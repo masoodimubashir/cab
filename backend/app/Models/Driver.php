@@ -1,0 +1,55 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+#[Fillable([
+    'user_id',
+    'approval_status',
+    'approved_at',
+    'rejected_at',
+    'vehicle_type',
+    'vehicle_brand',
+    'vehicle_model',
+    'vehicle_color',
+    'vehicle_reg_no',
+    'rating_avg',
+    'rating_count',
+    'is_online',
+    'last_online_at',
+    'last_offline_at',
+])]
+class Driver extends Model
+{
+    use HasFactory;
+
+    protected $casts = [
+        'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
+        'last_online_at' => 'datetime',
+        'last_offline_at' => 'datetime',
+        'rating_avg' => 'float',
+    ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(DriverDocument::class, 'driver_id');
+    }
+
+    public function trips(): HasMany
+    {
+        // trips.driver_id points to users.id (not drivers.id).
+        return $this->hasMany(Trip::class, 'driver_id', 'user_id');
+    }
+}
+

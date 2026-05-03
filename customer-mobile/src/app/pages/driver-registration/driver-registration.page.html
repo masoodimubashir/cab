@@ -1,0 +1,69 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="back()">Back</ion-button>
+    </ion-buttons>
+    <ion-title>Driver onboarding</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+  <ion-text color="success" *ngIf="message"><p>{{ message }}</p></ion-text>
+
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>Vehicle registration</ion-card-title>
+      <ion-card-subtitle *ngIf="!isCustomer">You are not on the customer role; backend may reject this if you are already a driver.</ion-card-subtitle>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-item lines="full">
+        <ion-label position="stacked">Vehicle type</ion-label>
+        <ion-input [(ngModel)]="vehicle_type" placeholder="e.g. Sedan"></ion-input>
+      </ion-item>
+      <ion-item lines="full">
+        <ion-label position="stacked">Registration no.</ion-label>
+        <ion-input [(ngModel)]="vehicle_reg_no" placeholder="Required"></ion-input>
+      </ion-item>
+      <ion-item lines="full">
+        <ion-label position="stacked">Brand (optional)</ion-label>
+        <ion-input [(ngModel)]="vehicle_brand"></ion-input>
+      </ion-item>
+      <ion-item lines="full">
+        <ion-label position="stacked">Model (optional)</ion-label>
+        <ion-input [(ngModel)]="vehicle_model"></ion-input>
+      </ion-item>
+      <ion-item lines="full">
+        <ion-label position="stacked">Color (optional)</ion-label>
+        <ion-input [(ngModel)]="vehicle_color"></ion-input>
+      </ion-item>
+      <ion-button expand="block" class="ion-margin-top" (click)="submitRegistration()" [disabled]="busy">
+        {{ busy ? 'Saving…' : 'Submit registration' }}
+      </ion-button>
+    </ion-card-content>
+  </ion-card>
+
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>Documents</ion-card-title>
+      <ion-card-subtitle>Requires driver role. Upload DL, RC, Insurance, ID (max 10 MB each).</ion-card-subtitle>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-item lines="full">
+        <ion-label position="stacked">Document type</ion-label>
+        <ion-select [(ngModel)]="docType" interface="action-sheet">
+          <ion-select-option value="DL">DL</ion-select-option>
+          <ion-select-option value="RC">RC</ion-select-option>
+          <ion-select-option value="INSURANCE">Insurance</ion-select-option>
+          <ion-select-option value="ID">ID</ion-select-option>
+        </ion-select>
+      </ion-item>
+      <ion-item lines="none">
+        <input type="file" (change)="onFileChange($event)" accept="image/*,application/pdf" />
+      </ion-item>
+      <ion-button expand="block" (click)="uploadDocument()" [disabled]="uploadBusy">
+        {{ uploadBusy ? 'Uploading…' : 'Upload document' }}
+      </ion-button>
+    </ion-card-content>
+  </ion-card>
+</ion-content>

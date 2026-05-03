@@ -1,0 +1,52 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>My Trips</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="refresh()" [disabled]="loading">Refresh</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-text color="danger" *ngIf="error" class="ion-padding"><p>{{ error }}</p></ion-text>
+
+  <ion-list *ngIf="!loading && trips.length">
+    <ion-item *ngFor="let t of trips" lines="full">
+      <ion-label>
+        <h2>Trip #{{ t['id'] }}</h2>
+        <p>Status: {{ t['status'] }}</p>
+        <p *ngIf="t['pickup_address']">Pickup: {{ t['pickup_address'] }}</p>
+        <p *ngIf="t['drop_address']">Drop: {{ t['drop_address'] }}</p>
+        <p *ngIf="t['final_fare'] != null">
+          Fare: {{ t['final_fare'] }} {{ t['currency'] || 'INR' }}
+        </p>
+        <p *ngIf="t['completed_at']">Completed: {{ t['completed_at'] }}</p>
+      </ion-label>
+      <ion-buttons slot="end">
+        <ion-button
+          *ngIf="t['status'] === 'NEGOTIATION'"
+          fill="outline"
+          size="small"
+          (click)="navigateToNegotiation(t)"
+        >
+          Negotiate
+        </ion-button>
+        <ion-button
+          fill="outline"
+          size="small"
+          (click)="navigatePickupToDrop(t)"
+          [disabled]="!t['pickup_lat'] || !t['drop_lat']"
+        >
+          Maps
+        </ion-button>
+      </ion-buttons>
+    </ion-item>
+  </ion-list>
+
+  <ion-spinner *ngIf="loading" class="ion-margin" name="crescent"></ion-spinner>
+
+  <div *ngIf="!loading && !trips.length && !error" class="ion-padding">
+    <p>No trips yet. Book a ride first.</p>
+  </div>
+</ion-content>
+

@@ -1,0 +1,54 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>Dashboard</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="refresh()" [disabled]="loading">Refresh</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-spinner *ngIf="loading" name="crescent" class="ion-margin"></ion-spinner>
+
+  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+
+  <ng-container *ngIf="!loading && auth.getUser() as u">
+    <ion-card>
+      <ion-card-header>
+        <ion-card-subtitle>Welcome</ion-card-subtitle>
+        <ion-card-title>{{ u.name }}</ion-card-title>
+      </ion-card-header>
+      <ion-card-content>
+        <p>Role: <strong>{{ u.role }}</strong></p>
+        <p *ngIf="u.phone">Phone: {{ u.phone }}</p>
+      </ion-card-content>
+    </ion-card>
+
+    <ion-card *ngIf="driver as d">
+      <ion-card-header>
+        <ion-card-title>Status</ion-card-title>
+      </ion-card-header>
+      <ion-card-content>
+        <p>Approval: <ion-badge [color]="d['approval_status'] === 'approved' ? 'success' : 'warning'">{{ d['approval_status'] }}</ion-badge></p>
+        <p>Online: <strong>{{ d['is_online'] ? 'Yes' : 'No' }}</strong></p>
+        <p *ngIf="d['rating_avg'] != null">Rating: {{ d['rating_avg'] }} ({{ d['rating_count'] }} trips)</p>
+        <p *ngIf="d['vehicle_reg_no']">Vehicle: {{ d['vehicle_type'] }} · {{ d['vehicle_reg_no'] }}</p>
+      </ion-card-content>
+    </ion-card>
+
+    <ion-card *ngIf="!driver">
+      <ion-card-content>
+        <p>No driver profile yet. Complete <strong>registration</strong> under the More tab (while signed in as customer after first login).</p>
+      </ion-card-content>
+    </ion-card>
+
+    <div class="online-actions" *ngIf="driver && driver['approval_status'] === 'approved'">
+      <ion-button expand="block" color="success" (click)="setOnline(true)" [disabled]="toggling || !!driver['is_online']">
+        Go online
+      </ion-button>
+      <ion-button expand="block" color="medium" fill="outline" (click)="setOnline(false)" [disabled]="toggling || !driver['is_online']">
+        Go offline
+      </ion-button>
+    </div>
+  </ng-container>
+</ion-content>

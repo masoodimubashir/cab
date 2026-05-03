@@ -1,0 +1,31 @@
+.hero {
+  margin-bottom: 1rem;
+}
+
+.hero h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.hero p {
+  margin: 0;
+  color: var(--ion-color-medium);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.hero .warn {
+  color: var(--ion-color-warning-shade);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ion-color-medium);
+}
+
+code {
+  font-size: 0.75rem;
+  word-break: break-all;
+}

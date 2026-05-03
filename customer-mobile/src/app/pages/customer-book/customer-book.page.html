@@ -1,0 +1,191 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>Book Trip</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+  <ion-text color="success" *ngIf="message"><p>{{ message }}</p></ion-text>
+
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>Trip details</ion-card-title>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-item lines="full">
+        <ion-label position="stacked">City</ion-label>
+        <ion-select [(ngModel)]="cityId" interface="popover">
+          <ion-select-option *ngFor="let c of cities" [value]="c.id">
+            {{ c.name }}
+          </ion-select-option>
+        </ion-select>
+      </ion-item>
+
+      <ion-item lines="full" class="ion-margin-top">
+        <ion-label position="stacked">Ride type</ion-label>
+        <ion-select [(ngModel)]="rideTypeId" interface="popover">
+          <ion-select-option *ngFor="let r of rideTypes" [value]="r.id">
+            {{ r.name }}{{ r.description ? ' - ' + r.description : '' }}
+          </ion-select-option>
+        </ion-select>
+      </ion-item>
+
+      <ion-grid class="ion-margin-top">
+        <ion-row>
+          <ion-col>
+            <ion-item lines="full">
+              <ion-label position="stacked">Pickup address (optional)</ion-label>
+              <ion-input
+                #pickupAddrIonInput
+                type="text"
+                [(ngModel)]="pickupAddress"
+                autocapitalize="off"
+                spellcheck="false"
+                autocomplete="off"
+              ></ion-input>
+            </ion-item>
+          </ion-col>
+        </ion-row>
+      </ion-grid>
+
+      <ion-grid>
+        <ion-row>
+          <ion-col size="6">
+            <ion-item lines="full">
+              <ion-label position="stacked">Pickup lat</ion-label>
+              <ion-input type="number" [(ngModel)]="pickupLat" step="0.000001" (ionChange)="syncMarkersFromCoords()"></ion-input>
+            </ion-item>
+          </ion-col>
+          <ion-col size="6">
+            <ion-item lines="full">
+              <ion-label position="stacked">Pickup lng</ion-label>
+              <ion-input type="number" [(ngModel)]="pickupLng" step="0.000001" (ionChange)="syncMarkersFromCoords()"></ion-input>
+            </ion-item>
+          </ion-col>
+        </ion-row>
+
+        <ion-row>
+          <ion-col>
+            <ion-item lines="full">
+              <ion-label position="stacked">Drop address (optional)</ion-label>
+              <ion-input
+                #dropAddrIonInput
+                type="text"
+                [(ngModel)]="dropAddress"
+                autocapitalize="off"
+                spellcheck="false"
+                autocomplete="off"
+              ></ion-input>
+            </ion-item>
+          </ion-col>
+        </ion-row>
+
+        <ion-row>
+          <ion-col size="6">
+            <ion-item lines="full">
+              <ion-label position="stacked">Drop lat</ion-label>
+              <ion-input type="number" [(ngModel)]="dropLat" step="0.000001" (ionChange)="syncMarkersFromCoords()"></ion-input>
+            </ion-item>
+          </ion-col>
+          <ion-col size="6">
+            <ion-item lines="full">
+              <ion-label position="stacked">Drop lng</ion-label>
+              <ion-input type="number" [(ngModel)]="dropLng" step="0.000001" (ionChange)="syncMarkersFromCoords()"></ion-input>
+            </ion-item>
+          </ion-col>
+        </ion-row>
+      </ion-grid>
+
+      <ion-card class="booking-map-card">
+        <ion-card-header>
+          <ion-card-title>Map (pickup / drop)</ion-card-title>
+        </ion-card-header>
+        <ion-card-content>
+          <ion-text color="danger" *ngIf="mapsLoadError" class="ion-margin-bottom">
+            <p>{{ mapsLoadError }}</p>
+          </ion-text>
+
+          <ion-item lines="none" *ngIf="googleMapsReady" class="ion-margin-bottom">
+            <ion-label>Tap on map to set:</ion-label>
+            <ion-segment [(ngModel)]="mapClickTarget" mode="ios">
+              <ion-segment-button value="pickup">
+                <ion-label>Pickup</ion-label>
+              </ion-segment-button>
+              <ion-segment-button value="drop">
+                <ion-label>Drop</ion-label>
+              </ion-segment-button>
+            </ion-segment>
+          </ion-item>
+
+          <div id="booking-map" class="booking-map"></div>
+        </ion-card-content>
+      </ion-card>
+
+      <ion-grid class="ion-margin-top">
+        <ion-row>
+          <ion-col size="6">
+            <ion-button
+              expand="block"
+              fill="outline"
+              (click)="openPickupInMaps()"
+              [disabled]="!canPickup()"
+            >
+              Pickup in Maps
+            </ion-button>
+          </ion-col>
+          <ion-col size="6">
+            <ion-button
+              expand="block"
+              fill="outline"
+              (click)="openDropInMaps()"
+              [disabled]="!canDrop()"
+            >
+              Drop in Maps
+            </ion-button>
+          </ion-col>
+        </ion-row>
+
+        <ion-item lines="none" class="ion-margin-top">
+          <ion-label>Use my current location</ion-label>
+          <ion-toggle [(ngModel)]="useMyCurrentLocation"></ion-toggle>
+        </ion-item>
+
+        <ion-row>
+          <ion-col>
+            <ion-button
+              expand="block"
+              color="primary"
+              class="ion-margin-top-half"
+              (click)="openRouteInMaps()"
+              [disabled]="!(canPickup() && canDrop())"
+            >
+              Route: pickup → drop
+            </ion-button>
+          </ion-col>
+        </ion-row>
+      </ion-grid>
+
+      <ion-button expand="block" class="ion-margin-top" (click)="estimateFare()" [disabled]="loading">
+        {{ loading ? 'Loading…' : 'Estimate fare' }}
+      </ion-button>
+
+      <ion-button expand="block" color="primary" class="ion-margin-top" (click)="bookTrip()" [disabled]="loading">
+        Request trip
+      </ion-button>
+    </ion-card-content>
+  </ion-card>
+
+  <ion-card *ngIf="estimate">
+    <ion-card-header>
+      <ion-card-title>Estimate</ion-card-title>
+    </ion-card-header>
+    <ion-card-content>
+      <p>Estimated fare: <strong>{{ estimate.estimated_fare }}</strong> {{ estimate.currency || 'INR' }}</p>
+      <p>Distance: {{ estimate.distance_km }} km</p>
+      <p>Time: {{ estimate.time_min }} min</p>
+      <p *ngIf="estimate.commission_percent != null">Commission: {{ estimate.commission_percent }}%</p>
+    </ion-card-content>
+  </ion-card>
+</ion-content>
+

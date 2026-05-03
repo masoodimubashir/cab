@@ -1,0 +1,75 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="primary">
+    <ion-title>DreamCabs Driver</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <div class="hero">
+    <h1>Sign in</h1>
+    <p *ngIf="firebaseReady">We’ll text a one-time code to your mobile number.</p>
+    <p *ngIf="!firebaseReady && firebaseSetup === 'not-web-app'" class="warn">
+      Firebase <code>appId</code> in <code>environment.ts</code> is for Android/iOS, not the browser. In Firebase Console add a <strong>Web</strong> app and paste that config — <code>appId</code> must contain <code>:web:</code>. Until then, use Developer sign-in below.
+    </p>
+    <p *ngIf="!firebaseReady && firebaseSetup !== 'not-web-app'" class="warn">
+      Firebase Web config is incomplete in <code>environment.ts</code> (including a Web <code>appId</code>). Add your Web app snippet from Firebase Console to enable SMS OTP, or use Developer sign-in below.
+    </p>
+  </div>
+
+  <div id="recaptcha-container"></div>
+
+  <ng-container *ngIf="step === 'phone'">
+    <ion-item lines="full">
+      <ion-label position="stacked">Mobile number</ion-label>
+      <ion-input
+        type="tel"
+        inputmode="tel"
+        [(ngModel)]="phone"
+        placeholder="9876543210 or +91 9876543210"
+        [disabled]="loading"
+        autocomplete="tel"
+      ></ion-input>
+    </ion-item>
+    <p class="hint ion-padding-start">India: enter 10 digits or full +91 number.</p>
+
+    <ion-button expand="block" class="ion-margin-top" (click)="sendOtp()" [disabled]="loading || !firebaseReady">
+      {{ loading ? 'Sending…' : 'Send OTP' }}
+    </ion-button>
+  </ng-container>
+
+  <ng-container *ngIf="step === 'otp'">
+    <ion-item lines="full">
+      <ion-label position="stacked">SMS code</ion-label>
+      <ion-input type="text" inputmode="numeric" [(ngModel)]="otp" [disabled]="loading" maxlength="8" autocomplete="one-time-code"></ion-input>
+    </ion-item>
+
+    <ion-button expand="block" class="ion-margin-top" (click)="verifyOtp()" [disabled]="loading">
+      {{ loading ? 'Verifying…' : 'Verify & continue' }}
+    </ion-button>
+    <ion-button expand="block" fill="clear" size="small" (click)="backToPhone()" [disabled]="loading">
+      Use a different number
+    </ion-button>
+  </ng-container>
+
+  <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal ion-margin-top">{{ error }}</p></ion-text>
+
+  <ion-accordion-group class="ion-margin-top">
+    <ion-accordion value="dev">
+      <ion-item slot="header" lines="full">
+        <ion-label>Developer sign-in</ion-label>
+      </ion-item>
+      <div class="ion-padding" slot="content">
+        <p class="hint">Paste a Firebase ID token (e.g. from another client) to call <code>/auth/otp/verify</code> without SMS.</p>
+        <ion-item lines="full">
+          <ion-label position="stacked">ID token</ion-label>
+          <ion-textarea [(ngModel)]="idToken" rows="3" [disabled]="loading"></ion-textarea>
+        </ion-item>
+        <ion-button expand="block" fill="outline" (click)="signInWithToken()" [disabled]="loading">
+          Sign in with token
+        </ion-button>
+      </div>
+    </ion-accordion>
+  </ion-accordion-group>
+
+  <ion-button expand="block" fill="clear" size="small" (click)="logoutDev()">Clear saved session</ion-button>
+</ion-content>

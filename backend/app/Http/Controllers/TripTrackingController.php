@@ -1,0 +1,127 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Events\TripLocationUpdated;
+use App\Models\DriverLocation;
+use App\Models\Trip;
+use App\Models\TripShareLink;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+
+class TripTrackingController extends Controller
+{
+    public function updateLocation(Request $request, Trip $trip)
+    {
+        $data = $request->validate([
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'speed_kmh' => ['nullable', 'numeric', 'min:0'],
+            'bearing_deg' => ['nullable', 'integer', 'min:0', 'max:360'],
+        ]);
+
+        $user = $request->user();
+        if ($trip->driver_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        if (in_array($trip->status, ['CANCELLED', 'COMPLETED'], true)) {
+            return response()->json(['message' => 'Trip is not active.'], 409);
+        }
+
+        // Throttle location writes to avoid flooding.
+        $minIntervalSeconds = 5;
+        $last = DriverLocation::query()
+            ->where('trip_id', $trip->id)
+            ->where('driver_id', $user->id)
+            ->orderByDesc('recorded_at')
+            ->first();
+
+        if ($last && $last->recorded_at) {
+            $ageSeconds = now()->getTimestamp() - $last->recorded_at->getTimestamp();
+            if ($ageSeconds < $minIntervalSeconds) {
+                return response()->json([
+                    'message' => 'Throttled',
+                    'location' => $last,
+                ], 429);
+            }
+        }
+
+        $location = DriverLocation::query()->create([
+            'driver_id' => $user->id,
+            'trip_id' => $trip->id,
+            'lat' => (float) $data['lat'],
+            'lng' => (float) $data['lng'],
+            'accuracy_m' => $data['accuracy_m'] ?? null,
+            'speed_kmh' => $data['speed_kmh'] ?? null,
+            'bearing_deg' => $data['bearing_deg'] ?? null,
+        ]);
+
+        broadcast(new TripLocationUpdated(
+            tripId: $trip->id,
+            location: $location->fresh(),
+        ))->toOthers();
+
+        return response()->json(['location' => $location]);
+    }
+
+    public function createShareLink(Request $request, Trip $trip)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        if (in_array($trip->status, ['CANCELLED', 'COMPLETED'], true)) {
+            return response()->json(['message' => 'Trip is not shareable.'], 409);
+        }
+
+        $token = Str::random(64);
+        $expiresAt = now()->addDay();
+
+        $shareLink = TripShareLink::query()->firstOrNew(['trip_id' => $trip->id]);
+        $shareLink->created_by_user_id = $user->id;
+        $shareLink->token = $token;
+        $shareLink->expires_at = $expiresAt;
+        $shareLink->revoked_at = null;
+        $shareLink->save();
+
+        return response()->json([
+            'token' => $shareLink->token,
+            'expires_at' => $shareLink->expires_at,
+        ]);
+    }
+
+    public function showShare(string $token)
+    {
+        $shareLink = TripShareLink::query()
+            ->where('token', $token)
+            ->whereNull('revoked_at')
+            ->first();
+
+        if (!$shareLink) {
+            return response()->json(['message' => 'Share link not found.'], 404);
+        }
+
+        if ($shareLink->expires_at && $shareLink->expires_at->isPast()) {
+            return response()->json(['message' => 'Share link expired.'], 410);
+        }
+
+        $trip = Trip::query()->with('driver', 'rideType')->find($shareLink->trip_id);
+        if (!$trip) {
+            return response()->json(['message' => 'Trip not found.'], 404);
+        }
+
+        $latestLocation = DriverLocation::query()
+            ->where('trip_id', $trip->id)
+            ->orderByDesc('recorded_at')
+            ->first();
+
+        return response()->json([
+            'trip' => $trip,
+            'latest_location' => $latestLocation,
+        ]);
+    }
+}
+
