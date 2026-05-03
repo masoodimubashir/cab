@@ -1,0 +1,44 @@
+import { NgModule } from '@angular/core';
+import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
+import { AuthGuard } from './core/auth.guard';
+
+const routes: Routes = [
+  {
+    path: 'auth/login',
+    loadChildren: () => import('./auth/login/login.module').then((m) => m.LoginPageModule),
+  },
+  {
+    path: 'tabs',
+    loadChildren: () => import('./tabs/tabs.module').then((m) => m.TabsPageModule),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'driver-registration',
+    loadChildren: () =>
+      import('./pages/driver-registration/driver-registration.module').then(
+        (m) => m.DriverRegistrationPageModule
+      ),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'performance',
+    loadChildren: () =>
+      import('./pages/performance/performance.module').then((m) => m.PerformancePageModule),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: '',
+    redirectTo: 'auth/login',
+    pathMatch: 'full',
+  },
+  {
+    path: '**',
+    redirectTo: 'auth/login',
+  },
+];
+
+@NgModule({
+  imports: [RouterModule.forRoot(routes, { preloadingStrategy: PreloadAllModules })],
+  exports: [RouterModule],
+})
+export class AppRoutingModule {}

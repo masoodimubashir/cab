@@ -1,0 +1,36 @@
+<nav
+  *ngIf="showNav"
+  class="app-header"
+>
+  <div class="app-header__inner">
+    <div class="app-header__brand">
+      <span class="app-header__brand-mark" aria-hidden="true">DC</span>
+      <span class="app-header__brand-text">DreamCabs Admin</span>
+    </div>
+
+    <div class="app-header__links" role="navigation" aria-label="Admin navigation">
+      <a
+        routerLink="/dashboard"
+        routerLinkActive="active"
+        class="nav-link"
+      >
+        Dashboard
+      </a>
+      <a routerLink="/users" routerLinkActive="active" class="nav-link">Users</a>
+      <a routerLink="/drivers" routerLinkActive="active" class="nav-link">Drivers</a>
+      <a routerLink="/pricing" routerLinkActive="active" class="nav-link">Pricing</a>
+      <a routerLink="/trips" routerLinkActive="active" class="nav-link">Trips</a>
+      <a routerLink="/safety" routerLinkActive="active" class="nav-link">Safety</a>
+      <a routerLink="/reports" routerLinkActive="active" class="nav-link">Reports</a>
+
+      <button type="button" class="logout-btn" (click)="logout()" aria-label="Logout">
+        Logout
+      </button>
+    </div>
+  </div>
+</nav>
+
+<main style="padding: 16px;">
+  <router-outlet />
+</main>
+

@@ -1,0 +1,27 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>Trip history</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="refresh()" [disabled]="loading">Refresh</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-list *ngIf="!loading && trips.length">
+    <ion-item *ngFor="let t of trips" lines="full">
+      <ion-label>
+        <h2>Trip #{{ t['id'] }}</h2>
+        <p>Status: {{ t['status'] }}</p>
+        <p *ngIf="t['final_fare'] != null">Fare: {{ t['final_fare'] }} {{ t['currency'] }}</p>
+        <p *ngIf="t['completed_at']">Completed: {{ t['completed_at'] }}</p>
+      </ion-label>
+    </ion-item>
+  </ion-list>
+
+  <ion-spinner *ngIf="loading" class="ion-margin" name="crescent"></ion-spinner>
+  <ion-text color="danger" *ngIf="error" class="ion-padding"><p>{{ error }}</p></ion-text>
+  <div *ngIf="!loading && !trips.length && !error" class="ion-padding">
+    <p>No completed trips yet.</p>
+  </div>
+</ion-content>

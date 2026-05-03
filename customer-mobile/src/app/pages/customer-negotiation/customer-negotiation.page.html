@@ -1,0 +1,77 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>Negotiation</ion-title>
+    <ion-buttons slot="end">
+      <ion-button fill="clear" (click)="refresh()" [disabled]="loading">Refresh</ion-button>
+      <ion-button fill="clear" (click)="goBack()">Back</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-text color="danger" *ngIf="error" class="ion-margin-bottom"><p>{{ error }}</p></ion-text>
+
+  <ion-spinner *ngIf="loading" class="ion-margin" name="crescent"></ion-spinner>
+
+  <ion-card *ngIf="!loading">
+    <ion-card-header>
+      <ion-card-title>Trip #{{ tripId }}</ion-card-title>
+        <ion-card-subtitle *ngIf="negotiation?.status">Status: {{ negotiation?.status }}</ion-card-subtitle>
+    </ion-card-header>
+
+    <ion-card-content>
+      <p *ngIf="negotiation?.final_amount != null">
+        Final fare locked: <strong>{{ negotiation?.final_amount }}</strong>
+      </p>
+      <p *ngIf="negotiation?.final_amount == null">
+        Waiting for the driver’s final fare...
+      </p>
+
+      <ion-list *ngIf="offers.length">
+        <ion-item *ngFor="let o of offers" lines="full">
+          <ion-label>
+            <h2>{{ o.from_role | titlecase }} offer</h2>
+            <p>Amount: {{ o.amount }}</p>
+            <p *ngIf="o.created_at">When: {{ o.created_at }}</p>
+          </ion-label>
+          <ion-badge
+            slot="end"
+            [color]="o.status === 'PENDING' ? 'warning' : (o.status === 'ACCEPTED' ? 'success' : 'medium')"
+          >
+            {{ o.status }}
+          </ion-badge>
+        </ion-item>
+      </ion-list>
+
+      <div *ngIf="!offers.length" class="ion-margin-top">
+        <p>No offers yet. Send your first offer below.</p>
+      </div>
+
+      <ion-item lines="full" class="ion-margin-top">
+        <ion-label position="stacked">Your offer amount</ion-label>
+        <ion-input type="number" [(ngModel)]="offerAmount" step="1" inputmode="decimal"></ion-input>
+      </ion-item>
+
+      <ion-button
+        expand="block"
+        color="primary"
+        class="ion-margin-top"
+        (click)="sendOffer()"
+        [disabled]="!canSendOffer"
+      >
+        {{ sendingOffer ? 'Sending…' : 'Send offer' }}
+      </ion-button>
+
+      <ion-button
+        expand="block"
+        color="success"
+        class="ion-margin-top"
+        (click)="confirmFinalFare()"
+        [disabled]="!canConfirm"
+      >
+        {{ confirming ? 'Confirming…' : 'Confirm final fare' }}
+      </ion-button>
+    </ion-card-content>
+  </ion-card>
+</ion-content>
+

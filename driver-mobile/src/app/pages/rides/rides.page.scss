@@ -1,0 +1,19 @@
+ion-card {
+  margin-bottom: 1rem;
+}
+
+.coords {
+  font-size: 0.85rem;
+  color: var(--ion-color-medium-shade, #666);
+  margin-top: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.hint {
+  color: var(--ion-color-medium-shade, #666);
+  margin: 0;
+}
+
+.nav-actions ion-button {
+  margin-inline: 0;
+}

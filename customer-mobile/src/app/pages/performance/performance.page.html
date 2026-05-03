@@ -1,0 +1,47 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="back()">Back</ion-button>
+    </ion-buttons>
+    <ion-title>Performance</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="load()" [disabled]="loading">Refresh</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
+  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+
+  <ion-card *ngIf="!loading">
+    <ion-card-header>
+      <ion-card-title>Driver metrics</ion-card-title>
+      <ion-card-subtitle>Aligned with admin approval, ratings, and completed trips.</ion-card-subtitle>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-list lines="none">
+        <ion-item>
+          <ion-label>Approval</ion-label>
+          <ion-badge slot="end" [color]="approvalStatus === 'approved' ? 'success' : 'warning'">{{ approvalStatus || '—' }}</ion-badge>
+        </ion-item>
+        <ion-item>
+          <ion-label>Average rating</ion-label>
+          <ion-note slot="end">{{ ratingAvg ?? '—' }}</ion-note>
+        </ion-item>
+        <ion-item>
+          <ion-label>Rating count</ion-label>
+          <ion-note slot="end">{{ ratingCount ?? '—' }}</ion-note>
+        </ion-item>
+        <ion-item>
+          <ion-label>Completed trips</ion-label>
+          <ion-note slot="end">{{ completedTrips }}</ion-note>
+        </ion-item>
+        <ion-item>
+          <ion-label>Online / activity</ion-label>
+          <ion-note slot="end">{{ onlineStreak }}</ion-note>
+        </ion-item>
+      </ion-list>
+    </ion-card-content>
+  </ion-card>
+</ion-content>

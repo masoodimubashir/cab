@@ -1,0 +1,769 @@
+openapi: 3.0.3
+info:
+  title: DreamCabs API
+  version: 0.1.0
+  description: Backend contract for DreamCabs (customer + driver mobile apps, admin panel).
+servers:
+  - url: http://localhost:8000/api
+tags:
+  - name: Health
+  - name: Auth
+  - name: Pricing
+  - name: Trips
+  - name: Payments
+  - name: Safety
+  - name: Ratings
+  - name: Admin
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: health_check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+  /auth/otp/start:
+    post:
+      tags: [Auth]
+      summary: Start OTP login
+      operationId: auth_otp_start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+      responses:
+        "200":
+          description: OTP sent (provider-specific)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId:
+                    type: string
+  /auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and issue app token
+      operationId: auth_otp_verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                requestId:
+                  type: string
+                idToken:
+                  type: string
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+  /pricing/estimate:
+    post:
+      tags: [Pricing]
+      summary: Estimate fare before booking
+      operationId: pricing_estimate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [city_id, ride_type_id, pickup_lat, pickup_lng, drop_lat, drop_lng]
+              properties:
+                city_id:
+                  type: integer
+                ride_type_id:
+                  type: integer
+                pickup_address:
+                  type: string
+                pickup_lat:
+                  type: number
+                pickup_lng:
+                  type: number
+                drop_address:
+                  type: string
+                drop_lat:
+                  type: number
+                drop_lng:
+                  type: number
+      responses:
+        "200":
+          description: Estimated fare
+          content:
+            application/json:
+              schema:
+                type: object
+  /trips:
+    post:
+      tags: [Trips]
+      summary: Create trip booking (starts fare negotiation)
+      operationId: trips_store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [city_id, ride_type_id, pickup_lat, pickup_lng, drop_lat, drop_lng]
+              properties:
+                city_id:
+                  type: integer
+                ride_type_id:
+                  type: integer
+                pickup_address:
+                  type: string
+                pickup_lat:
+                  type: number
+                pickup_lng:
+                  type: number
+                drop_address:
+                  type: string
+                drop_lat:
+                  type: number
+                drop_lng:
+                  type: number
+      responses:
+        "201":
+          description: Trip created
+          content:
+            application/json:
+              schema:
+                type: object
+  /trips/{tripId}/cancel:
+    post:
+      tags: [Trips]
+      summary: Cancel trip (customer)
+      operationId: trips_cancel
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Cancelled
+  /trips/{tripId}/confirm:
+    post:
+      tags: [Trips]
+      summary: Confirm final fare after negotiation (customer)
+      operationId: trips_confirm
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [final_fare]
+              properties:
+                final_fare:
+                  type: number
+      responses:
+        "200":
+          description: Confirmed
+  /trips/{tripId}/sos:
+    post:
+      tags: [Safety]
+      summary: Trigger SOS safety event (customer or driver)
+      operationId: trips_sos
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lat:
+                  type: number
+                lng:
+                  type: number
+                note:
+                  type: string
+      responses:
+        "200":
+          description: SOS event created
+  /trips/{tripId}/driver-progress:
+    patch:
+      tags: [Trips]
+      summary: Update trip progress and (optionally) location (driver)
+      operationId: trips_driver_progress
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                location:
+                  type: object
+                  properties:
+                    lat: { type: number }
+                    lng: { type: number }
+                    accuracy_m: { type: number }
+                    speed_kmh: { type: number }
+                    bearing_deg: { type: integer }
+      responses:
+        "200":
+          description: Updated
+  /trips/{tripId}/negotiation:
+    get:
+      tags: [Trips]
+      summary: Get fare negotiation thread (customer/driver)
+      operationId: negotiation_show
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Negotiation
+          content:
+            application/json:
+              schema:
+                type: object
+  /trips/{tripId}/negotiation/customer-offer:
+    post:
+      tags: [Trips]
+      summary: Submit a customer offer amount (customer)
+      operationId: negotiation_customer_offer
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: number }
+      responses:
+        "200":
+          description: Offer added
+  /trips/{tripId}/negotiation/customer-confirm:
+    post:
+      tags: [Trips]
+      summary: Customer confirms final fare (locks negotiation)
+      operationId: negotiation_customer_confirm
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [final_fare]
+              properties:
+                final_fare: { type: number }
+      responses:
+        "200":
+          description: Confirmed
+  /trips/{tripId}/negotiation/driver-action:
+    post:
+      tags: [Trips]
+      summary: Driver accept or counter an offer
+      operationId: negotiation_driver_action
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [ACCEPT, COUNTER]
+                amount:
+                  type: number
+      responses:
+        "200":
+          description: Driver action applied
+  /drivers/register:
+    post:
+      tags: [Trips]
+      summary: Register driver profile (vehicle details)
+      operationId: drivers_register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicle_type, vehicle_reg_no]
+              properties:
+                vehicle_type: { type: string }
+                vehicle_brand: { type: string }
+                vehicle_model: { type: string }
+                vehicle_color: { type: string }
+                vehicle_reg_no: { type: string }
+      responses:
+        "200":
+          description: Driver profile saved
+  /drivers/documents:
+    post:
+      tags: [Trips]
+      summary: Upload driver document (DL/RC/INSURANCE/ID)
+      operationId: drivers_upload_documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                document_type:
+                  type: string
+                  enum: [DL, RC, INSURANCE, ID]
+                file:
+                  description: Multipart upload in the real request (kept generic here).
+                  type: string
+      responses:
+        "200":
+          description: Document uploaded
+  /drivers/go-online:
+    post:
+      tags: [Trips]
+      summary: Mark driver online (admin-approved + all docs must be approved)
+      operationId: drivers_go_online
+      responses:
+        "200":
+          description: Online
+  /drivers/go-offline:
+    post:
+      tags: [Trips]
+      summary: Mark driver offline
+      operationId: drivers_go_offline
+      responses:
+        "200":
+          description: Offline
+  /trips/{tripId}/driver-accept:
+    post:
+      tags: [Trips]
+      summary: Driver accepts assignment (after negotiation confirmation)
+      operationId: ride_assignment_accept
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Assigned
+  /trips/{tripId}/driver-reject:
+    post:
+      tags: [Trips]
+      summary: Driver rejects assignment
+      operationId: ride_assignment_reject
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Rejected
+  /driver/trips/history:
+    get:
+      tags: [Ratings]
+      summary: Driver trip history
+      operationId: history_driver
+      responses:
+        "200":
+          description: History page
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Admin dashboard KPIs
+      operationId: admin_dashboard
+      responses:
+        "200":
+          description: KPI payload
+  /admin/drivers:
+    get:
+      tags: [Admin]
+      summary: Admin list drivers
+      operationId: admin_drivers
+      responses:
+        "200":
+          description: Driver list
+  /admin/drivers/{driverId}/approval:
+    patch:
+      tags: [Admin]
+      summary: Admin approves/rejects a driver
+      operationId: admin_driver_approval
+      parameters:
+        - name: driverId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approval_status]
+              properties:
+                approval_status:
+                  type: string
+                  enum: [approved, rejected]
+                rejection_reason:
+                  type: string
+      responses:
+        "200":
+          description: Updated driver
+  /admin/drivers/documents/{documentId}/status:
+    patch:
+      tags: [Admin]
+      summary: Admin sets driver document approval status
+      operationId: admin_driver_document_status
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [approved, rejected]
+                rejection_reason:
+                  type: string
+      responses:
+        "200":
+          description: Updated document
+  /admin/safety-events:
+    get:
+      tags: [Admin]
+      summary: Admin list safety events
+      operationId: admin_safety_events
+      responses:
+        "200":
+          description: Safety events page
+  /admin/pricing-rules:
+    get:
+      tags: [Admin]
+      summary: Admin list pricing rules
+      operationId: admin_pricing_rules
+      responses:
+        "200":
+          description: Pricing rules page
+  /admin/pricing-rules/{pricingRuleId}:
+    patch:
+      tags: [Admin]
+      summary: Admin updates a pricing rule
+      operationId: admin_pricing_rule_update
+      parameters:
+        - name: pricingRuleId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                base_fare: { type: number }
+                per_km: { type: number }
+                per_min: { type: number }
+                surge_multiplier: { type: number }
+                commission_percent: { type: number }
+                min_fare: { type: number }
+      responses:
+        "200":
+          description: Updated pricing rule
+  /admin/trips:
+    get:
+      tags: [Admin]
+      summary: Admin list trips
+      operationId: admin_trips
+      responses:
+        "200":
+          description: Trips page
+  /trips/{tripId}/location:
+    post:
+      tags: [Trips]
+      summary: Update driver location (driver)
+      operationId: trips_update_location
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat: { type: number }
+                lng: { type: number }
+                accuracy_m: { type: number }
+                speed_kmh: { type: number }
+                bearing_deg: { type: integer }
+      responses:
+        "200":
+          description: Location updated
+  /trips/{tripId}/share-link:
+    post:
+      tags: [Trips]
+      summary: Create a tokenized trip share link (customer)
+      operationId: trips_share_link_create
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Share token created
+  /trip-share/{token}:
+    get:
+      tags: [Trips]
+      summary: View shared trip tracking info (public by token)
+      operationId: trips_share_link_show
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Shared view
+  /trips/{tripId}/pay/upi:
+    post:
+      tags: [Payments]
+      summary: Start UPI payment (Razorpay) for trip
+      operationId: trips_pay_upi
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Payment initiation
+  /trips/{tripId}/pay/cash:
+    post:
+      tags: [Payments]
+      summary: Pay by cash for trip
+      operationId: trips_pay_cash
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Payment recorded
+  /trips/{tripId}/invoice:
+    get:
+      tags: [Payments]
+      summary: Get invoice metadata
+      operationId: invoices_show
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Invoice metadata
+    post:
+      tags: [Payments]
+      summary: Generate invoice PDF
+      operationId: invoices_generate
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Invoice generated
+  /trips/{tripId}/invoice/download:
+    get:
+      tags: [Payments]
+      summary: Download invoice PDF
+      operationId: invoices_download
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: PDF binary
+  /trips/{tripId}/rating:
+    post:
+      tags: [Ratings]
+      summary: Submit rating & feedback (customer)
+      operationId: ratings_store
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 2000 }
+      responses:
+        "200":
+          description: Rating stored
+  /customer/trips/history:
+    get:
+      tags: [Ratings]
+      summary: Customer trip history
+      operationId: history_customer
+      responses:
+        "200":
+          description: History page
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Admin list users
+      operationId: admin_users
+      responses:
+        "200":
+          description: Users page
+  /admin/users/{userId}/role:
+    patch:
+      tags: [Admin]
+      summary: Admin updates user role
+      operationId: admin_user_role_update
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [customer, driver, admin]
+      responses:
+        "200":
+          description: Role updated
+  /admin/trips/{tripId}/latest-location:
+    get:
+      tags: [Admin]
+      summary: Admin fetch latest stored driver location for a trip
+      operationId: admin_trip_latest_location
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Latest location
+  /payments/webhook/razorpay:
+    post:
+      tags: [Payments]
+      summary: Razorpay webhook handler
+      operationId: payments_razorpay_webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []

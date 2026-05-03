@@ -1,0 +1,32 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>Earnings</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="load()" [disabled]="loading">Refresh</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
+  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>Overview</ion-card-title>
+      <ion-card-subtitle>Summaries from your profile and completed trips. Detailed payouts can plug into payments later.</ion-card-subtitle>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-list lines="none">
+        <ion-item>
+          <ion-label>Completed trips (paginated total)</ion-label>
+          <ion-note slot="end">{{ completedCount }}</ion-note>
+        </ion-item>
+        <ion-item *ngIf="ratingAvg != null">
+          <ion-label>Average rating</ion-label>
+          <ion-note slot="end">{{ ratingAvg }} ({{ ratingCount }} ratings)</ion-note>
+        </ion-item>
+      </ion-list>
+    </ion-card-content>
+  </ion-card>
+</ion-content>
