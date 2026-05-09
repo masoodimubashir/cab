@@ -10,14 +10,22 @@
 <ion-content class="ion-padding">
   <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
 
+  <div id="trip-map" class="trip-map"></div>
+
   <ng-container *ngIf="!loading && trip as t">
     <ion-card>
       <ion-card-header>
         <ion-card-title>Status</ion-card-title>
-        <ion-card-subtitle>{{ t.status }}</ion-card-subtitle>
+        <ion-card-subtitle>
+          {{ t.status }}
+          <ion-badge *ngIf="liveConnected" color="success" style="margin-left: 0.5rem;">live</ion-badge>
+        </ion-card-subtitle>
       </ion-card-header>
       <ion-card-content>
         <p *ngIf="t.driver">Driver: <strong>{{ t.driver.name || 'Assigned' }}</strong></p>
+        <p *ngIf="driverPosition">
+          Driver location: {{ driverPosition.lat | number:'1.5-5' }}, {{ driverPosition.lng | number:'1.5-5' }}
+        </p>
         <p *ngIf="t.final_fare != null">Final fare: <strong>₹{{ t.final_fare }}</strong></p>
         <p *ngIf="t.payment_method">Selected payment: <strong>{{ t.payment_method | uppercase }}</strong></p>
       </ion-card-content>

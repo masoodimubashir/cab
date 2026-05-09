@@ -30,15 +30,7 @@ export class DriverRegistrationPage {
     private router: Router
   ) {}
 
-  get isCustomer(): boolean {
-    return this.auth.getUser()?.role === 'customer';
-  }
-
   submitRegistration(): void {
-    if (!this.isCustomer) {
-      this.error = 'Registration is only available when your account role is customer. If you are already a driver, use document upload below.';
-      return;
-    }
     if (!this.vehicle_type.trim() || !this.vehicle_reg_no.trim()) {
       this.error = 'Vehicle type and registration number are required.';
       return;
@@ -47,7 +39,7 @@ export class DriverRegistrationPage {
     this.error = null;
     this.message = null;
     this.api
-      .post<{ user?: { role: string }; driver?: unknown }>('/drivers/register', {
+      .post<{ user?: { roles?: string[] }; driver?: unknown }>('/drivers/register', {
         vehicle_type: this.vehicle_type.trim(),
         vehicle_brand: this.vehicle_brand.trim() || null,
         vehicle_model: this.vehicle_model.trim() || null,
@@ -56,11 +48,9 @@ export class DriverRegistrationPage {
       })
       .subscribe({
         next: (res) => {
-          const role = (res as { user?: { role?: string } }).user?.role;
-          if (role) {
-            this.auth.updateUser({ role });
-          } else {
-            this.auth.updateUser({ role: 'driver' });
+          const roles = res?.user?.roles;
+          if (roles?.length) {
+            this.auth.updateUser({ roles });
           }
           this.message = 'Driver profile saved. Upload documents next.';
         },

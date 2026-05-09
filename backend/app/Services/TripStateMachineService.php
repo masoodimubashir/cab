@@ -3,10 +3,16 @@
 namespace App\Services;
 
 use App\Models\Trip;
+use App\Models\User;
 use App\Events\TripStatusUpdated;
 
 class TripStateMachineService
 {
+    public function __construct(private NotificationService $notificationService)
+    {
+    }
+
+
     /**
      * Allowed transitions for trip status.
      *
@@ -79,7 +85,28 @@ class TripStateMachineService
         $trip->save();
 
         // Emit real-time status updates (used by customer/admin live tracking).
-        //broadcast(new TripStatusUpdated(tripId: $trip->id, status: $to))->toOthers();
+        broadcast(new TripStatusUpdated(tripId: $trip->id, status: $to))->toOthers();
+
+        // FCM: notify customer at the loud transitions.
+        $customerMessages = [
+            'ASSIGNED' => ['Driver assigned', 'Your driver is on the way.'],
+            'ARRIVED_PICKUP' => ['Driver has arrived', 'Your driver is at the pickup point.'],
+            'EN_ROUTE_DROP' => ['Trip started', 'You are on your way to the destination.'],
+            'COMPLETED' => ['Trip completed', 'Thanks for riding. Tap to pay and rate.'],
+            'CANCELLED' => ['Trip cancelled', $meta['cancelled_reason'] ?? 'Your trip was cancelled.'],
+        ];
+
+        if (isset($customerMessages[$to]) && $trip->customer_id) {
+            $customer = User::query()->find($trip->customer_id);
+            if ($customer) {
+                [$title, $body] = $customerMessages[$to];
+                $this->notificationService->sendToUser($customer, $title, $body, [
+                    'type' => 'trip_status',
+                    'trip_id' => $trip->id,
+                    'status' => $to,
+                ]);
+            }
+        }
 
         return $trip->fresh();
     }

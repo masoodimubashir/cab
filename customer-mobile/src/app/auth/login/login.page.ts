@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
+import { PushService } from '../../core/push.service';
 import {
   mapFirebaseAuthError,
   normalizeFirebaseIdToken,
@@ -60,7 +61,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private auth: AuthService,
     private router: Router,
     private phoneAuth: PhoneAuthService,
-    private googleAuth: GoogleAuthService
+    private googleAuth: GoogleAuthService,
+    private push: PushService
   ) {}
 
   ionViewWillEnter(): void {
@@ -383,6 +385,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         .subscribe({
           next: (res) => {
             this.auth.setSession(res.token, res.user);
+            void this.push.registerForUser();
             resolve(res.user);
           },
           error: (err) => reject(new Error(err?.error?.message || 'Sign-in failed')),
@@ -404,6 +407,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         .subscribe({
           next: (res) => {
             this.auth.setSession(res.token, res.user);
+            void this.push.registerForUser();
             this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
             resolve();
           },

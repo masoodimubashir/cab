@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Events\FareNegotiationLocked;
 use App\Events\FareNegotiationOfferAdded;
+use App\Models\Driver;
 use App\Models\FareNegotiation;
 use App\Models\FareNegotiationOffer;
 use App\Models\Trip;
+use App\Models\User;
+use App\Services\NotificationService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
 
@@ -41,7 +44,7 @@ class FareNegotiationController extends Controller
         ]);
     }
 
-    public function customerOffer(Request $request, Trip $trip)
+    public function customerOffer(Request $request, Trip $trip, NotificationService $notificationService)
     {
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0'],
@@ -83,6 +86,32 @@ class FareNegotiationController extends Controller
             tripId: $trip->id,
             offer: $offer->fresh(),
         ))->toOthers();
+
+        // Dispatch FCM to all online + approved drivers who accept this payment method.
+        // No-op until device tokens are registered (web VAPID / native plugin).
+        $eligibleDriverIds = Driver::query()
+            ->where('approval_status', 'approved')
+            ->where('is_online', true)
+            ->pluck('user_id');
+
+        if ($eligibleDriverIds->isNotEmpty()) {
+            $drivers = User::query()->whereIn('id', $eligibleDriverIds)->get();
+            foreach ($drivers as $driver) {
+                if ($trip->payment_method && !$driver->acceptsPaymentMethod($trip->payment_method)) {
+                    continue;
+                }
+                $notificationService->sendToUser(
+                    $driver,
+                    'New ride request',
+                    'Pickup: ' . ($trip->pickup_address ?? 'nearby') . ' — \u{20B9}' . number_format($amount, 0),
+                    [
+                        'type' => 'new_trip',
+                        'trip_id' => $trip->id,
+                        'amount' => $amount,
+                    ]
+                );
+            }
+        }
 
         return response()->json([
             'negotiation' => $negotiation->fresh('offers'),
@@ -197,7 +226,8 @@ class FareNegotiationController extends Controller
     public function customerConfirm(
         Request $request,
         Trip $trip,
-        TripStateMachineService $tripStateMachineService
+        TripStateMachineService $tripStateMachineService,
+        NotificationService $notificationService
     ) {
         $data = $request->validate([
             'final_fare' => ['required', 'numeric', 'min:0'],
@@ -238,6 +268,28 @@ class FareNegotiationController extends Controller
             tripId: $trip->id,
             finalFare: $finalFare,
         ))->toOthers();
+
+        // FCM: notify the driver whose counter-offer was accepted.
+        $acceptedDriverOffer = $negotiation->offers()
+            ->where('from_role', 'driver')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if ($acceptedDriverOffer && $acceptedDriverOffer->from_user_id) {
+            $driver = User::query()->find($acceptedDriverOffer->from_user_id);
+            if ($driver) {
+                $notificationService->sendToUser(
+                    $driver,
+                    'You got the trip',
+                    "Trip #{$trip->id} confirmed at \u{20B9}" . number_format($finalFare, 0),
+                    [
+                        'type' => 'trip_confirmed',
+                        'trip_id' => $trip->id,
+                        'final_fare' => $finalFare,
+                    ]
+                );
+            }
+        }
 
         return response()->json(['trip' => $trip->fresh()]);
     }

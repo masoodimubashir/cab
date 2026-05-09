@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { AlertController, MenuController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { PushService } from '../../core/push.service';
 
 @Component({
   selector: 'app-side-menu',
@@ -16,7 +17,8 @@ export class SideMenuComponent {
     private api: ApiService,
     private router: Router,
     private alertCtrl: AlertController,
-    private menuCtrl: MenuController
+    private menuCtrl: MenuController,
+    private push: PushService
   ) {}
 
   async signOut(): Promise<void> {
@@ -36,7 +38,8 @@ export class SideMenuComponent {
     await alert.present();
   }
 
-  private performSignOut(): void {
+  private async performSignOut(): Promise<void> {
+    await this.push.unregister();
     this.api.post('/me/logout', {}).subscribe({
       next: () => this.finishSignOut(),
       error: () => this.finishSignOut(),
