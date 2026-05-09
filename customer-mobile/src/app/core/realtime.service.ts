@@ -20,6 +20,23 @@ export type NegotiationLockedPayload = {
   final_fare: number;
 };
 
+export type TripLocationPayload = {
+  type: 'location_updated';
+  trip_id: number;
+  lat: number;
+  lng: number;
+  accuracy_m?: number;
+  speed_kmh?: number;
+  bearing_deg?: number;
+  recorded_at?: string;
+};
+
+export type TripStatusPayload = {
+  type: 'status_updated';
+  trip_id: number;
+  status: string;
+};
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private pusher: Pusher | null = null;
@@ -60,6 +77,30 @@ export class RealtimeService {
     return () => {
       channel.unbind('FareNegotiationOfferAdded', offerHandler);
       channel.unbind('FareNegotiationLocked', lockedHandler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
+  subscribeTracking(
+    tripId: number,
+    onLocation: (p: TripLocationPayload) => void,
+    onStatus: (p: TripStatusPayload) => void
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `trip.${tripId}.tracking`;
+    const channel = pusher.subscribe(channelName);
+
+    const locHandler = (data: TripLocationPayload) => onLocation(data);
+    const statusHandler = (data: TripStatusPayload) => onStatus(data);
+
+    channel.bind('TripLocationUpdated', locHandler);
+    channel.bind('TripStatusUpdated', statusHandler);
+
+    return () => {
+      channel.unbind('TripLocationUpdated', locHandler);
+      channel.unbind('TripStatusUpdated', statusHandler);
       pusher.unsubscribe(channelName);
     };
   }

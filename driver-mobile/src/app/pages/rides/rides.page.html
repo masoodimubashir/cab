@@ -7,8 +7,46 @@
 <ion-content class="ion-padding">
   <ion-card>
     <ion-card-header>
-      <ion-card-title>Accept / reject</ion-card-title>
-      <ion-card-subtitle>When a trip is confirmed for you, enter its ID from dispatch or push (API list can be added later).</ion-card-subtitle>
+      <ion-card-title>
+        Available rides
+        <ion-spinner *ngIf="loadingAvailable" name="dots" style="vertical-align: middle; margin-left: 0.5rem; height: 1rem;"></ion-spinner>
+      </ion-card-title>
+      <ion-card-subtitle>
+        Showing trips you can bid on (auto-refreshing every 8s). Must be online + approved.
+      </ion-card-subtitle>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-text color="medium" *ngIf="!available.length">
+        <p>No incoming trips right now.</p>
+      </ion-text>
+      <ion-list lines="full" *ngIf="available.length">
+        <ion-item *ngFor="let t of available">
+          <ion-label class="ion-text-wrap">
+            <h2>
+              ₹{{ t.customer_offer || t.estimated_fare || '-' }}
+              <small *ngIf="t.payment_method" style="margin-left:0.4rem; color:#666;">
+                · {{ t.payment_method | uppercase }}
+              </small>
+            </h2>
+            <p>From: {{ t.pickup_address || (t.pickup_lat + ', ' + t.pickup_lng) }}</p>
+            <p>To: {{ t.drop_address || (t.drop_lat + ', ' + t.drop_lng) }}</p>
+            <p style="color:#888; font-size:0.75rem;">Trip #{{ t.id }}</p>
+          </ion-label>
+          <ion-button slot="end" color="success" size="small" (click)="pickAvailable(t, 'accept')">
+            Accept
+          </ion-button>
+          <ion-button slot="end" fill="outline" size="small" (click)="pickAvailable(t, 'counter')">
+            Counter
+          </ion-button>
+        </ion-item>
+      </ion-list>
+    </ion-card-content>
+  </ion-card>
+
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>Trip actions</ion-card-title>
+      <ion-card-subtitle>Picked from the list above, or enter an ID directly.</ion-card-subtitle>
     </ion-card-header>
     <ion-card-content>
       <ion-item lines="full">

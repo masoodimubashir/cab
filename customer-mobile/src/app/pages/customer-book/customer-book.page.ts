@@ -143,6 +143,21 @@ export class CustomerBookPage implements OnDestroy {
         position: start,
         map: this.map,
         title: 'Pickup',
+        draggable: true,
+      });
+
+      this.pickupMarker.addListener('dragend', (ev: any) => {
+        const lat = ev.latLng.lat();
+        const lng = ev.latLng.lng();
+        void this.updatePickupTo(lat, lng);
+      });
+
+      this.map.addListener('click', (ev: any) => {
+        if (this.state !== 'idle') return;
+        const lat = ev.latLng.lat();
+        const lng = ev.latLng.lng();
+        this.pickupMarker.setPosition({ lat, lng });
+        void this.updatePickupTo(lat, lng);
       });
 
       const address = (await this.places.reverseGeocode(start.lat, start.lng)) ?? 'Current location';
@@ -150,6 +165,16 @@ export class CustomerBookPage implements OnDestroy {
       this.mapsReady = true;
     } catch (e) {
       this.mapsError = (e as Error)?.message || 'Could not load map.';
+    }
+  }
+
+  private async updatePickupTo(lat: number, lng: number): Promise<void> {
+    const address = (await this.places.reverseGeocode(lat, lng)) ?? 'Selected location';
+    this.pickup = { lat, lng, address };
+    if (this.map) this.map.panTo({ lat, lng });
+    if (this.drop) {
+      await this.showRouteOnMap();
+      await this.fetchEstimate();
     }
   }
 

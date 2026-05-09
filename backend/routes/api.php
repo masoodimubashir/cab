@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Auth\FirebaseAuthController;
+use App\Http\Controllers\DeviceTokensController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
@@ -41,6 +42,11 @@ Route::middleware('auth:sanctum')->post('/me/logout', [AccountController::class,
 Route::middleware('auth:sanctum')->delete('/me/account', [AccountController::class, 'destroy']);
 Route::middleware(['auth:sanctum', 'role:driver'])->patch('/me/driver/payment-methods', [AccountController::class, 'updateDriverPaymentMethods']);
 
+// FCM device-token registration (push notifications).
+Route::middleware('auth:sanctum')->post('/me/device-tokens', [DeviceTokensController::class, 'store']);
+Route::middleware('auth:sanctum')->delete('/me/device-tokens/{token}', [DeviceTokensController::class, 'destroy'])
+    ->where('token', '.*');
+
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
 
 // Public lookup endpoints for the mobile booking UI.
@@ -55,6 +61,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
+    Route::get('/trips/available', [TripsController::class, 'available']);
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
     Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
 });
@@ -74,7 +81,9 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/trips/{trip}/negotiation/driver-action', [FareNegotiationController::class, 'driverAction']);
 });
 
-Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
+// Driver onboarding: any authenticated user may register a vehicle profile.
+// The controller is idempotent (updateOrCreate) and grants the `driver` role.
+Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/drivers/register', [DriversController::class, 'register']);
 });
 

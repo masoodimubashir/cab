@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Driver;
 use App\Models\DriverLocation;
+use App\Models\FareNegotiation;
 use App\Models\PricingRule;
 use App\Models\Trip;
 use App\Services\FareEstimationService;
@@ -74,6 +76,73 @@ class TripsController extends Controller
             'trip' => $trip->fresh(),
             'estimate' => $estimate,
         ], 201);
+    }
+
+    /**
+     * Trips a driver can currently bid on (in NEGOTIATION, no driver claimed yet,
+     * payment method matches the driver's accepted_payment_methods).
+     * Returns the latest customer offer amount alongside each trip.
+     */
+    public function available(Request $request)
+    {
+        $user = $request->user();
+
+        $driverProfile = Driver::query()->where('user_id', $user->id)->first();
+        if (!$driverProfile) {
+            return response()->json(['message' => 'Driver profile not found.'], 404);
+        }
+        if ($driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
+            return response()->json(['data' => [], 'reason' => 'Driver must be approved and online.']);
+        }
+
+        $accepted = $user->accepted_payment_methods ?? ['cash', 'upi', 'qr'];
+
+        $trips = Trip::query()
+            ->where('status', 'NEGOTIATION')
+            ->whereNull('driver_id')
+            ->where(function ($q) use ($accepted) {
+                $q->whereNull('payment_method')
+                  ->orWhereIn('payment_method', $accepted);
+            })
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get([
+                'id', 'customer_id', 'pickup_address', 'pickup_lat', 'pickup_lng',
+                'drop_address', 'drop_lat', 'drop_lng', 'estimated_fare',
+                'payment_method', 'created_at',
+            ]);
+
+        $tripIds = $trips->pluck('id')->all();
+
+        // Fetch the latest customer offer per trip in a single query.
+        $latestOffers = FareNegotiation::query()
+            ->whereIn('trip_id', $tripIds)
+            ->with(['offers' => function ($q) {
+                $q->where('from_role', 'customer')->orderByDesc('created_at');
+            }])
+            ->get()
+            ->keyBy('trip_id');
+
+        $payload = $trips->map(function (Trip $t) use ($latestOffers) {
+            $negotiation = $latestOffers->get($t->id);
+            $latestAmount = $negotiation?->offers?->first()?->amount;
+
+            return [
+                'id' => $t->id,
+                'pickup_address' => $t->pickup_address,
+                'pickup_lat' => (float) $t->pickup_lat,
+                'pickup_lng' => (float) $t->pickup_lng,
+                'drop_address' => $t->drop_address,
+                'drop_lat' => (float) $t->drop_lat,
+                'drop_lng' => (float) $t->drop_lng,
+                'estimated_fare' => $t->estimated_fare !== null ? (float) $t->estimated_fare : null,
+                'customer_offer' => $latestAmount !== null ? (float) $latestAmount : null,
+                'payment_method' => $t->payment_method,
+                'created_at' => $t->created_at,
+            ];
+        });
+
+        return response()->json(['data' => $payload]);
     }
 
     public function cancel(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)
