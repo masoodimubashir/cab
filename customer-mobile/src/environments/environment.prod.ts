@@ -1,7 +1,7 @@
 export const environment = {
   production: true,
   apiUrl: 'https://your-api.example.com/api',
-  googleMapsApiKey: 'AIzaSyArBKPH_WET3XNUs4wh3ErZMbjSKsX8p8w',
+  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
   reverbAppKey: '',
   reverbHost: '',
   reverbPort: 443,
@@ -16,5 +16,6 @@ export const environment = {
     appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
     measurementId: "G-CLHQFG1HW1"
   },
+  fcmVapidKey: "",
 };
  

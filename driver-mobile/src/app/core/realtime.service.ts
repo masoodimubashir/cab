@@ -20,17 +20,6 @@ export type NegotiationLockedPayload = {
   final_fare: number;
 };
 
-export type TripLocationPayload = {
-  type: 'location_updated';
-  trip_id: number;
-  lat: number;
-  lng: number;
-  accuracy_m?: number;
-  speed_kmh?: number;
-  bearing_deg?: number;
-  recorded_at?: string;
-};
-
 export type TripStatusPayload = {
   type: 'status_updated';
   trip_id: number;
@@ -57,6 +46,10 @@ export class RealtimeService {
     return this.pusher;
   }
 
+  /**
+   * Subscribe to a trip's negotiation channel — used to see live customer fare offers
+   * (and your accepted/locked confirmations).
+   */
   subscribeNegotiation(
     tripId: number,
     onOffer: (p: NegotiationOfferPayload) => void,
@@ -81,9 +74,11 @@ export class RealtimeService {
     };
   }
 
-  subscribeTracking(
+  /**
+   * Subscribe to trip status updates (driver sees customer-side cancels in real time).
+   */
+  subscribeTripStatus(
     tripId: number,
-    onLocation: (p: TripLocationPayload) => void,
     onStatus: (p: TripStatusPayload) => void
   ): () => void {
     const pusher = this.ensure();
@@ -92,15 +87,11 @@ export class RealtimeService {
     const channelName = `trip.${tripId}.tracking`;
     const channel = pusher.subscribe(channelName);
 
-    const locHandler = (data: TripLocationPayload) => onLocation(data);
-    const statusHandler = (data: TripStatusPayload) => onStatus(data);
-
-    channel.bind('TripLocationUpdated', locHandler);
-    channel.bind('TripStatusUpdated', statusHandler);
+    const handler = (data: TripStatusPayload) => onStatus(data);
+    channel.bind('TripStatusUpdated', handler);
 
     return () => {
-      channel.unbind('TripLocationUpdated', locHandler);
-      channel.unbind('TripStatusUpdated', statusHandler);
+      channel.unbind('TripStatusUpdated', handler);
       pusher.unsubscribe(channelName);
     };
   }

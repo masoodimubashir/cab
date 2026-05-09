@@ -1,0 +1,133 @@
+import { Injectable } from '@angular/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
+import { ApiService } from './api.service';
+
+type Location = {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  speed?: number | null;
+  bearing?: number | null;
+  time?: number;
+};
+
+type WatcherOptions = {
+  backgroundMessage?: string;
+  backgroundTitle?: string;
+  requestPermissions?: boolean;
+  stale?: boolean;
+  distanceFilter?: number;
+};
+
+type BackgroundGeolocationPlugin = {
+  addWatcher(
+    options: WatcherOptions,
+    callback: (location: Location | null, error: any) => void
+  ): Promise<string>;
+  removeWatcher(options: { id: string }): Promise<void>;
+  openSettings(): Promise<void>;
+};
+
+const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
+
+@Injectable({ providedIn: 'root' })
+export class BackgroundLocationService {
+  private watcherId: string | null = null;
+  private currentTripId: number | null = null;
+  private webIntervalHandle: any = null;
+  private lastSentAt = 0;
+  private readonly minIntervalMs = 5000;
+
+  constructor(private api: ApiService) {}
+
+  isStreaming(): boolean {
+    return this.watcherId != null || this.webIntervalHandle != null;
+  }
+
+  async start(tripId: number): Promise<void> {
+    if (this.isStreaming() && this.currentTripId === tripId) return;
+    if (this.isStreaming()) await this.stop();
+
+    this.currentTripId = tripId;
+
+    if (Capacitor.isNativePlatform()) {
+      this.watcherId = await BackgroundGeolocation.addWatcher(
+        {
+          backgroundTitle: 'DreamCabs is sharing your location',
+          backgroundMessage: 'Your location is being shared with the rider during this trip.',
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 5,
+        },
+        (location, error) => {
+          if (error) {
+            console.warn('BackgroundLocation error', error);
+            return;
+          }
+          if (!location) return;
+          this.postLocation(location);
+        }
+      );
+    } else {
+      // Web fallback: foreground-only via Capacitor Geolocation watch.
+      const id = await Geolocation.watchPosition(
+        { enableHighAccuracy: true, maximumAge: 4000, timeout: 8000 },
+        (pos, err) => {
+          if (err || !pos) return;
+          this.postLocation({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            speed: pos.coords.speed,
+            bearing: pos.coords.heading,
+            time: pos.timestamp,
+          });
+        }
+      );
+      this.webIntervalHandle = id;
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (this.watcherId) {
+      try {
+        await BackgroundGeolocation.removeWatcher({ id: this.watcherId });
+      } catch {
+        /* ignore */
+      }
+      this.watcherId = null;
+    }
+    if (this.webIntervalHandle) {
+      try {
+        await Geolocation.clearWatch({ id: this.webIntervalHandle });
+      } catch {
+        /* ignore */
+      }
+      this.webIntervalHandle = null;
+    }
+    this.currentTripId = null;
+    this.lastSentAt = 0;
+  }
+
+  private postLocation(loc: Location): void {
+    if (!this.currentTripId) return;
+    const now = Date.now();
+    if (now - this.lastSentAt < this.minIntervalMs) return;
+
+    // Skip when essentially stationary to avoid hammering the endpoint.
+    const speedKmh =
+      loc.speed != null && Number.isFinite(loc.speed) ? Math.max(0, loc.speed) * 3.6 : null;
+
+    this.lastSentAt = now;
+    this.api
+      .post(`/trips/${this.currentTripId}/location`, {
+        lat: loc.latitude,
+        lng: loc.longitude,
+        accuracy_m: loc.accuracy ?? null,
+        speed_kmh: speedKmh,
+        bearing_deg: loc.bearing ?? null,
+      })
+      .subscribe({ error: () => {} });
+  }
+}
