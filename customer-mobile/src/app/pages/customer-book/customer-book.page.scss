@@ -1,19 +1,318 @@
-ion-card + ion-card {
-  margin-top: 1rem;
+.ride-page {
+  --background: #fff;
 }
 
-.ion-margin-top-half {
-  margin-top: 0.5rem;
+.ride-map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
 }
 
-.booking-map-card {
-  margin-top: 1rem;
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+
+  ion-fab,
+  .from-chip {
+    pointer-events: auto;
+  }
 }
 
-.booking-map {
-  height: 260px;
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
+.from-chip {
+  position: absolute;
+  top: 1rem;
+  left: 4rem;
+  right: 1rem;
+  background: #fff;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+  small {
+    color: #888;
+    font-size: 0.75rem;
+  }
+
+  p {
+    margin: 0;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
+.bottom-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+  border-top-left-radius: 1.25rem;
+  border-top-right-radius: 1.25rem;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+  padding: 1rem;
+  z-index: 2;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.sheet-idle {
+  .ride-chips {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+
+    .chip {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      background: #f3f4f6;
+      border: 2px solid transparent;
+      border-radius: 0.7rem;
+      padding: 0.6rem 1rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+
+      ion-icon {
+        font-size: 1.4rem;
+      }
+
+      &.active {
+        background: #e6f0ff;
+        border-color: #3880ff;
+      }
+    }
+  }
+
+  .search-bar {
+    width: 100%;
+    background: #f3f4f6;
+    border: 0;
+    border-radius: 0.6rem;
+    padding: 0.9rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: #555;
+    font-size: 1rem;
+  }
+}
+
+.sheet-route,
+.sheet-offer {
+  .sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.8rem;
+
+    h2 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+  }
+}
+
+.sheet-route {
+  .locked-from {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    background: #f3f4f6;
+    border-radius: 0.6rem;
+    padding: 0.7rem;
+    margin-bottom: 0.8rem;
+
+    small {
+      color: #888;
+    }
+
+    p {
+      margin: 0;
+      font-weight: 500;
+    }
+  }
+
+  .search-input {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1.5px solid #333;
+    border-radius: 0.6rem;
+    padding: 0.7rem;
+    margin-bottom: 0.5rem;
+
+    input {
+      flex: 1;
+      border: 0;
+      outline: none;
+      font-size: 1rem;
+    }
+  }
+
+  .suggestion-list {
+    margin: 0 -1rem;
+  }
+}
+
+.sheet-preview {
+  .route-summary {
+    background: #fff;
+    border-radius: 0.6rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    padding: 0.7rem;
+    margin-bottom: 0.8rem;
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.95rem;
+
+      + .row {
+        margin-top: 0.4rem;
+      }
+    }
+  }
+
+  .ride-card {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    background: #f8f9fa;
+    border-radius: 0.6rem;
+    padding: 0.8rem;
+    margin-bottom: 0.8rem;
+
+    ion-icon {
+      font-size: 2rem;
+    }
+
+    h3 {
+      margin: 0 0 0.2rem;
+    }
+
+    small {
+      color: #777;
+    }
+  }
+
+  .cta-fare {
+    --background: #c8f73d;
+    --color: #000;
+    --border-radius: 0.7rem;
+    font-weight: 600;
+  }
+}
+
+.sheet-offer {
+  .fare-input {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-bottom: 1px solid #ccc;
+    padding: 0.4rem 0;
+    margin-bottom: 0.3rem;
+
+    .rupee {
+      font-size: 2rem;
+      color: #d12c2c;
+      font-weight: 600;
+    }
+
+    input {
+      flex: 1;
+      border: 0;
+      outline: none;
+      font-size: 2rem;
+      font-weight: 600;
+    }
+  }
+
+  .fare-hint {
+    display: block;
+    color: #777;
+    margin-bottom: 0.6rem;
+  }
+
+  .fare-error {
+    display: block;
+    color: #d12c2c;
+    margin-bottom: 0.6rem;
+  }
+
+  .addr-row ion-label {
+    small {
+      color: #888;
+      display: block;
+    }
+
+    p {
+      margin: 0.1rem 0 0;
+      font-weight: 500;
+    }
+  }
+
+  .cta-find {
+    --background: #c8f73d;
+    --color: #000;
+    --border-radius: 0.7rem;
+    font-weight: 600;
+    margin-top: 0.8rem;
+  }
+}
+
+.sheet-searching {
+  .searching-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1rem;
+    margin-bottom: 0.4rem;
+
+    .timer {
+      font-weight: 600;
+    }
+  }
+
+  .fare-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 1rem 0;
+
+    .raise-btn {
+      flex: 0 0 60px;
+      background: #f3f4f6;
+      border: 0;
+      border-radius: 0.6rem;
+      padding: 0.6rem 0;
+      font-size: 1rem;
+      color: #444;
+
+      &:disabled {
+        opacity: 0.5;
+      }
+    }
+
+    .fare-amount {
+      flex: 1;
+      text-align: center;
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+  }
+}
+
+.sheet-bids {
+  h3 {
+    margin: 0 0 0.7rem;
+    font-size: 1rem;
+  }
+}

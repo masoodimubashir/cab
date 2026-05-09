@@ -33,12 +33,19 @@ class DriversController extends Controller
             ]
         );
 
-        $user->role = 'driver';
-        $user->save();
+        $user->addRole('driver');
+
+        $fresh = $user->fresh();
 
         return response()->json([
             'driver' => $driver->fresh(),
-            'user' => $user->fresh(['id', 'name', 'role', 'phone', 'email']),
+            'user' => [
+                'id' => $fresh->id,
+                'name' => $fresh->name,
+                'phone' => $fresh->phone,
+                'email' => $fresh->email,
+                'roles' => $fresh->roleNames(),
+            ],
         ]);
     }
 
@@ -51,7 +58,13 @@ class DriversController extends Controller
         $driver = Driver::query()->where('user_id', $user->id)->first();
 
         return response()->json([
-            'user' => $user->only(['id', 'name', 'role', 'phone', 'email']),
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'phone' => $user->phone,
+                'email' => $user->email,
+                'roles' => $user->roleNames(),
+            ],
             'driver' => $driver,
         ]);
     }

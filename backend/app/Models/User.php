@@ -16,7 +16,7 @@ use Laravel\Sanctum\HasApiTokens;
 use App\Models\Trip;
 use App\Models\Rating;
 
-#[Fillable(['name', 'email', 'password', 'phone', 'google_sub', 'avatar_path', 'role', 'last_login_at'])]
+#[Fillable(['name', 'email', 'password', 'phone', 'google_sub', 'avatar_path', 'accepted_payment_methods', 'last_login_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -34,12 +34,45 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'last_login_at' => 'datetime',
+            'accepted_payment_methods' => 'array',
         ];
+    }
+
+    public function roles(): HasMany
+    {
+        return $this->hasMany(UserRole::class);
+    }
+
+    public function hasRole(string $role): bool
+    {
+        return $this->roles()->where('role', $role)->exists();
+    }
+
+    public function addRole(string $role): void
+    {
+        UserRole::query()->firstOrCreate([
+            'user_id' => $this->id,
+            'role' => $role,
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function roleNames(): array
+    {
+        return $this->roles()->pluck('role')->all();
     }
 
     public function driver(): HasOne
     {
         return $this->hasOne(Driver::class, 'user_id');
+    }
+
+    public function acceptsPaymentMethod(string $method): bool
+    {
+        $methods = $this->accepted_payment_methods ?? ['cash', 'upi', 'qr'];
+        return in_array($method, $methods, true);
     }
 
     public function tripsAsCustomer(): HasMany

@@ -1,0 +1,72 @@
+import { Component } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertController, MenuController } from '@ionic/angular';
+import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
+
+@Component({
+  selector: 'app-side-menu',
+  templateUrl: './side-menu.component.html',
+  styleUrls: ['./side-menu.component.scss'],
+  standalone: false,
+})
+export class SideMenuComponent {
+  constructor(
+    public auth: AuthService,
+    private api: ApiService,
+    private router: Router,
+    private alertCtrl: AlertController,
+    private menuCtrl: MenuController
+  ) {}
+
+  async signOut(): Promise<void> {
+    await this.menuCtrl.close('customer-menu');
+    const alert = await this.alertCtrl.create({
+      header: 'Sign out?',
+      message: 'You will need to sign in again to book rides.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Sign out',
+          role: 'destructive',
+          handler: () => this.performSignOut(),
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private performSignOut(): void {
+    this.api.post('/me/logout', {}).subscribe({
+      next: () => this.finishSignOut(),
+      error: () => this.finishSignOut(),
+    });
+  }
+
+  private finishSignOut(): void {
+    this.auth.logout();
+    this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+  }
+
+  async confirmDeleteAccount(): Promise<void> {
+    await this.menuCtrl.close('customer-menu');
+    const alert = await this.alertCtrl.create({
+      header: 'Delete account',
+      message: 'You are about to delete your account. Some data will be lost forever.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Continue',
+          role: 'destructive',
+          handler: () => this.router.navigateByUrl('/delete-account'),
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  async go(url: string): Promise<void> {
+    await this.menuCtrl.close('customer-menu');
+    this.router.navigateByUrl(url);
+  }
+}

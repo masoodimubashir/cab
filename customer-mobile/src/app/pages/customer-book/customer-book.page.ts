@@ -1,17 +1,16 @@
-import { Component, ViewChild } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
+import { AlertController, ToastController } from '@ionic/angular';
+import { Subject, debounceTime, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { IonInput } from '@ionic/angular';
-import {
-  googleMapsDirectionsUrl,
-  openExternalUrl,
-  type MapCoords,
-} from '../../core/maps-navigation';
+import { AuthService, PaymentMethod } from '../../core/auth.service';
+import { GeolocationService, LatLng } from '../../core/geolocation.service';
+import { PlacesService, PlaceSuggestion } from '../../core/places.service';
+import { RealtimeService } from '../../core/realtime.service';
 import { environment } from '../../../environments/environment';
 
 declare const google: any;
 
-type City = { id: number; name: string; country_code: string };
 type RideType = { id: number; name: string; description?: string | null };
 
 type EstimateResponse = {
@@ -22,484 +21,479 @@ type EstimateResponse = {
   commission_percent?: number;
 };
 
+type DriverOffer = {
+  id?: number;
+  from_role: 'customer' | 'driver';
+  amount: number;
+  status: string;
+  from_user_id?: number;
+  driver_name?: string;
+  created_at?: string;
+};
+
+type RideState = 'idle' | 'route' | 'preview' | 'offer' | 'searching' | 'bids';
+
 @Component({
   selector: 'app-customer-book',
   templateUrl: './customer-book.page.html',
   styleUrls: ['./customer-book.page.scss'],
   standalone: false,
 })
-export class CustomerBookPage {
+export class CustomerBookPage implements OnDestroy {
+  state: RideState = 'idle';
   loading = false;
-  cities: City[] = [];
+  error: string | null = null;
+
   rideTypes: RideType[] = [];
+  selectedRideTypeId: number | null = null;
 
-  useMyCurrentLocation = true;
+  pickup: { lat: number; lng: number; address: string } | null = null;
+  drop: { lat: number; lng: number; address: string; place_id?: string } | null = null;
 
-  mapClickTarget: 'pickup' | 'drop' = 'pickup';
-  googleMapsReady = false;
-  mapsLoadError: string | null = null;
+  toQuery = '';
+  toQuery$ = new Subject<string>();
+  suggestions: PlaceSuggestion[] = [];
 
-  @ViewChild('pickupAddrIonInput', { read: IonInput })
-  private pickupAddrIonInput!: IonInput;
+  estimate: EstimateResponse | null = null;
+  fareInput: number | null = null;
+  paymentMethod: PaymentMethod = 'cash';
+  autoAcceptNearest = false;
 
-  @ViewChild('dropAddrIonInput', { read: IonInput })
-  private dropAddrIonInput!: IonInput;
+  tripId: number | null = null;
+  searchSecondsLeft = 60;
+  private searchTimer: any = null;
+
+  driverOffers: DriverOffer[] = [];
+  private unsubscribeRealtime: (() => void) | null = null;
+  private pollHandle: any = null;
 
   private map: any | null = null;
   private pickupMarker: any | null = null;
   private dropMarker: any | null = null;
-  private pickupAutocomplete: any | null = null;
-  private dropAutocomplete: any | null = null;
-  private geocoder: any | null = null;
-  private mapsScriptPromise: Promise<void> | null = null;
-  private mapInitialized = false;
-
-  cityId: number | null = null;
-  rideTypeId: number | null = null;
-
-  pickupAddress = '';
-  dropAddress = '';
-
-  pickupLat: number | null = null;
-  pickupLng: number | null = null;
-  dropLat: number | null = null;
-  dropLng: number | null = null;
-
-  estimate: EstimateResponse | null = null;
-  error: string | null = null;
-  message: string | null = null;
+  private routeRenderer: any | null = null;
+  mapsReady = false;
+  mapsError: string | null = null;
 
   constructor(
     private api: ApiService,
-    private router: Router
-  ) {}
+    private auth: AuthService,
+    private router: Router,
+    private geo: GeolocationService,
+    private places: PlacesService,
+    private realtime: RealtimeService,
+    private alertCtrl: AlertController,
+    private toastCtrl: ToastController
+  ) {
+    this.toQuery$
+      .pipe(
+        debounceTime(250),
+        switchMap((q) => this.places.autocompleteSearch(q, this.pickup ?? undefined))
+      )
+      .subscribe({
+        next: (results) => (this.suggestions = results),
+        error: () => (this.suggestions = []),
+      });
+  }
 
   ionViewWillEnter(): void {
-    // Load lookup data every time we enter (simple + predictable while developing).
-    this.loadLookups();
+    this.loadRideTypes();
   }
 
   ionViewDidEnter(): void {
-    void this.initGoogleMapsOnce();
+    void this.initMap();
   }
 
-  private async loadGoogleMapsApi(): Promise<void> {
-    if ((window as any).google?.maps) return;
-
-    const apiKey = environment.googleMapsApiKey;
-    if (!apiKey) {
-      throw new Error('Google Maps API key is missing. Set `googleMapsApiKey` in environment.ts.');
-    }
-
-    if (this.mapsScriptPromise) return this.mapsScriptPromise;
-
-    this.mapsScriptPromise = new Promise<void>((resolve, reject) => {
-      const cbName = '__customerMobileInitGoogleMaps';
-
-      (window as any)[cbName] = () => resolve();
-
-      const existing = document.getElementById('customer-mobile-google-maps-script');
-      if (existing) {
-        resolve();
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.id = 'customer-mobile-google-maps-script';
-      script.async = true;
-      script.defer = true;
-      script.onerror = () => reject(new Error('Failed to load Google Maps JavaScript API.'));
-      script.src =
-        `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
-        '&libraries=places' +
-        `&callback=${cbName}`;
-
-      document.head.appendChild(script);
-    });
-
-    return this.mapsScriptPromise;
+  ngOnDestroy(): void {
+    this.cleanupSearch();
   }
 
-  private async initGoogleMapsOnce(): Promise<void> {
-    if (this.mapInitialized) return;
-    this.mapInitialized = true;
+  // ─────────────────────────────────────────────────────────────────
+  // Lookups + initial state
+  // ─────────────────────────────────────────────────────────────────
 
-    if (!environment.googleMapsApiKey) {
-      this.mapsLoadError = 'Google Maps not configured (set `googleMapsApiKey`).';
-      this.googleMapsReady = false;
-      return;
-    }
-
-    try {
-      await this.loadGoogleMapsApi();
-      const mapDiv = document.getElementById('booking-map');
-      if (!mapDiv) throw new Error('Missing map container element.');
-
-      const center =
-        this.pickupCoords() ??
-        this.dropCoords() ?? {
-          lat: 12.9716,
-          lng: 77.5946,
-        };
-
-      this.map = new google.maps.Map(mapDiv, {
-        center,
-        zoom: 13,
-        clickable: true,
-      });
-
-      this.geocoder = new google.maps.Geocoder();
-
-      this.map.addListener('click', (e: any) => {
-        const lat = e?.latLng?.lat?.();
-        const lng = e?.latLng?.lng?.();
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-        void this.setCoordsFromMapClick(lat, lng);
-      });
-
-      // Autocomplete wiring (Places API).
-      const pickupInputEl = await this.pickupAddrIonInput.getInputElement();
-      const dropInputEl = await this.dropAddrIonInput.getInputElement();
-
-      const pickupAC = new google.maps.places.Autocomplete(pickupInputEl, {
-        types: ['geocode'],
-        fields: ['geometry', 'formatted_address', 'name'],
-        componentRestrictions: { country: 'IN' },
-      });
-      pickupAC.addListener('place_changed', () => {
-        const place = pickupAC.getPlace();
-        const geom = place?.geometry;
-        if (!geom?.location) return;
-        const lat = geom.location.lat();
-        const lng = geom.location.lng();
-
-        this.pickupLat = lat;
-        this.pickupLng = lng;
-        this.pickupAddress = place.formatted_address || place.name || this.pickupAddress;
-        this.syncMarkersFromCoords();
-      });
-      this.pickupAutocomplete = pickupAC;
-
-      const dropAC = new google.maps.places.Autocomplete(dropInputEl, {
-        types: ['geocode'],
-        fields: ['geometry', 'formatted_address', 'name'],
-        componentRestrictions: { country: 'IN' },
-      });
-      dropAC.addListener('place_changed', () => {
-        const place = dropAC.getPlace();
-        const geom = place?.geometry;
-        if (!geom?.location) return;
-        const lat = geom.location.lat();
-        const lng = geom.location.lng();
-
-        this.dropLat = lat;
-        this.dropLng = lng;
-        this.dropAddress = place.formatted_address || place.name || this.dropAddress;
-        this.syncMarkersFromCoords();
-      });
-      this.dropAutocomplete = dropAC;
-
-      this.syncMarkersFromCoords();
-
-      this.googleMapsReady = true;
-    } catch (e) {
-      this.mapsLoadError = (e as Error)?.message || 'Could not initialize Google Maps.';
-      this.googleMapsReady = false;
-    }
-  }
-
-  private async reverseGeocode(lat: number, lng: number): Promise<string | null> {
-    if (!this.geocoder) return null;
-
-    return new Promise((resolve) => {
-      this.geocoder.geocode({ location: { lat, lng } }, (results: any[], status: string) => {
-        if (status !== 'OK' || !results?.length) {
-          resolve(null);
-          return;
-        }
-        resolve(results[0]?.formatted_address || null);
-      });
-    });
-  }
-
-  private async setCoordsFromMapClick(lat: number, lng: number): Promise<void> {
-    if (this.mapClickTarget === 'pickup') {
-      this.pickupLat = lat;
-      this.pickupLng = lng;
-      const addr = await this.reverseGeocode(lat, lng);
-      if (addr) this.pickupAddress = addr;
-    } else {
-      this.dropLat = lat;
-      this.dropLng = lng;
-      const addr = await this.reverseGeocode(lat, lng);
-      if (addr) this.dropAddress = addr;
-    }
-
-    this.syncMarkersFromCoords();
-  }
-
-  /** Called when user manually edits lat/lng inputs. */
-  syncMarkersFromCoords(): void {
-    if (!this.map) return;
-
-    if (this.pickupLat != null && this.pickupLng != null) {
-      const lat = Number(this.pickupLat);
-      const lng = Number(this.pickupLng);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        const pos = { lat, lng };
-        if (!this.pickupMarker) {
-          this.pickupMarker = new google.maps.Marker({
-            map: this.map,
-            position: pos,
-            title: 'Pickup',
-          });
-        } else {
-          this.pickupMarker.setPosition(pos);
-        }
-      }
-    } else if (this.pickupMarker) {
-      this.pickupMarker.setMap(null);
-      this.pickupMarker = null;
-    }
-
-    if (this.dropLat != null && this.dropLng != null) {
-      const lat = Number(this.dropLat);
-      const lng = Number(this.dropLng);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        const pos = { lat, lng };
-        if (!this.dropMarker) {
-          this.dropMarker = new google.maps.Marker({
-            map: this.map,
-            position: pos,
-            title: 'Drop',
-          });
-        } else {
-          this.dropMarker.setPosition(pos);
-        }
-      }
-    } else if (this.dropMarker) {
-      this.dropMarker.setMap(null);
-      this.dropMarker = null;
-    }
-  }
-
-  private loadLookups(): void {
-    this.error = null;
-    this.message = null;
-
-    // Public endpoints (no auth required).
-    this.api.get<{ data: City[] }>('/pricing/cities').subscribe({
-      next: (res) => {
-        this.cities = res.data || [];
-        if (this.cities.length && this.cityId == null) {
-          this.cityId = this.cities[0].id;
-        }
-      },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load cities';
-      },
-    });
-
+  private loadRideTypes(): void {
     this.api.get<{ data: RideType[] }>('/pricing/ride-types').subscribe({
       next: (res) => {
         this.rideTypes = res.data || [];
-        if (this.rideTypes.length && this.rideTypeId == null) {
-          this.rideTypeId = this.rideTypes[0].id;
+        if (this.rideTypes.length && this.selectedRideTypeId == null) {
+          this.selectedRideTypeId = this.rideTypes[0].id;
         }
       },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load ride types';
+      error: () => {
+        this.rideTypes = [];
       },
     });
   }
 
-  private coordsOk(): boolean {
-    return (
-      this.pickupLat != null &&
-      this.pickupLng != null &&
-      this.dropLat != null &&
-      this.dropLng != null &&
-      Number.isFinite(this.pickupLat) &&
-      Number.isFinite(this.pickupLng) &&
-      Number.isFinite(this.dropLat) &&
-      Number.isFinite(this.dropLng)
-    );
-  }
+  private async initMap(): Promise<void> {
+    try {
+      await this.places.ensureLoaded();
+      const div = document.getElementById('ride-map');
+      if (!div) return;
 
-  canPickup(): boolean {
-    return (
-      this.pickupLat != null &&
-      this.pickupLng != null &&
-      Number.isFinite(this.pickupLat) &&
-      Number.isFinite(this.pickupLng)
-    );
-  }
-
-  canDrop(): boolean {
-    return (
-      this.dropLat != null &&
-      this.dropLng != null &&
-      Number.isFinite(this.dropLat) &&
-      Number.isFinite(this.dropLng)
-    );
-  }
-
-  private pickupCoords(): MapCoords | null {
-    if (!this.canPickup()) return null;
-    return { lat: this.pickupLat as number, lng: this.pickupLng as number };
-  }
-
-  private dropCoords(): MapCoords | null {
-    if (!this.canDrop()) return null;
-    return { lat: this.dropLat as number, lng: this.dropLng as number };
-  }
-
-  private async getMyCurrentLocation(): Promise<MapCoords | null> {
-    return new Promise((resolve) => {
-      if (!('geolocation' in navigator)) {
-        resolve(null);
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          resolve({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          });
-        },
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
-      );
-    });
-  }
-
-  estimateFare(): void {
-    this.error = null;
-    this.message = null;
-    this.estimate = null;
-
-    if (this.cityId == null || this.rideTypeId == null || !this.coordsOk()) {
-      this.error = 'Select city + ride type and enter pickup/drop coordinates.';
-      return;
-    }
-
-    this.loading = true;
-    this.api
-      .post<EstimateResponse>('/pricing/estimate', {
-        city_id: this.cityId,
-        ride_type_id: this.rideTypeId,
-        pickup_lat: this.pickupLat,
-        pickup_lng: this.pickupLng,
-        drop_lat: this.dropLat,
-        drop_lng: this.dropLng,
-      })
-      .subscribe({
-        next: (res) => {
-          this.estimate = res || null;
-          this.message = 'Estimate ready.';
-        },
-        error: (err) => {
-          this.error = err?.error?.message || 'Could not estimate fare';
-        },
-        complete: () => {
-          this.loading = false;
-        },
+      const start = (await this.geo.getCurrentPosition()) ?? { lat: 28.6139, lng: 77.209 };
+      this.map = new google.maps.Map(div, {
+        center: start,
+        zoom: 15,
+        disableDefaultUI: true,
+        clickableIcons: false,
       });
+
+      this.pickupMarker = new google.maps.Marker({
+        position: start,
+        map: this.map,
+        title: 'Pickup',
+      });
+
+      const address = (await this.places.reverseGeocode(start.lat, start.lng)) ?? 'Current location';
+      this.pickup = { lat: start.lat, lng: start.lng, address };
+      this.mapsReady = true;
+    } catch (e) {
+      this.mapsError = (e as Error)?.message || 'Could not load map.';
+    }
   }
 
-  bookTrip(): void {
-    this.error = null;
-    this.message = null;
+  // ─────────────────────────────────────────────────────────────────
+  // State transitions
+  // ─────────────────────────────────────────────────────────────────
 
-    if (this.cityId == null || this.rideTypeId == null || !this.coordsOk()) {
-      this.error = 'Select city + ride type and enter pickup/drop coordinates.';
+  goRoute(): void {
+    this.state = 'route';
+    this.suggestions = [];
+    this.toQuery = '';
+  }
+
+  closeSheet(): void {
+    if (this.state === 'searching' || this.state === 'bids') return;
+    this.state = 'idle';
+  }
+
+  onToInput(ev: any): void {
+    this.toQuery = ev?.target?.value ?? '';
+    this.toQuery$.next(this.toQuery);
+  }
+
+  async pickSuggestion(s: PlaceSuggestion): Promise<void> {
+    this.loading = true;
+    try {
+      const detail = await this.places.getPlaceDetail(s.place_id);
+      if (!detail) return;
+      this.drop = {
+        lat: detail.lat,
+        lng: detail.lng,
+        address: detail.description,
+        place_id: detail.place_id,
+      };
+      this.suggestions = [];
+      await this.showRouteOnMap();
+      await this.fetchEstimate();
+      this.state = 'preview';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  selectRideType(id: number): void {
+    this.selectedRideTypeId = id;
+    void this.fetchEstimate();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Map drawing
+  // ─────────────────────────────────────────────────────────────────
+
+  private async showRouteOnMap(): Promise<void> {
+    if (!this.map || !this.pickup || !this.drop) return;
+
+    if (this.dropMarker) this.dropMarker.setMap(null);
+    this.dropMarker = new google.maps.Marker({
+      position: { lat: this.drop.lat, lng: this.drop.lng },
+      map: this.map,
+      title: 'Drop',
+    });
+
+    if (!this.routeRenderer) {
+      this.routeRenderer = new google.maps.DirectionsRenderer({
+        suppressMarkers: true,
+        polylineOptions: { strokeColor: '#000', strokeWeight: 4 },
+      });
+      this.routeRenderer.setMap(this.map);
+    }
+
+    const dirSvc = new google.maps.DirectionsService();
+    try {
+      const result = await dirSvc.route({
+        origin: { lat: this.pickup.lat, lng: this.pickup.lng },
+        destination: { lat: this.drop.lat, lng: this.drop.lng },
+        travelMode: google.maps.TravelMode.DRIVING,
+      });
+      this.routeRenderer.setDirections(result);
+    } catch {
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend({ lat: this.pickup.lat, lng: this.pickup.lng });
+      bounds.extend({ lat: this.drop.lat, lng: this.drop.lng });
+      this.map.fitBounds(bounds, 80);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Pricing
+  // ─────────────────────────────────────────────────────────────────
+
+  private async fetchEstimate(): Promise<void> {
+    if (!this.pickup || !this.drop || this.selectedRideTypeId == null) return;
+
+    try {
+      const cities = await this.api.get<{ data: { id: number }[] }>('/pricing/cities').toPromise();
+      const cityId = cities?.data?.[0]?.id;
+      if (!cityId) return;
+
+      const res = await this.api
+        .post<EstimateResponse>('/pricing/estimate', {
+          city_id: cityId,
+          ride_type_id: this.selectedRideTypeId,
+          pickup_lat: this.pickup.lat,
+          pickup_lng: this.pickup.lng,
+          drop_lat: this.drop.lat,
+          drop_lng: this.drop.lng,
+        })
+        .toPromise();
+
+      this.estimate = res ?? null;
+      if (res?.estimated_fare != null) {
+        this.fareInput = Math.round(res.estimated_fare / 5) * 5;
+      }
+    } catch {
+      this.estimate = null;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Offer flow
+  // ─────────────────────────────────────────────────────────────────
+
+  goOffer(): void {
+    this.state = 'offer';
+  }
+
+  async openPaymentSheet(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Payment method',
+      inputs: ([
+        { type: 'radio', label: 'Cash', value: 'cash', checked: this.paymentMethod === 'cash' },
+        { type: 'radio', label: 'UPI', value: 'upi', checked: this.paymentMethod === 'upi' },
+        { type: 'radio', label: 'QR code', value: 'qr', checked: this.paymentMethod === 'qr' },
+      ] as any[]),
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Select',
+          handler: (val: PaymentMethod) => {
+            if (val) this.paymentMethod = val;
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  async findOffers(): Promise<void> {
+    if (!this.pickup || !this.drop || this.selectedRideTypeId == null) return;
+    if (this.fareInput == null || this.fareInput <= 0) {
+      this.error = 'Please enter your fare offer.';
       return;
     }
 
     this.loading = true;
+    this.error = null;
+    try {
+      const cities = await this.api.get<{ data: { id: number }[] }>('/pricing/cities').toPromise();
+      const cityId = cities?.data?.[0]?.id;
+      if (!cityId) throw new Error('No city configured.');
+
+      const tripRes = await this.api
+        .post<{ trip: { id: number } }>('/trips', {
+          city_id: cityId,
+          ride_type_id: this.selectedRideTypeId,
+          pickup_address: this.pickup.address,
+          pickup_lat: this.pickup.lat,
+          pickup_lng: this.pickup.lng,
+          drop_address: this.drop.address,
+          drop_lat: this.drop.lat,
+          drop_lng: this.drop.lng,
+          payment_method: this.paymentMethod,
+        })
+        .toPromise();
+
+      this.tripId = tripRes?.trip?.id ?? null;
+      if (!this.tripId) throw new Error('Trip creation failed.');
+
+      await this.sendCustomerOffer(this.fareInput);
+      this.startSearching();
+    } catch (e: any) {
+      this.error = e?.error?.message || e?.message || 'Could not start booking.';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private async sendCustomerOffer(amount: number): Promise<void> {
+    if (!this.tripId) return;
+    await this.api
+      .post(`/trips/${this.tripId}/negotiation/customer-offer`, { amount })
+      .toPromise();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Searching + bids
+  // ─────────────────────────────────────────────────────────────────
+
+  private startSearching(): void {
+    this.state = 'searching';
+    this.driverOffers = [];
+    this.searchSecondsLeft = 60;
+    this.searchTimer = setInterval(() => {
+      this.searchSecondsLeft = Math.max(0, this.searchSecondsLeft - 1);
+      if (this.searchSecondsLeft <= 0) clearInterval(this.searchTimer);
+    }, 1000);
+
+    if (this.tripId) {
+      this.unsubscribeRealtime = this.realtime.subscribeNegotiation(
+        this.tripId,
+        (p) => this.onIncomingOffer(p.offer),
+        () => this.onLocked()
+      );
+    }
+
+    // Polling fallback (every 4s) in case Reverb is not running.
+    this.pollHandle = setInterval(() => this.pollNegotiation(), 4000);
+  }
+
+  private cleanupSearch(): void {
+    if (this.searchTimer) {
+      clearInterval(this.searchTimer);
+      this.searchTimer = null;
+    }
+    if (this.pollHandle) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
+    if (this.unsubscribeRealtime) {
+      this.unsubscribeRealtime();
+      this.unsubscribeRealtime = null;
+    }
+  }
+
+  private pollNegotiation(): void {
+    if (!this.tripId) return;
     this.api
-      .post<{ trip: { id: number } & Record<string, unknown>; estimate: EstimateResponse }>(
-        '/trips',
-        {
-          city_id: this.cityId,
-          ride_type_id: this.rideTypeId,
-          pickup_address: this.pickupAddress || null,
-          pickup_lat: this.pickupLat,
-          pickup_lng: this.pickupLng,
-          drop_address: this.dropAddress || null,
-          drop_lat: this.dropLat,
-          drop_lng: this.dropLng,
-        }
+      .get<{ trip_id: number; negotiation: { status: string; final_amount: number; offers: DriverOffer[] } }>(
+        `/trips/${this.tripId}/negotiation`
       )
       .subscribe({
         next: (res) => {
-          const tripId = (res as any)?.trip?.id as number | undefined;
-          this.message = 'Trip requested. Negotiation will start shortly.';
-          if (tripId) {
-            this.router.navigateByUrl(`/customer-tabs/negotiation/${tripId}`, { replaceUrl: true });
-          } else {
-            this.router.navigateByUrl('/customer-tabs/my-trips', { replaceUrl: true });
-          }
-        },
-        error: (err) => {
-          this.error = err?.error?.message || 'Trip booking failed';
-        },
-        complete: () => {
-          this.loading = false;
+          const offers = (res?.negotiation?.offers || []).filter(
+            (o) => o.from_role === 'driver' && (o.status === 'PENDING' || o.status === 'ACCEPTED')
+          );
+          for (const o of offers) this.onIncomingOffer(o);
+          if (res?.negotiation?.status === 'LOCKED') this.onLocked();
         },
       });
   }
 
-  openPickupInMaps(): void {
-    const dest = this.pickupCoords();
-    if (!dest) return;
-    if (!this.useMyCurrentLocation) {
-      openExternalUrl(googleMapsDirectionsUrl({ destination: dest, travelmode: 'driving' }));
+  private onIncomingOffer(offer: DriverOffer): void {
+    if (offer.from_role !== 'driver') return;
+    const exists = this.driverOffers.some((o) => o.id != null && o.id === offer.id);
+    if (exists) return;
+    this.driverOffers = [...this.driverOffers, offer];
+
+    if (this.autoAcceptNearest && this.driverOffers.length === 1) {
+      void this.confirmOffer(offer);
       return;
     }
 
-    this.getMyCurrentLocation().then((origin) => {
-      openExternalUrl(
-        googleMapsDirectionsUrl({
-          origin: origin ?? undefined,
-          destination: dest,
-          travelmode: 'driving',
-        })
-      );
-    });
+    if (this.state === 'searching') this.state = 'bids';
   }
 
-  openDropInMaps(): void {
-    const dest = this.dropCoords();
-    if (!dest) return;
-    if (!this.useMyCurrentLocation) {
-      openExternalUrl(googleMapsDirectionsUrl({ destination: dest, travelmode: 'driving' }));
+  private onLocked(): void {
+    if (!this.tripId) return;
+    this.cleanupSearch();
+    this.router.navigateByUrl(`/customer-tabs/trip/${this.tripId}`, { replaceUrl: true });
+  }
+
+  raiseFare(delta: number): void {
+    if (this.fareInput == null) return;
+    const next = Math.max(1, this.fareInput + delta);
+    this.fareInput = next;
+    void this.sendCustomerOffer(next);
+  }
+
+  async confirmOffer(offer: DriverOffer): Promise<void> {
+    if (!this.tripId) return;
+
+    const ok = await this.alertCtrl.create({
+      header: 'Confirm fare',
+      message: `Accept ₹${offer.amount} from this driver?`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Confirm',
+          role: 'destructive',
+          handler: () => this.lockOffer(offer.amount),
+        },
+      ],
+    });
+    await ok.present();
+  }
+
+  private async lockOffer(amount: number): Promise<void> {
+    if (!this.tripId) return;
+    try {
+      await this.api
+        .post(`/trips/${this.tripId}/negotiation/customer-confirm`, { final_fare: amount })
+        .toPromise();
+      this.onLocked();
+    } catch (e: any) {
+      const t = await this.toastCtrl.create({
+        message: e?.error?.message || 'Could not confirm fare.',
+        duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+    }
+  }
+
+  async cancelRequest(): Promise<void> {
+    if (!this.tripId) {
+      this.resetToIdle();
       return;
     }
-
-    this.getMyCurrentLocation().then((origin) => {
-      openExternalUrl(
-        googleMapsDirectionsUrl({
-          origin: origin ?? undefined,
-          destination: dest,
-          travelmode: 'driving',
-        })
-      );
+    const a = await this.alertCtrl.create({
+      header: 'Cancel request?',
+      message: 'No driver will be assigned. You can request again any time.',
+      buttons: [
+        { text: 'Keep waiting', role: 'cancel' },
+        {
+          text: 'Cancel',
+          role: 'destructive',
+          handler: async () => {
+            try {
+              await this.api.post(`/trips/${this.tripId}/cancel`, {}).toPromise();
+            } catch {
+              /* ignore */
+            }
+            this.resetToIdle();
+          },
+        },
+      ],
     });
+    await a.present();
   }
 
-  openRouteInMaps(): void {
-    const a = this.pickupCoords();
-    const b = this.dropCoords();
-    if (!a || !b) return;
-    openExternalUrl(
-      googleMapsDirectionsUrl({
-        origin: a,
-        destination: b,
-        travelmode: 'driving',
-      })
-    );
+  private resetToIdle(): void {
+    this.cleanupSearch();
+    this.tripId = null;
+    this.driverOffers = [];
+    this.state = 'idle';
   }
 }
-

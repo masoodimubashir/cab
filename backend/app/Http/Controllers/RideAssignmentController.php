@@ -32,6 +32,12 @@ class RideAssignmentController extends Controller
             return response()->json(['message' => 'Trip already assigned to another driver.'], 409);
         }
 
+        if ($trip->payment_method && !$user->acceptsPaymentMethod($trip->payment_method)) {
+            return response()->json([
+                'message' => 'You do not accept this payment method. Update your settings to accept ' . strtoupper($trip->payment_method) . '.',
+            ], 422);
+        }
+
         // Ensure we only create one active assignment record per driver.
         TripAssignment::query()->updateOrCreate(
             ['trip_id' => $trip->id, 'driver_id' => $user->id],

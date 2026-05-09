@@ -23,10 +23,12 @@ class AdminUsersController extends Controller
 
         $role = $request->query('role');
         if ($role) {
-            $query->where('role', $role);
+            $query->whereHas('roles', function ($inner) use ($role) {
+                $inner->where('role', $role);
+            });
         }
 
-        $users = $query->paginate(50);
+        $users = $query->with('roles')->paginate(50);
 
         return response()->json(['data' => $users]);
     }
@@ -37,10 +39,17 @@ class AdminUsersController extends Controller
             'role' => ['required', 'in:customer,driver,admin'],
         ]);
 
-        $user->role = $data['role'];
-        $user->save();
+        $user->addRole($data['role']);
 
-        return response()->json(['user' => $user->fresh()]);
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'roles' => $user->roleNames(),
+            ],
+        ]);
     }
 }
 

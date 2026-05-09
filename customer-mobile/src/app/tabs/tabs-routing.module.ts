@@ -28,10 +28,6 @@ const routes: Routes = [
           import('../pages/trip-history/trip-history.module').then((m) => m.TripHistoryPageModule),
       },
       {
-        path: 'more',
-        loadChildren: () => import('../pages/more/more.module').then((m) => m.MorePageModule),
-      },
-      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full',

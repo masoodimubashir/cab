@@ -18,15 +18,13 @@ const routes: Routes = [
           import('../pages/customer-trips/customer-trips.module').then((m) => m.CustomerTripsPageModule),
       },
       {
-        path: 'negotiation/:tripId',
+        path: 'trip/:tripId',
         loadChildren: () =>
-          import('../pages/customer-negotiation/customer-negotiation.module').then(
-            (m) => m.CustomerNegotiationPageModule
-          ),
+          import('../pages/trip-active/trip-active.module').then((m) => m.TripActivePageModule),
       },
       {
-        path: 'more',
-        loadChildren: () => import('../pages/more/more.module').then((m) => m.MorePageModule),
+        path: 'negotiation/:tripId',
+        redirectTo: 'trip/:tripId',
       },
       {
         path: '',
@@ -42,4 +40,3 @@ const routes: Routes = [
   exports: [RouterModule],
 })
 export class CustomerTabsPageRoutingModule {}
-

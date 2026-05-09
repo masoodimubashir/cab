@@ -50,4 +50,11 @@ export class ApiService {
   postForm<T>(path: string, formData: FormData): Observable<T> {
     return this.http.post<T>(this.url(path), formData, { headers: this.multipartHeaders() });
   }
+
+  delete<T>(path: string, body?: unknown): Observable<T> {
+    return this.http.request<T>('DELETE', this.url(path), {
+      headers: this.jsonHeaders(),
+      body,
+    });
+  }
 }

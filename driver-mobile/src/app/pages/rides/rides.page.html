@@ -17,9 +17,28 @@
       </ion-item>
       <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
       <ion-text color="success" *ngIf="message"><p>{{ message }}</p></ion-text>
+
+      <ion-button expand="block" fill="outline" (click)="loadTrip()" [disabled]="busy" class="ion-margin-top">
+        Load trip details
+      </ion-button>
+
+      <ion-item lines="none" *ngIf="tripPaymentMethod" class="ion-margin-top">
+        <ion-icon
+          slot="start"
+          [name]="tripPaymentMethod === 'cash' ? 'cash-outline' : (tripPaymentMethod === 'upi' ? 'phone-portrait-outline' : 'qr-code-outline')"
+          aria-hidden="true"
+        ></ion-icon>
+        <ion-label>
+          <p>Customer wants to pay via <strong>{{ tripPaymentMethod | uppercase }}</strong></p>
+          <small *ngIf="!acceptsTripPayment" style="color: #d12c2c;">
+            You don't accept {{ tripPaymentMethod | uppercase }} — enable it in Settings.
+          </small>
+        </ion-label>
+      </ion-item>
+
       <ion-row class="ion-margin-top">
         <ion-col size="6">
-          <ion-button expand="block" color="success" (click)="accept()" [disabled]="busy">Accept</ion-button>
+          <ion-button expand="block" color="success" (click)="accept()" [disabled]="busy || !acceptsTripPayment">Accept</ion-button>
         </ion-col>
         <ion-col size="6">
           <ion-button expand="block" color="danger" fill="outline" (click)="reject()" [disabled]="busy">Reject</ion-button>

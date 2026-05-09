@@ -6,9 +6,16 @@ const USER_KEY = 'dreamcabs_customer_user';
 export type AuthUser = {
   id: number;
   name: string;
-  role: string;
+  /** Legacy field. Newer endpoints return `roles` instead; kept optional for backward compat. */
+  role?: string;
+  roles?: string[];
+  email?: string | null;
   phone?: string | null;
+  avatar_path?: string | null;
+  accepted_payment_methods?: string[];
 };
+
+export type PaymentMethod = 'cash' | 'upi' | 'qr';
 
 @Injectable({
   providedIn: 'root',

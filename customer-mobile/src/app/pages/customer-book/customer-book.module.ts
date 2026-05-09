@@ -10,4 +10,3 @@ import { CustomerBookPageRoutingModule } from './customer-book-routing.module';
   declarations: [CustomerBookPage],
 })
 export class CustomerBookPageModule {}
-
