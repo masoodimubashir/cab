@@ -48,6 +48,7 @@ export class PlacesService {
       script.src =
         `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
         '&libraries=places' +
+        '&loading=async' +
         `&callback=${cbName}`;
       document.head.appendChild(script);
     });
@@ -128,7 +129,15 @@ export class PlacesService {
     return new Promise<string | null>((resolve) => {
       geocoder.geocode({ location: { lat, lng } }, (results: any[], status: string) => {
         if (status !== 'OK' || !results?.length) return resolve(null);
-        resolve(results[0]?.formatted_address || null);
+        const preferred = ['street_address', 'premise', 'route', 'sublocality', 'neighborhood', 'locality'];
+        for (const want of preferred) {
+          const hit = results.find((r) => Array.isArray(r.types) && r.types.includes(want));
+          if (hit?.formatted_address) return resolve(hit.formatted_address);
+        }
+        const nonPlusCode = results.find(
+          (r) => Array.isArray(r.types) && !r.types.includes('plus_code') && r.formatted_address
+        );
+        resolve(nonPlusCode?.formatted_address || results[0]?.formatted_address || null);
       });
     });
   }

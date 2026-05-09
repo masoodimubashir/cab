@@ -11,7 +11,7 @@ class AdminDriversController
     public function index()
     {
         $drivers = Driver::query()
-            ->with('user')
+            ->with(['user', 'documents'])
             ->orderBy('created_at', 'desc')
             ->paginate(20);
 

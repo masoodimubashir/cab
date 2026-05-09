@@ -4,6 +4,7 @@ import { AlertController, ToastController } from '@ionic/angular';
 import { Subject, debounceTime } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
+import { PushService } from '../../core/push.service';
 
 const ALL_METHODS: PaymentMethod[] = ['cash', 'upi', 'qr'];
 
@@ -26,7 +27,8 @@ export class MorePage implements OnInit, OnDestroy {
     private api: ApiService,
     private router: Router,
     private alertCtrl: AlertController,
-    private toastCtrl: ToastController
+    private toastCtrl: ToastController,
+    private push: PushService
   ) {}
 
   ngOnInit(): void {
@@ -100,7 +102,8 @@ export class MorePage implements OnInit, OnDestroy {
     await alert.present();
   }
 
-  private performSignOut(): void {
+  private async performSignOut(): Promise<void> {
+    await this.push.unregister();
     this.api.post('/me/logout', {}).subscribe({
       next: () => this.finishSignOut(),
       error: () => this.finishSignOut(),
