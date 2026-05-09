@@ -24,8 +24,8 @@ class SafetyController extends Controller
             return response()->json(['message' => 'Trip is not active.'], 409);
         }
 
-        $isCustomer = $user->role === 'customer' && $trip->customer_id === $user->id;
-        $isDriver = $user->role === 'driver' && $trip->driver_id === $user->id;
+        $isCustomer = $user->hasRole('customer') && $trip->customer_id === $user->id;
+        $isDriver = $user->hasRole('driver') && $trip->driver_id === $user->id;
 
         if (!$isCustomer && !$isDriver) {
             return response()->json(['message' => 'Forbidden.'], 403);

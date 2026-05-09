@@ -16,6 +16,14 @@ export const environment = {
    */
   googleMapsApiKey: 'AIzaSyArBKPH_WET3XNUs4wh3ErZMbjSKsX8p8w',
   /**
+   * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
+   * Leave reverbAppKey blank to fall back to polling-only.
+   */
+  reverbAppKey: 'local',
+  reverbHost: 'localhost',
+  reverbPort: 8080,
+  reverbScheme: 'http' as 'http' | 'https',
+  /**
    * Firebase: must be the **Web** app object (Console → Project settings → Your apps → </> Web).
    * If `appId` contains `:android:` or `:ios:` instead of `:web:`, Phone Auth in the browser throws
    * auth/configuration-not-found. Enable Phone sign-in; add `localhost` to Authorized domains.

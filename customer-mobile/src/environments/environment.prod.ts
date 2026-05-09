@@ -2,6 +2,10 @@ export const environment = {
   production: true,
   apiUrl: 'https://your-api.example.com/api',
   googleMapsApiKey: 'AIzaSyArBKPH_WET3XNUs4wh3ErZMbjSKsX8p8w',
+  reverbAppKey: '',
+  reverbHost: '',
+  reverbPort: 443,
+  reverbScheme: 'https' as 'http' | 'https',
   /** Same Web app config as dev; `appId` must be `…:web:…`, not Android/iOS. */
   firebase: {
       apiKey: "AIzaSyCCpdahYlxnjogTRS1ZSaF3sQ6cF9DTbVY",

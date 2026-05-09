@@ -100,6 +100,27 @@ class FirebaseAuthService
     }
 
     /**
+     * Verify a Firebase ID token without touching the database. Used when we just need
+     * to confirm token validity + extract claims (e.g. proving phone-number ownership
+     * during a multi-step signup that ties Google identity to a phone OTP).
+     *
+     * @return array<string, mixed>
+     */
+    public function verifyClaimsOnly(string $idToken): array
+    {
+        $idToken = self::normalizeIdToken($idToken);
+        if ($idToken === '' || substr_count($idToken, '.') !== 2) {
+            throw new \InvalidArgumentException(
+                'idToken must be a Firebase ID token JWT (three segments separated by dots).'
+            );
+        }
+
+        $verifiedIdToken = $this->auth->verifyIdToken($idToken);
+
+        return $verifiedIdToken->claims()->all();
+    }
+
+    /**
      * Verifies a Firebase ID token and returns/creates a local User.
      *
      * @return array{user:User,claims:array<string,mixed>}
@@ -126,10 +147,6 @@ class FirebaseAuthService
         $phone = $claims['phone_number'] ?? ($claims['phone'] ?? null);
         $name = $claims['name'] ?? null;
         $picture = $claims['picture'] ?? null;
-        $roleClaim = $claims['role'] ?? null;
-
-        $allowedRoles = ['customer', 'driver', 'admin'];
-        $resolvedRole = in_array($roleClaim, $allowedRoles, true) ? $roleClaim : null;
 
         $userEmail = $email ?: "{$uid}@otp.local";
 
@@ -147,19 +164,12 @@ class FirebaseAuthService
             $user->google_sub = $uid;
             $user->phone = $phone;
             $user->avatar_path = $picture;
-            $user->role = $resolvedRole ?: 'customer';
             $user->save();
         } else {
             $user->google_sub = $uid;
             $user->phone = $phone ?: $user->phone;
             $user->avatar_path = $picture ?: $user->avatar_path;
             $user->name = $name ?: $user->name;
-            // Keep existing role (e.g. driver onboarding) unless Firebase explicitly provides one.
-            if ($resolvedRole) {
-                $user->role = $resolvedRole;
-            } elseif (!$user->role) {
-                $user->role = 'customer';
-            }
             $user->save();
         }
 

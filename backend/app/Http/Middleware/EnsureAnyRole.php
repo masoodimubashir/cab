@@ -23,11 +23,12 @@ class EnsureAnyRole
             preg_split('/[,\|]/', $roles) ?: []
         )));
 
-        if (!in_array((string) ($user->role ?? ''), $allowed, true)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
+        foreach ($allowed as $role) {
+            if ($user->hasRole($role) && $user->tokenCan("act-as:$role")) {
+                return $next($request);
+            }
         }
 
-        return $next($request);
+        return response()->json(['message' => 'Forbidden.'], 403);
     }
 }
-

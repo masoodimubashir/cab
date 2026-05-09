@@ -1,0 +1,45 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/customer-tabs/book"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Trip #{{ tripId }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
+
+  <ng-container *ngIf="!loading && trip as t">
+    <ion-card>
+      <ion-card-header>
+        <ion-card-title>Status</ion-card-title>
+        <ion-card-subtitle>{{ t.status }}</ion-card-subtitle>
+      </ion-card-header>
+      <ion-card-content>
+        <p *ngIf="t.driver">Driver: <strong>{{ t.driver.name || 'Assigned' }}</strong></p>
+        <p *ngIf="t.final_fare != null">Final fare: <strong>₹{{ t.final_fare }}</strong></p>
+        <p *ngIf="t.payment_method">Selected payment: <strong>{{ t.payment_method | uppercase }}</strong></p>
+      </ion-card-content>
+    </ion-card>
+
+    <ion-button
+      *ngIf="canCancel()"
+      expand="block"
+      color="danger"
+      fill="outline"
+      (click)="cancel()"
+    >
+      Cancel trip
+    </ion-button>
+
+    <ion-button
+      *ngIf="isCompleted()"
+      expand="block"
+      color="success"
+      (click)="pay()"
+    >
+      Pay
+    </ion-button>
+  </ng-container>
+</ion-content>

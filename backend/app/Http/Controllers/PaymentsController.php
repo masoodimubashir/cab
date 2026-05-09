@@ -97,6 +97,36 @@ class PaymentsController extends Controller
         return response()->json(['payment' => $payment]);
     }
 
+    public function payQr(Request $request, Trip $trip)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        if ($trip->status !== 'COMPLETED') {
+            return response()->json(['message' => 'Trip must be completed before payment.'], 409);
+        }
+
+        if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
+            return response()->json(['message' => 'Final fare not available.'], 422);
+        }
+
+        $payment = Payment::query()->updateOrCreate(
+            ['trip_id' => $trip->id],
+            [
+                'method' => 'QR',
+                'provider' => 'NONE',
+                'status' => 'SUCCESS',
+                'amount' => (float) $trip->final_fare,
+                'currency' => 'INR',
+                'paid_at' => now(),
+            ]
+        );
+
+        return response()->json(['payment' => $payment]);
+    }
+
     public function razorpayWebhook(Request $request, RazorpayService $razorpayService)
     {
         $signature = (string) $request->header('X-Razorpay-Signature', '');

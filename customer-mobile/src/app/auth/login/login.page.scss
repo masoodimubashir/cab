@@ -29,3 +29,93 @@ code {
   font-size: 0.75rem;
   word-break: break-all;
 }
+
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--ion-color-medium);
+  font-size: 0.8rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--ion-color-light-shade);
+}
+
+.divider span {
+  padding: 0 0.75rem;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+}
+
+.subtitle {
+  margin: 0 0 1.5rem;
+  color: var(--ion-color-medium);
+  font-size: 0.95rem;
+}
+
+.warn {
+  color: var(--ion-color-warning-shade);
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+.avatar-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0 1.5rem;
+}
+
+.avatar {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background-color: var(--ion-color-light-shade);
+  background-size: cover;
+  background-position: center;
+}
+
+.avatar-edit {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.plus-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: white;
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ion-background-color, white);
+}
+
+.resend-row {
+  display: flex;
+  justify-content: center;
+  min-height: 32px;
+}
+
+.resend-pill {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: var(--ion-color-light);
+  color: var(--ion-color-medium);
+  border-radius: 999px;
+  font-size: 0.9rem;
+}

@@ -62,7 +62,7 @@ export class CustomerTripsPage {
     const rawId = t['id'] as unknown;
     const tripId = typeof rawId === 'number' ? rawId : Number(rawId);
     if (!Number.isFinite(tripId) || tripId < 1) return;
-    this.router.navigateByUrl(`/customer-tabs/negotiation/${tripId}`, { replaceUrl: true });
+    this.router.navigateByUrl(`/customer-tabs/trip/${tripId}`, { replaceUrl: true });
   }
 }
 

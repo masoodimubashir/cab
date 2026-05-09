@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { ApiService } from '../../core/api.service';
+import { AuthService, PaymentMethod } from '../../core/auth.service';
 import {
   coordsFromTrip,
   googleMapsDirectionsUrl,
@@ -32,7 +33,47 @@ export class RidesPage {
     return this.negotiation?.['final_amount'] ?? null;
   }
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private auth: AuthService
+  ) {}
+
+  loadTrip(): void {
+    const id = this.validId();
+    if (id == null) return;
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    this.api
+      .get<{ trip?: Record<string, unknown>; negotiation?: Record<string, unknown> }>(
+        `/trips/${id}/negotiation`
+      )
+      .subscribe({
+        next: (res) => {
+          this.lastTrip = res.trip || null;
+          this.negotiation = res.negotiation || null;
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not load trip.';
+          this.lastTrip = null;
+        },
+        complete: () => {
+          this.busy = false;
+        },
+      });
+  }
+
+  get tripPaymentMethod(): PaymentMethod | null {
+    const m = this.lastTrip?.['payment_method'];
+    return m === 'cash' || m === 'upi' || m === 'qr' ? m : null;
+  }
+
+  get acceptsTripPayment(): boolean {
+    const m = this.tripPaymentMethod;
+    if (!m) return true;
+    const accepted = this.auth.getUser()?.accepted_payment_methods ?? ['cash', 'upi', 'qr'];
+    return accepted.includes(m);
+  }
 
   get pickupCoords() {
     return this.lastTrip ? coordsFromTrip(this.lastTrip, 'pickup_lat', 'pickup_lng') : null;

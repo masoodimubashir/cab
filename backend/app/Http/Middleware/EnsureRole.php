@@ -18,11 +18,10 @@ class EnsureRole
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        if (!isset($user->role) || $user->role !== $role) {
+        if (!$user->hasRole($role) || !$user->tokenCan("act-as:$role")) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         return $next($request);
     }
 }
-

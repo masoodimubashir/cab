@@ -20,13 +20,13 @@ class AdminAuthController extends Controller
 
         if (
             !$user ||
-            $user->role !== 'admin' ||
+            !$user->hasRole('admin') ||
             !Hash::check($data['password'], $user->password)
         ) {
             return response()->json(['message' => 'Invalid credentials.'], 401);
         }
 
-        $token = $user->createToken('dreamcabs-admin')->plainTextToken;
+        $token = $user->createToken('dreamcabs-admin', ['act-as:admin'])->plainTextToken;
 
         return response()->json([
             'token' => $token,
@@ -34,7 +34,7 @@ class AdminAuthController extends Controller
                 'id' => $user->id,
                 'email' => $user->email,
                 'name' => $user->name,
-                'role' => $user->role,
+                'roles' => $user->roleNames(),
             ],
         ]);
     }

@@ -69,14 +69,14 @@ class DatabaseSeeder extends Seeder
         }
 
         // Create a simple dev user for quick manual API testing (optional).
-        User::query()->updateOrCreate(
+        $testUser = User::query()->updateOrCreate(
             ['email' => 'test@example.com'],
             [
                 'name' => 'Test User',
                 'password' => bcrypt('password'),
-                'role' => 'customer',
             ],
         );
+        $testUser->addRole('customer');
 
         // Create an admin user for the web/admin panel.
         // Credentials are read from env: ADMIN_EMAIL / ADMIN_PASSWORD.

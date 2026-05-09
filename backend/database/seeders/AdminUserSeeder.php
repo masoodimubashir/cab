@@ -12,15 +12,16 @@ class AdminUserSeeder extends Seeder
         $email = env('ADMIN_EMAIL', 'admin@example.com');
         $password = env('ADMIN_PASSWORD', 'password');
 
-        User::query()->updateOrCreate(
+        $user = User::query()->updateOrCreate(
             ['email' => $email],
             [
                 'name' => 'Admin',
                 'password' => bcrypt($password),
-                'role' => 'admin',
                 'email_verified_at' => now(),
             ]
         );
+
+        $user->addRole('admin');
     }
 }
 

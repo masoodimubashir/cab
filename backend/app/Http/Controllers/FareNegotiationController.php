@@ -30,8 +30,13 @@ class FareNegotiationController extends Controller
             }])
             ->first();
 
+        $tripWithDriver = $trip->fresh()->load([
+            'driver:id,name,avatar_path,accepted_payment_methods',
+        ]);
+
         return response()->json([
             'trip_id' => $trip->id,
+            'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
         ]);
     }

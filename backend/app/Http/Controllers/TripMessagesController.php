@@ -12,7 +12,7 @@ class TripMessagesController extends Controller
     public function index(Request $request, Trip $trip)
     {
         $user = $request->user();
-        if ($trip->customer_id !== $user->id && $trip->driver_id !== $user->id && $user->role !== 'admin') {
+        if ($trip->customer_id !== $user->id && $trip->driver_id !== $user->id && !$user->hasRole('admin')) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 

@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Auth\FirebaseAuthController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FareNegotiationController;
@@ -29,6 +31,15 @@ Route::post('/admin/login', [AdminAuthController::class, 'login']);
 
 Route::post('/auth/otp/start', [FirebaseAuthController::class, 'startOtp'])->middleware('throttle:otp');
 Route::post('/auth/otp/verify', [FirebaseAuthController::class, 'verifyOtp'])->middleware('throttle:otp');
+Route::post('/auth/google/verify', [FirebaseAuthController::class, 'verifyGoogle'])->middleware('throttle:otp');
+
+// Profile completion (used after first-time phone OTP sign-up to capture name/email/photo).
+Route::middleware('auth:sanctum')->post('/me/profile', [ProfileController::class, 'update']);
+
+// Session + account management.
+Route::middleware('auth:sanctum')->post('/me/logout', [AccountController::class, 'logout']);
+Route::middleware('auth:sanctum')->delete('/me/account', [AccountController::class, 'destroy']);
+Route::middleware(['auth:sanctum', 'role:driver'])->patch('/me/driver/payment-methods', [AccountController::class, 'updateDriverPaymentMethods']);
 
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
 
@@ -115,6 +126,7 @@ Route::get('/trip-share/{token}', [TripTrackingController::class, 'showShare']);
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/pay/upi', [PaymentsController::class, 'payUpi']);
     Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash']);
+    Route::post('/trips/{trip}/pay/qr', [PaymentsController::class, 'payQr']);
     Route::get('/trips/{trip}/invoice', [InvoicesController::class, 'show']);
     Route::post('/trips/{trip}/invoice', [InvoicesController::class, 'generate']);
     Route::get('/trips/{trip}/invoice/download', [InvoicesController::class, 'download']);

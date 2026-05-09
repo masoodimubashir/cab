@@ -27,6 +27,12 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    path: 'delete-account',
+    loadChildren: () =>
+      import('./pages/delete-account/delete-account.module').then((m) => m.DeleteAccountPageModule),
+    canActivate: [AuthGuard],
+  },
+  {
     path: '',
     redirectTo: 'auth/login',
     pathMatch: 'full',

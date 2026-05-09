@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'estimated_fare',
     'final_fare',
     'currency',
+    'payment_method',
     'pickup_address',
     'pickup_lat',
     'pickup_lng',

@@ -43,10 +43,10 @@ class TripSeeder extends Seeder
             [
                 'name' => 'Test Driver',
                 'password' => bcrypt('password'),
-                'role' => 'driver',
                 'phone' => '+919999000001',
             ],
         );
+        $driverUser->addRole('driver');
 
         Driver::query()->updateOrCreate(
             ['user_id' => $driverUser->id],

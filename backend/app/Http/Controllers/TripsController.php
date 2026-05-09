@@ -27,6 +27,8 @@ class TripsController extends Controller
             'drop_address' => ['nullable', 'string', 'max:500'],
             'drop_lat' => ['required', 'numeric', 'between:-90,90'],
             'drop_lng' => ['required', 'numeric', 'between:-180,180'],
+
+            'payment_method' => ['nullable', 'in:cash,upi,qr'],
         ]);
 
         $pricingRule = PricingRule::query()
@@ -61,6 +63,7 @@ class TripsController extends Controller
             'drop_address' => $data['drop_address'] ?? null,
             'drop_lat' => (float) $data['drop_lat'],
             'drop_lng' => (float) $data['drop_lng'],
+            'payment_method' => $data['payment_method'] ?? null,
         ]);
 
         // Immediately start negotiation stage.
