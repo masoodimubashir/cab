@@ -1,125 +1,391 @@
-# DreamCabs — TODO
+# DreamCabs — What's Left to Do
 
-Living punch-list of what's left after the realtime-stack + dispatch-loop work. Grouped by severity. Tick items as they're done.
-
----
-
-## P0 — Bugs / edge cases that will hurt real users
-
-- [ ] **Driver double-booking.** `Trip::available()` doesn't exclude drivers with an active in-flight trip. A driver mid-ride can accept a second one and overwrite it.
-  - File: `backend/app/Http/Controllers/TripsController.php@available`
-  - Fix: also exclude drivers who have any trip in non-terminal status (`ASSIGNED` / `EN_ROUTE_PICKUP` / `ARRIVED_PICKUP` / `EN_ROUTE_DROP` / `ARRIVED_DROP`).
-
-- [ ] **Race condition: two drivers accept the same trip.** `FareNegotiationController@driverAction` does `if (driver_id === null) { ... save() }` — not atomic. Under concurrency, both pass.
-  - File: `backend/app/Http/Controllers/FareNegotiationController.php@driverAction`
-  - Fix: wrap in `DB::transaction()` + `Trip::lockForUpdate()`, OR use a single atomic `Trip::where('id', $id)->whereNull('driver_id')->update(['driver_id' => $userId])` and check `affected_rows === 1`.
-
-- [ ] **No negotiation timeout.** Trip sits in `NEGOTIATION` forever if customer closes app. The 60s timer is client-side only.
-  - Fix: scheduled command `php artisan negotiations:cleanup` that cancels NEGOTIATION trips older than 10 minutes. Wire in `routes/console.php` to run every minute.
-
-- [ ] **Customer cancel doesn't stop driver location stream when Reverb is down.** Driver keeps POSTing.
-  - File: `backend/app/Http/Controllers/TripTrackingController.php@updateLocation`
-  - Fix: reject location POSTs for trips not in active states (return 409); driver app stops on first reject.
-
-- [ ] **Driver re-opening app mid-trip loses location stream.** No state restoration.
-  - Fix: on driver-mobile boot, call `GET /drivers/me/active-trip` (build endpoint), and if there's an active trip, auto-call `bgLocation.start(tripId)`.
-
-- [ ] **Customer can offer ₹1.** No fare floor enforced.
-  - File: `backend/app/Http/Controllers/FareNegotiationController.php@customerOffer`
-  - Fix: validate `amount >= max(50, estimated_fare * 0.4)`.
-
-- [ ] **Reverb channels are public.** Any logged-in user can listen to any trip's negotiation/location/chat.
-  - Fix: switch all events to `PrivateChannel`; add channel auth in `routes/channels.php` checking `Trip::find($tripId)` belongs to the user as customer or driver.
-
-- [ ] **No driver no-show / customer no-show handling.** Driver stuck if customer doesn't appear at pickup.
-  - Fix: on `ARRIVED_PICKUP`, expose "Customer no-show" button → cancel + cancellation fee. Mirror for driver no-show.
-
-- [ ] **`customerConfirm` picks the wrong driver offer.** `offers->where('from_role','driver')->latest()` returns the most recent driver bid, not the one the customer tapped.
-  - File: `backend/app/Http/Controllers/FareNegotiationController.php@customerConfirm`
-  - Fix: customer-confirm payload should include `accepted_offer_id`; server loads that specific offer's `from_user_id`.
-
-- [ ] **Web `BackgroundLocationService` is foreground-only.** Tab-switch stops the stream. Acceptable for dev; document that drivers must run native build for production.
+> The pending work to take this Uber/Jugnoo-style ride hailing app to a production-ready
+> Android + iOS launch. Plain English first, developer notes underneath each item.
+>
+> Items are grouped by impact. **High** = needed before launch. **Medium** = strongly desired
+> shortly after launch. **Low** = nice to have.
+>
+> See `DONE.md` for everything that's already working.
 
 ---
 
-## P1 — Feature gaps before V1 launch
+## A. Customer experience (HIGH)
 
-- [ ] **Geo-radius dispatch.** FCM fan-out goes to every online driver regardless of distance.
-  - File: `backend/app/Http/Controllers/FareNegotiationController.php@customerOffer`
-  - Fix: filter drivers by Haversine distance (≤ 8km) against latest `driver_locations` row. V2: Redis GEO set.
+### A1. Pick a ride product before booking
+The customer mobile app today only books point-to-point rides. It doesn't yet expose the
+**Local / Rental / Out Station** choice that the admin is configuring per city.
 
-- [ ] **No ETA to pickup.** Customer sees the pin but no "arriving in X min".
-  - Fix: customer trip-active page calls Google Distance Matrix on each location update (debounced 10s).
+- Add a product picker (segmented control) on the customer booking screen.
+- Hide products the city has marked inactive (data is already stored).
+- Switch the booking form layout based on the product:
+  - **Local** — pickup + drop (current flow).
+  - **Rental** — pickup + package picker (e.g. *2 hr / 20 km*, *4 hr / 40 km*, *8 hr / 80 km*).
+  - **Out Station** — pickup + destination city + one-way / round-trip toggle + return date.
 
-- [ ] **Razorpay UPI not wired.** UPI is just a label — no actual payment.
-  - Files: `backend/app/Http/Controllers/PaymentsController.php@payUpi`, customer-mobile trip-active.
-  - Fix: create Razorpay order, return order_id, customer-mobile opens checkout, webhook updates payment.
+> *Devs:* `customer-mobile/src/app/pages/customer-book/customer-book.page.ts`. New public endpoint to read active products per city. Wire the chosen `product_kind` into the existing `POST /trips` payload (the backend already accepts it).
 
-- [ ] **No invoice / receipt UI.** Endpoint `GET /trips/{id}/invoice/download` exists; nobody calls it.
+### A2. Rental & Outstation fare models
+Right now the fare engine only handles point-to-point billing. Rental and Outstation
+have **completely different math**.
 
-- [ ] **No ratings UI.** Backend supports `POST /trips/{id}/rating`; no UI.
+- **Rental** = flat package + overage (₹/km past included km, ₹/min past included minutes). Needs `start_odometer`/`end_odometer` and `started_at`/`ended_at` on the trip.
+- **Outstation** = distance-heavy + per-day driver allowance ("bata") + night-halt fee + minimum km/day floor (e.g. 250 km/day even if you drove less).
 
-- [ ] **No chat UI.** Backend broadcasts `TripMessageSent`; no UI in either app.
+> *Devs:* New tables `rental_packages` (city, hours, km_included, base_price, extra_per_km, extra_per_min) and `outstation_pricing` (per-km, daily_min_km, allowance_per_day, night_halt_fee). Add a fare path for each in `FareEstimationService` that branches on `product_kind`.
 
-- [ ] **No SOS button in customer/driver apps.** Backend ready (`POST /trips/{id}/sos`); no UI surface.
+### A3. Multi-stop on customer side
+The admin's manual-dispatch flow already supports multiple stops; the customer app doesn't.
 
-- [ ] **No trip share-link UI.** `POST /trips/{id}/share-link` exists; no UI generates or shares it.
+- Let the rider add intermediate stops on the booking screen.
+- Re-quote the fare after each change.
 
-- [ ] **No "schedule a ride for later".** Trip model has no `scheduled_at` column.
+> *Devs:* `trips.stops` JSON column already exists. Mirror the manual-dispatch UI's "+ stop" pattern.
 
----
+### A4. Customer-app theming from City Settings
+We store `theme_color`, `logo_url`, `splash_screen`, `home_bg` per city — none of this
+is read by the apps yet.
 
-## P2 — Hardening / observability / scale
+- Bootstrap the apps to fetch the city config (public endpoint) and apply the colour, logo and screens.
+- Render `customer_rate_card_info` (HTML) inside an "About fares" page.
+- Show `onboarding_info` (HTML) on first launch.
 
-- [ ] **Queue FCM fan-out.** 200 online drivers → 200 sync HTTP calls inline with the customer-offer request.
-  - Fix: dispatch `SendDispatchNotificationsJob implements ShouldQueue` from `customerOffer`. Run `php artisan queue:work`.
-
-- [ ] **Retry / outbox for Reverb broadcasts.** Reverb down = silent miss.
-  - Fix: outbox pattern — write event to `events_outbox` in same transaction, dispatcher polls + broadcasts + marks sent.
-
-- [ ] **No idempotency on payment endpoints.** Double-tap creates double payment.
-  - Fix: require `Idempotency-Key` header; cache result for 24h.
-
-- [ ] **No request-id correlation logging.** Hard to trace a single ride end-to-end.
-  - Fix: middleware injects `X-Request-Id`; `Log::withContext(['request_id' => $id])`.
-
-- [ ] **No tests for the dispatch flow.**
-  - Fix: Pest/PHPUnit feature test — happy path: customer creates → driver bids → customer confirms → driver accepts → COMPLETED → payment recorded.
-
-- [ ] **No metrics.** You'll only know FCM is broken when users complain.
-  - Fix: counter on FCM success/fail, gauge for `pending_negotiations`, histogram for `negotiation_resolution_seconds`.
-
-- [ ] **Stale `device_tokens` cleanup.** Tokens that are valid but unused accumulate.
-  - Fix: daily scheduled job pruning rows with `last_seen_at < 60 days ago`.
-
-- [ ] **`broadcast()` happens before transaction commit.** Possible if the trip transition is inside a parent transaction; listeners can read stale state.
-  - File: `backend/app/Services/TripStateMachineService.php`
-  - Fix: `DB::afterCommit(fn() => broadcast(...))`.
-
-- [ ] **Unique constraint on `trip_assignments`.** `(trip_id, driver_id)` should be unique.
-  - Fix: migration adding a unique index. Currently `updateOrCreate` happens to dedupe — race-prone.
-
-- [ ] **`accepted_payment_methods` JSON has no DB-level enum validation.** Bad data possible via direct DB writes.
-  - Fix: JSON-schema check or move to a join table `driver_payment_methods`.
-
-- [ ] **Redis broadcaster for Reverb.** Single-node only today; broadcasts miss subscribers when scaling out.
-
-- [ ] **Background queue worker not running in dev.** No `queue:work` documented in onboarding.
+### A5. Customer notification preferences
+- Mute promotional pushes vs critical (booking) pushes.
+- Channel-level controls on Android.
 
 ---
 
-## Recommended order to tackle
+## B. Driver experience (HIGH)
 
-1. P0 — items 1, 2, 3 (driver double-booking + race + negotiation timeout) → 1 day
-2. P0 — item 7 (Reverb private channels) → 1 day
-3. P1 — geo-radius dispatch → 1 day
-4. P1 — Razorpay UPI → 2–3 days
-5. P2 — queue FCM fan-out → 2 hours
-6. P2 — first feature test on the happy path → half a day
+### B1. Driver earnings dashboard
+Drivers currently see trip history but not a tidy daily / weekly / monthly earnings summary
+inside the app.
+
+- Daily card (rides count, gross earnings, cash collected, online hours).
+- Weekly + monthly summaries with charts.
+
+### B2. Drivers ↔ Fleets linkage
+Drivers currently have no `fleet_id`. Manual dispatch has a fleet picker but the dispatch
+service can't honour it because drivers aren't tagged.
+
+- Add `fleet_id` column on `drivers`, populated during onboarding/admin assignment.
+- Update the dispatch service to restrict to the selected fleet when one is chosen.
+
+### B3. Driver-rates-customer flow
+Today only the customer rates the driver. Symmetric ratings keep both sides honest.
+
+- After trip completion, the driver sees a 1-tap rating screen.
+- Aggregate customer ratings power a future passenger-trust score.
+
+### B4. Driver onboarding / coaching
+- Quiz questions on safety + earnings rules.
+- Short training videos hosted on a CMS.
+- Block trip-acceptance until quiz passed.
 
 ---
 
-## Linked docs
-- SRS: `SRS.md`
-- Realtime / FCM / native setup: `REALTIME_SETUP.md`
-- Plan history: `~/.claude/plans/in-the-current-app-radiant-firefly.md`
+## C. Admin web — modules still missing (HIGH)
+
+The reference admin (Jugnoo-clone) has more modules than we've built. The big ones:
+
+### C1. Promotions module
+Empty group in our nav today.
+
+- **City Wide** promo rules (e.g. "20% off in Srinagar this week").
+- **Promo Codes** (single-use, multi-use, expiry, min fare, max discount).
+- **Coupons** (issued to specific customers).
+- **Referrals** (referrer reward + referee reward, unique code per user).
+
+> *Devs:* New tables `promotions`, `promo_codes`, `coupons`, `referrals`. Application logic in fare estimate + post-trip settlement.
+
+### C2. Banners
+In-app banner CMS for the customer & driver apps (target city, dates, deep-link, image).
+
+### C3. Vehicle Fare Settings page
+Reference admin has a dedicated page; we expose the same data through Base Pricing CRUD,
+but a friendlier per-vehicle view would be useful.
+
+### C4. Managers / sub-admin Settings
+Multi-operator support: invite a manager who can only access certain cities or modules.
+
+### C5. Toggle City
+Quick on/off switch per city in a header dropdown (we already have the data, just no
+dedicated UI).
+
+### C6. App Translate (i18n editor)
+Edit the customer/driver app strings per language without redeploying. Stores translations
+in DB, apps fetch on startup.
+
+### C7. Driver Subscriptions
+- Subscription plans (weekly/monthly) that let a driver keep more of the fare.
+- Renewal logic, payment integration.
+- Subscriptions list & manual extensions.
+
+### C8. Audit log
+Who did what when in the admin (price changes, role grants, geofence edits). Critical
+for any multi-operator or accountability story.
+
+### C9. Trip-message moderation UI
+Backend has the endpoint; admin doesn't surface a moderation queue yet.
+
+### C10. Global city-selector wiring
+We built the `CityContextService`. Other admin pages (Maps, Manual Dispatch, Analytics)
+still maintain their own dropdowns. Migrate them one by one.
+
+---
+
+## D. Money flows (HIGH for launch in regulated markets)
+
+### D1. Customer wallet
+- Balance, top-up via UPI / Razorpay, pay-from-wallet at trip end.
+- Refunds back to wallet.
+
+### D2. Driver wallet
+- Show net earnings minus commission.
+- Bank-account on-file for weekly payouts.
+- Manual hold / release in admin for disputes.
+
+### D3. Cashback & rewards
+- Per-ride cashback rules.
+- Loyalty tiers.
+
+### D4. Settlement & payouts
+- Auto-generate driver payout reports.
+- Integrate with payment-rail for bulk transfers (Razorpay Payouts, etc.).
+
+### D5. Tax invoices for businesses
+- GSTIN field on user profile.
+- Tax-compliant invoice template + monthly bundle download.
+
+---
+
+## E. Dispatch engine improvements (MEDIUM)
+
+The hop loop is in. Things to refine after launch:
+
+### E1. Smarter driver targeting
+- Prioritize drivers by acceptance rate, customer rating, idle time.
+- Penalize drivers who recently rejected.
+
+### E2. Surge / peak-hour visualization
+- Heatmap on the customer map showing where surge is active.
+- Driver-side incentive view ("go to this zone to earn more").
+
+### E3. ADD SERVICE extras
+- Catalogue of add-ons (child seat, pet, AC, extra luggage). Per-product pricing.
+
+### E4. Recurring rides
+- Daily-commute pattern: same pickup + drop, weekdays at 9 AM.
+- Auto-reschedule.
+
+### E5. Group rides / split fare
+- Uber-Pool style multi-rider matching (significant scope; consider post-launch).
+
+### E6. Corporate / business profiles
+- Bill-to-employer, monthly invoices, employee allow-lists.
+
+---
+
+## F. Production readiness (HIGH before launch)
+
+### F1. Real queue worker
+Currently the queue can run synchronously in dev. Production needs a long-running worker.
+- Set `QUEUE_CONNECTION=redis` (or `database`), run `php artisan queue:work` under a process manager (Supervisor/systemd).
+- Without this, the dispatch hop loop runs inline (no waits between hops).
+
+### F2. Cron / scheduler hookup
+The Laravel scheduler needs `* * * * * php artisan schedule:run` on the server. Verify
+on the production host.
+
+### F3. Error tracking
+- Sentry / Bugsnag integration (backend, customer app, driver app, admin).
+- Crash reporting + breadcrumbs.
+
+### F4. Log aggregation
+- Ship Laravel logs to a log service (Papertrail, Loggly, Datadog) for searchability.
+
+### F5. Database backups
+- Daily MySQL dumps stored off-server (S3 + retention policy).
+
+### F6. CDN + image upload limits
+- Serve `storage/app/public` through a CDN (Cloudfront / Bunny).
+- Enforce upload size limits + image type validation server-side.
+
+### F7. HTTPS everywhere
+- TLS termination at Nginx / load balancer.
+- HSTS headers, secure cookies.
+
+### F8. Rate limiting at infra level
+- We have Laravel throttle middleware; back it with Cloudflare / a real WAF.
+
+### F9. Environment hygiene
+- Separate staging env with its own DB, queue, Firebase project.
+- `.env.example` kept in sync.
+
+---
+
+## G. App-store deliverables (HIGH for launch)
+
+### G1. Play Store + App Store listings
+- Store icons (multiple sizes per platform).
+- Feature graphic, screenshots (5–8 per app per platform).
+- Short + long descriptions, keywords.
+- Categorization.
+
+### G2. Privacy policy + Terms of Service
+- Hosted pages reachable from inside the apps.
+- Update Firebase + Razorpay declarations to match.
+
+### G3. iOS push certificates
+- APNS auth key uploaded to Firebase project.
+- Notification entitlements in Xcode.
+
+### G4. Android push setup
+- `google-services.json` per build flavour.
+- Notification channels declared (rides, promos, safety).
+
+### G5. Testing tracks
+- Internal testing track on Play Console.
+- TestFlight build for iOS.
+
+### G6. Release signing
+- Keystore for Android (saved in a secrets vault).
+- Apple Developer account + provisioning profiles.
+
+---
+
+## H. CI / CD (MEDIUM)
+
+### H1. Lint + tests on every PR
+- PHP: pint + phpunit.
+- TypeScript: tsc + jest/karma.
+- Block merges on red.
+
+### H2. Auto-deploy to staging
+- Backend on Forge / Render / Railway.
+- Admin to a static host (Vercel / Netlify) on push.
+- Mobile via Codemagic / Bitrise / EAS for nightly builds.
+
+### H3. Tagged releases
+- `v1.0.0` cuts a backend image, an admin bundle, and store-track builds.
+
+---
+
+## I. Mobile-specific polish (MEDIUM)
+
+### I1. Background location reliability
+- iOS Always-vs-When-In-Use prompts written to match Apple's review guidance.
+- Android battery-optimization opt-out screen.
+
+### I2. Deep links
+- `dreamcabs://trip/123` opens the right screen from a push or share link.
+- Universal links / App links configured.
+
+### I3. Offline handling
+- "You're offline" banners on every screen.
+- Queue retries for failed location pings + chat sends.
+
+### I4. Accessibility
+- TalkBack / VoiceOver labels on every actionable element.
+- Dynamic-type support.
+- Contrast audit.
+
+### I5. Localization
+- English baseline → Hindi, Urdu, Kashmiri (we're targeting J&K).
+- RTL support if Urdu in scope.
+
+---
+
+## J. Analytics & business intelligence (MEDIUM)
+
+### J1. Reports drilldown filters
+Right now reports take only date range. Add:
+- City filter (multi-select).
+- Vehicle / ride-type filter.
+- Product (Local / Rental / Out Station) filter.
+
+### J2. Sparklines in real-time KPI cards
+- Tiny inline trend chart on each card.
+
+### J3. Cohort + retention analytics
+- New customer cohorts by week.
+- Repeat-rider %, average rides per customer per month.
+
+### J4. Driver supply analytics
+- Online hours per driver, idle %, acceptance rate, cancel rate.
+
+### J5. Funnel analytics
+- App open → request → confirmed → completed conversion at each step.
+
+---
+
+## K. Multi-city / scale (MEDIUM)
+
+### K1. Per-city currency
+- Currently hardcoded `INR`. Move to per-city config so we can expand internationally.
+
+### K2. Per-city languages
+- Different default languages per city.
+
+### K3. Per-city legal pages
+- Different T&C / privacy text per city if regulators demand.
+
+### K4. Multi-tenant / white-label
+- If we plan to sell this platform to other operators (Jugnoo's actual business model), wall everything by `operator_id` and provision new tenants from a super-admin panel.
+
+---
+
+## L. Safety, trust & compliance (MEDIUM/HIGH)
+
+### L1. Driver background-check workflow
+- Document admin workflow for police verification.
+- Block onboarding without it.
+
+### L2. Insurance / claims flow
+- Per-trip insurance coverage record.
+- Customer / driver claim form, admin claim resolution.
+
+### L3. Lost & found
+- After-trip flow on customer side: report a left-behind item; rings driver phone.
+
+### L4. Emergency contacts
+- Save 1–3 trusted contacts; SOS auto-shares trip + location with them.
+
+### L5. Trip recording (audio)
+- Optional in-trip audio recording on the driver's phone (consent screen first), uploaded after trip for safety review.
+
+---
+
+## M. Dev experience (LOW but nice)
+
+### M1. Swagger / OpenAPI docs
+- Auto-generate from Laravel routes + form requests.
+
+### M2. Storybook for the admin
+- Visual catalogue of PrimeNG-based components.
+
+### M3. End-to-end tests
+- Cypress / Playwright for the admin booking flow.
+- Detox for the mobile apps' golden paths.
+
+### M4. Seed scripts
+- One-command "load demo data" so a new dev can boot the system in 10 minutes.
+
+---
+
+## Suggested launch-blocking shortlist
+
+If we had to pick the **must-haves before the first public launch on Play Store + App Store**,
+the shortlist is:
+
+1. **A1** — customer can pick Local / Rental / Out Station.
+2. **A2** — Rental & Outstation fare models in the engine.
+3. **D1, D2, D4** — wallets and payouts (no business without money rails).
+4. **C1** — at least Promo Codes (every cab launch hands out free-ride codes on day 1).
+5. **F1, F2** — production queue worker + cron.
+6. **F3** — error tracking (you cannot debug a million-user app without it).
+7. **G1–G6** — store assets + signing.
+8. **L4** — emergency contacts + SOS hardening (legal/safety pressure on day 1).
+
+Everything else can ship in dot-releases.

@@ -17,3 +17,8 @@ Schedule::command('device-tokens:prune')
     ->dailyAt('03:30')
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('dispatch:wake-scheduled')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();

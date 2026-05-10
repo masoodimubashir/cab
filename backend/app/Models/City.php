@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['name', 'country_code', 'center_lat', 'center_lng', 'boundary_polygon', 'is_active'])]
 class City extends Model
@@ -22,6 +23,16 @@ class City extends Model
     public function pricingRules(): HasMany
     {
         return $this->hasMany(PricingRule::class, 'city_id');
+    }
+
+    public function rideProducts(): HasMany
+    {
+        return $this->hasMany(CityRideProduct::class, 'city_id');
+    }
+
+    public function settings(): HasOne
+    {
+        return $this->hasOne(CitySetting::class, 'city_id');
     }
 }
 

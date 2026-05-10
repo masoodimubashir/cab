@@ -72,6 +72,7 @@
         <i class="pi" [class.pi-chevron-down]="settingsOpen" [class.pi-chevron-right]="!settingsOpen"></i>
       </button>
       <div class="nav-group__items" *ngIf="settingsOpen">
+        <a routerLink="/settings/city" routerLinkActive="active" class="nav-sublink">City Settings</a>
         <a routerLink="/settings/geofencing" routerLinkActive="active" class="nav-sublink">Geofencing</a>
         <a routerLink="/settings/fleets" routerLinkActive="active" class="nav-sublink">Fleets</a>
       </div>

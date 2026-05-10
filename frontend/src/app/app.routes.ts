@@ -18,6 +18,7 @@ import { DynamicPricingFormComponent } from './admin/dynamic-pricing/dynamic-pri
 import { MapsComponent } from './admin/maps/maps.component';
 import { GeofencingComponent } from './admin/settings/geofencing.component';
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
+import { SettingsComponent } from './admin/settings/settings.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
 import { AnalyticsGraphsComponent } from './admin/analytics/analytics-graphs.component';
@@ -50,7 +51,9 @@ export const routes: Routes = [
 
   { path: 'maps', component: MapsComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'settings', redirectTo: 'settings/geofencing', pathMatch: 'full' },
+  { path: 'settings', redirectTo: 'settings/city', pathMatch: 'full' },
+  { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard] },
+  { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/geofencing', component: GeofencingComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard] },
 

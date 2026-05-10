@@ -10,7 +10,9 @@ use App\Models\PricingRule;
 use App\Models\Trip;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
+use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class TripsController extends Controller
@@ -20,10 +22,12 @@ class TripsController extends Controller
         FareEstimationService $fareEstimationService,
         TripStateMachineService $tripStateMachineService,
         DynamicPricingService $dynamicPricingService,
+        SchedulingPolicyService $schedulingPolicy,
     ) {
         $data = $request->validate([
             'city_id' => ['required', 'integer', 'exists:cities,id'],
             'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
+            'product_kind' => ['nullable', 'in:local,rental,outstation'],
 
             'pickup_address' => ['nullable', 'string', 'max:500'],
             'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
@@ -34,7 +38,24 @@ class TripsController extends Controller
             'drop_lng' => ['required', 'numeric', 'between:-180,180'],
 
             'payment_method' => ['nullable', 'in:cash,upi,qr'],
+            'scheduled_at' => ['nullable', 'date'],
         ]);
+
+        $kind = $data['product_kind'] ?? 'local';
+        $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
+
+        $policyError = $schedulingPolicy->validateBooking(
+            customerId: $request->user()->id,
+            cityId: (int) $data['city_id'],
+            kind: $kind,
+            scheduledAt: $scheduledAt,
+        );
+        if ($policyError) {
+            return response()->json([
+                'message' => $schedulingPolicy->messageFor($policyError),
+                'error_code' => $policyError,
+            ], 422);
+        }
 
         $city = City::query()->find((int) $data['city_id']);
         if (!$city) {
@@ -92,7 +113,9 @@ class TripsController extends Controller
             'driver_id' => null,
             'city_id' => (int) $data['city_id'],
             'ride_type_id' => (int) $data['ride_type_id'],
+            'product_kind' => $kind,
             'pricing_rule_id' => $pricingRule->id,
+            'scheduled_at' => $scheduledAt,
             'status' => 'REQUESTED',
             'estimated_fare' => $estimate['estimated_fare'],
             'final_fare' => null,
@@ -193,8 +216,12 @@ class TripsController extends Controller
         return response()->json(['data' => $payload]);
     }
 
-    public function cancel(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)
-    {
+    public function cancel(
+        Request $request,
+        Trip $trip,
+        TripStateMachineService $tripStateMachineService,
+        SchedulingPolicyService $schedulingPolicy,
+    ) {
         $request->validate([
             'reason' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -208,11 +235,26 @@ class TripsController extends Controller
             return response()->json(['message' => 'Trip cannot be cancelled in current status.'], 409);
         }
 
+        // Late-cancellation fee for scheduled rides cancelled inside the
+        // per-product cancel window. Pricing rule provides the flat fee.
+        $insideWindow = $schedulingPolicy->isInsideCancelWindow($trip);
+        if ($insideWindow && $trip->pricing_rule_id) {
+            $rule = \App\Models\PricingRule::query()->find($trip->pricing_rule_id);
+            $fee = (float) ($rule->cancellation_charges ?? 0.0);
+            if ($fee > 0) {
+                $trip->cancellation_fee_amount = $fee;
+                $trip->save();
+            }
+        }
+
         $tripStateMachineService->transition($trip, 'CANCELLED', [
             'cancelled_reason' => $request->input('reason'),
         ]);
 
-        return response()->json(['trip' => $trip->fresh()]);
+        return response()->json([
+            'trip' => $trip->fresh(),
+            'late_cancellation' => $insideWindow,
+        ]);
     }
 
     /**
