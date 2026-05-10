@@ -1,0 +1,228 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Models\City;
+use App\Models\CityVehicleType;
+use App\Models\RideType;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+
+class AdminVehicleTypesController
+{
+    private const KINDS = ['local', 'rental', 'outstation'];
+    private const TOLL_MODES = ['no', 'yes', 'yes_locked'];
+
+    /**
+     * List all vehicle types for a city. The Enabled/Disabled split in the
+     * Jugnoo UI is just is_active=true|false; the frontend filters client-side.
+     */
+    public function index(Request $request, City $city)
+    {
+        $rows = CityVehicleType::query()
+            ->with('rideType:id,name')
+            ->where('city_id', $city->id)
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (CityVehicleType $v) => $this->shape($v));
+
+        return response()->json([
+            'city_id' => $city->id,
+            'data' => $rows,
+            'available_ride_types' => RideType::query()
+                ->orderBy('sort_order')
+                ->get(['id', 'name'])
+                ->toArray(),
+        ]);
+    }
+
+    public function show(City $city, CityVehicleType $vehicleType)
+    {
+        $this->guard($city, $vehicleType);
+        $vehicleType->load('rideType:id,name');
+
+        return response()->json(['vehicle_type' => $this->shape($vehicleType)]);
+    }
+
+    /**
+     * Create a vehicle type. Mirrors the "Add Vehicle Type" modal in the
+     * reference admin: the modal exposes a small subset; the rest of the
+     * fields take their schema defaults and can be edited later from the
+     * detail page.
+     */
+    public function store(Request $request, City $city)
+    {
+        $data = $request->validate([
+            'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
+            'product_kind' => ['required', Rule::in(self::KINDS)],
+            'display_name' => ['required', 'string', 'max:120'],
+            'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
+            'max_people' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'luggage_capacity' => ['nullable', 'integer', 'min:0', 'max:99'],
+            'destination_mandatory' => ['nullable', 'boolean'],
+            'fare_mandatory' => ['nullable', 'boolean'],
+            'toll_mode' => ['nullable', Rule::in(self::TOLL_MODES)],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $exists = CityVehicleType::query()
+            ->where('city_id', $city->id)
+            ->where('ride_type_id', $data['ride_type_id'])
+            ->where('product_kind', $data['product_kind'])
+            ->exists();
+        if ($exists) {
+            return response()->json([
+                'message' => 'A vehicle type already exists for this city + ride type + product kind.',
+            ], 422);
+        }
+
+        $vehicleType = CityVehicleType::query()->create(array_merge(
+            ['city_id' => $city->id],
+            $data,
+        ));
+
+        return response()->json([
+            'vehicle_type' => $this->shape($vehicleType->fresh()->load('rideType:id,name')),
+            'message' => 'Vehicle type created.',
+        ], 201);
+    }
+
+    /**
+     * Full edit — every toggle, every commercial, every dispatcher override,
+     * and Android/iOS image uploads. Multipart accepted for the image fields.
+     */
+    public function update(Request $request, City $city, CityVehicleType $vehicleType)
+    {
+        $this->guard($city, $vehicleType);
+
+        $data = $request->validate([
+            'ride_type_id' => ['sometimes', 'integer', 'exists:ride_types,id'],
+            'product_kind' => ['sometimes', Rule::in(self::KINDS)],
+
+            'display_name' => ['sometimes', 'string', 'max:120'],
+            'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
+
+            'max_people' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'luggage_capacity' => ['nullable', 'integer', 'min:0', 'max:99'],
+
+            'destination_mandatory' => ['nullable', 'boolean'],
+            'fare_mandatory' => ['nullable', 'boolean'],
+            'reverse_bidding_enabled' => ['nullable', 'boolean'],
+            'waiting_charges_applicable' => ['nullable', 'boolean'],
+            'customer_notes_enabled' => ['nullable', 'boolean'],
+            'multiple_destinations_enabled' => ['nullable', 'boolean'],
+            'show_low_wallet_alert' => ['nullable', 'boolean'],
+            'toll_mode' => ['nullable', Rule::in(self::TOLL_MODES)],
+
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'convenience_charge' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'convenience_customer_waiver' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'convenience_driver_cut' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'min_driver_balance' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+
+            'override_request_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
+            'override_hop_interval_sec' => ['nullable', 'integer', 'min:1', 'max:600'],
+            'override_hop_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
+            'override_max_hops' => ['nullable', 'integer', 'min:1', 'max:50'],
+
+            'is_active' => ['nullable', 'boolean'],
+
+            'android_image' => ['nullable', 'file', 'image', 'max:4096'],
+            'ios_image' => ['nullable', 'file', 'image', 'max:4096'],
+        ]);
+
+        // Image swaps — delete old file before writing the new one.
+        if ($request->hasFile('android_image')) {
+            if ($vehicleType->android_image_path && Storage::disk('public')->exists($vehicleType->android_image_path)) {
+                Storage::disk('public')->delete($vehicleType->android_image_path);
+            }
+            $vehicleType->android_image_path = $request->file('android_image')->store('vehicle_types/android', 'public');
+        }
+        if ($request->hasFile('ios_image')) {
+            if ($vehicleType->ios_image_path && Storage::disk('public')->exists($vehicleType->ios_image_path)) {
+                Storage::disk('public')->delete($vehicleType->ios_image_path);
+            }
+            $vehicleType->ios_image_path = $request->file('ios_image')->store('vehicle_types/ios', 'public');
+        }
+
+        foreach ($data as $field => $value) {
+            if (in_array($field, ['android_image', 'ios_image'], true)) {
+                continue;
+            }
+            $vehicleType->{$field} = $value;
+        }
+        $vehicleType->save();
+
+        return response()->json([
+            'vehicle_type' => $this->shape($vehicleType->fresh()->load('rideType:id,name')),
+            'message' => 'Vehicle type updated.',
+        ]);
+    }
+
+    public function destroy(City $city, CityVehicleType $vehicleType)
+    {
+        $this->guard($city, $vehicleType);
+
+        foreach (['android_image_path', 'ios_image_path'] as $col) {
+            if ($vehicleType->{$col} && Storage::disk('public')->exists($vehicleType->{$col})) {
+                Storage::disk('public')->delete($vehicleType->{$col});
+            }
+        }
+        $vehicleType->delete();
+
+        return response()->json(['message' => 'Vehicle type deleted.']);
+    }
+
+    private function guard(City $city, CityVehicleType $vehicleType): void
+    {
+        if ($vehicleType->city_id !== $city->id) {
+            abort(404);
+        }
+    }
+
+    private function shape(CityVehicleType $v): array
+    {
+        return [
+            'id' => $v->id,
+            'city_id' => $v->city_id,
+            'ride_type_id' => $v->ride_type_id,
+            'ride_type_name' => $v->rideType?->name,
+            'product_kind' => $v->product_kind,
+            'display_name' => $v->display_name,
+            'display_order' => (int) $v->display_order,
+            'android_image_path' => $v->android_image_path,
+            'android_image_url' => $v->android_image_url,
+            'ios_image_path' => $v->ios_image_path,
+            'ios_image_url' => $v->ios_image_url,
+            'max_people' => (int) $v->max_people,
+            'luggage_capacity' => (int) $v->luggage_capacity,
+
+            'destination_mandatory' => (bool) $v->destination_mandatory,
+            'fare_mandatory' => (bool) $v->fare_mandatory,
+            'reverse_bidding_enabled' => (bool) $v->reverse_bidding_enabled,
+            'waiting_charges_applicable' => (bool) $v->waiting_charges_applicable,
+            'customer_notes_enabled' => (bool) $v->customer_notes_enabled,
+            'multiple_destinations_enabled' => (bool) $v->multiple_destinations_enabled,
+            'show_low_wallet_alert' => (bool) $v->show_low_wallet_alert,
+            'toll_mode' => $v->toll_mode,
+
+            'commission_percent' => (float) $v->commission_percent,
+            'fixed_commission' => (float) $v->fixed_commission,
+            'convenience_charge' => (float) $v->convenience_charge,
+            'convenience_customer_waiver' => (float) $v->convenience_customer_waiver,
+            'convenience_driver_cut' => (float) $v->convenience_driver_cut,
+            'min_driver_balance' => (float) $v->min_driver_balance,
+
+            'override_request_radius_m' => $v->override_request_radius_m,
+            'override_hop_interval_sec' => $v->override_hop_interval_sec,
+            'override_hop_radius_m' => $v->override_hop_radius_m,
+            'override_max_hops' => $v->override_max_hops,
+
+            'is_active' => (bool) $v->is_active,
+            'updated_at' => optional($v->updated_at)->toIso8601String(),
+        ];
+    }
+}

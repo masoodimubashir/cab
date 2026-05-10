@@ -102,9 +102,28 @@ Empty group in our nav today.
 ### C2. Banners
 In-app banner CMS for the customer & driver apps (target city, dates, deep-link, image).
 
-### C3. Vehicle Fare Settings page
-Reference admin has a dedicated page; we expose the same data through Base Pricing CRUD,
-but a friendlier per-vehicle view would be useful.
+### C3. Vehicle Fare Settings — follow-ups
+The core page is **shipped** (Settings → Vehicle Fare Settings tab) — per-city catalogue with
+toggles, commercials, Android/iOS image upload, and per-vehicle dispatcher overrides that
+feed `DispatchHopJob`. What's still pending on top of it:
+
+- **Vehicle Sets** — group multiple vehicle rows under one customer-facing card (e.g.
+  Sedan-Local + Sedan-Outstation appear as a single "Sedan" tile in the customer app). Needs
+  a `city_vehicle_sets` + `city_vehicle_set_members` schema and a UI for picking members.
+- **Fare Packages** — per-vehicle Outstation packages (one-way / round-trip) and Rental
+  packages (4hr/40km, 8hr/80km, 12hr/120km) with their own per-km / included-km / extra-hour
+  logic. Today only Local pricing has full coverage via `pricing_rules`.
+- **Customer mobile picker** — the booking page must call `GET /vehicle-types` for the
+  selected city + product kind and render real tiles (image + ETA + estimate). Behaviour
+  toggles drive the form: `destination_mandatory`, `multiple_destinations_enabled`,
+  `customer_notes_enabled`, etc.
+- **Driver eligibility gate** — filter drivers in `DispatchHopJob` by
+  `min_driver_balance` and by whether the driver's vehicle class matches the row's
+  `ride_type_id`.
+- **Commercials in fare estimate** — `FareEstimationService` should layer the vehicle's
+  `convenience_charge` (split across `convenience_customer_waiver` + `convenience_driver_cut`)
+  on top of the base pricing-rule fare, and the settlement code should honour
+  `commission_percent` / `fixed_commission` from this row when present.
 
 ### C4. Managers / sub-admin Settings
 Multi-operator support: invite a manager who can only access certain cities or modules.
