@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\City;
 use App\Models\Driver;
 use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
 use App\Models\PricingRule;
 use App\Models\Trip;
+use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
@@ -16,7 +18,8 @@ class TripsController extends Controller
     public function store(
         Request $request,
         FareEstimationService $fareEstimationService,
-        TripStateMachineService $tripStateMachineService
+        TripStateMachineService $tripStateMachineService,
+        DynamicPricingService $dynamicPricingService,
     ) {
         $data = $request->validate([
             'city_id' => ['required', 'integer', 'exists:cities,id'],
@@ -33,6 +36,25 @@ class TripsController extends Controller
             'payment_method' => ['nullable', 'in:cash,upi,qr'],
         ]);
 
+        $city = City::query()->find((int) $data['city_id']);
+        if (!$city) {
+            return response()->json(['message' => 'City not found.'], 404);
+        }
+
+        // Reject pickups outside the city's geofence (when one is configured).
+        if (!empty($city->boundary_polygon)) {
+            $inside = $dynamicPricingService->pointInPolygon(
+                (float) $data['pickup_lat'],
+                (float) $data['pickup_lng'],
+                $city->boundary_polygon,
+            );
+            if (!$inside) {
+                return response()->json([
+                    'message' => 'Pickup location is outside the service area for ' . $city->name . '.',
+                ], 422);
+            }
+        }
+
         $pricingRule = PricingRule::query()
             ->where('city_id', $data['city_id'])
             ->where('ride_type_id', $data['ride_type_id'])
@@ -42,17 +64,33 @@ class TripsController extends Controller
             return response()->json(['message' => 'Pricing rule not found.'], 404);
         }
 
+        $dynamicRule = $dynamicPricingService->findApplicable(
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (int) $data['ride_type_id'],
+            null,
+        );
+
+        $dynamicFactors = $dynamicRule ? [
+            'customer_factor' => (float) $dynamicRule->customer_fare_factor,
+            'driver_factor' => (float) $dynamicRule->driver_fare_factor,
+            'rule_id' => $dynamicRule->id,
+            'fare_type' => $dynamicRule->fare_type,
+        ] : null;
+
         $estimate = $fareEstimationService->estimateFare(
             $pricingRule->toArray(),
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
             (float) $data['drop_lat'],
             (float) $data['drop_lng'],
+            $dynamicFactors,
         );
 
         $trip = Trip::query()->create([
             'customer_id' => $request->user()->id,
             'driver_id' => null,
+            'city_id' => (int) $data['city_id'],
             'ride_type_id' => (int) $data['ride_type_id'],
             'pricing_rule_id' => $pricingRule->id,
             'status' => 'REQUESTED',
@@ -93,6 +131,16 @@ class TripsController extends Controller
         }
         if ($driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['data' => [], 'reason' => 'Driver must be approved and online.']);
+        }
+
+        // A driver already mid-trip cannot accept a second one. Hide the available
+        // queue from busy drivers so they don't even see the trips.
+        $hasActiveTrip = Trip::query()
+            ->where('driver_id', $user->id)
+            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->exists();
+        if ($hasActiveTrip) {
+            return response()->json(['data' => [], 'reason' => 'Driver has an active trip in progress.']);
         }
 
         $accepted = $user->accepted_payment_methods ?? ['cash', 'upi', 'qr'];
@@ -165,6 +213,76 @@ class TripsController extends Controller
         ]);
 
         return response()->json(['trip' => $trip->fresh()]);
+    }
+
+    /**
+     * Mark a trip as a no-show (driver waited at pickup, customer never arrived; or
+     * mirror for the customer if the driver never arrived). Cancels the trip and
+     * computes a cancellation fee from the trip's PricingRule.
+     */
+    public function markNoShow(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)
+    {
+        $data = $request->validate([
+            'role' => ['required', 'in:customer,driver'],
+        ]);
+
+        $user = $request->user();
+        $role = $data['role'];
+
+        // 'customer' role here means "the customer was a no-show" (driver-side action).
+        if ($role === 'customer') {
+            if ($trip->driver_id !== $user->id) {
+                return response()->json(['message' => 'Forbidden.'], 403);
+            }
+            if ($trip->status !== 'ARRIVED_PICKUP') {
+                return response()->json(['message' => 'Driver must be at pickup to mark a customer no-show.'], 409);
+            }
+        } else {
+            // 'driver' role here means "the driver was a no-show" (customer-side action).
+            if ($trip->customer_id !== $user->id) {
+                return response()->json(['message' => 'Forbidden.'], 403);
+            }
+            if (!in_array($trip->status, ['ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
+                return response()->json(['message' => 'Customer can only flag driver no-show before pickup.'], 409);
+            }
+        }
+
+        // Threshold check — based on PricingRule.no_show_threshold_minutes against
+        // the relevant timestamp. Falls back to 5 minutes if the rule is missing the field.
+        $pricingRule = $trip->pricing_rule_id ? PricingRule::query()->find($trip->pricing_rule_id) : null;
+        $thresholdMinutes = (float) ($pricingRule?->no_show_threshold_minutes ?? 5);
+        $perMinuteFee = (float) ($pricingRule?->no_show_charges_per_minute ?? 0);
+
+        $waitStartedAt = $role === 'customer'
+            ? $trip->arrived_pickup_at
+            : ($trip->assigned_at ?? $trip->confirmed_at);
+
+        if ($waitStartedAt) {
+            $waitedMinutes = now()->diffInMinutes($waitStartedAt, true);
+            if ($waitedMinutes < $thresholdMinutes) {
+                return response()->json([
+                    'message' => "No-show threshold not yet met. Wait at least {$thresholdMinutes} minutes.",
+                    'waited_minutes' => $waitedMinutes,
+                    'threshold_minutes' => $thresholdMinutes,
+                ], 409);
+            }
+            $fee = round($perMinuteFee * $waitedMinutes, 2);
+        } else {
+            $fee = 0.0;
+        }
+
+        $trip->cancellation_fee_amount = $fee;
+        $trip->no_show_by = $role;
+        $trip->save();
+
+        $tripStateMachineService->transition($trip, 'CANCELLED', [
+            'cancelled_reason' => "no_show_by:{$role}",
+        ]);
+
+        return response()->json([
+            'trip' => $trip->fresh(),
+            'fee' => $fee,
+        ]);
     }
 
     public function confirm(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)

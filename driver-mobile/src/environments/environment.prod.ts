@@ -16,6 +16,7 @@ export const environment = {
   reverbPort: 443,
   reverbScheme: 'https' as 'http' | 'https',
   fcmVapidKey: '',
+  googleMapsApiKey: '',
 };
 
 

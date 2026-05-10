@@ -1,13 +1,17 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { AlertController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
-import { RealtimeService } from '../../core/realtime.service';
+import { MapsLoaderService } from '../../core/maps-loader.service';
+import { RealtimeService, TripCustomerLocationPayload } from '../../core/realtime.service';
 import {
   coordsFromTrip,
   googleMapsDirectionsUrl,
   openExternalUrl,
 } from '../../core/maps-navigation';
+
+declare const google: any;
 
 type AvailableTrip = {
   id: number;
@@ -55,12 +59,105 @@ export class RidesPage implements OnInit, OnDestroy {
     return this.negotiation?.['final_amount'] ?? null;
   }
 
+  sosBusy = false;
+
+  // Live map for the active trip — shows pickup pin + the customer's GPS as
+  // they walk to the curb, plus this driver's own position for context.
+  private map: any | null = null;
+  private pickupMarker: any | null = null;
+  private dropMarker: any | null = null;
+  private customerMarker: any | null = null;
+  private selfMarker: any | null = null;
+  customerPosition: { lat: number; lng: number } | null = null;
+  mapReady = false;
+  private selfWatchId: number | null = null;
+
   constructor(
     private api: ApiService,
     private auth: AuthService,
     private bgLocation: BackgroundLocationService,
-    private realtime: RealtimeService
+    private realtime: RealtimeService,
+    private alertCtrl: AlertController,
+    private toastCtrl: ToastController,
+    private mapsLoader: MapsLoaderService
   ) {}
+
+  canSOS(): boolean {
+    const status = this.lastTrip?.['status'] as string | undefined;
+    if (!status) return false;
+    return status !== 'COMPLETED' && status !== 'CANCELLED';
+  }
+
+  async triggerSOS(): Promise<void> {
+    if (this.sosBusy) return;
+    const id = (this.lastTrip?.['id'] as number | undefined) ?? this.tripId;
+    if (!id) return;
+
+    const a = await this.alertCtrl.create({
+      header: 'Send SOS?',
+      message: 'Admins will be alerted with your trip and current location.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Send SOS',
+          role: 'destructive',
+          handler: () => {
+            void this.doTriggerSOS(id);
+          },
+        },
+      ],
+    });
+    await a.present();
+  }
+
+  private async doTriggerSOS(tripId: number): Promise<void> {
+    this.sosBusy = true;
+    const payload: { lat?: number; lng?: number } = {};
+    try {
+      const pos = await this.getCurrentPosition();
+      if (pos) {
+        payload.lat = pos.lat;
+        payload.lng = pos.lng;
+      }
+    } catch {
+      /* best-effort */
+    }
+    this.api.post(`/trips/${tripId}/sos`, payload).subscribe({
+      next: async () => {
+        const t = await this.toastCtrl.create({
+          message: 'SOS sent. Help is on the way.',
+          duration: 3000,
+          color: 'success',
+        });
+        await t.present();
+      },
+      error: async (err: any) => {
+        const t = await this.toastCtrl.create({
+          message: err?.error?.message || 'Could not send SOS.',
+          duration: 3000,
+          color: 'danger',
+        });
+        await t.present();
+      },
+      complete: () => {
+        this.sosBusy = false;
+      },
+    });
+  }
+
+  private getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+    return new Promise((resolve) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10_000 }
+      );
+    });
+  }
 
   ngOnInit(): void {
     this.refreshAvailable();
@@ -76,6 +173,7 @@ export class RidesPage implements OnInit, OnDestroy {
       clearInterval(this.availablePoll);
       this.availablePoll = null;
     }
+    this.stopSelfPositionWatch();
   }
 
   refreshAvailable(): void {
@@ -125,6 +223,16 @@ export class RidesPage implements OnInit, OnDestroy {
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+          // If we just loaded an in-flight trip (e.g. after a reload mid-ride),
+          // bring up the live map and re-subscribe to streams.
+          const status = this.lastTrip?.['status'] as string | undefined;
+          if (status && status !== 'COMPLETED' && status !== 'CANCELLED') {
+            void this.initLiveMap();
+            this.startSelfPositionWatch();
+            if (this.lastTrip?.['driver_id']) {
+              this.startTripStreams(id);
+            }
+          }
         },
         error: (err) => {
           this.error = err?.error?.message || 'Could not load trip.';
@@ -226,12 +334,182 @@ export class RidesPage implements OnInit, OnDestroy {
     void this.bgLocation.start(tripId);
 
     if (this.unsubscribeStatus) this.unsubscribeStatus();
-    this.unsubscribeStatus = this.realtime.subscribeTripStatus(tripId, (payload) => {
-      if (this.lastTrip) this.lastTrip['status'] = payload.status;
-      if (payload.status === 'COMPLETED' || payload.status === 'CANCELLED') {
-        void this.bgLocation.stop();
+    this.unsubscribeStatus = this.realtime.subscribeTripStatus(
+      tripId,
+      (payload) => {
+        if (this.lastTrip) this.lastTrip['status'] = payload.status;
+        if (payload.status === 'COMPLETED' || payload.status === 'CANCELLED') {
+          void this.bgLocation.stop();
+          this.stopSelfPositionWatch();
+        }
+      },
+      (payload) => this.onCustomerLocation(payload)
+    );
+
+    void this.initLiveMap();
+    this.startSelfPositionWatch();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Live trip map
+  // ─────────────────────────────────────────────────────────────────
+
+  private async initLiveMap(): Promise<void> {
+    if (this.mapReady) {
+      this.refreshTripMarkers();
+      return;
+    }
+    try {
+      await this.mapsLoader.ensureLoaded();
+      const div = document.getElementById('driver-trip-map');
+      if (!div) return;
+      this.map = new google.maps.Map(div, {
+        center: { lat: 28.6139, lng: 77.209 },
+        zoom: 14,
+        disableDefaultUI: true,
+      });
+      this.mapReady = true;
+      this.refreshTripMarkers();
+    } catch {
+      // Maps may be unavailable (no key, offline) — page still works without it.
+    }
+  }
+
+  private refreshTripMarkers(): void {
+    if (!this.map || !this.lastTrip) return;
+    const pickup = coordsFromTrip(this.lastTrip, 'pickup_lat', 'pickup_lng');
+    const drop = coordsFromTrip(this.lastTrip, 'drop_lat', 'drop_lng');
+
+    if (pickup) {
+      if (!this.pickupMarker) {
+        this.pickupMarker = new google.maps.Marker({
+          position: pickup,
+          map: this.map,
+          label: 'P',
+          title: 'Pickup',
+        });
+      } else {
+        this.pickupMarker.setPosition(pickup);
       }
-    });
+    }
+    if (drop) {
+      if (!this.dropMarker) {
+        this.dropMarker = new google.maps.Marker({
+          position: drop,
+          map: this.map,
+          label: 'D',
+          title: 'Drop',
+        });
+      } else {
+        this.dropMarker.setPosition(drop);
+      }
+    }
+    this.fitMap();
+  }
+
+  private fitMap(): void {
+    if (!this.map) return;
+    const bounds = new google.maps.LatLngBounds();
+    let any = false;
+    for (const m of [this.pickupMarker, this.dropMarker, this.customerMarker, this.selfMarker]) {
+      if (m) {
+        bounds.extend(m.getPosition());
+        any = true;
+      }
+    }
+    if (any) this.map.fitBounds(bounds, 80);
+  }
+
+  private onCustomerLocation(p: TripCustomerLocationPayload): void {
+    const loc = p.location;
+    if (loc?.lat == null || loc?.lng == null) return;
+    const pos = { lat: Number(loc.lat), lng: Number(loc.lng) };
+    this.customerPosition = pos;
+    if (!this.map) return;
+    if (!this.customerMarker) {
+      this.customerMarker = new google.maps.Marker({
+        position: pos,
+        map: this.map,
+        title: 'Customer',
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#1e6cf0',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+        zIndex: 3,
+      });
+      this.fitMap();
+    } else {
+      this.customerMarker.setPosition(pos);
+    }
+  }
+
+  private startSelfPositionWatch(): void {
+    if (this.selfWatchId !== null) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    this.selfWatchId = navigator.geolocation.watchPosition(
+      (pos) => this.onSelfPosition(pos),
+      () => this.stopSelfPositionWatch(),
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 }
+    );
+  }
+
+  private stopSelfPositionWatch(): void {
+    if (this.selfWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(this.selfWatchId);
+    }
+    this.selfWatchId = null;
+  }
+
+  private onSelfPosition(pos: GeolocationPosition): void {
+    if (!this.map) return;
+    const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    if (!this.selfMarker) {
+      this.selfMarker = new google.maps.Marker({
+        position: p,
+        map: this.map,
+        title: 'You',
+        icon: {
+          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: '#1f8b4c',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+        zIndex: 2,
+      });
+      this.fitMap();
+    } else {
+      this.selfMarker.setPosition(p);
+    }
+  }
+
+  markCustomerNoShow(): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id) return;
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    this.api
+      .post<{ trip?: Record<string, unknown>; fee?: number }>(`/trips/${id}/no-show`, { role: 'customer' })
+      .subscribe({
+        next: (res) => {
+          this.lastTrip = res.trip || null;
+          const fee = res.fee ?? 0;
+          this.message = `Trip cancelled (no-show). Cancellation fee ₹${fee}`;
+          void this.bgLocation.stop();
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not mark no-show';
+        },
+        complete: () => {
+          this.busy = false;
+        },
+      });
   }
 
   reject(): void {

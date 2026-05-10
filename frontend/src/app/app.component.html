@@ -1,36 +1,101 @@
-<nav
-  *ngIf="showNav"
-  class="app-header"
->
-  <div class="app-header__inner">
-    <div class="app-header__brand">
-      <span class="app-header__brand-mark" aria-hidden="true">DC</span>
-      <span class="app-header__brand-text">DreamCabs Admin</span>
+<div class="app-shell" *ngIf="showNav; else bare">
+  <aside class="sidebar" aria-label="Admin navigation">
+    <div class="sidebar__brand">
+      <span class="sidebar__brand-mark" aria-hidden="true">DC</span>
+      <span class="sidebar__brand-text">DreamCabs Admin</span>
     </div>
 
-    <div class="app-header__links" role="navigation" aria-label="Admin navigation">
-      <a
-        routerLink="/dashboard"
-        routerLinkActive="active"
-        class="nav-link"
-      >
-        Dashboard
+    <nav class="sidebar__nav">
+      <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-home"></i> Dashboard
       </a>
-      <a routerLink="/users" routerLinkActive="active" class="nav-link">Users</a>
-      <a routerLink="/drivers" routerLinkActive="active" class="nav-link">Drivers</a>
-      <a routerLink="/pricing" routerLinkActive="active" class="nav-link">Pricing</a>
-      <a routerLink="/trips" routerLinkActive="active" class="nav-link">Trips</a>
-      <a routerLink="/safety" routerLinkActive="active" class="nav-link">Safety</a>
-      <a routerLink="/reports" routerLinkActive="active" class="nav-link">Reports</a>
-
-      <button type="button" class="logout-btn" (click)="logout()" aria-label="Logout">
-        Logout
+      <a routerLink="/maps" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-map"></i> Maps
+      </a>
+      <a routerLink="/users" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-users"></i> Users
+      </a>
+      <button
+        type="button"
+        class="nav-link nav-group__toggle"
+        [class.open]="driversOpen"
+        (click)="driversOpen = !driversOpen"
+        [attr.aria-expanded]="driversOpen"
+      >
+        <span><i class="pi pi-id-card"></i> Drivers</span>
+        <i class="pi" [class.pi-chevron-down]="driversOpen" [class.pi-chevron-right]="!driversOpen"></i>
       </button>
-    </div>
-  </div>
-</nav>
+      <div class="nav-group__items" *ngIf="driversOpen">
+        <a routerLink="/drivers/active" routerLinkActive="active" class="nav-sublink">Active Drivers</a>
+        <a routerLink="/drivers/deactivated" routerLinkActive="active" class="nav-sublink">Deactivated Drivers</a>
+        <a routerLink="/drivers/leaderboard" routerLinkActive="active" class="nav-sublink">Leaderboard</a>
+        <a routerLink="/drivers/performance" routerLinkActive="active" class="nav-sublink">Driver Performance</a>
+        <a routerLink="/drivers/approvals" routerLinkActive="active" class="nav-sublink">Approvals & Documents</a>
+      </div>
+      <a routerLink="/pricing" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-tag"></i> Base Pricing
+      </a>
+      <a routerLink="/dynamic-pricing" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-bolt"></i> Dynamic Pricing
+      </a>
+      <a routerLink="/contact-drivers" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-envelope"></i> Contact Drivers
+      </a>
 
-<main style="padding: 16px;">
-  <router-outlet />
-</main>
+      <button
+        type="button"
+        class="nav-link nav-group__toggle"
+        [class.open]="ridesOpen"
+        (click)="ridesOpen = !ridesOpen"
+        [attr.aria-expanded]="ridesOpen"
+      >
+        <span><i class="pi pi-car"></i> Rides</span>
+        <i class="pi" [class.pi-chevron-down]="ridesOpen" [class.pi-chevron-right]="!ridesOpen"></i>
+      </button>
+      <div class="nav-group__items" *ngIf="ridesOpen">
+        <a routerLink="/rides/all" routerLinkActive="active" class="nav-sublink">All Rides</a>
+        <a routerLink="/rides/map" routerLinkActive="active" class="nav-sublink">Map View</a>
+      </div>
 
+      <a routerLink="/rides/manual-dispatch" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-send"></i> Manual Dispatch
+      </a>
+
+      <button
+        type="button"
+        class="nav-link nav-group__toggle"
+        [class.open]="settingsOpen"
+        (click)="settingsOpen = !settingsOpen"
+        [attr.aria-expanded]="settingsOpen"
+      >
+        <span><i class="pi pi-cog"></i> Settings</span>
+        <i class="pi" [class.pi-chevron-down]="settingsOpen" [class.pi-chevron-right]="!settingsOpen"></i>
+      </button>
+      <div class="nav-group__items" *ngIf="settingsOpen">
+        <a routerLink="/settings/geofencing" routerLinkActive="active" class="nav-sublink">Geofencing</a>
+        <a routerLink="/settings/fleets" routerLinkActive="active" class="nav-sublink">Fleets</a>
+      </div>
+
+      <a routerLink="/safety" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-shield"></i> Safety
+      </a>
+      <a routerLink="/reports" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-chart-line"></i> Reports
+      </a>
+    </nav>
+
+    <button type="button" class="logout-btn" (click)="logout()" aria-label="Logout">
+      <i class="pi pi-sign-out"></i> Logout
+    </button>
+  </aside>
+
+  <main class="app-main">
+    <router-outlet />
+  </main>
+</div>
+
+<ng-template #bare>
+  <main style="padding: 16px;">
+    <router-outlet />
+  </main>
+</ng-template>

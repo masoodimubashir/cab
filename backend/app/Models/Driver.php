@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'approval_status',
     'approved_at',
     'rejected_at',
+    'deactivated_at',
+    'deactivated_reason',
     'vehicle_type',
     'vehicle_brand',
     'vehicle_model',
@@ -31,6 +33,7 @@ class Driver extends Model
     protected $casts = [
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'deactivated_at' => 'datetime',
         'last_online_at' => 'datetime',
         'last_offline_at' => 'datetime',
         'rating_avg' => 'float',

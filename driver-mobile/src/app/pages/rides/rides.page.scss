@@ -17,3 +17,12 @@ ion-card {
 .nav-actions ion-button {
   margin-inline: 0;
 }
+
+.trip-map {
+  width: 100%;
+  height: 240px;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+  background: #eef0f2;
+}
