@@ -9,7 +9,13 @@ use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FareNegotiationController;
 use App\Http\Controllers\DriversController;
+use App\Http\Controllers\Admin\AdminCitiesController;
+use App\Http\Controllers\Admin\AdminContactDriversController;
+use App\Http\Controllers\Admin\AdminDispatchController;
 use App\Http\Controllers\Admin\AdminDriversController;
+use App\Http\Controllers\Admin\AdminFleetsController;
+use App\Http\Controllers\Admin\AdminManualDispatchController;
+use App\Http\Controllers\Admin\AdminDynamicPricingController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminPricingController;
 use App\Http\Controllers\Admin\AdminTripsController;
@@ -64,12 +70,16 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/trips/available', [TripsController::class, 'available']);
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
     Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
+    Route::post('/trips/{trip}/no-show', [TripsController::class, 'markNoShow']);
 });
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/trips/{trip}/negotiation', [FareNegotiationController::class, 'show']);
     Route::get('/trips/{trip}/messages', [TripMessagesController::class, 'index']);
     Route::get('/drivers/me', [DriversController::class, 'me']);
+    // Anonymized nearby-drivers list for the customer "searching" map.
+    // Returns lat/lng + opaque driver id only — no PII.
+    Route::get('/drivers/nearby', [DriversController::class, 'nearby']);
 });
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
@@ -91,6 +101,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/drivers/documents', [DriversController::class, 'uploadDocument']);
     Route::post('/drivers/go-online', [DriversController::class, 'goOnline']);
     Route::post('/drivers/go-offline', [DriversController::class, 'goOffline']);
+    Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -101,19 +112,44 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/drivers', [AdminDriversController::class, 'index']);
+    Route::get('/admin/drivers/export', [AdminDriversController::class, 'exportCsv']);
+    Route::get('/admin/drivers/leaderboard', [AdminDriversController::class, 'leaderboard']);
+    Route::get('/admin/drivers/performance', [AdminDriversController::class, 'performance']);
     Route::patch('/admin/drivers/{driver}/approval', [AdminDriversController::class, 'setApproval']);
+    Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation']);
     Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus']);
+    Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience']);
+    Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv']);
+    Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send']);
+    Route::get('/admin/dispatch/snapshot', [AdminDispatchController::class, 'snapshot']);
     Route::get('/admin/safety-events', [SafetyController::class, 'adminIndex']);
     Route::get('/admin/dashboard', [AdminDashboardController::class, 'index']);
     Route::get('/admin/reports', [AdminReportsController::class, 'index']);
     Route::get('/admin/users', [AdminUsersController::class, 'index']);
     Route::patch('/admin/users/{user}/role', [AdminUsersController::class, 'updateRole']);
-    Route::get('/admin/cities', [AdminPricingController::class, 'cities']);
+    Route::get('/admin/cities', [AdminCitiesController::class, 'index']);
+    Route::post('/admin/cities', [AdminCitiesController::class, 'store']);
+    Route::get('/admin/cities/{city}', [AdminCitiesController::class, 'show']);
+    Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update']);
+    Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon']);
+    Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy']);
+    Route::get('/admin/fleets', [AdminFleetsController::class, 'index']);
+    Route::post('/admin/fleets', [AdminFleetsController::class, 'store']);
+    Route::patch('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);
+    Route::delete('/admin/fleets/{fleet}', [AdminFleetsController::class, 'destroy']);
+    Route::post('/admin/manual-dispatch/lookup-user', [AdminManualDispatchController::class, 'lookupUser']);
+    Route::post('/admin/manual-dispatch/fare-estimate', [AdminManualDispatchController::class, 'fareEstimate']);
+    Route::post('/admin/manual-dispatch/book', [AdminManualDispatchController::class, 'book']);
     Route::get('/admin/ride-types', [AdminPricingController::class, 'rideTypes']);
     Route::get('/admin/pricing-rules', [AdminPricingController::class, 'index']);
     Route::post('/admin/pricing-rules', [AdminPricingController::class, 'store']);
     Route::patch('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'update']);
     Route::delete('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'destroy']);
+    Route::get('/admin/dynamic-pricing-rules', [AdminDynamicPricingController::class, 'index']);
+    Route::post('/admin/dynamic-pricing-rules', [AdminDynamicPricingController::class, 'store']);
+    Route::get('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'show']);
+    Route::patch('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'update']);
+    Route::delete('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'destroy']);
     Route::get('/admin/trips', [AdminTripsController::class, 'index']);
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation']);
     Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate']);
@@ -121,6 +157,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/trips/{trip}/location', [TripTrackingController::class, 'updateLocation'])->middleware('throttle:location');
+});
+
+// Customer-side location stream — feeds the driver app's live customer marker.
+Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
+    Route::post('/trips/{trip}/customer-location', [TripTrackingController::class, 'updateCustomerLocation'])->middleware('throttle:location');
 });
 
 // SOS should be available to both customers and drivers.
@@ -133,9 +174,9 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 Route::get('/trip-share/{token}', [TripTrackingController::class, 'showShare']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
-    Route::post('/trips/{trip}/pay/upi', [PaymentsController::class, 'payUpi']);
-    Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash']);
-    Route::post('/trips/{trip}/pay/qr', [PaymentsController::class, 'payQr']);
+    Route::post('/trips/{trip}/pay/upi', [PaymentsController::class, 'payUpi'])->middleware('idempotent');
+    Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash'])->middleware('idempotent');
+    Route::post('/trips/{trip}/pay/qr', [PaymentsController::class, 'payQr'])->middleware('idempotent');
     Route::get('/trips/{trip}/invoice', [InvoicesController::class, 'show']);
     Route::post('/trips/{trip}/invoice', [InvoicesController::class, 'generate']);
     Route::get('/trips/{trip}/invoice/download', [InvoicesController::class, 'download']);

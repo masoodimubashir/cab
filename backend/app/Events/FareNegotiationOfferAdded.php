@@ -3,7 +3,6 @@
 namespace App\Events;
 
 use App\Models\FareNegotiationOffer;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -22,8 +21,7 @@ class FareNegotiationOfferAdded implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        // View-only and authenticated clients can listen to this channel.
-        return [new Channel('trip.' . $this->tripId . '.negotiation')];
+        return [new PrivateChannel('trip.' . $this->tripId . '.negotiation')];
     }
 
     public function broadcastWith(): array

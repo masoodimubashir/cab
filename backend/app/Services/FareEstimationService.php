@@ -80,8 +80,17 @@ class FareEstimationService
         return $earthRadiusKm * $c;
     }
 
-    public function estimateFare(array $pricingRule, float $pickupLat, float $pickupLng, float $dropLat, float $dropLng): array
-    {
+    /**
+     * @param  array{customer_factor: float, driver_factor: float, rule_id: ?int, fare_type: ?string}|null  $dynamicFactors
+     */
+    public function estimateFare(
+        array $pricingRule,
+        float $pickupLat,
+        float $pickupLng,
+        float $dropLat,
+        float $dropLng,
+        ?array $dynamicFactors = null,
+    ): array {
         $distanceKm = $this->distanceKm($pickupLat, $pickupLng, $dropLat, $dropLng);
 
         // Simple time heuristic (later replace with routing/traffic).
@@ -117,6 +126,10 @@ class FareEstimationService
         $subtotalBeforeSurge = $baseFare + $distanceComponent + $timeComponent;
         $subtotal = $subtotalBeforeSurge * $surgeMultiplier;
 
+        $customerFactor = (float) ($dynamicFactors['customer_factor'] ?? 1.0);
+        $driverFactor = (float) ($dynamicFactors['driver_factor'] ?? 1.0);
+        $subtotal = $subtotal * $customerFactor;
+
         if ($minFare !== null && $subtotal < $minFare) {
             $subtotal = $minFare;
         }
@@ -132,6 +145,10 @@ class FareEstimationService
                 'distance_component' => round($distanceComponent, 2),
                 'time_component' => round($timeComponent, 2),
                 'surge_multiplier' => $surgeMultiplier,
+                'dynamic_customer_factor' => round($customerFactor, 3),
+                'dynamic_driver_factor' => round($driverFactor, 3),
+                'dynamic_rule_id' => $dynamicFactors['rule_id'] ?? null,
+                'dynamic_fare_type' => $dynamicFactors['fare_type'] ?? null,
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),

@@ -19,7 +19,7 @@ export const environment = {
    * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
    * Leave reverbAppKey blank to fall back to polling-only.
    */
-  reverbAppKey: 'local',
+  reverbAppKey: '4jsb8ggrbvcriyaskojh',
   reverbHost: 'localhost',
   reverbPort: 8080,
   reverbScheme: 'http' as 'http' | 'https',

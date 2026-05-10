@@ -2,8 +2,8 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -21,7 +21,7 @@ class TripStatusUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         // Reuse the live tracking channel for status updates as well.
-        return [new Channel('trip.' . $this->tripId . '.tracking')];
+        return [new PrivateChannel('trip.' . $this->tripId . '.tracking')];
     }
 
     public function broadcastWith(): array

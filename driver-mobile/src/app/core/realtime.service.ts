@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import Pusher from 'pusher-js';
 import { environment } from '../../environments/environment';
+import { AuthService } from './auth.service';
 
 export type NegotiationOfferPayload = {
   type: 'offer_added';
@@ -26,13 +27,31 @@ export type TripStatusPayload = {
   status: string;
 };
 
+export type TripCustomerLocationPayload = {
+  type: 'customer_location_updated';
+  location: {
+    trip_id: number;
+    customer_id: number;
+    lat: number;
+    lng: number;
+    accuracy_m?: number | null;
+    recorded_at?: string;
+  };
+};
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private pusher: Pusher | null = null;
 
+  constructor(private auth: AuthService) {}
+
   private ensure(): Pusher | null {
     if (!environment.reverbAppKey) return null;
     if (this.pusher) return this.pusher;
+
+    const authBase = environment.apiUrl.replace(/\/api\/?$/, '');
+    const authEndpoint = `${authBase}/broadcasting/auth`;
+    const authService = this.auth;
 
     this.pusher = new Pusher(environment.reverbAppKey, {
       wsHost: environment.reverbHost,
@@ -42,6 +61,26 @@ export class RealtimeService {
       enabledTransports: ['ws', 'wss'],
       cluster: '',
       disableStats: true,
+      authorizer: (channel: any) => ({
+        authorize: (socketId: string, callback: (err: Error | null, data: any) => void) => {
+          const token = authService.getToken();
+          fetch(authEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ socket_id: socketId, channel_name: channel.name }),
+          })
+            .then(async (res) => {
+              if (!res.ok) throw new Error(`auth ${res.status}`);
+              return res.json();
+            })
+            .then((data) => callback(null, data))
+            .catch((err) => callback(err, null));
+        },
+      }),
     } as any);
     return this.pusher;
   }
@@ -58,7 +97,7 @@ export class RealtimeService {
     const pusher = this.ensure();
     if (!pusher) return () => {};
 
-    const channelName = `trip.${tripId}.negotiation`;
+    const channelName = `private-trip.${tripId}.negotiation`;
     const channel = pusher.subscribe(channelName);
 
     const offerHandler = (data: NegotiationOfferPayload) => onOffer(data);
@@ -75,23 +114,30 @@ export class RealtimeService {
   }
 
   /**
-   * Subscribe to trip status updates (driver sees customer-side cancels in real time).
+   * Subscribe to trip status updates (driver sees customer-side cancels in real time)
+   * AND, optionally, the customer's live GPS pings — used by the driver-side map
+   * to render a moving customer marker as the rider approaches the pickup pin.
    */
   subscribeTripStatus(
     tripId: number,
-    onStatus: (p: TripStatusPayload) => void
+    onStatus: (p: TripStatusPayload) => void,
+    onCustomerLocation?: (p: TripCustomerLocationPayload) => void
   ): () => void {
     const pusher = this.ensure();
     if (!pusher) return () => {};
 
-    const channelName = `trip.${tripId}.tracking`;
+    const channelName = `private-trip.${tripId}.tracking`;
     const channel = pusher.subscribe(channelName);
 
-    const handler = (data: TripStatusPayload) => onStatus(data);
-    channel.bind('TripStatusUpdated', handler);
+    const statusHandler = (data: TripStatusPayload) => onStatus(data);
+    const custLocHandler = (data: TripCustomerLocationPayload) => onCustomerLocation?.(data);
+
+    channel.bind('TripStatusUpdated', statusHandler);
+    if (onCustomerLocation) channel.bind('TripCustomerLocationUpdated', custLocHandler);
 
     return () => {
-      channel.unbind('TripStatusUpdated', handler);
+      channel.unbind('TripStatusUpdated', statusHandler);
+      if (onCustomerLocation) channel.unbind('TripCustomerLocationUpdated', custLocHandler);
       pusher.unsubscribe(channelName);
     };
   }

@@ -10,6 +10,10 @@ import { Router, RouterLink, RouterOutlet } from '@angular/router';
   styleUrl: './app.component.scss'
 })
 export class AppComponent {
+  ridesOpen = true;
+  driversOpen = true;
+  settingsOpen = true;
+
   constructor(public router: Router) {}
 
   logout(): void {

@@ -74,6 +74,11 @@ export class CustomerBookPage implements OnDestroy {
   mapsReady = false;
   mapsError: string | null = null;
 
+  // Nearby driver markers (Uber-style icons sliding around during search).
+  // Keyed by driver user id so we can animate setPosition between polls.
+  private nearbyDriverMarkers = new Map<number, any>();
+  private nearbyPollHandle: any = null;
+
   constructor(
     private api: ApiService,
     private auth: AuthService,
@@ -105,6 +110,7 @@ export class CustomerBookPage implements OnDestroy {
 
   ngOnDestroy(): void {
     this.cleanupSearch();
+    this.stopNearbyDriversPoll();
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -163,9 +169,93 @@ export class CustomerBookPage implements OnDestroy {
       const address = (await this.places.reverseGeocode(start.lat, start.lng)) ?? 'Current location';
       this.pickup = { lat: start.lat, lng: start.lng, address };
       this.mapsReady = true;
+
+      // Begin showing nearby drivers around the pickup as soon as the map exists.
+      this.startNearbyDriversPoll();
     } catch (e) {
       this.mapsError = (e as Error)?.message || 'Could not load map.';
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Nearby drivers (Uber-style icons on the map)
+  // ─────────────────────────────────────────────────────────────────
+
+  private startNearbyDriversPoll(): void {
+    if (this.nearbyPollHandle) return;
+    void this.refreshNearbyDrivers();
+    this.nearbyPollHandle = setInterval(() => this.refreshNearbyDrivers(), 5000);
+  }
+
+  private stopNearbyDriversPoll(): void {
+    if (this.nearbyPollHandle) {
+      clearInterval(this.nearbyPollHandle);
+      this.nearbyPollHandle = null;
+    }
+    this.clearNearbyDriverMarkers();
+  }
+
+  private async refreshNearbyDrivers(): Promise<void> {
+    if (!this.map || !this.pickup) return;
+    try {
+      const lat = this.pickup.lat;
+      const lng = this.pickup.lng;
+      const res: any = await this.api
+        .get(`/drivers/nearby?lat=${lat}&lng=${lng}&radius_km=8&limit=30`)
+        .toPromise();
+      const drivers: { id: number; lat: number; lng: number; bearing_deg?: number | null }[] =
+        res?.data ?? [];
+      this.renderNearbyDrivers(drivers);
+    } catch {
+      // Silent — endpoint may not be available in dev, or the customer might
+      // not be authenticated yet. We just leave existing markers in place.
+    }
+  }
+
+  private renderNearbyDrivers(
+    drivers: { id: number; lat: number; lng: number; bearing_deg?: number | null }[]
+  ): void {
+    if (!this.map) return;
+    const seen = new Set<number>();
+    for (const d of drivers) {
+      seen.add(d.id);
+      const pos = { lat: d.lat, lng: d.lng };
+      const existing = this.nearbyDriverMarkers.get(d.id);
+      if (existing) {
+        existing.setPosition(pos);
+      } else {
+        const marker = new google.maps.Marker({
+          position: pos,
+          map: this.map,
+          title: 'Driver nearby',
+          icon: {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            scale: 5,
+            fillColor: '#000',
+            fillOpacity: 0.9,
+            strokeColor: '#fff',
+            strokeWeight: 1.5,
+            rotation: d.bearing_deg ?? 0,
+          },
+          zIndex: 1,
+        });
+        this.nearbyDriverMarkers.set(d.id, marker);
+      }
+    }
+    // Remove markers for drivers that disappeared from the radius.
+    for (const [id, marker] of this.nearbyDriverMarkers) {
+      if (!seen.has(id)) {
+        marker.setMap(null);
+        this.nearbyDriverMarkers.delete(id);
+      }
+    }
+  }
+
+  private clearNearbyDriverMarkers(): void {
+    for (const marker of this.nearbyDriverMarkers.values()) {
+      marker.setMap(null);
+    }
+    this.nearbyDriverMarkers.clear();
   }
 
   private async updatePickupTo(lat: number, lng: number): Promise<void> {
@@ -464,18 +554,30 @@ export class CustomerBookPage implements OnDestroy {
         {
           text: 'Confirm',
           role: 'destructive',
-          handler: () => this.lockOffer(offer.amount),
+          handler: () => this.lockOffer(offer),
         },
       ],
     });
     await ok.present();
   }
 
-  private async lockOffer(amount: number): Promise<void> {
+  private async lockOffer(offer: DriverOffer): Promise<void> {
     if (!this.tripId) return;
+    if (offer.id == null) {
+      const t = await this.toastCtrl.create({
+        message: 'Offer is missing an id — refresh and try again.',
+        duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+      return;
+    }
     try {
       await this.api
-        .post(`/trips/${this.tripId}/negotiation/customer-confirm`, { final_fare: amount })
+        .post(`/trips/${this.tripId}/negotiation/customer-confirm`, {
+          final_fare: offer.amount,
+          accepted_offer_id: offer.id,
+        })
         .toPromise();
       this.onLocked();
     } catch (e: any) {

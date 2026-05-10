@@ -22,6 +22,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Broadcasting routes are wired in bootstrap/app.php via ->withBroadcasting()
+        // so the channels file loads with the right middleware. Don't call
+        // Broadcast::routes() again here — once the route is registered it can't
+        // be redefined, and a duplicate call silently no-ops.
+
         RateLimiter::for('otp', function (Request $request) {
             $key = 'otp:' . ($request->ip() ?? 'unknown');
             return [Limit::perMinute(5)->by($key)];
