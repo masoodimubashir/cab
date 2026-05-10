@@ -32,6 +32,7 @@ use App\Http\Controllers\RatingsController;
 use App\Http\Controllers\SafetyController;
 use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
+use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -145,6 +146,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
     Route::get('/admin/cities/{city}/dispatcher-settings', [AdminDispatcherSettingsController::class, 'index']);
     Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update']);
+    Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index']);
+    Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store']);
+    Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show']);
+    Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
+    Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
+    Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy']);
     Route::get('/admin/fleets', [AdminFleetsController::class, 'index']);
     Route::post('/admin/fleets', [AdminFleetsController::class, 'store']);
     Route::patch('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);

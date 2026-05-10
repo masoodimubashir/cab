@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\CityVehicleType;
 use App\Models\DispatcherSetting;
 use App\Models\Driver;
 use App\Models\Trip;
@@ -52,14 +53,31 @@ class DispatchHopJob implements ShouldQueue
             return; // operator must dispatch manually for this product/city
         }
 
-        if ($this->hop > $settings->max_hops) {
+        // Per-vehicle dispatcher overrides (city × ride_type × product_kind).
+        // We resolve via the trip's vehicle_type_id when set, otherwise fall
+        // back to a tuple lookup so legacy trips still benefit from any
+        // matching catalogue row.
+        $vehicleType = $trip->vehicle_type_id
+            ? CityVehicleType::query()->find($trip->vehicle_type_id)
+            : ($trip->city_id && $trip->ride_type_id
+                ? CityVehicleType::query()
+                    ->where('city_id', $trip->city_id)
+                    ->where('ride_type_id', $trip->ride_type_id)
+                    ->where('product_kind', $trip->product_kind ?? 'local')
+                    ->first()
+                : null);
+
+        $hopIntervalSec = (int) ($vehicleType?->override_hop_interval_sec ?? $settings->dispatcher_hop_interval_sec);
+        $hopRadiusM = (int) ($vehicleType?->override_hop_radius_m ?? $settings->dispatcher_hop_radius_m);
+        $requestRadiusM = (int) ($vehicleType?->override_request_radius_m ?? $settings->request_radius_m);
+        $maxHops = (int) ($vehicleType?->override_max_hops ?? $settings->max_hops);
+
+        if ($this->hop > $maxHops) {
             return;
         }
 
-        $startRadius = $settings->request_radius_m > 0
-            ? (int) $settings->request_radius_m
-            : (int) $settings->dispatcher_hop_radius_m;
-        $radiusMeters = $startRadius + ($this->hop - 1) * (int) $settings->dispatcher_hop_radius_m;
+        $startRadius = $requestRadiusM > 0 ? $requestRadiusM : $hopRadiusM;
+        $radiusMeters = $startRadius + ($this->hop - 1) * $hopRadiusM;
         $radiusKm = max($radiusMeters / 1000.0, 0.5);
 
         $busyDriverIds = Trip::query()
@@ -74,7 +92,7 @@ class DispatchHopJob implements ShouldQueue
             ->pluck('user_id');
 
         if ($eligible->isEmpty()) {
-            $this->requeue($settings);
+            $this->requeue($maxHops, $hopIntervalSec);
             return;
         }
 
@@ -96,16 +114,16 @@ class DispatchHopJob implements ShouldQueue
             );
         }
 
-        $this->requeue($settings);
+        $this->requeue($maxHops, $hopIntervalSec);
     }
 
-    private function requeue(DispatcherSetting $settings): void
+    private function requeue(int $maxHops, int $hopIntervalSec): void
     {
-        if ($this->hop >= $settings->max_hops) {
+        if ($this->hop >= $maxHops) {
             return;
         }
         self::dispatch($this->tripId, $this->amount, $this->hop + 1)
-            ->delay(now()->addSeconds((int) $settings->dispatcher_hop_interval_sec));
+            ->delay(now()->addSeconds($hopIntervalSec));
     }
 
     /**

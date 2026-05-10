@@ -138,13 +138,14 @@ The full operator back office.
 - **General Settings** — per-city ride product catalogue (Local / Rental / Out Station with banner, description, info copy, on/off toggle).
 - **City Settings** — per-city operational config: feature toggles (chat, region fare, QR booking, OTP), night-time window, theme color & branding (logo / splash / background), OTP messages (Android + iOS), allowed driver payment modes, support contacts, operator metadata.
 - **Dispatcher Settings** — per-city × per-product **engine knobs**: hop interval & radius, max hops, scheduled-ride behaviour, booking-window guardrails (lead time, days limit, rides limit, cancel window).
+- **Vehicle Fare Settings** — per-city catalogue of every bookable vehicle product (city × ride class × Local/Rental/Outstation). Each row has its own behaviour toggles (destination mandatory, fare mandatory, reverse bidding, waiting charges, multiple destinations, customer notes, low-wallet alert, toll mode), commercials (commission %, fixed commission, convenience charges + waiver + driver cut, min driver balance), Android + iOS image upload, capacity (max people, luggage), and **per-vehicle dispatcher overrides** (request radius, hop interval, hop radius, max hops) that win over the city-level defaults when set. Enabled/Disabled tabs, search, in-place edit dialog with sectioned tabs (Identity & Capacity / Behaviour / Commercials / Dispatcher Overrides). The dispatch hop loop reads the merged config so individual vehicle products can be tuned tighter (e.g. bikes ping a smaller radius than sedans).
 
 ### Analytics
 - **Real Time** — gradient KPI cards, 30-second auto-refresh, today/yesterday toggle, multi-city/multi-vehicle filters.
 - **Graphs** — Total Rides line, Demand Quality stacked bar, Revenue line, Active Drivers bar.
 - **Reports** — searchable list of 9 reports (rides, cancellations, missed, incomplete, driver invoice daily/weekly/monthly, users with ride count) with date-range run + CSV export.
 
-> *Devs:* Angular 17 standalone + PrimeNG. New controllers under `Admin/`: `AdminCitiesController`, `AdminFleetsController`, `AdminManualDispatchController`, `AdminAnalyticsController`, `AdminCityRideProductsController`, `AdminCitySettingsController`, `AdminDispatcherSettingsController`. Combined settings page at `frontend/src/app/admin/settings/settings.component.ts`.
+> *Devs:* Angular 17 standalone + PrimeNG. New controllers under `Admin/`: `AdminCitiesController`, `AdminFleetsController`, `AdminManualDispatchController`, `AdminAnalyticsController`, `AdminCityRideProductsController`, `AdminCitySettingsController`, `AdminDispatcherSettingsController`, `AdminVehicleTypesController`. Combined settings page at `frontend/src/app/admin/settings/settings.component.ts`. Vehicle Fare Settings stored in `city_vehicle_types` (unique on `(city_id, ride_type_id, product_kind)`), model is `App\Models\CityVehicleType` with `effectiveDispatcherConfig()` helper that merges per-vehicle overrides on top of `DispatcherSetting`. `DispatchHopJob` calls into this merged config so vehicle-level tuning actually changes runtime behaviour. Trips carry an optional `vehicle_type_id` column for forward-compatible direct linkage.
 
 ## 9. Trip lifecycle (state machine)
 
@@ -239,8 +240,8 @@ The Dispatcher Settings drive these checks on every booking:
 users, user_roles, personal_access_tokens, device_tokens,
 cities, ride_types, fleets,
 pricing_rules, dynamic_pricing_rules,
-city_ride_products, city_settings, dispatcher_settings,
-trips (with product_kind, scheduled_at, is_round_trip, stops, fleet_id, dispatched_by_admin_id, …),
+city_ride_products, city_settings, dispatcher_settings, city_vehicle_types,
+trips (with product_kind, vehicle_type_id, scheduled_at, is_round_trip, stops, fleet_id, dispatched_by_admin_id, …),
 fare_negotiations, fare_negotiation_offers,
 driver_locations, customer_locations,
 driver_documents, driver_payment_methods,

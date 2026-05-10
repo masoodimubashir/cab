@@ -8,6 +8,7 @@ import { CityContextService, CityOption } from '../../core/city-context.service'
 import { GeneralSettingsComponent } from './general-settings.component';
 import { CitySettingsComponent } from './city-settings.component';
 import { DispatcherSettingsComponent } from './dispatcher-settings.component';
+import { VehicleTypesComponent } from './vehicle-types.component';
 
 @Component({
   selector: 'app-settings',
@@ -20,6 +21,7 @@ import { DispatcherSettingsComponent } from './dispatcher-settings.component';
     GeneralSettingsComponent,
     CitySettingsComponent,
     DispatcherSettingsComponent,
+    VehicleTypesComponent,
   ],
   template: `
     <div class="settings-shell">
@@ -58,6 +60,9 @@ import { DispatcherSettingsComponent } from './dispatcher-settings.component';
           </p-tabPanel>
           <p-tabPanel header="Dispatcher Settings">
             <app-dispatcher-settings *ngIf="activeIndex === 2"></app-dispatcher-settings>
+          </p-tabPanel>
+          <p-tabPanel header="Vehicle Fare Settings">
+            <app-vehicle-types *ngIf="activeIndex === 3"></app-vehicle-types>
           </p-tabPanel>
         </p-tabView>
       </section>
