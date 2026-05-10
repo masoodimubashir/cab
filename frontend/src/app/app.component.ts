@@ -13,6 +13,7 @@ export class AppComponent {
   ridesOpen = true;
   driversOpen = true;
   settingsOpen = true;
+  analyticsOpen = true;
 
   constructor(public router: Router) {}
 

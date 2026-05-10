@@ -76,6 +76,22 @@
         <a routerLink="/settings/fleets" routerLinkActive="active" class="nav-sublink">Fleets</a>
       </div>
 
+      <button
+        type="button"
+        class="nav-link nav-group__toggle"
+        [class.open]="analyticsOpen"
+        (click)="analyticsOpen = !analyticsOpen"
+        [attr.aria-expanded]="analyticsOpen"
+      >
+        <span><i class="pi pi-chart-bar"></i> Analytics</span>
+        <i class="pi" [class.pi-chevron-down]="analyticsOpen" [class.pi-chevron-right]="!analyticsOpen"></i>
+      </button>
+      <div class="nav-group__items" *ngIf="analyticsOpen">
+        <a routerLink="/analytics/real-time" routerLinkActive="active" class="nav-sublink">Real Time</a>
+        <a routerLink="/analytics/graphs" routerLinkActive="active" class="nav-sublink">Graphs</a>
+        <a routerLink="/analytics/reports" routerLinkActive="active" class="nav-sublink">Reports</a>
+      </div>
+
       <a routerLink="/safety" routerLinkActive="active" class="nav-link">
         <i class="pi pi-shield"></i> Safety
       </a>
