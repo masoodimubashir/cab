@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Events\FareNegotiationLocked;
 use App\Events\FareNegotiationOfferAdded;
+use App\Jobs\DispatchHopJob;
 use App\Jobs\SendDispatchNotificationsJob;
+use App\Models\DispatcherSetting;
 use App\Models\Driver;
 use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
@@ -96,43 +98,18 @@ class FareNegotiationController extends Controller
             offer: $offer->fresh(),
         ))->toOthers();
 
-        // Dispatch FCM to all online + approved drivers who accept this payment method.
-        // No-op until device tokens are registered (web VAPID / native plugin).
-        // Exclude drivers who are already on an in-flight trip — they cannot accept a second one.
-        $busyDriverIds = Trip::query()
-            ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
-            ->pluck('driver_id');
+        // Hand off to the expanding-ring auto-dispatcher. It reads the per-(city, kind)
+        // dispatcher_settings row for hop interval / radius / max hops, broadcasts to
+        // drivers in the current ring, then re-queues itself until acceptance or
+        // exhaustion. Falls back gracefully when no settings row exists.
+        $autoOn = true;
+        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->product_kind ?? 'local');
+        if ($settings && !$settings->automatic_dispatcher_type) {
+            $autoOn = false; // operator must dispatch manually
+        }
 
-        $eligibleDriverIds = Driver::query()
-            ->where('approval_status', 'approved')
-            ->where('is_online', true)
-            ->whereNotIn('user_id', $busyDriverIds)
-            ->pluck('user_id');
-
-        // Geo-radius filter: only drivers whose latest location is within 8 km
-        // of the pickup AND was recorded in the last 5 minutes (i.e. their app
-        // is actively streaming and they're nearby).
-        $eligibleDriverIds = $this->filterByPickupRadius(
-            $eligibleDriverIds,
-            (float) $trip->pickup_lat,
-            (float) $trip->pickup_lng,
-            radiusKm: 8.0,
-            freshnessMinutes: 5,
-        );
-
-        if ($eligibleDriverIds->isNotEmpty()) {
-            // Queue the FCM fan-out so the customer's request returns immediately
-            // even with hundreds of online drivers in radius. Requires `php artisan
-            // queue:work` (see REALTIME_SETUP.md). Falls back to inline execution
-            // when QUEUE_CONNECTION=sync.
-            SendDispatchNotificationsJob::dispatch(
-                driverUserIds: $eligibleDriverIds->values()->all(),
-                tripId: $trip->id,
-                amount: $amount,
-                pickupAddress: $trip->pickup_address,
-                paymentMethod: $trip->payment_method,
-            );
+        if ($autoOn) {
+            DispatchHopJob::dispatch($trip->id, $amount, 1);
         }
 
         return response()->json([

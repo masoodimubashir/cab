@@ -55,6 +55,9 @@ interface Snapshot {
 interface CityRow {
   id: number;
   name: string;
+  center_lat?: number | null;
+  center_lng?: number | null;
+  boundary_polygon?: { lat: number; lng: number }[] | null;
 }
 
 @Component({
@@ -667,6 +670,23 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   recenterMap(): void {
+    // Pan + zoom the map to the selected city, then refetch the snapshot so
+    // the lists/markers reflect the city scope. If "All cities" is picked,
+    // fall back to the wide default view.
+    const city = this.cityOptions.find((c) => c.id === this.cityId) || null;
+    if (this.map) {
+      if (city?.boundary_polygon?.length) {
+        const bounds = new google.maps.LatLngBounds();
+        city.boundary_polygon.forEach((p) => bounds.extend(p));
+        this.map.fitBounds(bounds, 40);
+      } else if (city?.center_lat != null && city?.center_lng != null) {
+        this.map.setCenter({ lat: city.center_lat, lng: city.center_lng });
+        this.map.setZoom(12);
+      } else if (!city) {
+        this.map.setCenter({ lat: 33.7311, lng: 75.1487 });
+        this.map.setZoom(11);
+      }
+    }
     this.fetch();
   }
 

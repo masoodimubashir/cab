@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Models\City;
 use App\Models\Driver;
 use App\Models\DriverLocation;
 use App\Models\Trip;
+use App\Services\DynamicPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -14,8 +16,10 @@ class AdminDispatchController
      * Single snapshot for the operator dispatch console.
      *
      * Optional filters:
-     *   ?city_id=X        — restrict to a city (best-effort: trips have no city_id, so we filter
-     *                        only the underlying pricing rule when present)
+     *   ?city_id=X        — restrict tasks to trips stamped with this city, and drivers to
+     *                        those whose latest location is inside the city's boundary polygon
+     *                        (drivers with no location are excluded when city_id is set, since
+     *                        we can't tell which city they're in).
      *   ?fresh_minutes=N  — drivers without a location ping in the last N minutes count as
      *                        "inactive" even if is_online is true (default 5).
      *
@@ -32,14 +36,18 @@ class AdminDispatchController
      *                    drop_address, drop_lat, drop_lng, customer:{}, driver:{}, created_at,
      *                    estimated_fare, ride_type }
      */
-    public function snapshot(Request $request)
+    public function snapshot(Request $request, DynamicPricingService $dynamicPricingService)
     {
         $freshMinutes = max(1, (int) $request->query('fresh_minutes', 5));
         $freshCutoff = now()->subMinutes($freshMinutes);
 
+        $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
+        $city = $cityId ? City::query()->find($cityId) : null;
+
         $busyDriverUserIds = Trip::query()
             ->whereNotNull('driver_id')
             ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
             ->pluck('driver_id')
             ->all();
 
@@ -68,6 +76,16 @@ class AdminDispatchController
             $lat = $loc?->lat !== null ? (float) $loc->lat : null;
             $lng = $loc?->lng !== null ? (float) $loc->lng : null;
             $lastSeen = $loc?->recorded_at;
+
+            // City filter for drivers: include only those whose last known location is
+            // inside the city's geofence. Drivers with no location are dropped when a
+            // city is selected (we can't place them on a map anyway).
+            if ($city && !empty($city->boundary_polygon)) {
+                if ($lat === null || $lng === null) continue;
+                if (!$dynamicPricingService->pointInPolygon($lat, $lng, $city->boundary_polygon)) continue;
+            } elseif ($cityId && !$city) {
+                continue; // unknown city id => empty result
+            }
 
             $isFresh = $loc && $lastSeen && $lastSeen >= $freshCutoff->toDateTimeString();
             $isBusy = in_array($driver->user_id, $busyDriverUserIds, true);
@@ -105,6 +123,7 @@ class AdminDispatchController
         $unassigned = Trip::query()
             ->with(['customer', 'rideType'])
             ->whereIn('status', ['REQUESTED', 'NEGOTIATION'])
+            ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
             ->orderByDesc('created_at')
             ->limit(200)
             ->get()
@@ -115,6 +134,7 @@ class AdminDispatchController
             ->with(['customer', 'driver', 'rideType'])
             ->whereNotNull('driver_id')
             ->whereIn('status', array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES))
+            ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
             ->orderByDesc('updated_at')
             ->limit(200)
             ->get()

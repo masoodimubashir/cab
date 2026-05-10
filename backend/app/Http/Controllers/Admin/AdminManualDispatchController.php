@@ -10,6 +10,7 @@ use App\Models\Trip;
 use App\Models\User;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
+use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -107,10 +108,15 @@ class AdminManualDispatchController
         FareEstimationService $fareEstimationService,
         DynamicPricingService $dynamicPricingService,
         TripStateMachineService $tripStateMachineService,
+        SchedulingPolicyService $schedulingPolicy,
     ) {
         $data = $this->validateBookingPayload($request, requireUser: true);
 
         $city = City::query()->findOrFail((int) $data['city_id']);
+
+        $kind = $data['product_kind'] ?? (!empty($data['is_round_trip']) ? 'outstation' : 'local');
+        $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
+        $returnAt = !empty($data['return_at']) ? Carbon::parse($data['return_at']) : null;
 
         // Pickup must fall inside the city geofence (when one is configured).
         if (!empty($city->boundary_polygon)) {
@@ -138,6 +144,23 @@ class AdminManualDispatchController
         } elseif (!empty($data['user_name']) && empty($customer->name)) {
             $customer->name = $data['user_name'];
             $customer->save();
+        }
+
+        // Booking-window guardrails (lead time, days limits, rides limit) per
+        // (city, product_kind). Skip the rides-limit on guest customers we just
+        // created — they have nothing pending.
+        $policyError = $schedulingPolicy->validateBooking(
+            customerId: $customer->id,
+            cityId: (int) $data['city_id'],
+            kind: $kind,
+            scheduledAt: $scheduledAt,
+            returnAt: $returnAt,
+        );
+        if ($policyError) {
+            return response()->json([
+                'message' => $schedulingPolicy->messageFor($policyError),
+                'error_code' => $policyError,
+            ], 422);
         }
 
         $pricingRule = PricingRule::query()
@@ -184,6 +207,7 @@ class AdminManualDispatchController
             'fleet_id' => isset($data['fleet_id']) ? (int) $data['fleet_id'] : null,
             'dispatched_by_admin_id' => $request->user()->id,
             'ride_type_id' => (int) $data['ride_type_id'],
+            'product_kind' => $kind,
             'pricing_rule_id' => $pricingRule->id,
             'status' => 'REQUESTED',
             'estimated_fare' => $estimatedFare,
@@ -244,6 +268,8 @@ class AdminManualDispatchController
             'is_round_trip' => ['nullable', 'boolean'],
             'driver_notes' => ['nullable', 'string', 'max:2000'],
             'scheduled_at' => ['nullable', 'date'],
+            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+            'return_at' => ['nullable', 'date'],
         ];
 
         if ($requireUser) {
