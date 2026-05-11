@@ -82,6 +82,9 @@ class DatabaseSeeder extends Seeder
         // Credentials are read from env: ADMIN_EMAIL / ADMIN_PASSWORD.
         $this->call(AdminUserSeeder::class);
 
+        // RBAC: seed permissions + default roles, and pin admin@example.com as Super Admin.
+        $this->call(RbacSeeder::class);
+
         // Sample trips for dashboards and API manual testing (pickup_address starts with "(seed) ").
         $this->call(TripSeeder::class);
     }

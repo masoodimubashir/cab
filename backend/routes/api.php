@@ -42,6 +42,9 @@ use App\Http\Controllers\Admin\AdminCityWidePromotionsController;
 use App\Http\Controllers\Admin\AdminPromoCodesController;
 use App\Http\Controllers\Admin\AdminCouponsController;
 use App\Http\Controllers\Admin\AdminReferralsController;
+use App\Http\Controllers\Admin\AdminPermissionsController;
+use App\Http\Controllers\Admin\AdminManagerRolesController;
+use App\Http\Controllers\Admin\AdminManagersController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -253,6 +256,25 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'show']);
     Route::patch('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
     Route::post('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
+
+    // ── RBAC: permissions catalog (read-only) ───────────────────────
+    Route::get('/admin/permissions', [AdminPermissionsController::class, 'index']);
+
+    // ── RBAC: manager roles ─────────────────────────────────────────
+    Route::get('/admin/manager-roles', [AdminManagerRolesController::class, 'index']);
+    Route::post('/admin/manager-roles', [AdminManagerRolesController::class, 'store']);
+    Route::get('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'show']);
+    Route::patch('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'update']);
+    Route::delete('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'destroy']);
+
+    // ── RBAC: managers (admin-side users) ───────────────────────────
+    Route::get('/admin/managers', [AdminManagersController::class, 'index']);
+    Route::post('/admin/managers', [AdminManagersController::class, 'store']);
+    Route::get('/admin/managers/{user}', [AdminManagersController::class, 'show']);
+    Route::patch('/admin/managers/{user}', [AdminManagersController::class, 'update']);
+    Route::post('/admin/managers/{user}/suspend', [AdminManagersController::class, 'suspend']);
+    Route::post('/admin/managers/{user}/unsuspend', [AdminManagersController::class, 'unsuspend']);
+    Route::delete('/admin/managers/{user}', [AdminManagersController::class, 'destroy']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
