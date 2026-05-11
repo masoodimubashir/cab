@@ -10,6 +10,9 @@ use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FareNegotiationController;
 use App\Http\Controllers\DriversController;
 use App\Http\Controllers\Admin\AdminCitiesController;
+use App\Http\Controllers\Admin\AdminDocumentsController;
+use App\Http\Controllers\Admin\AdminGlobalVehicleTypesController;
+use App\Http\Controllers\Admin\AdminRideTypesController;
 use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
 use App\Http\Controllers\Admin\AdminContactDriversController;
@@ -27,11 +30,13 @@ use App\Http\Controllers\Admin\AdminReportsController;
 use App\Http\Controllers\TripTrackingController;
 use App\Http\Controllers\RideAssignmentController;
 use App\Http\Controllers\PaymentsController;
+use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InvoicesController;
 use App\Http\Controllers\RatingsController;
 use App\Http\Controllers\SafetyController;
 use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
+use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Route;
@@ -100,12 +105,22 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 // The controller is idempotent (updateOrCreate) and grants the `driver` role.
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/drivers/register', [DriversController::class, 'register']);
+
+    // Catalog reads — used by the driver registration wizard. Auth-only so
+    // anonymous probes don't enumerate the catalog; no role required since
+    // the user is still pre-driver when they fetch these.
+    Route::get('/catalog/ride-types', [CatalogController::class, 'rideTypes']);
+    Route::get('/catalog/vehicle-types', [CatalogController::class, 'vehicleTypes']);
+    Route::get('/catalog/documents', [CatalogController::class, 'documents']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/drivers/documents', [DriversController::class, 'uploadDocument']);
+    Route::get('/drivers/me/documents/{document}/file', [DriversController::class, 'meDocumentFile'])
+        ->name('driver.me.documents.file');
     Route::post('/drivers/go-online', [DriversController::class, 'goOnline']);
     Route::post('/drivers/go-offline', [DriversController::class, 'goOffline']);
+    Route::post('/drivers/location', [DriversController::class, 'pingLocation'])->middleware('throttle:location');
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
 });
 
@@ -123,6 +138,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/drivers/{driver}/approval', [AdminDriversController::class, 'setApproval']);
     Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation']);
     Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus']);
+    Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile']);
+    Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver']);
+    Route::post('/admin/drivers/{driver}/documents', [AdminDriversController::class, 'uploadDocument']);
+    Route::get('/admin/drivers/{driver}/documents/{document}/file', [AdminDriversController::class, 'documentFile'])
+        ->name('admin.drivers.documents.file');
     Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience']);
     Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv']);
     Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send']);
@@ -152,6 +172,30 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
     Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
     Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy']);
+    Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'index']);
+    Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'store']);
+    Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
+    Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
+    Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'destroy']);
+    Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
+    Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);
+    Route::get('/admin/documents/{document}', [AdminDocumentsController::class, 'show']);
+    Route::patch('/admin/documents/{document}', [AdminDocumentsController::class, 'update']);
+    Route::post('/admin/documents/{document}/assign', [AdminDocumentsController::class, 'assign']);
+    Route::delete('/admin/documents/{document}', [AdminDocumentsController::class, 'destroy']);
+
+    Route::get('/admin/ride-types-crud', [AdminRideTypesController::class, 'index']);
+    Route::post('/admin/ride-types-crud', [AdminRideTypesController::class, 'store']);
+    Route::get('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'show']);
+    Route::patch('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'update']);
+    Route::delete('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'destroy']);
+
+    Route::get('/admin/vehicle-types-global', [AdminGlobalVehicleTypesController::class, 'index']);
+    Route::post('/admin/vehicle-types-global', [AdminGlobalVehicleTypesController::class, 'store']);
+    Route::get('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'show']);
+    Route::post('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'update']);
+    Route::patch('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'update']);
+    Route::delete('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'destroy']);
     Route::get('/admin/fleets', [AdminFleetsController::class, 'index']);
     Route::post('/admin/fleets', [AdminFleetsController::class, 'store']);
     Route::patch('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);

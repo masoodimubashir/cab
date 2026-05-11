@@ -12,6 +12,9 @@ import { DriversActiveComponent } from './admin/drivers/drivers-active.component
 import { DriversDeactivatedComponent } from './admin/drivers/drivers-deactivated.component';
 import { DriversLeaderboardComponent } from './admin/drivers/drivers-leaderboard.component';
 import { DriversPerformanceComponent } from './admin/drivers/drivers-performance.component';
+import { DriverDocumentsComponent } from './admin/drivers/driver-documents.component';
+import { DriverApprovalDetailsComponent } from './admin/drivers/driver-approval-details.component';
+import { VehiclesComponent } from './admin/vehicles/vehicles.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
 import { DynamicPricingListComponent } from './admin/dynamic-pricing/dynamic-pricing-list.component';
 import { DynamicPricingFormComponent } from './admin/dynamic-pricing/dynamic-pricing-form.component';
@@ -19,6 +22,7 @@ import { MapsComponent } from './admin/maps/maps.component';
 import { GeofencingComponent } from './admin/settings/geofencing.component';
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
+import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
 import { AnalyticsGraphsComponent } from './admin/analytics/analytics-graphs.component';
@@ -42,6 +46,8 @@ export const routes: Routes = [
   { path: 'drivers/leaderboard', component: DriversLeaderboardComponent, canActivate: [adminAuthGuard] },
   { path: 'drivers/performance', component: DriversPerformanceComponent, canActivate: [adminAuthGuard] },
   { path: 'drivers/approvals', component: AdminDriversComponent, canActivate: [adminAuthGuard] },
+  { path: 'drivers/approvals/:driverId', component: DriverApprovalDetailsComponent, canActivate: [adminAuthGuard] },
+  { path: 'drivers/documents', component: DriverDocumentsComponent, canActivate: [adminAuthGuard] },
   { path: 'contact-drivers', component: ContactDriversComponent, canActivate: [adminAuthGuard] },
 
   { path: 'rides', redirectTo: 'rides/all', pathMatch: 'full' },
@@ -51,11 +57,14 @@ export const routes: Routes = [
 
   { path: 'maps', component: MapsComponent, canActivate: [adminAuthGuard] },
 
+  { path: 'vehicles', component: VehiclesComponent, canActivate: [adminAuthGuard] },
+
   { path: 'settings', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/geofencing', component: GeofencingComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard] },
+  { path: 'settings/vehicle-types/:rideTypeId', component: VehicleTypeDetailsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'analytics', redirectTo: 'analytics/real-time', pathMatch: 'full' },
   { path: 'analytics/real-time', component: AnalyticsRealTimeComponent, canActivate: [adminAuthGuard] },

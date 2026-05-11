@@ -28,19 +28,12 @@ interface City {
   name: string;
   center_lat: number | null;
   center_lng: number | null;
+  boundary_polygon: { lat: number; lng: number }[] | null;
 }
 
-interface Fleet {
-  id: number;
-  city_id: number;
-  name: string;
-  is_active: boolean;
-}
-
-interface RideType {
+interface VehicleTypeOpt {
   id: number;
   name: string;
-  description?: string | null;
 }
 
 interface PlacePoint {
@@ -110,19 +103,6 @@ interface FareEstimateResponse {
               optionValue="id"
               appendTo="body"
               [filter]="true"
-            ></p-dropdown>
-          </label>
-
-          <label class="field">
-            <span>Fleet <span class="muted small">(optional)</span></span>
-            <p-dropdown
-              [options]="fleetsForCity"
-              [(ngModel)]="form.fleet_id"
-              placeholder="Any fleet"
-              optionLabel="name"
-              optionValue="id"
-              appendTo="body"
-              [showClear]="true"
             ></p-dropdown>
           </label>
 
@@ -222,11 +202,11 @@ interface FareEstimateResponse {
           </label>
 
           <label class="field">
-            <span>Vehicle Type</span>
+            <span>Vehicle Type *</span>
             <p-dropdown
-              [options]="rideTypes"
-              [(ngModel)]="form.ride_type_id"
-              placeholder="Select a vehicle type"
+              [options]="vehicleTypes"
+              [(ngModel)]="form.vehicle_type_id"
+              placeholder="Auto / Bike / Mini…"
               optionLabel="name"
               optionValue="id"
               appendTo="body"
@@ -446,8 +426,7 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChildren('stopInput') stopInputs!: QueryList<ElementRef<HTMLInputElement>>;
 
   cities: City[] = [];
-  fleets: Fleet[] = [];
-  rideTypes: RideType[] = [];
+  vehicleTypes: VehicleTypeOpt[] = [];
 
   paymentOptions = [
     { label: 'CASH', value: 'cash' },
@@ -459,8 +438,7 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
     user_phone: '',
     user_name: '',
     city_id: null as number | null,
-    fleet_id: null as number | null,
-    ride_type_id: null as number | null,
+    vehicle_type_id: null as number | null,
     payment_method: 'cash' as 'cash' | 'upi' | 'qr',
     scheduleMode: 'asap' as 'asap' | 'scheduled',
     scheduled_at: null as Date | null,
@@ -487,6 +465,7 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
   private stopMarkers: google.maps.Marker[] = [];
   private directionsRenderer: google.maps.DirectionsRenderer | null = null;
   private directionsService: google.maps.DirectionsService | null = null;
+  private cityBoundary: google.maps.Polygon | null = null;
 
   private autocompletes: google.maps.places.Autocomplete[] = [];
   private autocompleteListeners: google.maps.MapsEventListener[] = [];
@@ -503,12 +482,11 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
     this.api.get<{ data: City[] }>('/admin/cities').subscribe((res) => {
       this.cities = res?.data || [];
     });
-    this.api.get<{ data: Fleet[] }>('/admin/fleets').subscribe((res) => {
-      this.fleets = res?.data || [];
-    });
-    this.api.get<{ data: RideType[] }>('/admin/ride-types').subscribe((res) => {
-      this.rideTypes = res?.data || [];
-    });
+    this.api
+      .get<{ data: VehicleTypeOpt[] }>('/admin/vehicle-types-global?active_only=1')
+      .subscribe((res) => {
+        this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, name: v.name }));
+      });
   }
 
   ngAfterViewInit(): void {
@@ -521,21 +499,17 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
     this.dropMarker?.setMap(null);
     this.stopMarkers.forEach((m) => m.setMap(null));
     this.directionsRenderer?.setMap(null);
+    this.cityBoundary?.setMap(null);
     if (this.phoneTimer) window.clearTimeout(this.phoneTimer);
     document.querySelectorAll('.pac-container').forEach((el) => el.remove());
   }
 
   // ───── derived state ─────
 
-  get fleetsForCity(): Fleet[] {
-    if (!this.form.city_id) return [];
-    return this.fleets.filter((f) => f.city_id === this.form.city_id && f.is_active);
-  }
-
   get canEstimate(): boolean {
     return !!(
       this.form.city_id &&
-      this.form.ride_type_id &&
+      this.form.vehicle_type_id &&
       this.form.pickup.lat &&
       this.form.drop.lat
     );
@@ -548,13 +522,35 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
   // ───── form actions ─────
 
   onCityChange(): void {
-    // Reset fleet so we don't keep an inactive cross-city pick.
-    this.form.fleet_id = null;
     const city = this.cities.find((c) => c.id === this.form.city_id);
     if (city?.center_lat != null && city?.center_lng != null && this.map) {
       this.map.setCenter({ lat: city.center_lat, lng: city.center_lng });
       this.map.setZoom(12);
     }
+    this.drawCityBoundary(city);
+  }
+
+  private drawCityBoundary(city: City | undefined): void {
+    this.cityBoundary?.setMap(null);
+    this.cityBoundary = null;
+    if (!city || !this.map || !this.mapsReady) return;
+    const polygon = city.boundary_polygon;
+    if (!polygon || polygon.length < 3) return;
+
+    this.cityBoundary = new google.maps.Polygon({
+      paths: polygon.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) })),
+      strokeColor: '#16a34a',
+      strokeOpacity: 0.9,
+      strokeWeight: 2,
+      fillColor: '#16a34a',
+      fillOpacity: 0.08,
+      clickable: false,
+      map: this.map,
+    });
+
+    const bounds = new google.maps.LatLngBounds();
+    polygon.forEach((p) => bounds.extend({ lat: Number(p.lat), lng: Number(p.lng) }));
+    this.map.fitBounds(bounds, 40);
   }
 
   setSchedule(mode: 'asap' | 'scheduled'): void {
@@ -632,6 +628,11 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
     this.attachAutocompletes();
     // Re-attach when stops are added/removed.
     this.stopInputs.changes.subscribe(() => setTimeout(() => this.attachAutocompletes(), 0));
+
+    // If a city was selected before the map finished loading, draw it now.
+    if (this.form.city_id) {
+      this.drawCityBoundary(this.cities.find((c) => c.id === this.form.city_id));
+    }
   }
 
   private attachAutocompletes(): void {
@@ -779,8 +780,7 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
   private buildPayload(): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       city_id: this.form.city_id,
-      fleet_id: this.form.fleet_id,
-      ride_type_id: this.form.ride_type_id,
+      vehicle_type_id: this.form.vehicle_type_id,
       pickup_address: this.form.pickup.address || null,
       pickup_lat: this.form.pickup.lat,
       pickup_lng: this.form.pickup.lng,

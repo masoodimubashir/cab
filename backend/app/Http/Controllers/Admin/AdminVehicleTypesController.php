@@ -21,7 +21,7 @@ class AdminVehicleTypesController
     public function index(Request $request, City $city)
     {
         $rows = CityVehicleType::query()
-            ->with('rideType:id,name')
+            ->with(['rideType:id,name', 'vehicleType:id,name'])
             ->where('city_id', $city->id)
             ->orderBy('display_order')
             ->orderBy('id')
@@ -35,28 +35,38 @@ class AdminVehicleTypesController
                 ->orderBy('sort_order')
                 ->get(['id', 'name'])
                 ->toArray(),
+            'available_vehicle_types' => \App\Models\VehicleType::query()
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get(['id', 'name'])
+                ->toArray(),
         ]);
     }
 
     public function show(City $city, CityVehicleType $vehicleType)
     {
         $this->guard($city, $vehicleType);
-        $vehicleType->load('rideType:id,name');
+        $vehicleType->load(['rideType:id,name', 'vehicleType:id,name']);
 
         return response()->json(['vehicle_type' => $this->shape($vehicleType)]);
     }
 
     /**
-     * Create a vehicle type. Mirrors the "Add Vehicle Type" modal in the
-     * reference admin: the modal exposes a small subset; the rest of the
-     * fields take their schema defaults and can be edited later from the
-     * detail page.
+     * Create a vehicle in this city. The operator picks which product kinds
+     * to enable (Local / Rental / Outstation, at least one required) and we
+     * fan out one row per requested kind — all is_active=true — sharing the
+     * same ride_type_id, vehicle_type_id and display_name.
+     *
+     * Idempotent for the (city, ride_type, kind) tuple: re-submitting with
+     * a kind that already exists leaves that row alone. That makes it cheap
+     * to "add a missing kind later" by re-running this endpoint with just
+     * the new kind in the kinds[] array.
      */
     public function store(Request $request, City $city)
     {
         $data = $request->validate([
             'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
-            'product_kind' => ['required', Rule::in(self::KINDS)],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
             'display_name' => ['required', 'string', 'max:120'],
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'max_people' => ['nullable', 'integer', 'min:1', 'max:99'],
@@ -65,27 +75,46 @@ class AdminVehicleTypesController
             'fare_mandatory' => ['nullable', 'boolean'],
             'toll_mode' => ['nullable', Rule::in(self::TOLL_MODES)],
             'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+
+            // At least one product kind must be enabled at creation.
+            'kinds' => ['required', 'array', 'min:1'],
+            'kinds.*' => [Rule::in(self::KINDS)],
         ]);
 
-        $exists = CityVehicleType::query()
+        $kindsRequested = array_values(array_unique($data['kinds']));
+        unset($data['kinds']);
+
+        $existing = CityVehicleType::query()
             ->where('city_id', $city->id)
             ->where('ride_type_id', $data['ride_type_id'])
-            ->where('product_kind', $data['product_kind'])
-            ->exists();
-        if ($exists) {
-            return response()->json([
-                'message' => 'A vehicle type already exists for this city + ride type + product kind.',
-            ], 422);
+            ->pluck('product_kind')
+            ->all();
+
+        $created = [];
+        foreach ($kindsRequested as $kind) {
+            if (in_array($kind, $existing, true)) {
+                continue;
+            }
+            $created[] = CityVehicleType::query()->create(array_merge(
+                ['city_id' => $city->id, 'product_kind' => $kind, 'is_active' => true],
+                $data,
+            ));
         }
 
-        $vehicleType = CityVehicleType::query()->create(array_merge(
-            ['city_id' => $city->id],
-            $data,
-        ));
+        $allRows = CityVehicleType::query()
+            ->with('rideType:id,name')
+            ->where('city_id', $city->id)
+            ->where('ride_type_id', $data['ride_type_id'])
+            ->orderBy('product_kind')
+            ->get()
+            ->map(fn (CityVehicleType $v) => $this->shape($v));
 
         return response()->json([
-            'vehicle_type' => $this->shape($vehicleType->fresh()->load('rideType:id,name')),
-            'message' => 'Vehicle type created.',
+            'data' => $allRows,
+            'created_count' => count($created),
+            'message' => count($created) === 0
+                ? 'Vehicle already exists for all three kinds.'
+                : 'Vehicle created. Enable the kinds you want from the details page.',
         ], 201);
     }
 
@@ -99,6 +128,7 @@ class AdminVehicleTypesController
 
         $data = $request->validate([
             'ride_type_id' => ['sometimes', 'integer', 'exists:ride_types,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
             'product_kind' => ['sometimes', Rule::in(self::KINDS)],
 
             'display_name' => ['sometimes', 'string', 'max:120'],
@@ -157,7 +187,7 @@ class AdminVehicleTypesController
         $vehicleType->save();
 
         return response()->json([
-            'vehicle_type' => $this->shape($vehicleType->fresh()->load('rideType:id,name')),
+            'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name', 'vehicleType:id,name'])),
             'message' => 'Vehicle type updated.',
         ]);
     }
@@ -190,6 +220,8 @@ class AdminVehicleTypesController
             'city_id' => $v->city_id,
             'ride_type_id' => $v->ride_type_id,
             'ride_type_name' => $v->rideType?->name,
+            'vehicle_type_id' => $v->vehicle_type_id,
+            'vehicle_type_name' => $v->vehicleType?->name,
             'product_kind' => $v->product_kind,
             'display_name' => $v->display_name,
             'display_order' => (int) $v->display_order,
