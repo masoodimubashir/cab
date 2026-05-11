@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use App\Models\Driver;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +17,7 @@ use Laravel\Sanctum\HasApiTokens;
 use App\Models\Trip;
 use App\Models\Rating;
 
-#[Fillable(['name', 'email', 'password', 'phone', 'google_sub', 'avatar_path', 'accepted_payment_methods', 'last_login_at'])]
+#[Fillable(['name', 'email', 'password', 'phone', 'google_sub', 'avatar_path', 'accepted_payment_methods', 'last_login_at', 'manager_role_id', 'manager_city_id', 'manager_fleet_id', 'is_suspended'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -35,6 +36,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'last_login_at' => 'datetime',
             'accepted_payment_methods' => 'array',
+            'is_suspended' => 'boolean',
         ];
     }
 
@@ -93,5 +95,43 @@ class User extends Authenticatable
     public function ratingsGiven(): HasMany
     {
         return $this->hasMany(Rating::class, 'customer_id');
+    }
+
+    // ── RBAC ────────────────────────────────────────────────────────────
+
+    public function managerRole(): BelongsTo
+    {
+        return $this->belongsTo(ManagerRole::class, 'manager_role_id');
+    }
+
+    public function managerCity(): BelongsTo
+    {
+        return $this->belongsTo(City::class, 'manager_city_id');
+    }
+
+    public function managerFleet(): BelongsTo
+    {
+        return $this->belongsTo(Fleet::class, 'manager_fleet_id');
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->managerRole?->isSuperAdmin() ?? false;
+    }
+
+    /**
+     * Returns true if this user's role grants the given permission slug.
+     * Super Admin bypasses the check entirely.
+     */
+    public function hasPermission(string $slug): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+        $role = $this->managerRole;
+        if (! $role) {
+            return false;
+        }
+        return $role->permissions()->where('slug', $slug)->exists();
     }
 }
