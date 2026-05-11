@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\ManagerRole;
 use App\Models\User;
+use App\Services\ManagerScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -45,6 +46,12 @@ class AdminManagersController
 
         if ($cityId = $request->query('city_id')) {
             $q->where('manager_city_id', (int) $cityId);
+        }
+
+        // Restrict to the caller's city scope. Super Admin sees everyone.
+        $allowed = ManagerScope::cityIds();
+        if ($allowed !== null) {
+            $q->whereIn('manager_city_id', $allowed ?: [-1]);
         }
 
         $rows = $q->orderByDesc('id')->limit(500)->get()
@@ -182,6 +189,14 @@ class AdminManagersController
         // Super Admin doesn't need a city; other roles must have one.
         if (! $role->isSuperAdmin() && empty($data['manager_city_id'])) {
             abort(422, 'A city must be selected for this role.');
+        }
+        // A non-Super-Admin caller can't create/edit managers outside their scope.
+        if (! empty($data['manager_city_id'])) {
+            ManagerScope::assertCityAllowed((int) $data['manager_city_id']);
+        }
+        // A scoped caller also can't assign Super Admin.
+        if ($role->isSuperAdmin() && ! ManagerScope::isSuperAdmin()) {
+            abort(403, 'Only a Super Admin can assign the Super Admin role.');
         }
     }
 

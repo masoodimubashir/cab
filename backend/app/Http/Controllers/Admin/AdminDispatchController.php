@@ -44,9 +44,15 @@ class AdminDispatchController
         $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
         $city = $cityId ? City::query()->find($cityId) : null;
 
+        // "Busy" = driver attached to a live trip. CONFIRMED is included even
+        // though it's not in ACTIVE_DRIVER_STATUSES — the moment a driver
+        // accepts a trip we want the dispatch console to flip them out of Free
+        // (otherwise they show as Free while their trip already sits in the
+        // Assigned tasks panel, which looks inconsistent).
+        $busyStatuses = array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES);
         $busyDriverUserIds = Trip::query()
             ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', $busyStatuses)
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
             ->pluck('driver_id')
             ->all();
@@ -62,7 +68,7 @@ class AdminDispatchController
             ->keyBy('driver_id');
 
         $drivers = Driver::query()
-            ->with(['user'])
+            ->with(['user', 'vehicleTypeRef'])
             ->whereNull('deactivated_at')
             ->where('approval_status', 'approved')
             ->get();
@@ -76,11 +82,14 @@ class AdminDispatchController
             $lat = $loc?->lat !== null ? (float) $loc->lat : null;
             $lng = $loc?->lng !== null ? (float) $loc->lng : null;
             $lastSeen = $loc?->recorded_at;
+            $isBusy = in_array($driver->user_id, $busyDriverUserIds, true);
 
-            // City filter for drivers: include only those whose last known location is
-            // inside the city's geofence. Drivers with no location are dropped when a
-            // city is selected (we can't place them on a map anyway).
-            if ($city && !empty($city->boundary_polygon)) {
+            // City filter for drivers. A busy driver on a trip in this city
+            // belongs in this view regardless of where their last ping landed
+            // (e.g. they could be just outside the polygon delivering a fare).
+            // For Free/Inactive drivers we still require a location inside the
+            // polygon so the map doesn't drift to other cities' drivers.
+            if ($city && !empty($city->boundary_polygon) && ! $isBusy) {
                 if ($lat === null || $lng === null) continue;
                 if (!$dynamicPricingService->pointInPolygon($lat, $lng, $city->boundary_polygon)) continue;
             } elseif ($cityId && !$city) {
@@ -88,14 +97,13 @@ class AdminDispatchController
             }
 
             $isFresh = $loc && $lastSeen && $lastSeen >= $freshCutoff->toDateTimeString();
-            $isBusy = in_array($driver->user_id, $busyDriverUserIds, true);
 
             $row = [
                 'id' => $driver->id,
                 'user_id' => $driver->user_id,
                 'name' => $driver->user?->name,
                 'phone' => $driver->user?->phone,
-                'vehicle_type' => $driver->vehicle_type,
+                'vehicle_type' => $driver->vehicleTypeRef?->name ?? $driver->vehicle_type,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
                 'is_online' => (bool) $driver->is_online,
                 'lat' => $lat,

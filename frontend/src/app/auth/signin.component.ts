@@ -6,6 +6,7 @@ import { HttpClient } from '@angular/common/http';
 import { CardModule } from 'primeng/card';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
+import { AuthService } from '../core/auth.service';
 
 @Component({
   selector: 'app-signin',
@@ -69,7 +70,7 @@ export class SigninComponent {
   error: string | null = null;
   loading = false;
 
-  constructor(private router: Router, private http: HttpClient) {}
+  constructor(private router: Router, private http: HttpClient, private auth: AuthService) {}
 
   login(): void {
     this.error = null;
@@ -79,6 +80,7 @@ export class SigninComponent {
     this.http.post<any>(url, { email: this.email.trim(), password: this.password }).subscribe({
       next: (res) => {
         localStorage.setItem('dreamcabs_token', res?.token);
+        if (res?.user) this.auth.setProfile(res.user);
         this.router.navigateByUrl('/dashboard');
       },
       error: (err) => {

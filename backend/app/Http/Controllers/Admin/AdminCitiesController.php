@@ -3,17 +3,23 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\City;
+use App\Services\ManagerScope;
 use Illuminate\Http\Request;
 
 class AdminCitiesController
 {
     public function index()
     {
+        // Non-Super-Admin managers can only see the city they're scoped to.
+        // Returning a filtered list also drives the locked dropdown on the FE.
+        $q = City::query()->orderBy('name');
+        $allowed = ManagerScope::cityIds();
+        if ($allowed !== null) {
+            $q->whereIn('id', $allowed ?: [-1]);
+        }
+
         return response()->json([
-            'data' => City::query()
-                ->orderBy('name')
-                ->get()
-                ->map(fn (City $c) => $this->shape($c)),
+            'data' => $q->get()->map(fn (City $c) => $this->shape($c)),
         ]);
     }
 

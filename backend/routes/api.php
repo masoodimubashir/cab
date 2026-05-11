@@ -138,6 +138,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+    Route::get('/admin/me', [AdminAuthController::class, 'me']);
     Route::get('/admin/drivers', [AdminDriversController::class, 'index']);
     Route::get('/admin/drivers/export', [AdminDriversController::class, 'exportCsv']);
     Route::get('/admin/drivers/leaderboard', [AdminDriversController::class, 'leaderboard']);
@@ -161,29 +162,33 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/users/{user}/role', [AdminUsersController::class, 'updateRole']);
     Route::get('/admin/cities', [AdminCitiesController::class, 'index']);
     Route::post('/admin/cities', [AdminCitiesController::class, 'store']);
-    Route::get('/admin/cities/{city}', [AdminCitiesController::class, 'show']);
-    Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update']);
-    Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon']);
-    Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy']);
-    Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
-    Route::patch('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
-    Route::post('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
-    Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
-    Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
-    Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
-    Route::get('/admin/cities/{city}/dispatcher-settings', [AdminDispatcherSettingsController::class, 'index']);
-    Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update']);
-    Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index']);
-    Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store']);
-    Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show']);
-    Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
-    Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
-    Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy']);
-    Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'index']);
-    Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'store']);
-    Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
-    Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
-    Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'destroy']);
+    // City-scoped admin routes — `manager.city` middleware rejects requests
+    // when the caller's scoped to a different city.
+    Route::middleware('manager.city')->group(function () {
+        Route::get('/admin/cities/{city}', [AdminCitiesController::class, 'show']);
+        Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update']);
+        Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon']);
+        Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
+        Route::patch('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
+        Route::post('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
+        Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
+        Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
+        Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
+        Route::get('/admin/cities/{city}/dispatcher-settings', [AdminDispatcherSettingsController::class, 'index']);
+        Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update']);
+        Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index']);
+        Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store']);
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show']);
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
+        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'index']);
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'store']);
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
+        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'destroy']);
+    });
     Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
     Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);
     Route::get('/admin/documents/{document}', [AdminDocumentsController::class, 'show']);
@@ -231,31 +236,33 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation']);
     Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate']);
 
-    // ── Promotions: city-wide promotions ────────────────────────────
-    Route::get('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'index']);
-    Route::post('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'store']);
-    Route::get('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'show']);
-    Route::patch('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'update']);
-    Route::delete('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'destroy']);
+    Route::middleware('manager.city')->group(function () {
+        // ── Promotions: city-wide promotions ────────────────────────────
+        Route::get('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'index']);
+        Route::post('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'store']);
+        Route::get('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'show']);
+        Route::patch('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'update']);
+        Route::delete('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'destroy']);
 
-    // ── Promotions: promo codes ─────────────────────────────────────
-    Route::get('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'index']);
-    Route::post('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'store']);
-    Route::get('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'show']);
-    Route::patch('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'update']);
-    Route::delete('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'destroy']);
+        // ── Promotions: promo codes ─────────────────────────────────────
+        Route::get('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'index']);
+        Route::post('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'store']);
+        Route::get('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'show']);
+        Route::patch('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'update']);
+        Route::delete('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'destroy']);
 
-    // ── Promotions: coupons ─────────────────────────────────────────
-    Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index']);
-    Route::post('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'store']);
-    Route::get('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'show']);
-    Route::patch('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'update']);
-    Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy']);
+        // ── Promotions: coupons ─────────────────────────────────────────
+        Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index']);
+        Route::post('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'store']);
+        Route::get('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'show']);
+        Route::patch('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'update']);
+        Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy']);
 
-    // ── Promotions: referrals (singleton-per-city) ──────────────────
-    Route::get('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'show']);
-    Route::patch('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
-    Route::post('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
+        // ── Promotions: referrals (singleton-per-city) ──────────────────
+        Route::get('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'show']);
+        Route::patch('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
+        Route::post('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
+    });
 
     // ── RBAC: permissions catalog (read-only) ───────────────────────
     Route::get('/admin/permissions', [AdminPermissionsController::class, 'index']);

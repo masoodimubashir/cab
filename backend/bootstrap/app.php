@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureRole::class,
             'role_any' => \App\Http\Middleware\EnsureAnyRole::class,
             'idempotent' => \App\Http\Middleware\IdempotencyKey::class,
+            'manager.city' => \App\Http\Middleware\EnforceManagerCity::class,
         ]);
 
         // Tag every API request with an X-Request-Id and push it into the log

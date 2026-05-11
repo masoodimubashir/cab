@@ -71,11 +71,14 @@ interface ManagerRow {
       </div>
       <input
         pInputText
-        type="search"
+        type="text"
         placeholder="Search by name, email or phone…"
         [(ngModel)]="searchText"
         (ngModelChange)="onSearch()"
         class="search"
+        name="managers_search"
+        autocomplete="off"
+        spellcheck="false"
       />
     </div>
 
@@ -145,19 +148,20 @@ interface ManagerRow {
       <div class="form-grid">
         <div class="col">
           <label class="lbl">Name *</label>
-          <input pInputText [(ngModel)]="form.name" />
+          <input pInputText [(ngModel)]="form.name" name="manager_name" autocomplete="off" />
 
           <label class="lbl">Email *</label>
-          <input pInputText [(ngModel)]="form.email" type="email" />
+          <input pInputText [(ngModel)]="form.email" type="email" name="manager_email" autocomplete="off" />
 
           <label class="lbl">Phone</label>
-          <input pInputText [(ngModel)]="form.phone" />
+          <input pInputText [(ngModel)]="form.phone" name="manager_phone" autocomplete="off" />
 
           <label class="lbl">
             {{ editingId ? 'New Password (leave blank to keep)' : 'Password *' }}
           </label>
           <p-password [(ngModel)]="form.password" [toggleMask]="true" [feedback]="false"
-                      styleClass="full-pw" inputStyleClass="full-pw__inp"></p-password>
+                      styleClass="full-pw" inputStyleClass="full-pw__inp"
+                      autocomplete="new-password"></p-password>
         </div>
 
         <div class="col">
