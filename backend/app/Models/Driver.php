@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'user_id',
+    'ride_type_id',
+    'vehicle_type_id',
     'approval_status',
     'approved_at',
     'rejected_at',
@@ -42,6 +44,16 @@ class Driver extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function rideType(): BelongsTo
+    {
+        return $this->belongsTo(RideType::class, 'ride_type_id');
+    }
+
+    public function vehicleTypeRef(): BelongsTo
+    {
+        return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
     }
 
     public function documents(): HasMany

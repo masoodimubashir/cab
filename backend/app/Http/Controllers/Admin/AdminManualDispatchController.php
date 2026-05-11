@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Jobs\DispatchHopJob;
 use App\Models\City;
-use App\Models\Fleet;
+use App\Models\FareNegotiation;
 use App\Models\PricingRule;
 use App\Models\RideType;
 use App\Models\Trip;
@@ -55,19 +56,23 @@ class AdminManualDispatchController
     ) {
         $data = $this->validateBookingPayload($request, requireUser: false);
 
+        // Manual dispatch no longer asks the operator for a ride type — pick
+        // any pricing rule for the city as the base. If multiple ride types
+        // are configured for the city, the lowest-id rule wins (deterministic).
         $pricingRule = PricingRule::query()
             ->where('city_id', $data['city_id'])
-            ->where('ride_type_id', $data['ride_type_id'])
+            ->orderBy('id')
             ->first();
 
         if (!$pricingRule) {
-            return response()->json(['message' => 'No base pricing rule for this city + vehicle type.'], 404);
+            return response()->json(['message' => 'No pricing rule configured for this city.'], 404);
         }
+        $rideTypeId = (int) $pricingRule->ride_type_id;
 
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
-            (int) $data['ride_type_id'],
+            $rideTypeId,
             null,
         );
 
@@ -163,19 +168,22 @@ class AdminManualDispatchController
             ], 422);
         }
 
+        // Pick any pricing rule for the city — operator no longer specifies
+        // ride_type, so the lowest-id rule is the implicit default.
         $pricingRule = PricingRule::query()
             ->where('city_id', $data['city_id'])
-            ->where('ride_type_id', $data['ride_type_id'])
+            ->orderBy('id')
             ->first();
 
         if (!$pricingRule) {
-            return response()->json(['message' => 'No base pricing rule for this city + vehicle type.'], 404);
+            return response()->json(['message' => 'No pricing rule configured for this city.'], 404);
         }
+        $rideTypeId = (int) $pricingRule->ride_type_id;
 
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
-            (int) $data['ride_type_id'],
+            $rideTypeId,
             null,
         );
 
@@ -204,9 +212,8 @@ class AdminManualDispatchController
             'customer_id' => $customer->id,
             'driver_id' => null,
             'city_id' => (int) $data['city_id'],
-            'fleet_id' => isset($data['fleet_id']) ? (int) $data['fleet_id'] : null,
             'dispatched_by_admin_id' => $request->user()->id,
-            'ride_type_id' => (int) $data['ride_type_id'],
+            'ride_type_id' => $rideTypeId,
             'product_kind' => $kind,
             'pricing_rule_id' => $pricingRule->id,
             'status' => 'REQUESTED',
@@ -223,6 +230,9 @@ class AdminManualDispatchController
             'is_round_trip' => (bool) ($data['is_round_trip'] ?? false),
             'driver_notes' => $data['driver_notes'] ?? null,
             'is_manual_dispatch' => true,
+            'requested_vehicle_type_id' => isset($data['vehicle_type_id'])
+                ? (int) $data['vehicle_type_id']
+                : null,
             'scheduled_at' => !empty($data['scheduled_at'])
                 ? Carbon::parse($data['scheduled_at'])
                 : null,
@@ -232,6 +242,26 @@ class AdminManualDispatchController
         // Same negotiation pipeline as customer-initiated bookings; drivers will
         // see this trip in their available queue.
         $tripStateMachineService->transition($trip, 'NEGOTIATION');
+
+        // Seed the negotiation thread on the customer's behalf so the driver
+        // app has an offer to accept. Without this row the driver's ACCEPT
+        // action returns "No customer offer found to accept."
+        $negotiation = FareNegotiation::query()->create([
+            'trip_id' => $trip->id,
+            'customer_id' => $customer->id,
+            'status' => 'NEGOTIATING',
+        ]);
+        $negotiation->offers()->create([
+            'from_user_id' => $customer->id,
+            'from_role' => 'customer',
+            'amount' => $estimatedFare,
+            'status' => 'PENDING',
+        ]);
+
+        // Kick the expanding-ring auto-dispatcher so nearby drivers actually
+        // get the broadcast — mirrors what /customer-offer does for customer
+        // bookings. The job re-queues itself across hops until accepted.
+        DispatchHopJob::dispatch($trip->id, $estimatedFare, 1);
 
         return response()->json([
             'trip' => $trip->fresh(),
@@ -248,8 +278,7 @@ class AdminManualDispatchController
     {
         $rules = [
             'city_id' => ['required', 'integer', 'exists:cities,id'],
-            'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
-            'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
+            'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
 
             'pickup_address' => ['nullable', 'string', 'max:500'],
             'pickup_lat' => ['required', 'numeric', 'between:-90,90'],

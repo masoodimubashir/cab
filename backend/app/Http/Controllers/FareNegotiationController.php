@@ -238,6 +238,19 @@ class FareNegotiationController extends Controller
                 offer: $offer->fresh(),
             ))->toOthers();
 
+            // Manual-dispatch trips have no live customer to call
+            // /customer-confirm, so the dispatcher's chosen fare is the
+            // confirmation. Push the trip straight to CONFIRMED here so the
+            // driver can immediately call /driver-accept to enter ASSIGNED.
+            if ($trip->is_manual_dispatch) {
+                $confirmed = $tripAssignmentService->confirm($trip->id, (int) $offer->id, $amount);
+                if ($confirmed) {
+                    $negotiation->status = 'LOCKED';
+                    $negotiation->locked_at = now();
+                    $negotiation->save();
+                }
+            }
+
             return response()->json([
                 'negotiation' => $negotiation->fresh('offers'),
             ]);

@@ -8,6 +8,7 @@ use App\Models\Trip;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminDriversController
@@ -91,18 +92,52 @@ class AdminDriversController
         ]);
 
         if ($data['approval_status'] === 'approved') {
-            $requiredDocs = ['DL', 'RC', 'INSURANCE', 'ID'];
-            foreach ($requiredDocs as $docType) {
-                $doc = DriverDocument::query()
+            // The check used to hard-code the legacy DL/RC/INSURANCE/ID enum.
+            // The dynamic catalog (documents.required = 'mandatory_register')
+            // is the source of truth now. For each mandatory catalog entry
+            // the driver must have at least one driver_documents row with
+            // status='approved'. Catalog entries marked 'optional' don't gate
+            // approval.
+            $mandatoryDocIds = \App\Models\Document::query()
+                ->where('required', 'mandatory_register')
+                ->pluck('id')
+                ->all();
+
+            $missing = [];
+            if (!empty($mandatoryDocIds)) {
+                $approvedByDocId = DriverDocument::query()
                     ->where('driver_id', $driver->id)
-                    ->where('document_type', $docType)
-                    ->first();
-                if (!$doc || $doc->status !== 'approved') {
-                    return response()->json([
-                        'message' => 'All required documents must be approved before approving the driver.',
-                        'missing' => array_values(array_filter([$docType])),
-                    ], 422);
+                    ->whereIn('document_id', $mandatoryDocIds)
+                    ->where('status', 'approved')
+                    ->pluck('document_id')
+                    ->unique()
+                    ->all();
+
+                $missingIds = array_values(array_diff($mandatoryDocIds, $approvedByDocId));
+                if (!empty($missingIds)) {
+                    $missing = \App\Models\Document::query()
+                        ->whereIn('id', $missingIds)
+                        ->pluck('name')
+                        ->all();
                 }
+            }
+
+            // Legacy DL/RC/INSURANCE/ID rows: only block when one of them is
+            // explicitly present-but-not-approved. We don't *require* them
+            // anymore — fresh drivers come through the new flow only.
+            $legacyPending = DriverDocument::query()
+                ->where('driver_id', $driver->id)
+                ->whereNotNull('document_type')
+                ->where('status', '!=', 'approved')
+                ->pluck('document_type')
+                ->all();
+            $missing = array_merge($missing, $legacyPending);
+
+            if (!empty($missing)) {
+                return response()->json([
+                    'message' => 'All required documents must be approved before approving the driver.',
+                    'missing' => array_values(array_unique($missing)),
+                ], 422);
             }
 
             $driver->approval_status = 'approved';
@@ -127,11 +162,195 @@ class AdminDriversController
             'rejection_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        // Force the operator to give a reason on rejection so the driver gets
+        // actionable feedback in the mobile app.
+        if ($data['status'] === 'rejected' && empty(trim((string) ($data['rejection_reason'] ?? '')))) {
+            return response()->json([
+                'message' => 'A rejection reason is required when rejecting a document.',
+            ], 422);
+        }
+
         $document->status = $data['status'];
-        $document->rejection_reason = $data['rejection_reason'] ?? null;
+        $document->rejection_reason = $data['status'] === 'rejected'
+            ? trim($data['rejection_reason'])
+            : null;
         $document->save();
 
         return response()->json(['document' => $document->fresh()]);
+    }
+
+    /**
+     * Full driver profile used by the Approval Details page. Bundles the
+     * driver row, the user, ride_type / vehicle_type labels, and every
+     * uploaded document with its catalog name + label values.
+     */
+    public function fullProfile(Driver $driver)
+    {
+        $driver->load(['user', 'rideType', 'vehicleTypeRef']);
+
+        $docs = DriverDocument::query()
+            ->where('driver_id', $driver->id)
+            ->with(['document.labels', 'vehicleType'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (DriverDocument $d) => [
+                'id' => $d->id,
+                'document_id' => $d->document_id,
+                'document_name' => $d->document?->name,
+                'document_type' => $d->document_type, // legacy enum
+                'vehicle_type_id' => $d->vehicle_type_id,
+                'vehicle_type_name' => $d->vehicleType?->name,
+                'file_path' => $d->file_path,
+                'file_url' => route('admin.drivers.documents.file', [
+                    'driver' => $driver->id,
+                    'document' => $d->id,
+                ]),
+                'label_values' => $d->label_values,
+                'labels_meta' => $d->document?->labels->map(fn ($l) => [
+                    'label' => $l->label,
+                    'label_type' => $l->label_type,
+                    'mandatory' => (bool) $l->mandatory,
+                ])->all() ?? [],
+                'status' => $d->status,
+                'rejection_reason' => $d->rejection_reason,
+                'uploaded_at' => optional($d->created_at)->toIso8601String(),
+            ]);
+
+        return response()->json([
+            'driver' => [
+                'id' => $driver->id,
+                'user_id' => $driver->user_id,
+                'name' => $driver->user?->name,
+                'phone' => $driver->user?->phone,
+                'email' => $driver->user?->email,
+                'ride_type_id' => $driver->ride_type_id,
+                'ride_type_name' => $driver->rideType?->name,
+                'vehicle_type_id' => $driver->vehicle_type_id,
+                'vehicle_type_name' => $driver->vehicleTypeRef?->name,
+                'vehicle_reg_no' => $driver->vehicle_reg_no,
+                'vehicle_brand' => $driver->vehicle_brand,
+                'vehicle_model' => $driver->vehicle_model,
+                'vehicle_color' => $driver->vehicle_color,
+                'approval_status' => $driver->approval_status,
+                'deactivated_at' => optional($driver->deactivated_at)->toIso8601String(),
+                'is_online' => (bool) $driver->is_online,
+                'created_at' => optional($driver->created_at)->toIso8601String(),
+            ],
+            'documents' => $docs,
+        ]);
+    }
+
+    /**
+     * Stream a document file back to the admin. Files are stored on the
+     * non-public disk so a direct URL won't work — this endpoint
+     * authenticates the request and pipes the bytes through.
+     */
+    public function documentFile(Driver $driver, DriverDocument $document)
+    {
+        if ($document->driver_id !== $driver->id) {
+            abort(404);
+        }
+        if (!$document->file_path || !Storage::disk('local')->exists($document->file_path)) {
+            abort(404, 'File not found on disk.');
+        }
+
+        $mime = Storage::disk('local')->mimeType($document->file_path) ?: 'application/octet-stream';
+        $filename = basename($document->file_path);
+        $download = request()->boolean('download');
+
+        return response()->stream(
+            function () use ($document) {
+                $stream = Storage::disk('local')->readStream($document->file_path);
+                if ($stream) {
+                    fpassthru($stream);
+                    if (is_resource($stream)) fclose($stream);
+                }
+            },
+            200,
+            [
+                'Content-Type' => $mime,
+                'Content-Disposition' => ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
+            ],
+        );
+    }
+
+    /**
+     * Admin uploads a document on behalf of a driver (e.g. when paperwork
+     * arrives in person). Same payload shape as the driver-mobile upload —
+     * document_id is preferred, vehicle_type_id is optional, label_values
+     * accepted as JSON string or array.
+     */
+    public function uploadDocument(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            'document_id' => ['nullable', 'integer', 'exists:documents,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'document_type' => ['nullable', 'in:DL,RC,INSURANCE,ID'],
+            'label_values' => ['nullable'],
+            'file' => ['required', 'file', 'max:10240'],
+        ]);
+        if (empty($data['document_id']) && empty($data['document_type'])) {
+            return response()->json([
+                'message' => 'document_id or document_type is required.',
+            ], 422);
+        }
+
+        $labelValues = null;
+        if (isset($data['label_values'])) {
+            $labelValues = is_string($data['label_values'])
+                ? json_decode($data['label_values'], true)
+                : $data['label_values'];
+            if (!is_array($labelValues)) $labelValues = null;
+        }
+
+        $path = $request->file('file')->store('driver-documents', 'local');
+
+        $matcher = !empty($data['document_id'])
+            ? [
+                'driver_id' => $driver->id,
+                'document_id' => $data['document_id'],
+                'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+            ]
+            : [
+                'driver_id' => $driver->id,
+                'document_type' => $data['document_type'],
+            ];
+
+        $doc = DriverDocument::query()->updateOrCreate(
+            $matcher,
+            [
+                'document_id' => $data['document_id'] ?? null,
+                'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+                'document_type' => $data['document_type'] ?? null,
+                'file_path' => $path,
+                'label_values' => $labelValues,
+                'status' => 'uploaded',
+                'rejection_reason' => null,
+            ]
+        );
+
+        return response()->json(['document' => $doc->fresh()]);
+    }
+
+    /**
+     * Admin edits a driver row directly — e.g. setting vehicle_reg_no that
+     * the driver app no longer collects.
+     */
+    public function updateDriver(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
+            'vehicle_brand' => ['nullable', 'string', 'max:100'],
+            'vehicle_model' => ['nullable', 'string', 'max:100'],
+            'vehicle_color' => ['nullable', 'string', 'max:100'],
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+        ]);
+
+        $driver->fill($data);
+        $driver->save();
+
+        return response()->json(['driver' => $driver->fresh()]);
     }
 
     /**
@@ -269,6 +488,16 @@ class AdminDriversController
 
         if ($vehicleType = $request->query('vehicle_type')) {
             $query->where('vehicle_type', $vehicleType);
+        }
+
+        // ?has_documents=1 → drivers with at least one driver_documents row
+        // ?has_documents=0 → drivers with zero uploads
+        if ($request->has('has_documents') && $request->query('has_documents') !== '') {
+            if ($request->boolean('has_documents')) {
+                $query->whereHas('documents');
+            } else {
+                $query->whereDoesntHave('documents');
+            }
         }
 
         if ($q = trim((string) $request->query('q'))) {

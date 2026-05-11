@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
-    'city_id', 'ride_type_id', 'product_kind',
+    'city_id', 'ride_type_id', 'vehicle_type_id', 'product_kind',
     'display_name', 'display_order',
     'android_image_path', 'ios_image_path',
     'max_people', 'luggage_capacity',
@@ -61,6 +62,16 @@ class CityVehicleType extends Model
     public function rideType(): BelongsTo
     {
         return $this->belongsTo(RideType::class, 'ride_type_id');
+    }
+
+    public function vehicleType(): BelongsTo
+    {
+        return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
+    }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(CityVehicleTypeImage::class, 'city_vehicle_type_id');
     }
 
     public function getAndroidImageUrlAttribute(): ?string
