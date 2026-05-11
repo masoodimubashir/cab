@@ -14,6 +14,7 @@ export class AppComponent {
   driversOpen = true;
   settingsOpen = true;
   analyticsOpen = true;
+  promotionsOpen = true;
 
   constructor(public router: Router) {}
 

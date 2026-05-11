@@ -24,6 +24,10 @@ import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
+import { CityWidePromotionsComponent } from './admin/promotions/city-wide-promotions.component';
+import { PromoCodesComponent } from './admin/promotions/promo-codes.component';
+import { CouponsComponent } from './admin/promotions/coupons.component';
+import { ReferralsComponent } from './admin/promotions/referrals.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
 import { AnalyticsGraphsComponent } from './admin/analytics/analytics-graphs.component';
 import { AnalyticsReportsComponent } from './admin/analytics/analytics-reports.component';
@@ -58,6 +62,12 @@ export const routes: Routes = [
   { path: 'maps', component: MapsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'vehicles', component: VehiclesComponent, canActivate: [adminAuthGuard] },
+
+  { path: 'promotions', redirectTo: 'promotions/city-wide', pathMatch: 'full' },
+  { path: 'promotions/city-wide', component: CityWidePromotionsComponent, canActivate: [adminAuthGuard] },
+  { path: 'promotions/promo-codes', component: PromoCodesComponent, canActivate: [adminAuthGuard] },
+  { path: 'promotions/coupons', component: CouponsComponent, canActivate: [adminAuthGuard] },
+  { path: 'promotions/referrals', component: ReferralsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'settings', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard] },

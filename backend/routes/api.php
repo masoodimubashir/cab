@@ -38,6 +38,10 @@ use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
+use App\Http\Controllers\Admin\AdminCityWidePromotionsController;
+use App\Http\Controllers\Admin\AdminPromoCodesController;
+use App\Http\Controllers\Admin\AdminCouponsController;
+use App\Http\Controllers\Admin\AdminReferralsController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -221,6 +225,32 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/trips', [AdminTripsController::class, 'index']);
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation']);
     Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate']);
+
+    // ── Promotions: city-wide promotions ────────────────────────────
+    Route::get('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'index']);
+    Route::post('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'store']);
+    Route::get('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'show']);
+    Route::patch('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'update']);
+    Route::delete('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'destroy']);
+
+    // ── Promotions: promo codes ─────────────────────────────────────
+    Route::get('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'index']);
+    Route::post('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'store']);
+    Route::get('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'show']);
+    Route::patch('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'update']);
+    Route::delete('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'destroy']);
+
+    // ── Promotions: coupons ─────────────────────────────────────────
+    Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index']);
+    Route::post('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'store']);
+    Route::get('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'show']);
+    Route::patch('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'update']);
+    Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy']);
+
+    // ── Promotions: referrals (singleton-per-city) ──────────────────
+    Route::get('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'show']);
+    Route::patch('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
+    Route::post('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
