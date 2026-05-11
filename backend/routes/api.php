@@ -202,7 +202,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::delete('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'destroy']);
     Route::get('/admin/fleets', [AdminFleetsController::class, 'index']);
     Route::post('/admin/fleets', [AdminFleetsController::class, 'store']);
+    Route::get('/admin/fleets/{fleet}', [AdminFleetsController::class, 'show']);
     Route::patch('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);
+    Route::post('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);
     Route::delete('/admin/fleets/{fleet}', [AdminFleetsController::class, 'destroy']);
     Route::post('/admin/manual-dispatch/lookup-user', [AdminManualDispatchController::class, 'lookupUser']);
     Route::post('/admin/manual-dispatch/fare-estimate', [AdminManualDispatchController::class, 'fareEstimate']);
