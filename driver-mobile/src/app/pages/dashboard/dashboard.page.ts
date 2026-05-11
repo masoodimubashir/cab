@@ -25,6 +25,13 @@ export class DashboardPage implements OnDestroy {
       // but never appear as "Free" on the dispatch console.
       this.error = err.message;
     });
+    this.presence.onLocated(() => {
+      // The watcher just delivered a fresh fix — clear any stale "trying again"
+      // banner so the driver knows everything is healthy.
+      if (this.error && this.error.toLowerCase().includes('gps')) {
+        this.error = null;
+      }
+    });
   }
 
   ionViewWillEnter(): void {

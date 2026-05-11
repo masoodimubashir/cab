@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\DriverLocation;
 use App\Models\Trip;
+use App\Services\ManagerScope;
 use Illuminate\Http\Request;
 
 class AdminTripsController
@@ -27,6 +28,9 @@ class AdminTripsController
     {
         $query = Trip::query()
             ->with(['customer', 'driver', 'rideType', 'pricingRule']);
+
+        // Restrict to the manager's city scope. Super Admin sees all.
+        ManagerScope::applyCityScope($query, 'city_id');
 
         $category = $request->query('category');
         $status = $request->query('status');

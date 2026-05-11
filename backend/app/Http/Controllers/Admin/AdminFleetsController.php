@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\Fleet;
+use App\Services\ManagerScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -18,6 +19,9 @@ class AdminFleetsController
         if ($request->has('status') && $request->query('status') !== '') {
             $query->where('status', $request->query('status'));
         }
+        // City-scoped managers only see their city's fleets. Super Admin sees all.
+        ManagerScope::applyCityScope($query);
+
         return response()->json([
             'data' => $query->get()->map(fn (Fleet $f) => $this->shape($f)),
         ]);
@@ -31,6 +35,8 @@ class AdminFleetsController
     public function store(Request $request)
     {
         $data = $this->validatePayload($request, partial: false);
+        // Block creating a fleet outside the manager's city scope.
+        ManagerScope::assertCityAllowed((int) $data['city_id']);
         $file = $request->file('logo');
 
         $fleet = Fleet::query()->create($this->withoutLogo($data));
@@ -47,7 +53,11 @@ class AdminFleetsController
 
     public function update(Request $request, Fleet $fleet)
     {
+        ManagerScope::assertCityAllowed((int) $fleet->city_id);
         $data = $this->validatePayload($request, partial: true, fleetId: $fleet->id);
+        if (! empty($data['city_id'])) {
+            ManagerScope::assertCityAllowed((int) $data['city_id']);
+        }
         $file = $request->file('logo');
 
         $fleet->fill($this->withoutLogo($data));
@@ -67,6 +77,7 @@ class AdminFleetsController
 
     public function destroy(Fleet $fleet)
     {
+        ManagerScope::assertCityAllowed((int) $fleet->city_id);
         if ($fleet->logo_path && Storage::disk('public')->exists($fleet->logo_path)) {
             Storage::disk('public')->delete($fleet->logo_path);
         }
