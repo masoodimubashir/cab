@@ -62,3 +62,22 @@ ion-card + ion-button {
     }
   }
 }
+
+.tip-card .tip-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  ion-button { flex: 1; }
+}
+.tip-card .tip-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.tip-card--done ion-card-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+.tip-card--done ion-icon { font-size: 1.25rem; }

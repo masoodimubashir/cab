@@ -16,6 +16,7 @@ type TripDetail = {
   id: number;
   status: string;
   final_fare: number | null;
+  tip_amount?: number | null;
   payment_method?: PaymentMethod | null;
   pickup_lat?: number | null;
   pickup_lng?: number | null;
@@ -24,6 +25,11 @@ type TripDetail = {
   pickup_address?: string | null;
   drop_address?: string | null;
   driver?: { id: number; name?: string | null; accepted_payment_methods?: PaymentMethod[] | null };
+};
+
+type TippingConfig = {
+  values: number[];        // 3 presets: rupees or % depending on `in_percentage`
+  in_percentage: boolean;
 };
 
 @Component({
@@ -48,6 +54,15 @@ export class TripActivePage implements OnInit, OnDestroy {
   ratingComment = '';
   ratingBusy = false;
   ratingSubmitted = false;
+
+  // Tipping state — values pulled from /operator/tipping. Once the user taps
+  // any preset / submits a custom amount / taps Skip, this card disappears
+  // and won't return for this trip (option-A behaviour).
+  tipping: TippingConfig | null = null;
+  tipBusy = false;
+  tipSkipped = false;
+  tipCustomOpen = false;
+  tipCustomAmount: number | null = null;
 
   // SOS / share-link state
   sosBusy = false;
@@ -92,8 +107,20 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.refresh();
     void this.initMap();
     this.subscribeLive();
+    this.loadTippingConfig();
     // Slow polling fallback for status, in case Reverb is down.
     this.poll = setInterval(() => this.refresh(), 15000);
+  }
+
+  /**
+   * Fetch the operator's tipping presets once. Failure is non-fatal — the
+   * tip card just won't appear. We don't block the page on this.
+   */
+  private loadTippingConfig(): void {
+    this.api.get<TippingConfig>('/operator/tipping').subscribe({
+      next: (cfg) => { this.tipping = cfg; },
+      error: () => { this.tipping = null; },
+    });
   }
 
   ngOnDestroy(): void {
@@ -382,6 +409,80 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   isCompleted(): boolean {
     return this.trip?.status === 'COMPLETED';
+  }
+
+  // ── Tipping ──────────────────────────────────────────────────────
+
+  /** Show the tip card only on completed trips, with config loaded, where
+   *  the user hasn't already tipped or skipped this trip. */
+  get showTipCard(): boolean {
+    return (
+      this.isCompleted() &&
+      !!this.tipping &&
+      !this.tipSkipped &&
+      (this.trip?.tip_amount ?? null) === null
+    );
+  }
+
+  /** Display label for a preset value — "₹20" or "20%" depending on flag. */
+  tipLabel(value: number): string {
+    return this.tipping?.in_percentage ? `${value}%` : `₹${value}`;
+  }
+
+  /** Resolve a preset (rupee or percent) into actual rupees to send. */
+  private tipAmountFor(value: number): number {
+    if (!this.tipping?.in_percentage) return value;
+    const fare = this.trip?.final_fare ?? 0;
+    return Math.max(1, Math.round((fare * value) / 100));
+  }
+
+  pickTipPreset(value: number): void {
+    const amount = this.tipAmountFor(value);
+    this.submitTip(amount);
+  }
+
+  openCustomTip(): void {
+    this.tipCustomAmount = null;
+    this.tipCustomOpen = true;
+  }
+
+  submitCustomTip(): void {
+    const amt = Number(this.tipCustomAmount);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    this.tipCustomOpen = false;
+    this.submitTip(Math.round(amt));
+  }
+
+  skipTip(): void {
+    this.tipSkipped = true;
+  }
+
+  private submitTip(amount: number): void {
+    if (this.tipBusy) return;
+    this.tipBusy = true;
+    this.api.post<{ trip: TripDetail }>(`/trips/${this.tripId}/tip`, { amount }).subscribe({
+      next: async (res) => {
+        if (this.trip && res.trip?.tip_amount != null) {
+          this.trip.tip_amount = res.trip.tip_amount;
+        }
+        const t = await this.toastCtrl.create({
+          message: `Tip of ₹${amount} added. Thank you!`,
+          duration: 2000,
+          color: 'success',
+        });
+        await t.present();
+        this.tipBusy = false;
+      },
+      error: async (err) => {
+        const t = await this.toastCtrl.create({
+          message: err?.error?.message || 'Could not add tip.',
+          duration: 2500,
+          color: 'danger',
+        });
+        await t.present();
+        this.tipBusy = false;
+      },
+    });
   }
 
   async cancel(): Promise<void> {

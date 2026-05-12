@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'user_id',
     'ride_type_id',
     'vehicle_type_id',
+    'city_id',
+    'fleet_id',
     'approval_status',
     'approved_at',
     'rejected_at',

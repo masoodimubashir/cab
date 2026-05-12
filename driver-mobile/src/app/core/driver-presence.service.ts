@@ -8,6 +8,14 @@ export type PresenceError =
   | { code: 'timeout'; message: string }
   | { code: 'unknown'; message: string };
 
+export interface PresenceFix {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  speedKmh: number | null;
+  bearing: number | null;
+}
+
 /**
  * Streams the driver's location to the backend whenever they're online,
  * outside of an active trip. Trip-time pings still go through
@@ -24,7 +32,7 @@ export class DriverPresenceService {
   private readonly minIntervalMs = 10000;
   private highAccuracy = true;
   private errorListener: ((err: PresenceError) => void) | null = null;
-  private locatedListener: (() => void) | null = null;
+  private locatedListener: ((fix: PresenceFix) => void) | null = null;
 
   // Last error code we surfaced to the UI. We dedupe so the watcher's
   // repeated 20-second timeout doesn't flood the dashboard with the same
@@ -46,8 +54,12 @@ export class DriverPresenceService {
     this.errorListener = listener;
   }
 
-  /** Fired once per successful location ping — use it to clear UI error banners. */
-  onLocated(listener: () => void): void {
+  /**
+   * Fired on every successful GPS fix (even if we don't actually POST it
+   * because of the 10s throttle). The dashboard uses this to drive the
+   * live-tracking marker on the map.
+   */
+  onLocated(listener: (fix: PresenceFix) => void): void {
     this.locatedListener = listener;
   }
 
@@ -70,6 +82,7 @@ export class DriverPresenceService {
         maximumAge: 0,
         timeout: 20000,
       });
+      this.notifyLocated(pos);
       this.postLocation(pos);
     } catch (err) {
       this.handlePositionError(err, 'initial');
@@ -99,9 +112,45 @@ export class DriverPresenceService {
           this.handlePositionError(err, 'watch');
           return;
         }
-        if (pos) this.postLocation(pos);
+        if (pos) {
+          // Always notify the UI so the map marker tracks movement live, even
+          // when the backend POST is suppressed by the 10s throttle.
+          this.notifyLocated(pos);
+          this.postLocation(pos);
+        }
       },
     );
+  }
+
+  /**
+   * Builds a typed PresenceFix from a Capacitor position and hands it to the
+   * dashboard listener. Pure data — no API call here.
+   */
+  private notifyLocated(pos: {
+    coords: {
+      latitude: number;
+      longitude: number;
+      accuracy: number;
+      speed: number | null;
+      heading: number | null;
+    };
+  }): void {
+    if (!this.locatedListener) return;
+    const speedKmh =
+      pos.coords.speed != null && Number.isFinite(pos.coords.speed)
+        ? Math.max(0, pos.coords.speed) * 3.6
+        : null;
+    const bearing =
+      pos.coords.heading != null && Number.isFinite(pos.coords.heading)
+        ? Math.round(pos.coords.heading)
+        : null;
+    this.locatedListener({
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy: pos.coords.accuracy ?? null,
+      speedKmh,
+      bearing,
+    });
   }
 
   /**
@@ -206,10 +255,7 @@ export class DriverPresenceService {
           // A fix came through — clear any prior error banner and reset the
           // timeout counter so the next slow tick won't re-trigger.
           this.consecutiveTimeouts = 0;
-          if (this.lastNotifiedErrorCode) {
-            this.lastNotifiedErrorCode = null;
-            this.locatedListener?.();
-          }
+          this.lastNotifiedErrorCode = null;
         },
         error: (err: any) => {
           if (err?.status !== 429) {

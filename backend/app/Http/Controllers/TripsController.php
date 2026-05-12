@@ -8,6 +8,7 @@ use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
 use App\Models\PricingRule;
 use App\Models\Trip;
+use App\Models\WalletTransaction;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\SchedulingPolicyService;
@@ -392,6 +393,55 @@ class TripsController extends Controller
         }
 
         return response()->json(['trip' => $trip->fresh()]);
+    }
+
+    /**
+     * Customer adds a tip for the driver after a completed ride.
+     *
+     * One tip per trip — `trips.tip_amount` acts as the idempotency key.
+     * Tip is recorded both on the trip (for invoices/history) and as a
+     * wallet_transactions credit row for the driver (for the earnings tab).
+     */
+    public function tip(Request $request, Trip $trip)
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:1', 'max:10000'],
+        ]);
+
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        if ($trip->status !== 'COMPLETED') {
+            return response()->json(['message' => 'You can only tip a completed ride.'], 409);
+        }
+        if (!$trip->driver_id) {
+            return response()->json(['message' => 'No driver on this trip.'], 422);
+        }
+        if ($trip->tip_amount !== null) {
+            return response()->json(['message' => 'A tip has already been added to this ride.'], 409);
+        }
+
+        $amount = round((float) $data['amount'], 2);
+
+        \DB::transaction(function () use ($trip, $amount, $user) {
+            $trip->tip_amount = $amount;
+            $trip->save();
+
+            WalletTransaction::query()->create([
+                'user_id' => $trip->driver_id,
+                'amount' => $amount,
+                'type' => WalletTransaction::TYPE_CREDIT,
+                'engagement_id' => $trip->id,
+                'reason' => 'Customer tip',
+                'created_by_user_id' => $user->id,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Tip added. Thank you!',
+            'trip' => $trip->fresh(),
+        ], 201);
     }
 }
 

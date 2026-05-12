@@ -170,6 +170,19 @@ class AdminDriversController
             ], 422);
         }
 
+        // Block document approval until the operator has set the driver's
+        // vehicle registration number. Approving a document for a vehicle that
+        // has no plate on file leaves the driver in an inconsistent state
+        // (the dispatch flow keys off vehicle_reg_no).
+        if ($data['status'] === 'approved') {
+            $driver = $document->driver;
+            if (!$driver || empty(trim((string) ($driver->vehicle_reg_no ?? '')))) {
+                return response()->json([
+                    'message' => 'Please register vehicle number first.',
+                ], 422);
+            }
+        }
+
         $document->status = $data['status'];
         $document->rejection_reason = $data['status'] === 'rejected'
             ? trim($data['rejection_reason'])

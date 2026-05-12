@@ -540,6 +540,18 @@ export class DriverApprovalDetailsComponent implements OnInit, OnDestroy {
   }
 
   setStatus(d: DriverDocumentRow, status: 'approved' | 'rejected'): void {
+    // Approving a document for a driver with no vehicle registration on file
+    // leaves dispatch in an inconsistent state (the backend rejects this anyway
+    // with the same message — we just surface it earlier without a round-trip).
+    if (status === 'approved' && !this.driver?.vehicle_reg_no?.trim()) {
+      this.msg.add({
+        severity: 'error',
+        summary: 'Cannot approve document',
+        detail: 'Please register vehicle number first.',
+      });
+      return;
+    }
+
     this.api
       .patch<{ document: DriverDocumentRow }>(`/admin/drivers/documents/${d.id}/status`, { status })
       .subscribe({
