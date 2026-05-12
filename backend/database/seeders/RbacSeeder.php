@@ -74,6 +74,7 @@ class RbacSeeder extends Seeder
             'analytics.view', 'reports.view',
             'safety.view',
             'users.view',
+            'customers.view', 'customers.manage', 'customers.wallet',
             'contact_drivers.send',
             'settings.manage',
         ]);
@@ -243,6 +244,11 @@ class RbacSeeder extends Seeder
             ],
             'Users' => [
                 ['users.view', 'View Users', 'See customers and registered users (not managers).'],
+            ],
+            'Customers' => [
+                ['customers.view', 'View Customers', 'List, search and view customer profiles.'],
+                ['customers.manage', 'Manage Customers', 'Block, unblock, delete, unsubscribe and import customers.'],
+                ['customers.wallet', 'Manage Customer Wallets', 'Credit and debit customer wallet balances.'],
             ],
             'Administration' => [
                 ['managers.manage', 'Manage Managers', 'Create, edit, suspend admin managers.'],

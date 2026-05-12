@@ -4,6 +4,8 @@ import { AdminDriversComponent } from './admin/admin-drivers.component';
 import { AdminPricingComponent } from './admin/admin-pricing.component';
 import { AdminTripsComponent } from './admin/admin-trips.component';
 import { AdminUsersComponent } from './admin/admin-users.component';
+import { CustomersListComponent } from './admin/customers/customers-list.component';
+import { CustomerDetailComponent } from './admin/customers/customer-detail.component';
 import { AdminSafetyEventsComponent } from './admin/admin-safety-events.component';
 import { AdminReportsComponent } from './admin/admin-reports.component';
 import { RidesMapComponent } from './admin/rides/rides-map.component';
@@ -22,6 +24,7 @@ import { MapsComponent } from './admin/maps/maps.component';
 import { GeofencingComponent } from './admin/settings/geofencing.component';
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
+import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CityWidePromotionsComponent } from './admin/promotions/city-wide-promotions.component';
@@ -43,6 +46,8 @@ export const routes: Routes = [
   { path: 'pricing', component: AdminPricingComponent, canActivate: [adminAuthGuard] },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard] },
   { path: 'users', component: AdminUsersComponent, canActivate: [adminAuthGuard] },
+  { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard] },
+  { path: 'customers/:id', component: CustomerDetailComponent, canActivate: [adminAuthGuard] },
   { path: 'safety', component: AdminSafetyEventsComponent, canActivate: [adminAuthGuard] },
   { path: 'reports', component: AdminReportsComponent, canActivate: [adminAuthGuard] },
 
@@ -76,6 +81,7 @@ export const routes: Routes = [
 
   { path: 'settings', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard] },
+  { path: 'settings/operator', component: OperatorSettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/geofencing', component: GeofencingComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard] },

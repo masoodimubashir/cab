@@ -23,6 +23,9 @@
       <a *ngIf="can('users.view')" routerLink="/users" routerLinkActive="active" class="nav-link">
         <i class="pi pi-users"></i> Users
       </a>
+      <a *ngIf="can('customers.view')" routerLink="/customers" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-user-plus"></i> Customers
+      </a>
 
       <ng-container *ngIf="canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])">
         <button
@@ -110,6 +113,7 @@
           <i class="pi" [class.pi-chevron-down]="settingsOpen" [class.pi-chevron-right]="!settingsOpen"></i>
         </button>
         <div class="nav-group__items" *ngIf="settingsOpen">
+          <a *ngIf="can('settings.manage')" routerLink="/settings/operator" routerLinkActive="active" class="nav-sublink">Operator Settings</a>
           <a *ngIf="can('settings.manage')" routerLink="/settings/city" routerLinkActive="active" class="nav-sublink">City Settings</a>
           <a *ngIf="can('settings.manage')" routerLink="/settings/geofencing" routerLinkActive="active" class="nav-sublink">Geofencing</a>
           <a *ngIf="can('fleets.manage')" routerLink="/settings/fleets" routerLinkActive="active" class="nav-sublink">Fleets</a>
