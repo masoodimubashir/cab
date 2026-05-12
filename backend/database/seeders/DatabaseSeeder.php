@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\City;
 use App\Models\RideType;
 use App\Models\PricingRule;
+use App\Models\VehicleType;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -21,17 +22,25 @@ class DatabaseSeeder extends Seeder
         // User::factory(10)->create();
 
         // Minimal seed data for fare estimation during early development.
-        $city = City::updateOrCreate(
-            ['name' => 'Default City'],
-            ['country_code' => 'IN'],
-        );
+        // $city = City::updateOrCreate(
+        //     ['name' => 'Default City'],
+        //     ['country_code' => 'IN'],
+        // );
 
         $rideTypes = [
-            ['name' => 'Mini', 'description' => 'Budget ride', 'sort_order' => 10],
-            ['name' => 'Sedan', 'description' => 'Standard ride', 'sort_order' => 20],
-            ['name' => 'SUV', 'description' => 'Premium ride', 'sort_order' => 30],
-            ['name' => 'Outstation', 'description' => 'Inter-city ride', 'sort_order' => 40],
-            ['name' => 'Rental', 'description' => 'Hourly rental', 'sort_order' => 50],
+            ['name' => 'Airport', 'description' => 'Airport transfer', 'sort_order' => 10],
+            ['name' => 'Carpool', 'description' => 'Carpooling service', 'sort_order' => 20],
+            ['name' => 'Car Rental', 'description' => 'Car rental service', 'sort_order' => 30],
+            ['name' => 'Delivery', 'description' => 'Package delivery', 'sort_order' => 40],
+            ['name' => 'Normal', 'description' => 'Regular ride', 'sort_order' => 50],
+        ];
+
+        $vehicleTypes = [
+            ['name' => 'Sedan', 'description' => 'Standard sedan car', 'sort_order' => 10],
+            ['name' => 'SUV', 'description' => 'Sport Utility Vehicle', 'sort_order' => 20],
+            ['name' => 'Hatchback', 'description' => 'Compact hatchback car', 'sort_order' => 30],
+            ['name' => 'Van', 'description' => 'Spacious van for groups', 'sort_order' => 40],
+            ['name' => 'Motorcycle', 'description' => 'Two-wheeler motorcycle', 'sort_order' => 50],
         ];
 
         foreach ($rideTypes as $rt) {
@@ -39,44 +48,52 @@ class DatabaseSeeder extends Seeder
                 ['name' => $rt['name']],
                 ['description' => $rt['description'], 'sort_order' => $rt['sort_order']],
             );
+           
         }
 
-        $pricing = [
-            'Mini' => ['base_fare' => 30, 'per_km' => 10, 'per_min' => 1.2, 'surge_multiplier' => 1.0, 'commission_percent' => 20],
-            'Sedan' => ['base_fare' => 50, 'per_km' => 14, 'per_min' => 1.5, 'surge_multiplier' => 1.0, 'commission_percent' => 20],
-            'SUV' => ['base_fare' => 80, 'per_km' => 20, 'per_min' => 1.8, 'surge_multiplier' => 1.0, 'commission_percent' => 20],
-            'Outstation' => ['base_fare' => 120, 'per_km' => 30, 'per_min' => 2.0, 'surge_multiplier' => 1.0, 'commission_percent' => 18],
-            'Rental' => ['base_fare' => 150, 'per_km' => 0, 'per_min' => 8.0, 'surge_multiplier' => 1.0, 'commission_percent' => 15, 'min_fare' => 300],
-        ];
-
-        foreach ($pricing as $rideTypeName => $rule) {
-            $rideType = RideType::query()->where('name', $rideTypeName)->first();
-            if (!$rideType) {
-                continue;
-            }
-
-            PricingRule::updateOrCreate(
-                ['city_id' => $city->id, 'ride_type_id' => $rideType->id],
-                [
-                    'base_fare' => $rule['base_fare'],
-                    'per_km' => $rule['per_km'],
-                    'per_min' => $rule['per_min'],
-                    'surge_multiplier' => $rule['surge_multiplier'],
-                    'commission_percent' => $rule['commission_percent'],
-                    'min_fare' => $rule['min_fare'] ?? null,
-                ],
+        foreach ($vehicleTypes as $vt) {
+            VehicleType::updateOrCreate(
+                ['name' => $vt['name']],
+                ['description' => $vt['description'], 'sort_order' => $vt['sort_order']],
             );
         }
 
+        $pricing = [
+            'Airport' => ['base_fare' => 30, 'per_km' => 10, 'per_min' => 1.2, 'surge_multiplier' => 1.0, 'commission_percent' => 20],
+            'Carpool' => ['base_fare' => 50, 'per_km' => 14, 'per_min' => 1.5, 'surge_multiplier' => 1.0, 'commission_percent' => 20],
+            'Car Rental' => ['base_fare' => 80, 'per_km' => 20, 'per_min' => 1.8, 'surge_multiplier' => 1.0, 'commission_percent' => 20],
+            'Delivery' => ['base_fare' => 120, 'per_km' => 30, 'per_min' => 2.0, 'surge_multiplier' => 1.0, 'commission_percent' => 18],
+            'Normal' => ['base_fare' => 150, 'per_km' => 0, 'per_min' => 8.0, 'surge_multiplier' => 1.0, 'commission_percent' => 15, 'min_fare' => 300],
+        ];
+
+        // foreach ($pricing as $rideTypeName => $rule) {
+        //     $rideType = RideType::query()->where('name', $rideTypeName)->first();
+        //     if (!$rideType) {
+        //         continue;
+        //     }
+
+        //     PricingRule::updateOrCreate(
+        //         ['city_id' => $city->id, 'ride_type_id' => $rideType->id],
+        //         [
+        //             'base_fare' => $rule['base_fare'],
+        //             'per_km' => $rule['per_km'],
+        //             'per_min' => $rule['per_min'],
+        //             'surge_multiplier' => $rule['surge_multiplier'],
+        //             'commission_percent' => $rule['commission_percent'],
+        //             'min_fare' => $rule['min_fare'] ?? null,
+        //         ],
+        //     );
+        // }
+
         // Create a simple dev user for quick manual API testing (optional).
-        $testUser = User::query()->updateOrCreate(
-            ['email' => 'test@example.com'],
-            [
-                'name' => 'Test User',
-                'password' => bcrypt('password'),
-            ],
-        );
-        $testUser->addRole('customer');
+        // $testUser = User::query()->updateOrCreate(
+        //     ['email' => 'test@example.com'],
+        //     [
+        //         'name' => 'Test User',
+        //         'password' => bcrypt('password'),
+        //     ],
+        // );
+        // $testUser->addRole('customer');
 
         // Create an admin user for the web/admin panel.
         // Credentials are read from env: ADMIN_EMAIL / ADMIN_PASSWORD.
@@ -86,6 +103,6 @@ class DatabaseSeeder extends Seeder
         $this->call(RbacSeeder::class);
 
         // Sample trips for dashboards and API manual testing (pickup_address starts with "(seed) ").
-        $this->call(TripSeeder::class);
+        // $this->call(TripSeeder::class);
     }
 }

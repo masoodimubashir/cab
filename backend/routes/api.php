@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\AdminGlobalVehicleTypesController;
 use App\Http\Controllers\Admin\AdminRideTypesController;
 use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
+use App\Http\Controllers\Admin\AdminOperatorSettingsController;
 use App\Http\Controllers\Admin\AdminContactDriversController;
 use App\Http\Controllers\Admin\AdminDispatcherSettingsController;
 use App\Http\Controllers\Admin\AdminDispatchController;
@@ -46,6 +47,7 @@ use App\Http\Controllers\Admin\AdminPermissionsController;
 use App\Http\Controllers\Admin\AdminManagerRolesController;
 use App\Http\Controllers\Admin\AdminManagersController;
 use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\AdminCustomersController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
@@ -160,6 +162,26 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/reports', [AdminReportsController::class, 'index']);
     Route::get('/admin/users', [AdminUsersController::class, 'index']);
     Route::patch('/admin/users/{user}/role', [AdminUsersController::class, 'updateRole']);
+
+    // ── Customer Management ─────────────────────────────────────────
+    Route::prefix('admin/customers')->group(function () {
+        Route::get('/', [AdminCustomersController::class, 'index']);
+        Route::post('/import', [AdminCustomersController::class, 'importCsv']);
+        Route::get('/lookup/driver', [AdminCustomersController::class, 'lookupByDriver']);
+        Route::get('/lookup/ride', [AdminCustomersController::class, 'lookupByRide']);
+        Route::get('/{user}', [AdminCustomersController::class, 'show']);
+        Route::delete('/{user}', [AdminCustomersController::class, 'destroy']);
+        Route::post('/{user}/block', [AdminCustomersController::class, 'block']);
+        Route::post('/{user}/unblock', [AdminCustomersController::class, 'unblock']);
+        Route::post('/{user}/unsubscribe', [AdminCustomersController::class, 'unsubscribe']);
+        Route::post('/{user}/send-otp', [AdminCustomersController::class, 'sendOtp'])
+            ->middleware('throttle:otp');
+        Route::post('/{user}/wallet/transactions', [AdminCustomersController::class, 'creditDebit']);
+        Route::get('/{user}/wallet/transactions', [AdminCustomersController::class, 'walletTransactions']);
+        Route::get('/{user}/rides', [AdminCustomersController::class, 'rides']);
+        Route::get('/{user}/cancelled-rides', [AdminCustomersController::class, 'cancelledRides']);
+        Route::get('/{user}/referrals', [AdminCustomersController::class, 'referrals']);
+    });
     Route::get('/admin/cities', [AdminCitiesController::class, 'index']);
     Route::post('/admin/cities', [AdminCitiesController::class, 'store']);
     // City-scoped admin routes — `manager.city` middleware rejects requests
@@ -172,6 +194,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
         Route::patch('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
         Route::post('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
+        // Operator-wide (global, non-city) settings.
+        Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show']);
+        Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
+        Route::post('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
+
         Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
         Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
         Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);

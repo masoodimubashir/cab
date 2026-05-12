@@ -124,6 +124,15 @@ class AdminDispatchController
             }
 
             $row['status'] = 'inactive';
+            // Surface *why* this driver is inactive so the dispatcher knows
+            // whether to chase a GPS issue or just wait for them to go online.
+            if (! $driver->is_online) {
+                $row['inactive_reason'] = 'offline';
+            } elseif ($loc === null) {
+                $row['inactive_reason'] = 'no_location';
+            } else {
+                $row['inactive_reason'] = 'stale_location';
+            }
             $inactive[] = $row;
         }
 

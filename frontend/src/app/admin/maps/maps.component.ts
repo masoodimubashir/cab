@@ -28,6 +28,7 @@ interface DriverRow {
   lng: number | null;
   last_seen_at: string | null;
   status: 'free' | 'busy' | 'inactive';
+  inactive_reason?: 'offline' | 'no_location' | 'stale_location';
 }
 
 interface TaskRow {

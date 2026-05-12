@@ -11,18 +11,31 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Trip;
 use App\Models\Rating;
+use App\Models\WalletTransaction;
 
-#[Fillable(['name', 'email', 'password', 'phone', 'google_sub', 'avatar_path', 'accepted_payment_methods', 'last_login_at', 'manager_role_id', 'manager_city_id', 'manager_fleet_id', 'is_suspended'])]
+#[Fillable([
+    'name', 'email', 'password', 'phone', 'google_sub', 'avatar_path',
+    'accepted_payment_methods', 'last_login_at',
+    'manager_role_id', 'manager_city_id', 'manager_fleet_id', 'is_suspended',
+    // Customer profile fields (admin Customer module)
+    'dob', 'city', 'app_version', 'os_version', 'device_type',
+    'referral_code', 'referred_by_user_id',
+    'email_unsubscribed', 'sms_unsubscribed', 'push_unsubscribed',
+    'duplicate_registration',
+    'suspended_reason', 'suspended_at',
+])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasApiTokens;
+    use HasFactory, Notifiable, HasApiTokens, SoftDeletes;
 
     /**
      * Get the attributes that should be cast.
@@ -37,7 +50,44 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'accepted_payment_methods' => 'array',
             'is_suspended' => 'boolean',
+            'dob' => 'date',
+            'email_unsubscribed' => 'boolean',
+            'sms_unsubscribed' => 'boolean',
+            'push_unsubscribed' => 'boolean',
+            'duplicate_registration' => 'boolean',
+            'suspended_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Auto-generate a referral code for any new user that doesn't already have one.
+     * Customer signups, admin imports, and seeders all get covered by this hook.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (User $user) {
+            if (empty($user->referral_code)) {
+                do {
+                    $candidate = strtoupper(Str::random(8));
+                } while (self::query()->where('referral_code', $candidate)->exists());
+                $user->referral_code = $candidate;
+            }
+        });
+    }
+
+    public function walletTransactions(): HasMany
+    {
+        return $this->hasMany(WalletTransaction::class, 'user_id');
+    }
+
+    public function referrer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'referred_by_user_id');
+    }
+
+    public function referees(): HasMany
+    {
+        return $this->hasMany(User::class, 'referred_by_user_id');
     }
 
     public function roles(): HasMany
