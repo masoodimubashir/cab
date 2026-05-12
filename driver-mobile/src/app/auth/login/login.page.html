@@ -1,73 +1,143 @@
-<ion-header [translucent]="true" *ngIf="step === 'method'">
-  <ion-toolbar color="primary">
-    <ion-title>DreamCabs Driver</ion-title>
-  </ion-toolbar>
-</ion-header>
-
-<ion-header [translucent]="true" *ngIf="step !== 'method'">
-  <ion-toolbar>
-    <ion-buttons slot="start">
-      <ion-button (click)="backToMethod()" [disabled]="loading" aria-label="Back">
+<ion-header [translucent]="true">
+  <ion-toolbar [color]="step === 'phone' ? 'primary' : undefined">
+    <ion-buttons slot="start" *ngIf="step !== 'phone'">
+      <ion-button (click)="backToPhone()" [disabled]="loading" aria-label="Back">
         <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
+    <ion-title *ngIf="step === 'phone'">DreamCabs Driver</ion-title>
   </ion-toolbar>
 </ion-header>
 
 <ion-content class="ion-padding">
-  <!-- ============ METHOD PICKER ============ -->
-  <ng-container *ngIf="step === 'method'">
-    <div class="hero">
-      <h1>Sign in</h1>
-      <p>Choose how you’d like to continue.</p>
-    </div>
-
-    <ion-button expand="block" (click)="choosePhone()" [disabled]="loading">
-      Login with phone number
-    </ion-button>
-
-    <div class="divider ion-margin-top ion-margin-bottom"><span>or</span></div>
-
-    <ion-button
-      expand="block"
-      fill="outline"
-      (click)="signInWithGoogle()"
-      [disabled]="loading"
-    >
-      Continue with Google
-    </ion-button>
-  </ng-container>
-
-  <!-- ============ PHONE-ONLY: enter number ============ -->
   <ng-container *ngIf="step === 'phone'">
     <h1 class="title">Sign in</h1>
-    <p class="subtitle" *ngIf="firebaseReady">We’ll text a one-time code to your mobile number.</p>
+    <p class="subtitle" *ngIf="firebaseReady">We'll text a one-time code to your mobile number.</p>
     <p class="warn" *ngIf="!firebaseReady && firebaseSetup === 'not-web-app'">
-      Firebase <code>appId</code> in <code>environment.ts</code> is for Android/iOS, not the browser. Use Developer sign-in below.
+      Firebase <code>appId</code> in <code>environment.ts</code> is for Android/iOS, not the browser.
     </p>
     <p class="warn" *ngIf="!firebaseReady && firebaseSetup !== 'not-web-app'">
-      Firebase Web config is incomplete in <code>environment.ts</code>. Use Developer sign-in below.
+      Firebase Web config is incomplete in <code>environment.ts</code>.
     </p>
 
     <ion-item lines="full">
       <ion-label position="stacked">Mobile number</ion-label>
-      <ion-input
-        type="tel"
-        inputmode="tel"
-        [(ngModel)]="phone"
-        placeholder="9876543210 or +91 9876543210"
-        [disabled]="loading"
-        autocomplete="tel"
-      ></ion-input>
+      <div class="phone-row">
+        <button
+          type="button"
+          class="country-trigger"
+          (click)="showCountryPicker = true"
+          [disabled]="loading"
+        >
+          <span class="flag">{{ country.flag }}</span>
+          <span class="code">+{{ country.code }}</span>
+          <ion-icon name="chevron-down-outline"></ion-icon>
+        </button>
+        <ion-input
+          type="tel"
+          inputmode="tel"
+          [(ngModel)]="phone"
+          placeholder="9876543210"
+          [disabled]="loading"
+          autocomplete="tel"
+          class="phone-input"
+        ></ion-input>
+      </div>
     </ion-item>
-    <p class="hint ion-padding-start">India: enter 10 digits or full +91 number.</p>
+    <p class="hint ion-padding-start">Enter your number — the country prefix is added automatically.</p>
 
-    <ion-button expand="block" class="ion-margin-top" (click)="sendOtp()" [disabled]="loading || !firebaseReady">
-      {{ loading ? 'Sending…' : 'Send OTP' }}
+    <ion-button expand="block" class="ion-margin-top" (click)="proceedToPerms()" [disabled]="loading || !firebaseReady">
+      Continue
     </ion-button>
   </ng-container>
 
-  <!-- ============ PHONE-ONLY: enter SMS code ============ -->
+  <ion-modal [isOpen]="showCountryPicker" (didDismiss)="showCountryPicker = false">
+    <ng-template>
+      <ion-header>
+        <ion-toolbar color="primary">
+          <ion-title>Select country</ion-title>
+          <ion-buttons slot="end">
+            <ion-button (click)="showCountryPicker = false">Close</ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <ion-list>
+          <ion-item *ngFor="let c of countries" button (click)="pickCountry(c)">
+            <span class="flag-big" slot="start">{{ c.flag }}</span>
+            <ion-label>
+              <h3>{{ c.name }}</h3>
+              <p>+{{ c.code }}</p>
+            </ion-label>
+            <ion-icon *ngIf="c.iso === country.iso && c.code === country.code"
+                      name="checkmark-outline" slot="end" color="primary"></ion-icon>
+          </ion-item>
+        </ion-list>
+      </ion-content>
+    </ng-template>
+  </ion-modal>
+
+  <ng-container *ngIf="step === 'perms'">
+    <h1 class="title">Permissions Required</h1>
+    <p class="subtitle">
+      To make this app work smoothly, we need access to a few things on your device.
+    </p>
+
+    <ion-list class="perm-list" lines="full">
+      <ion-item>
+        <ion-icon name="location-outline" slot="start"></ion-icon>
+        <ion-label>
+          <h3>Location</h3>
+          <p>To share your live position with riders and pick up trips near you.</p>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-icon name="call-outline" slot="start"></ion-icon>
+        <ion-label>
+          <h3>Phone Number</h3>
+          <p>To verify your identity via SMS OTP.</p>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-icon name="chatbox-ellipses-outline" slot="start"></ion-icon>
+        <ion-label>
+          <h3>SMS</h3>
+          <p>To auto-read the OTP we just sent you.</p>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-icon name="people-outline" slot="start"></ion-icon>
+        <ion-label>
+          <h3>Contacts</h3>
+          <p>To let you message customers and dispatch quickly.</p>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-icon name="phone-portrait-outline" slot="start"></ion-icon>
+        <ion-label>
+          <h3>Device ID</h3>
+          <p>To keep your account secure across devices.</p>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-icon name="folder-outline" slot="start"></ion-icon>
+        <ion-label>
+          <h3>Files</h3>
+          <p>To upload your driving license, RC, insurance, and ID.</p>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <div class="perm-actions ion-margin-top">
+      <ion-button expand="block" (click)="allowPermsAndSendOtp()" [disabled]="loading">
+        {{ loading ? 'Granting…' : 'Allow' }}
+      </ion-button>
+      <ion-button expand="block" fill="outline" color="medium" (click)="denyPerms()" [disabled]="loading">
+        Deny
+      </ion-button>
+    </div>
+  </ng-container>
+
   <ng-container *ngIf="step === 'otp'">
     <h1 class="title">Enter the code</h1>
     <p class="subtitle">We sent your code via SMS to {{ phone }}.</p>
@@ -112,144 +182,7 @@
     </ion-button>
   </ng-container>
 
-  <!-- ============ PHONE-ONLY: profile completion ============ -->
-  <ng-container *ngIf="step === 'phone-info'">
-    <h1 class="title">Confirm your information</h1>
-
-    <div class="avatar-wrap">
-      <label class="avatar-edit">
-        <div
-          class="avatar"
-          [style.backgroundImage]="phoneInfoPhotoPreview ? 'url(' + phoneInfoPhotoPreview + ')' : null"
-        ></div>
-        <span class="plus-badge">+</span>
-        <input type="file" accept="image/*" hidden (change)="onPhotoSelected($event)" [disabled]="loading" />
-      </label>
-    </div>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Name</ion-label>
-      <ion-input type="text" [(ngModel)]="phoneInfoName" [disabled]="loading" autocomplete="name" required></ion-input>
-    </ion-item>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Email</ion-label>
-      <ion-input type="email" [(ngModel)]="phoneInfoEmail" [disabled]="loading" autocomplete="email" required></ion-input>
-    </ion-item>
-
-    <ion-button expand="block" class="ion-margin-top" (click)="submitPhoneInfo()" [disabled]="loading">
-      {{ loading ? 'Saving…' : 'Continue' }}
-    </ion-button>
-  </ng-container>
-
-  <!-- ============ GOOGLE FLOW: confirm info ============ -->
-  <ng-container *ngIf="step === 'google-info'">
-    <h1 class="title">Confirm your information</h1>
-
-    <div class="avatar-wrap">
-      <div
-        class="avatar"
-        [style.backgroundImage]="google?.photoUrl ? 'url(' + google!.photoUrl + ')' : null"
-      ></div>
-    </div>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Name</ion-label>
-      <ion-input type="text" [(ngModel)]="googleName" [disabled]="loading" autocomplete="name"></ion-input>
-    </ion-item>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Email</ion-label>
-      <ion-input type="email" [value]="google?.email || ''" [disabled]="true" autocomplete="email"></ion-input>
-    </ion-item>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Mobile number</ion-label>
-      <ion-input
-        type="tel"
-        inputmode="tel"
-        [(ngModel)]="googlePhone"
-        placeholder="9876543210 or +91 9876543210"
-        [disabled]="loading"
-        autocomplete="tel"
-      ></ion-input>
-    </ion-item>
-    <p class="hint ion-padding-start">India: enter 10 digits or full +91 number.</p>
-
-    <ion-button expand="block" class="ion-margin-top" (click)="sendGoogleOtp()" [disabled]="loading || !firebaseReady">
-      {{ loading ? 'Sending…' : 'Next' }}
-    </ion-button>
-  </ng-container>
-
-  <!-- ============ GOOGLE FLOW: SMS code ============ -->
-  <ng-container *ngIf="step === 'google-otp'">
-    <h1 class="title">Enter the code</h1>
-    <p class="subtitle">We sent your code via SMS to {{ googlePhone }}.</p>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">SMS code</ion-label>
-      <ion-input
-        type="text"
-        inputmode="numeric"
-        [(ngModel)]="googleOtp"
-        [disabled]="loading"
-        maxlength="8"
-        autocomplete="one-time-code"
-      ></ion-input>
-    </ion-item>
-
-    <ion-button
-      expand="block"
-      class="ion-margin-top"
-      (click)="verifyGoogleOtp()"
-      [disabled]="loading"
-      *ngIf="googleOtpReady"
-    >
-      {{ loading ? 'Verifying…' : 'Next' }}
-    </ion-button>
-
-    <div class="resend-row ion-margin-top">
-      <span class="resend-pill" *ngIf="resendSecondsLeft > 0">{{ resendDisplay }}</span>
-      <ion-button
-        fill="clear"
-        size="small"
-        (click)="resendGoogleOtp()"
-        [disabled]="loading"
-        *ngIf="resendSecondsLeft === 0"
-      >
-        Resend code
-      </ion-button>
-    </div>
-
-    <ion-button expand="block" fill="clear" size="small" (click)="backToGoogleInfo()" [disabled]="loading">
-      Edit details
-    </ion-button>
-  </ng-container>
-
-  <!-- reCAPTCHA host kept always-mounted so PhoneAuthService can attach to it. -->
   <div id="recaptcha-container"></div>
 
   <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal ion-margin-top">{{ error }}</p></ion-text>
-
-  <ion-accordion-group class="ion-margin-top" *ngIf="step === 'method' || step === 'phone'">
-    <ion-accordion value="dev">
-      <ion-item slot="header" lines="full">
-        <ion-label>Developer sign-in</ion-label>
-      </ion-item>
-      <div class="ion-padding" slot="content">
-        <p class="hint">Paste a Firebase ID token to call <code>/auth/otp/verify</code> without SMS.</p>
-        <ion-item lines="full">
-          <ion-label position="stacked">ID token</ion-label>
-          <ion-textarea [(ngModel)]="idToken" rows="3" [disabled]="loading"></ion-textarea>
-        </ion-item>
-        <ion-button expand="block" fill="outline" (click)="signInWithToken()" [disabled]="loading">
-          Sign in with token
-        </ion-button>
-      </div>
-    </ion-accordion>
-  </ion-accordion-group>
-
-  <ion-button expand="block" fill="clear" size="small" (click)="logoutDev()" *ngIf="step === 'method'">
-    Clear saved session
-  </ion-button>
 </ion-content>

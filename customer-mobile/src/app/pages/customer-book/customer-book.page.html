@@ -20,13 +20,13 @@
     <div *ngSwitchCase="'idle'" class="sheet-idle">
       <div class="ride-chips">
         <button
-          *ngFor="let r of rideTypes"
+          *ngFor="let p of productKinds"
           class="chip"
-          [class.active]="r.id === selectedRideTypeId"
-          (click)="selectRideType(r.id)"
+          [class.active]="p.kind === selectedProductKind"
+          (click)="selectProductKind(p.kind)"
         >
-          <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
-          <span>{{ r.name }}</span>
+          <ion-icon [name]="p.icon" aria-hidden="true"></ion-icon>
+          <span>{{ p.label }}</span>
         </button>
       </div>
 

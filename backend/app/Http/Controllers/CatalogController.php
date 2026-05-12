@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\City;
 use App\Models\Document;
 use App\Models\DocumentLabel;
+use App\Models\Fleet;
 use App\Models\RideType;
 use App\Models\VehicleType;
 use Illuminate\Http\Request;
@@ -38,6 +40,31 @@ class CatalogController extends Controller
                 'description' => $v->description,
                 'image_url' => $v->image_url,
             ]);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function cities(Request $request)
+    {
+        $rows = City::query()
+            ->select(['id', 'name', 'country_code'])
+            ->orderBy('name')
+            ->get();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function fleets(Request $request)
+    {
+        $query = Fleet::query()->where('is_active', true);
+        if ($cityId = $request->query('city_id')) {
+            $query->where('city_id', (int) $cityId);
+        }
+
+        $rows = $query
+            ->select(['id', 'name', 'city_id'])
+            ->orderBy('name')
+            ->get();
 
         return response()->json(['data' => $rows]);
     }

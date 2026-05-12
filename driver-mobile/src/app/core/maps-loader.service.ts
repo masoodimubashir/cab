@@ -34,9 +34,12 @@ export class MapsLoaderService {
       script.async = true;
       script.defer = true;
       script.onerror = () => reject(new Error('Failed to load Google Maps JavaScript API.'));
+      // `libraries=marker` brings in google.maps.marker.AdvancedMarkerElement,
+      // which replaces the deprecated google.maps.Marker class.
       script.src =
         `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
         '&loading=async' +
+        '&libraries=marker' +
         `&callback=${cbName}`;
       document.head.appendChild(script);
     });

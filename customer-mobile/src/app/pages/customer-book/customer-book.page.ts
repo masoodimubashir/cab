@@ -47,6 +47,22 @@ export class CustomerBookPage implements OnDestroy {
   rideTypes: RideType[] = [];
   selectedRideTypeId: number | null = null;
 
+  /**
+   * Top-of-screen ride mode chips (Local / Outstation / Rental). These map to
+   * `trips.product_kind` on the backend and decide *what kind* of trip is
+   * being booked. The vehicle class (Sedan / SUV / etc.) is still picked from
+   * the ride_types catalog under the hood for pricing.
+   *
+   * Vocabulary is fixed (the trips.product_kind enum), so it's defined here.
+   * Per-city label/icon overrides would later come from /pricing/products.
+   */
+  productKinds: { kind: 'local' | 'outstation' | 'rental'; label: string; icon: string }[] = [
+    { kind: 'local',      label: 'Local',      icon: 'car-outline' },
+    { kind: 'outstation', label: 'Outstation', icon: 'airplane-outline' },
+    { kind: 'rental',     label: 'Rental',     icon: 'time-outline' },
+  ];
+  selectedProductKind: 'local' | 'outstation' | 'rental' = 'local';
+
   pickup: { lat: number; lng: number; address: string } | null = null;
   drop: { lat: number; lng: number; address: string; place_id?: string } | null = null;
 
@@ -308,6 +324,10 @@ export class CustomerBookPage implements OnDestroy {
     }
   }
 
+  selectProductKind(kind: 'local' | 'outstation' | 'rental'): void {
+    this.selectedProductKind = kind;
+  }
+
   selectRideType(id: number): void {
     this.selectedRideTypeId = id;
     void this.fetchEstimate();
@@ -430,6 +450,7 @@ export class CustomerBookPage implements OnDestroy {
         .post<{ trip: { id: number } }>('/trips', {
           city_id: cityId,
           ride_type_id: this.selectedRideTypeId,
+          product_kind: this.selectedProductKind,
           pickup_address: this.pickup.address,
           pickup_lat: this.pickup.lat,
           pickup_lng: this.pickup.lng,

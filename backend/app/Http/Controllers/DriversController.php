@@ -27,6 +27,10 @@ class DriversController extends Controller
             // Reg no is now collected/edited by an admin, not the driver,
             // so it's optional during driver self-registration.
             'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
+            // Onboarding wizard now also captures the city + fleet. Both are
+            // nullable (fleet = "none" allowed; city set later by admin if missing).
+            'city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
         ]);
 
         $user = $request->user();
@@ -66,6 +70,8 @@ class DriversController extends Controller
             'vehicle_model' => $data['vehicle_model'] ?? ($existing->vehicle_model ?? null),
             'vehicle_color' => $data['vehicle_color'] ?? ($existing->vehicle_color ?? null),
             'vehicle_reg_no' => $data['vehicle_reg_no'] ?? ($existing->vehicle_reg_no ?? null),
+            'city_id' => array_key_exists('city_id', $data) ? $data['city_id'] : ($existing->city_id ?? null),
+            'fleet_id' => array_key_exists('fleet_id', $data) ? $data['fleet_id'] : ($existing->fleet_id ?? null),
         ];
         if (!$existing) {
             $payload['approval_status'] = 'pending';
@@ -185,6 +191,92 @@ class DriversController extends Controller
                 'Content-Disposition' => ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
             ],
         );
+    }
+
+    /**
+     * Earnings summary used by the driver mobile Earnings tab.
+     *
+     * Returns:
+     *  - total_earnings   lifetime SUM(final_fare) across the driver's completed trips
+     *  - wallet_balance   placeholder until driver payouts are wired up
+     *  - period           the bucket window: 'week' (last 7 days) or 'month' (last 30 days)
+     *  - buckets          [{ date: YYYY-MM-DD, amount: number, weekday: short }, ...]
+     *                     one entry per day in the requested window, in chronological order
+     *  - weekly           [{ date, amount, weekday }, ...] always the last 7 days
+     *                     so the dashboard's "weekly earnings" list stays stable
+     */
+    public function earnings(Request $request)
+    {
+        $user = $request->user();
+        $period = $request->query('period', 'week');
+        if (!in_array($period, ['week', 'month'], true)) {
+            $period = 'week';
+        }
+        $days = $period === 'month' ? 30 : 7;
+
+        $today = now()->startOfDay();
+        $windowStart = $today->copy()->subDays($days - 1);
+
+        $rows = Trip::query()
+            ->where('driver_id', $user->id)
+            ->where('status', 'COMPLETED')
+            ->whereNotNull('completed_at')
+            ->where('completed_at', '>=', $windowStart)
+            ->selectRaw('DATE(completed_at) as day, COALESCE(SUM(final_fare), 0) as amount')
+            ->groupBy('day')
+            ->pluck('amount', 'day');
+
+        // Backfill missing days with zero so the bar chart has even gaps.
+        $buckets = [];
+        for ($i = 0; $i < $days; $i++) {
+            $d = $windowStart->copy()->addDays($i);
+            $key = $d->toDateString();
+            $buckets[] = [
+                'date' => $key,
+                'amount' => (float) ($rows[$key] ?? 0),
+                'weekday' => $d->format('D'),
+            ];
+        }
+
+        // Always also return last-7-days for the weekly breakdown list.
+        $weekly = array_slice($buckets, -7);
+        if (count($buckets) < 7) {
+            $weekStart = $today->copy()->subDays(6);
+            $weekRows = Trip::query()
+                ->where('driver_id', $user->id)
+                ->where('status', 'COMPLETED')
+                ->whereNotNull('completed_at')
+                ->where('completed_at', '>=', $weekStart)
+                ->selectRaw('DATE(completed_at) as day, COALESCE(SUM(final_fare), 0) as amount')
+                ->groupBy('day')
+                ->pluck('amount', 'day');
+            $weekly = [];
+            for ($i = 0; $i < 7; $i++) {
+                $d = $weekStart->copy()->addDays($i);
+                $key = $d->toDateString();
+                $weekly[] = [
+                    'date' => $key,
+                    'amount' => (float) ($weekRows[$key] ?? 0),
+                    'weekday' => $d->format('D'),
+                ];
+            }
+        }
+
+        $totalEarnings = (float) Trip::query()
+            ->where('driver_id', $user->id)
+            ->where('status', 'COMPLETED')
+            ->sum('final_fare');
+
+        return response()->json([
+            'total_earnings' => round($totalEarnings, 2),
+            // Wallet balance for drivers isn't ledger-backed yet — show 0 until
+            // the payout module lands. UI presents this as "Wallet balance".
+            'wallet_balance' => 0.0,
+            'currency' => 'INR',
+            'period' => $period,
+            'buckets' => $buckets,
+            'weekly' => $weekly,
+        ]);
     }
 
     /**

@@ -56,9 +56,45 @@ class RatingsController extends Controller
     public function historyCustomer(Request $request)
     {
         $user = $request->user();
-        $trips = Trip::query()
-            ->where('customer_id', $user->id)
+
+        $query = Trip::query()->where('customer_id', $user->id);
+
+        // ── product_kind filter ─────────────────────────────────────
+        // 'all' (or missing) returns everything; otherwise must match the enum.
+        $productKind = $request->query('product_kind');
+        if ($productKind && $productKind !== 'all') {
+            if (in_array($productKind, ['local', 'rental', 'outstation'], true)) {
+                $query->where('product_kind', $productKind);
+            }
+        }
+
+        // ── status filter ───────────────────────────────────────────
+        // completed = ride finished cleanly
+        // cancelled = cancelled without a no-show flag (either side bailed early)
+        // missed    = cancelled AND no_show_by is set (someone didn't show up)
+        $status = $request->query('status', 'all');
+        if ($status === 'completed') {
+            $query->where('status', 'COMPLETED');
+        } elseif ($status === 'cancelled') {
+            $query->where('status', 'CANCELLED')->whereNull('no_show_by');
+        } elseif ($status === 'missed') {
+            $query->where('status', 'CANCELLED')->whereNotNull('no_show_by');
+        }
+
+        // Optional city + date-range filters (untouched when omitted).
+        if ($cityId = $request->query('city_id')) {
+            $query->where('city_id', (int) $cityId);
+        }
+        if ($from = $request->query('from')) {
+            $query->where('created_at', '>=', $from);
+        }
+        if ($to = $request->query('to')) {
+            $query->where('created_at', '<=', $to);
+        }
+
+        $trips = $query
             ->orderByDesc('completed_at')
+            ->orderByDesc('created_at')
             ->paginate(20);
 
         return response()->json(['data' => $trips]);

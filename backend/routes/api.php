@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\EmergencyContactsController;
+use App\Http\Controllers\SavedLocationsController;
+use App\Http\Controllers\OperatorPublicController;
 use App\Http\Controllers\Auth\FirebaseAuthController;
 use App\Http\Controllers\DeviceTokensController;
 use App\Http\Controllers\HealthController;
@@ -57,10 +60,25 @@ Route::post('/admin/login', [AdminAuthController::class, 'login']);
 
 Route::post('/auth/otp/start', [FirebaseAuthController::class, 'startOtp'])->middleware('throttle:otp');
 Route::post('/auth/otp/verify', [FirebaseAuthController::class, 'verifyOtp'])->middleware('throttle:otp');
-Route::post('/auth/google/verify', [FirebaseAuthController::class, 'verifyGoogle'])->middleware('throttle:otp');
 
 // Profile completion (used after first-time phone OTP sign-up to capture name/email/photo).
 Route::middleware('auth:sanctum')->post('/me/profile', [ProfileController::class, 'update']);
+
+// Per-user emergency contacts (driver + customer use the same endpoints).
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me/emergency-contacts', [EmergencyContactsController::class, 'index']);
+    Route::post('/me/emergency-contacts', [EmergencyContactsController::class, 'store']);
+    Route::patch('/me/emergency-contacts/{emergencyContact}', [EmergencyContactsController::class, 'update']);
+    Route::delete('/me/emergency-contacts/{emergencyContact}', [EmergencyContactsController::class, 'destroy']);
+});
+
+// Per-user saved locations (Home, Work, etc.).
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me/saved-locations', [SavedLocationsController::class, 'index']);
+    Route::post('/me/saved-locations', [SavedLocationsController::class, 'store']);
+    Route::patch('/me/saved-locations/{savedLocation}', [SavedLocationsController::class, 'update']);
+    Route::delete('/me/saved-locations/{savedLocation}', [SavedLocationsController::class, 'destroy']);
+});
 
 // Session + account management.
 Route::middleware('auth:sanctum')->post('/me/logout', [AccountController::class, 'logout']);
@@ -120,6 +138,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // the user is still pre-driver when they fetch these.
     Route::get('/catalog/ride-types', [CatalogController::class, 'rideTypes']);
     Route::get('/catalog/vehicle-types', [CatalogController::class, 'vehicleTypes']);
+    Route::get('/catalog/cities', [CatalogController::class, 'cities']);
+    Route::get('/catalog/fleets', [CatalogController::class, 'fleets']);
     Route::get('/catalog/documents', [CatalogController::class, 'documents']);
 });
 
@@ -131,6 +151,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/drivers/go-offline', [DriversController::class, 'goOffline']);
     Route::post('/drivers/location', [DriversController::class, 'pingLocation'])->middleware('throttle:location');
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
+    Route::get('/drivers/me/earnings', [DriversController::class, 'earnings']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -337,8 +358,12 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/invoice', [InvoicesController::class, 'generate']);
     Route::get('/trips/{trip}/invoice/download', [InvoicesController::class, 'download']);
     Route::post('/trips/{trip}/rating', [RatingsController::class, 'store']);
+    Route::post('/trips/{trip}/tip', [TripsController::class, 'tip']);
     Route::get('/customer/trips/history', [RatingsController::class, 'historyCustomer']);
 });
+
+// Public operator config slices used by the customer/driver apps.
+Route::middleware('auth:sanctum')->get('/operator/tipping', [OperatorPublicController::class, 'tipping']);
 
 Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayWebhook'])->middleware('throttle:webhooks');
 
