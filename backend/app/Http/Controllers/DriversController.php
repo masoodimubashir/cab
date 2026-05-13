@@ -267,11 +267,21 @@ class DriversController extends Controller
             ->where('status', 'COMPLETED')
             ->sum('final_fare');
 
+        // Net credits − debits from wallet_transactions. Tips, refunds, and
+        // operator adjustments all live in this ledger.
+        $credit = \App\Models\WalletTransaction::TYPE_CREDIT;
+        $debit = \App\Models\WalletTransaction::TYPE_DEBIT;
+        $walletBalance = (float) \App\Models\WalletTransaction::query()
+            ->where('user_id', $user->id)
+            ->selectRaw(
+                "COALESCE(SUM(CASE WHEN type = ? THEN amount WHEN type = ? THEN -amount ELSE 0 END), 0) as bal",
+                [$credit, $debit],
+            )
+            ->value('bal');
+
         return response()->json([
             'total_earnings' => round($totalEarnings, 2),
-            // Wallet balance for drivers isn't ledger-backed yet — show 0 until
-            // the payout module lands. UI presents this as "Wallet balance".
-            'wallet_balance' => 0.0,
+            'wallet_balance' => round($walletBalance, 2),
             'currency' => 'INR',
             'period' => $period,
             'buckets' => $buckets,
@@ -288,9 +298,16 @@ class DriversController extends Controller
     {
         $user = $request->user();
 
+        // Broader than Trip::ACTIVE_DRIVER_STATUSES on purpose: also surface
+        // NEGOTIATION trips the customer pre-selected this driver for, and
+        // CONFIRMED trips waiting for /driver-accept. Without these, a cold
+        // start mid-handoff lands on "no active trip" even though the driver
+        // is committed to one.
+        $statuses = array_merge(['NEGOTIATION', 'CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES);
+
         $trip = Trip::query()
             ->where('driver_id', $user->id)
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', $statuses)
             ->orderByDesc('updated_at')
             ->first();
 
@@ -571,10 +588,14 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
 
-        // Same 5-second throttle as trip pings, scoped to this driver's latest row.
+        // Scope the throttle to *presence* rows (trip_id IS NULL) so the 5s
+        // trip-location stream doesn't starve the 10s presence ping. They
+        // share the same table but serve different purposes — interleaving
+        // them would let one block the other indefinitely.
         $minIntervalSeconds = 5;
         $last = DriverLocation::query()
             ->where('driver_id', $user->id)
+            ->whereNull('trip_id')
             ->orderByDesc('recorded_at')
             ->first();
 

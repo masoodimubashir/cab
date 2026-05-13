@@ -98,6 +98,37 @@ export class TripActivePage implements OnInit, OnDestroy {
     private realtime: RealtimeService
   ) {}
 
+  /**
+   * Per-state title + subtitle copy. Replaces the generic enum value with
+   * something a customer would actually want to read while watching the trip
+   * progress. The ETA chip is still rendered separately when applicable.
+   */
+  statusCopy(): { title: string; sub: string } {
+    const status = this.trip?.status ?? '';
+    switch (status) {
+      case 'CONFIRMED':
+        return { title: 'Driver confirmed', sub: 'Connecting…' };
+      case 'ASSIGNED':
+      case 'EN_ROUTE_PICKUP':
+        return {
+          title: 'Driver is on the way',
+          sub: this.etaMinutes != null ? `Arriving in ${this.etaMinutes} min` : 'Heading to pickup',
+        };
+      case 'ARRIVED_PICKUP':
+        return { title: 'Driver has arrived', sub: 'Please come to the curb' };
+      case 'EN_ROUTE_DROP':
+        return { title: 'Ride in progress', sub: "Sit back — you're on your way" };
+      case 'ARRIVED_DROP':
+        return { title: "You've arrived", sub: 'Please complete payment' };
+      case 'COMPLETED':
+        return { title: 'Trip complete', sub: 'Tap to pay & rate' };
+      case 'CANCELLED':
+        return { title: 'Trip cancelled', sub: '' };
+      default:
+        return { title: status || 'Loading…', sub: '' };
+    }
+  }
+
   ngOnInit(): void {
     this.tripId = Number(this.route.snapshot.paramMap.get('tripId'));
     if (!this.tripId) {
@@ -148,6 +179,10 @@ export class TripActivePage implements OnInit, OnDestroy {
         center: { lat: 28.6139, lng: 77.209 },
         zoom: 14,
         disableDefaultUI: true,
+        // Required for AdvancedMarkerElement to render. DEMO_MAP_ID is
+        // Google's public test id; replace with a styled mapId when going to
+        // production.
+        mapId: 'DEMO_MAP_ID',
       });
       this.fitMap();
     } catch {
@@ -188,17 +223,27 @@ export class TripActivePage implements OnInit, OnDestroy {
     if (t.pickup_lat != null && t.pickup_lng != null) {
       const pos = { lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) };
       if (!this.pickupMarker) {
-        this.pickupMarker = new google.maps.Marker({ position: pos, map: this.map, label: 'A' });
+        this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: pos,
+          map: this.map,
+          title: 'Pickup',
+          content: this.buildPin('A', '#1f8b4c'),
+        });
       } else {
-        this.pickupMarker.setPosition(pos);
+        this.pickupMarker.position = pos;
       }
     }
     if (t.drop_lat != null && t.drop_lng != null) {
       const pos = { lat: Number(t.drop_lat), lng: Number(t.drop_lng) };
       if (!this.dropMarker) {
-        this.dropMarker = new google.maps.Marker({ position: pos, map: this.map, label: 'B' });
+        this.dropMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: pos,
+          map: this.map,
+          title: 'Drop',
+          content: this.buildPin('B', '#c0392b'),
+        });
       } else {
-        this.dropMarker.setPosition(pos);
+        this.dropMarker.position = pos;
       }
     }
     this.fitMap();
@@ -209,8 +254,10 @@ export class TripActivePage implements OnInit, OnDestroy {
     const bounds = new google.maps.LatLngBounds();
     let any = false;
     for (const m of [this.pickupMarker, this.dropMarker, this.driverMarker, this.selfMarker]) {
-      if (m) {
-        bounds.extend(m.getPosition());
+      if (m && m.position) {
+        // AdvancedMarkerElement.position is either {lat,lng} or LatLng; extend()
+        // accepts both shapes via the LatLngLiteral overload.
+        bounds.extend(m.position as any);
         any = true;
       }
     }
@@ -222,23 +269,58 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.scheduleEtaUpdate();
     if (!this.map) return;
     if (!this.driverMarker) {
-      this.driverMarker = new google.maps.Marker({
+      this.driverMarker = new google.maps.marker.AdvancedMarkerElement({
         position: this.driverPosition,
         map: this.map,
         title: 'Driver',
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: '#1f8b4c',
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2,
-        },
+        content: this.buildDot('#1f8b4c'),
       });
       this.fitMap();
     } else {
-      this.driverMarker.setPosition(this.driverPosition);
+      this.driverMarker.position = this.driverPosition;
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Marker content builders for AdvancedMarkerElement
+  // ─────────────────────────────────────────────────────────────────
+
+  private buildPin(letter: string, color: string): HTMLElement {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:28px',
+      'height:36px',
+      'display:flex',
+      'align-items:flex-start',
+      'justify-content:center',
+      'padding-top:4px',
+      'font-weight:700',
+      'font-size:13px',
+      'color:#fff',
+      `background:${color}`,
+      'border-radius:50% 50% 50% 0',
+      'transform:rotate(-45deg) translate(0,-14px)',
+      'border:2px solid #fff',
+      'box-shadow:0 1px 4px rgba(0,0,0,0.4)',
+    ].join(';');
+    const inner = document.createElement('span');
+    inner.textContent = letter;
+    inner.style.cssText = 'transform:rotate(45deg);';
+    el.appendChild(inner);
+    return el;
+  }
+
+  private buildDot(color: string): HTMLElement {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:16px',
+      'height:16px',
+      'border-radius:50%',
+      `background:${color}`,
+      'border:2px solid #fff',
+      'box-shadow:0 1px 4px rgba(0,0,0,0.4)',
+    ].join(';');
+    return el;
   }
 
   /**
@@ -360,23 +442,16 @@ export class TripActivePage implements OnInit, OnDestroy {
     // confirm where they are relative to the driver.
     if (this.map) {
       if (!this.selfMarker) {
-        this.selfMarker = new google.maps.Marker({
+        this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
           position: p,
           map: this.map,
           title: 'You',
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 7,
-            fillColor: '#1e6cf0',
-            fillOpacity: 1,
-            strokeColor: '#fff',
-            strokeWeight: 2,
-          },
+          content: this.buildDot('#1e6cf0'),
           zIndex: 4,
         });
         this.fitMap();
       } else {
-        this.selfMarker.setPosition(p);
+        this.selfMarker.position = p;
       }
     }
 
