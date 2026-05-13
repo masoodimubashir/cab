@@ -39,9 +39,16 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('location', function (Request $request) {
+            // Shared bucket across /drivers/location (10s presence),
+            // /trips/{id}/location (5s trip), and /trips/{id}/customer-location
+            // (5s customer). Steady-state on an active trip is ~18 req/min per
+            // user; the bump to 300/min covers brief GPS bursts, hot-reloads
+            // during dev, and a parallel customer stream without blocking.
+            // TripTrackingController already enforces a 5s server-side minimum
+            // before persisting, so this only guards against outright spam.
             $userId = optional($request->user())->id;
             $key = 'location:' . ($userId ?: $request->ip());
-            return [Limit::perMinute(60)->by((string) $key)];
+            return [Limit::perMinute(300)->by((string) $key)];
         });
 
         RateLimiter::for('chat', function (Request $request) {

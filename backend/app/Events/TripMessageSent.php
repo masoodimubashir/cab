@@ -24,6 +24,11 @@ class TripMessageSent implements ShouldBroadcastNow
         return [new PrivateChannel('trip.' . $this->tripId . '.chat')];
     }
 
+    public function broadcastAs(): string
+    {
+        return 'TripMessageSent';
+    }
+
     public function broadcastWith(): array
     {
         return [

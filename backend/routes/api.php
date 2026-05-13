@@ -95,12 +95,16 @@ Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middle
 // Public lookup endpoints for the mobile booking UI.
 Route::get('/pricing/cities', [PricingController::class, 'cities']);
 Route::get('/pricing/ride-types', [PricingController::class, 'rideTypes']);
+Route::get('/pricing/vehicle-types', [PricingController::class, 'vehicleTypes']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips', [TripsController::class, 'store'])->middleware('throttle:booking');
     Route::post('/trips/{trip}/cancel', [TripsController::class, 'cancel']);
     Route::post('/trips/{trip}/confirm', [TripsController::class, 'confirm']);
     Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
+    // List drivers eligible for this trip + customer picks one to negotiate with.
+    Route::get('/trips/{trip}/nearby-drivers', [TripsController::class, 'nearbyDrivers']);
+    Route::post('/trips/{trip}/select-driver', [TripsController::class, 'selectDriver']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {

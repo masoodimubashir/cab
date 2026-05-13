@@ -24,6 +24,11 @@ class SosTriggered implements ShouldBroadcastNow
         return [new PrivateChannel('trip.' . $this->tripId . '.sos')];
     }
 
+    public function broadcastAs(): string
+    {
+        return 'SosTriggered';
+    }
+
     public function broadcastWith(): array
     {
         return [

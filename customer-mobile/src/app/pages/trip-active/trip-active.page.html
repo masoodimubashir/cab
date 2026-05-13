@@ -15,10 +15,12 @@
   <ng-container *ngIf="!loading && trip as t">
     <ion-card>
       <ion-card-header>
-        <ion-card-title>Status</ion-card-title>
-        <ion-card-subtitle>
-          {{ t.status }}
+        <ion-card-title>
+          {{ statusCopy().title }}
           <ion-badge *ngIf="liveConnected" color="success" style="margin-left: 0.5rem;">live</ion-badge>
+        </ion-card-title>
+        <ion-card-subtitle *ngIf="statusCopy().sub">
+          {{ statusCopy().sub }}
         </ion-card-subtitle>
       </ion-card-header>
       <ion-card-content>
@@ -157,7 +159,7 @@
     <ion-card *ngIf="isCompleted() && (trip?.tip_amount ?? 0) > 0" class="tip-card tip-card--done">
       <ion-card-content>
         <ion-icon name="heart-outline" color="success"></ion-icon>
-        You tipped <strong>₹{{ trip?.tip_amount }}</strong>. Thanks!
+        You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!
       </ion-card-content>
     </ion-card>
 

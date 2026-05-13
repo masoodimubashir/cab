@@ -1,0 +1,40 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-title>Trip complete</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding trip-summary">
+  <div class="hero">
+    <small>You earned</small>
+    <h1>₹{{ finalFare | number:'1.0-2' }}</h1>
+    <p *ngIf="estimatedFare && estimatedFare !== finalFare" class="estimate-note">
+      Estimated was ₹{{ estimatedFare | number:'1.0-2' }} — settled from your actual route.
+    </p>
+  </div>
+
+  <ion-list lines="full" class="ion-margin-top">
+    <ion-item>
+      <ion-label>Waiting charge</ion-label>
+      <ion-note slot="end">₹{{ waitingCharge | number:'1.0-2' }}</ion-note>
+    </ion-item>
+    <ion-item>
+      <ion-label>Customer pays via</ion-label>
+      <ion-note slot="end">{{ paymentMethod }}</ion-note>
+    </ion-item>
+    <ion-item *ngIf="tipAmount">
+      <ion-label>Tip</ion-label>
+      <ion-note slot="end">₹{{ tipAmount | number:'1.0-2' }}</ion-note>
+    </ion-item>
+  </ion-list>
+
+  <ion-text color="medium">
+    <p class="hint">
+      A tip from the customer (if any) will appear in your earnings after they confirm payment.
+    </p>
+  </ion-text>
+
+  <ion-button expand="block" color="primary" class="ion-margin-top" (click)="done()">
+    Done
+  </ion-button>
+</ion-content>

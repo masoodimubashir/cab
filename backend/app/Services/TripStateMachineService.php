@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\DB;
 
 class TripStateMachineService
 {
-    public function __construct(private NotificationService $notificationService)
-    {
+    public function __construct(
+        private NotificationService $notificationService,
+        private FareEstimationService $fareEstimationService,
+    ) {
     }
 
 
@@ -75,7 +77,13 @@ class TripStateMachineService
                 $trip->arrived_drop_at = now();
                 break;
             case 'COMPLETED':
+                // Stamp completion first so recomputeFinal sees the closed window
+                // when summing telemetry.
                 $trip->completed_at = now();
+                $negotiatedFloor = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+                $settle = $this->fareEstimationService->recomputeFinal($trip, $negotiatedFloor);
+                $trip->final_fare = $settle['final_fare'];
+                $trip->waiting_charge_amount = $settle['waiting_charge_amount'];
                 break;
             case 'CANCELLED':
                 $trip->cancelled_at = now();

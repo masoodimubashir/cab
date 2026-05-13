@@ -38,8 +38,11 @@ class TripTrackingController extends Controller
             ], 409);
         }
 
-        // Throttle location writes to avoid flooding.
-        $minIntervalSeconds = 5;
+        // Server-side safety net to keep the table from being flooded if a
+        // misbehaving client posts faster than its own throttle. The client
+        // already enforces 5s — we sit at 3s so normal traffic never races
+        // this window and we only block actual abuse.
+        $minIntervalSeconds = 3;
         $last = DriverLocation::query()
             ->where('trip_id', $trip->id)
             ->where('driver_id', $user->id)
@@ -106,7 +109,8 @@ class TripTrackingController extends Controller
             ], 409);
         }
 
-        $minIntervalSeconds = 5;
+        // Same 3s safety net as the driver stream — see comment in updateLocation.
+        $minIntervalSeconds = 3;
         $last = CustomerLocation::query()
             ->where('trip_id', $trip->id)
             ->where('customer_id', $user->id)

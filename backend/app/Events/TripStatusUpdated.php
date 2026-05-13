@@ -24,6 +24,16 @@ class TripStatusUpdated implements ShouldBroadcastNow
         return [new PrivateChannel('trip.' . $this->tripId . '.tracking')];
     }
 
+    /**
+     * Override the default fully-qualified-class name so mobile clients can
+     * `channel.bind('TripStatusUpdated', ...)` without having to escape the
+     * namespace.
+     */
+    public function broadcastAs(): string
+    {
+        return 'TripStatusUpdated';
+    }
+
     public function broadcastWith(): array
     {
         return [

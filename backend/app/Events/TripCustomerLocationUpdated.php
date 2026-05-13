@@ -24,6 +24,11 @@ class TripCustomerLocationUpdated implements ShouldBroadcastNow
         return [new PrivateChannel('trip.' . $this->tripId . '.tracking')];
     }
 
+    public function broadcastAs(): string
+    {
+        return 'TripCustomerLocationUpdated';
+    }
+
     public function broadcastWith(): array
     {
         return [

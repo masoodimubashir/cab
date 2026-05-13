@@ -23,6 +23,11 @@ class FareNegotiationLocked implements ShouldBroadcastNow
         return [new PrivateChannel('trip.' . $this->tripId . '.negotiation')];
     }
 
+    public function broadcastAs(): string
+    {
+        return 'FareNegotiationLocked';
+    }
+
     public function broadcastWith(): array
     {
         return [
