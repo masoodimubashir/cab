@@ -11,9 +11,21 @@ interface EmergencyContact {
   is_primary: boolean;
 }
 
+interface SupportInfo {
+  emergency_police_no: string | null;
+  customer_support_no: string | null;
+  driver_support_no: string | null;
+  support_email: string | null;
+}
+
 /**
  * Customer's emergency contacts. Same backend endpoint as the driver app;
  * SOS flows on either side will pull from this list.
+ *
+ * Two segments:
+ *   - "My Contacts": user-saved friends/family numbers (existing).
+ *   - "Support":     official numbers from city_settings (police, customer
+ *                    support line, support email). Read-only, tap-to-call.
  */
 @Component({
   selector: 'app-customer-emergency-contacts',
@@ -22,9 +34,15 @@ interface EmergencyContact {
   standalone: false,
 })
 export class CustomerEmergencyContactsPage implements OnInit {
+  segment: 'contacts' | 'support' = 'contacts';
+
   contacts: EmergencyContact[] = [];
   loading = false;
   error: string | null = null;
+
+  support: SupportInfo | null = null;
+  supportLoading = false;
+  supportError: string | null = null;
 
   dialogOpen = false;
   saving = false;
@@ -45,6 +63,26 @@ export class CustomerEmergencyContactsPage implements OnInit {
     const nav = navigator as any;
     this.pickerSupported = !!nav.contacts && typeof nav.contacts.select === 'function';
     this.refresh();
+    this.loadSupport();
+  }
+
+  loadSupport(): void {
+    this.supportLoading = true;
+    this.supportError = null;
+    this.api.get<SupportInfo>('/support-info').subscribe({
+      next: (res) => { this.support = res; this.supportLoading = false; },
+      error: (err) => { this.supportError = err?.error?.message || 'Could not load support info.'; this.supportLoading = false; },
+    });
+  }
+
+  callNumber(phone: string | null | undefined): void {
+    if (!phone) return;
+    window.location.href = `tel:${phone}`;
+  }
+
+  emailSupport(email: string | null | undefined): void {
+    if (!email) return;
+    window.location.href = `mailto:${email}`;
   }
 
   refresh(): void {

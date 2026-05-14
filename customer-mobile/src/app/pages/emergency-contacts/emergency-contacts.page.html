@@ -5,12 +5,23 @@
         <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
-    <ion-title>Emergency Contacts</ion-title>
+    <ion-title>Emergency &amp; Support</ion-title>
+  </ion-toolbar>
+  <ion-toolbar>
+    <ion-segment [(ngModel)]="segment" mode="md">
+      <ion-segment-button value="contacts">
+        <ion-label>My Contacts</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="support">
+        <ion-label>Support</ion-label>
+      </ion-segment-button>
+    </ion-segment>
   </ion-toolbar>
 </ion-header>
 
 <ion-content>
-  <div class="page-pad">
+  <!-- ─────────────  My Contacts  ───────────── -->
+  <div class="page-pad" *ngIf="segment === 'contacts'">
     <p class="muted small">
       Save trusted friends and family. We'll show them quick-dial in an SOS.
     </p>
@@ -59,6 +70,46 @@
       </div>
       <div *ngIf="loading" class="empty"><ion-spinner name="crescent"></ion-spinner></div>
     </ng-template>
+  </div>
+
+  <!-- ─────────────  Support  ───────────── -->
+  <div class="page-pad" *ngIf="segment === 'support'">
+    <p class="muted small">
+      Official numbers from your operator. Tap to call or email.
+    </p>
+
+    <ion-text color="danger" *ngIf="supportError"><p>{{ supportError }}</p></ion-text>
+
+    <div *ngIf="supportLoading" class="empty"><ion-spinner name="crescent"></ion-spinner></div>
+
+    <ion-list inset="true" *ngIf="!supportLoading && support">
+      <ion-item button (click)="callNumber(support.emergency_police_no)" [disabled]="!support.emergency_police_no">
+        <ion-icon name="shield-outline" color="danger" slot="start"></ion-icon>
+        <ion-label>
+          <h2>Police</h2>
+          <p>{{ support.emergency_police_no || 'Not configured' }}</p>
+        </ion-label>
+        <ion-icon name="call-outline" color="primary" slot="end" *ngIf="support.emergency_police_no"></ion-icon>
+      </ion-item>
+
+      <ion-item button (click)="callNumber(support.customer_support_no)" [disabled]="!support.customer_support_no">
+        <ion-icon name="headset-outline" color="primary" slot="start"></ion-icon>
+        <ion-label>
+          <h2>Customer support</h2>
+          <p>{{ support.customer_support_no || 'Not configured' }}</p>
+        </ion-label>
+        <ion-icon name="call-outline" color="primary" slot="end" *ngIf="support.customer_support_no"></ion-icon>
+      </ion-item>
+
+      <ion-item button (click)="emailSupport(support.support_email)" [disabled]="!support.support_email">
+        <ion-icon name="mail-outline" color="primary" slot="start"></ion-icon>
+        <ion-label>
+          <h2>Support email</h2>
+          <p>{{ support.support_email || 'Not configured' }}</p>
+        </ion-label>
+        <ion-icon name="arrow-forward-outline" color="medium" slot="end" *ngIf="support.support_email"></ion-icon>
+      </ion-item>
+    </ion-list>
   </div>
 
   <ion-modal [isOpen]="dialogOpen" (didDismiss)="dialogOpen = false">

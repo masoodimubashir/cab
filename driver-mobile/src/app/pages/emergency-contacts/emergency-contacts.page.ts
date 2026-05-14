@@ -11,10 +11,22 @@ interface EmergencyContact {
   is_primary: boolean;
 }
 
+interface SupportInfo {
+  emergency_police_no: string | null;
+  customer_support_no: string | null;
+  driver_support_no: string | null;
+  support_email: string | null;
+}
+
 /**
  * Per-user emergency contact list — used in SOS situations.
  *
- * Two ways to add a contact:
+ * Two segments:
+ *   - "My Contacts": user-saved friends/family numbers.
+ *   - "Support":     official numbers from city_settings (police, driver
+ *                    support line, support email). Read-only, tap-to-call.
+ *
+ * Two ways to add a contact in "My Contacts":
  *   1. Manual entry in the dialog (name + phone + relationship).
  *   2. "Pick from phone contacts" — uses the Web Contacts API
  *      (navigator.contacts.select). Works on Android Chrome; gracefully
@@ -27,9 +39,15 @@ interface EmergencyContact {
   standalone: false,
 })
 export class EmergencyContactsPage implements OnInit {
+  segment: 'contacts' | 'support' = 'contacts';
+
   contacts: EmergencyContact[] = [];
   loading = false;
   error: string | null = null;
+
+  support: SupportInfo | null = null;
+  supportLoading = false;
+  supportError: string | null = null;
 
   // Dialog state
   dialogOpen = false;
@@ -54,6 +72,26 @@ export class EmergencyContactsPage implements OnInit {
     const nav = navigator as any;
     this.pickerSupported = !!nav.contacts && typeof nav.contacts.select === 'function';
     this.refresh();
+    this.loadSupport();
+  }
+
+  loadSupport(): void {
+    this.supportLoading = true;
+    this.supportError = null;
+    this.api.get<SupportInfo>('/support-info').subscribe({
+      next: (res) => { this.support = res; this.supportLoading = false; },
+      error: (err) => { this.supportError = err?.error?.message || 'Could not load support info.'; this.supportLoading = false; },
+    });
+  }
+
+  callNumber(phone: string | null | undefined): void {
+    if (!phone) return;
+    window.location.href = `tel:${phone}`;
+  }
+
+  emailSupport(email: string | null | undefined): void {
+    if (!email) return;
+    window.location.href = `mailto:${email}`;
   }
 
   refresh(): void {
