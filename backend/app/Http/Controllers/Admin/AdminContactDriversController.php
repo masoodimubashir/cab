@@ -37,7 +37,7 @@ class AdminContactDriversController
                 'phone' => $d->user?->phone,
                 'user_id' => $d->user_id,
                 'vehicle_type' => $d->vehicle_type,
-                'is_online' => (bool) $d->is_online,
+                'is_online' => $d->isOnlineFresh(),
             ]);
 
         return response()->json([
@@ -110,7 +110,7 @@ class AdminContactDriversController
                 'phone' => $d->user?->phone,
                 'user_id' => $d->user_id,
                 'vehicle_type' => $d->vehicle_type,
-                'is_online' => (bool) $d->is_online,
+                'is_online' => $d->isOnlineFresh(),
             ]);
 
         return response()->json([
@@ -206,11 +206,19 @@ class AdminContactDriversController
                 break;
 
             case 'live':
-                $query->whereNull('deactivated_at')->where('is_online', true);
+                $query->whereNull('deactivated_at')->onlineFresh();
                 break;
 
             case 'offline':
-                $query->whereNull('deactivated_at')->where('is_online', false);
+                // "Offline" must include drivers whose flag is still true but
+                // the heartbeat is stale — otherwise ghosts disappear from
+                // both buckets between reaper runs.
+                $query->whereNull('deactivated_at')
+                    ->where(function ($q) {
+                        $q->where('is_online', false)
+                            ->orWhereNull('last_online_at')
+                            ->orWhere('last_online_at', '<', now()->subSeconds(Driver::STALE_AFTER_SECONDS));
+                    });
                 break;
 
             case 'engaged':
@@ -228,7 +236,7 @@ class AdminContactDriversController
                     ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
                     ->pluck('driver_id');
                 $query->whereNull('deactivated_at')
-                    ->where('is_online', true)
+                    ->onlineFresh()
                     ->where('approval_status', 'approved')
                     ->whereNotIn('user_id', $busyUserIds);
                 break;
