@@ -204,10 +204,12 @@ class AdminAnalyticsController
             ->distinct('driver_id')
             ->count('driver_id');
 
-        // Live drivers — currently online. The is_online flag is a snapshot, so
-        // the comparison-period read returns the current value too. Comparing
-        // against itself yields a 0% delta, which is fine.
-        $liveDrivers = Driver::query()->where('is_online', true)->count();
+        // Live drivers — currently online AND recently pinged. The is_online
+        // flag alone is a snapshot that can lag (driver closes app without
+        // tapping Go Offline), so we also require a heartbeat inside the
+        // staleness window. The comparison-period read returns the current
+        // value too — comparing against itself yields a 0% delta, which is fine.
+        $liveDrivers = Driver::query()->onlineFresh()->count();
 
         $usersRegistered = User::query()
             ->whereBetween('created_at', [$start, $end])

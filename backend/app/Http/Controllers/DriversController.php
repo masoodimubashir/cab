@@ -620,6 +620,15 @@ class DriversController extends Controller
             'recorded_at' => now(),
         ]);
 
+        // Every ping is a liveness signal: stamp last_online_at so the reaper
+        // and admin freshness checks know the driver is still reachable. If the
+        // reaper had already flipped is_online=false because of a transient
+        // network drop, this ping re-asserts that they're online.
+        $driver->forceFill([
+            'is_online' => true,
+            'last_online_at' => now(),
+        ])->save();
+
         return response()->json(['location' => $location]);
     }
 }

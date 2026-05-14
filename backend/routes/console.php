@@ -22,3 +22,8 @@ Schedule::command('dispatch:wake-scheduled')
     ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('drivers:reap-stale')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
