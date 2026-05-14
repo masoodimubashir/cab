@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\EmergencyContactsController;
 use App\Http\Controllers\SavedLocationsController;
+use App\Http\Controllers\SupportInfoController;
 use App\Http\Controllers\OperatorPublicController;
 use App\Http\Controllers\Auth\FirebaseAuthController;
 use App\Http\Controllers\DeviceTokensController;
@@ -71,6 +72,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/me/emergency-contacts/{emergencyContact}', [EmergencyContactsController::class, 'update']);
     Route::delete('/me/emergency-contacts/{emergencyContact}', [EmergencyContactsController::class, 'destroy']);
 });
+
+// Official support contacts the admin sets up per city. Read-only.
+Route::middleware('auth:sanctum')->get('/support-info', [SupportInfoController::class, 'show']);
 
 // Per-user saved locations (Home, Work, etc.).
 Route::middleware('auth:sanctum')->group(function () {
