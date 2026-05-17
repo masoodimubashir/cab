@@ -48,6 +48,7 @@
 
     <ion-button expand="block" class="ion-margin-top" (click)="proceedToPerms()" [disabled]="loading || !firebaseReady">
       Continue
+      <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
     </ion-button>
   </ng-container>
 
@@ -131,6 +132,7 @@
     <div class="perm-actions ion-margin-top">
       <ion-button expand="block" (click)="allowPermsAndSendOtp()" [disabled]="loading">
         {{ loading ? 'Granting…' : 'Allow' }}
+        <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
       </ion-button>
       <ion-button expand="block" fill="outline" color="medium" (click)="denyPerms()" [disabled]="loading">
         Deny
@@ -162,6 +164,7 @@
       *ngIf="otpReady"
     >
       {{ loading ? 'Verifying…' : 'Next' }}
+      <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
     </ion-button>
 
     <div class="resend-row ion-margin-top">

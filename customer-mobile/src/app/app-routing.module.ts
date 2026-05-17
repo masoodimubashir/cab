@@ -4,6 +4,10 @@ import { AuthGuard } from './core/auth.guard';
 
 const routes: Routes = [
   {
+    path: 'welcome',
+    loadChildren: () => import('./pages/welcome/welcome.module').then( m => m.WelcomePageModule)
+  },
+  {
     path: 'intro',
     loadChildren: () => import('./pages/intro/intro.module').then((m) => m.IntroPageModule),
   },
@@ -44,13 +48,17 @@ const routes: Routes = [
   },
   {
     path: '',
-    redirectTo: 'intro',
+    redirectTo: 'splash',
     pathMatch: 'full',
   },
   {
     path: '**',
-    redirectTo: 'intro',
+    redirectTo: 'splash',
   },
+  {
+    path: 'splash',
+    loadChildren: () => import('./pages/splash/splash.module').then( m => m.SplashPageModule)
+  }
 ];
 
 @NgModule({

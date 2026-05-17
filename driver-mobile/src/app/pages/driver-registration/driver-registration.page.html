@@ -87,6 +87,7 @@
 
     <ion-button expand="block" class="ion-margin-top" (click)="submitStep1()" [disabled]="busy">
       {{ busy ? 'Saving…' : 'Continue' }}
+      <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
     </ion-button>
   </ng-container>
 

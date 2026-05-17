@@ -1,223 +1,322 @@
-<ion-header [translucent]="true">
-  <ion-toolbar [color]="step === 'phone' ? 'primary' : undefined">
-    <ion-buttons slot="start" *ngIf="step !== 'phone'">
-      <ion-button (click)="backToPhone()" [disabled]="loading" aria-label="Back">
-        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-    <ion-title *ngIf="step === 'phone'">DreamCabs</ion-title>
-  </ion-toolbar>
-</ion-header>
+<ion-content>
+  <!-- ============ PERSISTENT MASTER AUTH SHELL ============ -->
+  <div class="auth-header">
+    <!-- Centered Back Button (Visible on sub-steps) -->
+    <div class="back-button-wrap" (click)="goBack()" *ngIf="step !== 'phone' && step !== 'success' && !loading" aria-label="Go Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </div>
 
-<ion-content class="ion-padding">
-  <!-- ============ PHONE: enter number (default landing step) ============ -->
-  <ng-container *ngIf="step === 'phone'">
-    <h1 class="title">Sign in</h1>
-    <p class="subtitle" *ngIf="firebaseReady">We'll text a one-time code to your mobile number.</p>
-    <p class="warn" *ngIf="!firebaseReady && firebaseSetup === 'not-web-app'">
-      Firebase <code>appId</code> in <code>environment.ts</code> is for Android/iOS, not the browser.
-    </p>
-    <p class="warn" *ngIf="!firebaseReady && firebaseSetup !== 'not-web-app'">
-      Firebase Web config is incomplete in <code>environment.ts</code>.
-    </p>
+    <!-- Persistent Branding Elements -->
+    <div class="logo-mark">
+      <div class="logo-dots"></div>
+      <div class="logo-arrow"></div>
+    </div>
+    <div class="logo-text">
+      <span class="text-white">Dream</span><span class="text-primary">Cabs</span>
+    </div>
 
-    <ion-item lines="full">
-      <ion-label position="stacked">Mobile number</ion-label>
-      <div class="phone-row">
-        <button
-          type="button"
-          class="country-trigger"
-          (click)="showCountryPicker = true"
-          [disabled]="loading"
-        >
-          <span class="flag">{{ country.flag }}</span>
-          <span class="code">+{{ country.code }}</span>
-          <ion-icon name="chevron-down-outline"></ion-icon>
-        </button>
-        <ion-input
-          type="tel"
-          inputmode="tel"
-          [(ngModel)]="phone"
-          placeholder="9876543210"
-          [disabled]="loading"
-          autocomplete="tel"
-          class="phone-input"
-        ></ion-input>
+    <!-- Stable Dynamic Headers (No layout jumps) -->
+    <ng-container [ngSwitch]="step">
+      <ng-container *ngSwitchCase="'phone'">
+        <h1 class="auth-title">Mobile Number</h1>
+        <p class="auth-subtitle">
+          Please enter your phone number. We will send you a {{ otpLength }}-digit code to verify your account.
+        </p>
+      </ng-container>
+      <ng-container *ngSwitchCase="'perms'">
+        <h1 class="auth-title">Permissions</h1>
+        <p class="auth-subtitle">
+          We need a few permissions to give you the best ride experience.
+        </p>
+      </ng-container>
+      <ng-container *ngSwitchCase="'otp'">
+        <h1 class="auth-title">OTP Verification</h1>
+        <p class="auth-subtitle">
+          Enter {{ otpLength }}-digit Code. We have sent it to <br>
+          <span class="highlight-phone">+{{ country.code }} {{ phone }}</span>
+        </p>
+      </ng-container>
+      <ng-container *ngSwitchCase="'info'">
+        <h1 class="auth-title">Profile Details</h1>
+        <p class="auth-subtitle">
+          Please complete your profile details to finish setting up your account.
+        </p>
+      </ng-container>
+      <ng-container *ngSwitchCase="'success'">
+        <h1 class="auth-title">Account Created!</h1>
+        <p class="auth-subtitle">
+          Your account has been created successfully. Welcome to DreamCabs!
+        </p>
+      </ng-container>
+    </ng-container>
+  </div>
+
+  <!-- ============ DYNAMIC SCENE WRAPPER ============ -->
+  <div class="auth-form-container">
+    <div class="auth-scene-wrapper">
+      
+      <!-- STEP 1: PHONE ENTRY -->
+      <div class="step-slide" *ngIf="step === 'phone'">
+        <div class="phone-form-row">
+          <!-- Country Select -->
+          <div class="input-container country-container" (click)="showCountryPicker = true" [class.disabled]="loading">
+            <label>Country</label>
+            <div class="country-value">
+              <span class="flag">{{ country.flag }}</span>
+              <span class="code">+{{ country.code }}</span>
+              <ion-icon name="chevron-down-outline"></ion-icon>
+            </div>
+          </div>
+
+          <!-- Phone Input -->
+          <div class="input-container phone-container">
+            <label>Phone Number</label>
+            <ion-input
+              type="tel"
+              inputmode="tel"
+              [(ngModel)]="phone"
+              [disabled]="loading"
+              autocomplete="tel"
+              class="custom-phone-input"
+            ></ion-input>
+          </div>
+        </div>
       </div>
-    </ion-item>
-    <p class="hint ion-padding-start">Enter your number — the country prefix is added automatically.</p>
 
-    <ion-button expand="block" class="ion-margin-top" (click)="proceedToPerms()" [disabled]="loading || !firebaseReady">
-      Continue
-    </ion-button>
-  </ng-container>
+      <!-- STEP 2: BENTO PERMISSIONS -->
+      <div class="step-slide" *ngIf="step === 'perms'">
+        <div class="bento-perm-grid">
+          <div class="bento-card" style="animation-delay: 0.05s">
+            <div class="bento-icon-circle">
+              <ion-icon name="location-outline"></ion-icon>
+            </div>
+            <div class="bento-info">
+              <span class="bento-title">Location</span>
+              <span class="bento-desc">Find rides near you</span>
+            </div>
+          </div>
+
+          <div class="bento-card" style="animation-delay: 0.1s">
+            <div class="bento-icon-circle">
+              <ion-icon name="call-outline"></ion-icon>
+            </div>
+            <div class="bento-info">
+              <span class="bento-title">Phone</span>
+              <span class="bento-desc">Verify secure profile</span>
+            </div>
+          </div>
+
+          <div class="bento-card" style="animation-delay: 0.15s">
+            <div class="bento-icon-circle">
+              <ion-icon name="chatbox-ellipses-outline"></ion-icon>
+            </div>
+            <div class="bento-info">
+              <span class="bento-title">SMS</span>
+              <span class="bento-desc">Autofill secure OTPs</span>
+            </div>
+          </div>
+
+          <div class="bento-card" style="animation-delay: 0.2s">
+            <div class="bento-icon-circle">
+              <ion-icon name="people-outline"></ion-icon>
+            </div>
+            <div class="bento-info">
+              <span class="bento-title">Contacts</span>
+              <span class="bento-desc">Share trusted SOS</span>
+            </div>
+          </div>
+
+          <div class="bento-card" style="animation-delay: 0.25s">
+            <div class="bento-icon-circle">
+              <ion-icon name="phone-portrait-outline"></ion-icon>
+            </div>
+            <div class="bento-info">
+              <span class="bento-title">Device</span>
+              <span class="bento-desc">Keep account safe</span>
+            </div>
+          </div>
+
+          <div class="bento-card" style="animation-delay: 0.3s">
+            <div class="bento-icon-circle">
+              <ion-icon name="folder-outline"></ion-icon>
+            </div>
+            <div class="bento-info">
+              <span class="bento-title">Storage</span>
+              <span class="bento-desc">Upload profile photo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: OTP VERIFICATION -->
+      <div class="step-slide" *ngIf="step === 'otp'">
+        <div class="otp-input-wrapper">
+          <input
+            type="tel"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            [attr.maxlength]="otpLength"
+            [(ngModel)]="otp"
+            [disabled]="loading"
+            class="hidden-otp-input"
+            autocomplete="one-time-code"
+            #otpInput
+            (focus)="otpInputFocused = true"
+            (blur)="otpInputFocused = false"
+          />
+          <div class="otp-boxes-row">
+            <div 
+              class="otp-box" 
+              *ngFor="let char of otpCells; let i = index"
+              [class.active]="otp.length === i && otpInputFocused"
+              [class.filled]="otp.length > i"
+            >
+              {{ otp[i] || '' }}
+            </div>
+          </div>
+        </div>
+
+        <div class="resend-row">
+          <span class="resend-text" *ngIf="resendSecondsLeft > 0">
+            Didn't receive the code? <span class="countdown-text">{{ resendDisplay }}</span>
+          </span>
+          <span class="resend-text" *ngIf="resendSecondsLeft === 0">
+            Didn't receive the code? <a class="resend-link" (click)="resendOtp()">Resend OTP</a>
+          </span>
+        </div>
+      </div>
+
+      <!-- STEP 4: PROFILE COMPLETION -->
+      <div class="step-slide" *ngIf="step === 'info'">
+        <div class="info-form-wrapper">
+          <div class="avatar-wrap">
+            <label class="avatar-edit">
+              <div
+                class="avatar"
+                [style.backgroundImage]="infoPhotoPreview ? 'url(' + infoPhotoPreview + ')' : null"
+              ></div>
+              <span class="plus-badge">+</span>
+              <input type="file" accept="image/*" hidden (change)="onPhotoSelected($event)" [disabled]="loading" />
+            </label>
+          </div>
+
+          <div class="info-fields">
+            <div class="input-container phone-container">
+              <label>Full Name</label>
+              <ion-input type="text" [(ngModel)]="infoName" [disabled]="loading" autocomplete="name" required class="custom-phone-input"></ion-input>
+            </div>
+
+            <div class="input-container phone-container ion-margin-top">
+              <label>Email Address</label>
+              <ion-input type="email" [(ngModel)]="infoEmail" [disabled]="loading" autocomplete="email" required class="custom-phone-input"></ion-input>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 5: SUCCESS CONFIRMATION -->
+      <div class="step-slide success-slide" *ngIf="step === 'success'">
+        <div class="success-illustration-wrap">
+          <div class="success-glow-ring"></div>
+          <div class="success-badge-circle">
+            <ion-icon name="checkmark-sharp"></ion-icon>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ UNIFORMISED PERSISTENT CTA SECTION ============ -->
+    <div class="submit-action">
+      <button 
+        class="fab-btn" 
+        [class.fab-btn--block]="step === 'info' || step === 'success'"
+        [disabled]="loading || isButtonDisabled()" 
+        (click)="handlePrimaryAction()"
+        aria-label="Submit Action"
+      >
+        <span class="btn-text" *ngIf="(step === 'info' || step === 'success') && !loading">
+          {{ step === 'success' ? 'Get Started' : 'Continue' }}
+        </span>
+        <ion-icon name="arrow-forward-outline" *ngIf="!loading"></ion-icon>
+        <ion-spinner name="crescent" color="light" *ngIf="loading"></ion-spinner>
+      </button>
+
+      <button class="secondary-action-btn" (click)="denyPerms()" [disabled]="loading" *ngIf="step === 'perms'">
+        Not now
+      </button>
+
+      <p class="terms-text" *ngIf="step === 'phone' || step === 'otp'">
+        By continuing you agree that you have read and accept our <br>
+        <a>Term & Conditions</a> and <a>Privacy Policy</a>
+      </p>
+      
+      <p class="recaptcha-disclosure" *ngIf="step === 'phone' || step === 'otp'">
+        Protected by reCAPTCHA. Google <a href="https://policies.google.com/privacy" target="_blank">Privacy</a> & <a href="https://policies.google.com/terms" target="_blank">Terms</a> apply.
+      </p>
+    </div>
+  </div>
 
   <!-- ============ COUNTRY PICKER MODAL ============ -->
-  <ion-modal [isOpen]="showCountryPicker" (didDismiss)="showCountryPicker = false">
+  <ion-modal 
+    [isOpen]="showCountryPicker" 
+    (didDismiss)="showCountryPicker = false"
+    [initialBreakpoint]="0.75" 
+    [breakpoints]="[0, 0.75, 0.95]"
+    class="modern-bottom-sheet"
+  >
     <ng-template>
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-title>Select country</ion-title>
-          <ion-buttons slot="end">
-            <ion-button (click)="showCountryPicker = false">Close</ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-      <ion-content>
-        <ion-list>
-          <ion-item *ngFor="let c of countries" button (click)="pickCountry(c)">
-            <span class="flag-big" slot="start">{{ c.flag }}</span>
-            <ion-label>
-              <h3>{{ c.name }}</h3>
-              <p>+{{ c.code }}</p>
-            </ion-label>
-            <ion-icon *ngIf="c.iso === country.iso && c.code === country.code"
-                      name="checkmark-outline" slot="end" color="primary"></ion-icon>
-          </ion-item>
-        </ion-list>
+      <div class="sheet-header">
+        <div class="drag-handle"></div>
+        <h2>Select Country</h2>
+      </div>
+      <ion-content class="no-scrollbar">
+        <div class="country-list">
+          <ng-container *ngFor="let c of countries">
+            <!-- Selected Item -->
+            <div 
+              *ngIf="c.iso === country.iso"
+              class="selected-country"
+              (click)="pickCountry(c)"
+            >
+              <div class="country-left">
+                <span class="iso-badge selected">{{ c.iso }}</span>
+                <span class="country-name">{{ c.name }}</span>
+              </div>
+              <div class="country-right">
+                <span class="country-code">+{{ c.code }}</span>
+                <!-- Checkmark Icon -->
+                <svg class="check-icon" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+              </div>
+            </div>
+            
+            <!-- Other Countries -->
+            <div 
+              *ngIf="c.iso !== country.iso"
+              class="country-item"
+              (click)="pickCountry(c)"
+            >
+              <div class="country-left">
+                <span class="iso-badge">{{ c.iso }}</span>
+                <span class="country-name">{{ c.name }}</span>
+              </div>
+              <span class="country-code-secondary">+{{ c.code }}</span>
+            </div>
+          </ng-container>
+        </div>
       </ion-content>
     </ng-template>
   </ion-modal>
 
-  <!-- ============ PERMISSIONS DISCLOSURE ============ -->
-  <ng-container *ngIf="step === 'perms'">
-    <h1 class="title">Permissions Required</h1>
-    <p class="subtitle">
-      To make this app work smoothly, we need access to a few things on your device.
-    </p>
-
-    <ion-list class="perm-list" lines="full">
-      <ion-item>
-        <ion-icon name="location-outline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>Location</h3>
-          <p>To set your pickup and track your ride.</p>
-        </ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-icon name="call-outline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>Phone Number</h3>
-          <p>To verify your identity via SMS OTP.</p>
-        </ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-icon name="chatbox-ellipses-outline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>SMS</h3>
-          <p>To auto-read the OTP we just sent you.</p>
-        </ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-icon name="people-outline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>Contacts</h3>
-          <p>To let you share trip details with friends.</p>
-        </ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-icon name="phone-portrait-outline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>Device ID</h3>
-          <p>To keep your account secure across devices.</p>
-        </ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-icon name="folder-outline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>Files</h3>
-          <p>To upload your profile photo and documents.</p>
-        </ion-label>
-      </ion-item>
-    </ion-list>
-
-    <div class="perm-actions ion-margin-top">
-      <ion-button expand="block" (click)="allowPermsAndSendOtp()" [disabled]="loading">
-        {{ loading ? 'Granting…' : 'Allow' }}
-      </ion-button>
-      <ion-button expand="block" fill="outline" color="medium" (click)="denyPerms()" [disabled]="loading">
-        Deny
-      </ion-button>
-    </div>
-  </ng-container>
-
-  <!-- ============ OTP: enter code ============ -->
-  <ng-container *ngIf="step === 'otp'">
-    <h1 class="title">Enter the code</h1>
-    <p class="subtitle">We sent your code via SMS to {{ phone }}.</p>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">SMS code</ion-label>
-      <ion-input
-        type="text"
-        inputmode="numeric"
-        [(ngModel)]="otp"
-        [disabled]="loading"
-        maxlength="8"
-        autocomplete="one-time-code"
-      ></ion-input>
-    </ion-item>
-
-    <ion-button
-      expand="block"
-      class="ion-margin-top"
-      (click)="verifyOtp()"
-      [disabled]="loading"
-      *ngIf="otpReady"
-    >
-      {{ loading ? 'Verifying…' : 'Next' }}
-    </ion-button>
-
-    <div class="resend-row ion-margin-top">
-      <span class="resend-pill" *ngIf="resendSecondsLeft > 0">{{ resendDisplay }}</span>
-      <ion-button
-        fill="clear"
-        size="small"
-        (click)="resendOtp()"
-        [disabled]="loading"
-        *ngIf="resendSecondsLeft === 0"
-      >
-        Resend code
-      </ion-button>
-    </div>
-
-    <ion-button expand="block" fill="clear" size="small" (click)="backToPhone()" [disabled]="loading">
-      Use a different number
-    </ion-button>
-  </ng-container>
-
-  <!-- ============ PROFILE COMPLETION ============ -->
-  <ng-container *ngIf="step === 'info'">
-    <h1 class="title">Confirm your information</h1>
-
-    <div class="avatar-wrap">
-      <label class="avatar-edit">
-        <div
-          class="avatar"
-          [style.backgroundImage]="infoPhotoPreview ? 'url(' + infoPhotoPreview + ')' : null"
-        ></div>
-        <span class="plus-badge">+</span>
-        <input type="file" accept="image/*" hidden (change)="onPhotoSelected($event)" [disabled]="loading" />
-      </label>
-    </div>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Name</ion-label>
-      <ion-input type="text" [(ngModel)]="infoName" [disabled]="loading" autocomplete="name" required></ion-input>
-    </ion-item>
-
-    <ion-item lines="full">
-      <ion-label position="stacked">Email</ion-label>
-      <ion-input type="email" [(ngModel)]="infoEmail" [disabled]="loading" autocomplete="email" required></ion-input>
-    </ion-item>
-
-    <ion-button expand="block" class="ion-margin-top" (click)="submitInfo()" [disabled]="loading">
-      {{ loading ? 'Saving…' : 'Continue' }}
-    </ion-button>
-  </ng-container>
-
-  <!-- reCAPTCHA host kept always-mounted so PhoneAuthService can attach to it. -->
+  <!-- Invisible reCAPTCHA container -->
   <div id="recaptcha-container"></div>
 
-  <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal ion-margin-top">{{ error }}</p></ion-text>
+  <!-- Shared dynamic errors -->
+  <ion-text color="danger" *ngIf="error">
+    <p class="ion-padding-horizontal ion-margin-top error-banner">{{ error }}</p>
+  </ion-text>
 </ion-content>
+
+
