@@ -17,6 +17,11 @@ export class ApiService {
     return `${environment.apiUrl}${path.startsWith('/') ? path : '/' + path}`;
   }
 
+  /** Public base URL of the API (no trailing slash). Use sparingly — for share links etc. */
+  baseUrl(): string {
+    return environment.apiUrl.replace(/\/$/, '');
+  }
+
   private jsonHeaders(): HttpHeaders {
     const token = this.auth.getToken();
     let h = new HttpHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' });

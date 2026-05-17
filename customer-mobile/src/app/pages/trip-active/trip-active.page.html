@@ -15,14 +15,22 @@
   <ng-container *ngIf="!loading && trip as t">
     <ion-card>
       <ion-card-header>
-        <ion-card-title>Status</ion-card-title>
-        <ion-card-subtitle>
-          {{ t.status }}
+        <ion-card-title>
+          {{ statusCopy().title }}
           <ion-badge *ngIf="liveConnected" color="success" style="margin-left: 0.5rem;">live</ion-badge>
+        </ion-card-title>
+        <ion-card-subtitle *ngIf="statusCopy().sub">
+          {{ statusCopy().sub }}
         </ion-card-subtitle>
       </ion-card-header>
       <ion-card-content>
         <p *ngIf="t.driver">Driver: <strong>{{ t.driver.name || 'Assigned' }}</strong></p>
+        <p
+          *ngIf="etaMinutes != null && (t.status === 'ASSIGNED' || t.status === 'EN_ROUTE_PICKUP')"
+          class="eta"
+        >
+          Arriving in <strong>{{ etaMinutes }} min</strong>
+        </p>
         <p *ngIf="driverPosition">
           Driver location: {{ driverPosition.lat | number:'1.5-5' }}, {{ driverPosition.lng | number:'1.5-5' }}
         </p>
@@ -41,6 +49,28 @@
       Cancel trip
     </ion-button>
 
+    <!-- Safety + share controls — visible during active trip states -->
+    <div *ngIf="canSOS()" class="safety-row">
+      <ion-button
+        expand="block"
+        color="danger"
+        [disabled]="sosBusy"
+        (click)="triggerSOS()"
+      >
+        <ion-icon slot="start" name="warning-outline"></ion-icon>
+        {{ sosBusy ? 'Sending…' : 'SOS' }}
+      </ion-button>
+      <ion-button
+        expand="block"
+        fill="outline"
+        [disabled]="shareBusy"
+        (click)="shareTrip()"
+      >
+        <ion-icon slot="start" name="share-social-outline"></ion-icon>
+        {{ shareBusy ? 'Generating…' : 'Share trip' }}
+      </ion-button>
+    </div>
+
     <ion-button
       *ngIf="isCompleted()"
       expand="block"
@@ -49,5 +79,123 @@
     >
       Pay
     </ion-button>
+
+    <!-- Post-trip rating -->
+    <ion-card *ngIf="isCompleted()" class="rating-card">
+      <ion-card-header>
+        <ion-card-title>Rate your driver</ion-card-title>
+        <ion-card-subtitle *ngIf="!ratingSubmitted">Tap a star</ion-card-subtitle>
+        <ion-card-subtitle *ngIf="ratingSubmitted" color="success">Thanks for your feedback!</ion-card-subtitle>
+      </ion-card-header>
+      <ion-card-content>
+        <div class="stars" [class.stars--locked]="ratingSubmitted">
+          <button
+            type="button"
+            *ngFor="let i of [1,2,3,4,5]"
+            class="star"
+            [class.star--filled]="i <= ratingScore"
+            [disabled]="ratingSubmitted || ratingBusy"
+            (click)="setRating(i)"
+            [attr.aria-label]="i + ' star'"
+          >
+            ★
+          </button>
+        </div>
+        <ion-item lines="none" *ngIf="!ratingSubmitted">
+          <ion-textarea
+            [(ngModel)]="ratingComment"
+            placeholder="Optional feedback (max 2000 chars)"
+            autoGrow="true"
+            maxlength="2000"
+            [disabled]="ratingBusy"
+          ></ion-textarea>
+        </ion-item>
+        <ion-button
+          *ngIf="!ratingSubmitted"
+          expand="block"
+          [disabled]="ratingBusy || ratingScore < 1"
+          (click)="submitRating()"
+        >
+          {{ ratingBusy ? 'Submitting…' : 'Submit rating' }}
+        </ion-button>
+      </ion-card-content>
+    </ion-card>
+
+    <!-- Post-trip tip prompt. Only shows when:
+         - trip is COMPLETED
+         - operator's tipping config has loaded
+         - user hasn't already tipped this trip or tapped Skip -->
+    <ion-card *ngIf="showTipCard" class="tip-card">
+      <ion-card-header>
+        <ion-card-title>Add a tip for your driver?</ion-card-title>
+        <ion-card-subtitle *ngIf="tipping?.in_percentage">
+          Percentages of your fare
+        </ion-card-subtitle>
+      </ion-card-header>
+      <ion-card-content>
+        <div class="tip-row">
+          <ion-button
+            *ngFor="let v of tipping?.values"
+            fill="outline"
+            (click)="pickTipPreset(v)"
+            [disabled]="tipBusy"
+          >
+            {{ tipLabel(v) }}
+          </ion-button>
+        </div>
+
+        <div class="tip-actions">
+          <ion-button fill="clear" (click)="openCustomTip()" [disabled]="tipBusy">
+            Custom amount
+          </ion-button>
+          <ion-button fill="clear" color="medium" (click)="skipTip()" [disabled]="tipBusy">
+            Skip
+          </ion-button>
+        </div>
+      </ion-card-content>
+    </ion-card>
+
+    <!-- Already-tipped acknowledgement (sticky after submit). -->
+    <ion-card *ngIf="isCompleted() && (trip?.tip_amount ?? 0) > 0" class="tip-card tip-card--done">
+      <ion-card-content>
+        <ion-icon name="heart-outline" color="success"></ion-icon>
+        You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!
+      </ion-card-content>
+    </ion-card>
+
+    <!-- Custom amount modal -->
+    <ion-modal [isOpen]="tipCustomOpen" (didDismiss)="tipCustomOpen = false">
+      <ng-template>
+        <ion-header>
+          <ion-toolbar color="primary">
+            <ion-title>Custom tip</ion-title>
+            <ion-buttons slot="end">
+              <ion-button (click)="tipCustomOpen = false">Close</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="ion-padding">
+          <ion-item lines="full">
+            <ion-label position="stacked">Amount (₹)</ion-label>
+            <ion-input
+              type="number"
+              inputmode="numeric"
+              [(ngModel)]="tipCustomAmount"
+              [disabled]="tipBusy"
+              min="1"
+              max="10000"
+            ></ion-input>
+          </ion-item>
+          <ion-button
+            expand="block"
+            class="ion-margin-top"
+            (click)="submitCustomTip()"
+            [disabled]="tipBusy || !tipCustomAmount || tipCustomAmount <= 0"
+          >
+            {{ tipBusy ? 'Sending…' : 'Send tip' }}
+          </ion-button>
+        </ion-content>
+      </ng-template>
+    </ion-modal>
   </ng-container>
 </ion-content>

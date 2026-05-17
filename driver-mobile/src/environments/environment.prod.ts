@@ -16,6 +16,10 @@ export const environment = {
   reverbPort: 443,
   reverbScheme: 'https' as 'http' | 'https',
   fcmVapidKey: '',
+  // Shared with the customer + admin apps so all three render maps under the
+  // same Google Cloud project. Restrict by HTTP referrer in the Cloud Console
+  // when going to production.
+  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
 };
 
 

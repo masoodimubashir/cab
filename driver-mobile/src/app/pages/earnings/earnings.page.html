@@ -1,32 +1,80 @@
 <ion-header [translucent]="true">
-  <ion-toolbar>
+  <ion-toolbar color="primary">
     <ion-title>Earnings</ion-title>
     <ion-buttons slot="end">
-      <ion-button (click)="load()" [disabled]="loading">Refresh</ion-button>
+      <ion-button (click)="load()" [disabled]="loading" aria-label="Refresh">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+      </ion-button>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="ion-padding">
-  <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
-  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+<ion-content>
+  <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal">{{ error }}</p></ion-text>
 
-  <ion-card>
-    <ion-card-header>
-      <ion-card-title>Overview</ion-card-title>
-      <ion-card-subtitle>Summaries from your profile and completed trips. Detailed payouts can plug into payments later.</ion-card-subtitle>
-    </ion-card-header>
-    <ion-card-content>
-      <ion-list lines="none">
-        <ion-item>
-          <ion-label>Completed trips (paginated total)</ion-label>
-          <ion-note slot="end">{{ completedCount }}</ion-note>
-        </ion-item>
-        <ion-item *ngIf="ratingAvg != null">
-          <ion-label>Average rating</ion-label>
-          <ion-note slot="end">{{ ratingAvg }} ({{ ratingCount }} ratings)</ion-note>
-        </ion-item>
-      </ion-list>
-    </ion-card-content>
-  </ion-card>
+  <!-- ─── Stats row ─── -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <p class="stat-label">Total earnings</p>
+      <p class="stat-value">₹{{ total | number:'1.0-2' }}</p>
+    </div>
+    <div class="stat-card stat-card--alt">
+      <p class="stat-label">Wallet balance</p>
+      <p class="stat-value">₹{{ wallet | number:'1.0-2' }}</p>
+    </div>
+  </div>
+
+  <!-- ─── Bar chart with period filter ─── -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2>Earnings overview</h2>
+      <ion-segment [value]="period" (ionChange)="setPeriod($any($event.detail.value))">
+        <ion-segment-button value="week">
+          <ion-label>Week</ion-label>
+        </ion-segment-button>
+        <ion-segment-button value="month">
+          <ion-label>Month</ion-label>
+        </ion-segment-button>
+      </ion-segment>
+    </div>
+
+    <div *ngIf="loading; else chart" class="muted small ion-padding">Loading…</div>
+
+    <ng-template #chart>
+      <div *ngIf="buckets.length; else noData" class="chart">
+        <div class="chart-bars">
+          <div *ngFor="let b of buckets; let i = index" class="bar-wrap" [title]="b.date + ': ₹' + b.amount">
+            <div class="bar" [style.height.%]="barHeight(b.amount)">
+              <span class="bar-value" *ngIf="b.amount > 0">{{ b.amount | number:'1.0-0' }}</span>
+            </div>
+            <span class="bar-label" *ngIf="showLabel(i)">{{ period === 'week' ? b.weekday : shortLabel(b) }}</span>
+          </div>
+        </div>
+      </div>
+    </ng-template>
+
+    <ng-template #noData>
+      <p class="muted small ion-padding">No completed trips in this period yet.</p>
+    </ng-template>
+  </div>
+
+  <!-- ─── Weekly earnings list ─── -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2>Weekly earnings</h2>
+      <span class="muted small">last 7 days</span>
+    </div>
+
+    <ion-list lines="full" *ngIf="!loading && weekly.length">
+      <ion-item *ngFor="let d of weekly">
+        <ion-label>
+          <h3>{{ d.weekday }}</h3>
+          <p>{{ d.date }}</p>
+        </ion-label>
+        <ion-text slot="end" [color]="d.amount > 0 ? 'success' : 'medium'">
+          <strong>₹{{ d.amount | number:'1.0-2' }}</strong>
+        </ion-text>
+      </ion-item>
+    </ion-list>
+  </div>
 </ion-content>

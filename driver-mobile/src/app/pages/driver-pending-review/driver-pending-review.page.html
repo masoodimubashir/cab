@@ -1,0 +1,61 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="primary">
+    <ion-title>Account Status</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <div class="locked-wrap">
+    <div class="locked-icon">
+      <ion-icon [name]="status === 'rejected' ? 'alert-circle-outline' : 'time-outline'"></ion-icon>
+    </div>
+
+    <ng-container *ngIf="loading; else loaded">
+      <h2>Checking status…</h2>
+    </ng-container>
+
+    <ng-template #loaded>
+      <ng-container *ngIf="status !== 'rejected'">
+        <h2>Your documents are under review</h2>
+        <p class="muted">
+          Our team is verifying the documents you uploaded. You'll be able to start
+          accepting rides as soon as you're approved.
+        </p>
+        <p class="muted small">
+          This usually takes a few hours. We'll let you know — this screen will
+          automatically take you to the dashboard once you're approved.
+        </p>
+      </ng-container>
+
+      <ng-container *ngIf="status === 'rejected'">
+        <h2>One or more documents were rejected</h2>
+        <p class="muted">
+          Tap below to view the rejection reason and re-upload. You can't start
+          driving until every required document is approved.
+        </p>
+      </ng-container>
+    </ng-template>
+
+    <div class="actions">
+      <ion-button expand="block" fill="outline" (click)="refresh()" [disabled]="loading">
+        <ion-icon name="refresh-outline" slot="start"></ion-icon>
+        Check again
+      </ion-button>
+
+      <ion-button
+        expand="block"
+        *ngIf="status === 'rejected'"
+        color="warning"
+        (click)="fixDocuments()"
+        class="ion-margin-top"
+      >
+        Re-upload rejected documents
+      </ion-button>
+
+      <ion-button expand="block" color="medium" fill="clear" (click)="logout()" class="ion-margin-top">
+        <ion-icon name="log-out-outline" slot="start"></ion-icon>
+        Log out
+      </ion-button>
+    </div>
+  </div>
+</ion-content>

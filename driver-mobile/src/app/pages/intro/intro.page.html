@@ -1,0 +1,29 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="primary">
+    <ion-title>DreamCabs Driver</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <div class="hero">
+    <div class="logo-circle">
+      <ion-icon name="car-sport-outline"></ion-icon>
+    </div>
+
+    <h1>Welcome, Driver</h1>
+    <p class="lead">
+      This app uses <strong>location</strong> and a few other permissions to receive
+      ride requests, share your live position with riders, and process trips.
+    </p>
+  </div>
+
+  <div class="grant-wrap">
+    <ion-button expand="block" size="large" (click)="grant()" [disabled]="loading">
+      {{ loading ? 'Requesting…' : 'Grant Permissions' }}
+    </ion-button>
+    <p class="muted small">
+      You can change or revoke permissions later from your phone settings.
+    </p>
+    <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+  </div>
+</ion-content>
