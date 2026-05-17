@@ -128,6 +128,22 @@ export class BackgroundLocationService {
         speed_kmh: speedKmh,
         bearing_deg: loc.bearing ?? null,
       })
-      .subscribe({ error: () => {} });
+      .subscribe({
+        error: (err: any) => {
+          // 409 means the trip is no longer in an active driver state — customer
+          // cancelled, trip completed, or the driver lost it. Stop streaming.
+          if (err?.status === 409) {
+            void this.stop();
+            return;
+          }
+          // 429 is the server-side dedupe (same trip+driver wrote <3s ago);
+          // the last good location is still on file. Push lastSentAt forward
+          // so we don't re-fire immediately and keep racing the server.
+          if (err?.status === 429) {
+            this.lastSentAt = Date.now();
+            return;
+          }
+        },
+      });
   }
 }

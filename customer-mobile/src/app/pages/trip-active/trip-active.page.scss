@@ -10,3 +10,74 @@ ion-card + ion-button {
   margin-bottom: 0.8rem;
   background: #eef0f2;
 }
+
+.eta {
+  margin: 0.25rem 0;
+  color: var(--ion-color-success-shade);
+}
+
+.safety-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 1rem;
+
+  ion-button {
+    margin: 0;
+  }
+}
+
+.rating-card {
+  .stars {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: center;
+    margin-bottom: 0.75rem;
+
+    &--locked .star {
+      cursor: default;
+    }
+  }
+
+  .star {
+    font-size: 2rem;
+    line-height: 1;
+    background: none;
+    border: none;
+    color: var(--ion-color-medium);
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    transition: transform 0.1s ease, color 0.1s ease;
+
+    &:hover:not(:disabled) {
+      transform: scale(1.1);
+    }
+
+    &--filled {
+      color: #f5a623;
+    }
+
+    &:disabled {
+      opacity: 0.7;
+    }
+  }
+}
+
+.tip-card .tip-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  ion-button { flex: 1; }
+}
+.tip-card .tip-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.tip-card--done ion-card-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+.tip-card--done ion-icon { font-size: 1.25rem; }

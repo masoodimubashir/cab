@@ -10,9 +10,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'user_id',
+    'ride_type_id',
+    'vehicle_type_id',
+    'city_id',
+    'fleet_id',
     'approval_status',
     'approved_at',
     'rejected_at',
+    'deactivated_at',
+    'deactivated_reason',
     'vehicle_type',
     'vehicle_brand',
     'vehicle_model',
@@ -28,17 +34,51 @@ class Driver extends Model
 {
     use HasFactory;
 
+    // Drivers go "Online" by tapping a button in the app, but the only signal
+    // that they are still *reachable* is the periodic ping. After this many
+    // seconds without a fresh ping (browser tab closed, app killed by OS,
+    // network dropped) we treat them as offline regardless of `is_online`.
+    public const STALE_AFTER_SECONDS = 60;
+
     protected $casts = [
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'deactivated_at' => 'datetime',
         'last_online_at' => 'datetime',
         'last_offline_at' => 'datetime',
         'rating_avg' => 'float',
     ];
 
+    public function isOnlineFresh(): bool
+    {
+        if (! $this->is_online) {
+            return false;
+        }
+        if (! $this->last_online_at) {
+            return false;
+        }
+        return $this->last_online_at->getTimestamp() >= now()->getTimestamp() - self::STALE_AFTER_SECONDS;
+    }
+
+    public function scopeOnlineFresh($q)
+    {
+        return $q->where('is_online', true)
+            ->where('last_online_at', '>=', now()->subSeconds(self::STALE_AFTER_SECONDS));
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function rideType(): BelongsTo
+    {
+        return $this->belongsTo(RideType::class, 'ride_type_id');
+    }
+
+    public function vehicleTypeRef(): BelongsTo
+    {
+        return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
     }
 
     public function documents(): HasMany

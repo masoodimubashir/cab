@@ -1,52 +1,87 @@
 <ion-header [translucent]="true">
-  <ion-toolbar>
+  <ion-toolbar color="primary">
     <ion-title>My Trips</ion-title>
     <ion-buttons slot="end">
-      <ion-button (click)="refresh()" [disabled]="loading">Refresh</ion-button>
+      <ion-button (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+      </ion-button>
     </ion-buttons>
+  </ion-toolbar>
+
+  <!-- Product-kind segment lives in the header so it stays visible on scroll. -->
+  <ion-toolbar>
+    <ion-segment
+      [value]="productKind"
+      (ionChange)="setProductKind($any($event.detail.value))"
+      scrollable="true"
+    >
+      <ion-segment-button value="all"><ion-label>All</ion-label></ion-segment-button>
+      <ion-segment-button value="local"><ion-label>Local</ion-label></ion-segment-button>
+      <ion-segment-button value="rental"><ion-label>Rental</ion-label></ion-segment-button>
+      <ion-segment-button value="outstation"><ion-label>Outstation</ion-label></ion-segment-button>
+    </ion-segment>
   </ion-toolbar>
 </ion-header>
 
 <ion-content>
-  <ion-text color="danger" *ngIf="error" class="ion-padding"><p>{{ error }}</p></ion-text>
+  <!-- Status pills row. -->
+  <div class="status-pills">
+    <button class="pill" [class.pill--active]="status === 'all'" (click)="setStatus('all')">All</button>
+    <button class="pill" [class.pill--active]="status === 'completed'" (click)="setStatus('completed')">Completed</button>
+    <button class="pill" [class.pill--active]="status === 'cancelled'" (click)="setStatus('cancelled')">Cancelled</button>
+    <button class="pill" [class.pill--active]="status === 'missed'" (click)="setStatus('missed')">Missed</button>
+  </div>
 
-  <ion-list *ngIf="!loading && trips.length">
-    <ion-item *ngFor="let t of trips" lines="full">
-      <ion-label>
-        <h2>Trip #{{ t['id'] }}</h2>
-        <p>Status: {{ t['status'] }}</p>
-        <p *ngIf="t['pickup_address']">Pickup: {{ t['pickup_address'] }}</p>
-        <p *ngIf="t['drop_address']">Drop: {{ t['drop_address'] }}</p>
-        <p *ngIf="t['final_fare'] != null">
-          Fare: {{ t['final_fare'] }} {{ t['currency'] || 'INR' }}
-        </p>
-        <p *ngIf="t['completed_at']">Completed: {{ t['completed_at'] }}</p>
-      </ion-label>
-      <ion-buttons slot="end">
-        <ion-button
-          *ngIf="t['status'] === 'NEGOTIATION'"
-          fill="outline"
-          size="small"
-          (click)="navigateToNegotiation(t)"
-        >
-          Negotiate
-        </ion-button>
-        <ion-button
-          fill="outline"
-          size="small"
-          (click)="navigatePickupToDrop(t)"
-          [disabled]="!t['pickup_lat'] || !t['drop_lat']"
-        >
-          Maps
-        </ion-button>
-      </ion-buttons>
-    </ion-item>
-  </ion-list>
+  <ion-text color="danger" *ngIf="error" class="ion-padding"><p>{{ error }}</p></ion-text>
 
   <ion-spinner *ngIf="loading" class="ion-margin" name="crescent"></ion-spinner>
 
-  <div *ngIf="!loading && !trips.length && !error" class="ion-padding">
-    <p>No trips yet. Book a ride first.</p>
+  <ion-list *ngIf="!loading && trips.length" lines="none">
+    <ion-card *ngFor="let t of trips" class="trip-card">
+      <ion-card-header>
+        <div class="row-head">
+          <ion-card-subtitle>{{ productLabel(t.product_kind) }} · #{{ t.id }}</ion-card-subtitle>
+          <ion-badge [color]="statusColor(t)">{{ statusLabel(t) }}</ion-badge>
+        </div>
+      </ion-card-header>
+      <ion-card-content>
+        <p *ngIf="t.pickup_address" class="addr"><ion-icon name="ellipse-outline" color="primary"></ion-icon> {{ t.pickup_address }}</p>
+        <p *ngIf="t.drop_address" class="addr"><ion-icon name="location-outline" color="danger"></ion-icon> {{ t.drop_address }}</p>
+
+        <div class="meta">
+          <span *ngIf="fareDisplay(t) as f"><ion-icon name="cash-outline"></ion-icon> {{ f }}</span>
+          <span *ngIf="dateDisplay(t) as d"><ion-icon name="time-outline"></ion-icon> {{ d | date:'dd MMM yyyy, HH:mm' }}</span>
+        </div>
+
+        <p *ngIf="t.cancelled_reason" class="reason muted small">
+          {{ t.cancelled_reason }}
+        </p>
+
+        <div class="actions">
+          <ion-button
+            *ngIf="t.status === 'NEGOTIATION'"
+            fill="outline"
+            size="small"
+            (click)="navigateToNegotiation(t)"
+          >
+            Negotiate
+          </ion-button>
+          <ion-button
+            fill="outline"
+            size="small"
+            (click)="navigatePickupToDrop(t)"
+            [disabled]="!t.pickup_lat || !t.drop_lat"
+          >
+            <ion-icon name="navigate-outline" slot="start"></ion-icon>
+            Open in Maps
+          </ion-button>
+        </div>
+      </ion-card-content>
+    </ion-card>
+  </ion-list>
+
+  <div *ngIf="!loading && !trips.length && !error" class="empty">
+    <ion-icon name="car-outline"></ion-icon>
+    <p>No trips match these filters.</p>
   </div>
 </ion-content>
-
