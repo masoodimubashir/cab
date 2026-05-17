@@ -11,6 +11,15 @@ export const environment = {
   appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
   measurementId: "G-CLHQFG1HW1"
   },
+  reverbAppKey: '',
+  reverbHost: '',
+  reverbPort: 443,
+  reverbScheme: 'https' as 'http' | 'https',
+  fcmVapidKey: '',
+  // Shared with the customer + admin apps so all three render maps under the
+  // same Google Cloud project. Restrict by HTTP referrer in the Cloud Console
+  // when going to production.
+  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
 };
 
 

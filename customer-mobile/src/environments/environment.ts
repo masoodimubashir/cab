@@ -14,12 +14,12 @@ export const environment = {
    *
    * If empty, the booking screen will fall back to manual lat/lng + external maps links.
    */
-  googleMapsApiKey: 'AIzaSyArBKPH_WET3XNUs4wh3ErZMbjSKsX8p8w',
+  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
   /**
    * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
    * Leave reverbAppKey blank to fall back to polling-only.
    */
-  reverbAppKey: 'local',
+  reverbAppKey: '4jsb8ggrbvcriyaskojh',
   reverbHost: 'localhost',
   reverbPort: 8080,
   reverbScheme: 'http' as 'http' | 'https',
@@ -37,6 +37,12 @@ export const environment = {
     appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
     measurementId: "G-CLHQFG1HW1"
   },
+  /**
+   * FCM Web Push VAPID key — Firebase Console → Project Settings → Cloud Messaging →
+   * Web configuration → Web Push certificates → Generate key pair.
+   * Required for browser push to work; native (Android/iOS) does not need this.
+   */
+  fcmVapidKey: "",
 };
 
 /*

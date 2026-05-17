@@ -1,4 +1,4 @@
-<ion-content [fullscreen]="true" class="ride-page">
+<ion-content class="ride-page">
   <div id="ride-map" class="ride-map"></div>
 
   <div class="map-overlay" *ngIf="state === 'idle' || state === 'preview'">
@@ -20,26 +20,26 @@
     <div *ngSwitchCase="'idle'" class="sheet-idle">
       <div class="ride-chips">
         <button
-          *ngFor="let r of rideTypes"
+          *ngFor="let p of productKinds"
           class="chip"
-          [class.active]="r.id === selectedRideTypeId"
-          (click)="selectRideType(r.id)"
+          [class.active]="p.kind === selectedProductKind"
+          (click)="selectProductKind(p.kind)"
         >
-          <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
-          <span>{{ r.name }}</span>
+          <ion-icon [name]="p.icon" aria-hidden="true"></ion-icon>
+          <span>{{ p.label }}</span>
         </button>
       </div>
 
       <button class="search-bar" (click)="goRoute()">
         <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
-        <span>Where to &amp; for how much?</span>
+        <span>Where to?</span>
       </button>
     </div>
 
     <!-- ROUTE entry -->
     <div *ngSwitchCase="'route'" class="sheet-route">
       <div class="sheet-header">
-        <h2>Enter your route</h2>
+        <h2>Enter your destination</h2>
         <ion-button fill="clear" (click)="closeSheet()" aria-label="Close">
           <ion-icon name="close-outline" slot="icon-only"></ion-icon>
         </ion-button>
@@ -79,43 +79,38 @@
       </ion-list>
     </div>
 
-    <!-- PREVIEW (route is on map, ride summary card) -->
+    <!-- PREVIEW: auto-calculated fare + driver list (customer picks one) -->
     <div *ngSwitchCase="'preview'" class="sheet-preview">
       <div class="route-summary">
         <div class="row"><ion-icon name="person-outline" aria-hidden="true"></ion-icon><span>{{ pickup?.address }}</span></div>
         <div class="row"><ion-icon name="flag-outline" aria-hidden="true"></ion-icon><span>{{ drop?.address }}</span></div>
       </div>
 
-      <div class="ride-card">
-        <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
+      <div class="outside-banner" *ngIf="outsideServiceAreaNotice">
+        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+        <span>{{ outsideServiceAreaNotice }}</span>
+      </div>
+
+      <div class="vehicle-chips" *ngIf="vehicleTypes.length">
+        <button
+          *ngFor="let v of vehicleTypes"
+          class="chip"
+          [class.active]="v.id === selectedVehicleTypeId"
+          (click)="selectVehicleType(v.id)"
+        >
+          {{ v.name }}
+        </button>
+      </div>
+
+      <div class="fare-summary" *ngIf="estimate?.estimated_fare != null">
         <div>
-          <h3>{{ rideTypes.length ? (rideTypes[0].name) : 'Ride' }}</h3>
-          <small *ngIf="estimate?.distance_km != null">{{ estimate?.distance_km }} km · approx {{ estimate?.time_min }} min</small>
+          <small>Estimated fare</small>
+          <h2>₹{{ estimate?.estimated_fare }}</h2>
         </div>
+        <small *ngIf="estimate?.distance_km != null" class="fare-meta">
+          {{ estimate?.distance_km }} km · {{ estimate?.time_min }} min
+        </small>
       </div>
-
-      <ion-button expand="block" (click)="goOffer()" class="cta-fare">
-        Tap to offer your fare
-      </ion-button>
-    </div>
-
-    <!-- OFFER (fare entry) -->
-    <div *ngSwitchCase="'offer'" class="sheet-offer">
-      <div class="sheet-header">
-        <h2>Offer your fare</h2>
-        <ion-button fill="clear" (click)="state = 'preview'" aria-label="Close">
-          <ion-icon name="close-outline" slot="icon-only"></ion-icon>
-        </ion-button>
-      </div>
-
-      <div class="fare-input">
-        <span class="rupee">₹</span>
-        <input type="number" inputmode="numeric" [(ngModel)]="fareInput" placeholder="0" />
-      </div>
-      <small *ngIf="estimate?.estimated_fare != null" class="fare-hint">
-        Recommended ₹{{ estimate?.estimated_fare }} based on {{ estimate?.distance_km }} km
-      </small>
-      <small *ngIf="error" class="fare-error">{{ error }}</small>
 
       <ion-item button lines="full" (click)="openPaymentSheet()">
         <ion-icon
@@ -127,54 +122,75 @@
         <ion-icon slot="end" name="chevron-forward-outline" aria-hidden="true"></ion-icon>
       </ion-item>
 
-      <ion-item lines="full">
-        <ion-icon name="navigate-outline" slot="start" aria-hidden="true"></ion-icon>
-        <ion-label>Automatically accept the nearest driver</ion-label>
-        <ion-toggle [(ngModel)]="autoAcceptNearest" slot="end"></ion-toggle>
-      </ion-item>
+      <h3 class="drivers-heading">Available drivers</h3>
 
-      <ion-item lines="none" class="addr-row">
-        <ion-icon name="person-outline" slot="start" aria-hidden="true"></ion-icon>
-        <ion-label class="ion-text-wrap"><small>From</small><p>{{ pickup?.address }}</p></ion-label>
-      </ion-item>
-      <ion-item lines="full" class="addr-row">
-        <ion-icon name="flag-outline" slot="start" aria-hidden="true"></ion-icon>
-        <ion-label class="ion-text-wrap"><small>To</small><p>{{ drop?.address }}</p></ion-label>
-      </ion-item>
+      <div *ngIf="loadingDrivers && !drivers.length" class="drivers-empty">
+        Looking for nearby drivers…
+      </div>
+      <div *ngIf="!loadingDrivers && !drivers.length" class="drivers-empty">
+        No drivers nearby right now. Try again in a moment.
+      </div>
 
-      <ion-button expand="block" (click)="findOffers()" [disabled]="loading" class="cta-find">
-        {{ loading ? 'Sending…' : 'Find offers' }}
+      <ion-list lines="full" class="drivers-list" *ngIf="drivers.length">
+        <ion-item *ngFor="let d of drivers" button (click)="confirmRequest(d)">
+          <ion-icon name="person-circle-outline" slot="start" aria-hidden="true"></ion-icon>
+          <ion-label class="ion-text-wrap">
+            <h3>{{ d.name || 'Driver' }}</h3>
+            <p>
+              {{ d.vehicle?.brand }} {{ d.vehicle?.model }}
+              <span *ngIf="d.vehicle?.color"> · {{ d.vehicle?.color }}</span>
+            </p>
+            <small>
+              {{ d.distance_km }} km away
+              <span *ngIf="d.rating_avg"> · ★ {{ d.rating_avg }}</span>
+            </small>
+          </ion-label>
+          <ion-button slot="end" size="small">Request</ion-button>
+        </ion-item>
+      </ion-list>
+
+      <ion-button
+        expand="block"
+        fill="outline"
+        (click)="openReviewModal()"
+        [disabled]="!estimate?.estimated_fare"
+        class="review-btn"
+      >
+        <ion-icon slot="start" name="receipt-outline" aria-hidden="true"></ion-icon>
+        Review Ride
       </ion-button>
+
+      <small *ngIf="error" class="fare-error">{{ error }}</small>
     </div>
 
-    <!-- SEARCHING -->
-    <div *ngSwitchCase="'searching'" class="sheet-searching">
+    <!-- WAITING: chosen driver hasn't responded yet -->
+    <div *ngSwitchCase="'waiting'" class="sheet-searching">
       <div class="searching-head">
-        <span>Searching for drivers…</span>
+        <span>Waiting for the driver to accept…</span>
         <span class="timer">0:{{ searchSecondsLeft.toString().padStart(2, '0') }}</span>
       </div>
       <ion-progress-bar [value]="searchSecondsLeft / 60"></ion-progress-bar>
 
-      <div class="fare-row">
-        <button class="raise-btn" (click)="raiseFare(-10)" [disabled]="(fareInput || 0) <= 10">-10</button>
-        <span class="fare-amount">₹{{ fareInput }}</span>
-        <button class="raise-btn" (click)="raiseFare(10)">+10</button>
-      </div>
+      <p class="searching-hint">
+        Your request was sent. They’ll either accept the fare or send you a counter-offer.
+      </p>
 
-      <ion-button expand="block" fill="outline" (click)="raiseFare(10)">Raise fare</ion-button>
-
-      <ion-item lines="none">
-        <ion-icon name="navigate-outline" slot="start" aria-hidden="true"></ion-icon>
-        <ion-label>Automatically accept the nearest driver for ₹{{ fareInput }}</ion-label>
-        <ion-toggle [(ngModel)]="autoAcceptNearest" slot="end"></ion-toggle>
-      </ion-item>
+      <ion-button
+        *ngIf="showFindAnother"
+        expand="block"
+        fill="outline"
+        color="primary"
+        (click)="findAnotherDriver()"
+      >
+        Find another driver
+      </ion-button>
 
       <ion-button expand="block" fill="clear" color="medium" (click)="cancelRequest()">Cancel request</ion-button>
     </div>
 
-    <!-- BIDS -->
+    <!-- BIDS: driver countered the fare -->
     <div *ngSwitchCase="'bids'" class="sheet-bids">
-      <h3>Waiting for offers from drivers</h3>
+      <h3>Driver responded</h3>
 
       <ion-list lines="full">
         <ion-item *ngFor="let o of driverOffers" button (click)="confirmOffer(o)">
@@ -189,5 +205,81 @@
 
       <ion-button expand="block" fill="clear" color="medium" (click)="cancelRequest()">Cancel request</ion-button>
     </div>
+  </div>
+
+  <!-- REVIEW RIDE bottom-sheet modal -->
+  <div class="review-backdrop" *ngIf="showReviewModal" (click)="closeReviewModal()"></div>
+  <div class="review-modal" *ngIf="showReviewModal">
+    <div class="review-header">
+      <h2>Review your ride</h2>
+      <ion-button fill="clear" (click)="closeReviewModal()" aria-label="Close">
+        <ion-icon name="close-outline" slot="icon-only"></ion-icon>
+      </ion-button>
+    </div>
+
+    <div class="review-section">
+      <div class="review-row">
+        <ion-icon name="person-outline" aria-hidden="true"></ion-icon>
+        <div><small>From</small><p>{{ pickup?.address }}</p></div>
+      </div>
+      <div class="review-row">
+        <ion-icon name="flag-outline" aria-hidden="true"></ion-icon>
+        <div><small>To</small><p>{{ drop?.address }}</p></div>
+      </div>
+    </div>
+
+    <div class="review-section meta-row">
+      <span>{{ estimate?.distance_km || 0 }} km</span>
+      <span>·</span>
+      <span>{{ estimate?.time_min || 0 }} min</span>
+      <span>·</span>
+      <span>{{ selectedProductKind | uppercase }}</span>
+    </div>
+
+    <div class="review-section">
+      <h3>Fare breakdown</h3>
+      <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.base_fare != null">
+        <span>Base fare</span><span>₹{{ estimate?.fare_breakdown?.base_fare }}</span>
+      </div>
+      <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.distance_component != null">
+        <span>Distance ({{ estimate?.distance_km }} km)</span>
+        <span>₹{{ estimate?.fare_breakdown?.distance_component }}</span>
+      </div>
+      <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.time_component != null">
+        <span>Time ({{ estimate?.time_min }} min)</span>
+        <span>₹{{ estimate?.fare_breakdown?.time_component }}</span>
+      </div>
+      <div
+        class="breakdown-row"
+        *ngIf="estimate?.fare_breakdown?.surge_multiplier && (estimate?.fare_breakdown?.surge_multiplier ?? 1) > 1"
+      >
+        <span>Surge × {{ estimate?.fare_breakdown?.surge_multiplier }}</span>
+        <span></span>
+      </div>
+      <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.tax_amount">
+        <span>Tax ({{ estimate?.fare_breakdown?.tax_percent }}%)</span>
+        <span>₹{{ estimate?.fare_breakdown?.tax_amount }}</span>
+      </div>
+      <div class="breakdown-row total">
+        <span>Estimated total</span>
+        <span>₹{{ estimate?.estimated_fare }}</span>
+      </div>
+    </div>
+
+    <div class="review-section payment-section">
+      <ion-item button lines="none" (click)="openPaymentSheet()">
+        <ion-icon
+          slot="start"
+          [name]="paymentMethod === 'cash' ? 'cash-outline' : (paymentMethod === 'upi' ? 'phone-portrait-outline' : 'qr-code-outline')"
+          aria-hidden="true"
+        ></ion-icon>
+        <ion-label>Payment: <strong>{{ paymentMethod | uppercase }}</strong></ion-label>
+        <ion-icon slot="end" name="chevron-forward-outline" aria-hidden="true"></ion-icon>
+      </ion-item>
+    </div>
+
+    <ion-button expand="block" (click)="closeReviewModal()" class="review-done">
+      Done — pick a driver
+    </ion-button>
   </div>
 </ion-content>

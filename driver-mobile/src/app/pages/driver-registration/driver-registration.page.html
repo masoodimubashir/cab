@@ -1,69 +1,169 @@
 <ion-header [translucent]="true">
-  <ion-toolbar>
-    <ion-buttons slot="start">
-      <ion-button (click)="back()">Back</ion-button>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start" *ngIf="driverApproved">
+      <ion-button (click)="goToDashboard()" aria-label="Back">
+        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
+      </ion-button>
     </ion-buttons>
-    <ion-title>Driver onboarding</ion-title>
+    <ion-title>Documents</ion-title>
   </ion-toolbar>
 </ion-header>
 
 <ion-content class="ion-padding">
+  <div class="stepper" *ngIf="!initLoading">
+    <div class="stepper__item" [class.stepper__item--active]="step === 1" [class.stepper__item--done]="step > 1">
+      <span class="stepper__num">1</span>
+      <span class="stepper__label">Vehicle</span>
+    </div>
+    <div class="stepper__bar"></div>
+    <div class="stepper__item" [class.stepper__item--active]="step === 2">
+      <span class="stepper__num">2</span>
+      <span class="stepper__label">Documents</span>
+    </div>
+  </div>
+
   <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
   <ion-text color="success" *ngIf="message"><p>{{ message }}</p></ion-text>
 
-  <ion-card>
-    <ion-card-header>
-      <ion-card-title>Vehicle registration</ion-card-title>
-      <ion-card-subtitle *ngIf="!isCustomer">You are not on the customer role; backend may reject this if you are already a driver.</ion-card-subtitle>
-    </ion-card-header>
-    <ion-card-content>
-      <ion-item lines="full">
-        <ion-label position="stacked">Vehicle type</ion-label>
-        <ion-input [(ngModel)]="vehicle_type" placeholder="e.g. Sedan"></ion-input>
-      </ion-item>
-      <ion-item lines="full">
-        <ion-label position="stacked">Registration no.</ion-label>
-        <ion-input [(ngModel)]="vehicle_reg_no" placeholder="Required"></ion-input>
-      </ion-item>
-      <ion-item lines="full">
-        <ion-label position="stacked">Brand (optional)</ion-label>
-        <ion-input [(ngModel)]="vehicle_brand"></ion-input>
-      </ion-item>
-      <ion-item lines="full">
-        <ion-label position="stacked">Model (optional)</ion-label>
-        <ion-input [(ngModel)]="vehicle_model"></ion-input>
-      </ion-item>
-      <ion-item lines="full">
-        <ion-label position="stacked">Color (optional)</ion-label>
-        <ion-input [(ngModel)]="vehicle_color"></ion-input>
-      </ion-item>
-      <ion-button expand="block" class="ion-margin-top" (click)="submitRegistration()" [disabled]="busy">
-        {{ busy ? 'Saving…' : 'Submit registration' }}
-      </ion-button>
-    </ion-card-content>
-  </ion-card>
+  <div *ngIf="initLoading" class="loading">Loading…</div>
 
-  <ion-card>
-    <ion-card-header>
-      <ion-card-title>Documents</ion-card-title>
-      <ion-card-subtitle>Requires driver role. Upload DL, RC, Insurance, ID (max 10 MB each).</ion-card-subtitle>
-    </ion-card-header>
-    <ion-card-content>
+  <!-- ===== STEP 1 — Vehicle + City + Fleet (no profile here anymore) ===== -->
+  <ng-container *ngIf="!initLoading && step === 1">
+    <div class="section-card">
+      <h2>Where you drive</h2>
+
       <ion-item lines="full">
-        <ion-label position="stacked">Document type</ion-label>
-        <ion-select [(ngModel)]="docType" interface="action-sheet">
-          <ion-select-option value="DL">DL</ion-select-option>
-          <ion-select-option value="RC">RC</ion-select-option>
-          <ion-select-option value="INSURANCE">Insurance</ion-select-option>
-          <ion-select-option value="ID">ID</ion-select-option>
+        <ion-label position="stacked">City *</ion-label>
+        <ion-select
+          [(ngModel)]="city_id"
+          [disabled]="busy || driverApproved"
+          interface="action-sheet"
+          placeholder="Pick your city"
+        >
+          <ion-select-option *ngFor="let c of cities" [value]="c.id">{{ c.name }}</ion-select-option>
         </ion-select>
       </ion-item>
-      <ion-item lines="none">
-        <input type="file" (change)="onFileChange($event)" accept="image/*,application/pdf" />
+
+      <ion-item lines="full">
+        <ion-label position="stacked">Vehicle Type *</ion-label>
+        <ion-select
+          [(ngModel)]="vehicle_type_id"
+          [disabled]="busy || driverApproved"
+          interface="action-sheet"
+          placeholder="Pick your vehicle type"
+        >
+          <ion-select-option *ngFor="let v of vehicleTypes" [value]="v.id">{{ v.name }}</ion-select-option>
+        </ion-select>
       </ion-item>
-      <ion-button expand="block" (click)="uploadDocument()" [disabled]="uploadBusy">
-        {{ uploadBusy ? 'Uploading…' : 'Upload document' }}
-      </ion-button>
-    </ion-card-content>
-  </ion-card>
+
+      <ion-item lines="full">
+        <ion-label position="stacked">Vehicle Brand</ion-label>
+        <ion-input [(ngModel)]="vehicle_brand" [disabled]="busy || driverApproved" placeholder="e.g. Maruti Suzuki"></ion-input>
+      </ion-item>
+
+      <ion-item lines="full">
+        <ion-label position="stacked">Vehicle Model</ion-label>
+        <ion-input [(ngModel)]="vehicle_model" [disabled]="busy || driverApproved" placeholder="e.g. Dzire"></ion-input>
+      </ion-item>
+
+      <ion-item lines="full">
+        <ion-label position="stacked">Vehicle Color</ion-label>
+        <ion-input [(ngModel)]="vehicle_color" [disabled]="busy || driverApproved" placeholder="e.g. White"></ion-input>
+      </ion-item>
+
+      <ion-item lines="full">
+        <ion-label position="stacked">Fleet</ion-label>
+        <ion-select
+          [(ngModel)]="fleet_id"
+          [disabled]="busy"
+          interface="action-sheet"
+          placeholder="None"
+        >
+          <ion-select-option [value]="null">None</ion-select-option>
+          <ion-select-option *ngFor="let f of fleetsForCurrentCity" [value]="f.id">{{ f.name }}</ion-select-option>
+        </ion-select>
+      </ion-item>
+    </div>
+
+    <ion-button expand="block" class="ion-margin-top" (click)="submitStep1()" [disabled]="busy">
+      {{ busy ? 'Saving…' : 'Continue' }}
+    </ion-button>
+  </ng-container>
+
+  <!-- ===== STEP 2 — Documents ===== -->
+  <ng-container *ngIf="!initLoading && step === 2">
+    <div class="section-card">
+      <h2>Upload your documents</h2>
+      <p class="muted small">
+        You must upload your documents before you can start receiving rides.
+      </p>
+
+      <div *ngFor="let slot of docs" class="doc-row">
+        <div class="doc-row__head">
+          <strong>{{ slot.doc.name }}</strong>
+          <span class="status" *ngIf="slot.existing">
+            <ng-container [ngSwitch]="slot.existing.status">
+              <span *ngSwitchCase="'approved'" class="badge badge--ok">Approved</span>
+              <span *ngSwitchCase="'uploaded'" class="badge badge--pending">Pending review</span>
+              <span *ngSwitchCase="'rejected'" class="badge badge--bad">Rejected — re-upload</span>
+            </ng-container>
+          </span>
+        </div>
+        <p class="muted small" *ngIf="slot.doc.instructions">{{ slot.doc.instructions }}</p>
+
+        <div *ngIf="slot.doc.labels.length">
+          <ion-item lines="full" *ngFor="let l of slot.doc.labels">
+            <ion-label position="stacked">{{ l.label }}<span *ngIf="l.mandatory"> *</span></ion-label>
+            <ion-input
+              [type]="inputTypeFor(l.label_type)"
+              [(ngModel)]="slot.labelValues[l.label]"
+              [disabled]="isLocked(slot) || uploadBusy"
+            ></ion-input>
+          </ion-item>
+        </div>
+
+        <div *ngIf="slot.existing" class="existing-row">
+          <ion-button size="small" fill="outline" (click)="viewDoc(slot)">
+            <ion-icon name="eye-outline" slot="start"></ion-icon>
+            View
+          </ion-button>
+          <ion-button size="small" fill="outline" color="medium" (click)="downloadDoc(slot)">
+            <ion-icon name="download-outline" slot="start"></ion-icon>
+            Download
+          </ion-button>
+          <span class="muted small" *ngIf="slot.existing.uploaded_at">
+            Uploaded {{ slot.existing.uploaded_at | date:'dd/MM/yyyy HH:mm' }}
+          </span>
+        </div>
+
+        <input *ngIf="!isLocked(slot)" type="file" accept="image/*,application/pdf"
+               (change)="onDocFileChange(slot, $event)"
+               [disabled]="uploadBusy" />
+
+        <p class="status-line" *ngIf="slot.status === 'uploading'">Uploading…</p>
+        <p class="status-line err" *ngIf="slot.status === 'error'">{{ slot.error }}</p>
+        <p class="status-line ok" *ngIf="slot.status === 'done'">Uploaded.</p>
+      </div>
+
+      <div class="doc-actions">
+        <ion-button expand="block" (click)="uploadSelected()" [disabled]="uploadBusy || !hasSelection()">
+          {{ uploadBusy ? 'Uploading…' : 'Upload Selected' }}
+        </ion-button>
+
+        <ion-button
+          expand="block"
+          color="success"
+          class="ion-margin-top"
+          (click)="goToDashboard()"
+          [disabled]="!canGoToDashboard"
+        >
+          {{ canGoToDashboard ? 'Go to Dashboard' : 'Upload required documents to continue' }}
+        </ion-button>
+
+        <ion-button expand="block" fill="clear" size="small" (click)="goToStep(1)">
+          Back to profile
+        </ion-button>
+      </div>
+    </div>
+  </ng-container>
 </ion-content>

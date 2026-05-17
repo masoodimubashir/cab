@@ -20,6 +20,15 @@ export const environment = {
     appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
     measurementId: "G-CLHQFG1HW1"
   },
+  /** Reverb (WebSocket) — match backend/.env REVERB_* values. */
+  reverbAppKey: '4jsb8ggrbvcriyaskojh',
+  reverbHost: 'localhost',
+  reverbPort: 8080,
+  reverbScheme: 'http' as 'http' | 'https',
+  /** FCM Web Push VAPID key — Firebase Console → Cloud Messaging → Web Push certificates. */
+  fcmVapidKey: '',
+  /** Google Maps JavaScript API key — used for the in-app live map (pickup + customer marker). */
+  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
 };
 
 /*

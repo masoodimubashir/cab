@@ -1,0 +1,31 @@
+.hero {
+  text-align: center;
+  padding: 32px 16px 24px;
+}
+.logo-circle {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--ion-color-primary, #3880ff);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  ion-icon { font-size: 48px; }
+}
+h1 {
+  margin: 8px 0;
+  font-size: 1.7rem;
+}
+.lead {
+  color: var(--ion-color-medium, #666);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0 8px;
+}
+.grant-wrap {
+  padding: 24px 8px 8px;
+}
+.muted { color: var(--ion-color-medium, #666); }
+.small { font-size: 0.85rem; text-align: center; margin-top: 12px; }

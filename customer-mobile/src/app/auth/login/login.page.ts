@@ -1,26 +1,32 @@
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
+import { Geolocation } from '@capacitor/geolocation';
+import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
+import { PushService } from '../../core/push.service';
 import {
   mapFirebaseAuthError,
   normalizeFirebaseIdToken,
   PhoneAuthService,
 } from '../../core/phone-auth.service';
 import { normalizePhoneToE164 } from '../../core/phone-normalize';
-import {
-  GoogleAuthService,
-  GoogleSignInCancelledError,
-  GoogleSignInResult,
-} from '../../core/google-auth.service';
 
 type AuthExchangeResponse = {
   token: string;
   user: AuthUser;
 };
 
-type Step = 'method' | 'phone' | 'otp' | 'phone-info' | 'google-info' | 'google-otp';
+/**
+ * Flow:
+ *   method  → user taps "Login with phone"
+ *   phone   → enter mobile number
+ *   perms   → disclosure ("we use phone/SMS/contacts/device id/files") — Allow grants all
+ *   otp     → enter SMS code
+ *   info    → first-time signup completes name + email + photo
+ */
+type Step = 'phone' | 'perms' | 'otp' | 'info';
 
 const RESEND_SECONDS = 60;
 
@@ -31,24 +37,34 @@ const RESEND_SECONDS = 60;
   standalone: false,
 })
 export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, OnDestroy {
-  step: Step = 'method';
+  step: Step = 'phone';
   phone = '';
   otp = '';
-  showDevFallback = false;
-  idToken = '';
 
-  google: GoogleSignInResult | null = null;
-  googleName = '';
-  googlePhone = '';
-  googleOtp = '';
+  // Country prefix (default India). The picker on the phone-entry step writes
+  // here; sendOtp passes country.code to normalizePhoneToE164 as the default.
+  countries: Array<{ name: string; code: string; flag: string; iso: string }> = [
+    { name: 'India',         code: '91',  flag: '🇮🇳', iso: 'IN' },
+    { name: 'United States', code: '1',   flag: '🇺🇸', iso: 'US' },
+    { name: 'United Kingdom',code: '44',  flag: '🇬🇧', iso: 'GB' },
+    { name: 'UAE',           code: '971', flag: '🇦🇪', iso: 'AE' },
+    { name: 'Saudi Arabia',  code: '966', flag: '🇸🇦', iso: 'SA' },
+    { name: 'Singapore',     code: '65',  flag: '🇸🇬', iso: 'SG' },
+    { name: 'Australia',     code: '61',  flag: '🇦🇺', iso: 'AU' },
+    { name: 'Canada',        code: '1',   flag: '🇨🇦', iso: 'CA' },
+    { name: 'Bangladesh',    code: '880', flag: '🇧🇩', iso: 'BD' },
+    { name: 'Pakistan',      code: '92',  flag: '🇵🇰', iso: 'PK' },
+    { name: 'Sri Lanka',     code: '94',  flag: '🇱🇰', iso: 'LK' },
+    { name: 'Nepal',         code: '977', flag: '🇳🇵', iso: 'NP' },
+  ];
+  country = this.countries[0]; // India by default
+  showCountryPicker = false;
 
-  // Profile-completion state for the phone-only sign-up path.
-  phoneInfoName = '';
-  phoneInfoEmail = '';
-  phoneInfoPhotoFile: File | null = null;
-  phoneInfoPhotoPreview: string | null = null;
+  infoName = '';
+  infoEmail = '';
+  infoPhotoFile: File | null = null;
+  infoPhotoPreview: string | null = null;
 
-  // OTP resend countdown — shared by both phone-only and Google flows.
   resendSecondsLeft = 0;
   private resendInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -60,7 +76,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private auth: AuthService,
     private router: Router,
     private phoneAuth: PhoneAuthService,
-    private googleAuth: GoogleAuthService
+    private push: PushService
   ) {}
 
   ionViewWillEnter(): void {
@@ -70,7 +86,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   ionViewDidEnter(): void {
-    if (this.phoneAuth.isConfigured() && (this.step === 'phone' || this.step === 'google-info')) {
+    if (this.phoneAuth.isConfigured()) {
       this.installRecaptchaSoon();
     }
   }
@@ -106,56 +122,63 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     return this.otp.trim().length >= 4;
   }
 
-  get googleOtpReady(): boolean {
-    return this.googleOtp.trim().length >= 4;
-  }
-
   get resendDisplay(): string {
     const s = this.resendSecondsLeft;
     return `Resend code 00:${s.toString().padStart(2, '0')}`;
   }
 
-  // ---------- method picker ----------
+  // ── Step transitions ─────────────────────────────────────────────
 
-  choosePhone(): void {
-    this.error = null;
+  backToPhone(): void {
     this.step = 'phone';
-    if (this.phoneAuth.isConfigured()) {
-      this.installRecaptchaSoon();
-    }
-  }
-
-  backToMethod(): void {
-    this.error = null;
-    this.step = 'method';
-    this.phone = '';
     this.otp = '';
-    this.google = null;
-    this.googleName = '';
-    this.googlePhone = '';
-    this.googleOtp = '';
-    this.phoneInfoName = '';
-    this.phoneInfoEmail = '';
-    this.phoneInfoPhotoFile = null;
-    this.phoneInfoPhotoPreview = null;
+    this.error = null;
     this.stopResendTimer();
     this.phoneAuth.resetOtpOnly();
-    this.phoneAuth.teardownRecaptcha();
+    this.resetRecaptcha();
   }
 
-  // ---------- phone-only flow ----------
+  pickCountry(c: { name: string; code: string; flag: string; iso: string }): void {
+    this.country = c;
+    this.showCountryPicker = false;
+  }
 
-  async sendOtp(): Promise<void> {
+  // Step 1 → 2: validate phone, then show permissions disclosure.
+  proceedToPerms(): void {
     this.error = null;
-    const normalized = normalizePhoneToE164(this.phone);
-    if (!normalized || normalized.length < 11) {
-      this.error = 'Enter a valid mobile number (10 digits or full international).';
+    const normalized = normalizePhoneToE164(this.phone, this.country.code);
+    if (!normalized || normalized.length < 8) {
+      this.error = 'Enter a valid mobile number for the selected country.';
       return;
     }
     if (!this.assertFirebaseReady()) {
       return;
     }
+    this.step = 'perms';
+  }
+
+  // Permissions step: Deny sends the user back to phone entry.
+  denyPerms(): void {
+    this.step = 'phone';
+  }
+
+  // Permissions step: Allow grants what we can request, then sends the OTP.
+  async allowPermsAndSendOtp(): Promise<void> {
+    this.error = null;
     this.loading = true;
+    try {
+      try { await Geolocation.requestPermissions(); } catch { /* ignore */ }
+      try { await FirebaseMessaging.requestPermissions(); } catch { /* ignore */ }
+      localStorage.setItem('dreamcabs_permissions_granted', '1');
+      await this.sendOtp();
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private async sendOtp(): Promise<void> {
+    const normalized = normalizePhoneToE164(this.phone, this.country.code);
+    if (!normalized) return;
     try {
       this.phoneAuth.setupInvisibleRecaptcha('recaptcha-container');
       await this.phoneAuth.sendOtp(normalized);
@@ -163,15 +186,19 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.startResendTimer();
     } catch (e) {
       this.error = mapFirebaseAuthError(e);
+      this.step = 'phone';
       this.resetRecaptchaQuiet();
-    } finally {
-      this.loading = false;
     }
   }
 
   async resendOtp(): Promise<void> {
     if (this.resendSecondsLeft > 0 || this.loading) return;
-    await this.sendOtp();
+    this.loading = true;
+    try {
+      await this.sendOtp();
+    } finally {
+      this.loading = false;
+    }
   }
 
   async verifyOtp(): Promise<void> {
@@ -184,11 +211,10 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     try {
       const idToken = await this.phoneAuth.confirmOtp(this.otp.trim());
       const user = await this.exchangeOtpToken(idToken);
-      // First-time phone sign-up: collect name + email + optional photo before dashboard.
       if (this.userNeedsProfile(user)) {
-        this.phoneInfoName = user.name && user.name !== 'User' ? user.name : '';
-        this.phoneInfoEmail = this.isSyntheticEmail(user.email) ? '' : user.email ?? '';
-        this.step = 'phone-info';
+        this.infoName = user.name && user.name !== 'User' ? user.name : '';
+        this.infoEmail = this.isSyntheticEmail(user.email) ? '' : user.email ?? '';
+        this.step = 'info';
         this.stopResendTimer();
       } else {
         this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
@@ -200,33 +226,24 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
   }
 
-  backToPhone(): void {
-    this.step = 'phone';
-    this.otp = '';
-    this.error = null;
-    this.stopResendTimer();
-    this.phoneAuth.resetOtpOnly();
-    this.resetRecaptcha();
-  }
-
-  // ---------- phone-info (profile completion after first phone OTP) ----------
+  // ── Profile completion (first-time signup) ───────────────────────
 
   onPhotoSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;
     if (!file) return;
-    this.phoneInfoPhotoFile = file;
+    this.infoPhotoFile = file;
     const reader = new FileReader();
     reader.onload = () => {
-      this.phoneInfoPhotoPreview = reader.result as string;
+      this.infoPhotoPreview = reader.result as string;
     };
     reader.readAsDataURL(file);
   }
 
-  async submitPhoneInfo(): Promise<void> {
+  async submitInfo(): Promise<void> {
     this.error = null;
-    const name = this.phoneInfoName.trim();
-    const email = this.phoneInfoEmail.trim();
+    const name = this.infoName.trim();
+    const email = this.infoEmail.trim();
     if (!name) {
       this.error = 'Please enter your name.';
       return;
@@ -239,8 +256,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     const fd = new FormData();
     fd.append('name', name);
     fd.append('email', email);
-    if (this.phoneInfoPhotoFile) {
-      fd.append('photo', this.phoneInfoPhotoFile);
+    if (this.infoPhotoFile) {
+      fd.append('photo', this.infoPhotoFile);
     }
 
     this.loading = true;
@@ -248,7 +265,6 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       await new Promise<void>((resolve, reject) => {
         this.api.postForm<{ user: AuthUser }>('/me/profile', fd).subscribe({
           next: (res) => {
-            // Merge updated fields into the locally-cached user.
             this.auth.updateUser(res.user);
             resolve();
           },
@@ -263,114 +279,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
   }
 
-  // ---------- Google + phone flow ----------
-
-  async signInWithGoogle(): Promise<void> {
-    this.error = null;
-    this.loading = true;
-    try {
-      const result = await this.googleAuth.signIn();
-      this.google = result;
-      this.googleName = result.name ?? '';
-      this.googlePhone = '';
-      this.googleOtp = '';
-      this.step = 'google-info';
-      if (this.phoneAuth.isConfigured()) {
-        this.installRecaptchaSoon();
-      }
-    } catch (e) {
-      if (e instanceof GoogleSignInCancelledError) {
-        return;
-      }
-      this.error = mapFirebaseAuthError(e) || (e as Error)?.message || 'Google sign-in failed.';
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  async sendGoogleOtp(): Promise<void> {
-    this.error = null;
-    if (!this.google) {
-      this.error = 'Google session expired. Please sign in again.';
-      this.step = 'method';
-      return;
-    }
-    if (!this.googleName.trim()) {
-      this.error = 'Please enter your name.';
-      return;
-    }
-    const normalized = normalizePhoneToE164(this.googlePhone);
-    if (!normalized || normalized.length < 11) {
-      this.error = 'Enter a valid mobile number (10 digits or full international).';
-      return;
-    }
-    if (!this.assertFirebaseReady()) {
-      return;
-    }
-    this.loading = true;
-    try {
-      this.phoneAuth.setupInvisibleRecaptcha('recaptcha-container');
-      await this.phoneAuth.sendOtp(normalized);
-      this.step = 'google-otp';
-      this.startResendTimer();
-    } catch (e) {
-      this.error = mapFirebaseAuthError(e);
-      this.resetRecaptchaQuiet();
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  async resendGoogleOtp(): Promise<void> {
-    if (this.resendSecondsLeft > 0 || this.loading) return;
-    // Re-send to the same phone the user already entered.
-    const normalized = normalizePhoneToE164(this.googlePhone);
-    if (!normalized) return;
-    this.loading = true;
-    try {
-      this.phoneAuth.setupInvisibleRecaptcha('recaptcha-container');
-      await this.phoneAuth.sendOtp(normalized);
-      this.startResendTimer();
-    } catch (e) {
-      this.error = mapFirebaseAuthError(e);
-      this.resetRecaptchaQuiet();
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  async verifyGoogleOtp(): Promise<void> {
-    this.error = null;
-    if (!this.google) {
-      this.error = 'Google session expired. Please sign in again.';
-      this.step = 'method';
-      return;
-    }
-    if (!this.googleOtpReady) {
-      this.error = 'Enter the code from your SMS.';
-      return;
-    }
-    this.loading = true;
-    try {
-      const phoneIdToken = await this.phoneAuth.confirmOtp(this.googleOtp.trim());
-      await this.exchangeGoogleAndPhoneTokens(phoneIdToken);
-    } catch (e) {
-      this.error = mapFirebaseAuthError(e) || 'Invalid code. Try again or request a new OTP.';
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  backToGoogleInfo(): void {
-    this.step = 'google-info';
-    this.googleOtp = '';
-    this.error = null;
-    this.stopResendTimer();
-    this.phoneAuth.resetOtpOnly();
-    this.resetRecaptcha();
-  }
-
-  // ---------- backend exchanges ----------
+  // ── Backend exchange ─────────────────────────────────────────────
 
   private exchangeOtpToken(idToken: string): Promise<AuthUser> {
     const idTokenClean = normalizeFirebaseIdToken(idToken);
@@ -383,6 +292,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         .subscribe({
           next: (res) => {
             this.auth.setSession(res.token, res.user);
+            void this.push.registerForUser();
             resolve(res.user);
           },
           error: (err) => reject(new Error(err?.error?.message || 'Sign-in failed')),
@@ -390,50 +300,22 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     });
   }
 
-  private exchangeGoogleAndPhoneTokens(phoneIdToken: string): Promise<void> {
-    const phoneIdTokenClean = normalizeFirebaseIdToken(phoneIdToken);
-    const googleIdTokenClean = normalizeFirebaseIdToken(this.google?.idToken ?? '');
-    return new Promise((resolve, reject) => {
-      this.api
-        .post<AuthExchangeResponse>('/auth/google/verify', {
-          google_id_token: googleIdTokenClean,
-          phone_id_token: phoneIdTokenClean,
-          intent: 'customer',
-          name: this.googleName.trim() || undefined,
-        })
-        .subscribe({
-          next: (res) => {
-            this.auth.setSession(res.token, res.user);
-            this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
-            resolve();
-          },
-          error: (err) => reject(new Error(err?.error?.message || 'Sign-up failed')),
-        });
-    });
-  }
-
-  // ---------- helpers ----------
+  // ── Helpers ──────────────────────────────────────────────────────
 
   private isSyntheticEmail(email?: string | null): boolean {
     return !email || email.endsWith('@otp.local');
   }
 
   private userNeedsProfile(user: AuthUser): boolean {
-    return (
-      this.isSyntheticEmail(user.email) ||
-      !user.name ||
-      user.name === 'User'
-    );
+    return this.isSyntheticEmail(user.email) || !user.name || user.name === 'User';
   }
 
   private assertFirebaseReady(): boolean {
     if (this.phoneAuth.isConfigured()) return true;
     if (this.phoneAuth.firebaseSetupStatus() === 'not-web-app') {
-      this.error =
-        'Your Firebase appId is not a Web app (it must contain :web:). Add a Web app in Firebase Console and update environment.ts.';
+      this.error = 'Your Firebase appId is not a Web app (it must contain :web:). Use Developer sign-in.';
     } else {
-      this.error =
-        'Firebase Web config is incomplete in environment.ts. Use Developer sign-in or paste the full Web app config from Firebase Console.';
+      this.error = 'Firebase Web config is incomplete in environment.ts. Use Developer sign-in.';
     }
     return false;
   }
@@ -463,9 +345,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         if (this.phoneAuth.isConfigured()) {
           this.phoneAuth.setupInvisibleRecaptcha('recaptcha-container');
         }
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     });
   }
 
@@ -474,43 +354,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     queueMicrotask(() => {
       try {
         this.phoneAuth.setupInvisibleRecaptcha('recaptcha-container');
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     });
   }
 
-  signInWithToken(): void {
-    const token = normalizeFirebaseIdToken(this.idToken);
-    if (!token) {
-      this.error = 'Paste an ID token.';
-      return;
-    }
-    this.loading = true;
-    this.error = null;
-    this.exchangeOtpToken(token)
-      .then((user) => {
-        if (this.userNeedsProfile(user)) {
-          this.phoneInfoName = user.name && user.name !== 'User' ? user.name : '';
-          this.phoneInfoEmail = this.isSyntheticEmail(user.email) ? '' : user.email ?? '';
-          this.step = 'phone-info';
-        } else {
-          this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
-        }
-      })
-      .catch((e) => {
-        this.error = (e as Error).message;
-      })
-      .finally(() => {
-        this.loading = false;
-      });
-  }
-
-  logoutDev(): void {
-    this.auth.logout();
-    this.error = null;
-    this.step = 'method';
-    this.otp = '';
-    this.phoneAuth.teardownRecaptcha();
-  }
 }
