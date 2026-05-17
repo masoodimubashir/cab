@@ -119,3 +119,40 @@ code {
   border-radius: 999px;
   font-size: 0.9rem;
 }
+
+.perm-list {
+  ion-item ion-icon[slot="start"] { font-size: 24px; color: var(--ion-color-primary); }
+  h3 { font-size: 1rem; margin: 0 0 2px; font-weight: 600; }
+  p { font-size: 0.85rem; color: var(--ion-color-medium); margin: 0; }
+}
+
+.perm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.country-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--ion-color-light-shade);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 1rem;
+  cursor: pointer;
+  color: inherit;
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  .flag { font-size: 1.25rem; }
+  .code { font-weight: 600; }
+  ion-icon { font-size: 0.9rem; }
+}
+.phone-input { flex: 1; }
+.flag-big { font-size: 1.5rem; margin-right: 4px; }

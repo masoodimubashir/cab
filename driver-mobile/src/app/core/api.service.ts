@@ -39,6 +39,13 @@ export class ApiService {
     return this.http.get<T>(this.url(path), { headers: this.jsonHeaders() });
   }
 
+  getBlob(path: string): Observable<Blob> {
+    return this.http.get(this.url(path), {
+      headers: this.multipartHeaders(), // skip Content-Type
+      responseType: 'blob',
+    });
+  }
+
   post<T>(path: string, body: unknown): Observable<T> {
     return this.http.post<T>(this.url(path), body, { headers: this.jsonHeaders() });
   }

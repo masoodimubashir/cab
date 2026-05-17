@@ -1,36 +1,165 @@
-<nav
-  *ngIf="showNav"
-  class="app-header"
->
-  <div class="app-header__inner">
-    <div class="app-header__brand">
-      <span class="app-header__brand-mark" aria-hidden="true">DC</span>
-      <span class="app-header__brand-text">DreamCabs Admin</span>
+<div class="app-shell" *ngIf="showNav; else bare">
+  <aside class="sidebar" aria-label="Admin navigation">
+    <div class="sidebar__brand">
+      <span class="sidebar__brand-mark" aria-hidden="true">DC</span>
+      <span class="sidebar__brand-text">DreamCabs Admin</span>
     </div>
 
-    <div class="app-header__links" role="navigation" aria-label="Admin navigation">
-      <a
-        routerLink="/dashboard"
-        routerLinkActive="active"
-        class="nav-link"
-      >
-        Dashboard
+    <div class="sidebar__scope" *ngIf="scopedCityName">
+      <i class="pi pi-map-marker"></i>
+      <div>
+        <div class="sidebar__scope-lbl">Scoped to</div>
+        <div class="sidebar__scope-city">{{ scopedCityName }}</div>
+      </div>
+    </div>
+
+    <nav class="sidebar__nav">
+      <a *ngIf="can('dashboard.view')" routerLink="/dashboard" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-home"></i> Dashboard
       </a>
-      <a routerLink="/users" routerLinkActive="active" class="nav-link">Users</a>
-      <a routerLink="/drivers" routerLinkActive="active" class="nav-link">Drivers</a>
-      <a routerLink="/pricing" routerLinkActive="active" class="nav-link">Pricing</a>
-      <a routerLink="/trips" routerLinkActive="active" class="nav-link">Trips</a>
-      <a routerLink="/safety" routerLinkActive="active" class="nav-link">Safety</a>
-      <a routerLink="/reports" routerLinkActive="active" class="nav-link">Reports</a>
+      <a *ngIf="can('maps.view')" routerLink="/maps" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-map"></i> Maps
+      </a>
+      <a *ngIf="can('users.view')" routerLink="/users" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-users"></i> Users
+      </a>
+      <a *ngIf="can('customers.view')" routerLink="/customers" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-user-plus"></i> Customers
+      </a>
 
-      <button type="button" class="logout-btn" (click)="logout()" aria-label="Logout">
-        Logout
-      </button>
-    </div>
-  </div>
-</nav>
+      <ng-container *ngIf="canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])">
+        <button
+          type="button"
+          class="nav-link nav-group__toggle"
+          [class.open]="driversOpen"
+          (click)="driversOpen = !driversOpen"
+          [attr.aria-expanded]="driversOpen"
+        >
+          <span><i class="pi pi-id-card"></i> Drivers</span>
+          <i class="pi" [class.pi-chevron-down]="driversOpen" [class.pi-chevron-right]="!driversOpen"></i>
+        </button>
+        <div class="nav-group__items" *ngIf="driversOpen">
+          <a *ngIf="can('drivers.view')" routerLink="/drivers/active" routerLinkActive="active" class="nav-sublink">Active Drivers</a>
+          <a *ngIf="can('drivers.view')" routerLink="/drivers/deactivated" routerLinkActive="active" class="nav-sublink">Deactivated Drivers</a>
+          <a *ngIf="can('drivers.view')" routerLink="/drivers/leaderboard" routerLinkActive="active" class="nav-sublink">Leaderboard</a>
+          <a *ngIf="can('drivers.view')" routerLink="/drivers/performance" routerLinkActive="active" class="nav-sublink">Driver Performance</a>
+          <a *ngIf="can('drivers.approve')" routerLink="/drivers/approvals" routerLinkActive="active" class="nav-sublink">Approvals &amp; Documents</a>
+          <a *ngIf="can('documents.manage')" routerLink="/drivers/documents" routerLinkActive="active" class="nav-sublink">Documents Catalog</a>
+        </div>
+      </ng-container>
 
-<main style="padding: 16px;">
-  <router-outlet />
-</main>
+      <a *ngIf="can('pricing.view')" routerLink="/pricing" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-tag"></i> Base Pricing
+      </a>
+      <a *ngIf="can('dynamic_pricing.manage')" routerLink="/dynamic-pricing" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-bolt"></i> Dynamic Pricing
+      </a>
+      <a *ngIf="can('contact_drivers.send')" routerLink="/contact-drivers" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-envelope"></i> Contact Drivers
+      </a>
+      <a *ngIf="can('vehicles.view')" routerLink="/vehicles" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-car"></i> Vehicles
+      </a>
 
+      <ng-container *ngIf="canAny(['promotions.manage','promo_codes.manage','coupons.manage','referrals.manage'])">
+        <button
+          type="button"
+          class="nav-link nav-group__toggle"
+          [class.open]="promotionsOpen"
+          (click)="promotionsOpen = !promotionsOpen"
+          [attr.aria-expanded]="promotionsOpen"
+        >
+          <span><i class="pi pi-gift"></i> Promotions</span>
+          <i class="pi" [class.pi-chevron-down]="promotionsOpen" [class.pi-chevron-right]="!promotionsOpen"></i>
+        </button>
+        <div class="nav-group__items" *ngIf="promotionsOpen">
+          <a *ngIf="can('promotions.manage')" routerLink="/promotions/city-wide" routerLinkActive="active" class="nav-sublink">City Wide</a>
+          <a *ngIf="can('promo_codes.manage')" routerLink="/promotions/promo-codes" routerLinkActive="active" class="nav-sublink">Promo Codes</a>
+          <a *ngIf="can('coupons.manage')" routerLink="/promotions/coupons" routerLinkActive="active" class="nav-sublink">Coupons</a>
+          <a *ngIf="can('referrals.manage')" routerLink="/promotions/referrals" routerLinkActive="active" class="nav-sublink">Referrals</a>
+        </div>
+      </ng-container>
+
+      <ng-container *ngIf="canAny(['trips.view','rides.map','rides.dispatch'])">
+        <button
+          type="button"
+          class="nav-link nav-group__toggle"
+          [class.open]="ridesOpen"
+          (click)="ridesOpen = !ridesOpen"
+          [attr.aria-expanded]="ridesOpen"
+        >
+          <span><i class="pi pi-car"></i> Rides</span>
+          <i class="pi" [class.pi-chevron-down]="ridesOpen" [class.pi-chevron-right]="!ridesOpen"></i>
+        </button>
+        <div class="nav-group__items" *ngIf="ridesOpen">
+          <a *ngIf="can('trips.view')" routerLink="/rides/all" routerLinkActive="active" class="nav-sublink">All Rides</a>
+          <a *ngIf="can('rides.map')" routerLink="/rides/map" routerLinkActive="active" class="nav-sublink">Map View</a>
+        </div>
+      </ng-container>
+
+      <a *ngIf="can('rides.dispatch')" routerLink="/rides/manual-dispatch" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-send"></i> Manual Dispatch
+      </a>
+
+      <ng-container *ngIf="canAny(['settings.manage','fleets.manage','managers.manage','roles.manage'])">
+        <button
+          type="button"
+          class="nav-link nav-group__toggle"
+          [class.open]="settingsOpen"
+          (click)="settingsOpen = !settingsOpen"
+          [attr.aria-expanded]="settingsOpen"
+        >
+          <span><i class="pi pi-cog"></i> Settings</span>
+          <i class="pi" [class.pi-chevron-down]="settingsOpen" [class.pi-chevron-right]="!settingsOpen"></i>
+        </button>
+        <div class="nav-group__items" *ngIf="settingsOpen">
+          <a *ngIf="can('settings.manage')" routerLink="/settings/operator" routerLinkActive="active" class="nav-sublink">Operator Settings</a>
+          <a *ngIf="can('settings.manage')" routerLink="/settings/city" routerLinkActive="active" class="nav-sublink">City Settings</a>
+          <a *ngIf="can('settings.manage')" routerLink="/settings/geofencing" routerLinkActive="active" class="nav-sublink">Geofencing</a>
+          <a *ngIf="can('fleets.manage')" routerLink="/settings/fleets" routerLinkActive="active" class="nav-sublink">Fleets</a>
+          <a *ngIf="can('managers.manage')" routerLink="/managers" routerLinkActive="active" class="nav-sublink">Managers</a>
+          <a *ngIf="can('roles.manage')" routerLink="/roles-permissions" routerLinkActive="active" class="nav-sublink">Roles &amp; Permissions</a>
+        </div>
+      </ng-container>
+
+      <ng-container *ngIf="canAny(['analytics.view','reports.view'])">
+        <button
+          type="button"
+          class="nav-link nav-group__toggle"
+          [class.open]="analyticsOpen"
+          (click)="analyticsOpen = !analyticsOpen"
+          [attr.aria-expanded]="analyticsOpen"
+        >
+          <span><i class="pi pi-chart-bar"></i> Analytics</span>
+          <i class="pi" [class.pi-chevron-down]="analyticsOpen" [class.pi-chevron-right]="!analyticsOpen"></i>
+        </button>
+        <div class="nav-group__items" *ngIf="analyticsOpen">
+          <a *ngIf="can('analytics.view')" routerLink="/analytics/real-time" routerLinkActive="active" class="nav-sublink">Real Time</a>
+          <a *ngIf="can('analytics.view')" routerLink="/analytics/graphs" routerLinkActive="active" class="nav-sublink">Graphs</a>
+          <a *ngIf="can('reports.view')" routerLink="/analytics/reports" routerLinkActive="active" class="nav-sublink">Reports</a>
+        </div>
+      </ng-container>
+
+      <a *ngIf="can('safety.view')" routerLink="/safety" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-shield"></i> Safety
+      </a>
+      <a *ngIf="can('reports.view')" routerLink="/reports" routerLinkActive="active" class="nav-link">
+        <i class="pi pi-chart-line"></i> Reports
+      </a>
+    </nav>
+
+    <button type="button" class="logout-btn" (click)="logout()" aria-label="Logout">
+      <i class="pi pi-sign-out"></i> Logout
+    </button>
+  </aside>
+
+  <main class="app-main">
+    <router-outlet />
+  </main>
+</div>
+
+<ng-template #bare>
+  <main style="padding: 16px;">
+    <router-outlet />
+  </main>
+</ng-template>

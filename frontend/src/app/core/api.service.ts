@@ -47,5 +47,23 @@ export class ApiService {
       headers: this.authHeaders(),
     });
   }
+
+  getBlob(path: string): Observable<Blob> {
+    return this.http.get(`${this.getBaseUrl()}${path}`, {
+      headers: this.authHeaders(),
+      responseType: 'blob',
+    });
+  }
+
+  // For multipart uploads. Don't set Content-Type — the browser fills in
+  // the multipart boundary itself when given a FormData body.
+  postMultipart<T>(path: string, body: FormData): Observable<T> {
+    const token = localStorage.getItem('dreamcabs_token');
+    let headers = new HttpHeaders();
+    if (token) {
+      headers = headers.set('Authorization', `Bearer ${token}`);
+    }
+    return this.http.post<T>(`${this.getBaseUrl()}${path}`, body, { headers });
+  }
 }
 

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\TripCustomerLocationUpdated;
 use App\Events\TripLocationUpdated;
+use App\Models\CustomerLocation;
 use App\Models\DriverLocation;
 use App\Models\Trip;
 use App\Models\TripShareLink;
@@ -26,12 +28,21 @@ class TripTrackingController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (in_array($trip->status, ['CANCELLED', 'COMPLETED'], true)) {
-            return response()->json(['message' => 'Trip is not active.'], 409);
+        // Only accept location pings while the trip is in an active driver state.
+        // This catches NEGOTIATION (no driver yet), CANCELLED, COMPLETED — all of
+        // which mean the driver app should stop streaming.
+        if (!in_array($trip->status, Trip::ACTIVE_DRIVER_STATUSES, true)) {
+            return response()->json([
+                'message' => 'Trip is not in an active state.',
+                'status' => $trip->status,
+            ], 409);
         }
 
-        // Throttle location writes to avoid flooding.
-        $minIntervalSeconds = 5;
+        // Server-side safety net to keep the table from being flooded if a
+        // misbehaving client posts faster than its own throttle. The client
+        // already enforces 5s — we sit at 3s so normal traffic never races
+        // this window and we only block actual abuse.
+        $minIntervalSeconds = 3;
         $last = DriverLocation::query()
             ->where('trip_id', $trip->id)
             ->where('driver_id', $user->id)
@@ -59,6 +70,73 @@ class TripTrackingController extends Controller
         ]);
 
         broadcast(new TripLocationUpdated(
+            tripId: $trip->id,
+            location: $location->fresh(),
+        ))->toOthers();
+
+        return response()->json(['location' => $location]);
+    }
+
+    /**
+     * Customer-side location ping. Used by the customer mobile app to push its
+     * own GPS to the backend during an active trip so the driver app can render
+     * a live customer marker (mirrors the driver's stream in the other direction).
+     *
+     * Same active-state guard as the driver stream — once the trip is no longer
+     * in motion, the customer app should stop. Throttled to one row per 5s.
+     */
+    public function updateCustomerLocation(Request $request, Trip $trip)
+    {
+        $data = $request->validate([
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'accuracy_m' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        // Stream is meaningful from the moment a driver is bound onwards: customer's
+        // pin matters for the driver to see where the rider is walking from. Don't
+        // accept pings during NEGOTIATION (no driver yet) or after the trip ends.
+        $allowed = array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES);
+        if (!in_array($trip->status, $allowed, true)) {
+            return response()->json([
+                'message' => 'Trip is not in an active state.',
+                'status' => $trip->status,
+            ], 409);
+        }
+
+        // Same 3s safety net as the driver stream — see comment in updateLocation.
+        $minIntervalSeconds = 3;
+        $last = CustomerLocation::query()
+            ->where('trip_id', $trip->id)
+            ->where('customer_id', $user->id)
+            ->orderByDesc('recorded_at')
+            ->first();
+
+        if ($last && $last->recorded_at) {
+            $ageSeconds = now()->getTimestamp() - $last->recorded_at->getTimestamp();
+            if ($ageSeconds < $minIntervalSeconds) {
+                return response()->json([
+                    'message' => 'Throttled',
+                    'location' => $last,
+                ], 429);
+            }
+        }
+
+        $location = CustomerLocation::query()->create([
+            'trip_id' => $trip->id,
+            'customer_id' => $user->id,
+            'lat' => (float) $data['lat'],
+            'lng' => (float) $data['lng'],
+            'accuracy_m' => $data['accuracy_m'] ?? null,
+            'recorded_at' => now(),
+        ]);
+
+        broadcast(new TripCustomerLocationUpdated(
             tripId: $trip->id,
             location: $location->fresh(),
         ))->toOthers();

@@ -1,0 +1,9 @@
+.page-pad { padding: 12px; }
+.muted { color: var(--ion-color-medium, #666); }
+.small { font-size: 0.85rem; padding: 4px 8px 12px; }
+.empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--ion-color-medium, #666);
+  ion-icon { font-size: 48px; opacity: 0.5; }
+}

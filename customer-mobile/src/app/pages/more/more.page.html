@@ -1,0 +1,53 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="primary">
+    <ion-title>More</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-list inset="true">
+    <ion-list-header>
+      <ion-label>Account</ion-label>
+    </ion-list-header>
+    <ion-item *ngIf="auth.getUser() as u">
+      <ion-avatar slot="start" *ngIf="u.avatar_path">
+        <img [src]="u.avatar_path" alt="" />
+      </ion-avatar>
+      <ion-icon name="person-circle-outline" slot="start" *ngIf="!u.avatar_path"></ion-icon>
+      <ion-label>
+        <h2>{{ u.name }}</h2>
+        <p>{{ roleLabel }}</p>
+      </ion-label>
+    </ion-item>
+
+    <ion-list-header>
+      <ion-label>Settings</ion-label>
+    </ion-list-header>
+    <ion-item button detail="true" (click)="goProfile()">
+      <ion-icon name="person-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>Profile</h2>
+        <p>Name, email and photo</p>
+      </ion-label>
+    </ion-item>
+    <ion-item button detail="true" (click)="goSavedLocations()">
+      <ion-icon name="bookmark-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>Saved Locations</h2>
+        <p>Home, work and other quick-book places</p>
+      </ion-label>
+    </ion-item>
+    <ion-item button detail="true" (click)="goEmergencyContacts()">
+      <ion-icon name="people-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>Emergency Contacts</h2>
+        <p>Trusted numbers to reach in an SOS</p>
+      </ion-label>
+    </ion-item>
+
+    <ion-item button detail="false" (click)="signOut()" lines="full">
+      <ion-icon name="log-out-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
+      <ion-label color="danger">Sign out</ion-label>
+    </ion-item>
+  </ion-list>
+</ion-content>

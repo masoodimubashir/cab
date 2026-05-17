@@ -1,54 +1,65 @@
 <ion-header [translucent]="true">
-  <ion-toolbar>
+  <ion-toolbar color="primary">
     <ion-title>Dashboard</ion-title>
     <ion-buttons slot="end">
-      <ion-button (click)="refresh()" [disabled]="loading">Refresh</ion-button>
+      <ion-button (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+      </ion-button>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="ion-padding">
-  <ion-spinner *ngIf="loading" name="crescent" class="ion-margin"></ion-spinner>
+<ion-content [scrollY]="false">
+  <!-- Full-bleed map. The button bar floats above it. -->
+  <div #mapDiv class="map-canvas"></div>
 
-  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+  <ion-text color="danger" *ngIf="error">
+    <div class="banner banner--err">{{ error }}</div>
+  </ion-text>
 
-  <ng-container *ngIf="!loading && auth.getUser() as u">
-    <ion-card>
-      <ion-card-header>
-        <ion-card-subtitle>Welcome</ion-card-subtitle>
-        <ion-card-title>{{ u.name }}</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <p>Role: <strong>{{ u.role }}</strong></p>
-        <p *ngIf="u.phone">Phone: {{ u.phone }}</p>
-      </ion-card-content>
-    </ion-card>
+  <div class="status-pill" *ngIf="driver">
+    <span class="dot" [class.dot--on]="isOnline"></span>
+    {{ isOnline ? 'Online' : 'Offline' }}
+  </div>
 
-    <ion-card *ngIf="driver as d">
-      <ion-card-header>
-        <ion-card-title>Status</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <p>Approval: <ion-badge [color]="d['approval_status'] === 'approved' ? 'success' : 'warning'">{{ d['approval_status'] }}</ion-badge></p>
-        <p>Online: <strong>{{ d['is_online'] ? 'Yes' : 'No' }}</strong></p>
-        <p *ngIf="d['rating_avg'] != null">Rating: {{ d['rating_avg'] }} ({{ d['rating_count'] }} trips)</p>
-        <p *ngIf="d['vehicle_reg_no']">Vehicle: {{ d['vehicle_type'] }} · {{ d['vehicle_reg_no'] }}</p>
-      </ion-card-content>
-    </ion-card>
+  <!-- Bottom call-to-action. -->
+  <div class="cta-bar">
+    <ng-container *ngIf="driver; else loadingState">
+      <ng-container *ngIf="isApproved; else notApproved">
+        <ion-button
+          *ngIf="!isOnline"
+          expand="block"
+          color="success"
+          size="large"
+          (click)="goOnline()"
+          [disabled]="toggling"
+        >
+          <ion-icon name="power-outline" slot="start"></ion-icon>
+          {{ toggling ? 'Going online…' : 'Go Online' }}
+        </ion-button>
+        <ion-button
+          *ngIf="isOnline"
+          expand="block"
+          color="medium"
+          fill="outline"
+          size="large"
+          (click)="goOffline()"
+          [disabled]="toggling"
+        >
+          <ion-icon name="stop-circle-outline" slot="start"></ion-icon>
+          {{ toggling ? 'Going offline…' : 'Go Offline' }}
+        </ion-button>
+      </ng-container>
 
-    <ion-card *ngIf="!driver">
-      <ion-card-content>
-        <p>No driver profile yet. Complete <strong>registration</strong> under the More tab (while signed in as customer after first login).</p>
-      </ion-card-content>
-    </ion-card>
+      <ng-template #notApproved>
+        <div class="warn-card">
+          Your account isn't approved yet. Hang tight — the operator will let you know.
+        </div>
+      </ng-template>
+    </ng-container>
 
-    <div class="online-actions" *ngIf="driver && driver['approval_status'] === 'approved'">
-      <ion-button expand="block" color="success" (click)="setOnline(true)" [disabled]="toggling || !!driver['is_online']">
-        Go online
-      </ion-button>
-      <ion-button expand="block" color="medium" fill="outline" (click)="setOnline(false)" [disabled]="toggling || !driver['is_online']">
-        Go offline
-      </ion-button>
-    </div>
-  </ng-container>
+    <ng-template #loadingState>
+      <ion-button expand="block" size="large" [disabled]="true">Loading…</ion-button>
+    </ng-template>
+  </div>
 </ion-content>

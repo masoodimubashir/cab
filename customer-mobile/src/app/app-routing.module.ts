@@ -4,6 +4,10 @@ import { AuthGuard } from './core/auth.guard';
 
 const routes: Routes = [
   {
+    path: 'intro',
+    loadChildren: () => import('./pages/intro/intro.module').then((m) => m.IntroPageModule),
+  },
+  {
     path: 'auth/login',
     loadChildren: () => import('./auth/login/login.module').then((m) => m.LoginPageModule),
   },
@@ -40,12 +44,12 @@ const routes: Routes = [
   },
   {
     path: '',
-    redirectTo: 'auth/login',
+    redirectTo: 'intro',
     pathMatch: 'full',
   },
   {
     path: '**',
-    redirectTo: 'auth/login',
+    redirectTo: 'intro',
   },
 ];
 
