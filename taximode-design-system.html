@@ -1,0 +1,1595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TaxiMode · Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =========================================================================
+   TAXIMODE DESIGN SYSTEM
+   Source of truth for all colors, typography, shapes, and components
+   used across TaxiMode mobile app + admin dashboard.
+   ========================================================================= */
+
+:root{
+  /* ─── BRAND ────────────────────────────────────────── */
+  --tm-green:        #22C55E;   /* Primary brand · CTAs, success, accents */
+  --tm-green-deep:   #16A34A;   /* Pressed states, dark-on-green text */
+  --tm-green-soft:   #DCFCE7;   /* Soft accents, ring shadows */
+  --tm-green-tint:   #ECFDF3;   /* Backgrounds for status pills, callouts */
+  --tm-green-dark:   #15803D;   /* High-emphasis on light bg */
+
+  --tm-ink:          #0F1419;   /* Brand near-black · primary buttons, icon tiles */
+  --tm-ink-2:        #1B2128;   /* Slightly lifted ink */
+  --tm-ink-3:        #2A323C;   /* Gradient companion */
+
+  /* ─── TEXT ─────────────────────────────────────────── */
+  --tm-text:         #0F1419;   /* Default body & headings */
+  --tm-text-muted:   #6B7785;   /* Secondary text, helper, captions */
+  --tm-text-soft:    #94A0AD;   /* Placeholders, disabled, road labels */
+  --tm-text-inverse: #FFFFFF;   /* On dark backgrounds */
+
+  /* ─── SURFACES ─────────────────────────────────────── */
+  --tm-surface:      #FFFFFF;   /* Cards, sheets */
+  --tm-canvas:       #F4F6FA;   /* Page background (mimics map blue-grey) */
+  --tm-canvas-2:     #EAEEF4;   /* Slightly deeper canvas */
+  --tm-line:         #ECEFF3;   /* Subtle dividers */
+  --tm-line-2:       #E2E6EC;   /* Borders */
+
+  /* ─── DARK MODE (the app ships dark theme too) ────── */
+  --tm-dark-bg:      #0A0E12;
+  --tm-dark-surface: #131820;
+  --tm-dark-line:    #1F262E;
+  --tm-dark-text:    #FFFFFF;
+  --tm-dark-muted:   #94A0AD;
+
+  /* ─── STATUS ───────────────────────────────────────── */
+  --tm-success:      #22C55E;   /* === brand green */
+  --tm-success-bg:   #ECFDF3;
+  --tm-warning:      #F59E0B;   /* "CONFIRM" amber from trip cards */
+  --tm-warning-bg:   #FEF3C7;
+  --tm-danger:       #EF4444;
+  --tm-danger-bg:    #FEE2E2;
+  --tm-info:         #3B82F6;
+  --tm-info-bg:      #DBEAFE;
+
+  /* ─── SHAPE ────────────────────────────────────────── */
+  --tm-radius-xs:    8px;       /* Pills, small chips */
+  --tm-radius-sm:    10px;      /* Buttons, inputs */
+  --tm-radius-md:    14px;      /* Icon tiles, search boxes */
+  --tm-radius-lg:    22px;      /* Cards, sheets, modals */
+  --tm-radius-xl:    28px;      /* Hero cards */
+  --tm-radius-pill:  999px;     /* Status pills, badges */
+
+  /* ─── ELEVATION ────────────────────────────────────── */
+  --tm-shadow-sm:    0 1px 2px rgba(15,20,25,0.05);
+  --tm-shadow-card:  0 1px 0 rgba(15,20,25,0.04), 0 8px 24px -16px rgba(15,20,25,0.12);
+  --tm-shadow-pop:   0 12px 40px -16px rgba(15,20,25,0.25);
+  --tm-shadow-ring:  0 0 0 4px var(--tm-green-soft);
+
+  /* ─── SPACING (4px scale) ──────────────────────────── */
+  --tm-space-1:  4px;
+  --tm-space-2:  8px;
+  --tm-space-3:  12px;
+  --tm-space-4:  16px;
+  --tm-space-5:  20px;
+  --tm-space-6:  24px;
+  --tm-space-8:  32px;
+  --tm-space-10: 40px;
+
+  /* ─── TYPOGRAPHY ───────────────────────────────────── */
+  --tm-font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --tm-font-body:    'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --tm-font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* ─── MOTION ───────────────────────────────────────── */
+  --tm-ease:         cubic-bezier(0.4, 0, 0.2, 1);
+  --tm-duration-fast: 120ms;
+  --tm-duration-base: 200ms;
+  --tm-duration-slow: 320ms;
+}
+
+/* ========================================================================= */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--tm-font-body);
+  background:var(--tm-canvas);
+  color:var(--tm-text);
+  -webkit-font-smoothing:antialiased;
+  font-size:14px; line-height:1.5;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+code{font-family:var(--tm-font-mono); font-size:0.85em}
+
+/* ========================================================================= */
+/* PAGE LAYOUT                                                                */
+/* ========================================================================= */
+.page{
+  max-width:1280px;
+  margin:0 auto;
+  padding:48px 32px 80px;
+}
+
+/* ----- Brand strip / page header ----- */
+.ds-header{
+  background:linear-gradient(135deg, #0F1419 0%, #1B2128 100%);
+  border-radius:28px;
+  padding:48px 44px;
+  color:#fff;
+  margin-bottom:40px;
+  position:relative; overflow:hidden;
+}
+.ds-header::before{
+  content:""; position:absolute;
+  top:-100px; right:-100px;
+  width:340px; height:340px;
+  background:radial-gradient(circle, rgba(34,197,94,0.3), transparent 70%);
+  border-radius:50%;
+}
+.ds-header::after{
+  content:""; position:absolute;
+  bottom:-120px; left:30%;
+  width:280px; height:280px;
+  background:radial-gradient(circle, rgba(34,197,94,0.12), transparent 70%);
+  border-radius:50%;
+}
+.ds-header-top{
+  display:flex; align-items:center; gap:14px;
+  position:relative; z-index:2;
+  margin-bottom:24px;
+}
+.brand-mark{
+  width:48px; height:48px; border-radius:50%; background:#0F1419;
+  border:2px solid rgba(255,255,255,0.1);
+  display:grid; place-items:center; position:relative;
+}
+.brand-mark::before, .brand-mark::after{
+  content:""; position:absolute; left:11px;
+  width:7px; height:7px; border-radius:50%; background:#fff;
+}
+.brand-mark::before{top:19px}
+.brand-mark::after{top:19px; left:21px}
+.brand-arrow{
+  position:absolute; left:30px; top:17px; width:0;height:0;
+  border-left:10px solid #22C55E;
+  border-top:7px solid transparent; border-bottom:7px solid transparent;
+}
+.brand-wordmark{font-size:28px; font-weight:800; letter-spacing:-0.02em}
+.brand-wordmark .accent{color:#22C55E}
+.version-tag{
+  margin-left:auto;
+  display:inline-flex; align-items:center; gap:6px;
+  background:rgba(255,255,255,0.08); padding:6px 14px;
+  border-radius:999px; font-size:12px; font-weight:600;
+  border:1px solid rgba(255,255,255,0.1);
+}
+.version-tag .led{
+  width:7px; height:7px; border-radius:50%; background:#22C55E;
+}
+.ds-title{
+  font-size:48px; font-weight:800; letter-spacing:-0.04em;
+  line-height:1.05; margin:0 0 14px;
+  position:relative; z-index:2;
+}
+.ds-title .accent{color:#22C55E}
+.ds-subtitle{
+  font-size:16px; color:rgba(255,255,255,0.65);
+  max-width:640px; line-height:1.55;
+  position:relative; z-index:2;
+}
+.ds-meta{
+  display:flex; gap:32px;
+  margin-top:32px; padding-top:28px;
+  border-top:1px solid rgba(255,255,255,0.1);
+  position:relative; z-index:2;
+}
+.ds-meta-item .v{font-size:22px; font-weight:800; letter-spacing:-0.02em}
+.ds-meta-item .l{font-size:12px; color:rgba(255,255,255,0.5); margin-top:2px}
+
+/* ----- Section ----- */
+section.ds{margin-bottom:56px}
+.ds-section-head{
+  display:flex; align-items:flex-end; justify-content:space-between;
+  margin-bottom:20px; padding-bottom:14px;
+  border-bottom:1px solid var(--tm-line-2);
+}
+.ds-section-title{
+  font-size:24px; font-weight:800; letter-spacing:-0.025em;
+  display:flex; align-items:center; gap:12px;
+}
+.ds-section-title::before{
+  content:""; width:6px; height:24px; border-radius:3px;
+  background:var(--tm-green);
+}
+.ds-section-sub{font-size:14px; color:var(--tm-text-muted); margin-top:4px}
+.ds-section-num{
+  font-family:var(--tm-font-mono);
+  font-size:13px; color:var(--tm-text-soft);
+  font-weight:600;
+}
+
+/* ========================================================================= */
+/* COLORS                                                                     */
+/* ========================================================================= */
+.color-grid{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:16px;
+}
+.color-card{
+  background:var(--tm-surface);
+  border-radius:var(--tm-radius-lg);
+  overflow:hidden; box-shadow:var(--tm-shadow-card);
+}
+.color-swatch{
+  height:120px; position:relative;
+  display:flex; align-items:flex-end; padding:14px;
+  color:#fff;
+}
+.color-swatch.light{color:var(--tm-text)}
+.color-swatch .role{
+  font-size:10px; font-weight:800; letter-spacing:0.1em;
+  text-transform:uppercase;
+  background:rgba(255,255,255,0.15); padding:3px 8px;
+  border-radius:999px; backdrop-filter:blur(6px);
+}
+.color-swatch.light .role{background:rgba(0,0,0,0.05)}
+.color-info{padding:14px 16px 18px}
+.color-name{font-weight:700; font-size:14px; letter-spacing:-0.01em}
+.color-hex{
+  font-family:var(--tm-font-mono);
+  font-size:12px; color:var(--tm-text-muted);
+  margin-top:4px;
+}
+.color-var{
+  display:block;
+  font-family:var(--tm-font-mono); font-size:11px;
+  color:var(--tm-text-soft); margin-top:6px;
+  word-break:break-all;
+}
+.color-usage{
+  font-size:11px; color:var(--tm-text-muted);
+  margin-top:8px; padding-top:8px;
+  border-top:1px solid var(--tm-line);
+  line-height:1.4;
+}
+
+/* Status colors row */
+.status-row{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:14px;
+}
+.status-tile{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:18px; box-shadow:var(--tm-shadow-card);
+}
+.status-pill-demo{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 12px; border-radius:999px;
+  font-size:11px; font-weight:800; letter-spacing:0.05em;
+  text-transform:uppercase; margin-bottom:14px;
+}
+.status-pill-demo .led{width:7px; height:7px; border-radius:50%}
+.demo-success{background:var(--tm-success-bg); color:var(--tm-green-deep)}
+.demo-success .led{background:var(--tm-success)}
+.demo-warning{background:var(--tm-warning-bg); color:#92400E}
+.demo-warning .led{background:var(--tm-warning)}
+.demo-danger{background:var(--tm-danger-bg); color:var(--tm-danger)}
+.demo-danger .led{background:var(--tm-danger)}
+.demo-info{background:var(--tm-info-bg); color:#1E40AF}
+.demo-info .led{background:var(--tm-info)}
+.status-title{font-weight:800; font-size:14px}
+.status-desc{font-size:12px; color:var(--tm-text-muted); margin-top:4px; line-height:1.5}
+.status-vars{
+  font-family:var(--tm-font-mono); font-size:10px;
+  color:var(--tm-text-soft); margin-top:10px; line-height:1.5;
+}
+
+/* ========================================================================= */
+/* TYPOGRAPHY                                                                 */
+/* ========================================================================= */
+.type-table{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  box-shadow:var(--tm-shadow-card); overflow:hidden;
+}
+.type-row{
+  display:grid; grid-template-columns: 1.5fr 2fr 1fr;
+  gap:24px; padding:24px 28px;
+  border-bottom:1px solid var(--tm-line);
+  align-items:center;
+}
+.type-row:last-child{border-bottom:none}
+.type-sample{font-family:var(--tm-font-display); color:var(--tm-text)}
+.type-meta{}
+.type-name{font-weight:800; font-size:13px}
+.type-use{font-size:12px; color:var(--tm-text-muted); margin-top:4px; line-height:1.5}
+.type-specs{
+  font-family:var(--tm-font-mono); font-size:11px;
+  color:var(--tm-text-soft); line-height:1.7;
+  text-align:right;
+}
+
+/* Font showcase */
+.font-showcase{
+  display:grid; grid-template-columns: 1fr 1fr; gap:16px;
+  margin-bottom:20px;
+}
+.font-card{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:28px; box-shadow:var(--tm-shadow-card);
+}
+.font-card .label{
+  font-size:11px; font-weight:800; letter-spacing:0.1em;
+  color:var(--tm-text-muted); text-transform:uppercase;
+}
+.font-card .name{
+  font-size:28px; font-weight:800; letter-spacing:-0.025em;
+  margin-top:6px;
+}
+.font-card .preview{
+  font-size:48px; line-height:1.1;
+  margin:18px 0 12px;
+  letter-spacing:-0.03em;
+}
+.font-card.mono .preview{font-family:var(--tm-font-mono); font-size:32px; letter-spacing:-0.02em}
+.font-card .alphabet{
+  font-size:13px; color:var(--tm-text-muted);
+  letter-spacing:0.04em; line-height:1.6;
+  padding-top:14px; border-top:1px solid var(--tm-line);
+}
+.font-card.mono .alphabet{font-family:var(--tm-font-mono)}
+.weights-row{
+  display:flex; flex-wrap:wrap; gap:10px; margin-top:12px;
+  padding-top:12px; border-top:1px solid var(--tm-line);
+}
+.weight-chip{
+  font-size:13px; padding:5px 10px;
+  background:var(--tm-canvas); border-radius:8px;
+}
+
+/* ========================================================================= */
+/* SHAPES, RADII, ELEVATION                                                   */
+/* ========================================================================= */
+.shapes-grid{
+  display:grid; grid-template-columns:repeat(6,1fr); gap:14px;
+}
+.shape-card{
+  background:var(--tm-surface); padding:20px 16px;
+  text-align:center; box-shadow:var(--tm-shadow-card);
+}
+.shape-card.rxs{border-radius:8px}
+.shape-card.rsm{border-radius:10px}
+.shape-card.rmd{border-radius:14px}
+.shape-card.rlg{border-radius:22px}
+.shape-card.rxl{border-radius:28px}
+.shape-card.rpill{border-radius:999px}
+.shape-demo{
+  width:48px; height:48px; background:var(--tm-ink);
+  margin:0 auto 12px;
+}
+.shape-demo.rxs{border-radius:8px}
+.shape-demo.rsm{border-radius:10px}
+.shape-demo.rmd{border-radius:14px}
+.shape-demo.rlg{border-radius:22px}
+.shape-demo.rxl{border-radius:28px}
+.shape-demo.rpill{border-radius:999px}
+.shape-name{font-weight:800; font-size:12px}
+.shape-val{
+  font-family:var(--tm-font-mono); font-size:10px;
+  color:var(--tm-text-muted); margin-top:3px;
+}
+.shape-use{
+  font-size:10px; color:var(--tm-text-soft);
+  margin-top:8px; padding-top:8px;
+  border-top:1px solid var(--tm-line); line-height:1.4;
+}
+
+/* Elevation */
+.elev-grid{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:20px;
+  margin-top:20px;
+}
+.elev-card{
+  background:var(--tm-surface);
+  border-radius:var(--tm-radius-lg);
+  padding:28px;
+  text-align:center;
+}
+.elev-card.sm{box-shadow:var(--tm-shadow-sm)}
+.elev-card.card{box-shadow:var(--tm-shadow-card)}
+.elev-card.pop{box-shadow:var(--tm-shadow-pop)}
+.elev-name{font-weight:800; font-size:14px; margin-bottom:6px}
+.elev-var{font-family:var(--tm-font-mono); font-size:11px; color:var(--tm-text-muted); margin-bottom:10px}
+.elev-use{font-size:12px; color:var(--tm-text-muted); line-height:1.5}
+
+/* Spacing scale */
+.space-row{display:flex; flex-direction:column; gap:8px}
+.space-item{
+  display:flex; align-items:center; gap:16px;
+  background:var(--tm-surface); padding:14px 18px;
+  border-radius:var(--tm-radius-md);
+  box-shadow:var(--tm-shadow-sm);
+}
+.space-bar{
+  height:14px; background:var(--tm-green);
+  border-radius:4px; flex-shrink:0;
+}
+.space-name{
+  font-family:var(--tm-font-mono); font-size:12px;
+  color:var(--tm-text); font-weight:600;
+  min-width:80px;
+}
+.space-px{
+  font-family:var(--tm-font-mono); font-size:12px;
+  color:var(--tm-text-muted);
+  min-width:60px;
+}
+.space-use{font-size:12px; color:var(--tm-text-muted); margin-left:auto}
+
+/* ========================================================================= */
+/* ICON SYSTEM (mobile uses dark rounded tiles)                              */
+/* ========================================================================= */
+.icon-tiles-row{
+  display:grid; grid-template-columns:repeat(8,1fr); gap:14px;
+}
+.icon-tile-demo{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:18px 14px; text-align:center;
+  box-shadow:var(--tm-shadow-card);
+}
+.icon-tile{
+  width:48px; height:48px; border-radius:14px;
+  background:var(--tm-ink); color:#fff;
+  display:grid; place-items:center; margin:0 auto 10px;
+  box-shadow:0 2px 0 rgba(15,20,25,0.06);
+}
+.icon-tile.green{background:var(--tm-green)}
+.icon-tile.ringed{box-shadow: var(--tm-shadow-ring)}
+.icon-tile svg{width:22px; height:22px}
+.icon-label{font-size:11px; font-weight:700; color:var(--tm-text)}
+.icon-var{font-family:var(--tm-font-mono); font-size:9px; color:var(--tm-text-soft); margin-top:3px}
+
+/* ========================================================================= */
+/* COMPONENTS                                                                 */
+/* ========================================================================= */
+.comp-grid{
+  display:grid; grid-template-columns: 1fr 1fr; gap:18px;
+}
+.comp-card{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:24px; box-shadow:var(--tm-shadow-card);
+}
+.comp-card.wide{grid-column:1/-1}
+.comp-head{
+  display:flex; align-items:flex-end; justify-content:space-between;
+  margin-bottom:18px; padding-bottom:14px;
+  border-bottom:1px solid var(--tm-line);
+}
+.comp-name{font-weight:800; font-size:16px; letter-spacing:-0.01em}
+.comp-desc{font-size:12px; color:var(--tm-text-muted); margin-top:3px}
+.comp-tag{
+  font-family:var(--tm-font-mono); font-size:10px;
+  color:var(--tm-text-soft);
+  background:var(--tm-canvas); padding:3px 8px; border-radius:6px;
+}
+.comp-preview{
+  background:var(--tm-canvas); border-radius:var(--tm-radius-md);
+  padding:24px;
+  display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+}
+
+/* ----- Buttons ----- */
+.btn-ink{
+  padding:11px 18px; border-radius:14px;
+  background:var(--tm-ink); color:#fff;
+  font-weight:600; font-size:13px;
+  display:inline-flex; align-items:center; gap:8px;
+  transition:transform var(--tm-duration-fast);
+}
+.btn-ink:hover{transform:translateY(-1px)}
+.btn-green{
+  padding:11px 18px; border-radius:14px;
+  background:var(--tm-green); color:#fff;
+  font-weight:700; font-size:13px;
+  display:inline-flex; align-items:center; gap:8px;
+}
+.btn-outline{
+  padding:11px 18px; border-radius:14px;
+  background:var(--tm-surface); color:var(--tm-text);
+  border:1px solid var(--tm-line-2);
+  font-weight:600; font-size:13px;
+}
+.btn-ghost{
+  padding:11px 18px; border-radius:14px;
+  background:var(--tm-canvas-2); color:var(--tm-text);
+  font-weight:600; font-size:13px;
+}
+.btn-text-green{
+  padding:10px 0;
+  color:var(--tm-green); font-weight:800; font-size:12px;
+  letter-spacing:0.04em; text-transform:uppercase;
+}
+.btn-text-amber{
+  padding:10px 0;
+  color:var(--tm-warning); font-weight:800; font-size:12px;
+  letter-spacing:0.04em; text-transform:uppercase;
+}
+
+/* ----- Inputs ----- */
+.input-demo{
+  display:flex; align-items:center; gap:10px;
+  background:var(--tm-surface); border:1px solid var(--tm-line);
+  padding:11px 16px; border-radius:14px;
+  width:100%; max-width:340px;
+}
+.input-demo input{
+  border:none; outline:none; background:transparent;
+  flex:1; font-family:inherit; font-size:14px; color:var(--tm-text);
+}
+.input-demo input::placeholder{color:var(--tm-text-soft)}
+.input-demo svg{color:var(--tm-text-soft)}
+
+/* ----- Status pills (large) ----- */
+.pills-row{display:flex; flex-wrap:wrap; gap:10px}
+
+/* ----- Trip card ----- */
+.trip-card-demo{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:18px; box-shadow:var(--tm-shadow-card);
+  max-width:380px; width:100%;
+}
+.tcd-route{display:flex; flex-direction:column; gap:8px; margin-bottom:14px}
+.tcd-line{display:flex; align-items:center; gap:12px; font-size:14px; font-weight:600}
+.tcd-line .pin{
+  width:22px; height:22px; border-radius:50%;
+  display:grid; place-items:center; flex-shrink:0;
+}
+.tcd-line .pin::after{content:""; width:7px; height:7px; border-radius:50%; background:#fff}
+.tcd-line .pin.from{background:var(--tm-ink)}
+.tcd-line .pin.to{background:var(--tm-green)}
+.tcd-divider{
+  margin-left:11px; width:0; height:14px;
+  border-left:2px solid var(--tm-green);
+}
+.tcd-foot{
+  display:flex; align-items:center; justify-content:space-between;
+  padding-top:14px; border-top:1px solid var(--tm-line);
+}
+.tcd-fare{font-weight:800; font-size:16px; letter-spacing:-0.01em}
+
+/* ----- Pin pair (the signature trip pins) ----- */
+.pin-showcase{
+  display:flex; gap:30px; padding:20px;
+  align-items:center; justify-content:center;
+}
+.pin-set{display:flex; flex-direction:column; align-items:center; gap:4px}
+.pin-set .pin-lg{
+  width:48px; height:48px; border-radius:50%;
+  display:grid; place-items:center;
+}
+.pin-set .pin-lg::after{content:""; width:14px; height:14px; border-radius:50%; background:#fff}
+.pin-set .pin-lg.from{background:var(--tm-ink); box-shadow:0 6px 16px rgba(15,20,25,0.35)}
+.pin-set .pin-lg.to{background:var(--tm-green); box-shadow:0 6px 16px rgba(34,197,94,0.45)}
+.pin-set .pin-label{font-size:11px; font-weight:700; margin-top:6px}
+
+/* ----- Avatar ----- */
+.avatar-row{display:flex; gap:14px; align-items:center}
+.av{
+  border-radius:50%;
+  display:grid; place-items:center; color:#fff;
+  font-weight:800;
+  background:linear-gradient(135deg, var(--tm-green), var(--tm-green-deep));
+}
+.av-xs{width:24px; height:24px; font-size:10px}
+.av-sm{width:32px; height:32px; font-size:11px}
+.av-md{width:42px; height:42px; font-size:14px}
+.av-lg{width:60px; height:60px; font-size:18px}
+.av-xl{width:80px; height:80px; font-size:24px}
+.av.dark{background:linear-gradient(135deg, var(--tm-ink), var(--tm-ink-3))}
+.av-with-status{position:relative}
+.av-led{
+  position:absolute; right:0; bottom:0;
+  width:14px; height:14px; border-radius:50%;
+  border:3px solid #fff;
+  background:var(--tm-green);
+}
+
+/* ----- Badge ----- */
+.badge-demo{
+  font-size:9px; font-weight:800; padding:3px 8px;
+  border-radius:999px; letter-spacing:0.06em;
+  text-transform:uppercase;
+}
+.badge-verified{background:var(--tm-green-tint); color:var(--tm-green-deep)}
+.badge-top{background:var(--tm-ink); color:#fff}
+.badge-pending{background:var(--tm-warning-bg); color:#92400E}
+
+/* ----- Sidebar nav demo ----- */
+.nav-demo-list{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:12px; max-width:280px; box-shadow:var(--tm-shadow-card);
+}
+.nav-demo-item{
+  display:flex; align-items:center; gap:14px; padding:10px;
+  border-radius:14px; font-weight:600; font-size:14px;
+  position:relative;
+}
+.nav-demo-item.active{background:var(--tm-canvas)}
+.nav-demo-item.active::before{
+  content:""; position:absolute; left:-12px; top:10px; bottom:10px;
+  width:3px; background:var(--tm-green); border-radius:0 4px 4px 0;
+}
+.nav-demo-tile{
+  width:38px; height:38px; border-radius:12px;
+  background:var(--tm-ink); color:#fff;
+  display:grid; place-items:center;
+}
+.nav-demo-item.active .nav-demo-tile{box-shadow:0 0 0 3px var(--tm-green-soft)}
+.nav-demo-tile svg{width:18px; height:18px}
+.nav-demo-badge{
+  margin-left:auto; background:var(--tm-green); color:#fff;
+  font-size:11px; font-weight:700; padding:2px 7px; border-radius:999px;
+}
+
+/* ----- KPI card demo ----- */
+.kpi-demo{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:22px; box-shadow:var(--tm-shadow-card);
+  max-width:280px;
+}
+.kpi-demo .head{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  margin-bottom:18px;
+}
+.kpi-demo .label{
+  font-size:12px; font-weight:600; color:var(--tm-text-muted);
+}
+.kpi-demo .ico{
+  width:36px; height:36px; border-radius:12px;
+  background:var(--tm-green); color:#fff;
+  display:grid; place-items:center;
+}
+.kpi-demo .value{
+  font-size:30px; font-weight:800; letter-spacing:-0.03em; line-height:1;
+}
+.kpi-demo .foot{
+  display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px;
+}
+.kpi-demo .delta{
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 8px; border-radius:999px;
+  background:var(--tm-green-tint); color:var(--tm-green-deep);
+  font-weight:700; font-size:11px;
+}
+
+/* ========================================================================= */
+/* USAGE / CODE BLOCKS                                                        */
+/* ========================================================================= */
+.code-card{
+  background:#0F1419; color:#fff;
+  border-radius:var(--tm-radius-lg);
+  padding:24px 28px;
+  font-family:var(--tm-font-mono);
+  font-size:12.5px; line-height:1.7;
+  overflow-x:auto;
+}
+.code-card .comment{color:#94A0AD}
+.code-card .key{color:#22C55E}
+.code-card .val{color:#fff}
+.code-card .punct{color:#6B7785}
+
+/* ========================================================================= */
+/* PRINCIPLES                                                                 */
+/* ========================================================================= */
+.principles{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+}
+.principle{
+  background:var(--tm-surface); border-radius:var(--tm-radius-lg);
+  padding:24px; box-shadow:var(--tm-shadow-card);
+}
+.p-num{
+  font-family:var(--tm-font-mono); font-size:11px;
+  color:var(--tm-green-deep); font-weight:700;
+}
+.p-title{
+  font-size:17px; font-weight:800; letter-spacing:-0.015em;
+  margin:8px 0 10px;
+}
+.p-desc{font-size:13px; color:var(--tm-text-muted); line-height:1.6}
+
+/* ========================================================================= */
+/* RESPONSIVE                                                                 */
+/* ========================================================================= */
+@media (max-width: 1100px){
+  .color-grid{grid-template-columns:repeat(2,1fr)}
+  .shapes-grid{grid-template-columns:repeat(3,1fr)}
+  .icon-tiles-row{grid-template-columns:repeat(4,1fr)}
+  .comp-grid{grid-template-columns:1fr}
+  .principles{grid-template-columns:1fr}
+  .elev-grid{grid-template-columns:1fr}
+  .ds-title{font-size:36px}
+  .status-row{grid-template-columns:repeat(2,1fr)}
+  .font-showcase{grid-template-columns:1fr}
+}
+@media (max-width: 600px){
+  .page{padding:24px 16px 60px}
+  .ds-header{padding:28px 22px}
+  .ds-title{font-size:28px}
+  .color-grid{grid-template-columns:1fr}
+  .shapes-grid{grid-template-columns:repeat(2,1fr)}
+  .icon-tiles-row{grid-template-columns:repeat(3,1fr)}
+}
+
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============================ HEADER ============================ -->
+  <div class="ds-header">
+    <div class="ds-header-top">
+      <div class="brand-mark"><span class="brand-arrow"></span></div>
+      <div class="brand-wordmark">Taxi<span class="accent">Mode</span></div>
+      <div class="version-tag"><span class="led"></span>Design System · v1.0</div>
+    </div>
+    <h1 class="ds-title">The TaxiMode <span class="accent">design language</span>.</h1>
+    <p class="ds-subtitle">A single source of truth for every color, font, shape, and component used across the TaxiMode mobile app and admin dashboard. Drop this file into your project, and Claude Code will follow it consistently.</p>
+    <div class="ds-meta">
+      <div class="ds-meta-item"><div class="v">2</div><div class="l">Brand colors</div></div>
+      <div class="ds-meta-item"><div class="v">6</div><div class="l">Radius tokens</div></div>
+      <div class="ds-meta-item"><div class="v">2</div><div class="l">Type families</div></div>
+      <div class="ds-meta-item"><div class="v">14+</div><div class="l">Core components</div></div>
+      <div class="ds-meta-item"><div class="v">Light + Dark</div><div class="l">Both themes</div></div>
+    </div>
+  </div>
+
+  <!-- ============================ PRINCIPLES ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Design principles</div>
+        <div class="ds-section-sub">The rules every screen should follow</div>
+      </div>
+      <span class="ds-section-num">01 / 08</span>
+    </div>
+
+    <div class="principles">
+      <div class="principle">
+        <div class="p-num">PRINCIPLE 01</div>
+        <div class="p-title">Bold green, dark ink, generous white</div>
+        <div class="p-desc">Primary actions use brand green. Surfaces stay near-white. The dark "ink" tone (#0F1419) is reserved for icon tiles, primary buttons, and pickup pins. Never decorate with random colors.</div>
+      </div>
+      <div class="principle">
+        <div class="p-num">PRINCIPLE 02</div>
+        <div class="p-title">Rounded, not sharp</div>
+        <div class="p-desc">Cards use 22px radius. Icon tiles 14px. Pills are fully round. Right angles feel wrong here — they break the friendly, modern character of the brand.</div>
+      </div>
+      <div class="principle">
+        <div class="p-num">PRINCIPLE 03</div>
+        <div class="p-title">Dark icon tiles on white</div>
+        <div class="p-desc">Every navigation, action, and category icon sits in a dark rounded square with a white glyph. This is the most recognizable pattern from the mobile app — preserve it in admin.</div>
+      </div>
+      <div class="principle">
+        <div class="p-num">PRINCIPLE 04</div>
+        <div class="p-title">Black pickup, green drop</div>
+        <div class="p-desc">Every route visualization uses a black pin for pickup and green pin for drop-off, connected by a green line. This pairing is sacred — never swap or recolor.</div>
+      </div>
+      <div class="principle">
+        <div class="p-num">PRINCIPLE 05</div>
+        <div class="p-title">Minimal formatting, maximal clarity</div>
+        <div class="p-desc">Use bold weights (700, 800) for hierarchy instead of color. Let the green do the work as an accent — over-using it weakens its meaning.</div>
+      </div>
+      <div class="principle">
+        <div class="p-num">PRINCIPLE 06</div>
+        <div class="p-title">Map-blue canvas, not pure grey</div>
+        <div class="p-desc">The page background (#F4F6FA) is a cool grey-blue that echoes the mobile app's map tile. Pure neutral grey feels sterile and off-brand.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ COLOR ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Color</div>
+        <div class="ds-section-sub">Two brand anchors, supporting status palette, soft surfaces</div>
+      </div>
+      <span class="ds-section-num">02 / 08</span>
+    </div>
+
+    <h3 style="font-size:14px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--tm-text-muted); margin:0 0 14px">Brand</h3>
+    <div class="color-grid" style="margin-bottom:24px">
+      <div class="color-card">
+        <div class="color-swatch" style="background:#22C55E"><span class="role">Primary</span></div>
+        <div class="color-info">
+          <div class="color-name">Brand Green</div>
+          <div class="color-hex">#22C55E</div>
+          <code class="color-var">--tm-green</code>
+          <div class="color-usage">CTAs, success states, route lines, drop pins, active indicators</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#16A34A"><span class="role">Pressed</span></div>
+        <div class="color-info">
+          <div class="color-name">Green Deep</div>
+          <div class="color-hex">#16A34A</div>
+          <code class="color-var">--tm-green-deep</code>
+          <div class="color-usage">Pressed buttons, dark text on green tint, status pill text</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#DCFCE7"><span class="role">Accent</span></div>
+        <div class="color-info">
+          <div class="color-name">Green Soft</div>
+          <div class="color-hex">#DCFCE7</div>
+          <code class="color-var">--tm-green-soft</code>
+          <div class="color-usage">Focus rings, soft accents, halo around active icons</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#ECFDF3"><span class="role">Background</span></div>
+        <div class="color-info">
+          <div class="color-name">Green Tint</div>
+          <div class="color-hex">#ECFDF3</div>
+          <code class="color-var">--tm-green-tint</code>
+          <div class="color-usage">Success pill backgrounds, callout boxes, badge fills</div>
+        </div>
+      </div>
+
+      <div class="color-card">
+        <div class="color-swatch" style="background:#0F1419"><span class="role">Primary</span></div>
+        <div class="color-info">
+          <div class="color-name">Ink (Near-Black)</div>
+          <div class="color-hex">#0F1419</div>
+          <code class="color-var">--tm-ink</code>
+          <div class="color-usage">Body text, primary buttons, icon tiles, pickup pins, logo mark</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#1B2128"><span class="role">Surface</span></div>
+        <div class="color-info">
+          <div class="color-name">Ink 2</div>
+          <div class="color-hex">#1B2128</div>
+          <code class="color-var">--tm-ink-2</code>
+          <div class="color-usage">Lifted dark surfaces, gradient companion, hover on dark</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#2A323C"><span class="role">Gradient</span></div>
+        <div class="color-info">
+          <div class="color-name">Ink 3</div>
+          <div class="color-hex">#2A323C</div>
+          <code class="color-var">--tm-ink-3</code>
+          <div class="color-usage">End point for dark gradients, secondary dark surfaces</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#FFFFFF; border:1px solid var(--tm-line)"><span class="role">Base</span></div>
+        <div class="color-info">
+          <div class="color-name">Surface White</div>
+          <div class="color-hex">#FFFFFF</div>
+          <code class="color-var">--tm-surface</code>
+          <div class="color-usage">Cards, bottom sheets, modals, primary content areas</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-size:14px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--tm-text-muted); margin:8px 0 14px">Surfaces & text</h3>
+    <div class="color-grid" style="margin-bottom:24px">
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#F4F6FA"><span class="role">Canvas</span></div>
+        <div class="color-info">
+          <div class="color-name">Canvas</div>
+          <div class="color-hex">#F4F6FA</div>
+          <code class="color-var">--tm-canvas</code>
+          <div class="color-usage">Page background — mimics the mobile app's map tile colour</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#EAEEF4"><span class="role">Canvas 2</span></div>
+        <div class="color-info">
+          <div class="color-name">Canvas Deep</div>
+          <div class="color-hex">#EAEEF4</div>
+          <code class="color-var">--tm-canvas-2</code>
+          <div class="color-usage">Hover states for ghost buttons, slight depth</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#6B7785"><span class="role">Muted Text</span></div>
+        <div class="color-info">
+          <div class="color-name">Text Muted</div>
+          <div class="color-hex">#6B7785</div>
+          <code class="color-var">--tm-text-muted</code>
+          <div class="color-usage">Secondary text, captions, helper text, sub-labels</div>
+        </div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch light" style="background:#94A0AD"><span class="role">Soft Text</span></div>
+        <div class="color-info">
+          <div class="color-name">Text Soft</div>
+          <div class="color-hex">#94A0AD</div>
+          <code class="color-var">--tm-text-soft</code>
+          <div class="color-usage">Placeholders, disabled states, road labels on maps</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-size:14px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--tm-text-muted); margin:8px 0 14px">Status</h3>
+    <div class="status-row">
+      <div class="status-tile">
+        <span class="status-pill-demo demo-success"><span class="led"></span>Completed</span>
+        <div class="status-title">Success</div>
+        <div class="status-desc">Completed trips, successful payments, online drivers, verified docs</div>
+        <div class="status-vars">--tm-success: #22C55E<br>--tm-success-bg: #ECFDF3</div>
+      </div>
+      <div class="status-tile">
+        <span class="status-pill-demo demo-warning"><span class="led"></span>Confirm</span>
+        <div class="status-title">Warning</div>
+        <div class="status-desc">Pending confirmations, awaiting action, missing documents, busy drivers</div>
+        <div class="status-vars">--tm-warning: #F59E0B<br>--tm-warning-bg: #FEF3C7</div>
+      </div>
+      <div class="status-tile">
+        <span class="status-pill-demo demo-danger"><span class="led"></span>Cancelled</span>
+        <div class="status-title">Danger</div>
+        <div class="status-desc">Cancelled trips, failed payments, safety events, account deletions</div>
+        <div class="status-vars">--tm-danger: #EF4444<br>--tm-danger-bg: #FEE2E2</div>
+      </div>
+      <div class="status-tile">
+        <span class="status-pill-demo demo-info"><span class="led"></span>En route</span>
+        <div class="status-title">Info</div>
+        <div class="status-desc">In-progress states, en-route trips, informational badges, refunds</div>
+        <div class="status-vars">--tm-info: #3B82F6<br>--tm-info-bg: #DBEAFE</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ TYPOGRAPHY ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Typography</div>
+        <div class="ds-section-sub">One sans-serif family across the system, mono for codes & IDs</div>
+      </div>
+      <span class="ds-section-num">03 / 08</span>
+    </div>
+
+    <div class="font-showcase">
+      <div class="font-card">
+        <div class="label">DISPLAY & BODY</div>
+        <div class="name">Plus Jakarta Sans</div>
+        <div class="preview">Aa Bb Cc 123</div>
+        <div class="alphabet">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 !@#$%&*()</div>
+        <div class="weights-row">
+          <span class="weight-chip" style="font-weight:400">Regular 400</span>
+          <span class="weight-chip" style="font-weight:500">Medium 500</span>
+          <span class="weight-chip" style="font-weight:600">SemiBold 600</span>
+          <span class="weight-chip" style="font-weight:700">Bold 700</span>
+          <span class="weight-chip" style="font-weight:800">ExtraBold 800</span>
+        </div>
+      </div>
+      <div class="font-card mono">
+        <div class="label">MONOSPACE</div>
+        <div class="name">JetBrains Mono</div>
+        <div class="preview">#TM-58291</div>
+        <div class="alphabet">ABCDEFGHIJ · 0123456789<br>{ } [ ] ( ) &lt; &gt; / \ + - = *</div>
+        <div class="weights-row">
+          <span class="weight-chip" style="font-family:var(--tm-font-mono); font-weight:500">Medium 500</span>
+          <span class="weight-chip" style="font-family:var(--tm-font-mono); font-weight:600">SemiBold 600</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="type-table">
+      <div class="type-row">
+        <div class="type-sample" style="font-size:48px; font-weight:800; letter-spacing:-0.04em; line-height:1.05">Display</div>
+        <div class="type-meta">
+          <div class="type-name">Display</div>
+          <div class="type-use">Hero titles, marketing pages, splash. Use sparingly — one per screen max.</div>
+        </div>
+        <div class="type-specs">48px / 800<br>-0.04em<br>line-height: 1.05</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-size:32px; font-weight:800; letter-spacing:-0.03em">Heading 1</div>
+        <div class="type-meta">
+          <div class="type-name">Heading 1</div>
+          <div class="type-use">Page-level titles in admin. Section titles in mobile app.</div>
+        </div>
+        <div class="type-specs">32px / 800<br>-0.03em<br>line-height: 1.15</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-size:22px; font-weight:800; letter-spacing:-0.02em">Heading 2</div>
+        <div class="type-meta">
+          <div class="type-name">Heading 2</div>
+          <div class="type-use">Top bar titles ("Dashboard", "Drivers"), modal headers, card titles in large variants.</div>
+        </div>
+        <div class="type-specs">22px / 800<br>-0.02em<br>line-height: 1.25</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-size:16px; font-weight:700; letter-spacing:-0.01em">Heading 3</div>
+        <div class="type-meta">
+          <div class="type-name">Heading 3</div>
+          <div class="type-use">Card titles, list-item primary text, modal section titles.</div>
+        </div>
+        <div class="type-specs">16px / 700<br>-0.01em<br>line-height: 1.35</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-size:14px; font-weight:500">Body — Where are you going?</div>
+        <div class="type-meta">
+          <div class="type-name">Body</div>
+          <div class="type-use">Default paragraph text, list items, form labels, table cells.</div>
+        </div>
+        <div class="type-specs">14px / 500<br>0em<br>line-height: 1.5</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-size:12px; color:var(--tm-text-muted)">Small — Tap for location</div>
+        <div class="type-meta">
+          <div class="type-name">Small</div>
+          <div class="type-use">Helper text, captions, sub-labels under primary text.</div>
+        </div>
+        <div class="type-specs">12px / 500<br>0em<br>line-height: 1.5</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--tm-text-muted)">OVERLINE / EYEBROW</div>
+        <div class="type-meta">
+          <div class="type-name">Overline</div>
+          <div class="type-use">Section labels, table headers, "TOTAL TRIPS" style stat labels.</div>
+        </div>
+        <div class="type-specs">11px / 800<br>+0.08em (caps)<br>line-height: 1.4</div>
+      </div>
+      <div class="type-row">
+        <div class="type-sample" style="font-family:var(--tm-font-mono); font-size:12px; font-weight:600; color:var(--tm-text-muted)">#TM-58291</div>
+        <div class="type-meta">
+          <div class="type-name">Mono / Code</div>
+          <div class="type-use">Trip IDs, transaction IDs, vehicle registration, lat/lng coordinates.</div>
+        </div>
+        <div class="type-specs">12px / 600<br>JetBrains Mono<br>line-height: 1.5</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SHAPE & RADIUS ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Shape</div>
+        <div class="ds-section-sub">A six-step radius scale — TaxiMode is round, never sharp</div>
+      </div>
+      <span class="ds-section-num">04 / 08</span>
+    </div>
+
+    <div class="shapes-grid">
+      <div class="shape-card rxs">
+        <div class="shape-demo rxs"></div>
+        <div class="shape-name">XS</div>
+        <div class="shape-val">8px</div>
+        <div class="shape-use">Tiny chips, small badges</div>
+      </div>
+      <div class="shape-card rsm">
+        <div class="shape-demo rsm"></div>
+        <div class="shape-name">SM</div>
+        <div class="shape-val">10px</div>
+        <div class="shape-use">Buttons, ghost buttons</div>
+      </div>
+      <div class="shape-card rmd">
+        <div class="shape-demo rmd"></div>
+        <div class="shape-name">MD</div>
+        <div class="shape-val">14px</div>
+        <div class="shape-use">Icon tiles, inputs, search</div>
+      </div>
+      <div class="shape-card rlg">
+        <div class="shape-demo rlg"></div>
+        <div class="shape-name">LG</div>
+        <div class="shape-val">22px</div>
+        <div class="shape-use">Cards, modals, sheets</div>
+      </div>
+      <div class="shape-card rxl">
+        <div class="shape-demo rxl"></div>
+        <div class="shape-name">XL</div>
+        <div class="shape-val">28px</div>
+        <div class="shape-use">Hero cards, splash blocks</div>
+      </div>
+      <div class="shape-card rpill">
+        <div class="shape-demo rpill"></div>
+        <div class="shape-name">PILL</div>
+        <div class="shape-val">999px</div>
+        <div class="shape-use">Status pills, badges</div>
+      </div>
+    </div>
+
+    <h3 style="font-size:14px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--tm-text-muted); margin:32px 0 14px">Elevation</h3>
+    <div class="elev-grid">
+      <div class="elev-card sm">
+        <div class="elev-name">Shadow SM</div>
+        <div class="elev-var">--tm-shadow-sm</div>
+        <div class="elev-use">Input boxes, hover states</div>
+      </div>
+      <div class="elev-card card">
+        <div class="elev-name">Shadow Card</div>
+        <div class="elev-var">--tm-shadow-card</div>
+        <div class="elev-use">Cards, side panels (default elevation)</div>
+      </div>
+      <div class="elev-card pop">
+        <div class="elev-name">Shadow Pop</div>
+        <div class="elev-var">--tm-shadow-pop</div>
+        <div class="elev-use">Floating buttons on map, popovers, dropdowns</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SPACING ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Spacing</div>
+        <div class="ds-section-sub">4px base scale, named tokens</div>
+      </div>
+      <span class="ds-section-num">05 / 08</span>
+    </div>
+
+    <div class="space-row">
+      <div class="space-item">
+        <span class="space-name">space-1</span>
+        <span class="space-px">4px</span>
+        <div class="space-bar" style="width:4px"></div>
+        <span class="space-use">Tight gaps inside small chips, dot spacing</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-2</span>
+        <span class="space-px">8px</span>
+        <div class="space-bar" style="width:8px"></div>
+        <span class="space-use">Icon-to-text gap in buttons, small inline spacing</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-3</span>
+        <span class="space-px">12px</span>
+        <div class="space-bar" style="width:12px"></div>
+        <span class="space-use">List item internal padding, default gap</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-4</span>
+        <span class="space-px">16px</span>
+        <div class="space-bar" style="width:16px"></div>
+        <span class="space-use">Grid gaps between cards, paragraph margins</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-5</span>
+        <span class="space-px">20px</span>
+        <div class="space-bar" style="width:20px"></div>
+        <span class="space-use">Card internal padding (compact)</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-6</span>
+        <span class="space-px">24px</span>
+        <div class="space-bar" style="width:24px"></div>
+        <span class="space-use">Card internal padding (default), section spacing</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-8</span>
+        <span class="space-px">32px</span>
+        <div class="space-bar" style="width:32px"></div>
+        <span class="space-use">Page padding on mobile, hero card padding</span>
+      </div>
+      <div class="space-item">
+        <span class="space-name">space-10</span>
+        <span class="space-px">40px</span>
+        <div class="space-bar" style="width:40px"></div>
+        <span class="space-use">Major section dividers</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ICON TILES ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Icon tiles</div>
+        <div class="ds-section-sub">The signature visual element — dark rounded squares with white glyphs</div>
+      </div>
+      <span class="ds-section-num">06 / 08</span>
+    </div>
+
+    <div class="icon-tiles-row">
+      <div class="icon-tile-demo">
+        <div class="icon-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/></svg>
+        </div>
+        <div class="icon-label">Home</div>
+        <div class="icon-var">.icon-tile</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </div>
+        <div class="icon-label">Trips</div>
+        <div class="icon-var">.icon-tile</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="3"/><circle cx="12" cy="13" r="2.5"/></svg>
+        </div>
+        <div class="icon-label">Wallet</div>
+        <div class="icon-var">.icon-tile</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+        </div>
+        <div class="icon-label">Bell</div>
+        <div class="icon-var">.icon-tile</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <div class="icon-label">Location</div>
+        <div class="icon-var">.icon-tile</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5L20 7"/></svg>
+        </div>
+        <div class="icon-label">Success</div>
+        <div class="icon-var">.icon-tile.green</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile ringed">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/></svg>
+        </div>
+        <div class="icon-label">Active</div>
+        <div class="icon-var">.icon-tile.ringed</div>
+      </div>
+      <div class="icon-tile-demo">
+        <div class="icon-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9 1.65 1.65 0 0 0 4.27 7.18l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </div>
+        <div class="icon-label">Settings</div>
+        <div class="icon-var">.icon-tile</div>
+      </div>
+    </div>
+
+    <div style="margin-top:18px; padding:16px 20px; background:var(--tm-green-tint); border-radius:14px; font-size:13px; color:var(--tm-green-deep)">
+      <strong>Rule:</strong> Icon tiles are always 38–48px square, 12–14px radius, with a white 18–22px glyph at stroke-width 2. The "active" variant adds a 3px green-soft ring shadow.
+    </div>
+  </section>
+
+  <!-- ============================ COMPONENTS ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">Components</div>
+        <div class="ds-section-sub">Core building blocks — buttons, inputs, pills, cards</div>
+      </div>
+      <span class="ds-section-num">07 / 08</span>
+    </div>
+
+    <div class="comp-grid">
+
+      <!-- BUTTONS -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Buttons</div>
+            <div class="comp-desc">Five variants — ink (primary), green (CTA), outline, ghost, text</div>
+          </div>
+          <span class="comp-tag">.btn-*</span>
+        </div>
+        <div class="comp-preview">
+          <button class="btn-ink">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            New Trip
+          </button>
+          <button class="btn-green">Request a Trip</button>
+          <button class="btn-outline">Back</button>
+          <button class="btn-ghost">Cancel</button>
+          <button class="btn-text-green">ADD NEW</button>
+          <button class="btn-text-amber">CONFIRM</button>
+        </div>
+      </div>
+
+      <!-- INPUTS -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Inputs</div>
+            <div class="comp-desc">14px radius, 1px border, focuses to ink — never blue</div>
+          </div>
+          <span class="comp-tag">.input</span>
+        </div>
+        <div class="comp-preview" style="flex-direction:column; align-items:stretch">
+          <div class="input-demo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input placeholder="Search trips, drivers…" />
+          </div>
+          <div class="input-demo">
+            <input value="brayden@example.com" />
+          </div>
+          <div class="input-demo" style="border-color:var(--tm-ink)">
+            <input value="Brayden" style="font-weight:600" />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tm-green)" stroke-width="2.5"><path d="M5 12l5 5L20 7"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATUS PILLS -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Status pills</div>
+            <div class="comp-desc">Always include a coloured LED dot + uppercase text</div>
+          </div>
+          <span class="comp-tag">.status-pill</span>
+        </div>
+        <div class="comp-preview">
+          <span class="status-pill-demo demo-success"><span class="led"></span>Completed</span>
+          <span class="status-pill-demo demo-warning"><span class="led"></span>Confirm</span>
+          <span class="status-pill-demo demo-info"><span class="led"></span>En Route</span>
+          <span class="status-pill-demo demo-danger"><span class="led"></span>Cancelled</span>
+        </div>
+      </div>
+
+      <!-- BADGES -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Badges</div>
+            <div class="comp-desc">Small, used to flag drivers, accounts, items</div>
+          </div>
+          <span class="comp-tag">.badge</span>
+        </div>
+        <div class="comp-preview">
+          <span class="badge-demo badge-verified">✓ Verified</span>
+          <span class="badge-demo badge-top">TOP 1%</span>
+          <span class="badge-demo badge-pending">Pending</span>
+        </div>
+      </div>
+
+      <!-- AVATARS -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Avatars</div>
+            <div class="comp-desc">Five sizes, optional online indicator LED</div>
+          </div>
+          <span class="comp-tag">.av-*</span>
+        </div>
+        <div class="comp-preview">
+          <div class="av av-xs">B</div>
+          <div class="av av-sm">DR</div>
+          <div class="av av-md">SP</div>
+          <div class="av av-md dark av-with-status">AK<span class="av-led"></span></div>
+          <div class="av av-lg av-with-status">DR<span class="av-led"></span></div>
+          <div class="av av-xl dark">BL</div>
+        </div>
+      </div>
+
+      <!-- ROUTE PINS -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Route pins</div>
+            <div class="comp-desc">Black for pickup, green for drop — never swap</div>
+          </div>
+          <span class="comp-tag">.pin-from / .pin-to</span>
+        </div>
+        <div class="comp-preview pin-showcase">
+          <div class="pin-set">
+            <div class="pin-lg from"></div>
+            <div class="pin-label">PICKUP</div>
+          </div>
+          <svg width="60" height="40" viewBox="0 0 60 40">
+            <path d="M 5 20 L 55 20" stroke="#22C55E" stroke-width="3" stroke-dasharray="6 4" stroke-linecap="round"/>
+            <path d="M 50 14 L 56 20 L 50 26" stroke="#22C55E" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="pin-set">
+            <div class="pin-lg to"></div>
+            <div class="pin-label">DROP</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRIP CARD -->
+      <div class="comp-card wide">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Trip card</div>
+            <div class="comp-desc">The signature row used in Your Trips, Live Trips, and reports — pin-line-pin layout</div>
+          </div>
+          <span class="comp-tag">.trip-card</span>
+        </div>
+        <div class="comp-preview">
+          <div class="trip-card-demo">
+            <div class="tcd-route">
+              <div class="tcd-line"><div class="pin from"></div><span>1397 Walnut Street, Jackson</span></div>
+              <div class="tcd-divider"></div>
+              <div class="tcd-line"><div class="pin to"></div><span>345 Hardesty Street, 368972</span></div>
+            </div>
+            <div class="tcd-foot">
+              <span class="tcd-fare">₹ 146.50</span>
+              <span class="status-pill-demo demo-warning" style="margin:0"><span class="led"></span>Confirm</span>
+            </div>
+          </div>
+          <div class="trip-card-demo">
+            <div class="tcd-route">
+              <div class="tcd-line"><div class="pin from"></div><span>Lal Chowk, Srinagar</span></div>
+              <div class="tcd-divider"></div>
+              <div class="tcd-line"><div class="pin to"></div><span>Dal Lake Boulevard</span></div>
+            </div>
+            <div class="tcd-foot">
+              <span class="tcd-fare">₹ 268.00</span>
+              <span class="status-pill-demo demo-success" style="margin:0"><span class="led"></span>Completed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NAV ITEM -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">Nav item</div>
+            <div class="comp-desc">Sidebar pattern — dark icon tile + label, green bar marks active</div>
+          </div>
+          <span class="comp-tag">.nav-item</span>
+        </div>
+        <div class="comp-preview">
+          <div class="nav-demo-list">
+            <div class="nav-demo-item active">
+              <div class="nav-demo-tile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/></svg>
+              </div>
+              <span>Dashboard</span>
+            </div>
+            <div class="nav-demo-item">
+              <div class="nav-demo-tile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </div>
+              <span>Live Trips</span>
+              <span class="nav-demo-badge">14</span>
+            </div>
+            <div class="nav-demo-item">
+              <div class="nav-demo-tile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h-2v-6l2-5h9l4 5h4v6h-2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>
+              </div>
+              <span>Drivers</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI CARD -->
+      <div class="comp-card">
+        <div class="comp-head">
+          <div>
+            <div class="comp-name">KPI card</div>
+            <div class="comp-desc">Big number, label, optional delta pill — dashboards only</div>
+          </div>
+          <span class="comp-tag">.kpi-card</span>
+        </div>
+        <div class="comp-preview">
+          <div class="kpi-demo">
+            <div class="head">
+              <div class="label">Revenue (INR)</div>
+              <div class="ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+            </div>
+            <div class="value">₹4,86,210</div>
+            <div class="foot">
+              <span class="delta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M7 14l5-5 5 5"/></svg>
+                8.2%
+              </span>
+              <span style="color:var(--tm-text-muted)">this week</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ USAGE / CODE ============================ -->
+  <section class="ds">
+    <div class="ds-section-head">
+      <div>
+        <div class="ds-section-title">How to use</div>
+        <div class="ds-section-sub">Drop this into your project and reference it in your CSS or Tailwind config</div>
+      </div>
+      <span class="ds-section-num">08 / 08</span>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr; gap:20px">
+
+      <div>
+        <h3 style="font-size:14px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--tm-text-muted); margin:0 0 12px">CSS Variables (drop into <code>:root</code>)</h3>
+        <div class="code-card">
+<span class="comment">/* TaxiMode Design Tokens · paste into your global stylesheet */</span>
+<span class="key">:root</span> <span class="punct">{</span>
+  <span class="comment">/* Brand */</span>
+  <span class="key">--tm-green</span><span class="punct">:</span> #22C55E<span class="punct">;</span>
+  <span class="key">--tm-green-deep</span><span class="punct">:</span> #16A34A<span class="punct">;</span>
+  <span class="key">--tm-green-soft</span><span class="punct">:</span> #DCFCE7<span class="punct">;</span>
+  <span class="key">--tm-green-tint</span><span class="punct">:</span> #ECFDF3<span class="punct">;</span>
+  <span class="key">--tm-ink</span><span class="punct">:</span> #0F1419<span class="punct">;</span>
+  <span class="key">--tm-ink-2</span><span class="punct">:</span> #1B2128<span class="punct">;</span>
+
+  <span class="comment">/* Surfaces & text */</span>
+  <span class="key">--tm-surface</span><span class="punct">:</span> #FFFFFF<span class="punct">;</span>
+  <span class="key">--tm-canvas</span><span class="punct">:</span> #F4F6FA<span class="punct">;</span>
+  <span class="key">--tm-text</span><span class="punct">:</span> #0F1419<span class="punct">;</span>
+  <span class="key">--tm-text-muted</span><span class="punct">:</span> #6B7785<span class="punct">;</span>
+  <span class="key">--tm-text-soft</span><span class="punct">:</span> #94A0AD<span class="punct">;</span>
+  <span class="key">--tm-line</span><span class="punct">:</span> #ECEFF3<span class="punct">;</span>
+
+  <span class="comment">/* Status */</span>
+  <span class="key">--tm-success</span><span class="punct">:</span> #22C55E<span class="punct">;</span>
+  <span class="key">--tm-warning</span><span class="punct">:</span> #F59E0B<span class="punct">;</span>
+  <span class="key">--tm-danger</span><span class="punct">:</span>  #EF4444<span class="punct">;</span>
+  <span class="key">--tm-info</span><span class="punct">:</span>    #3B82F6<span class="punct">;</span>
+
+  <span class="comment">/* Shape & elevation */</span>
+  <span class="key">--tm-radius-md</span><span class="punct">:</span> 14px<span class="punct">;</span>
+  <span class="key">--tm-radius-lg</span><span class="punct">:</span> 22px<span class="punct">;</span>
+  <span class="key">--tm-radius-pill</span><span class="punct">:</span> 999px<span class="punct">;</span>
+  <span class="key">--tm-shadow-card</span><span class="punct">:</span> 0 1px 0 rgba(15,20,25,0.04), 0 8px 24px -16px rgba(15,20,25,0.12)<span class="punct">;</span>
+  <span class="key">--tm-shadow-pop</span><span class="punct">:</span>  0 12px 40px -16px rgba(15,20,25,0.25)<span class="punct">;</span>
+
+  <span class="comment">/* Typography */</span>
+  <span class="key">--tm-font-display</span><span class="punct">:</span> <span class="val">'Plus Jakarta Sans'</span>, system-ui, sans-serif<span class="punct">;</span>
+  <span class="key">--tm-font-mono</span><span class="punct">:</span> <span class="val">'JetBrains Mono'</span>, ui-monospace, monospace<span class="punct">;</span>
+<span class="punct">}</span>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="font-size:14px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--tm-text-muted); margin:0 0 12px">Tailwind config snippet</h3>
+        <div class="code-card">
+<span class="comment">// tailwind.config.js</span>
+<span class="key">module</span>.<span class="key">exports</span> <span class="punct">= {</span>
+  <span class="key">theme</span><span class="punct">: {</span>
+    <span class="key">extend</span><span class="punct">: {</span>
+      <span class="key">colors</span><span class="punct">: {</span>
+        <span class="key">green</span><span class="punct">: {</span> DEFAULT: <span class="val">'#22C55E'</span>, deep: <span class="val">'#16A34A'</span>, soft: <span class="val">'#DCFCE7'</span>, tint: <span class="val">'#ECFDF3'</span> <span class="punct">},</span>
+        <span class="key">ink</span><span class="punct">: {</span> DEFAULT: <span class="val">'#0F1419'</span>, 2: <span class="val">'#1B2128'</span>, 3: <span class="val">'#2A323C'</span> <span class="punct">},</span>
+        <span class="key">canvas</span><span class="punct">: {</span> DEFAULT: <span class="val">'#F4F6FA'</span>, 2: <span class="val">'#EAEEF4'</span> <span class="punct">},</span>
+        <span class="key">muted</span><span class="punct">:</span> <span class="val">'#6B7785'</span><span class="punct">,</span>
+        <span class="key">soft</span><span class="punct">:</span>  <span class="val">'#94A0AD'</span><span class="punct">,</span>
+      <span class="punct">},</span>
+      <span class="key">borderRadius</span><span class="punct">: {</span> md: <span class="val">'14px'</span>, lg: <span class="val">'22px'</span>, xl: <span class="val">'28px'</span> <span class="punct">},</span>
+      <span class="key">fontFamily</span><span class="punct">: {</span>
+        sans: <span class="punct">[</span><span class="val">'Plus Jakarta Sans'</span>, <span class="val">'system-ui'</span><span class="punct">],</span>
+        mono: <span class="punct">[</span><span class="val">'JetBrains Mono'</span>, <span class="val">'ui-monospace'</span><span class="punct">],</span>
+      <span class="punct">},</span>
+      <span class="key">boxShadow</span><span class="punct">: {</span>
+        card: <span class="val">'0 1px 0 rgba(15,20,25,0.04), 0 8px 24px -16px rgba(15,20,25,0.12)'</span><span class="punct">,</span>
+        pop:  <span class="val">'0 12px 40px -16px rgba(15,20,25,0.25)'</span><span class="punct">,</span>
+      <span class="punct">},</span>
+    <span class="punct">}</span>
+  <span class="punct">}</span>
+<span class="punct">}</span>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="font-size:14px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--tm-text-muted); margin:0 0 12px">Google Fonts import</h3>
+        <div class="code-card">
+<span class="comment">&lt;!-- Add to &lt;head&gt; --&gt;</span>
+&lt;<span class="key">link</span> rel=<span class="val">"preconnect"</span> href=<span class="val">"https://fonts.googleapis.com"</span>&gt;
+&lt;<span class="key">link</span> rel=<span class="val">"preconnect"</span> href=<span class="val">"https://fonts.gstatic.com"</span> crossorigin&gt;
+&lt;<span class="key">link</span> rel=<span class="val">"stylesheet"</span> href=<span class="val">"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap"</span>&gt;
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================ FOOTER ============================ -->
+  <footer style="margin-top:60px; padding-top:32px; border-top:1px solid var(--tm-line-2); color:var(--tm-text-muted); font-size:13px; text-align:center">
+    TaxiMode Design System · v1.0 · Use these tokens in every screen, every page, every component.
+    <div style="margin-top:8px; font-family:var(--tm-font-mono); font-size:11px; color:var(--tm-text-soft)">Built from /mnt/project · Sopore + Srinagar operations</div>
+  </footer>
+
+</div>
+</body>
+</html>
