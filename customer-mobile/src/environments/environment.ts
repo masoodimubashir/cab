@@ -19,7 +19,7 @@ export const environment = {
    * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
    * Leave reverbAppKey blank to fall back to polling-only.
    */
-  reverbAppKey: 'local',
+  reverbAppKey: '4jsb8ggrbvcriyaskojh',
   reverbHost: 'localhost',
   reverbPort: 8080,
   reverbScheme: 'http' as 'http' | 'https',
@@ -37,6 +37,12 @@ export const environment = {
     appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
     measurementId: "G-CLHQFG1HW1"
   },
+  /**
+   * FCM Web Push VAPID key — Firebase Console → Project Settings → Cloud Messaging →
+   * Web configuration → Web Push certificates → Generate key pair.
+   * Required for browser push to work; native (Android/iOS) does not need this.
+   */
+  fcmVapidKey: "",
 };
 
 /*

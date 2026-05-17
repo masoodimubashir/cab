@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Driver;
 use App\Models\DriverDocument;
+use App\Models\DriverLocation;
+use App\Models\Trip;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class DriversController extends Controller
@@ -12,25 +15,88 @@ class DriversController extends Controller
     public function register(Request $request)
     {
         $data = $request->validate([
-            'vehicle_type' => ['required', 'string', 'max:100'],
+            // The 3-step wizard sends ride_type_id (Step 1) + vehicle_type_id
+            // (Step 2). Free-text vehicle_type is kept for backwards compat
+            // with older registrations and as a human-readable fallback.
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'vehicle_type' => ['nullable', 'string', 'max:100'],
             'vehicle_brand' => ['nullable', 'string', 'max:100'],
             'vehicle_model' => ['nullable', 'string', 'max:100'],
             'vehicle_color' => ['nullable', 'string', 'max:100'],
-            'vehicle_reg_no' => ['required', 'string', 'max:50'],
+            // Reg no is now collected/edited by an admin, not the driver,
+            // so it's optional during driver self-registration.
+            'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
+            // Onboarding wizard now also captures the city + fleet. Both are
+            // nullable (fleet = "none" allowed; city set later by admin if missing).
+            'city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
         ]);
 
         $user = $request->user();
+        $existing = Driver::query()->where('user_id', $user->id)->first();
+
+        // Locked fields once the driver is approved. Trying to change either
+        // ride_type_id or vehicle_type_id post-approval is a 422 — the
+        // operator owns those decisions from that point on.
+        if ($existing && $existing->approval_status === 'approved') {
+            $tryingToChangeRide = array_key_exists('ride_type_id', $data)
+                && $data['ride_type_id'] !== null
+                && (int) $data['ride_type_id'] !== (int) $existing->ride_type_id;
+            $tryingToChangeVehicle = array_key_exists('vehicle_type_id', $data)
+                && $data['vehicle_type_id'] !== null
+                && (int) $data['vehicle_type_id'] !== (int) $existing->vehicle_type_id;
+            if ($tryingToChangeRide || $tryingToChangeVehicle) {
+                return response()->json([
+                    'message' => 'Ride type and vehicle type are locked after approval. Contact the operator.',
+                ], 422);
+            }
+        }
+
+        // If ride_type_id/vehicle_type_id are sent without a free-text
+        // vehicle_type, derive a sensible label so older parts of the app that
+        // read vehicle_type still get something.
+        $vehicleTypeLabel = $data['vehicle_type'] ?? null;
+        if (!$vehicleTypeLabel && !empty($data['vehicle_type_id'])) {
+            $vt = \App\Models\VehicleType::query()->find($data['vehicle_type_id']);
+            $vehicleTypeLabel = $vt?->name;
+        }
+
+        // Build the update set carefully: don't reset approval_status on a
+        // re-registration, and freeze ride/vehicle type once approved.
+        $payload = [
+            'vehicle_type' => $vehicleTypeLabel ?? ($existing->vehicle_type ?? null),
+            'vehicle_brand' => $data['vehicle_brand'] ?? ($existing->vehicle_brand ?? null),
+            'vehicle_model' => $data['vehicle_model'] ?? ($existing->vehicle_model ?? null),
+            'vehicle_color' => $data['vehicle_color'] ?? ($existing->vehicle_color ?? null),
+            'vehicle_reg_no' => $data['vehicle_reg_no'] ?? ($existing->vehicle_reg_no ?? null),
+            'city_id' => array_key_exists('city_id', $data) ? $data['city_id'] : ($existing->city_id ?? null),
+            'fleet_id' => array_key_exists('fleet_id', $data) ? $data['fleet_id'] : ($existing->fleet_id ?? null),
+        ];
+        if (!$existing) {
+            $payload['approval_status'] = 'pending';
+            $payload['ride_type_id'] = $data['ride_type_id'] ?? null;
+            $payload['vehicle_type_id'] = $data['vehicle_type_id'] ?? null;
+        } else {
+            $payload['approval_status'] = $existing->approval_status; // preserve
+            if ($existing->approval_status !== 'approved') {
+                // Pre-approval: driver can still flip their choices.
+                $payload['ride_type_id'] = array_key_exists('ride_type_id', $data)
+                    ? $data['ride_type_id']
+                    : $existing->ride_type_id;
+                $payload['vehicle_type_id'] = array_key_exists('vehicle_type_id', $data)
+                    ? $data['vehicle_type_id']
+                    : $existing->vehicle_type_id;
+            } else {
+                // Approved: ride/vehicle frozen regardless of payload.
+                $payload['ride_type_id'] = $existing->ride_type_id;
+                $payload['vehicle_type_id'] = $existing->vehicle_type_id;
+            }
+        }
 
         $driver = Driver::query()->updateOrCreate(
             ['user_id' => $user->id],
-            [
-                'approval_status' => 'pending',
-                'vehicle_type' => $data['vehicle_type'],
-                'vehicle_brand' => $data['vehicle_brand'] ?? null,
-                'vehicle_model' => $data['vehicle_model'] ?? null,
-                'vehicle_color' => $data['vehicle_color'] ?? null,
-                'vehicle_reg_no' => $data['vehicle_reg_no'],
-            ]
+            $payload,
         );
 
         $user->addRole('driver');
@@ -57,6 +123,27 @@ class DriversController extends Controller
         $user = $request->user();
         $driver = Driver::query()->where('user_id', $user->id)->first();
 
+        $documents = [];
+        if ($driver) {
+            $documents = DriverDocument::query()
+                ->where('driver_id', $driver->id)
+                ->with('document:id,name')
+                ->get()
+                ->map(fn (DriverDocument $d) => [
+                    'id' => $d->id,
+                    'document_id' => $d->document_id,
+                    'document_name' => $d->document?->name,
+                    'document_type' => $d->document_type,
+                    'vehicle_type_id' => $d->vehicle_type_id,
+                    'status' => $d->status,
+                    'rejection_reason' => $d->rejection_reason,
+                    'file_url' => route('driver.me.documents.file', ['document' => $d->id]),
+                    'label_values' => $d->label_values,
+                    'uploaded_at' => optional($d->created_at)->toIso8601String(),
+                ])
+                ->all();
+        }
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -66,16 +153,267 @@ class DriversController extends Controller
                 'roles' => $user->roleNames(),
             ],
             'driver' => $driver,
+            'documents' => $documents,
         ]);
+    }
+
+    /**
+     * Stream the driver's own uploaded document. Same content-disposition
+     * semantics as the admin equivalent — pass ?download=1 to force a
+     * download instead of inline view.
+     */
+    public function meDocumentFile(Request $request, DriverDocument $document)
+    {
+        $user = $request->user();
+        $driver = Driver::query()->where('user_id', $user->id)->first();
+        if (!$driver || $document->driver_id !== $driver->id) {
+            abort(404);
+        }
+        if (!$document->file_path || !\Illuminate\Support\Facades\Storage::disk('local')->exists($document->file_path)) {
+            abort(404, 'File not found.');
+        }
+
+        $mime = \Illuminate\Support\Facades\Storage::disk('local')->mimeType($document->file_path) ?: 'application/octet-stream';
+        $filename = basename($document->file_path);
+        $download = $request->boolean('download');
+
+        return response()->stream(
+            function () use ($document) {
+                $stream = \Illuminate\Support\Facades\Storage::disk('local')->readStream($document->file_path);
+                if ($stream) {
+                    fpassthru($stream);
+                    if (is_resource($stream)) fclose($stream);
+                }
+            },
+            200,
+            [
+                'Content-Type' => $mime,
+                'Content-Disposition' => ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
+            ],
+        );
+    }
+
+    /**
+     * Earnings summary used by the driver mobile Earnings tab.
+     *
+     * Returns:
+     *  - total_earnings   lifetime SUM(final_fare) across the driver's completed trips
+     *  - wallet_balance   placeholder until driver payouts are wired up
+     *  - period           the bucket window: 'week' (last 7 days) or 'month' (last 30 days)
+     *  - buckets          [{ date: YYYY-MM-DD, amount: number, weekday: short }, ...]
+     *                     one entry per day in the requested window, in chronological order
+     *  - weekly           [{ date, amount, weekday }, ...] always the last 7 days
+     *                     so the dashboard's "weekly earnings" list stays stable
+     */
+    public function earnings(Request $request)
+    {
+        $user = $request->user();
+        $period = $request->query('period', 'week');
+        if (!in_array($period, ['week', 'month'], true)) {
+            $period = 'week';
+        }
+        $days = $period === 'month' ? 30 : 7;
+
+        $today = now()->startOfDay();
+        $windowStart = $today->copy()->subDays($days - 1);
+
+        $rows = Trip::query()
+            ->where('driver_id', $user->id)
+            ->where('status', 'COMPLETED')
+            ->whereNotNull('completed_at')
+            ->where('completed_at', '>=', $windowStart)
+            ->selectRaw('DATE(completed_at) as day, COALESCE(SUM(final_fare), 0) as amount')
+            ->groupBy('day')
+            ->pluck('amount', 'day');
+
+        // Backfill missing days with zero so the bar chart has even gaps.
+        $buckets = [];
+        for ($i = 0; $i < $days; $i++) {
+            $d = $windowStart->copy()->addDays($i);
+            $key = $d->toDateString();
+            $buckets[] = [
+                'date' => $key,
+                'amount' => (float) ($rows[$key] ?? 0),
+                'weekday' => $d->format('D'),
+            ];
+        }
+
+        // Always also return last-7-days for the weekly breakdown list.
+        $weekly = array_slice($buckets, -7);
+        if (count($buckets) < 7) {
+            $weekStart = $today->copy()->subDays(6);
+            $weekRows = Trip::query()
+                ->where('driver_id', $user->id)
+                ->where('status', 'COMPLETED')
+                ->whereNotNull('completed_at')
+                ->where('completed_at', '>=', $weekStart)
+                ->selectRaw('DATE(completed_at) as day, COALESCE(SUM(final_fare), 0) as amount')
+                ->groupBy('day')
+                ->pluck('amount', 'day');
+            $weekly = [];
+            for ($i = 0; $i < 7; $i++) {
+                $d = $weekStart->copy()->addDays($i);
+                $key = $d->toDateString();
+                $weekly[] = [
+                    'date' => $key,
+                    'amount' => (float) ($weekRows[$key] ?? 0),
+                    'weekday' => $d->format('D'),
+                ];
+            }
+        }
+
+        $totalEarnings = (float) Trip::query()
+            ->where('driver_id', $user->id)
+            ->where('status', 'COMPLETED')
+            ->sum('final_fare');
+
+        // Net credits − debits from wallet_transactions. Tips, refunds, and
+        // operator adjustments all live in this ledger.
+        $credit = \App\Models\WalletTransaction::TYPE_CREDIT;
+        $debit = \App\Models\WalletTransaction::TYPE_DEBIT;
+        $walletBalance = (float) \App\Models\WalletTransaction::query()
+            ->where('user_id', $user->id)
+            ->selectRaw(
+                "COALESCE(SUM(CASE WHEN type = ? THEN amount WHEN type = ? THEN -amount ELSE 0 END), 0) as bal",
+                [$credit, $debit],
+            )
+            ->value('bal');
+
+        return response()->json([
+            'total_earnings' => round($totalEarnings, 2),
+            'wallet_balance' => round($walletBalance, 2),
+            'currency' => 'INR',
+            'period' => $period,
+            'buckets' => $buckets,
+            'weekly' => $weekly,
+        ]);
+    }
+
+    /**
+     * Returns the current driver's in-flight trip (or null). Used by the driver
+     * mobile app on boot to resume the location stream and route to the
+     * trip-active page after a cold start.
+     */
+    public function activeTrip(Request $request)
+    {
+        $user = $request->user();
+
+        // Broader than Trip::ACTIVE_DRIVER_STATUSES on purpose: also surface
+        // NEGOTIATION trips the customer pre-selected this driver for, and
+        // CONFIRMED trips waiting for /driver-accept. Without these, a cold
+        // start mid-handoff lands on "no active trip" even though the driver
+        // is committed to one.
+        $statuses = array_merge(['NEGOTIATION', 'CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES);
+
+        $trip = Trip::query()
+            ->where('driver_id', $user->id)
+            ->whereIn('status', $statuses)
+            ->orderByDesc('updated_at')
+            ->first();
+
+        return response()->json(['trip' => $trip]);
+    }
+
+    /**
+     * Anonymized list of nearby online + approved drivers, used by the customer
+     * "searching" map to render driver pins like Uber. Returns only lat/lng +
+     * an opaque `id` (the driver user id) so the customer can stably animate
+     * a marker between polls. Drivers already on an in-flight trip are excluded.
+     *
+     * Freshness window: only drivers whose latest location row was recorded in
+     * the last 5 minutes are returned — staler drivers are effectively offline.
+     */
+    public function nearby(Request $request)
+    {
+        $data = $request->validate([
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'radius_km' => ['nullable', 'numeric', 'min:0.1', 'max:50'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $lat = (float) $data['lat'];
+        $lng = (float) $data['lng'];
+        $radiusKm = (float) ($data['radius_km'] ?? 8.0);
+        $limit = (int) ($data['limit'] ?? 30);
+
+        $busyDriverIds = Trip::query()
+            ->whereNotNull('driver_id')
+            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->pluck('driver_id');
+
+        $eligibleIds = Driver::query()
+            ->where('approval_status', 'approved')
+            ->where('is_online', true)
+            ->whereNotIn('user_id', $busyDriverIds)
+            ->pluck('user_id');
+
+        if ($eligibleIds->isEmpty()) {
+            return response()->json(['data' => []]);
+        }
+
+        $cutoff = now()->subMinutes(5);
+        $latestPerDriver = DriverLocation::query()
+            ->select('driver_id', DB::raw('MAX(recorded_at) as max_recorded_at'))
+            ->whereIn('driver_id', $eligibleIds)
+            ->where('recorded_at', '>=', $cutoff)
+            ->groupBy('driver_id');
+
+        $rows = DriverLocation::query()
+            ->joinSub($latestPerDriver, 'latest', function ($join) {
+                $join->on('driver_locations.driver_id', '=', 'latest.driver_id')
+                     ->on('driver_locations.recorded_at', '=', 'latest.max_recorded_at');
+            })
+            ->get(['driver_locations.driver_id', 'driver_locations.lat', 'driver_locations.lng', 'driver_locations.bearing_deg']);
+
+        $nearby = $rows
+            ->map(function ($row) use ($lat, $lng) {
+                $distance = $this->haversineKm($lat, $lng, (float) $row->lat, (float) $row->lng);
+                return [
+                    'id' => (int) $row->driver_id,
+                    'lat' => (float) $row->lat,
+                    'lng' => (float) $row->lng,
+                    'bearing_deg' => $row->bearing_deg !== null ? (int) $row->bearing_deg : null,
+                    'distance_km' => round($distance, 3),
+                ];
+            })
+            ->filter(fn ($d) => $d['distance_km'] <= $radiusKm)
+            ->sortBy('distance_km')
+            ->take($limit)
+            ->values();
+
+        return response()->json(['data' => $nearby]);
+    }
+
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthKm = 6371.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        return $earthKm * $c;
     }
 
     public function uploadDocument(Request $request)
     {
+        // The driver wizard sends document_id (from the dynamic catalog) +
+        // vehicle_type_id + optional label_values. Legacy callers may still
+        // send the document_type enum — both are accepted.
         $data = $request->validate([
-            'document_type' => ['required', 'in:DL,RC,INSURANCE,ID'],
-            'file' => ['required'],
+            'document_id' => ['nullable', 'integer', 'exists:documents,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'document_type' => ['nullable', 'in:DL,RC,INSURANCE,ID'],
+            'label_values' => ['nullable'],
             'file' => ['required', 'file', 'max:10240'],
         ]);
+
+        if (empty($data['document_id']) && empty($data['document_type'])) {
+            return response()->json([
+                'message' => 'Either document_id (preferred) or document_type (legacy) must be provided.',
+            ], 422);
+        }
 
         $user = $request->user();
         $driver = Driver::query()->where('user_id', $user->id)->first();
@@ -83,15 +421,65 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
 
+        // Once the driver is approved, no further uploads are accepted —
+        // their paperwork is locked. Operator handles changes after this.
+        if ($driver->approval_status === 'approved') {
+            return response()->json([
+                'message' => 'Your registration is approved. Contact the operator to update documents.',
+            ], 403);
+        }
+
+        // Look up an existing row with the same identity. Re-upload is only
+        // allowed when that row was previously rejected — pending and
+        // approved rows are locked.
+        $matcher = !empty($data['document_id'])
+            ? [
+                'driver_id' => $driver->id,
+                'document_id' => $data['document_id'],
+                'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+            ]
+            : [
+                'driver_id' => $driver->id,
+                'document_type' => $data['document_type'],
+            ];
+
+        $existing = DriverDocument::query()->where($matcher)->first();
+        if ($existing && $existing->status !== 'rejected') {
+            $msg = $existing->status === 'approved'
+                ? 'This document is already approved and cannot be re-uploaded.'
+                : 'This document is already uploaded and awaiting review.';
+            return response()->json(['message' => $msg], 409);
+        }
+
+        // Allow label_values to arrive either as JSON string (multipart) or as
+        // a structured array (raw JSON body). Anything else gets ignored.
+        $labelValues = null;
+        if (isset($data['label_values'])) {
+            $labelValues = is_string($data['label_values'])
+                ? json_decode($data['label_values'], true)
+                : $data['label_values'];
+            if (!is_array($labelValues)) {
+                $labelValues = null;
+            }
+        }
+
         $file = $request->file('file');
-        // Store in the non-public disk; documents should only be accessible through
-        // authenticated/admin workflows (file serving endpoints, if added later).
         $path = $file->store('driver-documents', 'local');
 
+        // Clean up the previously-rejected file on disk before overwriting
+        // its row — we don't want orphan blobs accumulating.
+        if ($existing && $existing->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($existing->file_path)) {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($existing->file_path);
+        }
+
         $doc = DriverDocument::query()->updateOrCreate(
-            ['driver_id' => $driver->id, 'document_type' => $data['document_type']],
+            $matcher,
             [
+                'document_id' => $data['document_id'] ?? null,
+                'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+                'document_type' => $data['document_type'] ?? null,
                 'file_path' => $path,
+                'label_values' => $labelValues,
                 'status' => 'uploaded',
                 'rejection_reason' => null,
             ]
@@ -112,22 +500,47 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver is not approved.'], 422);
         }
 
-        $requiredDocs = ['DL', 'RC', 'INSURANCE', 'ID'];
+        // Consult the dynamic catalog instead of the legacy DL/RC/INSURANCE/ID
+        // enum. Mandatory rows in the documents catalog must each have an
+        // approved driver_documents entry for this driver. Legacy enum rows
+        // that exist and aren't approved still block — they don't gate
+        // approval otherwise.
+        $mandatoryDocIds = \App\Models\Document::query()
+            ->where('required', 'mandatory_register')
+            ->pluck('id')
+            ->all();
+
         $missing = [];
-        foreach ($requiredDocs as $docType) {
-            $doc = DriverDocument::query()
+        if (!empty($mandatoryDocIds)) {
+            $approvedByDocId = DriverDocument::query()
                 ->where('driver_id', $driver->id)
-                ->where('document_type', $docType)
-                ->first();
-            if (!$doc || $doc->status !== 'approved') {
-                $missing[] = $docType;
+                ->whereIn('document_id', $mandatoryDocIds)
+                ->where('status', 'approved')
+                ->pluck('document_id')
+                ->unique()
+                ->all();
+
+            $missingIds = array_values(array_diff($mandatoryDocIds, $approvedByDocId));
+            if (!empty($missingIds)) {
+                $missing = \App\Models\Document::query()
+                    ->whereIn('id', $missingIds)
+                    ->pluck('name')
+                    ->all();
             }
         }
+
+        $legacyPending = DriverDocument::query()
+            ->where('driver_id', $driver->id)
+            ->whereNotNull('document_type')
+            ->where('status', '!=', 'approved')
+            ->pluck('document_type')
+            ->all();
+        $missing = array_merge($missing, $legacyPending);
 
         if (!empty($missing)) {
             return response()->json([
                 'message' => 'Not all required documents are approved.',
-                'missing' => $missing,
+                'missing' => array_values(array_unique($missing)),
             ], 422);
         }
 
@@ -151,6 +564,72 @@ class DriversController extends Controller
         $driver->save();
 
         return response()->json(['driver' => $driver->fresh()]);
+    }
+
+    /**
+     * Presence heartbeat from the driver app while online (no trip in flight).
+     * Inserts a driver_locations row with trip_id=null so the dispatch snapshot
+     * has a fresh ping for "Free" classification. Trip-time pings still go
+     * through TripTrackingController@updateLocation.
+     */
+    public function pingLocation(Request $request)
+    {
+        $data = $request->validate([
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'speed_kmh' => ['nullable', 'numeric', 'min:0'],
+            'bearing_deg' => ['nullable', 'integer', 'min:0', 'max:360'],
+        ]);
+
+        $user = $request->user();
+        $driver = Driver::query()->where('user_id', $user->id)->first();
+        if (!$driver) {
+            return response()->json(['message' => 'Driver profile not found.'], 404);
+        }
+
+        // Scope the throttle to *presence* rows (trip_id IS NULL) so the 5s
+        // trip-location stream doesn't starve the 10s presence ping. They
+        // share the same table but serve different purposes — interleaving
+        // them would let one block the other indefinitely.
+        $minIntervalSeconds = 5;
+        $last = DriverLocation::query()
+            ->where('driver_id', $user->id)
+            ->whereNull('trip_id')
+            ->orderByDesc('recorded_at')
+            ->first();
+
+        if ($last && $last->recorded_at) {
+            $ageSeconds = now()->getTimestamp() - $last->recorded_at->getTimestamp();
+            if ($ageSeconds < $minIntervalSeconds) {
+                return response()->json([
+                    'message' => 'Throttled',
+                    'location' => $last,
+                ], 429);
+            }
+        }
+
+        $location = DriverLocation::query()->create([
+            'driver_id' => $user->id,
+            'trip_id' => null,
+            'lat' => (float) $data['lat'],
+            'lng' => (float) $data['lng'],
+            'accuracy_m' => $data['accuracy_m'] ?? null,
+            'speed_kmh' => $data['speed_kmh'] ?? null,
+            'bearing_deg' => $data['bearing_deg'] ?? null,
+            'recorded_at' => now(),
+        ]);
+
+        // Every ping is a liveness signal: stamp last_online_at so the reaper
+        // and admin freshness checks know the driver is still reachable. If the
+        // reaper had already flipped is_online=false because of a transient
+        // network drop, this ping re-asserts that they're online.
+        $driver->forceFill([
+            'is_online' => true,
+            'last_online_at' => now(),
+        ])->save();
+
+        return response()->json(['location' => $location]);
     }
 }
 

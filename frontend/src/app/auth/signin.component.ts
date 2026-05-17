@@ -3,61 +3,71 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { CardModule } from 'primeng/card';
-import { InputTextModule } from 'primeng/inputtext';
-import { ButtonModule } from 'primeng/button';
+import { AuthService } from '../core/auth.service';
+import { ToastService } from '../core/toast.service';
+import {
+  ButtonComponent,
+  InputComponent,
+  BrandMarkComponent,
+} from '../ui';
 
 @Component({
   selector: 'app-signin',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardModule, InputTextModule, ButtonModule],
+  imports: [
+    CommonModule, FormsModule,
+    ButtonComponent, InputComponent, BrandMarkComponent,
+  ],
   styleUrl: './signin.component.scss',
   template: `
-    <div class="auth-page">
-      <div class="auth-card-wrap">
-        <p-card class="auth-card">
-          <div class="auth-header">
-            <div class="auth-badge">DreamCabs</div>
-            <h2 class="auth-title">Admin Sign In</h2>
-            <p class="auth-subtitle">Sign in to manage rides, drivers, and pricing.</p>
-          </div>
+    <div class="auth">
+      <div class="auth__form-wrap">
+        <div class="auth__brand">
+          <tm-brand-mark />
+        </div>
 
-          <div class="auth-form">
-            <div class="field">
-              <label>Email</label>
-              <input
-                pInputText
-                [(ngModel)]="email"
-                placeholder="admin@example.com"
-                autocomplete="email"
-              />
-            </div>
+        <header class="auth__head">
+          <span class="tm-overline auth__eyebrow">Admin Console</span>
+          <h1 class="tm-h1 auth__title">login to start your session...</h1>
+        
+        </header>
 
-            <div class="field">
-              <label>Password</label>
-              <input
-                pInputText
-                type="password"
-                [(ngModel)]="password"
-                placeholder="Enter password"
-                autocomplete="current-password"
-              />
-            </div>
+        <form class="auth__form" (ngSubmit)="login()" autocomplete="on">
+          <tm-input
+            label="Email"
+            type="email"
+            placeholder="admin@example.com"
+            icon="envelope"
+            [(ngModel)]="email"
+            name="email"
+          />
 
-            <button
-              pButton
-              type="button"
-              class="auth-button"
-              label="{{ loading ? 'Signing in...' : 'Sign In' }}"
-              (click)="login()"
-              [disabled]="loading || !email || !password"
-            ></button>
+          <tm-input
+            label="Password"
+            type="password"
+            placeholder="Enter password"
+            icon="shield"
+            [(ngModel)]="password"
+            name="password"
+          />
 
-            <div *ngIf="error" class="auth-error">
-              {{ error }}
-            </div>
-          </div>
-        </p-card>
+         
+
+          <tm-button
+            variant="green"
+            size="lg"
+            type="submit"
+            [loading]="loading"
+            [disabled]="!email || !password"
+            iconTrail="arrow-right"
+            block
+          >
+            {{ loading ? 'Signing in…' : 'Sign In' }}
+          </tm-button>
+
+        </form>
+
+       
       </div>
     </div>
   `,
@@ -66,23 +76,39 @@ export class SigninComponent {
   private readonly apiBase = 'http://localhost:8000/api';
   email = '';
   password = '';
-  error: string | null = null;
+  remember = true;
   loading = false;
+  year = new Date().getFullYear();
 
-  constructor(private router: Router, private http: HttpClient) {}
+  constructor(
+    private router: Router,
+    private http: HttpClient,
+    private auth: AuthService,
+    private toast: ToastService,
+  ) {}
 
   login(): void {
-    this.error = null;
+    if (!this.email || !this.password || this.loading) return;
     this.loading = true;
     const url = `${this.apiBase}/admin/login`;
 
     this.http.post<any>(url, { email: this.email.trim(), password: this.password }).subscribe({
       next: (res) => {
         localStorage.setItem('dreamcabs_token', res?.token);
-        this.router.navigateByUrl('/dashboard');
+        if (res?.user) this.auth.setProfile(res.user);
+        this.router.navigateByUrl('/dashboard').then((ok) => {
+          if (ok) {
+            const name = res?.user?.name?.split(' ')[0];
+            this.toast.success(
+              name ? `Welcome back, ${name}.` : 'Signed in successfully.',
+              { title: 'Welcome' },
+            );
+          }
+        });
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Login failed';
+        const message = err?.error?.message || 'Login failed. Check your credentials and try again.';
+        this.toast.error(message, { title: 'Sign in failed' });
         this.loading = false;
       },
       complete: () => {
@@ -91,4 +117,3 @@ export class SigninComponent {
     });
   }
 }
-

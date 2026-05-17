@@ -3,10 +3,19 @@
 namespace App\Services;
 
 use App\Models\Trip;
+use App\Models\User;
 use App\Events\TripStatusUpdated;
+use Illuminate\Support\Facades\DB;
 
 class TripStateMachineService
 {
+    public function __construct(
+        private NotificationService $notificationService,
+        private FareEstimationService $fareEstimationService,
+    ) {
+    }
+
+
     /**
      * Allowed transitions for trip status.
      *
@@ -68,7 +77,13 @@ class TripStateMachineService
                 $trip->arrived_drop_at = now();
                 break;
             case 'COMPLETED':
+                // Stamp completion first so recomputeFinal sees the closed window
+                // when summing telemetry.
                 $trip->completed_at = now();
+                $negotiatedFloor = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+                $settle = $this->fareEstimationService->recomputeFinal($trip, $negotiatedFloor);
+                $trip->final_fare = $settle['final_fare'];
+                $trip->waiting_charge_amount = $settle['waiting_charge_amount'];
                 break;
             case 'CANCELLED':
                 $trip->cancelled_at = now();
@@ -78,8 +93,35 @@ class TripStateMachineService
 
         $trip->save();
 
-        // Emit real-time status updates (used by customer/admin live tracking).
-        //broadcast(new TripStatusUpdated(tripId: $trip->id, status: $to))->toOthers();
+        $tripId = $trip->id;
+        $customerId = $trip->customer_id;
+
+        // Defer broadcast + FCM until any enclosing transaction commits, so
+        // listeners and recipients never observe a status that's about to roll
+        // back. afterCommit() fires immediately when no transaction is active.
+        DB::afterCommit(function () use ($tripId, $to, $customerId, $meta) {
+            broadcast(new TripStatusUpdated(tripId: $tripId, status: $to))->toOthers();
+
+            $customerMessages = [
+                'ASSIGNED' => ['Driver assigned', 'Your driver is on the way.'],
+                'ARRIVED_PICKUP' => ['Driver has arrived', 'Your driver is at the pickup point.'],
+                'EN_ROUTE_DROP' => ['Trip started', 'You are on your way to the destination.'],
+                'COMPLETED' => ['Trip completed', 'Thanks for riding. Tap to pay and rate.'],
+                'CANCELLED' => ['Trip cancelled', $meta['cancelled_reason'] ?? 'Your trip was cancelled.'],
+            ];
+
+            if (isset($customerMessages[$to]) && $customerId) {
+                $customer = User::query()->find($customerId);
+                if ($customer) {
+                    [$title, $body] = $customerMessages[$to];
+                    $this->notificationService->sendToUser($customer, $title, $body, [
+                        'type' => 'trip_status',
+                        'trip_id' => $tripId,
+                        'status' => $to,
+                    ]);
+                }
+            }
+        });
 
         return $trip->fresh();
     }

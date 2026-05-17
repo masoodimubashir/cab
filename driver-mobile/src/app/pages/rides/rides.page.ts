@@ -1,11 +1,35 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
+import { BackgroundLocationService } from '../../core/background-location.service';
+import { MapsLoaderService } from '../../core/maps-loader.service';
+import { RealtimeService, TripCustomerLocationPayload } from '../../core/realtime.service';
+import { TripSummaryModal } from './trip-summary.modal';
 import {
   coordsFromTrip,
   googleMapsDirectionsUrl,
   openExternalUrl,
 } from '../../core/maps-navigation';
+
+declare const google: any;
+
+type AvailableTrip = {
+  id: number;
+  // True when the customer chose this driver specifically via /select-driver.
+  // The Rides UI surfaces these requests with a "Requested for you" badge.
+  is_selected_for_me?: boolean;
+  pickup_address?: string | null;
+  pickup_lat: number;
+  pickup_lng: number;
+  drop_address?: string | null;
+  drop_lat: number;
+  drop_lng: number;
+  estimated_fare?: number | null;
+  customer_offer?: number | null;
+  payment_method?: PaymentMethod | null;
+  created_at?: string;
+};
 
 @Component({
   selector: 'app-rides',
@@ -13,16 +37,27 @@ import {
   styleUrls: ['./rides.page.scss'],
   standalone: false,
 })
-export class RidesPage {
+export class RidesPage implements OnInit, OnDestroy {
+  private unsubscribeStatus: (() => void) | null = null;
+  private availablePoll: any = null;
+
   tripId: number | null = null;
   busy = false;
   message: string | null = null;
   error: string | null = null;
   lastTrip: Record<string, unknown> | null = null;
 
+  available: AvailableTrip[] = [];
+  loadingAvailable = false;
+
   negotiation: Record<string, unknown> | null = null;
   counterAmount: number | null = null;
   negBusy = false;
+
+  progressBusy = false;
+  // Last breakdown returned by /driver-progress when status=COMPLETED — fed
+  // into the summary modal in phase 3.
+  completionBreakdown: Record<string, unknown> | null = null;
 
   get offers(): Record<string, unknown>[] {
     const raw = this.negotiation?.['offers'];
@@ -33,10 +68,397 @@ export class RidesPage {
     return this.negotiation?.['final_amount'] ?? null;
   }
 
+  sosBusy = false;
+
+  // Live map for the active trip — shows pickup pin + the customer's GPS as
+  // they walk to the curb, plus this driver's own position for context.
+  private map: any | null = null;
+  private pickupMarker: any | null = null;
+  private dropMarker: any | null = null;
+  private customerMarker: any | null = null;
+  private selfMarker: any | null = null;
+  customerPosition: { lat: number; lng: number } | null = null;
+  mapReady = false;
+  private selfWatchId: number | null = null;
+
   constructor(
     private api: ApiService,
-    private auth: AuthService
+    private auth: AuthService,
+    private bgLocation: BackgroundLocationService,
+    private realtime: RealtimeService,
+    private alertCtrl: AlertController,
+    private toastCtrl: ToastController,
+    private mapsLoader: MapsLoaderService,
+    private modalCtrl: ModalController
   ) {}
+
+  canSOS(): boolean {
+    const status = this.lastTrip?.['status'] as string | undefined;
+    if (!status) return false;
+    return status !== 'COMPLETED' && status !== 'CANCELLED';
+  }
+
+  async triggerSOS(): Promise<void> {
+    if (this.sosBusy) return;
+    const id = (this.lastTrip?.['id'] as number | undefined) ?? this.tripId;
+    if (!id) return;
+
+    const a = await this.alertCtrl.create({
+      header: 'Send SOS?',
+      message: 'Admins will be alerted with your trip and current location.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Send SOS',
+          role: 'destructive',
+          handler: () => {
+            void this.doTriggerSOS(id);
+          },
+        },
+      ],
+    });
+    await a.present();
+  }
+
+  private async doTriggerSOS(tripId: number): Promise<void> {
+    this.sosBusy = true;
+    const payload: { lat?: number; lng?: number } = {};
+    try {
+      const pos = await this.getCurrentPosition();
+      if (pos) {
+        payload.lat = pos.lat;
+        payload.lng = pos.lng;
+      }
+    } catch {
+      /* best-effort */
+    }
+    this.api.post(`/trips/${tripId}/sos`, payload).subscribe({
+      next: async () => {
+        const t = await this.toastCtrl.create({
+          message: 'SOS sent. Help is on the way.',
+          duration: 3000,
+          color: 'success',
+        });
+        await t.present();
+      },
+      error: async (err: any) => {
+        const t = await this.toastCtrl.create({
+          message: err?.error?.message || 'Could not send SOS.',
+          duration: 3000,
+          color: 'danger',
+        });
+        await t.present();
+      },
+      complete: () => {
+        this.sosBusy = false;
+      },
+    });
+  }
+
+  private getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+    return new Promise((resolve) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10_000 }
+      );
+    });
+  }
+
+  ngOnInit(): void {
+    // Resume any in-flight trip first so a cold start (page reload, FCM tap,
+    // app reopen) drops the driver straight into the in-trip view rather
+    // than showing "Driver has an active trip" while the list stays empty.
+    this.resumeActiveTrip();
+    this.refreshAvailable();
+    this.availablePoll = setInterval(() => {
+      this.refreshAvailable();
+      // Also poll for a freshly-confirmed trip so the moment the customer
+      // locks the fare we slide into the in-trip view without a reload.
+      if (!this.hasActiveTrip) this.resumeActiveTrip();
+    }, 8000);
+  }
+
+  /** Called on every tab switch back to Rides — same auto-resume semantics. */
+  ionViewWillEnter(): void {
+    if (!this.lastTrip) {
+      this.resumeActiveTrip();
+    }
+  }
+
+  /**
+   * Hydrate lastTrip from /drivers/me/active-trip so the redesigned in-trip
+   * view renders without requiring the driver to re-accept. Falls back to
+   * silent no-op when no trip is in-flight.
+   */
+  private resumeActiveTrip(): void {
+    this.api
+      .get<{ trip: Record<string, unknown> | null }>('/drivers/me/active-trip')
+      .subscribe({
+        next: (res) => {
+          const trip = res?.trip ?? null;
+          if (!trip) return;
+          const id = Number(trip['id']);
+          if (!Number.isFinite(id) || id < 1) return;
+          this.tripId = id;
+          // Reuse loadTrip's hydration path — it pulls the negotiation +
+          // initialises the live map + restarts location/status streams when
+          // the status is still active.
+          this.loadTrip();
+        },
+        // Silent on error — driver may not be approved yet, or offline.
+        error: () => undefined,
+      });
+  }
+
+  ngOnDestroy(): void {
+    if (this.unsubscribeStatus) {
+      this.unsubscribeStatus();
+      this.unsubscribeStatus = null;
+    }
+    if (this.availablePoll) {
+      clearInterval(this.availablePoll);
+      this.availablePoll = null;
+    }
+    this.stopSelfPositionWatch();
+  }
+
+  refreshAvailable(): void {
+    this.loadingAvailable = true;
+    this.api.get<{ data: AvailableTrip[]; reason?: string }>('/trips/available').subscribe({
+      next: (res) => {
+        this.available = res?.data || [];
+        if (res?.reason && !this.available.length) {
+          this.message = res.reason;
+        }
+      },
+      error: () => {
+        // silent — driver may be offline / not approved yet
+      },
+      complete: () => {
+        this.loadingAvailable = false;
+      },
+    });
+  }
+
+  /**
+   * Per-state hero copy for the in-trip view. Mirrors the customer-side
+   * statusCopy() so both sides read the same scenario.
+   */
+  statusCopy(): { title: string; sub: string; tone: 'primary' | 'success' | 'warning' | 'medium' } {
+    const status = (this.lastTrip?.['status'] as string | undefined) ?? '';
+    switch (status) {
+      case 'CONFIRMED':
+        return { title: 'Trip confirmed', sub: 'Get ready to drive to pickup', tone: 'primary' };
+      case 'ASSIGNED':
+        return { title: 'Heading to pickup', sub: 'Tap below when you start moving', tone: 'primary' };
+      case 'EN_ROUTE_PICKUP':
+        return { title: 'On the way to pickup', sub: 'Customer is waiting', tone: 'primary' };
+      case 'ARRIVED_PICKUP':
+        return { title: 'At pickup', sub: 'Waiting for the customer to come out', tone: 'warning' };
+      case 'EN_ROUTE_DROP':
+        return { title: 'Trip in progress', sub: 'Driving to drop-off', tone: 'success' };
+      case 'ARRIVED_DROP':
+        return { title: "You've arrived at drop", sub: 'Tap below to end the ride', tone: 'success' };
+      case 'COMPLETED':
+        return { title: 'Trip complete', sub: '', tone: 'medium' };
+      case 'CANCELLED':
+        return { title: 'Trip cancelled', sub: '', tone: 'medium' };
+      default:
+        return { title: status || 'Loading…', sub: '', tone: 'medium' };
+    }
+  }
+
+  /** Customer display name for the in-trip card; falls back gracefully. */
+  get customerName(): string {
+    const t = this.lastTrip;
+    if (!t) return '';
+    const direct = (t['customer_name'] as string | undefined) || '';
+    if (direct) return direct;
+    const customer = (t['customer'] as { name?: string } | undefined) || undefined;
+    return customer?.name || 'Customer';
+  }
+
+  /**
+   * True when we're rendering the focused active-trip layout (vs the
+   * available list). NEGOTIATION is handled by the available list / counter
+   * card so the driver can still bid; CONFIRMED onwards is "locked in" and
+   * deserves the in-trip view with its Accept-ride / progression CTA.
+   */
+  get hasActiveTrip(): boolean {
+    const status = (this.lastTrip?.['status'] as string | undefined) ?? '';
+    if (!this.lastTrip) return false;
+    return [
+      'CONFIRMED',
+      'ASSIGNED',
+      'EN_ROUTE_PICKUP',
+      'ARRIVED_PICKUP',
+      'EN_ROUTE_DROP',
+      'ARRIVED_DROP',
+    ].includes(status);
+  }
+
+  /**
+   * Maps the trip's current status to the next progression action the driver
+   * can take, or null when no progression is available (pre-accept, terminal).
+   * Drives a single context-aware action button on the rides page.
+   *
+   * `kind` distinguishes the backend endpoint each label maps to:
+   *   - 'accept'   → POST /trips/{id}/driver-accept (CONFIRMED → ASSIGNED)
+   *   - 'progress' → PATCH /trips/{id}/driver-progress for the rest
+   */
+  nextAction(): { label: string; nextStatus: string; kind: 'accept' | 'progress'; confirm?: boolean } | null {
+    const status = (this.lastTrip?.['status'] as string | undefined) || null;
+    switch (status) {
+      case 'CONFIRMED':
+        return { label: 'Accept ride', nextStatus: 'ASSIGNED', kind: 'accept' };
+      case 'ASSIGNED':
+        return { label: 'Start to pickup', nextStatus: 'EN_ROUTE_PICKUP', kind: 'progress' };
+      case 'EN_ROUTE_PICKUP':
+        return { label: "I've arrived at pickup", nextStatus: 'ARRIVED_PICKUP', kind: 'progress' };
+      case 'ARRIVED_PICKUP':
+        return { label: 'Start trip', nextStatus: 'EN_ROUTE_DROP', kind: 'progress' };
+      case 'EN_ROUTE_DROP':
+        return { label: "I've arrived at drop", nextStatus: 'ARRIVED_DROP', kind: 'progress' };
+      case 'ARRIVED_DROP':
+        return { label: 'Complete ride', nextStatus: 'COMPLETED', kind: 'progress', confirm: true };
+      default:
+        // NEGOTIATION is handled by the negotiation card (Accept/Counter
+        // buttons), not by the in-trip CTA, so we return null here.
+        return null;
+    }
+  }
+
+  async advance(): Promise<void> {
+    const id = (this.lastTrip?.['id'] as number | undefined) ?? this.tripId;
+    const action = this.nextAction();
+    if (!id || !action || this.progressBusy) return;
+
+    if (action.confirm) {
+      const ok = await this.alertCtrl.create({
+        header: 'End the ride?',
+        message: 'This will calculate the final fare and notify the customer to pay.',
+        buttons: [
+          { text: 'Not yet', role: 'cancel' },
+          { text: 'End ride', role: 'destructive', handler: () => this.doAdvance(id, action.nextStatus, action.kind) },
+        ],
+      });
+      await ok.present();
+      return;
+    }
+    void this.doAdvance(id, action.nextStatus, action.kind);
+  }
+
+  private async doAdvance(tripId: number, nextStatus: string, kind: 'accept' | 'progress'): Promise<void> {
+    this.progressBusy = true;
+    this.error = null;
+    this.message = null;
+
+    // CONFIRMED → ASSIGNED uses /driver-accept (separate endpoint that also
+    // kicks off the location stream); everything else uses /driver-progress.
+    if (kind === 'accept') {
+      this.api
+        .post<{ trip: Record<string, unknown> }>(`/trips/${tripId}/driver-accept`, {})
+        .subscribe({
+          next: (res) => {
+            this.lastTrip = res.trip || this.lastTrip;
+            this.startTripStreams(tripId);
+          },
+          error: (err) => {
+            this.error = err?.error?.message || 'Could not accept ride.';
+          },
+          complete: () => {
+            this.progressBusy = false;
+          },
+        });
+      return;
+    }
+
+    const location = await this.getCurrentPosition();
+    const body: Record<string, unknown> = { status: nextStatus };
+    if (location) body['location'] = location;
+
+    this.api
+      .patch<{ trip: Record<string, unknown>; breakdown?: Record<string, unknown> }>(
+        `/trips/${tripId}/driver-progress`,
+        body,
+      )
+      .subscribe({
+        next: (res) => {
+          this.lastTrip = res.trip || this.lastTrip;
+          if (res.breakdown) {
+            this.completionBreakdown = res.breakdown;
+          }
+          if (nextStatus === 'COMPLETED') {
+            void this.bgLocation.stop();
+            this.onTripCompleted();
+          }
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not advance trip.';
+        },
+        complete: () => {
+          this.progressBusy = false;
+        },
+      });
+  }
+
+  /**
+   * Open the trip summary modal, then clear active-trip state on dismiss so
+   * the rides list refreshes and the driver can pick up the next ride.
+   */
+  protected async onTripCompleted(): Promise<void> {
+    const modal = await this.modalCtrl.create({
+      component: TripSummaryModal,
+      componentProps: {
+        trip: this.lastTrip,
+        breakdown: this.completionBreakdown,
+      },
+      breakpoints: [0, 0.7, 1],
+      initialBreakpoint: 0.7,
+    });
+    await modal.present();
+    await modal.onDidDismiss();
+
+    this.tripId = null;
+    this.lastTrip = null;
+    this.negotiation = null;
+    this.completionBreakdown = null;
+    this.message = null;
+    this.refreshAvailable();
+  }
+
+  pickAvailable(t: AvailableTrip, action: 'accept' | 'counter'): void {
+    this.tripId = t.id;
+    this.error = null;
+    this.message = null;
+    if (action === 'accept') {
+      // Accept the customer's offer at face value.
+      this.counterAmount = t.customer_offer ?? t.estimated_fare ?? 0;
+      this.acceptCustomerOffer();
+    } else {
+      // Pre-fill counter at +10 over what the customer offered.
+      const base = t.customer_offer ?? t.estimated_fare ?? 100;
+      this.counterAmount = Math.round((base + 10) / 5) * 5;
+    }
+  }
+
+  /**
+   * Statuses where the server accepts `POST /trips/{id}/location` pings. Must
+   * stay in sync with backend `Trip::ACTIVE_DRIVER_STATUSES` — any wider list
+   * here causes a 409 loop because the server rejects the writes.
+   */
+  private readonly LOCATION_STREAM_STATUSES = [
+    'ASSIGNED',
+    'EN_ROUTE_PICKUP',
+    'ARRIVED_PICKUP',
+    'EN_ROUTE_DROP',
+    'ARRIVED_DROP',
+  ];
 
   loadTrip(): void {
     const id = this.validId();
@@ -52,6 +474,22 @@ export class RidesPage {
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+          // If we just loaded an in-flight trip (e.g. after a reload mid-ride),
+          // bring up the live map and re-subscribe to streams.
+          const status = this.lastTrip?.['status'] as string | undefined;
+          if (status && status !== 'COMPLETED' && status !== 'CANCELLED') {
+            void this.initLiveMap();
+            this.startSelfPositionWatch();
+            // Only start the location-ping stream when the server will accept
+            // the writes. CONFIRMED / NEGOTIATION are not in
+            // ACTIVE_DRIVER_STATUSES — pinging during those states returns 409.
+            if (
+              this.lastTrip?.['driver_id'] &&
+              this.LOCATION_STREAM_STATUSES.includes(status)
+            ) {
+              this.startTripStreams(id);
+            }
+          }
         },
         error: (err) => {
           this.error = err?.error?.message || 'Could not load trip.';
@@ -137,6 +575,7 @@ export class RidesPage {
       next: (res) => {
         this.lastTrip = res.trip || null;
         this.message = 'Ride accepted';
+        this.startTripStreams(id);
       },
       error: (err) => {
         this.error = err?.error?.message || 'Accept failed';
@@ -146,6 +585,243 @@ export class RidesPage {
         this.busy = false;
       },
     });
+  }
+
+  private startTripStreams(tripId: number): void {
+    void this.bgLocation.start(tripId);
+
+    if (this.unsubscribeStatus) this.unsubscribeStatus();
+    this.unsubscribeStatus = this.realtime.subscribeTripStatus(
+      tripId,
+      (payload) => {
+        if (this.lastTrip) this.lastTrip['status'] = payload.status;
+        if (payload.status === 'COMPLETED' || payload.status === 'CANCELLED') {
+          void this.bgLocation.stop();
+          this.stopSelfPositionWatch();
+        }
+      },
+      (payload) => this.onCustomerLocation(payload)
+    );
+
+    void this.initLiveMap();
+    this.startSelfPositionWatch();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Live trip map
+  // ─────────────────────────────────────────────────────────────────
+
+  private async initLiveMap(): Promise<void> {
+    if (this.mapReady) {
+      this.refreshTripMarkers();
+      return;
+    }
+    try {
+      await this.mapsLoader.ensureLoaded();
+      const div = document.getElementById('driver-trip-map');
+      if (!div) return;
+      this.map = new google.maps.Map(div, {
+        center: { lat: 28.6139, lng: 77.209 },
+        zoom: 14,
+        disableDefaultUI: true,
+        // Required for AdvancedMarkerElement (the replacement for the
+        // deprecated google.maps.Marker class). Use a real Cloud Map ID in
+        // production for styling/POI customisation.
+        mapId: 'DEMO_MAP_ID',
+      });
+      this.mapReady = true;
+      this.refreshTripMarkers();
+    } catch {
+      // Maps may be unavailable (no key, offline) — page still works without it.
+    }
+  }
+
+  private refreshTripMarkers(): void {
+    if (!this.map || !this.lastTrip) return;
+    const pickup = coordsFromTrip(this.lastTrip, 'pickup_lat', 'pickup_lng');
+    const drop = coordsFromTrip(this.lastTrip, 'drop_lat', 'drop_lng');
+
+    if (pickup) {
+      if (!this.pickupMarker) {
+        this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: pickup,
+          map: this.map,
+          title: 'Pickup',
+          content: this.buildPin('P', '#1f8b4c'),
+        });
+      } else {
+        this.pickupMarker.position = pickup;
+      }
+    }
+    if (drop) {
+      if (!this.dropMarker) {
+        this.dropMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: drop,
+          map: this.map,
+          title: 'Drop',
+          content: this.buildPin('D', '#c0392b'),
+        });
+      } else {
+        this.dropMarker.position = drop;
+      }
+    }
+    this.fitMap();
+  }
+
+  private fitMap(): void {
+    if (!this.map) return;
+    const bounds = new google.maps.LatLngBounds();
+    let any = false;
+    for (const m of [this.pickupMarker, this.dropMarker, this.customerMarker, this.selfMarker]) {
+      if (m && m.position) {
+        bounds.extend(m.position as any);
+        any = true;
+      }
+    }
+    if (any) this.map.fitBounds(bounds, 80);
+  }
+
+  private onCustomerLocation(p: TripCustomerLocationPayload): void {
+    const loc = p.location;
+    if (loc?.lat == null || loc?.lng == null) return;
+    const pos = { lat: Number(loc.lat), lng: Number(loc.lng) };
+    this.customerPosition = pos;
+    if (!this.map) return;
+    if (!this.customerMarker) {
+      this.customerMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: pos,
+        map: this.map,
+        title: 'Customer',
+        content: this.buildDot('#1e6cf0'),
+        zIndex: 3,
+      });
+      this.fitMap();
+    } else {
+      this.customerMarker.position = pos;
+    }
+  }
+
+  private startSelfPositionWatch(): void {
+    if (this.selfWatchId !== null) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    this.selfWatchId = navigator.geolocation.watchPosition(
+      (pos) => this.onSelfPosition(pos),
+      () => this.stopSelfPositionWatch(),
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 }
+    );
+  }
+
+  private stopSelfPositionWatch(): void {
+    if (this.selfWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(this.selfWatchId);
+    }
+    this.selfWatchId = null;
+  }
+
+  private onSelfPosition(pos: GeolocationPosition): void {
+    if (!this.map) return;
+    const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    if (!this.selfMarker) {
+      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: p,
+        map: this.map,
+        title: 'You',
+        content: this.buildArrow(pos.coords.heading ?? 0, '#1f8b4c'),
+        zIndex: 2,
+      });
+      this.fitMap();
+    } else {
+      this.selfMarker.position = p;
+      // Re-spin the arrow if a fresh heading came in. Stable marker DOM
+      // means we only rotate the inner element, not rebuild the marker.
+      const arrow = (this.selfMarker.content as HTMLElement | null)?.firstElementChild as HTMLElement | null;
+      if (arrow && pos.coords.heading != null) {
+        arrow.style.transform = `rotate(${pos.coords.heading}deg)`;
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Marker content builders for AdvancedMarkerElement
+  // ─────────────────────────────────────────────────────────────────
+
+  private buildPin(letter: string, color: string): HTMLElement {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:28px',
+      'height:36px',
+      'display:flex',
+      'align-items:flex-start',
+      'justify-content:center',
+      'padding-top:4px',
+      'font-weight:700',
+      'font-size:13px',
+      'color:#fff',
+      `background:${color}`,
+      'border-radius:50% 50% 50% 0',
+      'transform:rotate(-45deg) translate(0,-14px)',
+      'border:2px solid #fff',
+      'box-shadow:0 1px 4px rgba(0,0,0,0.4)',
+    ].join(';');
+    const inner = document.createElement('span');
+    inner.textContent = letter;
+    inner.style.cssText = 'transform:rotate(45deg);';
+    el.appendChild(inner);
+    return el;
+  }
+
+  private buildDot(color: string): HTMLElement {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:16px',
+      'height:16px',
+      'border-radius:50%',
+      `background:${color}`,
+      'border:2px solid #fff',
+      'box-shadow:0 1px 4px rgba(0,0,0,0.4)',
+    ].join(';');
+    return el;
+  }
+
+  private buildArrow(bearingDeg: number, color: string): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:22px;height:22px;display:flex;align-items:center;justify-content:center;';
+    const arrow = document.createElement('div');
+    arrow.style.cssText = [
+      `transform:rotate(${bearingDeg}deg)`,
+      'width:0',
+      'height:0',
+      'border-left:6px solid transparent',
+      'border-right:6px solid transparent',
+      `border-bottom:14px solid ${color}`,
+      'filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))',
+    ].join(';');
+    wrap.appendChild(arrow);
+    return wrap;
+  }
+
+  markCustomerNoShow(): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id) return;
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    this.api
+      .post<{ trip?: Record<string, unknown>; fee?: number }>(`/trips/${id}/no-show`, { role: 'customer' })
+      .subscribe({
+        next: (res) => {
+          this.lastTrip = res.trip || null;
+          const fee = res.fee ?? 0;
+          this.message = `Trip cancelled (no-show). Cancellation fee ₹${fee}`;
+          void this.bgLocation.stop();
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not mark no-show';
+        },
+        complete: () => {
+          this.busy = false;
+        },
+      });
   }
 
   reject(): void {
