@@ -1,0 +1,104 @@
+/* ============================================================
+   TaxiMode design tokens
+   Source of truth: TAXIMODE_DESIGN_SYSTEM.md
+   ============================================================ */
+
+:root {
+  /* Brand */
+  --tm-green: #22C55E;
+  --tm-green-deep: #16A34A;
+  --tm-green-soft: #DCFCE7;
+  --tm-green-tint: #ECFDF3;
+  --tm-ink: #0F1419;
+  --tm-ink-2: #1B2128;
+  --tm-ink-3: #2A323C;
+
+  /* Surfaces & text */
+  --tm-surface: #FFFFFF;
+  --tm-canvas: #F4F6FA;
+  --tm-canvas-2: #EAEEF4;
+  --tm-text: #0F1419;
+  --tm-text-muted: #6B7785;
+  --tm-text-soft: #94A0AD;
+  --tm-line: #ECEFF3;
+  --tm-line-2: #E2E6EC;
+
+  /* Status */
+  --tm-success: #22C55E;
+  --tm-success-bg: #ECFDF3;
+  --tm-success-fg: #16A34A;
+  --tm-warning: #F59E0B;
+  --tm-warning-bg: #FEF3C7;
+  --tm-warning-fg: #92400E;
+  --tm-danger: #EF4444;
+  --tm-danger-bg: #FEE2E2;
+  --tm-danger-fg: #B91C1C;
+  --tm-info: #3B82F6;
+  --tm-info-bg: #DBEAFE;
+  --tm-info-fg: #1E40AF;
+
+  /* Shape */
+  --tm-radius-xs: 8px;
+  --tm-radius-sm: 10px;
+  --tm-radius-md: 14px;
+  --tm-radius-lg: 22px;
+  --tm-radius-xl: 28px;
+  --tm-radius-pill: 999px;
+
+  /* Elevation */
+  --tm-shadow-sm:   0 1px 2px rgba(15,20,25,0.05);
+  --tm-shadow-card: 0 1px 0 rgba(15,20,25,0.04), 0 8px 24px -16px rgba(15,20,25,0.12);
+  --tm-shadow-pop:  0 12px 40px -16px rgba(15,20,25,0.25);
+  --tm-shadow-ring: 0 0 0 4px var(--tm-green-soft);
+
+  /* Spacing (4px base scale) */
+  --tm-space-1: 4px;
+  --tm-space-2: 8px;
+  --tm-space-3: 12px;
+  --tm-space-4: 16px;
+  --tm-space-5: 20px;
+  --tm-space-6: 24px;
+  --tm-space-8: 32px;
+  --tm-space-10: 40px;
+  --tm-space-12: 48px;
+  --tm-space-16: 64px;
+
+  /* Typography */
+  --tm-font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --tm-font-body:    'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --tm-font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* Type scale */
+  --tm-fs-display: 48px;
+  --tm-fs-h1: 32px;
+  --tm-fs-h2: 22px;
+  --tm-fs-h3: 16px;
+  --tm-fs-body: 14px;
+  --tm-fs-small: 12px;
+  --tm-fs-overline: 11px;
+
+  /* Motion */
+  --tm-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --tm-duration-fast: 120ms;
+  --tm-duration-base: 200ms;
+  --tm-duration-slow: 320ms;
+
+  /* Layout */
+  --tm-sidebar-w: 264px;
+  --tm-sidebar-w-collapsed: 76px;
+  --tm-topbar-h: 72px;
+  --tm-content-max: 1400px;
+  --tm-mobile-breakpoint: 880px;
+}
+
+/* Dark mode — opt-in via [data-theme="dark"] on <html> or <body> */
+[data-theme="dark"] {
+  --tm-surface: #131820;
+  --tm-canvas: #0A0E12;
+  --tm-canvas-2: #131820;
+  --tm-text: #FFFFFF;
+  --tm-text-muted: #94A0AD;
+  --tm-text-soft: #6B7785;
+  --tm-line: #1F262E;
+  --tm-line-2: #2A323C;
+}
