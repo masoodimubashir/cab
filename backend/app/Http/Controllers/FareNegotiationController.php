@@ -4,12 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Events\FareNegotiationLocked;
 use App\Events\FareNegotiationOfferAdded;
+use App\Jobs\DispatchHopJob;
+use App\Jobs\SendDispatchNotificationsJob;
+use App\Models\DispatcherSetting;
 use App\Models\Driver;
+use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
 use App\Models\FareNegotiationOffer;
 use App\Models\Trip;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
+use App\Services\TripAssignmentService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
 
@@ -44,12 +50,8 @@ class FareNegotiationController extends Controller
         ]);
     }
 
-    public function customerOffer(Request $request, Trip $trip, NotificationService $notificationService)
+    public function customerOffer(Request $request, Trip $trip)
     {
-        $data = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0'],
-        ]);
-
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
@@ -58,6 +60,15 @@ class FareNegotiationController extends Controller
         if ($trip->status !== 'NEGOTIATION') {
             return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
         }
+
+        // Fare floor: at least ₹50, and at least 40% of the estimated fare.
+        // Prevents customers from spamming ₹1 offers.
+        $estimated = (float) ($trip->estimated_fare ?? 0);
+        $minAmount = max(50.0, round($estimated * 0.4, 2));
+
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', "min:{$minAmount}"],
+        ]);
 
         $negotiation = FareNegotiation::query()->firstOrCreate(
             ['trip_id' => $trip->id],
@@ -87,30 +98,18 @@ class FareNegotiationController extends Controller
             offer: $offer->fresh(),
         ))->toOthers();
 
-        // Dispatch FCM to all online + approved drivers who accept this payment method.
-        // No-op until device tokens are registered (web VAPID / native plugin).
-        $eligibleDriverIds = Driver::query()
-            ->where('approval_status', 'approved')
-            ->where('is_online', true)
-            ->pluck('user_id');
+        // Hand off to the expanding-ring auto-dispatcher. It reads the per-(city, kind)
+        // dispatcher_settings row for hop interval / radius / max hops, broadcasts to
+        // drivers in the current ring, then re-queues itself until acceptance or
+        // exhaustion. Falls back gracefully when no settings row exists.
+        $autoOn = true;
+        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->product_kind ?? 'local');
+        if ($settings && !$settings->automatic_dispatcher_type) {
+            $autoOn = false; // operator must dispatch manually
+        }
 
-        if ($eligibleDriverIds->isNotEmpty()) {
-            $drivers = User::query()->whereIn('id', $eligibleDriverIds)->get();
-            foreach ($drivers as $driver) {
-                if ($trip->payment_method && !$driver->acceptsPaymentMethod($trip->payment_method)) {
-                    continue;
-                }
-                $notificationService->sendToUser(
-                    $driver,
-                    'New ride request',
-                    'Pickup: ' . ($trip->pickup_address ?? 'nearby') . ' — \u{20B9}' . number_format($amount, 0),
-                    [
-                        'type' => 'new_trip',
-                        'trip_id' => $trip->id,
-                        'amount' => $amount,
-                    ]
-                );
-            }
+        if ($autoOn) {
+            DispatchHopJob::dispatch($trip->id, $amount, 1);
         }
 
         return response()->json([
@@ -119,7 +118,61 @@ class FareNegotiationController extends Controller
         ]);
     }
 
-    public function driverAction(Request $request, Trip $trip)
+    /**
+     * Filter a list of driver user IDs down to those whose latest location is
+     * within radiusKm of the pickup AND was recorded in the last freshnessMinutes.
+     * Drivers with no location row, or with a stale row, are excluded.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $driverUserIds
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function filterByPickupRadius(
+        \Illuminate\Support\Collection $driverUserIds,
+        float $pickupLat,
+        float $pickupLng,
+        float $radiusKm = 8.0,
+        int $freshnessMinutes = 5,
+    ): \Illuminate\Support\Collection {
+        if ($driverUserIds->isEmpty()) {
+            return $driverUserIds;
+        }
+
+        // Latest location per driver, restricted to the eligible set and a freshness window.
+        $cutoff = now()->subMinutes($freshnessMinutes);
+
+        $latestPerDriver = DriverLocation::query()
+            ->select('driver_id', DB::raw('MAX(recorded_at) as max_recorded_at'))
+            ->whereIn('driver_id', $driverUserIds)
+            ->where('recorded_at', '>=', $cutoff)
+            ->groupBy('driver_id');
+
+        $locations = DriverLocation::query()
+            ->joinSub($latestPerDriver, 'latest', function ($join) {
+                $join->on('driver_locations.driver_id', '=', 'latest.driver_id')
+                     ->on('driver_locations.recorded_at', '=', 'latest.max_recorded_at');
+            })
+            ->get(['driver_locations.driver_id', 'driver_locations.lat', 'driver_locations.lng']);
+
+        return $locations
+            ->filter(function ($row) use ($pickupLat, $pickupLng, $radiusKm) {
+                return $this->haversineKm($pickupLat, $pickupLng, (float) $row->lat, (float) $row->lng) <= $radiusKm;
+            })
+            ->pluck('driver_id')
+            ->values();
+    }
+
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthKm = 6371.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        return $earthKm * $c;
+    }
+
+    public function driverAction(Request $request, Trip $trip, TripAssignmentService $tripAssignmentService)
     {
         $data = $request->validate([
             'action' => ['required', 'in:ACCEPT,COUNTER'],
@@ -127,19 +180,18 @@ class FareNegotiationController extends Controller
         ]);
 
         $user = $request->user();
-        // During trip negotiation, the driver is allowed to join the negotiation
-        // even if the trip doesn't have a driver_id yet. First negotiation action
-        // will “claim” the trip for this driver.
-        if ($trip->driver_id === null) {
-            $trip->driver_id = $user->id;
-            $trip->save();
-        } elseif ($trip->driver_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
 
-        if ($trip->status !== 'NEGOTIATION') {
+        // Atomically claim the trip for this driver. Returns null if the trip is
+        // already claimed by another driver, no longer in NEGOTIATION, or gone.
+        $claimed = $tripAssignmentService->claim($trip->id, $user->id);
+        if (!$claimed) {
+            $fresh = $trip->fresh();
+            if ($fresh && $fresh->driver_id !== null && $fresh->driver_id !== $user->id) {
+                return response()->json(['message' => 'Trip already taken.'], 409);
+            }
             return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
         }
+        $trip = $claimed;
 
         $negotiation = FareNegotiation::query()->firstOrCreate(
             ['trip_id' => $trip->id],
@@ -186,6 +238,19 @@ class FareNegotiationController extends Controller
                 offer: $offer->fresh(),
             ))->toOthers();
 
+            // Manual-dispatch trips have no live customer to call
+            // /customer-confirm, so the dispatcher's chosen fare is the
+            // confirmation. Push the trip straight to CONFIRMED here so the
+            // driver can immediately call /driver-accept to enter ASSIGNED.
+            if ($trip->is_manual_dispatch) {
+                $confirmed = $tripAssignmentService->confirm($trip->id, (int) $offer->id, $amount);
+                if ($confirmed) {
+                    $negotiation->status = 'LOCKED';
+                    $negotiation->locked_at = now();
+                    $negotiation->save();
+                }
+            }
+
             return response()->json([
                 'negotiation' => $negotiation->fresh('offers'),
             ]);
@@ -226,11 +291,12 @@ class FareNegotiationController extends Controller
     public function customerConfirm(
         Request $request,
         Trip $trip,
-        TripStateMachineService $tripStateMachineService,
+        TripAssignmentService $tripAssignmentService,
         NotificationService $notificationService
     ) {
         $data = $request->validate([
             'final_fare' => ['required', 'numeric', 'min:0'],
+            'accepted_offer_id' => ['required', 'integer', 'exists:fare_negotiation_offers,id'],
         ]);
 
         $user = $request->user();
@@ -246,52 +312,50 @@ class FareNegotiationController extends Controller
             ->where('trip_id', $trip->id)
             ->first();
 
-        if (!$negotiation || !$negotiation->final_amount) {
+        if (!$negotiation) {
             return response()->json(['message' => 'Nothing to confirm yet.'], 409);
         }
 
         $finalFare = (float) $data['final_fare'];
-        if (abs($finalFare - (float) $negotiation->final_amount) > 0.01) {
-            return response()->json(['message' => 'final_fare must match the negotiated final amount.'], 422);
+        $acceptedOffer = $negotiation->offers()
+            ->where('id', $data['accepted_offer_id'])
+            ->where('from_role', 'driver')
+            ->first();
+
+        if (!$acceptedOffer || !$acceptedOffer->from_user_id) {
+            return response()->json(['message' => 'Selected offer was not found on this trip.'], 422);
         }
 
-        $tripStateMachineService->transition($trip, 'CONFIRMED', [
-            'final_fare' => $finalFare,
-        ]);
+        if (abs($finalFare - (float) $acceptedOffer->amount) > 0.01) {
+            return response()->json(['message' => 'final_fare must match the selected offer amount.'], 422);
+        }
+
+        $confirmed = $tripAssignmentService->confirm($trip->id, (int) $acceptedOffer->id, $finalFare);
+        if (!$confirmed) {
+            return response()->json(['message' => 'Trip could not be confirmed (already taken or no longer in negotiation).'], 409);
+        }
 
         $negotiation->final_amount = $finalFare;
         $negotiation->status = 'LOCKED';
         $negotiation->locked_at = now();
         $negotiation->save();
 
-        broadcast(new FareNegotiationLocked(
-            tripId: $trip->id,
-            finalFare: $finalFare,
-        ))->toOthers();
-
         // FCM: notify the driver whose counter-offer was accepted.
-        $acceptedDriverOffer = $negotiation->offers()
-            ->where('from_role', 'driver')
-            ->orderByDesc('created_at')
-            ->first();
-
-        if ($acceptedDriverOffer && $acceptedDriverOffer->from_user_id) {
-            $driver = User::query()->find($acceptedDriverOffer->from_user_id);
-            if ($driver) {
-                $notificationService->sendToUser(
-                    $driver,
-                    'You got the trip',
-                    "Trip #{$trip->id} confirmed at \u{20B9}" . number_format($finalFare, 0),
-                    [
-                        'type' => 'trip_confirmed',
-                        'trip_id' => $trip->id,
-                        'final_fare' => $finalFare,
-                    ]
-                );
-            }
+        $driver = User::query()->find($acceptedOffer->from_user_id);
+        if ($driver) {
+            $notificationService->sendToUser(
+                $driver,
+                'You got the trip',
+                "Trip #{$confirmed->id} confirmed at \u{20B9}" . number_format($finalFare, 0),
+                [
+                    'type' => 'trip_confirmed',
+                    'trip_id' => $confirmed->id,
+                    'final_fare' => $finalFare,
+                ]
+            );
         }
 
-        return response()->json(['trip' => $trip->fresh()]);
+        return response()->json(['trip' => $confirmed->fresh()]);
     }
 }
 

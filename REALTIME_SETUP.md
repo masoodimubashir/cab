@@ -217,3 +217,22 @@ Same flow — log in, allow notifications, expect a `device_tokens` row with `pl
 - `@capacitor-community/background-geolocation` (driver-mobile)
 - `@capacitor/geolocation` (driver-mobile, web fallback)
 - `pusher-js` (driver-mobile — was already in customer-mobile)
+
+---
+
+## Web vs native location streaming (P0 caveat)
+
+`driver-mobile/src/app/core/background-location.service.ts` falls back to
+`@capacitor/geolocation`'s `watchPosition` on the web target. **This is
+foreground-only.** Browsers throttle or suspend `watchPosition` when:
+
+- The tab is backgrounded, the OS sleeps, or the screen locks.
+- The user switches to another app (mobile browsers).
+
+For dev / demos this is fine. **Production drivers must run the Capacitor
+native build** (Android / iOS), which uses
+`@capacitor-community/background-geolocation` and continues streaming with a
+foreground-service notification.
+
+If you're testing in a browser and the customer-side map stops updating,
+check whether the driver tab is still focused before debugging the realtime stack.

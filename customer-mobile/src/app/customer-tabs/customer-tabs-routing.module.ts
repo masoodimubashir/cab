@@ -18,6 +18,26 @@ const routes: Routes = [
           import('../pages/customer-trips/customer-trips.module').then((m) => m.CustomerTripsPageModule),
       },
       {
+        path: 'more',
+        loadChildren: () =>
+          import('../pages/more/more.module').then((m) => m.CustomerMorePageModule),
+      },
+      {
+        path: 'profile',
+        loadChildren: () =>
+          import('../pages/profile/profile.module').then((m) => m.CustomerProfilePageModule),
+      },
+      {
+        path: 'saved-locations',
+        loadChildren: () =>
+          import('../pages/saved-locations/saved-locations.module').then((m) => m.SavedLocationsPageModule),
+      },
+      {
+        path: 'emergency-contacts',
+        loadChildren: () =>
+          import('../pages/emergency-contacts/emergency-contacts.module').then((m) => m.CustomerEmergencyContactsPageModule),
+      },
+      {
         path: 'trip/:tripId',
         loadChildren: () =>
           import('../pages/trip-active/trip-active.module').then((m) => m.TripActivePageModule),

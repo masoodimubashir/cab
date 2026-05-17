@@ -4,9 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { IonicModule } from '@ionic/angular';
 import { RidesPage } from './rides.page';
 import { RidesPageRoutingModule } from './rides-routing.module';
+import { TripSummaryModal } from './trip-summary.modal';
 
 @NgModule({
   imports: [CommonModule, FormsModule, IonicModule, RidesPageRoutingModule],
-  declarations: [RidesPage],
+  declarations: [RidesPage, TripSummaryModal],
 })
 export class RidesPageModule {}
