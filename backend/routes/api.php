@@ -98,6 +98,7 @@ Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middle
 
 // Public lookup endpoints for the mobile booking UI.
 Route::get('/pricing/cities', [PricingController::class, 'cities']);
+Route::get('/pricing/cities/{city}/products', [PricingController::class, 'products']);
 Route::get('/pricing/ride-types', [PricingController::class, 'rideTypes']);
 Route::get('/pricing/vehicle-types', [PricingController::class, 'vehicleTypes']);
 

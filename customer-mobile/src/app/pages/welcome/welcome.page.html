@@ -1,0 +1,50 @@
+<ion-content class="ion-padding" [fullscreen]="true">
+  <!-- Header / Logo Area -->
+  <div class="logo-header">
+    <div class="logo-mark">
+      <div class="logo-dots"></div>
+      <div class="logo-arrow"></div>
+    </div>
+    <div class="logo-text">
+      <span class="text-dark">Dream</span><span class="text-primary">Cabs</span>
+    </div>
+  </div>
+
+  <!-- Illustration Area (Placeholder for the vector graphic) -->
+  <div class="illustration-container">
+    <img src="assets/images/welcome-illustration.svg" alt="Welcome to DreamCabs" (error)="useFallbackImage($event)" />
+  </div>
+
+  <!-- Main Content -->
+  <div class="content-wrapper">
+    <h1 class="welcome-title">Welcome to Dream<span class="text-primary">Cabs</span></h1>
+
+    <div class="actions">
+      <!-- Main Phone Login Button -->
+      <ion-button expand="block" color="secondary" class="action-btn main-btn" (click)="goToLogin()">
+        <ion-icon slot="start" name="call"></ion-icon>
+        Continue with Mobile Number
+        <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
+      </ion-button>
+
+      <!-- Social Logins -->
+      <div class="social-row">
+        <ion-button expand="block" color="secondary" class="action-btn social-btn" (click)="loginGoogle()">
+          <ion-icon slot="start" name="logo-google" style="color: #ea4335"></ion-icon>
+          Google
+        </ion-button>
+        
+        <ion-button expand="block" color="secondary" class="action-btn social-btn" (click)="loginFacebook()">
+          <ion-icon slot="start" name="logo-facebook" style="color: #1877f2"></ion-icon>
+          Facebook
+        </ion-button>
+      </div>
+    </div>
+
+    <!-- Terms and Privacy -->
+    <p class="terms-text">
+      By continuing you agree that you have read and accept our <br>
+      <a (click)="goToTerms()">Term & Conditions</a> and <a (click)="goToPrivacy()">Privacy Policy</a>
+    </p>
+  </div>
+</ion-content>

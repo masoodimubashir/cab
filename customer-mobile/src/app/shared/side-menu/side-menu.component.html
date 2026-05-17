@@ -1,35 +1,56 @@
 <ion-menu side="start" menuId="customer-menu" contentId="main-content">
-  <ion-header>
-    <ion-toolbar>
-      <ion-title>Account</ion-title>
-    </ion-toolbar>
-  </ion-header>
-  <ion-content>
-    <ion-list lines="full">
-      <ion-item *ngIf="auth.getUser() as u">
-        <ion-avatar slot="start" *ngIf="u.avatar_path">
-          <img [src]="u.avatar_path" alt="avatar" />
-        </ion-avatar>
-        <ion-label>
-          <h2>{{ u.name || 'Guest' }}</h2>
-          <p>{{ u.phone || u.email }}</p>
-        </ion-label>
+  <ion-content class="menu-content">
+    
+    <!-- ============ PREMIUM HEADER PROFILE BLOCK ============ -->
+    <div class="menu-profile-card" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
+      <div class="profile-avatar-wrap">
+        <div class="avatar-circle">
+          <img *ngIf="u.avatar_path" [src]="u.avatar_path" alt="avatar" />
+          <ion-icon *ngIf="!u.avatar_path" name="person" aria-hidden="true"></ion-icon>
+        </div>
+      </div>
+      <div class="profile-details">
+        <span class="hello-text">Hello,</span>
+        <h2 class="name-text">{{ u.name || 'Guest' }}</h2>
+        <span class="edit-link">Edit account</span>
+      </div>
+    </div>
+
+    <!-- ============ NAVIGATION LINKS LIST ============ -->
+    <ion-list lines="none" class="menu-items-list">
+      
+      <!-- Home Option -->
+      <ion-item button (click)="go('/customer-tabs/book')" class="menu-item">
+        <div class="icon-box" slot="start">
+          <ion-icon name="home" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Home</ion-label>
       </ion-item>
 
-      <ion-item button (click)="go('/customer-tabs/my-trips')">
-        <ion-icon name="receipt-outline" slot="start" aria-hidden="true"></ion-icon>
-        <ion-label>My orders</ion-label>
+      <!-- My orders Option -->
+      <ion-item button (click)="go('/customer-tabs/my-trips')" class="menu-item">
+        <div class="icon-box" slot="start">
+          <ion-icon name="receipt" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">My orders</ion-label>
       </ion-item>
 
-      <ion-item button (click)="signOut()">
-        <ion-icon name="log-out-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
-        <ion-label color="danger">Sign out</ion-label>
+      <!-- Delete account Option -->
+      <ion-item button (click)="confirmDeleteAccount()" class="menu-item danger-item">
+        <div class="icon-box" slot="start">
+          <ion-icon name="trash" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Delete account</ion-label>
       </ion-item>
 
-      <ion-item button (click)="confirmDeleteAccount()">
-        <ion-icon name="trash-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
-        <ion-label color="danger">Delete account</ion-label>
+      <!-- Sign out Option -->
+      <ion-item button (click)="signOut()" class="menu-item danger-item">
+        <div class="icon-box" slot="start">
+          <ion-icon name="log-out" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Sign out</ion-label>
       </ion-item>
+
     </ion-list>
   </ion-content>
 </ion-menu>

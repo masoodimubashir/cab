@@ -1,2 +1,32 @@
-// For information on how to create your own theme, please refer to:
-// https://ionicframework.com/docs/theming/
+// Ionic Global Variables
+:root {
+  /** Primary Color: The main brand green (from TaxiMode logo) **/
+  --ion-color-primary: #12B35B;
+  --ion-color-primary-rgb: 18,179,91;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255,255,255;
+  --ion-color-primary-shade: #109e50;
+  --ion-color-primary-tint: #2abb6b;
+
+  /** Secondary Color: The dark navy from the buttons and "Taxi" text **/
+  --ion-color-secondary: #0D1B2A;
+  --ion-color-secondary-rgb: 13,27,42;
+  --ion-color-secondary-contrast: #ffffff;
+  --ion-color-secondary-contrast-rgb: 255,255,255;
+  --ion-color-secondary-shade: #0b1825;
+  --ion-color-secondary-tint: #253240;
+
+  /** Backgrounds & Surfaces **/
+  --ion-background-color: #ffffff;
+  --ion-surface-color: #ffffff;
+
+  /** Typography Colors **/
+  --text-main: #0D1B2A;
+  --text-muted: #6C757D;
+
+  /** Border Radii **/
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+}

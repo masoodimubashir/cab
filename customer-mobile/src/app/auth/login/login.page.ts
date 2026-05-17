@@ -26,7 +26,7 @@ type AuthExchangeResponse = {
  *   otp     → enter SMS code
  *   info    → first-time signup completes name + email + photo
  */
-type Step = 'phone' | 'perms' | 'otp' | 'info';
+type Step = 'phone' | 'perms' | 'otp' | 'info' | 'success';
 
 const RESEND_SECONDS = 60;
 
@@ -40,6 +40,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   step: Step = 'phone';
   phone = '';
   otp = '';
+  otpLength = 6; // Dynamic OTP length matching backend/Firebase configuration
+  otpInputFocused = false;
 
   // Country prefix (default India). The picker on the phone-entry step writes
   // here; sendOtp passes country.code to normalizePhoneToE164 as the default.
@@ -119,7 +121,11 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   get otpReady(): boolean {
-    return this.otp.trim().length >= 4;
+    return this.otp.trim().length >= this.otpLength;
+  }
+
+  get otpCells(): number[] {
+    return Array.from({ length: this.otpLength }, (_, i) => i);
   }
 
   get resendDisplay(): string {
@@ -127,7 +133,50 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     return `Resend code 00:${s.toString().padStart(2, '0')}`;
   }
 
+  isButtonDisabled(): boolean {
+    if (this.step === 'phone') {
+      return !this.firebaseReady || !this.phone || this.phone.trim().length < 8;
+    }
+    if (this.step === 'perms') {
+      return false;
+    }
+    if (this.step === 'otp') {
+      return !this.otpReady;
+    }
+    if (this.step === 'info') {
+      return !this.infoName.trim() || !this.infoEmail.trim();
+    }
+    if (this.step === 'success') {
+      return false;
+    }
+    return true;
+  }
+
+  handlePrimaryAction(): void {
+    if (this.step === 'phone') {
+      this.proceedToPerms();
+    } else if (this.step === 'perms') {
+      void this.allowPermsAndSendOtp();
+    } else if (this.step === 'otp') {
+      void this.verifyOtp();
+    } else if (this.step === 'info') {
+      void this.submitInfo();
+    } else if (this.step === 'success') {
+      void this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+    }
+  }
+
   // ── Step transitions ─────────────────────────────────────────────
+
+  goBack(): void {
+    if (this.step === 'perms') {
+      this.denyPerms();
+    } else if (this.step === 'otp') {
+      this.backToPhone();
+    } else if (this.step === 'info') {
+      this.backToPhone();
+    }
+  }
 
   backToPhone(): void {
     this.step = 'phone';
@@ -271,7 +320,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
           error: (err) => reject(new Error(err?.error?.message || 'Could not save profile.')),
         });
       });
-      this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+      this.step = 'success';
     } catch (e) {
       this.error = (e as Error).message;
     } finally {
