@@ -8,6 +8,7 @@ use App\Http\Controllers\OperatorPublicController;
 use App\Http\Controllers\Auth\FirebaseAuthController;
 use App\Http\Controllers\DeviceTokensController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
@@ -88,6 +89,9 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::middleware('auth:sanctum')->post('/me/logout', [AccountController::class, 'logout']);
 Route::middleware('auth:sanctum')->delete('/me/account', [AccountController::class, 'destroy']);
 Route::middleware(['auth:sanctum', 'role:driver'])->patch('/me/driver/payment-methods', [AccountController::class, 'updateDriverPaymentMethods']);
+
+// Last-known location ping. Customer + driver apps POST { lat, lng } here.
+Route::middleware('auth:sanctum')->post('/me/location', [LocationController::class, 'store']);
 
 // FCM device-token registration (push notifications).
 Route::middleware('auth:sanctum')->post('/me/device-tokens', [DeviceTokensController::class, 'store']);

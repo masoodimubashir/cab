@@ -1,2 +1,5 @@
 /* TaxiMode design system — single global entry point. */
 @import "./styles/index.scss";
+
+/* Third-party — Dan Grossman daterangepicker (jQuery plugin) */
+@import "daterangepicker/daterangepicker.css";

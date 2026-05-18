@@ -485,19 +485,27 @@ class AdminDriversController
 
     /**
      * @return \Illuminate\Database\Eloquent\Builder<Driver>
+     *
+     * Filters honored:
+     *   - state:        all (default) | active | deactivated
+     *   - vehicle_type: exact match
+     *   - has_documents: 1 → with docs, 0 → without
+     *   - q:            driver id, name, email, phone, vehicle_reg_no
+     *   - date_from / date_to: drivers.created_at window (YYYY-MM-DD)
      */
     private function buildIndexQuery(Request $request)
     {
-        $state = strtolower((string) $request->query('state', 'active'));
+        $state = strtolower((string) $request->query('state', 'all'));
 
         $query = Driver::query()
             ->with(['user', 'documents']);
 
         if ($state === 'deactivated') {
             $query->whereNotNull('deactivated_at');
-        } else {
+        } elseif ($state === 'active') {
             $query->whereNull('deactivated_at');
         }
+        // state=all → no activation filter
 
         if ($vehicleType = $request->query('vehicle_type')) {
             $query->where('vehicle_type', $vehicleType);
@@ -510,6 +518,22 @@ class AdminDriversController
                 $query->whereHas('documents');
             } else {
                 $query->whereDoesntHave('documents');
+            }
+        }
+
+        // Registered-on (drivers.created_at) date range
+        if ($from = $request->query('date_from')) {
+            try {
+                $query->where('drivers.created_at', '>=', Carbon::parse((string) $from)->startOfDay());
+            } catch (\Throwable $e) {
+                // ignore malformed dates from the client
+            }
+        }
+        if ($to = $request->query('date_to')) {
+            try {
+                $query->where('drivers.created_at', '<=', Carbon::parse((string) $to)->endOfDay());
+            } catch (\Throwable $e) {
+                // ignore malformed dates from the client
             }
         }
 

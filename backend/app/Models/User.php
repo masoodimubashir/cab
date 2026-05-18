@@ -30,6 +30,8 @@ use App\Models\WalletTransaction;
     'email_unsubscribed', 'sms_unsubscribed', 'push_unsubscribed',
     'duplicate_registration',
     'suspended_reason', 'suspended_at',
+    // Last-known location pinged from the mobile apps.
+    'current_lat', 'current_lng', 'current_location_updated_at',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -56,6 +58,9 @@ class User extends Authenticatable
             'push_unsubscribed' => 'boolean',
             'duplicate_registration' => 'boolean',
             'suspended_at' => 'datetime',
+            'current_lat' => 'decimal:7',
+            'current_lng' => 'decimal:7',
+            'current_location_updated_at' => 'datetime',
         ];
     }
 

@@ -56,6 +56,16 @@ import {
           size="md"
           class="tb__bell"
         />
+        <button
+          type="button"
+          class="tb__fab"
+          (click)="toggleFullscreen()"
+          [attr.aria-pressed]="isFullscreen"
+          [title]="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+          [attr.aria-label]="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+        >
+          <tm-icon [name]="isFullscreen ? 'compress' : 'expand'" [size]="16" />
+        </button>
 
         <div class="tb__user-wrap" *ngIf="user">
           <button
@@ -66,10 +76,6 @@ import {
             aria-haspopup="menu"
             (click)="toggleMenu($event)"
           >
-            <div class="tb__user-meta">
-              <div class="tb__user-name">{{ user.name }}</div>
-              <div class="tb__user-role" *ngIf="user.role">{{ user.role }}</div>
-            </div>
             <tm-avatar
               [src]="user.photo"
               [initials]="user.initials"
@@ -123,8 +129,32 @@ export class TopbarComponent {
   @Output() logout = new EventEmitter<void>();
 
   menuOpen = false;
+  isFullscreen = false;
 
   constructor(private host: ElementRef<HTMLElement>) {}
+
+  toggleFullscreen(): void {
+    const doc = document as any;
+    if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+      const root = document.documentElement as any;
+      const req =
+        root.requestFullscreen ||
+        root.webkitRequestFullscreen ||
+        root.msRequestFullscreen;
+      req?.call(root);
+    } else {
+      const exit =
+        doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+      exit?.call(doc);
+    }
+  }
+
+  @HostListener('document:fullscreenchange')
+  @HostListener('document:webkitfullscreenchange')
+  onFullscreenChange(): void {
+    const doc = document as any;
+    this.isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+  }
 
   toggleMenu(e: Event): void {
     e.stopPropagation();
