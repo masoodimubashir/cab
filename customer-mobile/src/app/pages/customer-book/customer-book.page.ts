@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 import { Subject, debounceTime, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { AuthService, PaymentMethod } from '../../core/auth.service';
+import { AuthService, PaymentMethod, AuthUser } from '../../core/auth.service';
 import { GeolocationService, LatLng } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { RealtimeService } from '../../core/realtime.service';
@@ -77,8 +77,9 @@ type DriverOffer = {
  *   preview → fare auto-calculated, driver list shown, customer picks a driver
  *   waiting → trip created + driver selected; waiting for driver to ACCEPT
  *   bids    → driver countered; customer accepts/rejects the counter
+ *   map-select → focused mode for map-based location selection
  */
-type RideState = 'idle' | 'route' | 'preview' | 'waiting' | 'bids';
+type RideState = 'idle' | 'route' | 'vehicle' | 'payment' | 'preview' | 'waiting' | 'bids' | 'map-select';
 
 @Component({
   selector: 'app-customer-book',
@@ -87,6 +88,10 @@ type RideState = 'idle' | 'route' | 'preview' | 'waiting' | 'bids';
   standalone: false,
 })
 export class CustomerBookPage implements OnDestroy {
+  get currentUser(): AuthUser | null {
+    return this.auth.getUser();
+  }
+
   state: RideState = 'idle';
   loading = false;
   error: string | null = null;
@@ -116,8 +121,10 @@ export class CustomerBookPage implements OnDestroy {
   pickup: { lat: number; lng: number; address: string } | null = null;
   drop: { lat: number; lng: number; address: string; place_id?: string } | null = null;
 
+  pickupQuery = '';
   toQuery = '';
   toQuery$ = new Subject<string>();
+  activeSearchField: 'pickup' | 'drop' = 'drop';
   suggestions: PlaceSuggestion[] = [];
 
   estimate: EstimateResponse | null = null;
@@ -130,6 +137,11 @@ export class CustomerBookPage implements OnDestroy {
   drivers: NearbyDriver[] = [];
   loadingDrivers = false;
   private driversPollHandle: any = null;
+
+  pickupError: string | null = null;
+  dropError: string | null = null;
+  vehicleError: string | null = null;
+  paymentError: string | null = null;
 
   tripId: number | null = null;
   selectedDriverId: number | null = null;
@@ -233,11 +245,26 @@ export class CustomerBookPage implements OnDestroy {
 
   selectVehicleType(id: number): void {
     this.selectedVehicleTypeId = id;
+    this.vehicleError = null;
     void this.fetchEstimate();
     void this.refreshDriverList();
   }
 
   openReviewModal(): void {
+    this.vehicleError = null;
+    this.paymentError = null;
+
+    if (this.vehicleTypes.length && this.selectedVehicleTypeId == null) {
+      this.vehicleError = 'Choose a vehicle type';
+    }
+    if (!this.paymentMethod) {
+      this.paymentError = 'Select a payment method';
+    }
+
+    if (this.vehicleError || this.paymentError) {
+      return;
+    }
+
     this.showReviewModal = true;
   }
 
@@ -496,10 +523,28 @@ export class CustomerBookPage implements OnDestroy {
   // State transitions
   // ─────────────────────────────────────────────────────────────────
 
+  async centerMapToCurrentLocation(): Promise<void> {
+    try {
+      const pos = await this.geo.getCurrentPosition();
+      if (pos) {
+        if (this.pickupMarker) {
+          this.pickupMarker.position = pos;
+        }
+        await this.updatePickupTo(pos.lat, pos.lng);
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
   goRoute(): void {
     this.state = 'route';
     this.suggestions = [];
     this.toQuery = '';
+    this.pickupQuery = this.pickup?.address || '';
+    this.activeSearchField = 'drop';
+    this.pickupError = null;
+    this.dropError = null;
   }
 
   closeSheet(): void {
@@ -507,9 +552,77 @@ export class CustomerBookPage implements OnDestroy {
     this.state = 'idle';
   }
 
-  onToInput(ev: any): void {
-    this.toQuery = ev?.target?.value ?? '';
-    this.toQuery$.next(this.toQuery);
+  onSearchInput(ev: any, field: 'pickup' | 'drop'): void {
+    this.activeSearchField = field;
+    const val = ev?.target?.value ?? '';
+    if (field === 'pickup') {
+      this.pickupQuery = val;
+      this.pickupError = null;
+    } else {
+      this.toQuery = val;
+      this.dropError = null;
+    }
+    this.toQuery$.next(val);
+  }
+
+  swapLocations(): void {
+    if (!this.pickup || !this.drop) return;
+    const temp = { ...this.pickup };
+    this.pickup = { lat: this.drop.lat, lng: this.drop.lng, address: this.drop.address };
+    this.drop = { lat: temp.lat, lng: temp.lng, address: temp.address, place_id: undefined };
+    
+    this.toQuery = this.drop.address;
+    this.pickupQuery = this.pickup.address;
+    
+    void this.showRouteOnMap();
+    if (this.state === 'vehicle' || this.state === 'payment' || this.state === 'preview') {
+      void this.onRouteReady();
+    }
+  }
+
+  goToVehicle(): void {
+    this.pickupError = null;
+    this.dropError = null;
+
+    if (!this.pickup) {
+      this.pickupError = 'Pickup location is required';
+    }
+    if (!this.drop) {
+      this.dropError = 'Please select a destination';
+    }
+
+    if (this.pickupError || this.dropError) {
+      return;
+    }
+
+    this.suggestions = [];
+    this.state = 'vehicle';
+    void this.showRouteOnMap();
+    void this.fetchEstimate();
+  }
+
+  goToPayment(): void {
+    this.vehicleError = null;
+
+    if (this.vehicleTypes.length && this.selectedVehicleTypeId == null) {
+      this.vehicleError = 'Choose a vehicle type';
+      return;
+    }
+
+    this.state = 'payment';
+    void this.fetchEstimate();
+  }
+
+  goToDrivers(): void {
+    this.paymentError = null;
+
+    if (!this.paymentMethod) {
+      this.paymentError = 'Select a payment method';
+      return;
+    }
+
+    this.state = 'preview';
+    void this.onRouteReady();
   }
 
   async pickSuggestion(s: PlaceSuggestion): Promise<void> {
@@ -517,19 +630,95 @@ export class CustomerBookPage implements OnDestroy {
     try {
       const detail = await this.places.getPlaceDetail(s.place_id);
       if (!detail) return;
-      this.drop = {
-        lat: detail.lat,
-        lng: detail.lng,
-        address: detail.description,
-        place_id: detail.place_id,
-      };
+      
+      if (this.activeSearchField === 'pickup') {
+         this.pickup = {
+           lat: detail.lat,
+           lng: detail.lng,
+           address: detail.description
+         };
+         this.pickupQuery = detail.description;
+         this.pickupError = null;
+      } else {
+         this.drop = {
+           lat: detail.lat,
+           lng: detail.lng,
+           address: detail.description,
+           place_id: detail.place_id,
+         };
+         this.toQuery = detail.description;
+         this.dropError = null;
+      }
       this.suggestions = [];
-      await this.showRouteOnMap();
-      await this.onRouteReady();
-      this.state = 'preview';
+      // Don't auto-navigate if both aren't set or if they're just editing pickup.
     } finally {
       this.loading = false;
     }
+  }
+
+  async setPickupCurrentLocation(): Promise<void> {
+    const pos = await this.geo.getCurrentPosition();
+    if (pos) {
+      if (this.pickupMarker) {
+        this.pickupMarker.position = pos;
+      }
+      await this.updatePickupTo(pos.lat, pos.lng);
+      this.pickupQuery = this.pickup?.address || '';
+      this.pickupError = null;
+    }
+  }
+
+  setLocationOnMap(): void {
+    this.state = 'map-select';
+    const loc = this.activeSearchField === 'pickup' ? this.pickup : this.drop;
+    if (loc && this.map) {
+      this.map.panTo({ lat: loc.lat, lng: loc.lng });
+    }
+  }
+
+  async confirmMapLocation(): Promise<void> {
+    if (!this.map) return;
+    this.loading = true;
+    try {
+      const center = this.map.getCenter();
+      const lat = center.lat();
+      const lng = center.lng();
+      const address = await this.places.reverseGeocode(lat, lng) ?? 'Selected on map';
+      
+      if (this.activeSearchField === 'pickup') {
+        this.pickup = { lat, lng, address };
+        this.pickupQuery = address;
+        this.pickupError = null;
+        if (this.pickupMarker) {
+          this.pickupMarker.position = { lat, lng };
+        }
+      } else {
+        this.drop = { lat, lng, address, place_id: undefined };
+        this.toQuery = address;
+        this.dropError = null;
+      }
+      this.state = 'route';
+    } catch {
+      // Ignored
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  cancelMapSelection(): void {
+    this.state = 'route';
+  }
+
+  addHome(): void {
+    // Add logic for saving/booking to home
+  }
+
+  addWork(): void {
+    // Add logic for saving/booking to work
+  }
+
+  addFavorite(): void {
+    // Add logic for saved places
   }
 
   selectProductKind(kind: 'local' | 'outstation' | 'rental'): void {
