@@ -1,4 +1,35 @@
 ion-tab-bar {
-  --background: var(--ion-background-color);
+  --background: #ffffff;
+  --border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 -8px 24px rgba(13, 27, 42, 0.04);
+  height: 64px;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
+ion-tab-button {
+  --color: #9CA3AF;
+  --color-selected: var(--ion-color-secondary, #0D1B2A);
+  font-weight: 600;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  
+  ion-icon {
+    font-size: 22px;
+    margin-bottom: 3px;
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  
+  &.tab-selected {
+    font-weight: 700;
+    
+    ion-icon {
+      transform: scale(1.15) translateY(-1px);
+      color: var(--ion-color-primary, #12B35B); /* Elegant Emerald brand color for selected icon! */
+    }
+    
+    ion-label {
+      color: var(--ion-color-secondary, #0D1B2A);
+      font-size: 11px;
+    }
+  }
+}
