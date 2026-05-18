@@ -31,8 +31,11 @@ class AdminCustomersController
 
     public function index(Request $request)
     {
-        $search = trim((string) $request->query('search', ''));
-        $tab = $request->query('tab', 'all'); // all | with_docs
+        $search       = trim((string) $request->query('search', ''));
+        $tab          = $request->query('tab', 'all'); // all | with_docs
+        $lastRideFrom = trim((string) $request->query('last_ride_from', ''));
+        $lastRideTo   = trim((string) $request->query('last_ride_to', ''));
+        $perPage      = max(1, min(200, (int) $request->query('per_page', 25)));
 
         $query = User::query()
             ->whereHas('roles', fn ($q) => $q->where('role', 'customer'))
@@ -57,13 +60,22 @@ class AdminCustomersController
         }
 
         // "Customers with Docs" tab — customers who have ever uploaded any document.
-        // Drivers also belong to users; this filters to users with the customer role
-        // who also have a driver row + documents (i.e. customer-drivers).
         if ($tab === 'with_docs') {
             $query->whereHas('driver.documents');
         }
 
-        $rows = $query->orderByDesc('created_at')->paginate(50);
+        // Last-ride date-range filter: matches customers whose most-recent
+        // trip's created_at falls within [from, to]. Customers with no trips
+        // are excluded (MAX is NULL, fails the comparison).
+        $maxTripSql = '(SELECT MAX(created_at) FROM trips WHERE trips.customer_id = users.id)';
+        if ($lastRideFrom !== '') {
+            $query->whereRaw("{$maxTripSql} >= ?", [$lastRideFrom . ' 00:00:00']);
+        }
+        if ($lastRideTo !== '') {
+            $query->whereRaw("{$maxTripSql} <= ?", [$lastRideTo . ' 23:59:59']);
+        }
+
+        $rows = $query->orderByDesc('created_at')->paginate($perPage);
 
         return response()->json(['data' => $rows]);
     }
@@ -107,6 +119,9 @@ class AdminCustomersController
                 'used_subscribed' => false, // placeholder until subscription module exists
                 'cancellation_charge_policy' => optional(\App\Models\OperatorSetting::query()->first())
                     ->commission_deduction ?? 'on_complaint',
+                'current_lat' => $user->current_lat,
+                'current_lng' => $user->current_lng,
+                'current_location_updated_at' => $user->current_location_updated_at,
             ],
         ]);
     }

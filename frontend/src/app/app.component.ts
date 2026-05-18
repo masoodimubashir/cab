@@ -61,21 +61,34 @@ export class AppComponent implements OnInit {
   ];
 
   private url = signal(this.router.url);
+  /** Bumped whenever the auth profile is (re)loaded so pageTitle recomputes. */
+  private profileTick = signal(0);
+
   pageTitle = computed(() => {
-    const match = AppComponent.TITLES.find(([re]) => re.test(this.url()));
-    return match ? match[1] : 'TaxiMode';
+    // Topbar now greets the user. url()/profileTick() are read for reactivity.
+    void this.url();
+    void this.profileTick();
+    const name = this.auth.profile?.name?.trim() || '';
+    const first = name.split(/\s+/)[0];
+    return first ? `Welcome, ${first}` : 'Welcome';
   });
 
   constructor(public router: Router, public auth: AuthService) {}
 
   ngOnInit(): void {
-    if (this.isAuthorized) this.auth.ensureLoaded().subscribe();
+    if (this.isAuthorized) {
+      this.auth.ensureLoaded().subscribe(() =>
+        this.profileTick.update((n) => n + 1),
+      );
+    }
     this.router.events
       .pipe(filter((e) => e instanceof NavigationEnd))
       .subscribe((e) => {
         this.url.set((e as NavigationEnd).urlAfterRedirects);
         if (this.isAuthorized && !this.auth.profile) {
-          this.auth.ensureLoaded().subscribe();
+          this.auth.ensureLoaded().subscribe(() =>
+            this.profileTick.update((n) => n + 1),
+          );
         }
       });
   }
@@ -98,8 +111,7 @@ export class AppComponent implements OnInit {
       items.push({
         label: 'Drivers', icon: 'id-card',
         children: filterTruthy([
-          can('drivers.view')     && { label: 'Active Drivers',        icon: 'user',      route: '/drivers/active' },
-          can('drivers.view')     && { label: 'Deactivated Drivers',   icon: 'user',      route: '/drivers/deactivated' },
+          can('drivers.view')     && { label: 'All Drivers',            icon: 'user',      route: '/drivers' },
           can('drivers.view')     && { label: 'Leaderboard',           icon: 'star',      route: '/drivers/leaderboard' },
           can('drivers.view')     && { label: 'Driver Performance',    icon: 'chart-bar', route: '/drivers/performance' },
           can('drivers.approve')  && { label: 'Approvals & Documents', icon: 'check',     route: '/drivers/approvals' },

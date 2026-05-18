@@ -12,7 +12,9 @@ export type IconName =
   | 'search' | 'bell' | 'chevron-down' | 'chevron-right' | 'chevron-left'
   | 'chevron-up' | 'menu' | 'x' | 'plus' | 'check' | 'arrow-right'
   | 'filter' | 'calendar' | 'pin' | 'phone' | 'star' | 'eye' | 'edit'
-  | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal';
+  | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal'
+  | 'road' | 'driver-helmet' | 'rupee' | 'handshake' | 'key'
+  | 'expand' | 'compress';
 
 export const ICONS: Record<IconName, string> = {
   'home': '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/>',
@@ -56,4 +58,11 @@ export const ICONS: Record<IconName, string> = {
   'upload': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
   'refresh': '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
   'more-horizontal': '<circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="12" r="1.5"/>',
+  'road': '<path d="M4 21 7 3"/><path d="M20 21 17 3"/><path d="M12 5v2"/><path d="M12 11v2"/><path d="M12 17v2"/>',
+  'driver-helmet': '<path d="M4 14a8 8 0 0 1 16 0v2H4v-2z"/><path d="M9 14V9"/><path d="M15 14V9"/><path d="M3 18h18"/><circle cx="12" cy="9" r="3"/><path d="M8 11h8"/>',
+  'rupee': '<path d="M6 3h12"/><path d="M6 8h12"/><path d="M6 13h3"/><path d="M9 13c6 0 6-10 0-10"/><path d="m6 13 8.5 8"/>',
+  'handshake': '<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>',
+  'key': '<circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 8-8"/><path d="m17 4 3 3"/><path d="m14 7 3 3"/>',
+  'expand': '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
+  'compress': '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>',
 };

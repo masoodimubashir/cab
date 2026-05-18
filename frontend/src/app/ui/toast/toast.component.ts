@@ -45,7 +45,8 @@ import { ToastService, ToastKind } from '../../core/toast.service';
       position: fixed;
       top: var(--tm-space-5);
       right: var(--tm-space-5);
-      z-index: 1000;
+      /* Sit above modals/overlays so error toasts are never hidden by the backdrop. */
+      z-index: 2147483000;
       display: flex;
       flex-direction: column;
       gap: var(--tm-space-3);

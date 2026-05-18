@@ -1,287 +1,245 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { CardModule } from 'primeng/card';
-import { ButtonModule } from 'primeng/button';
 import { Router } from '@angular/router';
 import { ApiService } from '../core/api.service';
+import {
+  ButtonComponent,
+  CardComponent,
+  IconComponent,
+  IconTileComponent,
+  StatusPillComponent,
+} from '../ui';
+import { IconName } from '../ui';
+
+type KpiTile = {
+  key: string;
+  label: string;
+  icon: IconName;
+  tone: 'ink' | 'green';
+  value: () => string;
+  footnote?: string;
+};
 
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, CardModule, ButtonModule],
+  imports: [
+    CommonModule,
+    ButtonComponent,
+    CardComponent,
+    IconComponent,
+    IconTileComponent,
+    StatusPillComponent,
+  ],
   template: `
     <div class="dashboard-page">
-      <div class="dashboard-hero">
-        <div>
-          <div class="dashboard-title">Admin Dashboard</div>
-          <div class="dashboard-subtitle">
-            Operational overview at a glance
+    
+
+      <section
+        class="kpi-grid"
+        *ngIf="!loading && !error"
+        aria-label="Key performance indicators"
+      >
+        <tm-card
+          *ngFor="let tile of tiles; let i = index"
+          class="kpi-card"
+          padding="compact"
+          elevation="card"
+        >
+          <div class="kpi-card__head">
+            <span class="kpi-card__label">{{ tile.label }}</span>
+            <tm-icon-tile
+              [icon]="tile.icon"
+              [tone]="tile.tone"
+              size="lg"
+            />
           </div>
+          <div class="kpi-card__value">{{ tile.value() }}</div>
+          <div class="kpi-card__foot" *ngIf="tile.footnote">
+            <span class="kpi-card__hint">{{ tile.footnote }}</span>
+          </div>
+        </tm-card>
+      </section>
+
+      <div *ngIf="loading" class="dash-loading" role="status">
+        <span class="dash-spinner" aria-hidden="true"></span>
+        <span class="dash-loading__text">Loading dashboard…</span>
+      </div>
+
+      <tm-card *ngIf="error" class="dash-error" padding="compact" elevation="flat">
+        <div class="dash-error__row">
+          <tm-status-pill tone="danger">Error</tm-status-pill>
+          <span class="dash-error__msg">{{ error }}</span>
         </div>
-
-        <div class="dashboard-quick-actions" aria-label="Quick actions">
-          <button
-            pButton
-            type="button"
-            label="Trips"
-            icon="pi pi-car"
-            class="p-button-outlined"
-            (click)="go('/trips')"
-          ></button>
-          <button
-            pButton
-            type="button"
-            label="Drivers"
-            icon="pi pi-user"
-            class="p-button-outlined"
-            (click)="go('/drivers')"
-          ></button>
-          <button
-            pButton
-            type="button"
-            label="Users"
-            icon="pi pi-users"
-            class="p-button-outlined"
-            (click)="go('/users')"
-          ></button>
-          <button
-            pButton
-            type="button"
-            label="Reports"
-            icon="pi pi-chart-line"
-            class="p-button-outlined"
-            (click)="go('/reports')"
-          ></button>
-        </div>
-      </div>
-
-      <div class="kpi-grid" *ngIf="!loading">
-        <p-card class="kpi-card kpi-card--orange">
-          <div class="kpi-content">
-            <div class="kpi-icon"><i class="pi pi-bolt"></i></div>
-            <div class="kpi-meta">
-              <div class="kpi-label">Active Trips</div>
-              <div class="kpi-value">{{ kpis?.active_trips ?? 0 }}</div>
-            </div>
-          </div>
-        </p-card>
-
-        <p-card class="kpi-card kpi-card--green">
-          <div class="kpi-content">
-            <div class="kpi-icon"><i class="pi pi-check-circle"></i></div>
-            <div class="kpi-meta">
-              <div class="kpi-label">Completed Trips</div>
-              <div class="kpi-value">{{ kpis?.completed_trips ?? 0 }}</div>
-            </div>
-          </div>
-        </p-card>
-
-        <p-card class="kpi-card kpi-card--blue">
-          <div class="kpi-content">
-            <div class="kpi-icon"><i class="pi pi-users"></i></div>
-            <div class="kpi-meta">
-              <div class="kpi-label">Drivers (Total)</div>
-              <div class="kpi-value">{{ kpis?.drivers_total ?? 0 }}</div>
-            </div>
-          </div>
-        </p-card>
-
-        <p-card class="kpi-card kpi-card--purple">
-          <div class="kpi-content">
-            <div class="kpi-icon"><i class="pi pi-shield-check"></i></div>
-            <div class="kpi-meta">
-              <div class="kpi-label">Drivers (Approved)</div>
-              <div class="kpi-value">{{ kpis?.drivers_approved ?? 0 }}</div>
-            </div>
-          </div>
-        </p-card>
-
-        <p-card class="kpi-card kpi-card--amber">
-          <div class="kpi-content">
-            <div class="kpi-icon"><i class="pi pi-wallet"></i></div>
-            <div class="kpi-meta">
-              <div class="kpi-label">Earnings Total</div>
-              <div class="kpi-value">
-                {{ (kpis?.earnings_total ?? 0) | number:'1.2-2' }}
-              </div>
-              <div class="kpi-footnote">INR</div>
-            </div>
-          </div>
-        </p-card>
-
-        <p-card class="kpi-card kpi-card--slate">
-          <div class="kpi-content">
-            <div class="kpi-icon"><i class="pi pi-comment"></i></div>
-            <div class="kpi-meta">
-              <div class="kpi-label">Fare Negotiations</div>
-              <div class="kpi-value">{{ kpis?.fare_negotiations_total ?? 0 }}</div>
-            </div>
-          </div>
-        </p-card>
-      </div>
-
-      <div class="kpi-loading" *ngIf="loading">
-        <div class="spinner" aria-hidden="true"></div>
-        <div class="kpi-loading__text">Loading KPIs...</div>
-      </div>
-
-      <div *ngIf="error" class="dashboard-error">
-        {{ error }}
-      </div>
+      </tm-card>
     </div>
   `,
   styles: [
     `
+      :host { display: block; }
+
       .dashboard-page {
-        background: radial-gradient(900px circle at 20% 0%, rgba(245, 158, 11, 0.16), transparent 45%),
-          radial-gradient(700px circle at 90% 10%, rgba(59, 130, 246, 0.12), transparent 45%),
-          linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-        padding: 6px 4px 28px;
-        border-radius: 16px;
+        background: var(--tm-canvas);
+        padding: var(--tm-space-2) 0 var(--tm-space-8);
       }
 
-      .dashboard-hero {
+      /* ---------- Hero ---------- */
+      .dash-hero {
         display: flex;
-        align-items: flex-start;
+        align-items: flex-end;
         justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 18px;
-        padding: 18px 16px;
-        background: rgba(255, 255, 255, 0.72);
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        border-radius: 16px;
-        box-shadow: 0 12px 30px rgba(2, 6, 23, 0.06);
+        gap: var(--tm-space-6);
+        margin-bottom: var(--tm-space-6);
+        padding: var(--tm-space-6);
+        background: var(--tm-surface);
+        border-radius: var(--tm-radius-lg);
+        box-shadow: var(--tm-shadow-card);
       }
 
-      .dashboard-title {
-        font-size: 20px;
-        font-weight: 900;
-        color: #0f172a;
-        margin-bottom: 6px;
+      .dash-hero__head { min-width: 0; }
+
+      .dash-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: var(--tm-space-3);
+      }
+      .dash-eyebrow__dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--tm-green);
+        box-shadow: 0 0 0 3px var(--tm-green-soft);
       }
 
-      .dashboard-subtitle {
-        font-size: 14px;
-        font-weight: 600;
-        color: rgba(15, 23, 42, 0.62);
+      .dash-title {
+        color: var(--tm-text);
+        margin: 0 0 var(--tm-space-2);
       }
 
-      .dashboard-quick-actions {
+      .dash-subtitle {
+        font-size: var(--tm-fs-body);
+        font-weight: 500;
+        color: var(--tm-text-muted);
+        line-height: 1.5;
+        max-width: 56ch;
+        margin: 0;
+      }
+
+      .dash-quick {
         display: flex;
-        gap: 10px;
         flex-wrap: wrap;
+        gap: var(--tm-space-2);
         justify-content: flex-end;
+        flex-shrink: 0;
       }
 
+      /* ---------- KPI grid ---------- */
       .kpi-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
+        gap: var(--tm-space-4);
       }
 
       .kpi-card {
-        border-radius: 16px !important;
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        background: rgba(255, 255, 255, 0.82) !important;
+        transition: transform var(--tm-duration-fast) var(--tm-ease),
+                    box-shadow var(--tm-duration-fast) var(--tm-ease);
+      }
+      .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--tm-shadow-pop);
       }
 
-      .kpi-content {
+      .kpi-card__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--tm-space-3);
+        margin-bottom: var(--tm-space-4);
+      }
+
+      .kpi-card__label {
+        font-size: var(--tm-fs-small);
+        font-weight: 600;
+        color: var(--tm-text-muted);
+        line-height: 1.4;
+        padding-top: 4px;
+      }
+
+      .kpi-card__value {
+        font-family: var(--tm-font-display);
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        color: var(--tm-text);
+      }
+
+      .kpi-card__foot {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 6px 2px;
+        gap: var(--tm-space-2);
+        margin-top: var(--tm-space-3);
       }
 
-      .kpi-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(249, 115, 22, 0.14);
-        color: #f97316;
-        flex: 0 0 auto;
-        font-size: 18px;
+      .kpi-card__hint {
+        font-family: var(--tm-font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--tm-text-soft);
       }
 
-      .kpi-meta {
-        flex: 1 1 auto;
-        min-width: 0;
+      /* Tighten the icon-tile so the glyph fills more of the dark square */
+      :host ::ng-deep .kpi-card tm-icon-tile.size-lg {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
       }
 
-      .kpi-label {
-        font-size: 13px;
-        font-weight: 800;
-        color: rgba(15, 23, 42, 0.68);
-        margin-bottom: 4px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .kpi-value {
-        font-size: 22px;
-        font-weight: 950;
-        color: #0f172a;
-        letter-spacing: 0.2px;
-      }
-
-      .kpi-footnote {
-        margin-top: 2px;
-        font-size: 12px;
-        font-weight: 800;
-        color: rgba(15, 23, 42, 0.55);
-      }
-
-      /* Card themes */
-      .kpi-card--orange .kpi-icon { background: rgba(249, 115, 22, 0.14); color: #f97316; }
-      .kpi-card--green .kpi-icon { background: rgba(16, 185, 129, 0.14); color: #10b981; }
-      .kpi-card--blue .kpi-icon { background: rgba(59, 130, 246, 0.14); color: #3b82f6; }
-      .kpi-card--purple .kpi-icon { background: rgba(139, 92, 246, 0.14); color: #8b5cf6; }
-      .kpi-card--amber .kpi-icon { background: rgba(245, 158, 11, 0.16); color: #f59e0b; }
-      .kpi-card--slate .kpi-icon { background: rgba(100, 116, 139, 0.18); color: #64748b; }
-
-      .dashboard-error {
-        color: #b00020;
-        margin-top: 16px;
-        background: rgba(176, 0, 32, 0.06);
-        border: 1px solid rgba(176, 0, 32, 0.18);
-        padding: 12px 14px;
-        border-radius: 14px;
-        font-weight: 700;
-      }
-
-      .kpi-loading {
+      /* ---------- Loading ---------- */
+      .dash-loading {
         display: flex;
-        gap: 12px;
         align-items: center;
         justify-content: center;
-        padding: 26px 0;
-        color: rgba(15, 23, 42, 0.72);
-        font-weight: 800;
+        gap: var(--tm-space-3);
+        padding: var(--tm-space-10) 0;
+        color: var(--tm-text-muted);
+        font-weight: 600;
+        font-size: var(--tm-fs-body);
+      }
+      .dash-spinner {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid var(--tm-line-2);
+        border-top-color: var(--tm-green);
+        animation: dash-spin 0.7s linear infinite;
+      }
+      @keyframes dash-spin { to { transform: rotate(360deg); } }
+
+      /* ---------- Error ---------- */
+      .dash-error {
+        border: 1px solid var(--tm-danger-bg);
+        background: var(--tm-danger-bg);
+      }
+      .dash-error__row {
+        display: flex; align-items: center; gap: var(--tm-space-3);
+      }
+      .dash-error__msg {
+        color: var(--tm-danger-fg);
+        font-weight: 600;
+        font-size: var(--tm-fs-body);
       }
 
-      .spinner {
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        border: 3px solid rgba(15, 23, 42, 0.12);
-        border-top-color: #f97316;
-        animation: spin 0.9s linear infinite;
-      }
-
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-
-      @media (max-width: 980px) {
+      /* ---------- Responsive ---------- */
+      @media (max-width: 1100px) {
         .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
-
-      @media (max-width: 640px) {
-        .dashboard-hero { flex-direction: column; }
+      @media (max-width: 720px) {
+        .dash-hero {
+          flex-direction: column;
+          align-items: stretch;
+          padding: var(--tm-space-5);
+        }
+        .dash-quick { justify-content: flex-start; }
         .kpi-grid { grid-template-columns: 1fr; }
       }
     `,
@@ -291,6 +249,57 @@ export class AdminDashboardComponent implements OnInit {
   kpis: any;
   error: string | null = null;
   loading = false;
+
+  readonly tiles: KpiTile[] = [
+    {
+      key: 'active_trips',
+      label: 'Active Trips',
+      icon: 'car',
+      tone: 'ink',
+      value: () => this.formatInt(this.kpis?.active_trips),
+      footnote: 'Live now',
+    },
+    {
+      key: 'completed_trips',
+      label: 'Completed Trips',
+      icon: 'road',
+      tone: 'ink',
+      value: () => this.formatInt(this.kpis?.completed_trips),
+      footnote: 'All time',
+    },
+    {
+      key: 'drivers_total',
+      label: 'Drivers (Total)',
+      icon: 'driver-helmet',
+      tone: 'ink',
+      value: () => this.formatInt(this.kpis?.drivers_total),
+      footnote: 'On platform',
+    },
+    {
+      key: 'drivers_approved',
+      label: 'Drivers (Approved)',
+      icon: 'driver-helmet',
+      tone: 'ink',
+      value: () => this.formatInt(this.kpis?.drivers_approved),
+      footnote: 'Verified',
+    },
+    {
+      key: 'earnings_total',
+      label: 'Earnings Total',
+      icon: 'rupee',
+      tone: 'ink',
+      value: () => this.formatCurrency(this.kpis?.earnings_total),
+      footnote: 'INR · gross',
+    },
+    {
+      key: 'fare_negotiations_total',
+      label: 'Fare Negotiations',
+      icon: 'handshake',
+      tone: 'ink',
+      value: () => this.formatInt(this.kpis?.fare_negotiations_total),
+      footnote: 'Total offers',
+    },
+  ];
 
   constructor(private api: ApiService, private router: Router) {}
 
@@ -313,5 +322,17 @@ export class AdminDashboardComponent implements OnInit {
       },
     });
   }
-}
 
+  private formatInt(n: unknown): string {
+    const v = typeof n === 'number' ? n : Number(n ?? 0);
+    return new Intl.NumberFormat('en-IN').format(isNaN(v) ? 0 : v);
+  }
+
+  private formatCurrency(n: unknown): string {
+    const v = typeof n === 'number' ? n : Number(n ?? 0);
+    return `₹ ${new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(isNaN(v) ? 0 : v)}`;
+  }
+}

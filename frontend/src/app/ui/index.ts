@@ -16,3 +16,6 @@ export * from './avatar/avatar.component';
 export * from './input/input.component';
 export * from './brand-mark/brand-mark.component';
 export * from './toast/toast.component';
+export * from './data-table/column.component';
+export * from './data-table/data-table.component';
+export * from './modal/modal.component';

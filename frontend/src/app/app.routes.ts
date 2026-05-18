@@ -10,8 +10,7 @@ import { AdminSafetyEventsComponent } from './admin/admin-safety-events.componen
 import { AdminReportsComponent } from './admin/admin-reports.component';
 import { RidesMapComponent } from './admin/rides/rides-map.component';
 import { RidesAllComponent } from './admin/rides/rides-all.component';
-import { DriversActiveComponent } from './admin/drivers/drivers-active.component';
-import { DriversDeactivatedComponent } from './admin/drivers/drivers-deactivated.component';
+import { DriversListComponent } from './admin/drivers/drivers-list.component';
 import { DriversLeaderboardComponent } from './admin/drivers/drivers-leaderboard.component';
 import { DriversPerformanceComponent } from './admin/drivers/drivers-performance.component';
 import { DriverDocumentsComponent } from './admin/drivers/driver-documents.component';
@@ -51,9 +50,11 @@ export const routes: Routes = [
   { path: 'safety', component: AdminSafetyEventsComponent, canActivate: [adminAuthGuard] },
   { path: 'reports', component: AdminReportsComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'drivers', redirectTo: 'drivers/active', pathMatch: 'full' },
-  { path: 'drivers/active', component: DriversActiveComponent, canActivate: [adminAuthGuard] },
-  { path: 'drivers/deactivated', component: DriversDeactivatedComponent, canActivate: [adminAuthGuard] },
+  { path: 'drivers', component: DriversListComponent, canActivate: [adminAuthGuard] },
+  // Legacy split-route URLs — keep them resolving to the merged list so any
+  // bookmarks / external links the other dev's tooling may have don't 404.
+  { path: 'drivers/active', redirectTo: 'drivers', pathMatch: 'full' },
+  { path: 'drivers/deactivated', redirectTo: 'drivers', pathMatch: 'full' },
   { path: 'drivers/leaderboard', component: DriversLeaderboardComponent, canActivate: [adminAuthGuard] },
   { path: 'drivers/performance', component: DriversPerformanceComponent, canActivate: [adminAuthGuard] },
   { path: 'drivers/approvals', component: AdminDriversComponent, canActivate: [adminAuthGuard] },
