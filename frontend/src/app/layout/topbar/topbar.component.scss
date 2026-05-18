@@ -48,6 +48,28 @@
 .tb__bell { cursor: pointer; }
 .tb__bell:hover { background: var(--tm-canvas-2); }
 
+.tb__fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-line);
+  color: var(--tm-text);
+  cursor: pointer;
+  transition: background var(--tm-duration-fast) var(--tm-ease),
+              color var(--tm-duration-fast) var(--tm-ease),
+              border-color var(--tm-duration-fast) var(--tm-ease);
+}
+.tb__fab:hover { background: var(--tm-canvas-2); }
+.tb__fab[aria-pressed="true"] {
+  background: var(--tm-ink);
+  color: #fff;
+  border-color: var(--tm-ink);
+}
+
 .tb__user-wrap { position: relative; }
 
 .tb__user {
