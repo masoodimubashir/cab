@@ -1,5 +1,19 @@
 :host { display: block; }
 
+.page-outlet {
+  padding: var(--tm-space-4) 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1199px) {
+  .page-outlet { padding: var(--tm-space-3) 10px; }
+}
+
+@media (max-width: 880px) {
+  .page-outlet { padding: var(--tm-space-3) 10px; }
+}
+
 .bare {
   display: flex;
   align-items: center;
