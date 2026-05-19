@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import $ from 'jquery';
 import moment from 'moment';
 import 'daterangepicker';
@@ -18,13 +18,20 @@ import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
+  ChartComponent,
   ColumnComponent,
   DataTableComponent,
   IconComponent,
   InputComponent,
+  ModalComponent,
 } from '../../ui';
+import { DriversInsightsComponent, InsightMode } from './drivers-insights.component';
+
+type DriversView = 'table' | 'graph';
 
 type StateFilter = 'all' | 'active' | 'deactivated';
+type OnlineFilter = 'all' | 'online' | 'offline';
+type ApprovalFilter = 'all' | 'approved' | 'pending' | 'rejected';
 
 interface DriverRow {
   id: number;
@@ -51,10 +58,13 @@ interface DriverRow {
     FormsModule,
     DatePipe,
     ButtonComponent,
+    ChartComponent,
     ColumnComponent,
     DataTableComponent,
     IconComponent,
     InputComponent,
+    ModalComponent,
+    DriversInsightsComponent,
   ],
   template: `
     <div class="page">
@@ -69,6 +79,40 @@ interface DriverRow {
           </p>
         </div>
         <div class="page__hero-right">
+          <!-- Table / Graph view toggle -->
+          <div class="view-toggle" role="group" aria-label="View mode">
+            <button
+              type="button"
+              class="view-toggle__btn"
+              [class.is-active]="view === 'table'"
+              [attr.aria-pressed]="view === 'table'"
+              (click)="setView('table')"
+              title="Table view"
+            >
+              <tm-icon name="menu" [size]="14" />
+              <span>Table</span>
+            </button>
+            <button
+              type="button"
+              class="view-toggle__btn"
+              [class.is-active]="view === 'graph'"
+              [attr.aria-pressed]="view === 'graph'"
+              (click)="setView('graph')"
+              title="Graph view"
+            >
+              <tm-icon name="chart-bar" [size]="14" />
+              <span>Graph</span>
+            </button>
+          </div>
+
+          <tm-button
+            *ngIf="view === 'table'"
+            variant="outline"
+            icon="chart-bar"
+            (clicked)="openInsights('leaderboard')"
+          >
+            Insights
+          </tm-button>
           <tm-button variant="outline" icon="download"
                      [loading]="exporting" (clicked)="exportCsv()">
             Export CSV
@@ -76,8 +120,173 @@ interface DriverRow {
         </div>
       </header>
 
+      <!-- =================== Graph view =================== -->
+      <section class="graphs" *ngIf="view === 'graph'">
+        <p class="graphs__hint">
+          Visualizing the current page of <strong>{{ rows.length }}</strong> of <strong>{{ total | number }}</strong> drivers.
+          Bump <em>Rows per page</em> in Table view for a wider sample.
+        </p>
+
+        <!-- ===== KPI strip — fastest read of the fleet's state ===== -->
+        <div class="kpi-strip">
+          <div class="kpi">
+            <div class="kpi__icon kpi__icon--ink"><tm-icon name="users" [size]="18" /></div>
+            <div class="kpi__body">
+              <span class="kpi__value">{{ rows.length | number }}</span>
+              <span class="kpi__label">Drivers in view</span>
+              <span class="kpi__sub">of {{ total | number }} total</span>
+            </div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__icon kpi__icon--green"><tm-icon name="bolt" [size]="18" /></div>
+            <div class="kpi__body">
+              <span class="kpi__value">{{ stats.online | number }}</span>
+              <span class="kpi__label">Online now</span>
+              <span class="kpi__sub">{{ stats.onlinePct }}% of page</span>
+            </div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__icon kpi__icon--green"><tm-icon name="shield" [size]="18" /></div>
+            <div class="kpi__body">
+              <span class="kpi__value">{{ stats.approvalRate }}%</span>
+              <span class="kpi__label">Approval rate</span>
+              <span class="kpi__sub">{{ stats.approved }} approved · {{ stats.pending }} pending</span>
+            </div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__icon kpi__icon--amber"><tm-icon name="star" [size]="18" /></div>
+            <div class="kpi__body">
+              <span class="kpi__value">{{ stats.medianRides | number }}</span>
+              <span class="kpi__label">Median total rides</span>
+              <span class="kpi__sub">Avg {{ stats.avgRides | number:'1.0-1' }} per driver</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Section 1: Composition (who they are) ===== -->
+        <h4 class="graphs__section">Composition <span class="graphs__section-sub">— who's in the fleet right now</span></h4>
+        <div class="graphs__grid">
+          <article class="graphs__card">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="shield" [size]="14" /> Approval status
+              </h3>
+              <span class="graphs__hint-mini">Higher approved % → less admin queue</span>
+            </header>
+            <tm-chart type="doughnut" [config]="approvalChart" [height]="220" />
+          </article>
+
+          <article class="graphs__card">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="bolt" [size]="14" /> Live activity
+              </h3>
+              <span class="graphs__hint-mini">Drivers reachable for dispatch right now</span>
+            </header>
+            <tm-chart type="doughnut" [config]="activityChart" [height]="220" />
+          </article>
+
+          <article class="graphs__card">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="user" [size]="14" /> Account state
+              </h3>
+              <span class="graphs__hint-mini">Active vs. deactivated drivers</span>
+            </header>
+            <tm-chart type="polarArea" [config]="stateChart" [height]="220" />
+          </article>
+
+          <article class="graphs__card">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="car" [size]="14" /> Vehicle mix
+              </h3>
+              <span class="graphs__hint-mini">Driver count per vehicle type</span>
+            </header>
+            <tm-chart type="bar" [config]="vehicleTypeChart" [height]="220" />
+          </article>
+        </div>
+
+        <!-- ===== Section 2: Distribution (how much they drive) ===== -->
+        <h4 class="graphs__section">Distribution <span class="graphs__section-sub">— spread of ride volume</span></h4>
+        <div class="graphs__grid">
+          <article class="graphs__card graphs__card--wide">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="chart-bar" [size]="14" /> Ride volume buckets
+              </h3>
+              <span class="graphs__hint-mini">How many drivers fall into each lifetime-rides bucket</span>
+            </header>
+            <tm-chart type="bar" [config]="ridesHistogramChart" [height]="240" />
+          </article>
+
+          <article class="graphs__card">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="chart-line" [size]="14" /> Recent vs. lifetime
+              </h3>
+              <span class="graphs__hint-mini">Each dot is a driver — 7-day rides vs. total</span>
+            </header>
+            <tm-chart type="scatter" [config]="recentVsLifetimeChart" [height]="260" />
+          </article>
+
+          <article class="graphs__card">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="refresh" [size]="14" /> Registrations
+              </h3>
+              <span class="graphs__hint-mini">Sign-ups per day, last 30 days</span>
+            </header>
+            <tm-chart type="line" [config]="registrationsChart" [height]="260" />
+          </article>
+        </div>
+
+        <!-- ===== Section 3: Top performers ===== -->
+        <h4 class="graphs__section">Top performers <span class="graphs__section-sub">— who's earning the most rides</span></h4>
+        <div class="graphs__grid">
+          <article class="graphs__card graphs__card--wide">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="star" [size]="14" /> Top 10 by total rides
+              </h3>
+              <span class="graphs__hint-mini">Lifetime completed-trip count, from current page</span>
+            </header>
+            <tm-chart type="bar" [config]="topRidesChart" [height]="280" />
+          </article>
+
+          <article class="graphs__card graphs__card--wide">
+            <header class="graphs__card-head">
+              <h3 class="graphs__title">
+                <tm-icon name="bolt" [size]="14" /> Most active in last 7 days
+              </h3>
+              <span class="graphs__hint-mini">Recent activity — find your current grinders</span>
+            </header>
+            <tm-chart type="bar" [config]="top7dChart" [height]="240" />
+          </article>
+        </div>
+
+        <!-- Leaderboard inline — feeds from /admin/drivers/leaderboard -->
+        <article class="graphs__card graphs__card--wide graphs__embed">
+          <header class="graphs__card-head">
+            <h3 class="graphs__title">Driver leaderboard</h3>
+            <span class="graphs__hint-mini">Ranked by completed rides</span>
+          </header>
+          <app-drivers-insights mode="leaderboard" view="graph" [active]="true" />
+        </article>
+
+        <!-- Performance inline — feeds from /admin/drivers/performance -->
+        <article class="graphs__card graphs__card--wide graphs__embed">
+          <header class="graphs__card-head">
+            <h3 class="graphs__title">Driver performance</h3>
+            <span class="graphs__hint-mini">Successful / Cancelled / Missed breakdown</span>
+          </header>
+          <app-drivers-insights mode="performance" view="graph" [active]="true" />
+        </article>
+      </section>
+
       <!-- =================== Reusable table =================== -->
       <tm-data-table
+        *ngIf="view === 'table'"
         [rows]="rows"
         [total]="total"
         [page]="page"
@@ -100,22 +309,107 @@ interface DriverRow {
 
         <!-- Toolbar: filters on the RIGHT -->
         <ng-container slot="filters">
-          <!-- State select (Active / Deactivated / All) -->
-          <div class="state-select" [class.has-value]="state !== 'all'">
-            <span class="state-select__icon" aria-hidden="true">
-              <tm-icon name="user" [size]="14" />
-            </span>
-            <select
-              class="state-select__field"
-              [(ngModel)]="state"
-              (ngModelChange)="onStateChange()"
+          <!-- State select (Active / Deactivated / All) — custom dropdown for full CSS control -->
+          <div class="state-select" [class.has-value]="state !== 'all'" [class.is-open]="stateOpen">
+            <button
+              type="button"
+              class="state-select__trigger"
+              (click)="toggleStateMenu($event)"
+              [attr.aria-expanded]="stateOpen"
+              aria-haspopup="listbox"
               aria-label="Activation status filter"
             >
-              <option value="all">All drivers</option>
-              <option value="active">Active</option>
-              <option value="deactivated">Deactivated</option>
-            </select>
-            <tm-icon name="chevron-down" [size]="12" class="state-select__caret" />
+              <span class="state-select__icon" aria-hidden="true">
+                <tm-icon name="user" [size]="14" />
+              </span>
+              <span class="state-select__value">{{ stateLabel() }}</span>
+              <tm-icon name="chevron-down" [size]="12" class="state-select__caret" />
+            </button>
+            <ul
+              class="state-select__menu"
+              *ngIf="stateOpen"
+              role="listbox"
+              (click)="$event.stopPropagation()"
+            >
+              <li
+                *ngFor="let opt of stateOptions"
+                class="state-select__option"
+                [class.is-selected]="state === opt.value"
+                role="option"
+                [attr.aria-selected]="state === opt.value"
+                (click)="selectState(opt.value)"
+              >
+                <tm-icon
+                  *ngIf="state === opt.value"
+                  name="check"
+                  [size]="12"
+                  class="state-select__option-check"
+                />
+                <span class="state-select__option-label">{{ opt.label }}</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Activity (Online / Offline) filter -->
+          <div class="state-select" [class.has-value]="online !== 'all'" [class.is-open]="onlineOpen">
+            <button
+              type="button"
+              class="state-select__trigger"
+              (click)="toggleOnlineMenu($event)"
+              [attr.aria-expanded]="onlineOpen"
+              aria-haspopup="listbox"
+              aria-label="Online status filter"
+            >
+              <span class="state-select__icon" aria-hidden="true">
+                <tm-icon name="bolt" [size]="14" />
+              </span>
+              <span class="state-select__value">{{ onlineLabel() }}</span>
+              <tm-icon name="chevron-down" [size]="12" class="state-select__caret" />
+            </button>
+            <ul class="state-select__menu" *ngIf="onlineOpen" role="listbox" (click)="$event.stopPropagation()">
+              <li
+                *ngFor="let opt of onlineOptions"
+                class="state-select__option"
+                [class.is-selected]="online === opt.value"
+                role="option"
+                [attr.aria-selected]="online === opt.value"
+                (click)="selectOnline(opt.value)"
+              >
+                <tm-icon *ngIf="online === opt.value" name="check" [size]="12" class="state-select__option-check" />
+                <span class="state-select__option-label">{{ opt.label }}</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Approval (Approved / Pending / Disapproved) filter -->
+          <div class="state-select" [class.has-value]="approval !== 'all'" [class.is-open]="approvalOpen">
+            <button
+              type="button"
+              class="state-select__trigger"
+              (click)="toggleApprovalMenu($event)"
+              [attr.aria-expanded]="approvalOpen"
+              aria-haspopup="listbox"
+              aria-label="Approval status filter"
+            >
+              <span class="state-select__icon" aria-hidden="true">
+                <tm-icon name="shield" [size]="14" />
+              </span>
+              <span class="state-select__value">{{ approvalLabel() }}</span>
+              <tm-icon name="chevron-down" [size]="12" class="state-select__caret" />
+            </button>
+            <ul class="state-select__menu" *ngIf="approvalOpen" role="listbox" (click)="$event.stopPropagation()">
+              <li
+                *ngFor="let opt of approvalOptions"
+                class="state-select__option"
+                [class.is-selected]="approval === opt.value"
+                role="option"
+                [attr.aria-selected]="approval === opt.value"
+                (click)="selectApproval(opt.value)"
+              >
+                <tm-icon *ngIf="approval === opt.value" name="check" [size]="12" class="state-select__option-check" />
+                <span class="state-select__option-label">{{ opt.label }}</span>
+              </li>
+            </ul>
           </div>
 
           <!-- Date range picker — filters by drivers.created_at -->
@@ -180,6 +474,26 @@ interface DriverRow {
               <tm-icon name="x" [size]="12" />
             </button>
           </span>
+          <span class="filter-pill" *ngIf="online !== 'all'">
+            <span class="filter-pill__icon">
+              <tm-icon name="bolt" [size]="11" />
+            </span>
+            <span class="filter-pill__label">Activity</span>
+            <span class="filter-pill__value">{{ online === 'online' ? 'Online' : 'Offline' }}</span>
+            <button type="button" class="filter-pill__close" (click)="clearOnline()" aria-label="Clear activity filter">
+              <tm-icon name="x" [size]="12" />
+            </button>
+          </span>
+          <span class="filter-pill" *ngIf="approval !== 'all'">
+            <span class="filter-pill__icon">
+              <tm-icon name="shield" [size]="11" />
+            </span>
+            <span class="filter-pill__label">Approval</span>
+            <span class="filter-pill__value">{{ approvalLabel() }}</span>
+            <button type="button" class="filter-pill__close" (click)="clearApproval()" aria-label="Clear approval filter">
+              <tm-icon name="x" [size]="12" />
+            </button>
+          </span>
         </ng-container>
 
         <!-- ============ Columns ============ -->
@@ -204,34 +518,14 @@ interface DriverRow {
           </ng-template>
         </tm-column>
 
-        <tm-column key="phone" label="Phone" width="160">
+        <tm-column key="contact" label="Contact" width="240">
           <ng-template let-row>
-            <span class="mono">{{ row.user?.phone || '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="email" label="Email">
-          <ng-template let-row>
-            <span [class.muted]="!row.user?.email">{{ row.user?.email || '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="status" label="Status" width="160">
-          <ng-template let-row>
-            <span class="status-stack">
-              <span class="status-pill"
-                    [class.is-online]="row.is_online"
-                    [class.is-offline]="!row.is_online">
-                <span class="status-dot"></span>
-                {{ row.is_online ? 'Online' : 'Offline' }}
+            <div class="cell-contact">
+              <span class="cell-contact__email" [class.muted]="!row.user?.email">
+                {{ row.user?.email || '—' }}
               </span>
-              <span class="status-pill status-pill--ghost"
-                    [class.is-approved]="row.approval_status === 'approved'"
-                    [class.is-rejected]="row.approval_status === 'rejected'"
-                    [class.is-pending]="row.approval_status === 'pending'">
-                {{ row.approval_status }}
-              </span>
-            </span>
+              <span class="cell-contact__phone mono">{{ row.user?.phone || '—' }}</span>
+            </div>
           </ng-template>
         </tm-column>
 
@@ -243,15 +537,19 @@ interface DriverRow {
           </ng-template>
         </tm-column>
 
-        <tm-column key="rides_7d" label="7d" width="70" align="right">
+        <tm-column key="rides_7d" label="Rides (7d)" width="110" align="right">
           <ng-template let-row>
-            <span class="rides-chip" [class.is-zero]="!row.rides_7d">{{ row.rides_7d ?? 0 }}</span>
+            <span class="rides-chip" [class.is-zero]="!row.rides_7d"
+                  title="Completed trips in the last 7 days">
+              {{ row.rides_7d ?? 0 }}
+            </span>
           </ng-template>
         </tm-column>
 
-        <tm-column key="total_rides" label="Total" width="80" align="right">
+        <tm-column key="total_rides" label="Total rides" width="120" align="right">
           <ng-template let-row>
-            <span class="rides-chip" [class.is-zero]="!row.total_rides">
+            <span class="rides-chip" [class.is-zero]="!row.total_rides"
+                  title="All completed trips for this driver">
               {{ row.total_rides ?? 0 }}
             </span>
           </ng-template>
@@ -279,6 +577,38 @@ interface DriverRow {
                 Reactivate
               </tm-button>
             </ng-template>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="status" label="Status" width="200">
+          <ng-template let-row>
+            <div class="status-cluster">
+              <span
+                *ngIf="row.deactivated_at"
+                class="status-pill is-deactivated"
+                title="Driver is deactivated — dispatch is stopped"
+              >
+                <span class="status-dot"></span>
+                Deactivated
+              </span>
+              <span
+                *ngIf="!row.deactivated_at"
+                class="status-pill"
+                [class.is-online]="row.is_online"
+                [class.is-offline]="!row.is_online"
+                [title]="row.is_online ? 'Driver is online and receiving rides' : 'Driver is offline'"
+              >
+                <span class="status-dot"></span>
+                {{ row.is_online ? 'Online' : 'Offline' }}
+              </span>
+              <span class="status-pill status-pill--ghost"
+                    [class.is-approved]="row.approval_status === 'approved'"
+                    [class.is-rejected]="row.approval_status === 'rejected'"
+                    [class.is-pending]="row.approval_status === 'pending'"
+                    [title]="'Approval: ' + row.approval_status">
+                {{ row.approval_status }}
+              </span>
+            </div>
           </ng-template>
         </tm-column>
 
@@ -373,6 +703,163 @@ interface DriverRow {
           </ng-template>
         </tm-column>
       </tm-data-table>
+
+      <!-- Deactivation confirmation modal -->
+      <tm-modal
+        [open]="deactivateOpen"
+        title="Deactivate driver"
+        [dismissible]="busyId === null"
+        (closed)="closeDeactivateModal()"
+      >
+        <ng-container slot="body">
+          <div class="deact" *ngIf="deactivateTarget as t">
+            <div class="deact__alert">
+              <span class="deact__alert-icon" aria-hidden="true">
+                <tm-icon name="x" [size]="14" />
+              </span>
+              <div class="deact__alert-body">
+                <strong>This will stop dispatch for this driver.</strong>
+                <span class="deact__alert-sub">
+                  They won't receive new ride requests until you reactivate them.
+                </span>
+              </div>
+            </div>
+
+            <div class="deact__who">
+              <span class="cell-avatar">{{ initials(t.user?.name) }}</span>
+              <div class="deact__who-meta">
+                <span class="deact__who-name">{{ t.user?.name || 'Unnamed' }}</span>
+                <span class="deact__who-sub mono">#{{ t.id }} · {{ t.user?.phone || '—' }}</span>
+              </div>
+            </div>
+
+            <label class="deact__lbl" for="deact-reason">
+              Reason <span class="deact__lbl-opt">(optional, shown to the driver)</span>
+            </label>
+            <textarea
+              id="deact-reason"
+              class="deact__reason"
+              rows="3"
+              [(ngModel)]="deactivateReason"
+              [disabled]="busyId !== null"
+              placeholder="e.g. Document re-verification required."
+            ></textarea>
+          </div>
+        </ng-container>
+
+        <ng-container slot="footer">
+          <tm-button
+            variant="ghost"
+            (clicked)="closeDeactivateModal()"
+            [disabled]="busyId !== null"
+          >
+            Cancel
+          </tm-button>
+          <tm-button
+            variant="danger"
+            [loading]="busyId !== null && busyId === deactivateTarget?.id"
+            (clicked)="confirmDeactivate()"
+          >
+            Deactivate driver
+          </tm-button>
+        </ng-container>
+      </tm-modal>
+
+      <!-- ============ Insights drawer (Leaderboard / Performance) ============ -->
+      <div
+        *ngIf="insightsMounted"
+        class="drawer"
+        [class.is-closing]="insightsClosing"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="insights-drawer-title"
+        (click)="closeInsights()"
+      >
+        <aside
+          class="drawer__panel"
+          [class.is-closing]="insightsClosing"
+          (click)="$event.stopPropagation()"
+        >
+          <header class="drawer__head">
+            <div class="drawer__head-left">
+              <h2 id="insights-drawer-title" class="drawer__title">
+                <tm-icon name="chart-bar" [size]="18" />
+                Driver Insights
+              </h2>
+              <p class="drawer__sub">
+                {{ insightsMode === 'leaderboard'
+                  ? 'Rank drivers by completed-ride count over a fixed period.'
+                  : 'Break ride outcomes into Successful / Cancelled / Missed over a date range.' }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="drawer__close"
+              (click)="closeInsights()"
+              aria-label="Close insights"
+            >
+              <tm-icon name="x" [size]="16" />
+            </button>
+          </header>
+
+          <!-- Segmented tabs + view toggle -->
+          <div class="drawer__tabs-row">
+            <nav class="drawer__tabs" role="tablist" aria-label="Insight view">
+              <button
+                type="button"
+                role="tab"
+                class="drawer__tab"
+                [class.is-active]="insightsMode === 'leaderboard'"
+                [attr.aria-selected]="insightsMode === 'leaderboard'"
+                (click)="switchInsightsTab('leaderboard')"
+              >
+                <tm-icon name="bolt" [size]="14" />
+                <span>Leaderboard</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="drawer__tab"
+                [class.is-active]="insightsMode === 'performance'"
+                [attr.aria-selected]="insightsMode === 'performance'"
+                (click)="switchInsightsTab('performance')"
+              >
+                <tm-icon name="chart-bar" [size]="14" />
+                <span>Performance</span>
+              </button>
+            </nav>
+
+            <div class="view-toggle" role="group" aria-label="View mode">
+              <button
+                type="button"
+                class="view-toggle__btn"
+                [class.is-active]="view === 'table'"
+                [attr.aria-pressed]="view === 'table'"
+                (click)="setView('table')"
+                title="Table view"
+              >
+                <tm-icon name="menu" [size]="14" />
+                <span>Table</span>
+              </button>
+              <button
+                type="button"
+                class="view-toggle__btn"
+                [class.is-active]="view === 'graph'"
+                [attr.aria-pressed]="view === 'graph'"
+                (click)="setView('graph')"
+                title="Graph view"
+              >
+                <tm-icon name="chart-bar" [size]="14" />
+                <span>Graph</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="drawer__body">
+            <app-drivers-insights [mode]="insightsMode" [view]="view" [active]="insightsOpen" />
+          </div>
+        </aside>
+      </div>
     </div>
   `,
   styles: [`
@@ -424,57 +911,264 @@ interface DriverRow {
       justify-content: flex-end;
     }
 
-    /* ---------- State select (left of date range) ---------- */
-    .state-select {
-      position: relative;
+    /* ---------- Table / Graph view toggle ---------- */
+    .view-toggle {
+      display: inline-flex;
+      padding: 3px;
+      background: var(--tm-canvas-2);
+      border-radius: var(--tm-radius-md);
+      gap: 2px;
+    }
+    .view-toggle__btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 4px 26px 4px 10px;
+      padding: 7px 12px;
+      border: 0;
+      background: transparent;
+      color: var(--tm-text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: calc(var(--tm-radius-md) - 3px);
+      transition: background var(--tm-duration-fast) var(--tm-ease),
+                  color var(--tm-duration-fast) var(--tm-ease),
+                  box-shadow var(--tm-duration-fast) var(--tm-ease);
+    }
+    .view-toggle__btn:hover:not(.is-active) { color: var(--tm-text); }
+    .view-toggle__btn.is-active {
+      background: var(--tm-surface);
+      color: var(--tm-text);
+      box-shadow: 0 1px 3px rgba(15,20,25,0.08);
+    }
+
+    /* ---------- Graph view ---------- */
+    .graphs { display: flex; flex-direction: column; gap: var(--tm-space-4); }
+    .graphs__hint {
+      margin: 0;
+      padding: 10px 14px;
+      background: var(--tm-canvas);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-sm);
+      font-size: 12px;
+      color: var(--tm-text-muted);
+    }
+    .graphs__hint strong { color: var(--tm-text); font-weight: 700; }
+
+    .graphs__section {
+      margin: var(--tm-space-2) 0 calc(-1 * var(--tm-space-2));
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--tm-text);
+    }
+    .graphs__section-sub {
+      font-weight: 500;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--tm-text-muted);
+      margin-left: 6px;
+    }
+
+    .graphs__grid {
+      display: grid;
+      gap: var(--tm-space-3);
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .graphs__card {
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-md);
+      padding: var(--tm-space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--tm-space-3);
+    }
+    .graphs__card--wide { grid-column: 1 / -1; }
+    .graphs__card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .graphs__title {
+      margin: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--tm-text);
+    }
+    .graphs__title tm-icon { color: var(--tm-green-deep); }
+    .graphs__hint-mini {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--tm-text-muted);
+      max-width: 60%;
+      text-align: right;
+    }
+
+    /* ---------- KPI strip ---------- */
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--tm-space-3);
+    }
+    .kpi {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-md);
+      padding: var(--tm-space-3) var(--tm-space-4);
+    }
+    .kpi__icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .kpi__icon--ink   { background: var(--tm-ink); color: #fff; }
+    .kpi__icon--green { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .kpi__icon--amber { background: #fffbeb; color: #b45309; }
+    .kpi__body { display: flex; flex-direction: column; min-width: 0; }
+    .kpi__value {
+      font-family: var(--tm-font-mono);
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--tm-text);
+    }
+    .kpi__label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--tm-text-muted);
+      margin-top: 2px;
+    }
+    .kpi__sub {
+      font-size: 11px;
+      color: var(--tm-text-soft);
+      margin-top: 2px;
+    }
+    /* Embedded <app-drivers-insights> already has its own inner padding,
+       so drop the outer card padding for that variant. */
+    .graphs__embed { padding: var(--tm-space-3); }
+    .graphs__embed :host ::ng-deep .graph-card,
+    .graphs__embed ::ng-deep .graph-card {
+      border: 0;
+      padding: 0;
+    }
+    @media (max-width: 540px) {
+      .view-toggle__btn span { display: none; }
+      .view-toggle__btn { padding: 7px 10px; }
+    }
+
+    /* ---------- Custom state-select dropdown (button + popover) ---------- */
+    .state-select {
+      position: relative;
+      display: inline-block;
+    }
+    .state-select__trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
       border: 1px solid var(--tm-line-2);
       border-radius: var(--tm-radius-md);
       background: transparent;
+      font-family: var(--tm-font-body);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--tm-text);
+      cursor: pointer;
+      line-height: 1.2;
       transition: border-color var(--tm-duration-fast) var(--tm-ease),
                   background var(--tm-duration-fast) var(--tm-ease);
     }
-    .state-select:focus-within { border-color: var(--tm-ink); }
-    .state-select.has-value {
+    .state-select__trigger:hover { border-color: var(--tm-ink); }
+    .state-select.is-open .state-select__trigger { border-color: var(--tm-ink); }
+    .state-select.has-value .state-select__trigger {
       background: var(--tm-green-tint);
       border-color: var(--tm-green-deep);
     }
     .state-select__icon { color: var(--tm-text-muted); display: inline-flex; }
     .state-select.has-value .state-select__icon { color: var(--tm-green-deep); }
-    .state-select__field {
-      appearance: none;
-      -webkit-appearance: none;
-      background: transparent;
-      border: 0;
-      outline: 0;
-      font-family: var(--tm-font-body);
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--tm-text);
-      padding: 4px 0;
-      min-width: 130px;
-      cursor: pointer;
-    }
+    .state-select__value { min-width: 110px; text-align: left; }
     .state-select__caret {
-      position: absolute;
-      right: 8px;
-      pointer-events: none;
       color: var(--tm-text-soft);
+      transition: transform var(--tm-duration-fast) var(--tm-ease);
     }
+    .state-select.is-open .state-select__caret { transform: rotate(180deg); }
     .state-select.has-value .state-select__caret { color: var(--tm-green-deep); }
+
+    /* Dropdown menu */
+    .state-select__menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      min-width: 180px;
+      margin: 0;
+      padding: 6px;
+      list-style: none;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      box-shadow: var(--tm-shadow-pop);
+      z-index: 1100;
+      animation: state-select-in 140ms var(--tm-ease) both;
+    }
+    @keyframes state-select-in {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .state-select__option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--tm-radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--tm-text);
+      cursor: pointer;
+      transition: background var(--tm-duration-fast) var(--tm-ease),
+                  color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .state-select__option:hover {
+      background: var(--tm-canvas-2);
+    }
+    .state-select__option.is-selected {
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+      font-weight: 700;
+    }
+    .state-select__option-check {
+      color: var(--tm-green-deep);
+      flex-shrink: 0;
+    }
+    .state-select__option-label { flex: 1; }
 
     /* ---------- Date range picker ---------- */
     .date-range {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 6px 4px 10px;
+      gap: 8px;
+      padding: 8px 8px 8px 14px;
       border: 1px solid var(--tm-line-2);
       border-radius: var(--tm-radius-md);
       background: transparent;
+      line-height: 1;
       transition: border-color var(--tm-duration-fast) var(--tm-ease),
                   background var(--tm-duration-fast) var(--tm-ease);
       cursor: pointer;
@@ -496,17 +1190,18 @@ interface DriverRow {
       font-size: 12px;
       font-weight: 600;
       color: var(--tm-text);
-      padding: 4px 0;
+      padding: 0;
       min-width: 220px;
       cursor: pointer;
+      line-height: 1.2;
     }
     .date-range__input::placeholder { color: var(--tm-text-soft); }
     .date-range__clear {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: var(--tm-canvas-2);
       color: var(--tm-text-muted);
@@ -634,47 +1329,111 @@ interface DriverRow {
       color: var(--tm-text-muted);
     }
 
-    .status-stack {
-      display: inline-flex;
+    .cell-contact {
+      display: flex;
       flex-direction: column;
-      gap: 4px;
-      align-items: flex-start;
+      gap: 2px;
+      min-width: 0;
+    }
+    .cell-contact__email {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--tm-text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cell-contact__email.muted { color: var(--tm-text-soft); }
+    .cell-contact__phone {
+      font-size: 12px;
+      color: var(--tm-text-muted);
+    }
+
+    /* ----- Status column: grouped pill cluster ----- */
+    .status-cluster {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      background: var(--tm-canvas);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-pill);
+      max-width: 100%;
     }
     .status-pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 2px 10px;
+      gap: 5px;
+      padding: 3px 9px;
       border-radius: var(--tm-radius-pill);
-      font-size: 10px;
-      font-weight: 800;
+      font-size: 10.5px;
+      font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      line-height: 1.6;
+      line-height: 1.4;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      transition: transform var(--tm-duration-fast) var(--tm-ease);
     }
     .status-pill .status-dot {
-      width: 6px; height: 6px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: currentColor;
+      box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent);
+      flex-shrink: 0;
     }
-    .status-pill.is-online   { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .status-pill.is-offline  { background: var(--tm-canvas-2);   color: var(--tm-text-soft);  }
+    .status-pill.is-online {
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+      border-color: var(--tm-green-soft);
+    }
+    .status-pill.is-online .status-dot {
+      animation: status-pulse 1.6s var(--tm-ease) infinite;
+    }
+    @keyframes status-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 35%, transparent); }
+      50%      { box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%, transparent); }
+    }
+    .status-pill.is-offline     { background: var(--tm-surface);     color: var(--tm-text-muted); border-color: var(--tm-line-2); }
+    .status-pill.is-offline .status-dot { background: var(--tm-text-soft); box-shadow: none; }
+    .status-pill.is-deactivated { background: #fee2e2;               color: #b91c1c;              border-color: #fecaca; }
     .status-pill--ghost {
-      background: transparent;
+      background: var(--tm-surface);
       border: 1px solid var(--tm-line-2);
       color: var(--tm-text-muted);
     }
     .status-pill--ghost.is-approved {
-      border-color: var(--tm-green-deep);
+      background: var(--tm-green-tint);
+      border-color: var(--tm-green-soft);
       color: var(--tm-green-deep);
     }
+    .status-pill--ghost.is-approved::before {
+      content: '✓';
+      font-size: 10px;
+      font-weight: 900;
+      margin-right: 1px;
+    }
     .status-pill--ghost.is-rejected {
-      border-color: #dc2626;
+      background: #fef2f2;
+      border-color: #fecaca;
       color: #dc2626;
     }
+    .status-pill--ghost.is-rejected::before {
+      content: '✕';
+      font-size: 10px;
+      font-weight: 900;
+      margin-right: 1px;
+    }
     .status-pill--ghost.is-pending {
-      border-color: #f59e0b;
-      color: #f59e0b;
+      background: #fffbeb;
+      border-color: #fde68a;
+      color: #b45309;
+    }
+    .status-pill--ghost.is-pending::before {
+      content: '⏱';
+      font-size: 10px;
+      margin-right: 1px;
     }
 
     .rides-chip {
@@ -795,14 +1554,250 @@ interface DriverRow {
     }
     .id-pop__link:hover { color: var(--tm-green); }
 
-    /* ---------- Toolbar surface tweaks ---------- */
+    /* ---------- Toolbar surface tweaks (search to match state/date controls) ---------- */
     :host ::ng-deep tm-data-table .tm-dt__toolbar tm-input .field {
       background: transparent;
       border-color: var(--tm-line-2);
+      padding: 9px 14px;
+      gap: 8px;
     }
     :host ::ng-deep tm-data-table .tm-dt__toolbar tm-input .field:focus-within {
       border-color: var(--tm-ink);
       background: var(--tm-surface);
+    }
+    :host ::ng-deep tm-data-table .tm-dt__toolbar tm-input input {
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    /* ---------- Deactivation modal ---------- */
+    .deact {
+      display: flex;
+      flex-direction: column;
+      gap: var(--tm-space-3);
+    }
+    .deact__alert {
+      display: flex;
+      gap: 10px;
+      padding: 12px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: var(--tm-radius-sm);
+      color: #991b1b;
+    }
+    .deact__alert-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fecaca;
+      color: #991b1b;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .deact__alert-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .deact__alert-sub {
+      color: #b91c1c;
+      font-weight: 500;
+    }
+    .deact__who {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--tm-canvas);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-sm);
+    }
+    .deact__who-meta { display: flex; flex-direction: column; min-width: 0; }
+    .deact__who-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--tm-text);
+    }
+    .deact__who-sub {
+      font-size: 11px;
+      color: var(--tm-text-muted);
+    }
+    .deact__lbl {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--tm-text-muted);
+    }
+    .deact__lbl-opt {
+      letter-spacing: 0.02em;
+      text-transform: none;
+      font-weight: 500;
+      color: var(--tm-text-soft);
+    }
+    .deact__reason {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-sm);
+      background: var(--tm-surface);
+      font-family: var(--tm-font-body);
+      font-size: 13px;
+      color: var(--tm-text);
+      resize: vertical;
+      min-height: 80px;
+      transition: border-color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .deact__reason:focus {
+      outline: none;
+      border-color: var(--tm-ink);
+    }
+    .deact__reason:disabled {
+      background: var(--tm-canvas-2);
+      color: var(--tm-text-soft);
+      cursor: not-allowed;
+    }
+
+    /* ---------- Insights drawer ---------- */
+    .drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      background: rgba(15, 20, 25, 0.42);
+      backdrop-filter: blur(2px);
+      display: flex;
+      justify-content: flex-end;
+      animation: drawer-fade-in 180ms var(--tm-ease) both;
+    }
+    .drawer.is-closing { animation: drawer-fade-out 180ms var(--tm-ease) both; }
+    @keyframes drawer-fade-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes drawer-fade-out {
+      from { opacity: 1; }
+      to   { opacity: 0; }
+    }
+
+    .drawer__panel {
+      width: min(880px, 96vw);
+      max-width: 96vw;
+      height: 100%;
+      background: var(--tm-canvas);
+      border-left: 1px solid var(--tm-line);
+      box-shadow: -20px 0 50px rgba(15,20,25,0.18);
+      display: flex;
+      flex-direction: column;
+      animation: drawer-slide-in 220ms var(--tm-ease) both;
+    }
+    .drawer__panel.is-closing { animation: drawer-slide-out 200ms var(--tm-ease) both; }
+    @keyframes drawer-slide-in {
+      from { transform: translateX(40px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    @keyframes drawer-slide-out {
+      from { transform: translateX(0);    opacity: 1; }
+      to   { transform: translateX(40px); opacity: 0; }
+    }
+
+    .drawer__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--tm-space-3);
+      padding: var(--tm-space-4) var(--tm-space-5);
+      background: var(--tm-surface);
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .drawer__head-left { min-width: 0; flex: 1; }
+    .drawer__title {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 4px;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--tm-text);
+    }
+    .drawer__title tm-icon { color: var(--tm-green-deep); }
+    .drawer__sub {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--tm-text-muted);
+      line-height: 1.4;
+    }
+    .drawer__close {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--tm-canvas-2);
+      color: var(--tm-text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background var(--tm-duration-fast) var(--tm-ease),
+                  color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .drawer__close:hover { background: var(--tm-ink); color: #fff; }
+
+    .drawer__tabs-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--tm-space-3);
+      padding: var(--tm-space-3) var(--tm-space-5) 0;
+      background: var(--tm-surface);
+      border-bottom: 1px solid var(--tm-line);
+      flex-wrap: wrap;
+    }
+    .drawer__tabs {
+      display: flex;
+      gap: 4px;
+    }
+    .drawer__tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border: 0;
+      background: transparent;
+      color: var(--tm-text-muted);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color var(--tm-duration-fast) var(--tm-ease),
+                  border-color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .drawer__tab:hover:not(.is-active) { color: var(--tm-text); }
+    .drawer__tab.is-active {
+      color: var(--tm-green-deep);
+      border-bottom-color: var(--tm-green-deep);
+    }
+
+    .drawer__body {
+      flex: 1;
+      overflow: auto;
+      padding: var(--tm-space-5);
+    }
+
+    /* Mobile: drawer becomes a full-height sheet */
+    @media (max-width: 640px) {
+      .drawer { background: rgba(15,20,25,0.55); }
+      .drawer__panel { width: 100vw; }
+      .drawer__head,
+      .drawer__tabs-row { padding-left: var(--tm-space-4); padding-right: var(--tm-space-4); }
+      .drawer__body { padding: var(--tm-space-4); }
+      .drawer__title { font-size: 16px; }
+      .drawer__sub { display: none; }
+      .drawer__tab span { font-size: 12px; }
     }
 
     /* ---------- Responsive ---------- */
@@ -824,6 +1819,30 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   search = '';
   state: StateFilter = 'all';
+  stateOpen = false;
+  readonly stateOptions: { value: StateFilter; label: string }[] = [
+    { value: 'all', label: 'All drivers' },
+    { value: 'active', label: 'Active' },
+    { value: 'deactivated', label: 'Deactivated' },
+  ];
+
+  online: OnlineFilter = 'all';
+  onlineOpen = false;
+  readonly onlineOptions: { value: OnlineFilter; label: string }[] = [
+    { value: 'all', label: 'Any activity' },
+    { value: 'online', label: 'Online' },
+    { value: 'offline', label: 'Offline' },
+  ];
+
+  approval: ApprovalFilter = 'all';
+  approvalOpen = false;
+  readonly approvalOptions: { value: ApprovalFilter; label: string }[] = [
+    { value: 'all', label: 'Any approval' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'rejected', label: 'Disapproved' },
+  ];
+
   page = 1;
   pageSize = 25;
 
@@ -837,17 +1856,41 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   busyId: number | null = null;
 
+  /** Deactivation confirmation modal. */
+  deactivateOpen = false;
+  deactivateTarget: DriverRow | null = null;
+  deactivateReason = '';
+
+  /** Insights drawer (Leaderboard / Performance). */
+  insightsOpen = false;
+  insightsMounted = false;
+  insightsClosing = false;
+  insightsMode: InsightMode = 'leaderboard';
+
+  /** Table vs graph view for the drivers page. */
+  view: DriversView = 'table';
+
   private searchDebounce: any = null;
+  private insightsCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private api: ApiService,
     private toast: ToastService,
     private zone: NgZone,
     private router: Router,
+    private route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
     this.reload();
+    // Deep-link support: /drivers?insights=leaderboard|performance opens the
+    // drawer pre-selected (used by the sidebar nav and redirected legacy URLs).
+    this.route.queryParamMap.subscribe((q) => {
+      const v = q.get('insights');
+      if (v === 'leaderboard' || v === 'performance') {
+        this.openInsights(v);
+      }
+    });
   }
 
   ngAfterViewInit(): void {
@@ -856,6 +1899,8 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyDateRangePicker();
+    if (this.insightsCloseTimer) clearTimeout(this.insightsCloseTimer);
+    if (this.insightsOpen) document.body.style.overflow = '';
   }
 
   get rangeLabel(): string {
@@ -914,6 +1959,8 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.search.trim()) params.set('q', this.search.trim());
     if (this.dateFrom) params.set('date_from', this.dateFrom);
     if (this.dateTo) params.set('date_to', this.dateTo);
+    if (this.online !== 'all') params.set('is_online', this.online === 'online' ? '1' : '0');
+    if (this.approval !== 'all') params.set('approval_status', this.approval);
 
     this.loading = true;
     this.api.get<{ data: { data: DriverRow[]; total: number } }>(
@@ -950,6 +1997,72 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   clearState(): void {
     this.state = 'all';
     this.onStateChange();
+  }
+
+  stateLabel(): string {
+    return this.stateOptions.find((o) => o.value === this.state)?.label ?? 'All drivers';
+  }
+
+  toggleStateMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.onlineOpen = false;
+    this.approvalOpen = false;
+    this.stateOpen = !this.stateOpen;
+  }
+
+  selectState(value: StateFilter): void {
+    this.stateOpen = false;
+    if (this.state === value) return;
+    this.state = value;
+    this.onStateChange();
+  }
+
+  // ---- Activity (online/offline) filter ----
+  onlineLabel(): string {
+    return this.onlineOptions.find((o) => o.value === this.online)?.label ?? 'Any activity';
+  }
+  toggleOnlineMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.stateOpen = false;
+    this.approvalOpen = false;
+    this.onlineOpen = !this.onlineOpen;
+  }
+  selectOnline(value: OnlineFilter): void {
+    this.onlineOpen = false;
+    if (this.online === value) return;
+    this.online = value;
+    this.page = 1;
+    this.reload();
+  }
+  clearOnline(): void {
+    if (this.online === 'all') return;
+    this.online = 'all';
+    this.page = 1;
+    this.reload();
+  }
+
+  // ---- Approval filter ----
+  approvalLabel(): string {
+    return this.approvalOptions.find((o) => o.value === this.approval)?.label ?? 'Any approval';
+  }
+  toggleApprovalMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.stateOpen = false;
+    this.onlineOpen = false;
+    this.approvalOpen = !this.approvalOpen;
+  }
+  selectApproval(value: ApprovalFilter): void {
+    this.approvalOpen = false;
+    if (this.approval === value) return;
+    this.approval = value;
+    this.page = 1;
+    this.reload();
+  }
+  clearApproval(): void {
+    if (this.approval === 'all') return;
+    this.approval = 'all';
+    this.page = 1;
+    this.reload();
   }
 
   onPageChange(page: number): void {
@@ -1010,17 +2123,29 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   openProfile(id: number, event: MouseEvent): void {
     event.stopPropagation();
     this.openPopoverId = null;
-    this.router.navigate(['/drivers/approvals', id]);
+    // Drawer is mounted in the /drivers shell; open it by setting ?driverId.
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { driverId: id },
+      queryParamsHandling: 'merge',
+    });
   }
 
   @HostListener('document:click')
   onDocumentClick(): void {
     if (this.openPopoverId !== null) this.openPopoverId = null;
+    if (this.stateOpen) this.stateOpen = false;
+    if (this.onlineOpen) this.onlineOpen = false;
+    if (this.approvalOpen) this.approvalOpen = false;
   }
 
   @HostListener('document:keydown.escape')
   onDocumentEscape(): void {
+    if (this.insightsOpen) { this.closeInsights(); return; }
     if (this.openPopoverId !== null) this.openPopoverId = null;
+    if (this.stateOpen) this.stateOpen = false;
+    if (this.onlineOpen) this.onlineOpen = false;
+    if (this.approvalOpen) this.approvalOpen = false;
   }
 
   initials(name: string | null | undefined): string {
@@ -1033,7 +2158,22 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   deactivate(row: DriverRow): void {
-    const reason = (window.prompt('Reason for deactivation (optional)') ?? '').trim();
+    this.deactivateTarget = row;
+    this.deactivateReason = '';
+    this.deactivateOpen = true;
+  }
+
+  closeDeactivateModal(): void {
+    if (this.busyId !== null) return;
+    this.deactivateOpen = false;
+    this.deactivateTarget = null;
+    this.deactivateReason = '';
+  }
+
+  confirmDeactivate(): void {
+    if (!this.deactivateTarget) return;
+    const reason = this.deactivateReason.trim();
+    const row = this.deactivateTarget;
     this.toggleActivation(row, false, reason || null);
   }
 
@@ -1054,6 +2194,11 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
             active ? `Driver #${row.id} reactivated` : `Driver #${row.id} deactivated`,
           );
           this.busyId = null;
+          if (!active) {
+            this.deactivateOpen = false;
+            this.deactivateTarget = null;
+            this.deactivateReason = '';
+          }
           this.reload();
         },
         error: (err) => {
@@ -1063,12 +2208,382 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
       });
   }
 
+  // -------------------- Table / Graph view toggle --------------------
+  setView(next: DriversView): void {
+    if (this.view === next) return;
+    this.view = next;
+    // Graph view embeds the leaderboard + performance charts inline, so the
+    // drawer is redundant — close it to avoid a stacked UI.
+    if (next === 'graph' && this.insightsOpen) this.closeInsights();
+  }
+
+  /** Approval status doughnut: approved / pending / rejected. */
+  get approvalChart() {
+    const counts = { approved: 0, pending: 0, rejected: 0 };
+    for (const r of this.rows) counts[r.approval_status as keyof typeof counts]++;
+    return {
+      data: {
+        labels: ['Approved', 'Pending', 'Rejected'],
+        datasets: [{
+          data: [counts.approved, counts.pending, counts.rejected],
+          backgroundColor: ['#16A34A', '#F59E0B', '#DC2626'],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom' as const, labels: { font: { size: 11 }, boxWidth: 10 } },
+        },
+      },
+    };
+  }
+
+  /** Online vs offline doughnut. */
+  get activityChart() {
+    const online = this.rows.filter((r) => r.is_online).length;
+    const offline = this.rows.length - online;
+    return {
+      data: {
+        labels: ['Online', 'Offline'],
+        datasets: [{
+          data: [online, offline],
+          backgroundColor: ['#22C55E', '#94A0AD'],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom' as const, labels: { font: { size: 11 }, boxWidth: 10 } },
+        },
+      },
+    };
+  }
+
+  /** Active vs deactivated doughnut. */
+  get stateChart() {
+    const deact = this.rows.filter((r) => !!r.deactivated_at).length;
+    const active = this.rows.length - deact;
+    return {
+      data: {
+        labels: ['Active', 'Deactivated'],
+        datasets: [{
+          data: [active, deact],
+          backgroundColor: ['#0F1419', '#DC2626'],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom' as const, labels: { font: { size: 11 }, boxWidth: 10 } },
+        },
+      },
+    };
+  }
+
+  /** Horizontal bar chart of the top 10 drivers in the current page by total rides. */
+  get topRidesChart() {
+    const top = [...this.rows]
+      .filter((r) => (r.total_rides ?? 0) > 0)
+      .sort((a, b) => (b.total_rides ?? 0) - (a.total_rides ?? 0))
+      .slice(0, 10);
+    return {
+      data: {
+        labels: top.map((r) => r.user?.name?.slice(0, 24) || `#${r.id}`),
+        datasets: [{
+          label: 'Total rides',
+          data: top.map((r) => r.total_rides ?? 0),
+          backgroundColor: '#16A34A',
+          borderRadius: 6,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        indexAxis: 'y' as const,
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#ECEFF3' } },
+          y: { grid: { display: false } },
+        },
+      },
+    };
+  }
+
+  /** Horizontal bar of the top 5 drivers by rides_7d (recent activity). */
+  get top7dChart() {
+    const top = [...this.rows]
+      .filter((r) => (r.rides_7d ?? 0) > 0)
+      .sort((a, b) => (b.rides_7d ?? 0) - (a.rides_7d ?? 0))
+      .slice(0, 5);
+    return {
+      data: {
+        labels: top.map((r) => r.user?.name?.slice(0, 24) || `#${r.id}`),
+        datasets: [{
+          label: 'Rides (last 7d)',
+          data: top.map((r) => r.rides_7d ?? 0),
+          backgroundColor: '#22C55E',
+          borderRadius: 6,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        indexAxis: 'y' as const,
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#ECEFF3' } },
+          y: { grid: { display: false } },
+        },
+      },
+    };
+  }
+
+  /** Vertical bar of driver count per vehicle_type. Unknown types lumped as "—". */
+  get vehicleTypeChart() {
+    const buckets = new Map<string, number>();
+    for (const r of this.rows) {
+      const k = (r.vehicle_type || '—').trim() || '—';
+      buckets.set(k, (buckets.get(k) || 0) + 1);
+    }
+    const entries = Array.from(buckets.entries()).sort((a, b) => b[1] - a[1]);
+    return {
+      data: {
+        labels: entries.map(([k]) => k),
+        datasets: [{
+          label: 'Drivers',
+          data: entries.map(([, v]) => v),
+          backgroundColor: '#16A34A',
+          borderRadius: 6,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#ECEFF3' } },
+        },
+      },
+    };
+  }
+
+  /** Histogram of lifetime-rides buckets so you can see the long tail at a glance. */
+  get ridesHistogramChart() {
+    const ranges = [
+      { label: '0', min: 0, max: 0 },
+      { label: '1–5', min: 1, max: 5 },
+      { label: '6–20', min: 6, max: 20 },
+      { label: '21–50', min: 21, max: 50 },
+      { label: '51–100', min: 51, max: 100 },
+      { label: '100+', min: 101, max: Infinity },
+    ];
+    const counts = ranges.map((b) => this.rows.filter((r) => {
+      const n = r.total_rides ?? 0;
+      return n >= b.min && n <= b.max;
+    }).length);
+    return {
+      data: {
+        labels: ranges.map((b) => b.label),
+        datasets: [{
+          label: 'Drivers',
+          data: counts,
+          backgroundColor: ['#94A0AD', '#9CA3AF', '#22C55E', '#16A34A', '#15803D', '#166534'],
+          borderRadius: 6,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            title: { display: true, text: 'Lifetime completed rides', font: { size: 11 }, color: '#6B7785' },
+            grid: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            title: { display: true, text: 'Driver count', font: { size: 11 }, color: '#6B7785' },
+            grid: { color: '#ECEFF3' },
+          },
+        },
+      },
+    };
+  }
+
+  /** Scatter of rides_7d (x) vs total_rides (y). Reveals new-but-active vs long-tenured-quiet. */
+  get recentVsLifetimeChart() {
+    const pts = this.rows
+      .filter((r) => (r.total_rides ?? 0) || (r.rides_7d ?? 0))
+      .map((r) => ({ x: r.rides_7d ?? 0, y: r.total_rides ?? 0 }));
+    return {
+      data: {
+        datasets: [{
+          label: 'Drivers',
+          data: pts,
+          backgroundColor: 'rgba(22, 163, 74, 0.55)',
+          borderColor: '#16A34A',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            title: { display: true, text: 'Rides (last 7d)', font: { size: 11 }, color: '#6B7785' },
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: '#ECEFF3' },
+          },
+          y: {
+            title: { display: true, text: 'Total rides', font: { size: 11 }, color: '#6B7785' },
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: '#ECEFF3' },
+          },
+        },
+      },
+    };
+  }
+
+  /** Line chart of new driver registrations per day over the last 30 days. */
+  get registrationsChart() {
+    const days = 30;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const buckets = new Map<string, number>();
+    const labels: string[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      buckets.set(key, 0);
+      labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+    }
+    for (const r of this.rows) {
+      if (!r.registered_on) continue;
+      const key = r.registered_on.slice(0, 10);
+      if (buckets.has(key)) buckets.set(key, (buckets.get(key) || 0) + 1);
+    }
+    return {
+      data: {
+        labels,
+        datasets: [{
+          label: 'New drivers',
+          data: Array.from(buckets.values()),
+          borderColor: '#16A34A',
+          backgroundColor: 'rgba(34, 197, 94, 0.18)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 14 } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#ECEFF3' } },
+        },
+      },
+    };
+  }
+
+  /** Plain-number KPIs computed from the current page. */
+  get stats() {
+    const n = this.rows.length;
+    const online = this.rows.filter((r) => r.is_online).length;
+    const approved = this.rows.filter((r) => r.approval_status === 'approved').length;
+    const pending = this.rows.filter((r) => r.approval_status === 'pending').length;
+    const totals = this.rows.map((r) => r.total_rides ?? 0);
+    const avg = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : 0;
+    // Median: pick the middle of a sorted copy (no point dragging in a math lib for this).
+    const sorted = [...totals].sort((a, b) => a - b);
+    const median = sorted.length
+      ? (sorted.length % 2
+          ? sorted[(sorted.length - 1) / 2]
+          : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2)
+      : 0;
+    return {
+      online,
+      onlinePct: n ? Math.round((online / n) * 100) : 0,
+      approved,
+      pending,
+      approvalRate: n ? Math.round((approved / n) * 100) : 0,
+      avgRides: avg,
+      medianRides: median,
+    };
+  }
+
+  // -------------------- Insights drawer --------------------
+  openInsights(mode: InsightMode = 'leaderboard'): void {
+    if (this.insightsCloseTimer) {
+      clearTimeout(this.insightsCloseTimer);
+      this.insightsCloseTimer = null;
+    }
+    this.insightsMode = mode;
+    this.insightsMounted = true;
+    this.insightsClosing = false;
+    this.insightsOpen = true;
+    document.body.style.overflow = 'hidden';
+  }
+
+  closeInsights(): void {
+    if (!this.insightsMounted) return;
+    this.insightsClosing = true;
+    this.insightsOpen = false;
+    document.body.style.overflow = '';
+    // Allow the slide-out animation to finish before unmounting.
+    this.insightsCloseTimer = setTimeout(() => {
+      this.insightsMounted = false;
+      this.insightsClosing = false;
+      this.insightsCloseTimer = null;
+    }, 200);
+    // Strip the query param so reopening from a button doesn't re-trigger
+    // openInsights via the queryParamMap subscription.
+    if (this.route.snapshot.queryParamMap.get('insights')) {
+      this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { insights: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    }
+  }
+
+  switchInsightsTab(mode: InsightMode): void {
+    if (this.insightsMode === mode) return;
+    this.insightsMode = mode;
+  }
+
   exportCsv(): void {
     this.exporting = true;
     const params = new URLSearchParams({ state: this.state });
     if (this.search.trim()) params.set('q', this.search.trim());
     if (this.dateFrom) params.set('date_from', this.dateFrom);
     if (this.dateTo) params.set('date_to', this.dateTo);
+    if (this.online !== 'all') params.set('is_online', this.online === 'online' ? '1' : '0');
+    if (this.approval !== 'all') params.set('approval_status', this.approval);
 
     this.api.getBlob(`/admin/drivers/export?${params.toString()}`).subscribe({
       next: (blob) => {

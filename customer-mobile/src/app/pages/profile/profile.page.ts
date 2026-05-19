@@ -19,6 +19,9 @@ export class CustomerProfilePage implements OnInit {
   name = '';
   email = '';
   phone = '';
+  /** Captured once at signup, surfaced read-only here. */
+  dob = '';
+  cityName = '';
 
   busy = false;
   error: string | null = null;
@@ -35,8 +38,17 @@ export class CustomerProfilePage implements OnInit {
       this.name = me.name && me.name !== 'User' ? me.name : '';
       this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
       this.phone = me.phone ?? '';
-      this.photoPreview = me.avatar_path || null;
+      this.photoPreview = me.avatar_url || me.avatar_path || null;
+      this.dob = me.dob ?? '';
+      this.cityName = me.city ?? '';
     }
+  }
+
+  get dobDisplay(): string {
+    if (!this.dob) return '';
+    const d = new Date(this.dob);
+    if (Number.isNaN(d.getTime())) return this.dob;
+    return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
   onPhotoChange(ev: Event): void {

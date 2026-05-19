@@ -16,6 +16,8 @@ export interface NavItem {
   label: string;
   icon: IconName;
   route?: string;
+  /** Optional query params appended to the route (e.g. {insights: 'leaderboard'}). */
+  queryParams?: Record<string, string | number | boolean>;
   badge?: string | number;
   children?: NavItem[];
   /** Default-open state for a group. Defaults to false (collapsed). */

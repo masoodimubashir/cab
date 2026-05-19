@@ -25,6 +25,14 @@ class ProfileController extends Controller
                 Rule::unique('users', 'email')->ignore($user->id),
             ],
             'photo' => ['nullable', 'file', 'image', 'max:4096'],
+            'dob' => ['nullable', 'date', 'before:today'],
+            'city' => ['nullable', 'string', 'max:80'],
+            // Column widths: app_version varchar(32), os_version varchar(32),
+            // device_type varchar(64). Validator caps match the schema so a
+            // long User-Agent (etc.) returns 422 instead of crashing on insert.
+            'app_version' => ['nullable', 'string', 'max:32'],
+            'os_version' => ['nullable', 'string', 'max:32'],
+            'device_type' => ['nullable', 'string', 'max:64'],
         ]);
 
         if ($request->hasFile('photo')) {
@@ -37,10 +45,20 @@ class ProfileController extends Controller
 
         $user->name = $data['name'];
         $user->email = $data['email'];
+        foreach (['dob', 'city', 'app_version', 'os_version', 'device_type'] as $field) {
+            if (array_key_exists($field, $data) && $data[$field] !== null) {
+                $user->{$field} = $data[$field];
+            }
+        }
         $user->save();
 
+        // Resolve via url() (not Storage::url()) so the host+port match the
+        // request — Storage::url() uses APP_URL, which in dev often lacks the
+        // artisan-serve port and yields a broken link the mobile can't load.
         $avatarUrl = $user->avatar_path
-            ? (str_starts_with($user->avatar_path, 'http') ? $user->avatar_path : Storage::disk('public')->url($user->avatar_path))
+            ? (str_starts_with($user->avatar_path, 'http')
+                ? $user->avatar_path
+                : url('/storage/'.ltrim($user->avatar_path, '/')))
             : null;
 
         return response()->json([
@@ -51,6 +69,11 @@ class ProfileController extends Controller
                 'phone' => $user->phone,
                 'avatar_path' => $user->avatar_path,
                 'avatar_url' => $avatarUrl,
+                'dob' => $user->dob?->toDateString(),
+                'city' => $user->city,
+                'app_version' => $user->app_version,
+                'os_version' => $user->os_version,
+                'device_type' => $user->device_type,
                 'roles' => $user->roleNames(),
             ],
         ]);
