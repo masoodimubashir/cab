@@ -18,7 +18,13 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
   imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   template: `
     <header class="head" *ngIf="driver">
-      <span class="head__avatar">{{ initials(driver.name) }}</span>
+      <span
+        class="head__avatar"
+        [class.head__avatar--photo]="driver.avatar_url || driver.avatar_path"
+        [style.backgroundImage]="(driver.avatar_url || driver.avatar_path) ? 'url(' + (driver.avatar_url || driver.avatar_path) + ')' : null"
+      >
+        <ng-container *ngIf="!(driver.avatar_url || driver.avatar_path)">{{ initials(driver.name) }}</ng-container>
+      </span>
       <div class="head__title">
         <div class="head__name">
           {{ driver.name || 'Unnamed driver' }}
@@ -110,6 +116,12 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
       font-size: 14px;
       font-weight: 800;
       flex-shrink: 0;
+    }
+    .head__avatar--photo {
+      background-color: var(--tm-canvas-2);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
     }
     .head__title { min-width: 0; flex: 1; }
     .head__name {
