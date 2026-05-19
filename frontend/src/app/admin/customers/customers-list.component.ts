@@ -35,6 +35,8 @@ interface CustomerRow {
   total_rides: number;
   address: string | null;
   is_suspended: boolean;
+  avatar_path?: string | null;
+  avatar_url?: string | null;
 }
 
 @Component({
@@ -176,7 +178,13 @@ interface CustomerRow {
         <tm-column key="name" label="User Name">
           <ng-template let-row>
             <div class="cell-user">
-              <span class="cell-avatar">{{ initials(row.name) }}</span>
+              <span
+                class="cell-avatar"
+                [class.cell-avatar--photo]="row.avatar_url || row.avatar_path"
+                [style.backgroundImage]="(row.avatar_url || row.avatar_path) ? 'url(' + (row.avatar_url || row.avatar_path) + ')' : null"
+              >
+                <ng-container *ngIf="!(row.avatar_url || row.avatar_path)">{{ initials(row.name) }}</ng-container>
+              </span>
               <div class="cell-user__meta">
                 <span class="cell-user__name">{{ row.name || 'Unnamed' }}</span>
                 <span class="cell-user__sub" *ngIf="row.address">{{ row.address }}</span>
@@ -185,15 +193,14 @@ interface CustomerRow {
           </ng-template>
         </tm-column>
 
-        <tm-column key="phone" label="Phone" width="160">
+        <tm-column key="contact" label="Contact" width="260">
           <ng-template let-row>
-            <span class="mono">{{ row.phone || '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="email" label="Email">
-          <ng-template let-row>
-            <span [class.muted]="!row.email">{{ row.email || '—' }}</span>
+            <div class="cell-contact">
+              <span class="cell-contact__email" [class.muted]="!row.email">
+                {{ row.email || '—' }}
+              </span>
+              <span class="cell-contact__phone mono">{{ row.phone || '—' }}</span>
+            </div>
           </ng-template>
         </tm-column>
 
@@ -234,19 +241,18 @@ interface CustomerRow {
           </ng-template>
         </tm-column>
 
-        <tm-column key="view" label="" width="60" align="right">
+        <tm-column key="view" label="" width="130" align="right">
           <ng-template let-row>
             <div class="id-pop" [class.is-open]="openPopoverId === row.id">
               <button
                 type="button"
-                class="view-btn"
+                class="view-btn view-btn--text"
                 [class.is-open]="openPopoverId === row.id"
                 (click)="togglePopover(row.id, $event)"
                 [attr.aria-expanded]="openPopoverId === row.id"
                 aria-label="View customer details"
-                title="View details"
               >
-                <tm-icon name="eye" [size]="14" />
+                View details
               </button>
               <div
                 class="id-pop__panel"
@@ -257,7 +263,13 @@ interface CustomerRow {
                 [style.left.px]="popoverLeft"
               >
                 <header class="id-pop__head">
-                  <span class="cell-avatar">{{ initials(row.name) }}</span>
+                  <span
+                    class="cell-avatar"
+                    [class.cell-avatar--photo]="row.avatar_url || row.avatar_path"
+                    [style.backgroundImage]="(row.avatar_url || row.avatar_path) ? 'url(' + (row.avatar_url || row.avatar_path) + ')' : null"
+                  >
+                    <ng-container *ngIf="!(row.avatar_url || row.avatar_path)">{{ initials(row.name) }}</ng-container>
+                  </span>
                   <div class="id-pop__title">
                     <div class="id-pop__name">{{ row.name || 'Unnamed' }}</div>
                     <div class="id-pop__id mono">#{{ row.id }}</div>
@@ -309,7 +321,7 @@ interface CustomerRow {
                     class="id-pop__link"
                     (click)="openProfile(row.id, $event)"
                   >
-                    Open full profile <tm-icon name="arrow-right" [size]="12" />
+                    View details <tm-icon name="arrow-right" [size]="12" />
                   </button>
                 </footer>
               </div>
@@ -648,7 +660,7 @@ interface CustomerRow {
       color: var(--tm-green-deep);
     }
 
-    /* ---------- Eye-icon view button (end of row) ---------- */
+    /* ---------- View-details button (end of row) ---------- */
     .view-btn {
       display: inline-flex;
       align-items: center;
@@ -669,6 +681,24 @@ interface CustomerRow {
       background: var(--tm-green);
       color: #fff;
     }
+    /* Text variant — replaces the icon-only square with a pill labeled
+       "View details" so the action reads inline with the other row actions. */
+    .view-btn--text {
+      width: auto;
+      height: 28px;
+      padding: 0 12px;
+      font-family: var(--tm-font-body);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      border: 1px solid var(--tm-line-2);
+      background: var(--tm-surface);
+      color: var(--tm-text);
+      cursor: pointer;
+    }
+    .view-btn--text:hover { background: var(--tm-ink); color: #fff; border-color: var(--tm-ink); }
+    .view-btn--text.is-open { background: var(--tm-green); color: #fff; border-color: var(--tm-green); }
 
     /* ---------- Detail popover ---------- */
     .id-pop {
@@ -790,6 +820,14 @@ interface CustomerRow {
       letter-spacing: 0.02em;
       flex-shrink: 0;
     }
+    /* Photo variant — let the inline background-image render and cover the
+       circle. Must be defined AFTER .cell-avatar so the shorthand reset wins. */
+    .cell-avatar--photo {
+      background-color: var(--tm-canvas-2);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
     .cell-user__meta {
       display: flex;
       flex-direction: column;
@@ -807,6 +845,28 @@ interface CustomerRow {
       font-size: 11px;
       font-weight: 600;
       color: var(--tm-text-muted);
+    }
+
+    /* Combined Contact column — email on top, phone below.
+       Mirrors the drivers list pattern for visual consistency across modules. */
+    .cell-contact {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .cell-contact__email {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--tm-text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cell-contact__phone {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--tm-text-soft);
     }
 
     .rides-chip {
