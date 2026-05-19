@@ -5,8 +5,8 @@
     <div class="menu-profile-card" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
       <div class="profile-avatar-wrap">
         <div class="avatar-circle">
-          <img *ngIf="u.avatar_path" [src]="u.avatar_path" alt="avatar" />
-          <ion-icon *ngIf="!u.avatar_path" name="person" aria-hidden="true"></ion-icon>
+          <img *ngIf="auth.resolveAvatarUrl(u)" [src]="auth.resolveAvatarUrl(u)" alt="avatar" />
+          <ion-icon *ngIf="!auth.resolveAvatarUrl(u)" name="person" aria-hidden="true"></ion-icon>
         </div>
       </div>
       <div class="profile-details">

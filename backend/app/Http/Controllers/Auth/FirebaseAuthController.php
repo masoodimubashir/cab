@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseAuthService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Kreait\Firebase\JWT\Error\IdTokenVerificationFailed;
 
@@ -58,6 +59,16 @@ class FirebaseAuthController extends Controller
 
             $token = $user->createToken($tokenName, ["act-as:$intent"])->plainTextToken;
 
+            // Resolve the public URL the mobile clients can render directly.
+            // Using url() (not Storage::url()) so the host+port match the
+            // request — Storage::url() reads APP_URL from .env, which in dev
+            // often lacks the artisan-serve port and yields broken links.
+            $avatarUrl = $user->avatar_path
+                ? (str_starts_with($user->avatar_path, 'http')
+                    ? $user->avatar_path
+                    : url('/storage/'.ltrim($user->avatar_path, '/')))
+                : null;
+
             return response()->json([
                 'token' => $token,
                 'user' => [
@@ -66,6 +77,9 @@ class FirebaseAuthController extends Controller
                     'email' => $user->email,
                     'phone' => $user->phone,
                     'avatar_path' => $user->avatar_path,
+                    'avatar_url' => $avatarUrl,
+                    'dob' => $user->dob?->toDateString(),
+                    'city' => $user->city,
                     'roles' => $user->roleNames(),
                     'accepted_payment_methods' => $user->accepted_payment_methods ?? ['cash', 'upi', 'qr'],
                 ],

@@ -61,6 +61,7 @@ import { NavItem, NavSection } from '../nav.types';
             <a
               *ngIf="!item.children?.length"
               [routerLink]="item.route"
+              [queryParams]="item.queryParams || null"
               routerLinkActive
               #rla="routerLinkActive"
               class="sb__item"
@@ -94,7 +95,9 @@ import { NavItem, NavSection } from '../nav.types';
                 <a
                   *ngFor="let child of item.children; trackBy: trackItem"
                   [routerLink]="child.route"
+                  [queryParams]="child.queryParams || null"
                   routerLinkActive="is-active"
+                  [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'exact', matrixParams: 'ignored', fragment: 'ignored' }"
                   class="sb__child"
                 >
                   <span class="sb__child-lbl">{{ child.label }}</span>
@@ -161,7 +164,12 @@ export class SidebarComponent implements OnDestroy {
 
   private isRouteActive(route: string): boolean {
     if (!route) return false;
-    return this.currentUrl === route || this.currentUrl.startsWith(route + '/');
+    // currentUrl includes query string + fragment; the configured `route` does
+    // not (queryParams come from NavItem.queryParams). Compare path-only so a
+    // child link like `/drivers` with `?tab=…` still matches when we're on
+    // `/drivers?tab=documents`.
+    const path = this.currentUrl.split('?')[0].split('#')[0];
+    return path === route || path.startsWith(route + '/');
   }
 
   private keyFor(section: NavSection, idx: number): string {

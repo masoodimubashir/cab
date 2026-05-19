@@ -19,3 +19,6 @@ export * from './toast/toast.component';
 export * from './data-table/column.component';
 export * from './data-table/data-table.component';
 export * from './modal/modal.component';
+export * from './chart/chart.component';
+export * from './file-drop/file-drop.component';
+export * from './select/select.component';

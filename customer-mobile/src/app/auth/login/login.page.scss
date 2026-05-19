@@ -416,6 +416,51 @@ ion-content {
   width: 100%;
 }
 
+/* Native date input — neutralise UA chrome so it reads like the other fields. */
+.native-date {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-main, #0D1B2A);
+  padding: 0;
+  line-height: 32px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.native-date::-webkit-date-and-time-value { text-align: left; }
+.native-date:disabled { color: var(--text-muted, #6C757D); }
+
+/* City picker trigger — clickable container styled like phone-container. */
+.city-trigger {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+
+  &.disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .city-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--text-main, #0D1B2A);
+    line-height: 32px;
+
+    .is-placeholder {
+      font-weight: 500;
+      color: var(--text-muted, #6C757D);
+    }
+
+    ion-icon { color: var(--text-muted, #6C757D); font-size: 16px; }
+  }
+}
+
 .field-container {
   margin-top: 12px;
 }
