@@ -223,16 +223,32 @@
               />
             </div>
 
-            <div
-              class="input-container phone-container ion-margin-top city-trigger"
-              (click)="!loading && (showCityPicker = true)"
-              [class.disabled]="loading"
-            >
-              <label>City</label>
-              <div class="city-value">
-                <span [class.is-placeholder]="!infoCityName">{{ infoCityName || 'Select your city' }}</span>
-                <ion-icon name="chevron-down-outline"></ion-icon>
-              </div>
+            <div class="input-container phone-container ion-margin-top address-field">
+              <label>Address</label>
+              <ion-input
+                type="text"
+                [(ngModel)]="addressQuery"
+                (ionInput)="onAddressQueryChange($event.detail.value)"
+                [disabled]="loading"
+                autocomplete="street-address"
+                placeholder="Search your address"
+                required
+                class="custom-phone-input"
+              ></ion-input>
+              <ul class="address-suggestions" *ngIf="addressSuggestions.length && !infoAddress">
+                <li
+                  *ngFor="let s of addressSuggestions"
+                  class="address-suggestion"
+                  (click)="pickAddress(s)"
+                >
+                  <ion-icon name="location-outline"></ion-icon>
+                  <div class="address-suggestion__text">
+                    <span class="address-suggestion__main">{{ s.main_text }}</span>
+                    <span class="address-suggestion__sub" *ngIf="s.secondary_text">{{ s.secondary_text }}</span>
+                  </div>
+                </li>
+              </ul>
+              <div class="address-empty" *ngIf="!addressSuggestions.length && addressLoading">Searching…</div>
             </div>
           </div>
         </div>
@@ -327,58 +343,6 @@
                 <span class="country-name">{{ c.name }}</span>
               </div>
               <span class="country-code-secondary">+{{ c.code }}</span>
-            </div>
-          </ng-container>
-        </div>
-      </ion-content>
-    </ng-template>
-  </ion-modal>
-
-  <!-- ============ CITY PICKER MODAL ============ -->
-  <ion-modal
-    [isOpen]="showCityPicker"
-    (didDismiss)="showCityPicker = false"
-    [initialBreakpoint]="0.75"
-    [breakpoints]="[0, 0.75, 0.95]"
-    class="modern-bottom-sheet"
-  >
-    <ng-template>
-      <div class="sheet-header">
-        <div class="drag-handle"></div>
-        <h2>Select City</h2>
-      </div>
-      <ion-content class="no-scrollbar">
-        <div class="country-list">
-          <ng-container *ngIf="cities.length === 0">
-            <div class="country-item">
-              <span class="country-name">{{ citiesLoading ? 'Loading…' : 'No cities available' }}</span>
-            </div>
-          </ng-container>
-          <ng-container *ngFor="let c of cities">
-            <div
-              *ngIf="c.id === infoCityId"
-              class="selected-country"
-              (click)="pickCity(c)"
-            >
-              <div class="country-left">
-                <span class="iso-badge selected">{{ c.country_code || '•' }}</span>
-                <span class="country-name">{{ c.name }}</span>
-              </div>
-              <div class="country-right">
-                <svg class="check-icon" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                </svg>
-              </div>
-            </div>
-            <div
-              *ngIf="c.id !== infoCityId"
-              class="country-item"
-              (click)="pickCity(c)"
-            >
-              <div class="country-left">
-                <span class="iso-badge">{{ c.country_code || '•' }}</span>
-                <span class="country-name">{{ c.name }}</span>
-              </div>
             </div>
           </ng-container>
         </div>

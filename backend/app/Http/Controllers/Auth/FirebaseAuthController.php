@@ -79,7 +79,7 @@ class FirebaseAuthController extends Controller
                     'avatar_path' => $user->avatar_path,
                     'avatar_url' => $avatarUrl,
                     'dob' => $user->dob?->toDateString(),
-                    'city' => $user->city,
+                    'address' => $user->address,
                     'roles' => $user->roleNames(),
                     'accepted_payment_methods' => $user->accepted_payment_methods ?? ['cash', 'upi', 'qr'],
                 ],

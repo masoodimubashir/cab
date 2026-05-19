@@ -25,7 +25,7 @@ use App\Models\WalletTransaction;
     'accepted_payment_methods', 'last_login_at',
     'manager_role_id', 'manager_city_id', 'manager_fleet_id', 'is_suspended',
     // Customer profile fields (admin Customer module)
-    'dob', 'city', 'app_version', 'os_version', 'device_type',
+    'dob', 'address', 'app_version', 'os_version', 'device_type',
     'referral_code', 'referred_by_user_id',
     'email_unsubscribed', 'sms_unsubscribed', 'push_unsubscribed',
     'duplicate_registration',

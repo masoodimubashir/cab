@@ -21,7 +21,7 @@ export class CustomerProfilePage implements OnInit {
   phone = '';
   /** Captured once at signup, surfaced read-only here. */
   dob = '';
-  cityName = '';
+  address = '';
 
   busy = false;
   error: string | null = null;
@@ -40,7 +40,7 @@ export class CustomerProfilePage implements OnInit {
       this.phone = me.phone ?? '';
       this.photoPreview = this.auth.resolveAvatarUrl(me);
       this.dob = me.dob ?? '';
-      this.cityName = me.city ?? '';
+      this.address = me.address ?? '';
     }
   }
 
