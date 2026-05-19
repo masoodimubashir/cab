@@ -17,7 +17,7 @@ export type AuthUser = {
   avatar_url?: string | null;
   /** Stored once during signup; surfaced read-only on the edit profile screen. */
   dob?: string | null;
-  city?: string | null;
+  address?: string | null;
   accepted_payment_methods?: string[];
 };
 

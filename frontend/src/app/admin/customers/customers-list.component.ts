@@ -33,7 +33,7 @@ interface CustomerRow {
   last_login_at: string | null;
   last_ride_at: string | null;
   total_rides: number;
-  city: string | null;
+  address: string | null;
   is_suspended: boolean;
 }
 
@@ -179,7 +179,7 @@ interface CustomerRow {
               <span class="cell-avatar">{{ initials(row.name) }}</span>
               <div class="cell-user__meta">
                 <span class="cell-user__name">{{ row.name || 'Unnamed' }}</span>
-                <span class="cell-user__sub" *ngIf="row.city">{{ row.city }}</span>
+                <span class="cell-user__sub" *ngIf="row.address">{{ row.address }}</span>
               </div>
             </div>
           </ng-template>
@@ -280,9 +280,9 @@ interface CustomerRow {
                     <span class="lbl">Email</span>
                     <span [class.muted]="!row.email">{{ row.email || '—' }}</span>
                   </div>
-                  <div class="id-pop__row" *ngIf="row.city">
-                    <span class="lbl">City</span>
-                    <span>{{ row.city }}</span>
+                  <div class="id-pop__row" *ngIf="row.address">
+                    <span class="lbl">Address</span>
+                    <span>{{ row.address }}</span>
                   </div>
                   <div class="id-pop__row">
                     <span class="lbl">Last login</span>

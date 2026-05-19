@@ -20,7 +20,7 @@ interface CustomerProfile {
   phone: string | null;
   email: string | null;
   dob: string | null;
-  city: string | null;
+  address: string | null;
   date_registered: string;
   last_login_at: string | null;
   app_version: string | null;
@@ -130,11 +130,11 @@ const BLOCK_REASONS = [
                 </span>
               </ng-template>
 
-              <!-- City -->
-              <span class="contact contact--static" [class.contact--empty]="!profile.city">
+              <!-- Address -->
+              <span class="contact contact--static" [class.contact--empty]="!profile.address">
                 <span class="contact__icon"><tm-icon name="map-marker" [size]="13" /></span>
-                <span class="contact__k">City</span>
-                <span class="contact__text">{{ profile.city || '—' }}</span>
+                <span class="contact__k">Address</span>
+                <span class="contact__text">{{ profile.address || '—' }}</span>
               </span>
 
               <!-- Current latitude / longitude pinged by the mobile app -->
@@ -241,7 +241,7 @@ const BLOCK_REASONS = [
             <strong>{{ profile.name || 'This customer' }}</strong>
             joined TaxiMode on
             <strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong>
-            and lives in <strong>{{ profile.city || '—' }}</strong>.
+            and lives at <strong>{{ profile.address || '—' }}</strong>.
             They use the app version <span class="mono">{{ profile.app_version || '—' }}</span>
             on a {{ profile.device_type || '—' }} running {{ profile.os_version || '—' }}.
             Referred by
