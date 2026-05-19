@@ -41,7 +41,7 @@ class AdminCustomersController
             ->whereHas('roles', fn ($q) => $q->where('role', 'customer'))
             ->select([
                 'id', 'name', 'email', 'phone', 'last_login_at',
-                'city', 'created_at', 'is_suspended', 'referral_code',
+                'address', 'created_at', 'is_suspended', 'referral_code',
             ])
             ->withCount(['tripsAsCustomer as total_rides'])
             ->addSelect([
@@ -94,7 +94,7 @@ class AdminCustomersController
                 'email' => $user->email,
                 'email_verified_at' => $user->email_verified_at,
                 'dob' => $user->dob,
-                'city' => $user->city,
+                'address' => $user->address,
                 'avatar_path' => $user->avatar_path,
                 'date_registered' => $user->created_at,
                 'last_login_at' => $user->last_login_at,

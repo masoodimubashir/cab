@@ -434,31 +434,77 @@ ion-content {
 .native-date::-webkit-date-and-time-value { text-align: left; }
 .native-date:disabled { color: var(--text-muted, #6C757D); }
 
-/* City picker trigger — clickable container styled like phone-container. */
-.city-trigger {
-  cursor: pointer;
+/* Address autocomplete — input + suggestions list that floats below it. */
+.address-field {
+  position: relative;
+  overflow: visible;
+}
+
+.address-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #ffffff;
+  border: 1px solid #E5E7EB;
+  border-radius: var(--radius-md, 12px);
+  box-shadow: 0 12px 24px rgba(13, 27, 42, 0.10);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.address-suggestion {
   display: flex;
   align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
 
-  &.disabled { opacity: 0.6; cursor: not-allowed; }
+  &:hover { background: #F3F4F6; }
 
-  .city-value {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    font-weight: 700;
-    font-size: 16px;
-    color: var(--text-main, #0D1B2A);
-    line-height: 32px;
-
-    .is-placeholder {
-      font-weight: 500;
-      color: var(--text-muted, #6C757D);
-    }
-
-    ion-icon { color: var(--text-muted, #6C757D); font-size: 16px; }
+  ion-icon {
+    flex-shrink: 0;
+    color: var(--ion-color-primary, #12B35B);
+    font-size: 18px;
   }
+
+  &__text { display: flex; flex-direction: column; min-width: 0; }
+  &__main {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text-main, #0D1B2A);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__sub {
+    font-size: 12px;
+    color: var(--text-muted, #6C757D);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.address-empty {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #E5E7EB;
+  border-radius: var(--radius-md, 12px);
+  font-size: 13px;
+  color: var(--text-muted, #6C757D);
+  font-style: italic;
 }
 
 .field-container {

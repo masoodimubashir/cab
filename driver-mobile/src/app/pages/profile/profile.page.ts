@@ -4,8 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
-
-type CityOption = { id: number; name: string; country_code?: string | null };
+import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 
 /**
  * Driver profile page — photo, name, email (optional).
@@ -32,12 +31,16 @@ export class ProfilePage implements OnInit {
   email = '';
   phone = '';
   dob = '';
-  cityId: number | null = null;
-  cityName = '';
+  /** Picked address (the Place's formatted_address) — used during onboarding,
+   *  shown read-only on the edit screen. */
+  address = '';
 
-  cities: CityOption[] = [];
-  citiesLoading = false;
-  showCityPicker = false;
+  // Address autocomplete (Google Places) — onboarding only.
+  addressQuery = '';
+  addressSuggestions: PlaceSuggestion[] = [];
+  addressLoading = false;
+  private addressSkipNextQueryEmit = false;
+  private addressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Yesterday — server validator is `before:today` (strict), so today would 422.
   readonly maxDob = (() => {
@@ -61,6 +64,7 @@ export class ProfilePage implements OnInit {
     private api: ApiService,
     private auth: AuthService,
     private router: Router,
+    private places: PlacesService,
   ) {}
 
   ngOnInit(): void {
@@ -71,16 +75,17 @@ export class ProfilePage implements OnInit {
       this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
       this.phone = me.phone ?? '';
       this.photoPreview = this.auth.resolveAvatarUrl(me);
-      // Prefill the read-only DOB + City on the edit screen. Backend returns
-      // dob as an ISO date string (YYYY-MM-DD); we keep the ISO form for the
-      // native picker (onboarding) and a separately formatted display string.
+      // Prefill the read-only DOB + Address on the edit screen. Backend
+      // returns dob as an ISO date string (YYYY-MM-DD); we keep the ISO form
+      // for the native picker (onboarding) and a separately formatted display
+      // string. Address is whatever the user picked in Places.
       this.dob = me.dob ?? '';
-      this.cityName = me.city ?? '';
+      this.address = me.address ?? '';
+      this.addressQuery = this.address;
     }
-    // Onboarding still picks via the sheet → load the list. In edit mode the
-    // field is locked and showing the city's name only, so we can skip it.
+    // Onboarding needs Places autocomplete — warm the SDK in the background.
     if (this.onboarding) {
-      this.loadCities();
+      void this.places.ensureLoaded().catch(() => {});
     }
     void this.captureDeviceInfo();
   }
@@ -93,19 +98,49 @@ export class ProfilePage implements OnInit {
     return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
-  private loadCities(): void {
-    if (this.cities.length || this.citiesLoading) return;
-    this.citiesLoading = true;
-    this.api.get<{ data: CityOption[] }>('/catalog/cities').subscribe({
-      next: (res) => {
-        this.cities = res?.data ?? [];
-        this.citiesLoading = false;
-      },
-      error: () => {
-        this.cities = [];
-        this.citiesLoading = false;
-      },
-    });
+  onAddressQueryChange(value: string | null | undefined): void {
+    const q = (value ?? '').toString();
+    this.addressQuery = q;
+    if (this.addressSkipNextQueryEmit) {
+      this.addressSkipNextQueryEmit = false;
+      return;
+    }
+    if (this.address && q !== this.address) {
+      this.address = '';
+    }
+    if (this.addressDebounceTimer) clearTimeout(this.addressDebounceTimer);
+    if (!q.trim()) {
+      this.addressSuggestions = [];
+      return;
+    }
+    this.addressDebounceTimer = setTimeout(() => {
+      this.fetchAddressSuggestions(q);
+    }, 220);
+  }
+
+  private async fetchAddressSuggestions(q: string): Promise<void> {
+    this.addressLoading = true;
+    try {
+      this.addressSuggestions = await this.places.autocompleteSearch(q);
+    } catch {
+      this.addressSuggestions = [];
+    } finally {
+      this.addressLoading = false;
+    }
+  }
+
+  async pickAddress(s: PlaceSuggestion): Promise<void> {
+    this.addressLoading = true;
+    try {
+      const detail = await this.places.getPlaceDetail(s.place_id);
+      const formatted = detail?.description || s.description;
+      this.address = formatted;
+      this.addressQuery = formatted;
+      this.addressSkipNextQueryEmit = true;
+      this.addressSuggestions = [];
+    } finally {
+      this.addressLoading = false;
+    }
   }
 
   private async captureDeviceInfo(): Promise<void> {
@@ -123,12 +158,6 @@ export class ProfilePage implements OnInit {
     } catch { /* ignore */ }
   }
 
-  pickCity(c: CityOption): void {
-    this.cityId = c.id;
-    this.cityName = c.name;
-    this.showCityPicker = false;
-  }
-
   onPhotoChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;
@@ -143,11 +172,11 @@ export class ProfilePage implements OnInit {
     this.error = null;
     const name = this.name.trim();
     if (!name) { this.error = 'Please enter your name.'; return; }
-    // DOB + City are required during onboarding only — on the edit screen
+    // DOB + Address are required during onboarding only — on the edit screen
     // they're locked and we don't send them.
     if (this.onboarding) {
       if (!this.dob) { this.error = 'Please select your date of birth.'; return; }
-      if (this.cityId == null) { this.error = 'Please select your city.'; return; }
+      if (!this.address) { this.error = 'Please pick your address from the suggestions.'; return; }
     }
 
     const fd = new FormData();
@@ -155,7 +184,7 @@ export class ProfilePage implements OnInit {
     if (this.email.trim()) fd.append('email', this.email.trim());
     if (this.onboarding) {
       if (this.dob) fd.append('dob', this.dob);
-      if (this.cityName) fd.append('city', this.cityName);
+      if (this.address) fd.append('address', this.address);
       if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
       if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
       if (this.deviceInfo.device_type) fd.append('device_type', this.deviceInfo.device_type.slice(0, 64));
