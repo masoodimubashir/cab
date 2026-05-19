@@ -1,10 +1,12 @@
 import {
   Component,
+  EventEmitter,
   HostListener,
   Input,
   OnChanges,
   OnDestroy,
   OnInit,
+  Output,
   SimpleChanges,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -157,6 +159,7 @@ type UnifiedRow = LeaderboardRow | PerformanceRow;
           : 'Adjust the date range, or pick a wider window.'"
         (pageChange)="onPageChange($event)"
         (pageSizeChange)="onPageSizeChange($event)"
+        (rowClick)="onDriverClick($event.driver_id)"
       >
         <tm-input
           slot="search"
@@ -280,7 +283,13 @@ type UnifiedRow = LeaderboardRow | PerformanceRow;
           <tm-column key="driver" label="Driver">
             <ng-template let-row>
               <div class="cell-user">
-                <span class="cell-avatar">{{ initials(row.name) }}</span>
+                <span
+                  class="cell-avatar"
+                  [class.cell-avatar--photo]="row.avatar_url || row.avatar_path"
+                  [style.backgroundImage]="(row.avatar_url || row.avatar_path) ? 'url(' + (row.avatar_url || row.avatar_path) + ')' : null"
+                >
+                  <ng-container *ngIf="!(row.avatar_url || row.avatar_path)">{{ initials(row.name) }}</ng-container>
+                </span>
                 <div class="cell-user__meta">
                   <span class="cell-user__name">{{ row.name || 'Unnamed' }}</span>
                   <span class="cell-user__sub mono">#{{ row.driver_id }}</span>
@@ -298,6 +307,18 @@ type UnifiedRow = LeaderboardRow | PerformanceRow;
               <span class="rides-chip" [class.is-zero]="!row.rides">{{ row.rides ?? 0 }}</span>
             </ng-template>
           </tm-column>
+          <tm-column key="view" label="" width="60" align="right">
+            <ng-template let-row>
+              <button
+                type="button"
+                class="row-eye"
+                aria-label="View driver"
+                (click)="$event.stopPropagation(); onDriverClick(row.driver_id)"
+              >
+                <tm-icon name="eye" [size]="14" />
+              </button>
+            </ng-template>
+          </tm-column>
         </ng-container>
 
         <!-- PERFORMANCE columns -->
@@ -310,7 +331,13 @@ type UnifiedRow = LeaderboardRow | PerformanceRow;
           <tm-column key="driver" label="Driver">
             <ng-template let-row>
               <div class="cell-user">
-                <span class="cell-avatar">{{ initials(row.name) }}</span>
+                <span
+                  class="cell-avatar"
+                  [class.cell-avatar--photo]="row.avatar_url || row.avatar_path"
+                  [style.backgroundImage]="(row.avatar_url || row.avatar_path) ? 'url(' + (row.avatar_url || row.avatar_path) + ')' : null"
+                >
+                  <ng-container *ngIf="!(row.avatar_url || row.avatar_path)">{{ initials(row.name) }}</ng-container>
+                </span>
                 <div class="cell-user__meta">
                   <span class="cell-user__name">{{ row.name || 'Unnamed' }}</span>
                   <span class="cell-user__sub mono">{{ row.phone || '—' }}</span>
@@ -344,6 +371,18 @@ type UnifiedRow = LeaderboardRow | PerformanceRow;
           <tm-column key="total" label="Total" width="90" align="right">
             <ng-template let-row>
               <strong class="cell-total">{{ row.total ?? 0 }}</strong>
+            </ng-template>
+          </tm-column>
+          <tm-column key="view" label="" width="60" align="right">
+            <ng-template let-row>
+              <button
+                type="button"
+                class="row-eye"
+                aria-label="View driver"
+                (click)="$event.stopPropagation(); onDriverClick(row.driver_id)"
+              >
+                <tm-icon name="eye" [size]="14" />
+              </button>
             </ng-template>
           </tm-column>
         </ng-container>
@@ -552,6 +591,27 @@ type UnifiedRow = LeaderboardRow | PerformanceRow;
       font-weight: 800;
       flex-shrink: 0;
     }
+    .cell-avatar--photo {
+      background-color: var(--tm-canvas-2);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    /* Eye action button — mirrors drivers-list row-action styling. */
+    .row-eye {
+      width: 28px; height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 0;
+      background: transparent;
+      color: var(--tm-text-soft);
+      cursor: pointer;
+      transition: background var(--tm-duration-fast) var(--tm-ease),
+                  color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .row-eye:hover { background: var(--tm-canvas-2); color: var(--tm-text); }
     .cell-user__meta { display: flex; flex-direction: column; min-width: 0; }
     .cell-user__name {
       font-weight: 700;
@@ -702,6 +762,13 @@ export class DriversInsightsComponent implements OnInit, OnChanges, OnDestroy {
    */
   @Input() active = true;
 
+  /**
+   * Fires when the user clicks a driver row (or the eye action) in the
+   * leaderboard / performance tables. The parent decides what to do — typically
+   * close this drawer and open the driver detail drawer.
+   */
+  @Output() driverClick = new EventEmitter<number>();
+
   /** Exposed so the template can call Math.max for dynamic chart heights. */
   readonly Math = Math;
   readonly topNLeaderboard = 15;
@@ -817,6 +884,16 @@ export class DriversInsightsComponent implements OnInit, OnChanges, OnDestroy {
   // -------------------- Pagination --------------------
   onPageChange(p: number): void { this.page = p; }
   onPageSizeChange(s: number): void { this.pageSize = s; this.page = 1; }
+
+  /**
+   * Emits the row's driver_id so the parent (drivers-list) can close this
+   * insights drawer and route to the driver detail drawer. Guards against
+   * undefined ids in case the leaderboard/performance payload is partial.
+   */
+  onDriverClick(driverId: number | null | undefined): void {
+    if (driverId == null) return;
+    this.driverClick.emit(driverId);
+  }
 
   // -------------------- Fetch --------------------
   private fetch(): void {

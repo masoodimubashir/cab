@@ -21,6 +21,8 @@ interface CustomerProfile {
   email: string | null;
   dob: string | null;
   address: string | null;
+  avatar_path?: string | null;
+  avatar_url?: string | null;
   date_registered: string;
   last_login_at: string | null;
   app_version: string | null;
@@ -84,7 +86,13 @@ const BLOCK_REASONS = [
       <header class="cover">
         <div class="cover__banner" aria-hidden="true"></div>
         <div class="cover__inner">
-          <span class="cover__avatar">{{ initials(profile.name) }}</span>
+          <span
+            class="cover__avatar"
+            [class.cover__avatar--photo]="profile.avatar_url || profile.avatar_path"
+            [style.backgroundImage]="(profile.avatar_url || profile.avatar_path) ? 'url(' + (profile.avatar_url || profile.avatar_path) + ')' : null"
+          >
+            <ng-container *ngIf="!(profile.avatar_url || profile.avatar_path)">{{ initials(profile.name) }}</ng-container>
+          </span>
           <div class="cover__body">
             <div class="cover__title-row">
               <h1 class="cover__name">{{ profile.name || 'Unnamed customer' }}</h1>
@@ -833,6 +841,13 @@ const BLOCK_REASONS = [
       flex-shrink: 0;
       border: 4px solid var(--tm-surface);
       box-shadow: var(--tm-shadow-card);
+    }
+    /* Photo variant — must come AFTER the base rule to win specificity. */
+    .cover__avatar--photo {
+      background-color: var(--tm-canvas-2);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
     }
     .cover__body {
       display: flex;

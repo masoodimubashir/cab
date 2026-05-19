@@ -4,6 +4,8 @@ export interface DriverProfile {
   name: string | null;
   phone: string | null;
   email: string | null;
+  avatar_path?: string | null;
+  avatar_url?: string | null;
   ride_type_id: number | null;
   ride_type_name: string | null;
   vehicle_type_id: number | null;
