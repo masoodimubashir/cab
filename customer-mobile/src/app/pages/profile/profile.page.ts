@@ -38,7 +38,7 @@ export class CustomerProfilePage implements OnInit {
       this.name = me.name && me.name !== 'User' ? me.name : '';
       this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
       this.phone = me.phone ?? '';
-      this.photoPreview = me.avatar_url || me.avatar_path || null;
+      this.photoPreview = this.auth.resolveAvatarUrl(me);
       this.dob = me.dob ?? '';
       this.cityName = me.city ?? '';
     }
