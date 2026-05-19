@@ -70,7 +70,7 @@ export class ProfilePage implements OnInit {
       this.name = me.name && me.name !== 'User' ? me.name : '';
       this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
       this.phone = me.phone ?? '';
-      this.photoPreview = me.avatar_url || me.avatar_path || null;
+      this.photoPreview = this.auth.resolveAvatarUrl(me);
       // Prefill the read-only DOB + City on the edit screen. Backend returns
       // dob as an ISO date string (YYYY-MM-DD); we keep the ISO form for the
       // native picker (onboarding) and a separately formatted display string.
