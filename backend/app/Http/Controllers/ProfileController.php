@@ -26,7 +26,7 @@ class ProfileController extends Controller
             ],
             'photo' => ['nullable', 'file', 'image', 'max:4096'],
             'dob' => ['nullable', 'date', 'before:today'],
-            'city' => ['nullable', 'string', 'max:80'],
+            'address' => ['nullable', 'string', 'max:255'],
             // Column widths: app_version varchar(32), os_version varchar(32),
             // device_type varchar(64). Validator caps match the schema so a
             // long User-Agent (etc.) returns 422 instead of crashing on insert.
@@ -45,7 +45,7 @@ class ProfileController extends Controller
 
         $user->name = $data['name'];
         $user->email = $data['email'];
-        foreach (['dob', 'city', 'app_version', 'os_version', 'device_type'] as $field) {
+        foreach (['dob', 'address', 'app_version', 'os_version', 'device_type'] as $field) {
             if (array_key_exists($field, $data) && $data[$field] !== null) {
                 $user->{$field} = $data[$field];
             }
@@ -70,7 +70,7 @@ class ProfileController extends Controller
                 'avatar_path' => $user->avatar_path,
                 'avatar_url' => $avatarUrl,
                 'dob' => $user->dob?->toDateString(),
-                'city' => $user->city,
+                'address' => $user->address,
                 'app_version' => $user->app_version,
                 'os_version' => $user->os_version,
                 'device_type' => $user->device_type,

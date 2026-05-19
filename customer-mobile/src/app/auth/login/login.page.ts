@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
+import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { PushService } from '../../core/push.service';
 import {
   mapFirebaseAuthError,
@@ -19,8 +20,6 @@ type AuthExchangeResponse = {
   token: string;
   user: AuthUser;
 };
-
-type CityOption = { id: number; name: string; country_code?: string | null };
 
 /**
  * Flow:
@@ -69,15 +68,18 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   infoName = '';
   infoEmail = '';
   infoDob = '';
-  infoCityId: number | null = null;
-  infoCityName = '';
+  /** Final picked address (the Place's formatted_address). */
+  infoAddress = '';
   infoPhotoFile: File | null = null;
   infoPhotoPreview: string | null = null;
 
-  // City picker
-  cities: CityOption[] = [];
-  citiesLoading = false;
-  showCityPicker = false;
+  // Address autocomplete (Google Places)
+  addressQuery = '';
+  addressSuggestions: PlaceSuggestion[] = [];
+  addressLoading = false;
+  /** Skip the next query-change emit after we set query from a pick(). */
+  private addressSkipNextQueryEmit = false;
+  private addressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Captured once after permissions/OTP so they're ready before submitInfo runs.
   // Sent silently with the profile payload so the admin Customer module shows
@@ -104,7 +106,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private auth: AuthService,
     private router: Router,
     private phoneAuth: PhoneAuthService,
-    private push: PushService
+    private push: PushService,
+    private places: PlacesService,
   ) {}
 
   ionViewWillEnter(): void {
@@ -143,25 +146,55 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     } catch { /* ignore */ }
   }
 
-  private loadCities(): void {
-    if (this.cities.length || this.citiesLoading) return;
-    this.citiesLoading = true;
-    this.api.get<{ data: CityOption[] }>('/catalog/cities').subscribe({
-      next: (res) => {
-        this.cities = res?.data ?? [];
-        this.citiesLoading = false;
-      },
-      error: () => {
-        this.cities = [];
-        this.citiesLoading = false;
-      },
-    });
+  /**
+   * Called by the address `<ion-input>` on every keystroke. Debounces a
+   * Places autocomplete fetch and updates the suggestions list. Typing after
+   * a pick clears the locked address so the user can re-search.
+   */
+  onAddressQueryChange(value: string | null | undefined): void {
+    const q = (value ?? '').toString();
+    this.addressQuery = q;
+    if (this.addressSkipNextQueryEmit) {
+      this.addressSkipNextQueryEmit = false;
+      return;
+    }
+    // Typing again invalidates the prior pick — the address isn't "locked" anymore.
+    if (this.infoAddress && q !== this.infoAddress) {
+      this.infoAddress = '';
+    }
+    if (this.addressDebounceTimer) clearTimeout(this.addressDebounceTimer);
+    if (!q.trim()) {
+      this.addressSuggestions = [];
+      return;
+    }
+    this.addressDebounceTimer = setTimeout(() => {
+      this.fetchAddressSuggestions(q);
+    }, 220);
   }
 
-  pickCity(c: CityOption): void {
-    this.infoCityId = c.id;
-    this.infoCityName = c.name;
-    this.showCityPicker = false;
+  private async fetchAddressSuggestions(q: string): Promise<void> {
+    this.addressLoading = true;
+    try {
+      this.addressSuggestions = await this.places.autocompleteSearch(q);
+    } catch {
+      this.addressSuggestions = [];
+    } finally {
+      this.addressLoading = false;
+    }
+  }
+
+  async pickAddress(s: PlaceSuggestion): Promise<void> {
+    this.addressLoading = true;
+    try {
+      const detail = await this.places.getPlaceDetail(s.place_id);
+      const formatted = detail?.description || s.description;
+      this.infoAddress = formatted;
+      this.addressQuery = formatted;
+      this.addressSkipNextQueryEmit = true;
+      this.addressSuggestions = [];
+    } finally {
+      this.addressLoading = false;
+    }
   }
 
   ionViewWillLeave(): void {
@@ -219,7 +252,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         !this.infoName.trim() ||
         !this.infoEmail.trim() ||
         !this.infoDob ||
-        this.infoCityId == null
+        !this.infoAddress
       );
     }
     if (this.step === 'success') {
@@ -341,7 +374,9 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         this.infoEmail = this.isSyntheticEmail(user.email) ? '' : user.email ?? '';
         this.step = 'info';
         this.stopResendTimer();
-        this.loadCities();
+        // Warm the Places API loader in the background — by the time the user
+        // taps the address field, the SDK is usually already in memory.
+        void this.places.ensureLoaded().catch(() => {});
       } else {
         this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
       }
@@ -382,8 +417,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.error = 'Please select your date of birth.';
       return;
     }
-    if (this.infoCityId == null) {
-      this.error = 'Please select your city.';
+    if (!this.infoAddress) {
+      this.error = 'Please pick your address from the suggestions.';
       return;
     }
 
@@ -394,7 +429,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     // '' into null which `nullable` skips, but belt-and-braces (and avoids
     // accidentally tripping `before:today` on a malformed string).
     if (this.infoDob) fd.append('dob', this.infoDob);
-    if (this.infoCityName) fd.append('city', this.infoCityName);
+    if (this.infoAddress) fd.append('address', this.infoAddress);
     if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
     if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
     if (this.deviceInfo.device_type) fd.append('device_type', this.deviceInfo.device_type.slice(0, 64));
