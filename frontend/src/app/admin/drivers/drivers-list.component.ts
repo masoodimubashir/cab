@@ -47,7 +47,14 @@ interface DriverRow {
   total_rides: number;
   deactivated_at: string | null;
   deactivated_reason: string | null;
-  user: { id: number; name: string; phone: string | null; email: string | null } | null;
+  user: {
+    id: number;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    avatar_path?: string | null;
+    avatar_url?: string | null;
+  } | null;
 }
 
 @Component({
@@ -113,7 +120,7 @@ interface DriverRow {
           >
             Insights
           </tm-button>
-          <tm-button variant="outline" icon="download"
+          <tm-button variant="green" icon="download"
                      [loading]="exporting" (clicked)="exportCsv()">
             Export CSV
           </tm-button>
@@ -506,7 +513,13 @@ interface DriverRow {
         <tm-column key="name" label="Driver">
           <ng-template let-row>
             <div class="cell-user">
-              <span class="cell-avatar">{{ initials(row.user?.name) }}</span>
+              <span
+                class="cell-avatar"
+                [class.cell-avatar--photo]="row.user?.avatar_url || row.user?.avatar_path"
+                [style.backgroundImage]="(row.user?.avatar_url || row.user?.avatar_path) ? 'url(' + (row.user?.avatar_url || row.user?.avatar_path) + ')' : null"
+              >
+                <ng-container *ngIf="!(row.user?.avatar_url || row.user?.avatar_path)">{{ initials(row.user?.name) }}</ng-container>
+              </span>
               <div class="cell-user__meta">
                 <span class="cell-user__name">{{ row.user?.name || 'Unnamed' }}</span>
                 <span class="cell-user__sub" *ngIf="row.vehicle_type || row.vehicle_reg_no">
@@ -612,19 +625,18 @@ interface DriverRow {
           </ng-template>
         </tm-column>
 
-        <tm-column key="view" label="" width="60" align="right">
+        <tm-column key="view" label="" width="130" align="right">
           <ng-template let-row>
             <div class="id-pop" [class.is-open]="openPopoverId === row.id">
               <button
                 type="button"
-                class="view-btn"
+                class="view-btn view-btn--text"
                 [class.is-open]="openPopoverId === row.id"
                 (click)="togglePopover(row, $event)"
                 [attr.aria-expanded]="openPopoverId === row.id"
                 aria-label="View driver details"
-                title="View details"
               >
-                <tm-icon name="eye" [size]="14" />
+                View details
               </button>
               <div
                 class="id-pop__panel"
@@ -635,7 +647,13 @@ interface DriverRow {
                 [style.left.px]="popoverLeft"
               >
                 <header class="id-pop__head">
-                  <span class="cell-avatar">{{ initials(row.user?.name) }}</span>
+                  <span
+                    class="cell-avatar"
+                    [class.cell-avatar--photo]="row.user?.avatar_url || row.user?.avatar_path"
+                    [style.backgroundImage]="(row.user?.avatar_url || row.user?.avatar_path) ? 'url(' + (row.user?.avatar_url || row.user?.avatar_path) + ')' : null"
+                  >
+                    <ng-container *ngIf="!(row.user?.avatar_url || row.user?.avatar_path)">{{ initials(row.user?.name) }}</ng-container>
+                  </span>
                   <div class="id-pop__title">
                     <div class="id-pop__name">{{ row.user?.name || 'Unnamed' }}</div>
                     <div class="id-pop__id mono">#{{ row.id }}</div>
@@ -695,7 +713,7 @@ interface DriverRow {
                     class="id-pop__link"
                     (click)="openProfile(row.id, $event)"
                   >
-                    Open full profile <tm-icon name="arrow-right" [size]="12" />
+                    View details <tm-icon name="arrow-right" [size]="12" />
                   </button>
                 </footer>
               </div>
@@ -726,7 +744,13 @@ interface DriverRow {
             </div>
 
             <div class="deact__who">
-              <span class="cell-avatar">{{ initials(t.user?.name) }}</span>
+              <span
+                class="cell-avatar"
+                [class.cell-avatar--photo]="t.user?.avatar_url || t.user?.avatar_path"
+                [style.backgroundImage]="(t.user?.avatar_url || t.user?.avatar_path) ? 'url(' + (t.user?.avatar_url || t.user?.avatar_path) + ')' : null"
+              >
+                <ng-container *ngIf="!(t.user?.avatar_url || t.user?.avatar_path)">{{ initials(t.user?.name) }}</ng-container>
+              </span>
               <div class="deact__who-meta">
                 <span class="deact__who-name">{{ t.user?.name || 'Unnamed' }}</span>
                 <span class="deact__who-sub mono">#{{ t.id }} · {{ t.user?.phone || '—' }}</span>
@@ -856,7 +880,12 @@ interface DriverRow {
           </div>
 
           <div class="drawer__body">
-            <app-drivers-insights [mode]="insightsMode" [view]="view" [active]="insightsOpen" />
+            <app-drivers-insights
+              [mode]="insightsMode"
+              [view]="view"
+              [active]="insightsOpen"
+              (driverClick)="onInsightsDriverClick($event)"
+            />
           </div>
         </aside>
       </div>
@@ -1314,6 +1343,15 @@ interface DriverRow {
       letter-spacing: 0.02em;
       flex-shrink: 0;
     }
+    /* Photo variant — let the inline background-image render and cover the
+       circle. background-color is reset so the dark gradient doesn't bleed
+       through on transparent PNGs. */
+    .cell-avatar--photo {
+      background-color: var(--tm-canvas-2);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
     .cell-user__meta { display: flex; flex-direction: column; min-width: 0; }
     .cell-user__name {
       font-weight: 700;
@@ -1457,7 +1495,7 @@ interface DriverRow {
     .mono { font-family: var(--tm-font-mono); font-weight: 600; font-size: 12px; }
     .muted { color: var(--tm-text-soft); }
 
-    /* ---------- Eye-icon view button ---------- */
+    /* ---------- View-details button ---------- */
     .view-btn {
       display: inline-flex;
       align-items: center;
@@ -1472,6 +1510,24 @@ interface DriverRow {
     }
     .view-btn:hover { background: var(--tm-ink); color: #fff; }
     .view-btn.is-open { background: var(--tm-green); color: #fff; }
+    /* Text variant — replaces the icon-only square so the action reads
+       "View details" inline with the other approval pill column. */
+    .view-btn--text {
+      width: auto;
+      height: 28px;
+      padding: 0 12px;
+      font-family: var(--tm-font-body);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      border: 1px solid var(--tm-line-2);
+      background: var(--tm-surface);
+      color: var(--tm-text);
+      cursor: pointer;
+    }
+    .view-btn--text:hover { background: var(--tm-ink); color: #fff; border-color: var(--tm-ink); }
+    .view-btn--text.is-open { background: var(--tm-green); color: #fff; border-color: var(--tm-green); }
 
     /* ---------- Detail popover ---------- */
     .id-pop { position: relative; display: inline-block; }
@@ -2569,6 +2625,21 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
         replaceUrl: true,
       });
     }
+  }
+
+  /**
+   * Handler for the (driverClick) output on app-drivers-insights. The user
+   * clicked an eye / row inside the leaderboard or performance table — close
+   * the insights drawer and route to ?driverId=… so the page shell opens the
+   * driver detail drawer on top.
+   */
+  onInsightsDriverClick(driverId: number): void {
+    this.closeInsights();
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { driverId, insights: null },
+      queryParamsHandling: 'merge',
+    });
   }
 
   switchInsightsTab(mode: InsightMode): void {

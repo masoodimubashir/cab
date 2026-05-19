@@ -27,7 +27,14 @@ interface DriverRow {
   vehicle_type: string | null;
   vehicle_reg_no: string | null;
   is_online: boolean;
-  user: { id: number; name: string; phone: string | null; email: string | null } | null;
+  user: {
+    id: number;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    avatar_path?: string | null;
+    avatar_url?: string | null;
+  } | null;
 }
 
 const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
@@ -108,7 +115,13 @@ const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
         <tm-column key="name" label="Driver">
           <ng-template let-row>
             <div class="cell-user">
-              <span class="cell-avatar">{{ initials(row.user?.name) }}</span>
+              <span
+                class="cell-avatar"
+                [class.cell-avatar--photo]="row.user?.avatar_url || row.user?.avatar_path"
+                [style.backgroundImage]="(row.user?.avatar_url || row.user?.avatar_path) ? 'url(' + (row.user?.avatar_url || row.user?.avatar_path) + ')' : null"
+              >
+                <ng-container *ngIf="!(row.user?.avatar_url || row.user?.avatar_path)">{{ initials(row.user?.name) }}</ng-container>
+              </span>
               <div class="cell-user__meta">
                 <span class="cell-user__name">{{ row.user?.name || 'Unnamed' }}</span>
                 <span class="cell-user__sub" *ngIf="row.vehicle_type || row.vehicle_reg_no">
@@ -251,6 +264,14 @@ const FILTER_OPTIONS: { value: DocsFilter; label: string }[] = [
       font-size: 11px;
       font-weight: 800;
       flex-shrink: 0;
+    }
+    /* --photo must come AFTER .cell-avatar — same specificity, later wins, and
+       .cell-avatar uses the background shorthand which resets background-image. */
+    .cell-avatar--photo {
+      background: var(--tm-canvas-2);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
     }
     .cell-user__meta { display: flex; flex-direction: column; min-width: 0; }
     .cell-user__name {

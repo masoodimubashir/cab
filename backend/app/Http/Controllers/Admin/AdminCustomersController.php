@@ -42,6 +42,7 @@ class AdminCustomersController
             ->select([
                 'id', 'name', 'email', 'phone', 'last_login_at',
                 'address', 'created_at', 'is_suspended', 'referral_code',
+                'avatar_path',
             ])
             ->withCount(['tripsAsCustomer as total_rides'])
             ->addSelect([
@@ -77,6 +78,13 @@ class AdminCustomersController
 
         $rows = $query->orderByDesc('created_at')->paginate($perPage);
 
+        // Resolve each row's avatar URL so the admin UI doesn't have to know
+        // about the storage path layout.
+        $rows->getCollection()->transform(function (User $u) {
+            $u->setAttribute('avatar_url', $this->avatarUrl($u->avatar_path));
+            return $u;
+        });
+
         return response()->json(['data' => $rows]);
     }
 
@@ -96,6 +104,7 @@ class AdminCustomersController
                 'dob' => $user->dob,
                 'address' => $user->address,
                 'avatar_path' => $user->avatar_path,
+                'avatar_url' => $this->avatarUrl($user->avatar_path),
                 'date_registered' => $user->created_at,
                 'last_login_at' => $user->last_login_at,
                 'app_version' => $user->app_version,
@@ -438,5 +447,22 @@ class AdminCustomersController
         if (!$user->hasRole('customer')) {
             abort(404, 'Customer not found.');
         }
+    }
+
+    /**
+     * Resolve the public URL the admin UI can render for a stored avatar.
+     * Using url() (not Storage::url()) so the host+port match the request —
+     * Storage::url() reads APP_URL from .env, which in dev often lacks the
+     * artisan-serve port and yields a broken link.
+     */
+    private function avatarUrl(?string $path): ?string
+    {
+        if (!$path) {
+            return null;
+        }
+        if (str_starts_with($path, 'http')) {
+            return $path;
+        }
+        return url('/storage/' . ltrim($path, '/'));
     }
 }

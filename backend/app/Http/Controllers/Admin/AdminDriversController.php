@@ -236,6 +236,8 @@ class AdminDriversController
                 'name' => $driver->user?->name,
                 'phone' => $driver->user?->phone,
                 'email' => $driver->user?->email,
+                'avatar_path' => $driver->user?->avatar_path,
+                'avatar_url' => $this->avatarUrl($driver->user?->avatar_path),
                 'ride_type_id' => $driver->ride_type_id,
                 'ride_type_name' => $driver->rideType?->name,
                 'vehicle_type_id' => $driver->vehicle_type_id,
@@ -413,9 +415,10 @@ class AdminDriversController
                 'drivers.id as driver_id',
                 'users.name as name',
                 'users.phone as phone',
+                'users.avatar_path as avatar_path',
                 DB::raw('COUNT(trips.id) as rides')
             )
-            ->groupBy('drivers.id', 'users.name', 'users.phone')
+            ->groupBy('drivers.id', 'users.name', 'users.phone', 'users.avatar_path')
             ->orderByDesc('rides')
             ->limit(100)
             ->get();
@@ -425,6 +428,8 @@ class AdminDriversController
                 'driver_id' => (int) $row->driver_id,
                 'name' => $row->name,
                 'phone' => $row->phone,
+                'avatar_path' => $row->avatar_path,
+                'avatar_url' => $this->avatarUrl($row->avatar_path),
                 'rides' => (int) $row->rides,
                 'rank' => $idx + 1,
             ];
@@ -459,17 +464,20 @@ class AdminDriversController
                 'drivers.id as driver_id',
                 'users.name as name',
                 'users.phone as phone',
+                'users.avatar_path as avatar_path',
                 DB::raw("SUM(CASE WHEN trips.status = 'COMPLETED' THEN 1 ELSE 0 END) as successful"),
                 DB::raw("SUM(CASE WHEN trips.status = 'CANCELLED' AND trips.no_show_by IS NULL THEN 1 ELSE 0 END) as cancelled"),
                 DB::raw("SUM(CASE WHEN trips.status = 'CANCELLED' AND trips.no_show_by IS NOT NULL THEN 1 ELSE 0 END) as missed")
             )
-            ->groupBy('drivers.id', 'users.name', 'users.phone')
+            ->groupBy('drivers.id', 'users.name', 'users.phone', 'users.avatar_path')
             ->orderByDesc('successful')
             ->get()
             ->map(fn ($r) => [
                 'driver_id' => (int) $r->driver_id,
                 'name' => $r->name,
                 'phone' => $r->phone,
+                'avatar_path' => $r->avatar_path,
+                'avatar_url' => $this->avatarUrl($r->avatar_path),
                 'successful' => (int) $r->successful,
                 'cancelled' => (int) $r->cancelled,
                 'missed' => (int) $r->missed,
@@ -630,8 +638,27 @@ class AdminDriversController
                 'name' => $driver->user->name,
                 'phone' => $driver->user->phone,
                 'email' => $driver->user->email,
+                'avatar_path' => $driver->user->avatar_path,
+                'avatar_url' => $this->avatarUrl($driver->user->avatar_path),
             ] : null,
             'documents' => $driver->documents,
         ];
+    }
+
+    /**
+     * Resolve the public URL the admin UI can render for a stored avatar.
+     * Using url() (not Storage::url()) so the host+port match the request —
+     * Storage::url() reads APP_URL from .env, which in dev often lacks the
+     * artisan-serve port and yields a broken link.
+     */
+    private function avatarUrl(?string $path): ?string
+    {
+        if (!$path) {
+            return null;
+        }
+        if (str_starts_with($path, 'http')) {
+            return $path;
+        }
+        return url('/storage/' . ltrim($path, '/'));
     }
 }
