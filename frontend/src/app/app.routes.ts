@@ -1,6 +1,5 @@
 import { Routes } from '@angular/router';
 import { AdminDashboardComponent } from './admin/admin-dashboard.component';
-import { AdminDriversComponent } from './admin/admin-drivers.component';
 import { AdminPricingComponent } from './admin/admin-pricing.component';
 import { AdminTripsComponent } from './admin/admin-trips.component';
 import { AdminUsersComponent } from './admin/admin-users.component';
@@ -10,11 +9,6 @@ import { AdminSafetyEventsComponent } from './admin/admin-safety-events.componen
 import { AdminReportsComponent } from './admin/admin-reports.component';
 import { RidesMapComponent } from './admin/rides/rides-map.component';
 import { RidesAllComponent } from './admin/rides/rides-all.component';
-import { DriversListComponent } from './admin/drivers/drivers-list.component';
-import { DriversLeaderboardComponent } from './admin/drivers/drivers-leaderboard.component';
-import { DriversPerformanceComponent } from './admin/drivers/drivers-performance.component';
-import { DriverDocumentsComponent } from './admin/drivers/driver-documents.component';
-import { DriverApprovalDetailsComponent } from './admin/drivers/driver-approval-details.component';
 import { VehiclesComponent } from './admin/vehicles/vehicles.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
 import { DynamicPricingListComponent } from './admin/dynamic-pricing/dynamic-pricing-list.component';
@@ -50,16 +44,35 @@ export const routes: Routes = [
   { path: 'safety', component: AdminSafetyEventsComponent, canActivate: [adminAuthGuard] },
   { path: 'reports', component: AdminReportsComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'drivers', component: DriversListComponent, canActivate: [adminAuthGuard] },
-  // Legacy split-route URLs — keep them resolving to the merged list so any
-  // bookmarks / external links the other dev's tooling may have don't 404.
+  // Drivers module is a single-page shell with tabs. All four legacy URLs
+  // resolve to the same shell; `data.name` lets the shell pick the right tab.
+  {
+    path: 'drivers',
+    loadComponent: () => import('./admin/drivers/drivers-page.component').then((m) => m.DriversPageComponent),
+    canActivate: [adminAuthGuard],
+    data: { name: 'drivers-all' },
+  },
   { path: 'drivers/active', redirectTo: 'drivers', pathMatch: 'full' },
   { path: 'drivers/deactivated', redirectTo: 'drivers', pathMatch: 'full' },
-  { path: 'drivers/leaderboard', component: DriversLeaderboardComponent, canActivate: [adminAuthGuard] },
-  { path: 'drivers/performance', component: DriversPerformanceComponent, canActivate: [adminAuthGuard] },
-  { path: 'drivers/approvals', component: AdminDriversComponent, canActivate: [adminAuthGuard] },
-  { path: 'drivers/approvals/:driverId', component: DriverApprovalDetailsComponent, canActivate: [adminAuthGuard] },
-  { path: 'drivers/documents', component: DriverDocumentsComponent, canActivate: [adminAuthGuard] },
+  {
+    path: 'drivers/approvals',
+    loadComponent: () => import('./admin/drivers/drivers-page.component').then((m) => m.DriversPageComponent),
+    canActivate: [adminAuthGuard],
+    data: { name: 'drivers-approvals' },
+  },
+  // Legacy deep link: the shell reads :driverId and opens the detail drawer.
+  {
+    path: 'drivers/approvals/:driverId',
+    loadComponent: () => import('./admin/drivers/drivers-page.component').then((m) => m.DriversPageComponent),
+    canActivate: [adminAuthGuard],
+    data: { name: 'drivers-approvals' },
+  },
+  {
+    path: 'drivers/documents',
+    loadComponent: () => import('./admin/drivers/drivers-page.component').then((m) => m.DriversPageComponent),
+    canActivate: [adminAuthGuard],
+    data: { name: 'drivers-documents' },
+  },
   { path: 'contact-drivers', component: ContactDriversComponent, canActivate: [adminAuthGuard] },
 
   { path: 'rides', redirectTo: 'rides/all', pathMatch: 'full' },

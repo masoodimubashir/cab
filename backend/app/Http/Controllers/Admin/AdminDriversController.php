@@ -521,6 +521,30 @@ class AdminDriversController
             }
         }
 
+        // ?is_online=1 → fresh-online drivers (online flag + ping within stale window)
+        // ?is_online=0 → offline OR stale (older than STALE_AFTER_SECONDS)
+        if ($request->has('is_online') && $request->query('is_online') !== '') {
+            $staleCutoff = now()->subSeconds(Driver::STALE_AFTER_SECONDS);
+            if ($request->boolean('is_online')) {
+                $query->where('drivers.is_online', true)
+                    ->where('drivers.last_online_at', '>=', $staleCutoff);
+            } else {
+                $query->where(function ($w) use ($staleCutoff) {
+                    $w->where('drivers.is_online', false)
+                        ->orWhereNull('drivers.last_online_at')
+                        ->orWhere('drivers.last_online_at', '<', $staleCutoff);
+                });
+            }
+        }
+
+        // ?approval_status=approved|pending|rejected
+        if ($approval = $request->query('approval_status')) {
+            $approval = strtolower((string) $approval);
+            if (in_array($approval, ['approved', 'pending', 'rejected'], true)) {
+                $query->where('drivers.approval_status', $approval);
+            }
+        }
+
         // Registered-on (drivers.created_at) date range
         if ($from = $request->query('date_from')) {
             try {

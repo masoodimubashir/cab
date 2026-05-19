@@ -111,11 +111,9 @@ export class AppComponent implements OnInit {
       items.push({
         label: 'Drivers', icon: 'id-card',
         children: filterTruthy([
-          can('drivers.view')     && { label: 'All Drivers',            icon: 'user',      route: '/drivers' },
-          can('drivers.view')     && { label: 'Leaderboard',           icon: 'star',      route: '/drivers/leaderboard' },
-          can('drivers.view')     && { label: 'Driver Performance',    icon: 'chart-bar', route: '/drivers/performance' },
-          can('drivers.approve')  && { label: 'Approvals & Documents', icon: 'check',     route: '/drivers/approvals' },
-          can('documents.manage') && { label: 'Documents Catalog',     icon: 'edit',      route: '/drivers/documents' },
+          can('drivers.view')     && { label: 'All Drivers',          icon: 'user',  route: '/drivers' },
+          can('drivers.approve')  && { label: 'Approvals & Documents', icon: 'check', route: '/drivers', queryParams: { tab: 'approvals' } },
+          can('documents.manage') && { label: 'Documents Catalog',     icon: 'edit',  route: '/drivers', queryParams: { tab: 'documents' } },
         ]),
       });
     }

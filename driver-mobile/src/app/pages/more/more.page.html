@@ -10,6 +10,14 @@
       <ion-label>Account</ion-label>
     </ion-list-header>
     <ion-item *ngIf="auth.getUser() as u">
+      <div
+        slot="start"
+        class="account-avatar"
+        [class.has-photo]="auth.resolveAvatarUrl(u)"
+        [style.backgroundImage]="auth.resolveAvatarUrl(u) ? 'url(' + auth.resolveAvatarUrl(u) + ')' : null"
+      >
+        <ion-icon *ngIf="!auth.resolveAvatarUrl(u)" name="person-circle-outline"></ion-icon>
+      </div>
       <ion-label>
         <p>{{ u.name }}</p>
         <small>{{ (u.roles && u.roles.join(', ')) || u.role }}</small>
