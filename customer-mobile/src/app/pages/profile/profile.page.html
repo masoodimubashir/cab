@@ -31,6 +31,16 @@
     <ion-input type="email" [(ngModel)]="email" [disabled]="busy" autocomplete="email"></ion-input>
   </ion-item>
 
+  <ion-item lines="full">
+    <ion-label position="stacked">Date of birth</ion-label>
+    <ion-input [value]="dobDisplay || '—'" disabled></ion-input>
+  </ion-item>
+
+  <ion-item lines="full">
+    <ion-label position="stacked">City</ion-label>
+    <ion-input [value]="cityName || '—'" disabled></ion-input>
+  </ion-item>
+
   <ion-item lines="full" *ngIf="phone">
     <ion-label position="stacked">Phone</ion-label>
     <ion-input [value]="phone" disabled></ion-input>

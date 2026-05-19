@@ -3,6 +3,8 @@ import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
 import { Geolocation } from '@capacitor/geolocation';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { PushService } from '../../core/push.service';
@@ -17,6 +19,8 @@ type AuthExchangeResponse = {
   token: string;
   user: AuthUser;
 };
+
+type CityOption = { id: number; name: string; country_code?: string | null };
 
 /**
  * Flow:
@@ -64,8 +68,30 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
 
   infoName = '';
   infoEmail = '';
+  infoDob = '';
+  infoCityId: number | null = null;
+  infoCityName = '';
   infoPhotoFile: File | null = null;
   infoPhotoPreview: string | null = null;
+
+  // City picker
+  cities: CityOption[] = [];
+  citiesLoading = false;
+  showCityPicker = false;
+
+  // Captured once after permissions/OTP so they're ready before submitInfo runs.
+  // Sent silently with the profile payload so the admin Customer module shows
+  // device + app metadata without asking the user.
+  private deviceInfo: { app_version?: string; os_version?: string; device_type?: string } = {};
+
+  // Yesterday in YYYY-MM-DD — feeds `[max]` on the DOB input. Server validator
+  // is `before:today` (strict), so picking today would 422. Yesterday is the
+  // latest the server will accept for a DOB.
+  readonly maxDob = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
 
   resendSecondsLeft = 0;
   private resendInterval: ReturnType<typeof setInterval> | null = null;
@@ -91,6 +117,51 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     if (this.phoneAuth.isConfigured()) {
       this.installRecaptchaSoon();
     }
+    void this.captureDeviceInfo();
+  }
+
+  /**
+   * Reads platform + app version + UA string once on page entry and stashes
+   * them on `this.deviceInfo`. We don't `await` this from anywhere — by the
+   * time the user reaches the `info` step it's already populated, and worst
+   * case the fields are absent on the request (backend treats them nullable).
+   */
+  private async captureDeviceInfo(): Promise<void> {
+    try {
+      this.deviceInfo.device_type = Capacitor.getPlatform();
+    } catch { /* ignore */ }
+    try {
+      if (typeof navigator !== 'undefined') {
+        this.deviceInfo.os_version = parseOsVersion(navigator.userAgent);
+      }
+    } catch { /* ignore */ }
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const info = await CapacitorApp.getInfo();
+        this.deviceInfo.app_version = info.version?.slice(0, 32);
+      }
+    } catch { /* ignore */ }
+  }
+
+  private loadCities(): void {
+    if (this.cities.length || this.citiesLoading) return;
+    this.citiesLoading = true;
+    this.api.get<{ data: CityOption[] }>('/catalog/cities').subscribe({
+      next: (res) => {
+        this.cities = res?.data ?? [];
+        this.citiesLoading = false;
+      },
+      error: () => {
+        this.cities = [];
+        this.citiesLoading = false;
+      },
+    });
+  }
+
+  pickCity(c: CityOption): void {
+    this.infoCityId = c.id;
+    this.infoCityName = c.name;
+    this.showCityPicker = false;
   }
 
   ionViewWillLeave(): void {
@@ -144,7 +215,12 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       return !this.otpReady;
     }
     if (this.step === 'info') {
-      return !this.infoName.trim() || !this.infoEmail.trim();
+      return (
+        !this.infoName.trim() ||
+        !this.infoEmail.trim() ||
+        !this.infoDob ||
+        this.infoCityId == null
+      );
     }
     if (this.step === 'success') {
       return false;
@@ -265,6 +341,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         this.infoEmail = this.isSyntheticEmail(user.email) ? '' : user.email ?? '';
         this.step = 'info';
         this.stopResendTimer();
+        this.loadCities();
       } else {
         this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
       }
@@ -301,10 +378,26 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.error = 'Please enter a valid email address.';
       return;
     }
+    if (!this.infoDob) {
+      this.error = 'Please select your date of birth.';
+      return;
+    }
+    if (this.infoCityId == null) {
+      this.error = 'Please select your city.';
+      return;
+    }
 
     const fd = new FormData();
     fd.append('name', name);
     fd.append('email', email);
+    // Only append non-empty values — Laravel's ConvertEmptyStringsToNull turns
+    // '' into null which `nullable` skips, but belt-and-braces (and avoids
+    // accidentally tripping `before:today` on a malformed string).
+    if (this.infoDob) fd.append('dob', this.infoDob);
+    if (this.infoCityName) fd.append('city', this.infoCityName);
+    if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
+    if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
+    if (this.deviceInfo.device_type) fd.append('device_type', this.deviceInfo.device_type.slice(0, 64));
     if (this.infoPhotoFile) {
       fd.append('photo', this.infoPhotoFile);
     }
@@ -407,4 +500,24 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     });
   }
 
+}
+
+// Extract a short OS label ("Android 7.0", "iOS 17.4", "Windows 10", …) from a
+// User-Agent string so we stay well under the users.os_version varchar(32).
+function parseOsVersion(ua: string | undefined | null): string | undefined {
+  if (!ua) return undefined;
+  const patterns: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
+    [/Android\s([\d._]+)/i,           (m) => `Android ${m[1]}`],
+    [/iPhone OS\s([\d_]+)/i,          (m) => `iOS ${m[1].replace(/_/g, '.')}`],
+    [/CPU OS\s([\d_]+)\s+like Mac/i,  (m) => `iOS ${m[1].replace(/_/g, '.')}`],
+    [/Mac OS X\s([\d._]+)/i,          (m) => `macOS ${m[1].replace(/_/g, '.')}`],
+    [/Windows NT\s([\d.]+)/i,         (m) => `Windows NT ${m[1]}`],
+    [/CrOS\s[^\s]+\s([\d.]+)/i,       (m) => `ChromeOS ${m[1]}`],
+    [/Linux/i,                        () => 'Linux'],
+  ];
+  for (const [rx, fmt] of patterns) {
+    const m = ua.match(rx);
+    if (m) return fmt(m).slice(0, 32);
+  }
+  return 'Web';
 }

@@ -34,3 +34,16 @@
   justify-content: center;
   border: 2px solid var(--ion-background-color, white);
 }
+
+.city-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 0 6px;
+  font-size: 1rem;
+  color: var(--ion-text-color, #1c1f24);
+
+  .placeholder { color: var(--ion-color-medium, #92949c); }
+  ion-icon { color: var(--ion-color-medium, #92949c); font-size: 1.1rem; }
+}

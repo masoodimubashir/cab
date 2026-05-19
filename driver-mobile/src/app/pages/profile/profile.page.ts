@@ -1,7 +1,11 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
+
+type CityOption = { id: number; name: string; country_code?: string | null };
 
 /**
  * Driver profile page — photo, name, email (optional).
@@ -27,6 +31,24 @@ export class ProfilePage implements OnInit {
   name = '';
   email = '';
   phone = '';
+  dob = '';
+  cityId: number | null = null;
+  cityName = '';
+
+  cities: CityOption[] = [];
+  citiesLoading = false;
+  showCityPicker = false;
+
+  // Yesterday — server validator is `before:today` (strict), so today would 422.
+  readonly maxDob = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  // Captured once on init; sent silently with the profile payload so the
+  // admin Customer module shows device + app metadata without asking.
+  private deviceInfo: { app_version?: string; os_version?: string; device_type?: string } = {};
 
   busy = false;
   error: string | null = null;
@@ -48,8 +70,63 @@ export class ProfilePage implements OnInit {
       this.name = me.name && me.name !== 'User' ? me.name : '';
       this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
       this.phone = me.phone ?? '';
-      this.photoPreview = me.avatar_path || null;
+      this.photoPreview = this.auth.resolveAvatarUrl(me);
+      // Prefill the read-only DOB + City on the edit screen. Backend returns
+      // dob as an ISO date string (YYYY-MM-DD); we keep the ISO form for the
+      // native picker (onboarding) and a separately formatted display string.
+      this.dob = me.dob ?? '';
+      this.cityName = me.city ?? '';
     }
+    // Onboarding still picks via the sheet → load the list. In edit mode the
+    // field is locked and showing the city's name only, so we can skip it.
+    if (this.onboarding) {
+      this.loadCities();
+    }
+    void this.captureDeviceInfo();
+  }
+
+  /** Pretty form for the locked edit screen (e.g. "12 Apr 1997"). */
+  get dobDisplay(): string {
+    if (!this.dob) return '';
+    const d = new Date(this.dob);
+    if (Number.isNaN(d.getTime())) return this.dob;
+    return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  private loadCities(): void {
+    if (this.cities.length || this.citiesLoading) return;
+    this.citiesLoading = true;
+    this.api.get<{ data: CityOption[] }>('/catalog/cities').subscribe({
+      next: (res) => {
+        this.cities = res?.data ?? [];
+        this.citiesLoading = false;
+      },
+      error: () => {
+        this.cities = [];
+        this.citiesLoading = false;
+      },
+    });
+  }
+
+  private async captureDeviceInfo(): Promise<void> {
+    try { this.deviceInfo.device_type = Capacitor.getPlatform(); } catch { /* ignore */ }
+    try {
+      if (typeof navigator !== 'undefined') {
+        this.deviceInfo.os_version = parseOsVersion(navigator.userAgent);
+      }
+    } catch { /* ignore */ }
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const info = await CapacitorApp.getInfo();
+        this.deviceInfo.app_version = info.version?.slice(0, 32);
+      }
+    } catch { /* ignore */ }
+  }
+
+  pickCity(c: CityOption): void {
+    this.cityId = c.id;
+    this.cityName = c.name;
+    this.showCityPicker = false;
   }
 
   onPhotoChange(ev: Event): void {
@@ -66,10 +143,23 @@ export class ProfilePage implements OnInit {
     this.error = null;
     const name = this.name.trim();
     if (!name) { this.error = 'Please enter your name.'; return; }
+    // DOB + City are required during onboarding only — on the edit screen
+    // they're locked and we don't send them.
+    if (this.onboarding) {
+      if (!this.dob) { this.error = 'Please select your date of birth.'; return; }
+      if (this.cityId == null) { this.error = 'Please select your city.'; return; }
+    }
 
     const fd = new FormData();
     fd.append('name', name);
     if (this.email.trim()) fd.append('email', this.email.trim());
+    if (this.onboarding) {
+      if (this.dob) fd.append('dob', this.dob);
+      if (this.cityName) fd.append('city', this.cityName);
+      if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
+      if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
+      if (this.deviceInfo.device_type) fd.append('device_type', this.deviceInfo.device_type.slice(0, 64));
+    }
     if (this.photoFile) fd.append('photo', this.photoFile);
 
     this.busy = true;
@@ -95,4 +185,24 @@ export class ProfilePage implements OnInit {
   back(): void {
     this.router.navigateByUrl('/tabs/more');
   }
+}
+
+// Extract a short OS label ("Android 7.0", "iOS 17.4", "Windows 10", …) from a
+// User-Agent string so we stay well under the users.os_version varchar(32).
+function parseOsVersion(ua: string | undefined | null): string | undefined {
+  if (!ua) return undefined;
+  const patterns: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
+    [/Android\s([\d._]+)/i,           (m) => `Android ${m[1]}`],
+    [/iPhone OS\s([\d_]+)/i,          (m) => `iOS ${m[1].replace(/_/g, '.')}`],
+    [/CPU OS\s([\d_]+)\s+like Mac/i,  (m) => `iOS ${m[1].replace(/_/g, '.')}`],
+    [/Mac OS X\s([\d._]+)/i,          (m) => `macOS ${m[1].replace(/_/g, '.')}`],
+    [/Windows NT\s([\d.]+)/i,         (m) => `Windows NT ${m[1]}`],
+    [/CrOS\s[^\s]+\s([\d.]+)/i,       (m) => `ChromeOS ${m[1]}`],
+    [/Linux/i,                        () => 'Linux'],
+  ];
+  for (const [rx, fmt] of patterns) {
+    const m = ua.match(rx);
+    if (m) return fmt(m).slice(0, 32);
+  }
+  return 'Web';
 }

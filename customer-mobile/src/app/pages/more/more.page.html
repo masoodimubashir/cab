@@ -10,10 +10,10 @@
       <ion-label>Account</ion-label>
     </ion-list-header>
     <ion-item *ngIf="auth.getUser() as u">
-      <ion-avatar slot="start" *ngIf="u.avatar_path">
-        <img [src]="u.avatar_path" alt="" />
+      <ion-avatar slot="start" *ngIf="auth.resolveAvatarUrl(u)">
+        <img [src]="auth.resolveAvatarUrl(u)" alt="" />
       </ion-avatar>
-      <ion-icon name="person-circle-outline" slot="start" *ngIf="!u.avatar_path"></ion-icon>
+      <ion-icon name="person-circle-outline" slot="start" *ngIf="!auth.resolveAvatarUrl(u)"></ion-icon>
       <ion-label>
         <h2>{{ u.name }}</h2>
         <p>{{ roleLabel }}</p>

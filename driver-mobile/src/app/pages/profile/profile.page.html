@@ -35,10 +35,76 @@
     <ion-input type="email" [(ngModel)]="email" [disabled]="busy" autocomplete="email"></ion-input>
   </ion-item>
 
+  <!-- Onboarding (editable): native date picker + city sheet -->
+  <ng-container *ngIf="onboarding">
+    <ion-item lines="full">
+      <ion-label position="stacked">Date of birth *</ion-label>
+      <ion-input
+        type="date"
+        [(ngModel)]="dob"
+        [max]="maxDob"
+        [disabled]="busy"
+        required
+      ></ion-input>
+    </ion-item>
+
+    <ion-item lines="full" button [detail]="false" (click)="!busy && (showCityPicker = true)">
+      <ion-label position="stacked">City *</ion-label>
+      <ion-text class="city-value">
+        <span [class.placeholder]="!cityName">{{ cityName || 'Select your city' }}</span>
+        <ion-icon name="chevron-down-outline"></ion-icon>
+      </ion-text>
+    </ion-item>
+  </ng-container>
+
+  <!-- Edit mode (locked): captured once at signup, not editable later -->
+  <ng-container *ngIf="!onboarding">
+    <ion-item lines="full">
+      <ion-label position="stacked">Date of birth</ion-label>
+      <ion-input [value]="dobDisplay || '—'" disabled></ion-input>
+    </ion-item>
+
+    <ion-item lines="full">
+      <ion-label position="stacked">City</ion-label>
+      <ion-input [value]="cityName || '—'" disabled></ion-input>
+    </ion-item>
+  </ng-container>
+
   <ion-item lines="full" *ngIf="phone">
     <ion-label position="stacked">Phone</ion-label>
     <ion-input [value]="phone" disabled></ion-input>
   </ion-item>
+
+  <ion-modal [isOpen]="showCityPicker" (didDismiss)="showCityPicker = false">
+    <ng-template>
+      <ion-header>
+        <ion-toolbar color="primary">
+          <ion-title>Select city</ion-title>
+          <ion-buttons slot="end">
+            <ion-button (click)="showCityPicker = false">Close</ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <ion-list *ngIf="cities.length; else cityEmpty">
+          <ion-item *ngFor="let c of cities" button (click)="pickCity(c)">
+            <ion-label>
+              <h3>{{ c.name }}</h3>
+              <p *ngIf="c.country_code">{{ c.country_code }}</p>
+            </ion-label>
+            <ion-icon *ngIf="c.id === cityId" name="checkmark-outline" slot="end" color="primary"></ion-icon>
+          </ion-item>
+        </ion-list>
+        <ng-template #cityEmpty>
+          <ion-item lines="none">
+            <ion-label class="ion-text-center">
+              {{ citiesLoading ? 'Loading…' : 'No cities available' }}
+            </ion-label>
+          </ion-item>
+        </ng-template>
+      </ion-content>
+    </ng-template>
+  </ion-modal>
 
   <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
 
