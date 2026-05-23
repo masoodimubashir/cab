@@ -74,6 +74,33 @@ class CityVehicleType extends Model
         return $this->hasMany(CityVehicleTypeImage::class, 'city_vehicle_type_id');
     }
 
+    /**
+     * Resolve the city_vehicle_types row id for a booking. A booking arrives
+     * keyed by (city, product_kind) plus either a ride_type or a global
+     * vehicle_type; this maps that back to the exact per-city vehicle so
+     * dynamic-pricing surge can target it. Returns null when no row matches.
+     */
+    public static function resolveId(
+        int $cityId,
+        string $productKind,
+        ?int $rideTypeId,
+        ?int $vehicleTypeId,
+    ): ?int {
+        $query = static::query()
+            ->where('city_id', $cityId)
+            ->where('product_kind', $productKind);
+
+        if ($rideTypeId !== null) {
+            $query->where('ride_type_id', $rideTypeId);
+        } elseif ($vehicleTypeId !== null) {
+            $query->where('vehicle_type_id', $vehicleTypeId);
+        } else {
+            return null;
+        }
+
+        return $query->value('id');
+    }
+
     public function getAndroidImageUrlAttribute(): ?string
     {
         return $this->android_image_path

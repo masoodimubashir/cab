@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'city_id',
     'ride_type_id',
     'vehicle_type',
+    'city_vehicle_type_ids',
     'fare_type',
     'customer_fare_factor',
     'customer_priority',
@@ -34,6 +35,7 @@ class DynamicPricingRule extends Model
 
     protected $casts = [
         'region_polygon' => 'array',
+        'city_vehicle_type_ids' => 'array',
         'modes' => 'array',
         'in_modes' => 'array',
         'date_from' => 'date',

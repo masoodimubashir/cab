@@ -44,6 +44,7 @@ use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
+use App\Http\Controllers\Admin\AdminOutstationPackagesController;
 use App\Http\Controllers\Admin\AdminCityWidePromotionsController;
 use App\Http\Controllers\Admin\AdminPromoCodesController;
 use App\Http\Controllers\Admin\AdminCouponsController;
@@ -105,6 +106,7 @@ Route::get('/pricing/cities', [PricingController::class, 'cities']);
 Route::get('/pricing/cities/{city}/products', [PricingController::class, 'products']);
 Route::get('/pricing/ride-types', [PricingController::class, 'rideTypes']);
 Route::get('/pricing/vehicle-types', [PricingController::class, 'vehicleTypes']);
+Route::get('/pricing/outstation-packages', [PricingController::class, 'outstationPackages']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips', [TripsController::class, 'store'])->middleware('throttle:booking');
@@ -249,6 +251,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
         Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
         Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'destroy']);
+
+        // Outstation fare packages (One Way / Round Trip / …) per vehicle.
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'index']);
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'store']);
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'update']);
+        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'destroy']);
     });
     Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
     Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);
@@ -285,6 +293,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/analytics/reports/{key}/export', [AdminAnalyticsController::class, 'exportReport']);
     Route::get('/admin/ride-types', [AdminPricingController::class, 'rideTypes']);
     Route::get('/admin/pricing-rules', [AdminPricingController::class, 'index']);
+    Route::get('/admin/pricing-rules/resolve', [AdminPricingController::class, 'resolve']);
     Route::post('/admin/pricing-rules', [AdminPricingController::class, 'store']);
     Route::patch('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'update']);
     Route::delete('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'destroy']);

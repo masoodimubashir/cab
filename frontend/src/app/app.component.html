@@ -1,8 +1,6 @@
 <tm-shell
   *ngIf="showShell; else bare"
   [sections]="navSections"
-  scopeLabel="Scoped to"
-  [scopeValue]="scopedCityName"
 >
   <tm-topbar
     [title]="pageTitle()"
@@ -10,7 +8,9 @@
     (menuClick)="openMobileNav()"
     (profile)="goProfile()"
     (logout)="logout()"
-  ></tm-topbar>
+  >
+    <tm-city-switcher slot="lead" *ngIf="showCitySwitcher()" />
+  </tm-topbar>
 
   <div class="page-outlet">
     <router-outlet />

@@ -1,27 +1,22 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { CityContextService } from '../core/city-context.service';
+import { ToastService } from '../core/toast.service';
 import {
   ButtonComponent,
-  CardComponent,
+  DrawerComponent,
   IconComponent,
-  InputComponent,
   ModalComponent,
-  SelectComponent,
-  SelectOption,
-} from '../ui';
-import {
-  ColumnComponent,
-  DataTableComponent,
 } from '../ui';
 
 /**
- * Base Pricing — admin module. Mirrors the look-and-feel of the drivers list
- * (KPI strip + tm-data-table with toolbar search + filters + per-row actions,
- * tm-modal for create/edit/view). Server returns the full pricing-rules list
- * once; search and city/ride filtering happen client-side, same as the drivers
- * approvals tab does today.
+ * Base Pricing — rate cards for the city chosen in the topbar switcher.
+ * One rate card per ride type. The full parameter set (thresholds, waiting,
+ * cancellation, pickup, no-show) is edited in a sectioned right-side drawer.
  */
 
 type PricingForm = {
@@ -87,845 +82,590 @@ const NUMERIC_FORM_FIELDS: (keyof PricingForm)[] = [
   selector: 'app-admin-pricing',
   standalone: true,
   imports: [
-    CommonModule,
-    FormsModule,
-    CardComponent,
-    IconComponent,
-    InputComponent,
-    ButtonComponent,
-    SelectComponent,
-    ModalComponent,
-    DataTableComponent,
-    ColumnComponent,
+    CommonModule, FormsModule,
+    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
   ],
   template: `
-    <div class="pricing-page">
-      <!-- ============ KPI strip ============ -->
-      <section class="kpis">
-        <tm-card class="kpi">
-          <span class="kpi__label">Total rules</span>
-          <span class="kpi__value">{{ allRules.length }}</span>
-        </tm-card>
-        <tm-card class="kpi">
-          <span class="kpi__label">Cities covered</span>
-          <span class="kpi__value">{{ citiesCoveredCount }}</span>
-        </tm-card>
-        <tm-card class="kpi">
-          <span class="kpi__label">Ride types</span>
-          <span class="kpi__value">{{ rideTypesCoveredCount }}</span>
-        </tm-card>
-        <tm-card class="kpi">
-          <span class="kpi__label">Avg base fare</span>
-          <span class="kpi__value">{{ avgBaseFare | number:'1.0-0' }}</span>
-        </tm-card>
-      </section>
+    <div class="bp">
+      <header class="bp__head">
+        <p class="bp__sub">Fare rate cards for each ride type in this city.</p>
+        <tm-button
+          *ngIf="cityId != null && rideTypes.length"
+          variant="green" icon="plus"
+          [disabled]="!availableRideTypes.length"
+          (clicked)="openCreate()"
+        >Add rate card</tm-button>
+      </header>
 
-      <!-- ============ Reusable table ============ -->
-      <tm-data-table
-        [rows]="filteredRules"
-        [total]="filteredRules.length"
-        [loading]="loading"
-        emptyTitle="No pricing rules"
-        emptyHint="Try a different search, or add a new rule for a city + ride type."
-      >
-        <!-- Search (left) -->
-        <tm-input
-          slot="search"
-          icon="search"
-          placeholder="Search by city or ride type"
-          [(ngModel)]="search"
-          (ngModelChange)="applyFilters()"
-        />
+      <!-- No city -->
+      <div class="cue" *ngIf="cityId == null">
+        <tm-icon name="map-marker" [size]="24" />
+        <p class="cue__title">No city selected</p>
+        <p class="cue__text">Pick a city from the switcher in the top bar to set its pricing.</p>
+      </div>
 
-        <!-- Filters + Add button (right) -->
-        <ng-container slot="filters">
-          <tm-select
-            class="filter-select"
-            [options]="cityFilterOptions"
-            [(ngModel)]="cityFilter"
-            (ngModelChange)="applyFilters()"
-            placeholder="All cities"
-          />
-          <tm-select
-            class="filter-select"
-            [options]="rideFilterOptions"
-            [(ngModel)]="rideFilter"
-            (ngModelChange)="applyFilters()"
-            placeholder="All ride types"
-          />
-          <tm-button variant="green" icon="plus" (clicked)="openCreate()">
-            Add pricing rule
-          </tm-button>
-        </ng-container>
+      <!-- City but no ride types at all -->
+      <div class="cue" *ngIf="cityId != null && !loading && !rideTypes.length">
+        <tm-icon name="road" [size]="24" />
+        <p class="cue__title">No ride types yet</p>
+        <p class="cue__text">Pricing is set per ride type — add ride types first.</p>
+        <tm-button variant="green" size="sm" icon="arrow-right" (clicked)="goTo('/vehicles')">
+          Go to Vehicles
+        </tm-button>
+      </div>
 
-        <!-- Columns -->
-        <tm-column key="id" label="ID" width="80">
-          <ng-template let-row>
-            <span class="cell-id cell-id--static">#{{ row.id }}</span>
-          </ng-template>
-        </tm-column>
+      <ng-container *ngIf="cityId != null && rideTypes.length">
+        <!-- Summary -->
+        <div class="bp__stats" *ngIf="cityRules.length">
+          <div class="stat">
+            <span class="stat__v">{{ cityRules.length }}</span>
+            <span class="stat__l">Rate cards</span>
+          </div>
+          <div class="stat">
+            <span class="stat__v">{{ availableRideTypes.length }}</span>
+            <span class="stat__l">Ride types unpriced</span>
+          </div>
+          <div class="stat">
+            <span class="stat__v">{{ avgBaseFare | number:'1.0-0' }}</span>
+            <span class="stat__l">Avg base fare</span>
+          </div>
+        </div>
 
-        <tm-column key="city" label="City">
-          <ng-template let-row>
-            <div class="cell-user">
-              <span class="cell-avatar">{{ initials(cityName(row)) }}</span>
-              <div class="cell-user__meta">
-                <span class="cell-user__name">{{ cityName(row) }}</span>
-                <span class="cell-user__sub">{{ rideName(row) }}</span>
-              </div>
-            </div>
-          </ng-template>
-        </tm-column>
+        <!-- Loading -->
+        <div class="cue" *ngIf="loading">
+          <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading pricing…</p>
+        </div>
 
-        <tm-column key="base_fare" label="Base" width="90" align="right">
-          <ng-template let-row>
-            <span class="num">{{ row.base_fare ?? '—' }}</span>
-          </ng-template>
-        </tm-column>
+        <!-- No rules for this city -->
+        <div class="cue" *ngIf="!loading && !cityRules.length">
+          <tm-icon name="tag" [size]="24" />
+          <p class="cue__title">This city isn't priced yet</p>
+          <p class="cue__text">Add a rate card for a ride type to start accepting bookings.</p>
+          <tm-button variant="green" size="sm" icon="plus" (clicked)="openCreate()">Add rate card</tm-button>
+        </div>
 
-        <tm-column key="per_km" label="Per km" width="90" align="right">
-          <ng-template let-row>
-            <span class="num">{{ row.per_km ?? '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="per_min" label="Per min" width="90" align="right">
-          <ng-template let-row>
-            <span class="num">{{ row.per_min ?? '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="min_fare" label="Min fare" width="100" align="right">
-          <ng-template let-row>
-            <span class="num">{{ row.min_fare ?? '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="surge_multiplier" label="Surge" width="90" align="right">
-          <ng-template let-row>
-            <span class="num">{{ row.surge_multiplier ?? '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="tax_percent" label="Tax %" width="90" align="right">
-          <ng-template let-row>
-            <span class="num">{{ row.tax_percent ?? '—' }}</span>
-          </ng-template>
-        </tm-column>
-
-        <tm-column key="actions" label="" width="140" align="right">
-          <ng-template let-row>
-            <div class="row-actions">
-              <button
-                type="button"
-                class="row-action"
-                aria-label="View"
-                (click)="openView(row)"
-              >
-                <tm-icon name="eye" [size]="14" />
-              </button>
-              <button
-                type="button"
-                class="row-action"
-                aria-label="Edit"
-                (click)="openEdit(row)"
-              >
-                <tm-icon name="edit" [size]="14" />
-              </button>
-              <button
-                type="button"
-                class="row-action row-action--danger"
-                aria-label="Delete"
-                (click)="remove(row)"
-              >
-                <tm-icon name="trash" [size]="14" />
-              </button>
-            </div>
-          </ng-template>
-        </tm-column>
-      </tm-data-table>
-
-      <p class="error" *ngIf="error">{{ error }}</p>
+        <!-- Rate card table -->
+        <div class="tablewrap" *ngIf="!loading && cityRules.length">
+          <table class="rtable">
+            <thead>
+              <tr>
+                <th>Ride type</th>
+                <th class="num">Base fare</th>
+                <th class="num">Min fare</th>
+                <th class="num">Per km</th>
+                <th class="num">Per min</th>
+                <th class="num">Commission</th>
+                <th class="num">Tax</th>
+                <th class="act">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of cityRules">
+                <td class="rtable__name">
+                  <span class="rtable__icon"><tm-icon name="tag" [size]="13" /></span>
+                  {{ rideName(r) }}
+                </td>
+                <td class="num">{{ r.base_fare ?? '—' }}</td>
+                <td class="num">{{ r.min_fare ?? '—' }}</td>
+                <td class="num">{{ r.per_km ?? '—' }}</td>
+                <td class="num">{{ r.per_min ?? '—' }}</td>
+                <td class="num">{{ r.commission_percent != null ? r.commission_percent + '%' : '—' }}</td>
+                <td class="num">{{ r.tax_percent != null ? r.tax_percent + '%' : '—' }}</td>
+                <td class="act">
+                  <div class="rtable__actions">
+                    <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
+                    <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
     </div>
 
-    <!-- ============ Create / Edit modal ============ -->
-    <tm-modal
-      [open]="showFormModal"
-      [title]="editMode ? 'Edit pricing rule' : 'Add pricing rule'"
+    <!-- ========== Create / edit drawer ========== -->
+    <tm-drawer
+      [open]="drawerOpen"
+      [title]="editMode ? 'Edit rate card' : 'Add rate card'"
+      [subtitle]="cityName"
+      [width]="560"
       (closed)="closeForm()"
     >
-      <div slot="body" class="fieldsets">
-        <fieldset class="fs">
-          <legend>Identity & base</legend>
-          <div class="grid grid--4">
-            <!-- div, not label — a label-for-tm-select synthesizes a 2nd click
-                 on the trigger button when you pick an option, re-opening the
-                 menu. The plain number inputs below keep their <label> tags. -->
-            <div class="field">
-              <span class="field__lbl">City</span>
-              <tm-select
-                [options]="cityOptions"
-                [(ngModel)]="formModel.city_id"
-                [disabled]="editMode"
-                placeholder="Select city"
-              />
-            </div>
-            <div class="field">
-              <span class="field__lbl">Ride type</span>
-              <tm-select
-                [options]="rideOptions"
-                [(ngModel)]="formModel.ride_type_id"
-                [disabled]="editMode"
-                placeholder="Select ride type"
-              />
-            </div>
-            <label class="field">
-              <span class="field__lbl">Base fare</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.base_fare" />
+      <div slot="body" class="pform">
+        <!-- Identity & base -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="tag" [size]="14" /> Ride type & base fare</h3>
+          <div class="pgrid">
+            <label class="pfield pfield--full">
+              <span class="pfield__lbl">Ride type <i>*</i></span>
+              <select [(ngModel)]="formModel.ride_type_id" [disabled]="editMode">
+                <option [ngValue]="null" disabled>Select ride type</option>
+                <option *ngFor="let rt of formRideOptions" [ngValue]="rt.id">{{ rt.name }}</option>
+              </select>
             </label>
-            <label class="field">
-              <span class="field__lbl">Per km</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.per_km" />
+            <label class="pfield">
+              <span class="pfield__lbl">Base fare <i>*</i></span>
+              <input type="number" min="0" [(ngModel)]="formModel.base_fare" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Per min</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.per_min" />
+            <label class="pfield">
+              <span class="pfield__lbl">Minimum fare <i>*</i></span>
+              <input type="number" min="0" [(ngModel)]="formModel.min_fare" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Min fare</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.min_fare" />
+            <label class="pfield">
+              <span class="pfield__lbl">Per km <i>*</i></span>
+              <input type="number" min="0" [(ngModel)]="formModel.per_km" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Surge multiplier</span>
-              <input class="num-input" type="number" min="0" step="0.1" [(ngModel)]="formModel.surge_multiplier" />
+            <label class="pfield">
+              <span class="pfield__lbl">Per min</span>
+              <input type="number" min="0" [(ngModel)]="formModel.per_min" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Commission %</span>
-              <input class="num-input" type="number" min="0" max="100" [(ngModel)]="formModel.commission_percent" />
+            <label class="pfield">
+              <span class="pfield__lbl">Commission %</span>
+              <input type="number" min="0" max="100" [(ngModel)]="formModel.commission_percent" />
             </label>
           </div>
-        </fieldset>
+        </section>
 
-        <fieldset class="fs">
-          <legend>Distance thresholds</legend>
-          <div class="grid grid--4">
-            <label class="field">
-              <span class="field__lbl">Threshold 1 (km)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.threshold_distance_1_km" />
+        <!-- Distance thresholds -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="road" [size]="14" /> Distance thresholds</h3>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">Threshold 1 (km)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.threshold_distance_1_km" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Fare/km after T1</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.fare_per_km_after_threshold_1" />
+            <label class="pfield">
+              <span class="pfield__lbl">Fare/km after T1</span>
+              <input type="number" min="0" [(ngModel)]="formModel.fare_per_km_after_threshold_1" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Threshold 2 (km)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.threshold_distance_2_km" />
+            <label class="pfield">
+              <span class="pfield__lbl">Threshold 2 (km)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.threshold_distance_2_km" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Fare/km after T2</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.fare_per_km_after_threshold_2" />
+            <label class="pfield">
+              <span class="pfield__lbl">Fare/km after T2</span>
+              <input type="number" min="0" [(ngModel)]="formModel.fare_per_km_after_threshold_2" />
             </label>
           </div>
-        </fieldset>
+        </section>
 
-        <fieldset class="fs">
-          <legend>Time thresholds</legend>
-          <div class="grid grid--4">
-            <label class="field">
-              <span class="field__lbl">Threshold 1 (min)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.threshold_time_1_min" />
+        <!-- Time thresholds -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="calendar" [size]="14" /> Time thresholds</h3>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">Threshold 1 (min)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.threshold_time_1_min" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Fare/min after T1</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.fare_per_min_after_threshold_time_1" />
+            <label class="pfield">
+              <span class="pfield__lbl">Fare/min after T1</span>
+              <input type="number" min="0" [(ngModel)]="formModel.fare_per_min_after_threshold_time_1" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Threshold 2 (min)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.threshold_time_2_min" />
+            <label class="pfield">
+              <span class="pfield__lbl">Threshold 2 (min)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.threshold_time_2_min" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Fare/min after T2</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.fare_per_min_after_threshold_time_2" />
+            <label class="pfield">
+              <span class="pfield__lbl">Fare/min after T2</span>
+              <input type="number" min="0" [(ngModel)]="formModel.fare_per_min_after_threshold_time_2" />
             </label>
           </div>
-        </fieldset>
+        </section>
 
-        <fieldset class="fs">
-          <legend>Waiting & tax</legend>
-          <div class="grid grid--4">
-            <label class="field">
-              <span class="field__lbl">Waiting threshold (min)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.threshold_waiting_time_min" />
+        <!-- Waiting & tax -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="refresh" [size]="14" /> Waiting & tax</h3>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">Waiting threshold (min)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.threshold_waiting_time_min" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Fare per waiting min</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.fare_per_waiting_minute" />
+            <label class="pfield">
+              <span class="pfield__lbl">Fare per waiting min</span>
+              <input type="number" min="0" [(ngModel)]="formModel.fare_per_waiting_minute" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Tax %</span>
-              <input class="num-input" type="number" min="0" max="100" [(ngModel)]="formModel.tax_percent" />
+            <label class="pfield">
+              <span class="pfield__lbl">Tax %</span>
+              <input type="number" min="0" max="100" [(ngModel)]="formModel.tax_percent" />
+            </label>
+            <label class="pfield">
+              <span class="pfield__lbl">Luggage charges</span>
+              <input type="number" min="0" [(ngModel)]="formModel.luggage_charges" />
+            </label>
+            <label class="pfield">
+              <span class="pfield__lbl">Scheduled-ride fare</span>
+              <input type="number" min="0" [(ngModel)]="formModel.scheduled_ride_fare" />
             </label>
           </div>
-        </fieldset>
+        </section>
 
-        <fieldset class="fs">
-          <legend>Cancellation</legend>
-          <div class="grid grid--4">
-            <label class="field">
-              <span class="field__lbl">Cancellation charges</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.cancellation_charges" />
+        <!-- Cancellation -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="x" [size]="14" /> Cancellation</h3>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">Cancellation charges</span>
+              <input type="number" min="0" [(ngModel)]="formModel.cancellation_charges" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Cancel threshold (km)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.cancel_threshold_distance_km" />
+            <label class="pfield">
+              <span class="pfield__lbl">Cancel threshold (km)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.cancel_threshold_distance_km" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Cancel threshold (min)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.cancel_threshold_time_min" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Luggage charges</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.luggage_charges" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Scheduled-ride fare</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.scheduled_ride_fare" />
+            <label class="pfield">
+              <span class="pfield__lbl">Cancel threshold (min)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.cancel_threshold_time_min" />
             </label>
           </div>
-        </fieldset>
+        </section>
 
-        <fieldset class="fs">
-          <legend>Pickup</legend>
-          <div class="grid grid--4">
-            <label class="field">
-              <span class="field__lbl">Charge before threshold</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.pickup_charge_before_threshold" />
+        <!-- Pickup -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="pin" [size]="14" /> Pickup</h3>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">Charge before threshold</span>
+              <input type="number" min="0" [(ngModel)]="formModel.pickup_charge_before_threshold" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Charge after threshold</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.pickup_charge_after_threshold" />
+            <label class="pfield">
+              <span class="pfield__lbl">Charge after threshold</span>
+              <input type="number" min="0" [(ngModel)]="formModel.pickup_charge_after_threshold" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Threshold distance (km)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.pickup_threshold_distance_km" />
+            <label class="pfield">
+              <span class="pfield__lbl">Threshold distance (km)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.pickup_threshold_distance_km" />
             </label>
           </div>
-        </fieldset>
+        </section>
 
-        <fieldset class="fs">
-          <legend>No-show & cancel subsidy</legend>
-          <div class="grid grid--4">
-            <label class="field">
-              <span class="field__lbl">No-show charge / min</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.no_show_charges_per_minute" />
+        <!-- No-show & subsidy -->
+        <section class="psec">
+          <h3 class="psec__title"><tm-icon name="bolt" [size]="14" /> No-show & cancel subsidy</h3>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">No-show charge / min</span>
+              <input type="number" min="0" [(ngModel)]="formModel.no_show_charges_per_minute" />
             </label>
-            <label class="field">
-              <span class="field__lbl">No-show threshold (min)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.no_show_threshold_minutes" />
+            <label class="pfield">
+              <span class="pfield__lbl">No-show threshold (min)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.no_show_threshold_minutes" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Cancel subsidy</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.cancel_subsidy" />
+            <label class="pfield">
+              <span class="pfield__lbl">Cancel subsidy</span>
+              <input type="number" min="0" [(ngModel)]="formModel.cancel_subsidy" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Subsidy threshold (min)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.cancel_subsidy_threshold_minutes" />
+            <label class="pfield">
+              <span class="pfield__lbl">Subsidy threshold (min)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.cancel_subsidy_threshold_minutes" />
             </label>
-            <label class="field">
-              <span class="field__lbl">Subsidy threshold (km)</span>
-              <input class="num-input" type="number" min="0" [(ngModel)]="formModel.cancel_subsidy_threshold_distance_km" />
+            <label class="pfield">
+              <span class="pfield__lbl">Subsidy threshold (km)</span>
+              <input type="number" min="0" [(ngModel)]="formModel.cancel_subsidy_threshold_distance_km" />
             </label>
           </div>
-        </fieldset>
+        </section>
       </div>
 
-      <ng-container slot="footer">
+      <div slot="footer">
         <tm-button variant="ghost" (clicked)="closeForm()">Cancel</tm-button>
-        <tm-button
-          variant="green"
-          [disabled]="submitting || !canSubmit"
-          [loading]="submitting"
-          (clicked)="submitForm()"
-        >
-          {{ editMode ? 'Update' : 'Create' }}
+        <tm-button variant="green" [disabled]="submitting || !canSubmit" (clicked)="submitForm()">
+          {{ submitting ? 'Saving…' : editMode ? 'Save changes' : 'Create rate card' }}
         </tm-button>
-      </ng-container>
-    </tm-modal>
-
-    <!-- ============ View modal ============ -->
-    <tm-modal
-      [open]="showViewModal"
-      [title]="'Pricing rule details'"
-      (closed)="closeView()"
-    >
-      <div slot="body" class="details-grid" *ngIf="viewRule">
-        <div class="detail"><span class="lbl">City</span><span>{{ cityName(viewRule) }}</span></div>
-        <div class="detail"><span class="lbl">Ride</span><span>{{ rideName(viewRule) }}</span></div>
-        <div class="detail"><span class="lbl">Base fare</span><span>{{ viewRule.base_fare ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Per km</span><span>{{ viewRule.per_km ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Per min</span><span>{{ viewRule.per_min ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Min fare</span><span>{{ viewRule.min_fare ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Surge</span><span>{{ viewRule.surge_multiplier ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Commission %</span><span>{{ viewRule.commission_percent ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Tax %</span><span>{{ viewRule.tax_percent ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Cancellation</span><span>{{ viewRule.cancellation_charges ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">No-show / min</span><span>{{ viewRule.no_show_charges_per_minute ?? '—' }}</span></div>
-        <div class="detail"><span class="lbl">Luggage</span><span>{{ viewRule.luggage_charges ?? '—' }}</span></div>
       </div>
+    </tm-drawer>
 
-      <ng-container slot="footer">
-        <tm-button variant="ghost" (clicked)="closeView()">Close</tm-button>
-        <tm-button variant="green" icon="edit" (clicked)="editFromView()" *ngIf="viewRule">Edit</tm-button>
-      </ng-container>
+    <!-- ========== Delete confirm ========== -->
+    <tm-modal [open]="!!deleteTarget" title="Delete rate card" (closed)="deleteTarget = null">
+      <div slot="body">
+        <p>Delete the <strong>{{ deleteTarget ? rideName(deleteTarget) : '' }}</strong> rate card for
+        <strong>{{ cityName }}</strong>? This cannot be undone.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="deleteTarget = null">Cancel</tm-button>
+        <tm-button variant="danger" [disabled]="submitting" (clicked)="confirmDelete()">Delete</tm-button>
+      </div>
     </tm-modal>
   `,
   styles: [`
-    :host { display: block; }
+    .bp { display: flex; flex-direction: column; gap: 18px; }
+    .bp__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .bp__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
 
-    .pricing-page {
-      display: flex;
-      flex-direction: column;
-      gap: var(--tm-space-5);
-    }
-
-    /* KPI strip */
-    .kpis {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: var(--tm-space-4);
-    }
-    .kpi {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 14px 16px;
-    }
-    .kpi__label {
-      font-size: 12px;
-      color: var(--tm-text-soft);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .kpi__value {
-      font-family: var(--tm-font-display);
-      font-size: 26px;
-      font-weight: 800;
-      color: var(--tm-ink);
-      line-height: 1.1;
-    }
-
-    /* Table cell helpers — mirror drivers list */
-    .cell-id { font-family: var(--tm-font-mono); font-weight: 700; color: var(--tm-text-soft); font-size: 12px; }
-    .cell-user { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .cell-avatar {
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      background: var(--tm-green-tint);
-      color: var(--tm-green-deep);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: 800;
-      flex-shrink: 0;
-    }
-    .cell-user__meta { display: flex; flex-direction: column; min-width: 0; }
-    .cell-user__name {
-      font-weight: 700;
-      color: var(--tm-text);
-      font-size: 13px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .cell-user__sub {
-      font-size: 12px;
-      color: var(--tm-text-soft);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .num { font-family: var(--tm-font-mono); font-weight: 700; font-size: 13px; color: var(--tm-text); }
-
-    /* Row actions — circular icon buttons */
-    .row-actions {
-      display: inline-flex;
-      gap: 4px;
-      align-items: center;
-      justify-content: flex-end;
-    }
-    .row-action {
-      width: 28px; height: 28px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      border: 0;
-      background: transparent;
-      color: var(--tm-text-soft);
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .row-action:hover { background: var(--tm-canvas-2); color: var(--tm-text); }
-    .row-action--danger:hover { background: rgba(220, 38, 38, 0.10); color: #b91c1c; }
-
-    /* Keep the filters compact so the search + 2 selects + Add button stay on
-       one line in the toolbar. tm-select fills its container, so we cap each
-       chip here rather than touching the primitive. */
-    .filter-select {
-      width: 150px;
-      flex: 0 0 auto;
-    }
-    @media (max-width: 720px) { .filter-select { width: 140px; } }
-
-    /* Uniform toolbar control height — input/select/button each ship with
-       their own padding so they end up 36–40px tall. Lock them all to 40px
-       so the four chips read as a single bar. Scoped to this page only.
-       tm-input renders .field, tm-select renders .trigger, tm-button renders
-       .tm-btn — those are the inner elements whose padding sets the height. */
-    :host ::ng-deep .tm-dt__toolbar tm-input .field,
-    :host ::ng-deep .tm-dt__toolbar tm-select .trigger,
-    :host ::ng-deep .tm-dt__toolbar tm-button .tm-btn {
-      height: 40px;
-      box-sizing: border-box;
-      padding-top: 0;
-      padding-bottom: 0;
-    }
-
-    .error {
-      margin: 0;
-      padding: 10px 14px;
-      border-radius: var(--tm-radius-md);
-      background: rgba(220, 38, 38, 0.08);
-      color: #b91c1c;
-      font-weight: 600;
-      font-size: 13px;
-    }
-
-    /* ============ Modal form ============ */
-    .fieldsets { display: flex; flex-direction: column; gap: 14px; }
-    .fs {
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-md);
-      padding: 12px 14px 14px;
-      margin: 0;
-      background: var(--tm-canvas);
-    }
-    .fs legend {
-      padding: 0 6px;
-      font-size: 12px;
-      font-weight: 800;
-      color: var(--tm-text);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .grid { display: grid; gap: 10px 12px; }
-    .grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    @media (max-width: 980px) { .grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 560px) { .grid--4 { grid-template-columns: 1fr; } }
-
-    .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-    .field__lbl {
-      font-size: 11px;
-      font-weight: 800;
-      color: var(--tm-text-soft);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .num-input {
-      width: 100%;
-      height: 36px;
-      padding: 0 12px;
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-sm);
+    .cue {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 48px 24px; text-align: center;
       background: var(--tm-surface);
-      font-family: var(--tm-font-body);
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--tm-text);
-      transition: border-color var(--tm-duration-fast) var(--tm-ease);
+      border: 1px dashed var(--tm-line);
+      border-radius: var(--tm-radius-lg);
+      color: var(--tm-text-muted);
     }
-    .num-input:hover { border-color: var(--tm-ink); }
-    .num-input:focus { outline: 0; border-color: var(--tm-ink); }
+    .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
+    .cue__text { margin: 0 0 6px; font-size: 13px; max-width: 380px; }
 
-    .details-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px 12px;
+    .bp__stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .stat {
+      display: flex; flex-direction: column; gap: 2px;
+      padding: 12px 18px;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-md, 10px);
+      min-width: 130px;
     }
-    @media (max-width: 560px) { .details-grid { grid-template-columns: 1fr; } }
-    .detail {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: var(--tm-radius-sm);
+    .stat__v { font-size: 22px; font-weight: 800; color: var(--tm-text); }
+    .stat__l { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--tm-text-muted); }
+
+    .tablewrap {
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-lg, 14px);
+      overflow-x: auto;
+    }
+    .rtable { width: 100%; border-collapse: collapse; }
+    .rtable th {
+      text-align: left; white-space: nowrap;
+      padding: 11px 14px;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.4px;
+      text-transform: uppercase; color: var(--tm-text-muted);
       background: var(--tm-canvas-2);
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--tm-text);
+      border-bottom: 1px solid var(--tm-line);
     }
-    .detail .lbl {
-      font-size: 11px;
-      font-weight: 800;
-      color: var(--tm-text-soft);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+    .rtable td {
+      padding: 12px 14px;
+      font-size: 13px; font-weight: 600; color: var(--tm-text);
+      border-bottom: 1px solid var(--tm-line);
+      white-space: nowrap;
     }
+    .rtable tbody tr:last-child td { border-bottom: none; }
+    .rtable tbody tr:hover { background: var(--tm-canvas-2); }
+    .rtable th.num, .rtable td.num { text-align: right; }
+    .rtable th.act, .rtable td.act { text-align: right; }
+    .rtable__name { font-weight: 800; }
+    .rtable__icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 7px; margin-right: 8px;
+      vertical-align: middle;
+      background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green);
+    }
+    .rtable__actions { display: flex; gap: 5px; justify-content: flex-end; }
 
-    @media (max-width: 980px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 560px) { .kpis { grid-template-columns: 1fr; } }
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
+    }
+    .icon-btn:hover { background: var(--tm-ink); color: #fff; }
+    .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
 
-    /* tm-modal locks the panel to min(480px, 100%). Widen it per modal: the
-       form modal has a 4-col fieldset grid and needs the room; the view
-       modal only renders 2-col detail chips. Using :has() so we can target
-       each panel by the marker class on its body content. */
-    :host ::ng-deep .tm-modal__panel:has(.fieldsets) {
-      width: min(1280px, 96vw);
+    /* drawer form */
+    .pform { display: flex; flex-direction: column; gap: 18px; }
+    .psec { display: flex; flex-direction: column; gap: 9px; }
+    .psec__title {
+      display: flex; align-items: center; gap: 6px;
+      margin: 0; font-size: 12px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--tm-text-muted);
     }
-    :host ::ng-deep .tm-modal__panel:has(.details-grid) {
-      width: min(760px, 96vw);
+    .pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pfield { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .pfield--full { grid-column: 1 / -1; }
+    .pfield__lbl { font-size: 11px; font-weight: 700; color: var(--tm-text); }
+    .pfield__lbl i { color: var(--tm-danger, #ef4444); font-style: normal; }
+    .pfield input, .pfield select {
+      width: 100%; height: 36px; padding: 0 10px;
+      border: 1px solid var(--tm-line); border-radius: 8px;
+      background: var(--tm-canvas); color: var(--tm-text);
+      font-size: 13px; outline: none;
     }
+    .pfield input:focus, .pfield select:focus { border-color: var(--tm-green); }
   `],
 })
-export class AdminPricingComponent implements OnInit {
+export class AdminPricingComponent implements OnInit, OnDestroy {
   allRules: PricingRule[] = [];
-  filteredRules: PricingRule[] = [];
-  error: string | null = null;
+  rideTypes: RideRef[] = [];
   loading = true;
 
-  cities: CityRef[] = [];
-  rideTypes: RideRef[] = [];
+  cityId: number | null = null;
+  cityName = '';
 
-  // Filters
-  search = '';
-  cityFilter: number | null = null;
-  rideFilter: number | null = null;
-
-  // Modal state
+  // Drawer state
   submitting = false;
-  showFormModal = false;
-  showViewModal = false;
+  drawerOpen = false;
   editMode = false;
   editingId: number | null = null;
-  viewRule: PricingRule | null = null;
+  deleteTarget: PricingRule | null = null;
   formModel: PricingForm = this.defaultForm();
 
-  constructor(private api: ApiService) {}
+  private subs: Subscription[] = [];
+
+  constructor(
+    private api: ApiService,
+    private cityCtx: CityContextService,
+    private toast: ToastService,
+    private router: Router,
+  ) {}
 
   ngOnInit(): void {
+    this.cityCtx.ensureCitiesLoaded().subscribe();
+    this.subs.push(
+      this.cityCtx.cityId$.subscribe((id) => {
+        this.cityId = id;
+      }),
+      this.cityCtx.cities$.subscribe((list) => {
+        this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
+      }),
+    );
     this.loadAll();
   }
 
-  // ── Derived data ────────────────────────────────────────────────
-
-  get cityFilterOptions(): SelectOption<number | null>[] {
-    return [
-      { label: 'All cities', value: null },
-      ...this.cities.map((c) => ({ label: c.name, value: c.id })),
-    ];
+  ngOnDestroy(): void {
+    this.subs.forEach((s) => s.unsubscribe());
   }
 
-  get rideFilterOptions(): SelectOption<number | null>[] {
-    return [
-      { label: 'All ride types', value: null },
-      ...this.rideTypes.map((r) => ({ label: r.name, value: r.id })),
-    ];
+  // ── Derived ──────────────────────────────────────────────────────
+
+  get cityRules(): PricingRule[] {
+    return this.allRules.filter((r) => r.city_id === this.cityId);
   }
 
-  get cityOptions(): SelectOption<number | null>[] {
-    return this.cities.map((c) => ({ label: c.name, value: c.id }));
+  /** Ride types not yet priced for this city — selectable when creating. */
+  get availableRideTypes(): RideRef[] {
+    const used = new Set(this.cityRules.map((r) => r.ride_type_id));
+    return this.rideTypes.filter((rt) => !used.has(rt.id));
   }
 
-  get rideOptions(): SelectOption<number | null>[] {
-    return this.rideTypes.map((r) => ({ label: r.name, value: r.id }));
-  }
-
-  get citiesCoveredCount(): number {
-    return new Set(this.allRules.map((r) => r.city_id).filter((id) => id != null)).size;
-  }
-
-  get rideTypesCoveredCount(): number {
-    return new Set(this.allRules.map((r) => r.ride_type_id).filter((id) => id != null)).size;
+  /** Ride types shown in the form select (includes the current one on edit). */
+  get formRideOptions(): RideRef[] {
+    if (this.editMode) {
+      const cur = this.rideTypes.find((rt) => rt.id === this.formModel.ride_type_id);
+      return cur ? [cur] : this.rideTypes;
+    }
+    return this.availableRideTypes;
   }
 
   get avgBaseFare(): number {
-    const fares = this.allRules
+    const fares = this.cityRules
       .map((r) => (typeof r.base_fare === 'number' ? r.base_fare : null))
       .filter((v): v is number => v != null);
-    if (!fares.length) return 0;
-    return fares.reduce((a, b) => a + b, 0) / fares.length;
-  }
-
-  get canCreate(): boolean {
-    return (
-      !!this.formModel.city_id &&
-      !!this.formModel.ride_type_id &&
-      this.formModel.base_fare !== null &&
-      this.formModel.per_km !== null &&
-      this.formModel.per_min !== null &&
-      this.formModel.surge_multiplier !== null &&
-      this.formModel.commission_percent !== null
-    );
+    return fares.length ? fares.reduce((a, b) => a + b, 0) / fares.length : 0;
   }
 
   get canSubmit(): boolean {
-    return this.editMode ? this.editingId !== null : this.canCreate;
-  }
-
-  // ── View helpers ────────────────────────────────────────────────
-
-  cityName(rule: PricingRule): string {
-    return rule.city?.name || this.cities.find((c) => c.id === rule.city_id)?.name || '—';
+    const f = this.formModel;
+    return (
+      !!this.cityId &&
+      !!f.ride_type_id &&
+      f.base_fare !== null && (f.base_fare as any) !== '' &&
+      f.min_fare !== null && (f.min_fare as any) !== '' &&
+      f.per_km !== null && (f.per_km as any) !== ''
+    );
   }
 
   rideName(rule: PricingRule): string {
-    return rule.rideType?.name || this.rideTypes.find((r) => r.id === rule.ride_type_id)?.name || '—';
+    return (
+      rule.rideType?.name ||
+      this.rideTypes.find((r) => r.id === rule.ride_type_id)?.name ||
+      'Ride type'
+    );
   }
 
-  initials(name: string | null | undefined): string {
-    if (!name) return '·';
-    const parts = name.trim().split(/\s+/).slice(0, 2);
-    return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '·';
+  goTo(path: string): void {
+    this.router.navigateByUrl(path);
   }
 
-  // ── Filtering ───────────────────────────────────────────────────
-
-  applyFilters(): void {
-    const q = this.search.trim().toLowerCase();
-    this.filteredRules = this.allRules.filter((r) => {
-      if (this.cityFilter != null && r.city_id !== this.cityFilter) return false;
-      if (this.rideFilter != null && r.ride_type_id !== this.rideFilter) return false;
-      if (!q) return true;
-      return (
-        this.cityName(r).toLowerCase().includes(q) ||
-        this.rideName(r).toLowerCase().includes(q)
-      );
-    });
-  }
-
-  // ── Data ────────────────────────────────────────────────────────
+  // ── Data ─────────────────────────────────────────────────────────
 
   loadAll(): void {
-    this.error = null;
     this.loading = true;
-    let inflight = 3;
+    let inflight = 2;
     const done = () => { if (--inflight === 0) this.loading = false; };
-
-    this.api.get<{ data: CityRef[] }>('/admin/cities').subscribe({
-      next: (res) => { this.cities = res?.data || []; done(); },
-      error: (err) => { this.error = err?.error?.message || 'Failed to load cities'; done(); },
-    });
 
     this.api.get<{ data: RideRef[] }>('/admin/ride-types').subscribe({
       next: (res) => { this.rideTypes = res?.data || []; done(); },
-      error: (err) => { this.error = err?.error?.message || 'Failed to load ride types'; done(); },
+      error: () => { this.toast.error('Failed to load ride types'); done(); },
     });
 
     this.api.get<{ data: { data: PricingRule[] } }>('/admin/pricing-rules').subscribe({
-      next: (res) => {
-        this.allRules = res?.data?.data || [];
-        this.applyFilters();
-        done();
-      },
-      error: (err) => { this.error = err?.error?.message || 'Failed to load pricing rules'; done(); },
+      next: (res) => { this.allRules = res?.data?.data || []; done(); },
+      error: () => { this.toast.error('Failed to load pricing rules'); done(); },
     });
   }
 
-  // ── Form lifecycle ──────────────────────────────────────────────
+  // ── Form lifecycle ───────────────────────────────────────────────
 
   openCreate(): void {
-    this.error = null;
+    if (this.cityId == null) return;
     this.editMode = false;
     this.editingId = null;
     this.formModel = this.defaultForm();
-    this.showFormModal = true;
+    this.formModel.city_id = this.cityId;
+    this.drawerOpen = true;
   }
 
   openEdit(rule: PricingRule): void {
-    this.error = null;
     this.editMode = true;
     this.editingId = rule.id;
     this.formModel = { ...this.defaultForm(), ...this.toFormShape(rule) };
-    this.showFormModal = true;
+    this.drawerOpen = true;
   }
 
   closeForm(): void {
-    this.showFormModal = false;
+    this.drawerOpen = false;
     this.submitting = false;
-  }
-
-  openView(rule: PricingRule): void {
-    this.viewRule = rule;
-    this.showViewModal = true;
-  }
-
-  closeView(): void {
-    this.showViewModal = false;
-    this.viewRule = null;
-  }
-
-  editFromView(): void {
-    const rule = this.viewRule;
-    this.closeView();
-    if (rule) this.openEdit(rule);
   }
 
   submitForm(): void {
     if (!this.canSubmit || this.submitting) return;
     this.submitting = true;
-    this.error = null;
-
     const payload = this.normalizePayload(this.formModel);
+    payload.city_id = this.cityId;
+
     const req = !this.editMode
       ? this.api.post<unknown>('/admin/pricing-rules', payload)
       : this.api.patch<unknown>(`/admin/pricing-rules/${this.editingId}`, payload);
 
     req.subscribe({
       next: () => {
-        this.closeForm();
+        this.submitting = false;
+        this.drawerOpen = false;
+        this.toast.success(this.editMode ? 'Rate card updated' : 'Rate card created');
         this.loadAll();
       },
       error: (err) => {
-        this.error = err?.error?.message || (this.editMode ? 'Failed to update pricing rule' : 'Failed to add pricing rule');
         this.submitting = false;
+        this.toast.error(err?.error?.message || 'Failed to save rate card');
       },
-      complete: () => { this.submitting = false; },
     });
   }
 
-  remove(rule: PricingRule): void {
-    this.error = null;
-    const city = rule?.city?.name || this.cityName(rule);
-    const ride = rule?.rideType?.name || this.rideName(rule);
-    const ok = window.confirm(`Delete pricing rule for ${city} — ${ride}?`);
-    if (!ok) return;
-
+  confirmDelete(): void {
+    const rule = this.deleteTarget;
+    if (!rule || this.submitting) return;
+    this.submitting = true;
     this.api.delete<unknown>(`/admin/pricing-rules/${rule.id}`).subscribe({
       next: () => {
+        this.submitting = false;
+        this.deleteTarget = null;
         this.allRules = this.allRules.filter((r) => r.id !== rule.id);
-        this.applyFilters();
+        this.toast.success('Rate card deleted');
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Failed to delete pricing rule';
+        this.submitting = false;
+        this.toast.error(err?.error?.message || 'Failed to delete rate card');
       },
     });
   }
 
-  // ── Form shape helpers ──────────────────────────────────────────
+  // ── Form shape helpers ───────────────────────────────────────────
 
   private defaultForm(): PricingForm {
     return {
       city_id: null,
       ride_type_id: null,
-      base_fare: 0,
-      per_km: 0,
-      per_min: 0,
+      base_fare: null,
+      per_km: null,
+      per_min: null,
       surge_multiplier: 1,
-      commission_percent: 20,
+      commission_percent: null,
       min_fare: null,
       threshold_distance_1_km: null,
       fare_per_km_after_threshold_1: null,
@@ -954,10 +694,6 @@ export class AdminPricingComponent implements OnInit {
     };
   }
 
-  /**
-   * Strip server-only/non-form keys from a row so we don't accidentally feed
-   * Eloquent relation objects (city, rideType) back into the form model.
-   */
   private toFormShape(rule: PricingRule): PricingForm {
     const f = this.defaultForm();
     (Object.keys(f) as (keyof PricingForm)[]).forEach((k) => {
@@ -967,10 +703,6 @@ export class AdminPricingComponent implements OnInit {
     return f;
   }
 
-  /**
-   * Coerce empty `<input type="number">` values (which arrive as `''`) back to
-   * `null` so the backend validator doesn't see them as zero or invalid.
-   */
   private normalizePayload(form: PricingForm): PricingForm {
     const out: any = { ...form };
     for (const k of NUMERIC_FORM_FIELDS) {

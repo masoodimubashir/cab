@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\City;
+use App\Models\CityVehicleType;
+use App\Models\OutstationPackage;
 use App\Models\RideType;
 use App\Models\PricingRule;
 use App\Models\VehicleType;
@@ -46,6 +48,37 @@ class PricingController extends Controller
         return response()->json(['data' => $rows]);
     }
 
+    /**
+     * Outstation fare packages for a (city, ride type) — the customer app
+     * shows these so the rider can pick One Way / Round Trip before booking.
+     */
+    public function outstationPackages(Request $request)
+    {
+        $data = $request->validate([
+            'city_id' => ['required', 'integer', 'exists:cities,id'],
+            'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
+        ]);
+
+        $vehicle = CityVehicleType::query()
+            ->where('city_id', $data['city_id'])
+            ->where('ride_type_id', $data['ride_type_id'])
+            ->where('product_kind', 'outstation')
+            ->first();
+
+        if (!$vehicle) {
+            return response()->json(['data' => []]);
+        }
+
+        $packages = OutstationPackage::query()
+            ->where('city_vehicle_type_id', $vehicle->id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get(['id', 'name']);
+
+        return response()->json(['data' => $packages]);
+    }
+
     public function estimate(
         Request $request,
         FareEstimationService $fareEstimationService,
@@ -65,6 +98,7 @@ class PricingController extends Controller
             // Optional: real route metrics from Google DirectionsService.
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
+            'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
         ]);
 
         $pricingRule = PricingRule::resolveFor(
@@ -78,18 +112,24 @@ class PricingController extends Controller
             return response()->json(['message' => 'Pricing rule not found for given city/vehicle type/product kind.'], 404);
         }
 
-        // DynamicPricingService still keys surge by ride_type_id; fall back to
-        // the resolved rule's ride_type_id when the client only sent
-        // vehicle_type_id.
-        $rideTypeForSurge = (int) ($data['ride_type_id'] ?? $pricingRule->ride_type_id ?? 0);
-        $dynamicRule = $rideTypeForSurge > 0
-            ? $dynamicPricingService->findApplicable(
-                (float) $data['pickup_lat'],
-                (float) $data['pickup_lng'],
-                $rideTypeForSurge,
-                null,
-            )
-            : null;
+        // Surge is keyed by the per-city vehicle (city_vehicle_types). Resolve
+        // it from the booking axes so a rule scoped to e.g. "SWIFT/SEDAN O"
+        // only surges that exact vehicle.
+        $cityVehicleTypeId = CityVehicleType::resolveId(
+            cityId: (int) $data['city_id'],
+            productKind: $data['product_kind'] ?? 'local',
+            rideTypeId: isset($data['ride_type_id'])
+                ? (int) $data['ride_type_id']
+                : ($pricingRule->ride_type_id ? (int) $pricingRule->ride_type_id : null),
+            vehicleTypeId: isset($data['vehicle_type_id'])
+                ? (int) $data['vehicle_type_id']
+                : ($pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null),
+        );
+        $dynamicRule = $dynamicPricingService->findApplicable(
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            $cityVehicleTypeId,
+        );
 
         $dynamicFactors = $dynamicRule ? [
             'customer_factor' => (float) $dynamicRule->customer_fare_factor,
@@ -99,7 +139,10 @@ class PricingController extends Controller
         ] : null;
 
         $estimate = $fareEstimationService->estimateFare(
-            $pricingRule->toArray(),
+            $fareEstimationService->fareInput(
+                $pricingRule->toArray(),
+                isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
+            ),
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
             (float) $data['drop_lat'],

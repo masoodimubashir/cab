@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\FareNegotiationOfferAdded;
 use App\Models\City;
+use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
@@ -51,6 +52,7 @@ class TripsController extends Controller
             // When present the estimator uses them instead of haversine.
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
+            'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
         ]);
 
         $kind = $data['product_kind'] ?? 'local';
@@ -99,15 +101,24 @@ class TripsController extends Controller
             return response()->json(['message' => 'Pricing rule not found.'], 404);
         }
 
-        $rideTypeForSurge = (int) ($data['ride_type_id'] ?? $pricingRule->ride_type_id ?? 0);
-        $dynamicRule = $rideTypeForSurge > 0
-            ? $dynamicPricingService->findApplicable(
-                (float) $data['pickup_lat'],
-                (float) $data['pickup_lng'],
-                $rideTypeForSurge,
-                null,
-            )
-            : null;
+        // Surge is keyed by the per-city vehicle (city_vehicle_types). Resolve
+        // it from the booking axes so a rule scoped to e.g. "SWIFT/SEDAN O"
+        // only surges that exact vehicle.
+        $cityVehicleTypeId = CityVehicleType::resolveId(
+            cityId: (int) $data['city_id'],
+            productKind: $kind,
+            rideTypeId: isset($data['ride_type_id'])
+                ? (int) $data['ride_type_id']
+                : ($pricingRule->ride_type_id ? (int) $pricingRule->ride_type_id : null),
+            vehicleTypeId: isset($data['vehicle_type_id'])
+                ? (int) $data['vehicle_type_id']
+                : ($pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null),
+        );
+        $dynamicRule = $dynamicPricingService->findApplicable(
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            $cityVehicleTypeId,
+        );
 
         $dynamicFactors = $dynamicRule ? [
             'customer_factor' => (float) $dynamicRule->customer_fare_factor,
@@ -117,7 +128,10 @@ class TripsController extends Controller
         ] : null;
 
         $estimate = $fareEstimationService->estimateFare(
-            $pricingRule->toArray(),
+            $fareEstimationService->fareInput(
+                $pricingRule->toArray(),
+                isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
+            ),
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
             (float) $data['drop_lat'],
@@ -142,6 +156,9 @@ class TripsController extends Controller
                 ? (int) $data['vehicle_type_id']
                 : ($pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null),
             'product_kind' => $kind,
+            'outstation_package_id' => isset($data['outstation_package_id'])
+                ? (int) $data['outstation_package_id']
+                : null,
             'pricing_rule_id' => $pricingRule->id,
             'scheduled_at' => $scheduledAt,
             'status' => 'REQUESTED',

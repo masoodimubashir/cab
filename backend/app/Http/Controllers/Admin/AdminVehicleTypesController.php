@@ -57,24 +57,24 @@ class AdminVehicleTypesController
      * fan out one row per requested kind — all is_active=true — sharing the
      * same ride_type_id, vehicle_type_id and display_name.
      *
-     * Idempotent for the (city, ride_type, kind) tuple: re-submitting with
-     * a kind that already exists leaves that row alone. That makes it cheap
-     * to "add a missing kind later" by re-running this endpoint with just
-     * the new kind in the kinds[] array.
+     * Idempotent for the (city, ride_type, vehicle, kind) tuple: re-submitting
+     * the same vehicle with a kind that already exists leaves that row alone.
+     * That makes it cheap to "add a missing kind later" by re-running this
+     * endpoint with just the new kind in the kinds[] array.
      */
     public function store(Request $request, City $city)
     {
         $data = $request->validate([
             'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
-            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
             'display_name' => ['required', 'string', 'max:120'],
-            'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
-            'max_people' => ['nullable', 'integer', 'min:1', 'max:99'],
-            'luggage_capacity' => ['nullable', 'integer', 'min:0', 'max:99'],
-            'destination_mandatory' => ['nullable', 'boolean'],
-            'fare_mandatory' => ['nullable', 'boolean'],
-            'toll_mode' => ['nullable', Rule::in(self::TOLL_MODES)],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'display_order' => ['required', 'integer', 'min:0', 'max:9999'],
+            'max_people' => ['required', 'integer', 'min:1', 'max:99'],
+            'luggage_capacity' => ['required', 'integer', 'min:0', 'max:99'],
+            'destination_mandatory' => ['required', 'boolean'],
+            'fare_mandatory' => ['required', 'boolean'],
+            'toll_mode' => ['required', Rule::in(self::TOLL_MODES)],
+            'commission_percent' => ['required', 'numeric', 'min:0', 'max:100'],
 
             // At least one product kind must be enabled at creation.
             'kinds' => ['required', 'array', 'min:1'],
@@ -84,9 +84,20 @@ class AdminVehicleTypesController
         $kindsRequested = array_values(array_unique($data['kinds']));
         unset($data['kinds']);
 
+        // A vehicle is identified by its Vehicle Name within the (city, ride
+        // type, vehicle type) — many vehicles can share one ride type. The
+        // idempotency check is per (vehicle, kind): re-adding a kind that
+        // already exists for THIS vehicle is a no-op; a different Vehicle Name
+        // is an independent vehicle.
+        $matchVehicle = function ($query) use ($city, $data) {
+            $query->where('city_id', $city->id)
+                ->where('ride_type_id', $data['ride_type_id'])
+                ->where('vehicle_type_id', $data['vehicle_type_id'])
+                ->where('display_name', $data['display_name']);
+        };
+
         $existing = CityVehicleType::query()
-            ->where('city_id', $city->id)
-            ->where('ride_type_id', $data['ride_type_id'])
+            ->where($matchVehicle)
             ->pluck('product_kind')
             ->all();
 
@@ -103,8 +114,7 @@ class AdminVehicleTypesController
 
         $allRows = CityVehicleType::query()
             ->with('rideType:id,name')
-            ->where('city_id', $city->id)
-            ->where('ride_type_id', $data['ride_type_id'])
+            ->where($matchVehicle)
             ->orderBy('product_kind')
             ->get()
             ->map(fn (CityVehicleType $v) => $this->shape($v));
@@ -125,6 +135,12 @@ class AdminVehicleTypesController
     public function update(Request $request, City $city, CityVehicleType $vehicleType)
     {
         $this->guard($city, $vehicleType);
+
+        // The Vehicle Name + class identify the vehicle and are shared by all
+        // its product-kind rows — captured here so a rename can be propagated
+        // to the siblings after the save.
+        $origRideTypeId = $vehicleType->ride_type_id;
+        $origDisplayName = $vehicleType->display_name;
 
         $data = $request->validate([
             'ride_type_id' => ['sometimes', 'integer', 'exists:ride_types,id'],
@@ -185,6 +201,20 @@ class AdminVehicleTypesController
             $vehicleType->{$field} = $value;
         }
         $vehicleType->save();
+
+        // Keep the vehicle's other product-kind rows in sync on identity
+        // changes, so a rename doesn't split one vehicle into two cards.
+        if ($vehicleType->display_name !== $origDisplayName || $request->has('vehicle_type_id')) {
+            CityVehicleType::query()
+                ->where('city_id', $city->id)
+                ->where('ride_type_id', $origRideTypeId)
+                ->where('display_name', $origDisplayName)
+                ->where('id', '!=', $vehicleType->id)
+                ->update([
+                    'display_name' => $vehicleType->display_name,
+                    'vehicle_type_id' => $vehicleType->vehicle_type_id,
+                ]);
+        }
 
         return response()->json([
             'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name', 'vehicleType:id,name'])),

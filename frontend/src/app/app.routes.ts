@@ -1,8 +1,8 @@
 import { Routes } from '@angular/router';
 import { AdminDashboardComponent } from './admin/admin-dashboard.component';
-import { AdminPricingComponent } from './admin/admin-pricing.component';
+import { CityWorkspaceComponent } from './admin/city-workspace/city-workspace.component';
+import { PricingComponent } from './admin/pricing/pricing.component';
 import { AdminTripsComponent } from './admin/admin-trips.component';
-import { AdminUsersComponent } from './admin/admin-users.component';
 import { CustomersListComponent } from './admin/customers/customers-list.component';
 import { CustomerDetailComponent } from './admin/customers/customer-detail.component';
 import { AdminSafetyEventsComponent } from './admin/admin-safety-events.component';
@@ -11,14 +11,12 @@ import { RidesMapComponent } from './admin/rides/rides-map.component';
 import { RidesAllComponent } from './admin/rides/rides-all.component';
 import { VehiclesComponent } from './admin/vehicles/vehicles.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
-import { DynamicPricingListComponent } from './admin/dynamic-pricing/dynamic-pricing-list.component';
-import { DynamicPricingFormComponent } from './admin/dynamic-pricing/dynamic-pricing-form.component';
 import { MapsComponent } from './admin/maps/maps.component';
-import { GeofencingComponent } from './admin/settings/geofencing.component';
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
+import { VehicleTypesComponent } from './admin/settings/vehicle-types.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CityWidePromotionsComponent } from './admin/promotions/city-wide-promotions.component';
 import { PromoCodesComponent } from './admin/promotions/promo-codes.component';
@@ -35,10 +33,11 @@ import { adminAuthGuard } from './auth/admin-auth.guard';
 export const routes: Routes = [
   { path: '', redirectTo: 'signin', pathMatch: 'full' },
   { path: 'signin', component: SigninComponent },
+  { path: 'city', component: CityWorkspaceComponent, canActivate: [adminAuthGuard] },
   { path: 'dashboard', component: AdminDashboardComponent, canActivate: [adminAuthGuard] },
-  { path: 'pricing', component: AdminPricingComponent, canActivate: [adminAuthGuard] },
+  { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard] },
+  { path: 'vehicle-fares', component: VehicleTypesComponent, canActivate: [adminAuthGuard] },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard] },
-  { path: 'users', component: AdminUsersComponent, canActivate: [adminAuthGuard] },
   { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard] },
   { path: 'customers/:id', component: CustomerDetailComponent, canActivate: [adminAuthGuard] },
   { path: 'safety', component: AdminSafetyEventsComponent, canActivate: [adminAuthGuard] },
@@ -97,18 +96,17 @@ export const routes: Routes = [
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/operator', component: OperatorSettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
-  { path: 'settings/geofencing', component: GeofencingComponent, canActivate: [adminAuthGuard] },
+  // Geofencing is now drawn inside the City Workspace map (no standalone page).
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard] },
-  { path: 'settings/vehicle-types/:rideTypeId', component: VehicleTypeDetailsComponent, canActivate: [adminAuthGuard] },
+  { path: 'settings/vehicle-types/:vehicleRowId', component: VehicleTypeDetailsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'analytics', redirectTo: 'analytics/real-time', pathMatch: 'full' },
   { path: 'analytics/real-time', component: AnalyticsRealTimeComponent, canActivate: [adminAuthGuard] },
   { path: 'analytics/graphs', component: AnalyticsGraphsComponent, canActivate: [adminAuthGuard] },
   { path: 'analytics/reports', component: AnalyticsReportsComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'dynamic-pricing', component: DynamicPricingListComponent, canActivate: [adminAuthGuard] },
-  { path: 'dynamic-pricing/new', component: DynamicPricingFormComponent, canActivate: [adminAuthGuard] },
-  { path: 'dynamic-pricing/:id', component: DynamicPricingFormComponent, canActivate: [adminAuthGuard] },
+  // Dynamic pricing is now the second tab of the unified Pricing page.
+  { path: 'dynamic-pricing', redirectTo: 'pricing', pathMatch: 'full' },
 
   { path: '**', redirectTo: 'signin' },
 ];

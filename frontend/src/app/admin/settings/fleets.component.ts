@@ -1,23 +1,16 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ButtonModule } from 'primeng/button';
-import { TableModule } from 'primeng/table';
-import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
-import { DropdownModule } from 'primeng/dropdown';
-import { InputSwitchModule } from 'primeng/inputswitch';
-import { TagModule } from 'primeng/tag';
-import { ToastModule } from 'primeng/toast';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-
-interface City {
-  id: number;
-  name: string;
-}
+import { CityContextService } from '../../core/city-context.service';
+import { ToastService } from '../../core/toast.service';
+import {
+  ButtonComponent,
+  DrawerComponent,
+  IconComponent,
+  ModalComponent,
+} from '../../ui';
 
 interface Fleet {
   id: number;
@@ -35,237 +28,329 @@ interface Fleet {
   is_active: boolean;
 }
 
+const STATUS_OPTIONS = [
+  { label: 'Active', value: 'active' },
+  { label: 'Inactive', value: 'inactive' },
+  { label: 'Suspended', value: 'suspended' },
+  { label: 'Pending', value: 'pending' },
+];
+
+/**
+ * Fleets — fleet operators within the city chosen in the topbar switcher.
+ * Create/edit uses the shared right-side drawer; delete uses a confirm modal.
+ */
 @Component({
   selector: 'app-fleets-settings',
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonModule, TableModule, DialogModule,
-    InputTextModule, InputTextareaModule, DropdownModule, InputSwitchModule,
-    TagModule, ToastModule, ConfirmDialogModule,
+    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
   ],
-  providers: [MessageService, ConfirmationService],
   template: `
-    <p-toast />
-    <p-confirmDialog />
-
-    <h2 class="page-title">Fleets</h2>
-    <p class="muted small">Fleet operators that own vehicles in your cities. Each fleet is scoped to one city.</p>
-
-    <div class="toolbar">
-      <p-dropdown
-        [options]="cityOptions"
-        [(ngModel)]="filterCityId"
-        (onChange)="fetchFleets()"
-        placeholder="All cities"
-        [showClear]="true"
-        optionLabel="name"
-        optionValue="id"
-        appendTo="body"
-      ></p-dropdown>
-      <p-dropdown
-        [options]="statusFilterOptions"
-        [(ngModel)]="filterStatus"
-        (onChange)="fetchFleets()"
-        placeholder="All statuses"
-        [showClear]="true"
-        optionLabel="label"
-        optionValue="value"
-        appendTo="body"
-      ></p-dropdown>
-      <button pButton type="button" icon="pi pi-plus" label="Add Fleet" class="p-button-sm"
-              (click)="openCreate()"></button>
-    </div>
-
-    <p-table [value]="fleets" styleClass="p-datatable-sm" [rowHover]="true" [paginator]="fleets.length > 20" [rows]="20">
-      <ng-template pTemplate="header">
-        <tr>
-          <th style="width: 64px;">Logo</th>
-          <th>Name</th>
-          <th>City</th>
-          <th>Phone</th>
-          <th>VAT</th>
-          <th>Status</th>
-          <th style="width: 160px;">Actions</th>
-        </tr>
-      </ng-template>
-      <ng-template pTemplate="body" let-f>
-        <tr>
-          <td>
-            <img *ngIf="f.logo_url" [src]="f.logo_url" class="logo" alt="" />
-            <div *ngIf="!f.logo_url" class="logo logo--empty">—</div>
-          </td>
-          <td><strong>{{ f.name }}</strong></td>
-          <td>{{ f.city_name || '—' }}</td>
-          <td>{{ f.phone_number || '—' }}</td>
-          <td>
-            <span *ngIf="f.vat_enabled" class="vat-on">{{ f.vat_number || 'Enabled' }}</span>
-            <span *ngIf="!f.vat_enabled" class="muted">—</span>
-          </td>
-          <td>
-            <p-tag [value]="f.status" [severity]="statusSeverity(f.status)"></p-tag>
-          </td>
-          <td class="actions">
-            <button pButton type="button" label="Edit" class="p-button-sm" (click)="openEdit(f)"></button>
-            <button pButton type="button" label="Delete"
-                    class="p-button-sm p-button-text p-button-danger" (click)="remove(f)"></button>
-          </td>
-        </tr>
-      </ng-template>
-      <ng-template pTemplate="emptymessage">
-        <tr><td colspan="7" class="empty">No fleets match the current filters.</td></tr>
-      </ng-template>
-    </p-table>
-
-    <p-dialog
-      [header]="editingId ? 'Edit Fleet' : 'Add Fleet'"
-      [(visible)]="open"
-      [modal]="true"
-      [style]="{ width: '760px' }"
-      [draggable]="false"
-    >
-      <div class="grid">
-        <div class="col">
-          <label class="lbl">Name *</label>
-          <input pInputText [(ngModel)]="form.name" placeholder="e.g. Baramulla Premiere" />
-
-          <label class="lbl">City *</label>
-          <p-dropdown
-            [options]="cityOptions"
-            [(ngModel)]="form.city_id"
-            placeholder="Select city"
-            optionLabel="name"
-            optionValue="id"
-            appendTo="body"
-          ></p-dropdown>
-
-          <label class="lbl">Phone Number *</label>
-          <input pInputText [(ngModel)]="form.phone_number" placeholder="+91 90000 00000" />
-
-          <label class="lbl">Bank</label>
-          <input pInputText [(ngModel)]="form.bank" placeholder="Bank name / account label" />
-
-          <label class="lbl">Address</label>
-          <textarea pInputTextarea rows="3" [(ngModel)]="form.address"></textarea>
+    <div class="fl">
+      <header class="fl__head">
+        <div>
+          <h1 class="fl__title">Fleets</h1>
+          <p class="fl__sub">Fleet operators that own vehicles in this city.</p>
         </div>
+        <tm-button
+          *ngIf="cityId != null"
+          variant="green" icon="plus"
+          (clicked)="openCreate()"
+        >Add fleet</tm-button>
+      </header>
 
-        <div class="col">
-          <div class="switch-row">
-            <span class="lbl">VAT Enabled</span>
-            <p-inputSwitch [(ngModel)]="form.vat_enabled"></p-inputSwitch>
-          </div>
-
-          <label class="lbl">VAT Number</label>
-          <input pInputText [(ngModel)]="form.vat_number" [disabled]="!form.vat_enabled" />
-
-          <label class="lbl">Status</label>
-          <p-dropdown
-            [options]="statusOptions"
-            [(ngModel)]="form.status"
-            optionLabel="label"
-            optionValue="value"
-            appendTo="body"
-          ></p-dropdown>
-
-          <label class="lbl">Logo (optional)</label>
-          <input type="file" accept="image/*" (change)="onLogo($event)" />
-          <img *ngIf="logoPreview" [src]="logoPreview" class="logo logo--preview" alt="logo preview" />
-        </div>
+      <!-- No city -->
+      <div class="cue" *ngIf="cityId == null">
+        <tm-icon name="map-marker" [size]="24" />
+        <p class="cue__title">No city selected</p>
+        <p class="cue__text">Pick a city from the switcher in the top bar to manage its fleets.</p>
       </div>
 
-      <ng-template pTemplate="footer">
-        <button pButton type="button" label="Cancel" class="p-button-secondary" (click)="open = false"></button>
-        <button pButton type="button"
-                [label]="editingId ? 'Update' : 'Create'"
-                (click)="submit()" [loading]="saving"></button>
-      </ng-template>
-    </p-dialog>
+      <ng-container *ngIf="cityId != null">
+        <div class="seg">
+          <button class="seg__btn" [class.is-on]="filterStatus === null" (click)="setStatus(null)">All</button>
+          <button
+            *ngFor="let s of statusOptions"
+            class="seg__btn"
+            [class.is-on]="filterStatus === s.value"
+            (click)="setStatus(s.value)"
+          >{{ s.label }}</button>
+        </div>
+
+        <div class="grid" *ngIf="fleets.length; else empty">
+          <article class="fcard" *ngFor="let f of fleets">
+            <div class="fcard__head">
+              <span class="fcard__logo">
+                <img *ngIf="f.logo_url" [src]="f.logo_url" alt="" />
+                <tm-icon *ngIf="!f.logo_url" name="car" [size]="20" />
+              </span>
+              <div class="fcard__id">
+                <span class="fcard__name">{{ f.name }}</span>
+                <span class="fcard__phone">{{ f.phone_number || 'No phone' }}</span>
+              </div>
+              <span class="fcard__status" [attr.data-s]="f.status">{{ f.status }}</span>
+            </div>
+            <div class="fcard__rows">
+              <div class="fcard__row">
+                <span class="fcard__k">VAT</span>
+                <span class="fcard__v">{{ f.vat_enabled ? (f.vat_number || 'Enabled') : 'Not enabled' }}</span>
+              </div>
+              <div class="fcard__row" *ngIf="f.bank">
+                <span class="fcard__k">Bank</span>
+                <span class="fcard__v">{{ f.bank }}</span>
+              </div>
+              <div class="fcard__row" *ngIf="f.address">
+                <span class="fcard__k">Address</span>
+                <span class="fcard__v">{{ f.address }}</span>
+              </div>
+            </div>
+            <div class="fcard__foot">
+              <button class="icon-btn" (click)="openEdit(f)" aria-label="Edit fleet"><tm-icon name="edit" [size]="14" /></button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = f" aria-label="Delete fleet"><tm-icon name="trash" [size]="14" /></button>
+            </div>
+          </article>
+        </div>
+        <ng-template #empty>
+          <div class="cue">
+            <tm-icon name="car" [size]="24" />
+            <p class="cue__title">No fleets yet</p>
+            <p class="cue__text">Add a fleet operator for this city.</p>
+          </div>
+        </ng-template>
+      </ng-container>
+    </div>
+
+    <!-- Create / edit drawer -->
+    <tm-drawer
+      [open]="open"
+      [title]="editingId ? 'Edit fleet' : 'Add fleet'"
+      [subtitle]="cityName"
+      [width]="520"
+      (closed)="open = false"
+    >
+      <div slot="body" class="form">
+        <label class="field">
+          <span class="field__lbl">Fleet name <i>*</i></span>
+          <input type="text" [(ngModel)]="form.name" (ngModelChange)="touched.name = true"
+                 placeholder="e.g. Baramulla Premiere" />
+          <span class="field__err" *ngIf="touched.name && !form.name.trim()">Name is required.</span>
+        </label>
+
+        <label class="field">
+          <span class="field__lbl">Phone number <i>*</i></span>
+          <input type="text" [(ngModel)]="form.phone_number" (ngModelChange)="touched.phone = true"
+                 placeholder="+91 90000 00000" />
+          <span class="field__err" *ngIf="touched.phone && !form.phone_number.trim()">Phone is required.</span>
+        </label>
+
+        <label class="field">
+          <span class="field__lbl">Bank</span>
+          <input type="text" [(ngModel)]="form.bank" placeholder="Bank name / account label" />
+        </label>
+
+        <label class="field">
+          <span class="field__lbl">Address</span>
+          <textarea rows="3" [(ngModel)]="form.address"></textarea>
+        </label>
+
+        <label class="toggle">
+          <input type="checkbox" [(ngModel)]="form.vat_enabled" />
+          <span>VAT enabled</span>
+        </label>
+
+        <label class="field" *ngIf="form.vat_enabled">
+          <span class="field__lbl">VAT number</span>
+          <input type="text" [(ngModel)]="form.vat_number" />
+        </label>
+
+        <label class="field">
+          <span class="field__lbl">Status</span>
+          <select [(ngModel)]="form.status">
+            <option *ngFor="let s of statusOptions" [value]="s.value">{{ s.label }}</option>
+          </select>
+        </label>
+
+        <div class="field">
+          <span class="field__lbl">Logo (optional)</span>
+          <label class="upload">
+            <tm-icon name="upload" [size]="13" /> Choose image
+            <input type="file" accept="image/*" (change)="onLogo($event)" hidden />
+          </label>
+          <img *ngIf="logoPreview" [src]="logoPreview" class="preview" alt="logo preview" />
+        </div>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="open = false">Cancel</tm-button>
+        <tm-button variant="green" [disabled]="!formValid || saving" (clicked)="submit()">
+          {{ saving ? 'Saving…' : editingId ? 'Save changes' : 'Create fleet' }}
+        </tm-button>
+      </div>
+    </tm-drawer>
+
+    <!-- Delete confirm -->
+    <tm-modal [open]="!!deleteTarget" title="Delete fleet" (closed)="deleteTarget = null">
+      <div slot="body">
+        <p>Delete fleet <strong>{{ deleteTarget?.name }}</strong>? This cannot be undone.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="deleteTarget = null">Cancel</tm-button>
+        <tm-button variant="danger" [disabled]="saving" (clicked)="confirmDelete()">
+          {{ saving ? 'Deleting…' : 'Delete' }}
+        </tm-button>
+      </div>
+    </tm-modal>
   `,
   styles: [`
-    .page-title { margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #0f172a; }
-    .muted { color: #64748b; }
-    .small { font-size: 12px; margin: 0 0 14px; }
+    .fl { display: flex; flex-direction: column; gap: 16px; }
+    .fl__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .fl__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
+    .fl__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
 
-    .toolbar {
-      display: flex; gap: 10px; align-items: center; margin-bottom: 12px;
+    .cue {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 48px 24px; text-align: center;
+      background: var(--tm-surface); border: 1px dashed var(--tm-line);
+      border-radius: var(--tm-radius-lg); color: var(--tm-text-muted);
     }
-    .toolbar :host ::ng-deep .p-dropdown { min-width: 200px; }
+    .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
+    .cue__text { margin: 0; font-size: 13px; }
 
-    .empty { padding: 28px; text-align: center; color: #64748b; }
-    .actions { display: flex; gap: 6px; }
-    .vat-on {
-      display: inline-block; padding: 2px 8px;
-      background: #fef3c7; color: #92400e;
-      border-radius: 6px; font-size: 12px; font-weight: 700;
+    .seg {
+      display: inline-flex; gap: 4px; padding: 4px;
+      background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
+      flex-wrap: wrap;
     }
+    .seg__btn {
+      padding: 7px 15px; border-radius: 8px;
+      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
+      background: transparent; cursor: pointer;
+    }
+    .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
 
-    .logo {
-      width: 44px; height: 44px; object-fit: cover;
-      border-radius: 8px; border: 1px solid #e2e8f0;
-      background: #f8fafc;
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
     }
-    .logo--empty {
+    .fcard {
+      background: var(--tm-surface); border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-lg, 14px); padding: 14px;
+    }
+    .fcard__head { display: flex; align-items: center; gap: 11px; }
+    .fcard__logo {
+      width: 44px; height: 44px; border-radius: 10px; flex: none; overflow: hidden;
       display: inline-flex; align-items: center; justify-content: center;
-      color: #94a3b8; font-size: 13px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      border: 1px solid var(--tm-line);
     }
-    .logo--preview {
-      width: 96px; height: 96px; margin-top: 8px;
+    .fcard__logo img { width: 100%; height: 100%; object-fit: cover; }
+    .fcard__id { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .fcard__name { font-size: 14px; font-weight: 800; color: var(--tm-text); }
+    .fcard__phone { font-size: 12px; color: var(--tm-text-muted); }
+    .fcard__status {
+      flex: none; text-transform: capitalize;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.3px;
+      padding: 3px 8px; border-radius: 999px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
     }
+    .fcard__status[data-s="active"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .fcard__status[data-s="suspended"] { background: var(--tm-danger-bg, #fee2e2); color: var(--tm-danger-fg, #b91c1c); }
+    .fcard__status[data-s="pending"] { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
 
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .col { display: flex; flex-direction: column; gap: 6px; }
-    .lbl { font-size: 12px; font-weight: 700; color: #475569; margin-top: 6px; }
-    :host ::ng-deep .col .p-dropdown { width: 100%; }
-    .col input[pInputText], .col textarea { width: 100%; }
-    .switch-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 12px; background: #f8fafc; border-radius: 8px; margin-top: 6px;
+    .fcard__rows {
+      display: flex; flex-direction: column; gap: 6px;
+      border-top: 1px solid var(--tm-line); margin-top: 12px; padding-top: 10px;
     }
-    .switch-row .lbl { margin: 0; }
+    .fcard__row { display: flex; gap: 10px; font-size: 12px; }
+    .fcard__k { width: 64px; flex: none; font-weight: 700; color: var(--tm-text-muted); }
+    .fcard__v { color: var(--tm-text); min-width: 0; }
+    .fcard__foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
+    }
+    .icon-btn:hover { background: var(--tm-ink); color: #fff; }
+    .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
+
+    .form { display: flex; flex-direction: column; gap: 14px; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .field__lbl i { color: var(--tm-danger, #ef4444); font-style: normal; }
+    .field input[type=text], .field textarea, .field select {
+      width: 100%; padding: 9px 11px;
+      border: 1px solid var(--tm-line); border-radius: 9px;
+      background: var(--tm-canvas); color: var(--tm-text);
+      font-size: 13px; outline: none; font-family: inherit;
+    }
+    .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--tm-green); }
+    .field textarea { resize: vertical; }
+    .field__err { font-size: 11px; font-weight: 600; color: var(--tm-danger, #ef4444); }
+    .upload {
+      display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+      padding: 8px 12px; border-radius: 8px;
+      background: var(--tm-canvas-2); color: var(--tm-text);
+      font-size: 12px; font-weight: 700; cursor: pointer; width: fit-content;
+    }
+    .upload:hover { background: var(--tm-line); }
+    .preview { width: 96px; height: 96px; object-fit: cover; border-radius: 9px; border: 1px solid var(--tm-line); margin-top: 4px; }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
+    .toggle input { width: 16px; height: 16px; }
   `],
 })
-export class FleetsSettingsComponent implements OnInit {
-  cityOptions: City[] = [];
+export class FleetsSettingsComponent implements OnInit, OnDestroy {
   fleets: Fleet[] = [];
+  cityId: number | null = null;
+  cityName = '';
 
-  filterCityId: number | null = null;
   filterStatus: string | null = null;
-  statusFilterOptions = [
-    { label: 'Active', value: 'active' },
-    { label: 'Inactive', value: 'inactive' },
-    { label: 'Suspended', value: 'suspended' },
-    { label: 'Pending', value: 'pending' },
-  ];
+  statusOptions = STATUS_OPTIONS;
 
   open = false;
   editingId: number | null = null;
   saving = false;
+  deleteTarget: Fleet | null = null;
 
   form = this.blankForm();
+  touched = { name: false, phone: false };
   logoFile: File | null = null;
   logoPreview: string | null = null;
 
-  statusOptions = [
-    { label: 'Active', value: 'active' },
-    { label: 'Inactive', value: 'inactive' },
-    { label: 'Suspended', value: 'suspended' },
-    { label: 'Pending', value: 'pending' },
-  ];
+  private subs: Subscription[] = [];
 
   constructor(
     private api: ApiService,
-    private msg: MessageService,
-    private confirm: ConfirmationService,
+    private cityCtx: CityContextService,
+    private toast: ToastService,
   ) {}
 
   ngOnInit(): void {
-    this.fetchCities();
+    this.cityCtx.ensureCitiesLoaded().subscribe();
+    this.subs.push(
+      this.cityCtx.cityId$.subscribe((id) => {
+        this.cityId = id;
+        this.fetchFleets();
+      }),
+      this.cityCtx.cities$.subscribe((list) => {
+        this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
+      }),
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.subs.forEach((s) => s.unsubscribe());
+  }
+
+  setStatus(s: string | null): void {
+    if (this.filterStatus === s) return;
+    this.filterStatus = s;
     this.fetchFleets();
   }
 
   blankForm() {
     return {
-      city_id: null as number | null,
       name: '',
       phone_number: '',
       bank: '',
@@ -277,27 +362,24 @@ export class FleetsSettingsComponent implements OnInit {
     };
   }
 
-  private fetchCities(): void {
-    this.api.get<{ data: City[] }>('/admin/cities').subscribe({
-      next: (res) => (this.cityOptions = res?.data || []),
-    });
-  }
-
   fetchFleets(): void {
+    if (this.cityId == null) {
+      this.fleets = [];
+      return;
+    }
     const params = new URLSearchParams();
-    if (this.filterCityId) params.set('city_id', String(this.filterCityId));
+    params.set('city_id', String(this.cityId));
     if (this.filterStatus) params.set('status', this.filterStatus);
-    const qs = params.toString() ? `?${params.toString()}` : '';
-    this.api.get<{ data: Fleet[] }>(`/admin/fleets${qs}`).subscribe({
+    this.api.get<{ data: Fleet[] }>(`/admin/fleets?${params.toString()}`).subscribe({
       next: (res) => (this.fleets = res?.data || []),
-      error: (err) => this.msg.add({ severity: 'error', summary: err?.error?.message || 'Failed to load fleets' }),
+      error: (err) => this.toast.error(err?.error?.message || 'Failed to load fleets'),
     });
   }
 
   openCreate(): void {
     this.editingId = null;
     this.form = this.blankForm();
-    this.form.city_id = this.filterCityId;
+    this.touched = { name: false, phone: false };
     this.logoFile = null;
     this.logoPreview = null;
     this.open = true;
@@ -305,8 +387,8 @@ export class FleetsSettingsComponent implements OnInit {
 
   openEdit(f: Fleet): void {
     this.editingId = f.id;
+    this.touched = { name: false, phone: false };
     this.form = {
-      city_id: f.city_id,
       name: f.name,
       phone_number: f.phone_number || '',
       bank: f.bank || '',
@@ -331,23 +413,17 @@ export class FleetsSettingsComponent implements OnInit {
     }
   }
 
+  get formValid(): boolean {
+    return !!this.form.name.trim() && !!this.form.phone_number.trim();
+  }
+
   submit(): void {
-    if (!this.form.name.trim()) {
-      this.msg.add({ severity: 'warn', summary: 'Name is required' });
-      return;
-    }
-    if (!this.form.city_id) {
-      this.msg.add({ severity: 'warn', summary: 'City is required' });
-      return;
-    }
-    if (!this.form.phone_number.trim()) {
-      this.msg.add({ severity: 'warn', summary: 'Phone number is required' });
-      return;
-    }
+    this.touched = { name: true, phone: true };
+    if (!this.formValid || this.saving || this.cityId == null) return;
 
     const fd = new FormData();
     if (this.editingId) fd.append('_method', 'PATCH');
-    fd.append('city_id', String(this.form.city_id));
+    fd.append('city_id', String(this.cityId));
     fd.append('name', this.form.name.trim());
     fd.append('phone_number', this.form.phone_number.trim());
     if (this.form.bank) fd.append('bank', this.form.bank);
@@ -366,32 +442,31 @@ export class FleetsSettingsComponent implements OnInit {
       next: () => {
         this.saving = false;
         this.open = false;
-        this.msg.add({ severity: 'success', summary: this.editingId ? 'Fleet updated' : 'Fleet created' });
+        this.toast.success(this.editingId ? 'Fleet updated' : 'Fleet created');
         this.fetchFleets();
       },
       error: (err) => {
         this.saving = false;
-        this.msg.add({ severity: 'error', summary: err?.error?.message || 'Save failed' });
+        this.toast.error(err?.error?.message || 'Save failed');
       },
     });
   }
 
-  remove(f: Fleet): void {
-    this.confirm.confirm({
-      message: `Delete fleet "${f.name}"?`,
-      accept: () => {
-        this.api.delete(`/admin/fleets/${f.id}`).subscribe({
-          next: () => { this.msg.add({ severity: 'success', summary: 'Deleted' }); this.fetchFleets(); },
-          error: (err) => this.msg.add({ severity: 'error', summary: err?.error?.message || 'Delete failed' }),
-        });
+  confirmDelete(): void {
+    const f = this.deleteTarget;
+    if (!f || this.saving) return;
+    this.saving = true;
+    this.api.delete(`/admin/fleets/${f.id}`).subscribe({
+      next: () => {
+        this.saving = false;
+        this.deleteTarget = null;
+        this.toast.success('Fleet deleted');
+        this.fetchFleets();
+      },
+      error: (err) => {
+        this.saving = false;
+        this.toast.error(err?.error?.message || 'Delete failed');
       },
     });
-  }
-
-  statusSeverity(s: string): 'success' | 'warning' | 'danger' | 'info' | 'secondary' {
-    if (s === 'active') return 'success';
-    if (s === 'suspended') return 'danger';
-    if (s === 'pending') return 'warning';
-    return 'secondary';
   }
 }
