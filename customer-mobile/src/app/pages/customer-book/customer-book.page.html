@@ -29,29 +29,23 @@
     </div>
   </div>
 
-  <!-- Floating Premium Step Progress Header (Positioned at the top of the screen below status bar) -->
-  <div class="floating-step-progress" *ngIf="state === 'route' || state === 'vehicle' || state === 'payment' || state === 'preview'">
+  <!-- Floating Premium Step Progress Header (Route → Payment → Match) -->
+  <div class="floating-step-progress" *ngIf="state === 'route' || state === 'payment' || state === 'preview'">
     <div class="step-progress-header">
       <div class="step-item" [class.active]="state === 'route'" [class.completed]="state !== 'route'">
         <span class="step-number">1</span>
         <span class="step-label">Route</span>
       </div>
       <div class="step-line" [class.completed]="state !== 'route'"></div>
-      
-      <div class="step-item" [class.active]="state === 'vehicle'" [class.completed]="state === 'payment' || state === 'preview'">
-        <span class="step-number">2</span>
-        <span class="step-label">Vehicle</span>
-      </div>
-      <div class="step-line" [class.completed]="state === 'payment' || state === 'preview'"></div>
-      
+
       <div class="step-item" [class.active]="state === 'payment'" [class.completed]="state === 'preview'">
-        <span class="step-number">3</span>
+        <span class="step-number">2</span>
         <span class="step-label">Payment</span>
       </div>
       <div class="step-line" [class.completed]="state === 'preview'"></div>
-      
+
       <div class="step-item" [class.active]="state === 'preview'">
-        <span class="step-number">4</span>
+        <span class="step-number">3</span>
         <span class="step-label">Match</span>
       </div>
     </div>
@@ -84,12 +78,13 @@
           [class.active]="p.kind === selectedProductKind"
           (click)="selectProductKind(p.kind)"
         >
-          <div class="chip-icon-circle">
-            <ion-icon [name]="p.icon" aria-hidden="true"></ion-icon>
+          <div class="chip-icon-circle" [class.has-banner]="!!p.image_url" [class.is-empty]="!p.image_url">
+            <img *ngIf="p.image_url" [src]="p.image_url" [alt]="p.label" />
+            <ion-icon *ngIf="!p.image_url" name="image-outline" aria-hidden="true"></ion-icon>
           </div>
           <span class="chip-label">{{ p.label }}</span>
           <span class="chip-desc">
-            {{ p.kind === 'local' ? 'City rides' : (p.kind === 'outstation' ? 'Inter-city' : 'Hourly rental') }}
+            {{ p.description || (p.kind === 'local' ? 'City rides' : (p.kind === 'outstation' ? 'Inter-city' : 'Hourly rental')) }}
           </span>
         </button>
       </div>
@@ -228,83 +223,6 @@
 
       <div class="action-footer">
         <button class="action-btn-back" (click)="closeSheet()">Back</button>
-        <button class="action-btn-continue" (click)="goToVehicle()">Continue</button>
-      </div>
-    </div>
-
-    <!-- VEHICLE SELECTION -->
-    <div *ngSwitchCase="'vehicle'" class="sheet-vehicle">
-      <div class="sheet-header">
-        <h2>Choose Vehicle</h2>
-      </div>
-
-      <!-- Reusable, read-only location card for seamless visual flow -->
-      <div class="route-editor-card read-only">
-        <!-- Connecting Line -->
-        <div class="route-line-connector">
-          <div class="dot-pickup dark"></div>
-          <div class="line-solid"></div>
-          <div class="dot-drop green"></div>
-        </div>
-
-        <div class="route-inputs">
-          <div class="input-row">
-            <small>Pickup</small>
-            <p class="readonly-address">{{ pickup?.address }}</p>
-          </div>
-          
-          <div class="input-divider"></div>
-
-          <div class="input-row">
-            <small>Drop Off</small>
-            <p class="readonly-address">{{ drop?.address }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="outside-banner" *ngIf="outsideServiceAreaNotice">
-        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
-        <span>{{ outsideServiceAreaNotice }}</span>
-      </div>
-
-      <!-- Horizontal scroll vehicle list (Square Icons, Outside Titles) -->
-      <div class="vehicle-square-scroller" *ngIf="vehicleTypes.length">
-        <div
-          *ngFor="let v of vehicleTypes"
-          class="vehicle-square-item"
-          [class.active]="v.id === selectedVehicleTypeId"
-          (click)="selectVehicleType(v.id)"
-        >
-          <div class="vehicle-square-box">
-            <ion-icon name="car-sport-sharp"></ion-icon>
-          </div>
-          <span class="vehicle-square-title">{{ v.name }}</span>
-        </div>
-      </div>
-      <div class="input-error-msg chip-error" [class.show]="vehicleError">
-        {{ vehicleError }}
-      </div>
-
-      <!-- Fare Summary Display -->
-      <div class="fare-summary" *ngIf="estimate?.estimated_fare != null">
-        <div class="fare-brand-info">
-          <small>Estimated fare</small>
-          <h2>₹{{ estimate?.estimated_fare }}</h2>
-        </div>
-        <div *ngIf="estimate?.distance_km != null" class="fare-route-details">
-          <div class="route-detail-item">
-            <ion-icon name="map-outline" aria-hidden="true"></ion-icon>
-            <span>{{ estimate?.distance_km }} km</span>
-          </div>
-          <div class="route-detail-item">
-            <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
-            <span>{{ estimate?.time_min }} min</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="action-footer">
-        <button class="action-btn-back" (click)="goRoute()">Back</button>
         <button class="action-btn-continue" (click)="goToPayment()">Continue</button>
       </div>
     </div>
@@ -335,31 +253,36 @@
         </div>
       </div>
 
-      <!-- Premium Payment Grid Options -->
-      <div class="payment-grid">
-        <button class="payment-card" [class.active]="paymentMethod === 'cash'" (click)="paymentMethod = 'cash'; paymentError = null">
-          <div class="pay-icon-circle"><ion-icon name="cash-outline"></ion-icon></div>
-          <div class="pay-info">
-            <span class="pay-title">Cash</span>
-            <span class="pay-desc">Pay driver directly</span>
+      <!-- Fare Summary (moved from the eliminated Vehicle step) -->
+      <div class="fare-summary" *ngIf="estimate?.estimated_fare != null">
+        <div class="fare-brand-info">
+          <small>Estimated fare · any available vehicle</small>
+          <h2>₹{{ estimate?.estimated_fare }}</h2>
+        </div>
+        <div *ngIf="estimate?.distance_km != null" class="fare-route-details">
+          <div class="route-detail-item">
+            <ion-icon name="map-outline" aria-hidden="true"></ion-icon>
+            <span>{{ estimate?.distance_km }} km</span>
           </div>
-          <div class="pay-select-dot"></div>
-        </button>
+          <div class="route-detail-item">
+            <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
+            <span>{{ estimate?.time_min }} min</span>
+          </div>
+        </div>
+      </div>
 
-        <button class="payment-card" [class.active]="paymentMethod === 'upi'" (click)="paymentMethod = 'upi'; paymentError = null">
+      <div class="outside-banner" *ngIf="outsideServiceAreaNotice">
+        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+        <span>{{ outsideServiceAreaNotice }}</span>
+      </div>
+
+      <!-- Payment options (Cash & QR temporarily disabled — only Online for now) -->
+      <div class="payment-grid">
+        <button class="payment-card active" (click)="paymentMethod = 'upi'; paymentError = null">
           <div class="pay-icon-circle"><ion-icon name="phone-portrait-outline"></ion-icon></div>
           <div class="pay-info">
-            <span class="pay-title">UPI</span>
-            <span class="pay-desc">Instant online pay</span>
-          </div>
-          <div class="pay-select-dot"></div>
-        </button>
-
-        <button class="payment-card" [class.active]="paymentMethod === 'qr'" (click)="paymentMethod = 'qr'; paymentError = null">
-          <div class="pay-icon-circle"><ion-icon name="qr-code-outline"></ion-icon></div>
-          <div class="pay-info">
-            <span class="pay-title">QR Code</span>
-            <span class="pay-desc">Scan driver's code</span>
+            <span class="pay-title">Online</span>
+            <span class="pay-desc">UPI / cards / wallets</span>
           </div>
           <div class="pay-select-dot"></div>
         </button>
@@ -378,7 +301,7 @@
       </div>
 
       <div class="action-footer">
-        <button class="action-btn-back" (click)="state = 'vehicle'">Back</button>
+        <button class="action-btn-back" (click)="goRoute()">Back</button>
         <button class="action-btn-continue" (click)="goToDrivers()">Continue</button>
       </div>
     </div>
@@ -585,12 +508,8 @@
 
     <div class="review-section payment-section">
       <ion-item button lines="none" (click)="openPaymentSheet()">
-        <ion-icon
-          slot="start"
-          [name]="paymentMethod === 'cash' ? 'cash-outline' : (paymentMethod === 'upi' ? 'phone-portrait-outline' : 'qr-code-outline')"
-          aria-hidden="true"
-        ></ion-icon>
-        <ion-label>Payment: <strong>{{ paymentMethod | uppercase }}</strong></ion-label>
+        <ion-icon slot="start" name="phone-portrait-outline" aria-hidden="true"></ion-icon>
+        <ion-label>Payment: <strong>ONLINE</strong></ion-label>
         <ion-icon slot="end" name="chevron-forward-outline" aria-hidden="true"></ion-icon>
       </ion-item>
     </div>

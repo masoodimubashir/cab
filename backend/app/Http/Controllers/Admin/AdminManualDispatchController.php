@@ -73,7 +73,7 @@ class AdminManualDispatchController
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
-            $vehicleTypeId,
+            $pricingRule->city_vehicle_type_id ? (int) $pricingRule->city_vehicle_type_id : null,
         );
 
         $dynamicFactors = $dynamicRule ? [
@@ -119,7 +119,7 @@ class AdminManualDispatchController
 
         $city = City::query()->findOrFail((int) $data['city_id']);
 
-        $kind = $data['product_kind'] ?? (!empty($data['is_round_trip']) ? 'outstation' : 'local');
+        $kind = 'local'; // product_kind has been retired from the trip model.
         $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
         $returnAt = !empty($data['return_at']) ? Carbon::parse($data['return_at']) : null;
 
@@ -184,7 +184,7 @@ class AdminManualDispatchController
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
-            $vehicleTypeId,
+            $pricingRule->city_vehicle_type_id ? (int) $pricingRule->city_vehicle_type_id : null,
         );
 
         $dynamicFactors = $dynamicRule ? [
@@ -214,7 +214,7 @@ class AdminManualDispatchController
             'city_id' => (int) $data['city_id'],
             'dispatched_by_admin_id' => $request->user()->id,
             'ride_type_id' => $rideTypeId,
-            'product_kind' => $kind,
+            'city_vehicle_type_id' => $pricingRule->city_vehicle_type_id,
             'pricing_rule_id' => $pricingRule->id,
             'status' => 'REQUESTED',
             'estimated_fare' => $estimatedFare,
@@ -297,7 +297,7 @@ class AdminManualDispatchController
             'is_round_trip' => ['nullable', 'boolean'],
             'driver_notes' => ['nullable', 'string', 'max:2000'],
             'scheduled_at' => ['nullable', 'date'],
-            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+            // 'product_kind' has been retired from the trip model.
             'return_at' => ['nullable', 'date'],
         ];
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { Geolocation } from '@capacitor/geolocation';
 import { ApiService } from './api.service';
+import { GeolocationService } from './geolocation.service';
 
 type Location = {
   latitude: number;
@@ -39,7 +39,7 @@ export class BackgroundLocationService {
   private lastSentAt = 0;
   private readonly minIntervalMs = 5000;
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private geo: GeolocationService) {}
 
   isStreaming(): boolean {
     return this.watcherId != null || this.webIntervalHandle != null;
@@ -70,18 +70,18 @@ export class BackgroundLocationService {
         }
       );
     } else {
-      // Web fallback: foreground-only via Capacitor Geolocation watch.
-      const id = await Geolocation.watchPosition(
+      // Web fallback: foreground-only via GeolocationService (honours dev override).
+      const id = await this.geo.watchPosition(
         { enableHighAccuracy: true, maximumAge: 4000, timeout: 8000 },
-        (pos, err) => {
-          if (err || !pos) return;
+        (fix, err) => {
+          if (err || !fix) return;
           this.postLocation({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            speed: pos.coords.speed,
-            bearing: pos.coords.heading,
-            time: pos.timestamp,
+            latitude: fix.lat,
+            longitude: fix.lng,
+            accuracy: fix.accuracy ?? undefined,
+            speed: fix.speed,
+            bearing: fix.bearing,
+            time: fix.timestamp,
           });
         }
       );
@@ -99,11 +99,7 @@ export class BackgroundLocationService {
       this.watcherId = null;
     }
     if (this.webIntervalHandle) {
-      try {
-        await Geolocation.clearWatch({ id: this.webIntervalHandle });
-      } catch {
-        /* ignore */
-      }
+      await this.geo.clearWatch(this.webIntervalHandle);
       this.webIntervalHandle = null;
     }
     this.currentTripId = null;

@@ -10,9 +10,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'city_id',
+    'city_vehicle_type_id',
     'ride_type_id',
     'vehicle_type_id',
-    'product_kind',
     'base_fare',
     'per_km',
     'per_min',
@@ -63,39 +63,18 @@ class PricingRule extends Model
         return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
     }
 
+    public function cityVehicleType(): BelongsTo
+    {
+        return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
+    }
+
     /**
-     * Resolve the active rate card for a (city, vehicle_type, product_kind)
-     * tuple. Falls back to a (city, ride_type) lookup so legacy callers that
-     * still send ride_type_id (and trips with only ride_type_id set) keep
-     * resolving until the migration is fully completed.
+     * Resolve the rate card for the booked city_vehicle_type. Each vehicle now
+     * carries exactly one base rate card. Returns null when none is set yet.
      */
-    public static function resolveFor(
-        int $cityId,
-        ?int $vehicleTypeId,
-        ?string $productKind,
-        ?int $rideTypeId = null,
-    ): ?self {
-        $kind = $productKind ?: 'local';
-
-        if ($vehicleTypeId) {
-            $rule = self::query()
-                ->where('city_id', $cityId)
-                ->where('vehicle_type_id', $vehicleTypeId)
-                ->where('product_kind', $kind)
-                ->first();
-            if ($rule) {
-                return $rule;
-            }
-        }
-
-        if ($rideTypeId) {
-            return self::query()
-                ->where('city_id', $cityId)
-                ->where('ride_type_id', $rideTypeId)
-                ->first();
-        }
-
-        return null;
+    public static function resolveFor(int $cityVehicleTypeId): ?self
+    {
+        return self::query()->where('city_vehicle_type_id', $cityVehicleTypeId)->first();
     }
 
     public function trips(): HasMany

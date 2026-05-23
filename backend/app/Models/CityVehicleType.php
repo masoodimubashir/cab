@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
-    'city_id', 'ride_type_id', 'vehicle_type_id', 'product_kind',
+    'city_id', 'ride_type_id', 'vehicle_type_id', 'vehicle_set_id',
     'display_name', 'display_order',
     'android_image_path', 'ios_image_path',
     'max_people', 'luggage_capacity',
@@ -69,36 +69,57 @@ class CityVehicleType extends Model
         return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
     }
 
+    public function vehicleSet(): BelongsTo
+    {
+        return $this->belongsTo(VehicleSet::class, 'vehicle_set_id');
+    }
+
     public function images(): HasMany
     {
         return $this->hasMany(CityVehicleTypeImage::class, 'city_vehicle_type_id');
     }
 
     /**
-     * Resolve the city_vehicle_types row id for a booking. A booking arrives
-     * keyed by (city, product_kind) plus either a ride_type or a global
-     * vehicle_type; this maps that back to the exact per-city vehicle so
-     * dynamic-pricing surge can target it. Returns null when no row matches.
+     * Resolve a city_vehicle_type id for a booking.
+     *
+     *   - Both axes given          → matching active row.
+     *   - Only ride_type or only
+     *     vehicle_type              → lowest-id row matching that axis.
+     *   - Neither given             → the city's "default" vehicle (lowest
+     *     display_order, then id) — used for the "any vehicle / ride now"
+     *     flow where the customer doesn't pick a vehicle up front. The fare
+     *     estimate borrows that vehicle's rate card; the trip is allowed to
+     *     match drivers of any vehicle type (set requested_vehicle_type_id
+     *     to null on the trip in that case).
      */
     public static function resolveId(
         int $cityId,
-        string $productKind,
         ?int $rideTypeId,
         ?int $vehicleTypeId,
     ): ?int {
-        $query = static::query()
-            ->where('city_id', $cityId)
-            ->where('product_kind', $productKind);
+        $query = static::query()->where('city_id', $cityId)->where('is_active', true);
 
         if ($rideTypeId !== null) {
             $query->where('ride_type_id', $rideTypeId);
-        } elseif ($vehicleTypeId !== null) {
+        }
+        if ($vehicleTypeId !== null) {
             $query->where('vehicle_type_id', $vehicleTypeId);
-        } else {
-            return null;
         }
 
-        return $query->value('id');
+        // "Any vehicle" mode (customer sent no specific hint) — only consider
+        // vehicles that actually carry a rate card, otherwise the booking
+        // would 404 with "pricing rule not set" later in the flow. When the
+        // customer was specific, keep the original behaviour so the error
+        // makes it clear which vehicle is mis-configured.
+        if ($rideTypeId === null && $vehicleTypeId === null) {
+            $query->whereExists(function ($sub) {
+                $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('pricing_rules')
+                    ->whereColumn('pricing_rules.city_vehicle_type_id', 'city_vehicle_types.id');
+            });
+        }
+
+        return $query->orderBy('display_order')->orderBy('id')->value('id');
     }
 
     public function getAndroidImageUrlAttribute(): ?string
@@ -118,14 +139,13 @@ class CityVehicleType extends Model
     /**
      * Merged dispatcher tuning for this vehicle: vehicle-level override wins
      * where set, otherwise the city-level DispatcherSetting value is used.
-     *
-     * Returns null when neither row exists for the (city, kind) tuple.
+     * Returns null when no row exists for the city.
      *
      * @return array{request_radius_m:int, hop_interval_sec:int, hop_radius_m:int, max_hops:int}|null
      */
     public function effectiveDispatcherConfig(): ?array
     {
-        $city = DispatcherSetting::forTrip($this->city_id, $this->product_kind);
+        $city = DispatcherSetting::forTrip($this->city_id, 'local');
         if (!$city) {
             return null;
         }

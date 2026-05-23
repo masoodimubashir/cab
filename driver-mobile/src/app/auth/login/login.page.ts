@@ -1,11 +1,11 @@
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
-import { Geolocation } from '@capacitor/geolocation';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
+import { GeolocationService } from '../../core/geolocation.service';
 import { PushService } from '../../core/push.service';
 import {
   mapFirebaseAuthError,
@@ -74,7 +74,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private auth: AuthService,
     private router: Router,
     private phoneAuth: PhoneAuthService,
-    private push: PushService
+    private push: PushService,
+    private geo: GeolocationService,
   ) {}
 
   ionViewWillEnter(): void {
@@ -162,7 +163,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     this.error = null;
     this.loading = true;
     try {
-      try { await Geolocation.requestPermissions(); } catch { /* ignore */ }
+      await this.geo.requestPermissions();
       try { await FirebaseMessaging.requestPermissions(); } catch { /* ignore */ }
       localStorage.setItem('dreamcabs_permissions_granted', '1');
       await this.sendOtp();

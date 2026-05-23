@@ -8,14 +8,11 @@ import { CityContextService, CityOption } from '../../core/city-context.service'
 import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, DrawerComponent, IconComponent } from '../../ui';
 
-type ProductKind = 'local' | 'rental' | 'outstation';
-
 interface VehicleType {
   id: number;
   city_id: number;
   ride_type_id: number;
   ride_type_name: string;
-  product_kind: ProductKind;
   display_name: string;
   max_people: number;
   is_active: boolean;
@@ -23,18 +20,6 @@ interface VehicleType {
 
 interface RideTypeRef { id: number; name: string; }
 interface VehicleTypeRef { id: number; name: string; }
-
-interface VehicleGroup {
-  row_id: number;
-  ride_type_id: number;
-  ride_type_name: string;
-  display_name: string;
-  max_people: number;
-  kinds: ProductKind[];
-  enabled_kinds: ProductKind[];
-}
-
-const KINDS: ProductKind[] = ['local', 'rental', 'outstation'];
 
 /**
  * Vehicle Fares — the city's vehicle catalogue (one card per vehicle class),
@@ -47,8 +32,8 @@ const KINDS: ProductKind[] = ['local', 'rental', 'outstation'];
   imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent],
   template: `
     <p class="intro">
-      One card per vehicle class. Each is created across the three product kinds —
-      open <strong>Details</strong> to tune each kind independently.
+      One card per vehicle. Open <strong>Details</strong> to tune its identity, fare,
+      images and dispatcher settings.
     </p>
 
     <div class="cue" *ngIf="!cityId">
@@ -72,27 +57,23 @@ const KINDS: ProductKind[] = ['local', 'rental', 'outstation'];
         </tm-button>
       </div>
 
-      <div class="grid" *ngIf="visibleGroups().length; else empty">
-        <article class="vcard" *ngFor="let g of visibleGroups()">
+      <div class="grid" *ngIf="visibleRows().length; else empty">
+        <article class="vcard" *ngFor="let v of visibleRows()">
           <div class="vcard__head">
             <span class="vcard__icon"><tm-icon name="car" [size]="16" /></span>
             <div class="vcard__id">
-              <span class="vcard__name">{{ g.display_name }}</span>
-              <span class="vcard__rt">{{ g.ride_type_name }}</span>
+              <span class="vcard__name">{{ v.display_name }}</span>
+              <span class="vcard__rt">{{ v.ride_type_name }}</span>
             </div>
-            <span class="vcard__seats"><tm-icon name="users" [size]="13" /> {{ g.max_people }}</span>
+            <span class="vcard__seats"><tm-icon name="users" [size]="13" /> {{ v.max_people }}</span>
           </div>
           <div class="vcard__kinds">
-            <span
-              *ngFor="let k of allKinds"
-              class="kpill"
-              [class.on]="g.enabled_kinds.includes(k)"
-              [class.has]="g.kinds.includes(k) && !g.enabled_kinds.includes(k)"
-              [class.missing]="!g.kinds.includes(k)"
-            >{{ kindLabel(k) }}</span>
+            <span class="kpill" [class.on]="v.is_active" [class.missing]="!v.is_active">
+              {{ v.is_active ? 'Enabled' : 'Disabled' }}
+            </span>
           </div>
           <div class="vcard__foot">
-            <tm-button variant="outline" size="sm" icon="arrow-right" (clicked)="openDetails(g)">
+            <tm-button variant="outline" size="sm" icon="arrow-right" (clicked)="openDetails(v)">
               Details
             </tm-button>
           </div>
@@ -179,18 +160,6 @@ const KINDS: ProductKind[] = ['local', 'rental', 'outstation'];
           </label>
         </div>
 
-        <div class="field">
-          <span class="field__lbl">Enabled in <i>*</i></span>
-          <div class="chips">
-            <button type="button" class="chip" [class.is-on]="createForm.kind_local"
-                    (click)="createForm.kind_local = !createForm.kind_local">Local</button>
-            <button type="button" class="chip" [class.is-on]="createForm.kind_rental"
-                    (click)="createForm.kind_rental = !createForm.kind_rental">Rental</button>
-            <button type="button" class="chip" [class.is-on]="createForm.kind_outstation"
-                    (click)="createForm.kind_outstation = !createForm.kind_outstation">Outstation</button>
-          </div>
-          <span class="field__hint">Picked kinds are created enabled — add others later from Details.</span>
-        </div>
       </div>
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button>
@@ -303,7 +272,6 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
   vehicleTypeOptions: VehicleTypeRef[] = [];
 
   filter: 'enabled' | 'disabled' = 'enabled';
-  allKinds = KINDS;
 
   cities: CityOption[] = [];
   createOpen = false;
@@ -353,55 +321,22 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       });
   }
 
-  /**
-   * One card per vehicle. A vehicle is identified by its Vehicle Name within a
-   * ride type — many vehicles can share a ride type — and its up-to-three
-   * product-kind rows are folded into a single card.
-   */
-  groups(): VehicleGroup[] {
-    const byVehicle = new Map<string, VehicleType[]>();
-    for (const r of this.rows) {
-      const key = `${r.ride_type_id}|${r.display_name}`;
-      const arr = byVehicle.get(key) ?? [];
-      arr.push(r);
-      byVehicle.set(key, arr);
-    }
-    return Array.from(byVehicle.values()).map((rowsForVehicle) => {
-      const first = rowsForVehicle[0];
-      return {
-        row_id: first.id,
-        ride_type_id: first.ride_type_id,
-        ride_type_name: first.ride_type_name,
-        display_name: first.display_name,
-        max_people: first.max_people,
-        kinds: rowsForVehicle.map((r) => r.product_kind),
-        enabled_kinds: rowsForVehicle.filter((r) => r.is_active).map((r) => r.product_kind),
-      };
-    });
-  }
-
-  visibleGroups(): VehicleGroup[] {
-    const all = this.groups();
+  /** One card per vehicle row. */
+  visibleRows(): VehicleType[] {
     return this.filter === 'enabled'
-      ? all.filter((g) => g.enabled_kinds.length > 0)
-      : all.filter((g) => g.enabled_kinds.length === 0);
+      ? this.rows.filter((r) => r.is_active)
+      : this.rows.filter((r) => !r.is_active);
   }
 
   countEnabled(): number {
-    return this.groups().filter((g) => g.enabled_kinds.length > 0).length;
+    return this.rows.filter((r) => r.is_active).length;
   }
   countDisabled(): number {
-    return this.groups().filter((g) => g.enabled_kinds.length === 0).length;
+    return this.rows.filter((r) => !r.is_active).length;
   }
 
-  kindLabel(k: ProductKind): string {
-    if (k === 'rental') return 'Rental';
-    if (k === 'outstation') return 'Outstation';
-    return 'Local';
-  }
-
-  openDetails(g: VehicleGroup): void {
-    this.router.navigateByUrl(`/settings/vehicle-types/${g.row_id}`);
+  openDetails(v: VehicleType): void {
+    this.router.navigateByUrl(`/settings/vehicle-types/${v.id}`);
   }
 
   blankCreate() {
@@ -417,9 +352,6 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       destination_mandatory: false,
       fare_mandatory: false,
       toll_applicable: false,
-      kind_local: true,
-      kind_rental: true,
-      kind_outstation: true,
     };
   }
 
@@ -438,18 +370,13 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       f.display_order != null &&
       f.max_people != null &&
       f.commission_percent != null &&
-      f.luggage_capacity != null &&
-      (f.kind_local || f.kind_rental || f.kind_outstation)
+      f.luggage_capacity != null
     );
   }
 
   submitCreate(): void {
     if (!this.createValid || this.creating) return;
     const f = this.createForm;
-    const kinds: ProductKind[] = [];
-    if (f.kind_local) kinds.push('local');
-    if (f.kind_rental) kinds.push('rental');
-    if (f.kind_outstation) kinds.push('outstation');
 
     const payload = {
       ride_type_id: f.ride_type_id,
@@ -462,12 +389,11 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       destination_mandatory: f.destination_mandatory,
       fare_mandatory: f.fare_mandatory,
       toll_mode: f.toll_applicable ? 'yes' : 'no',
-      kinds,
     };
 
     this.creating = true;
     this.api
-      .post<{ data: VehicleType[]; created_count: number; message: string }>(
+      .post<{ vehicle_type: VehicleType; message: string }>(
         `/admin/cities/${f.city_id}/vehicle-types`,
         payload,
       )

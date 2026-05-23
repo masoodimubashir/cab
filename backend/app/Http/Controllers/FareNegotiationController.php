@@ -103,7 +103,7 @@ class FareNegotiationController extends Controller
         // drivers in the current ring, then re-queues itself until acceptance or
         // exhaustion. Falls back gracefully when no settings row exists.
         $autoOn = true;
-        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->product_kind ?? 'local');
+        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
         if ($settings && !$settings->automatic_dispatcher_type) {
             $autoOn = false; // operator must dispatch manually
         }

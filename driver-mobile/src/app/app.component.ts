@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { ApiService } from './core/api.service';
 import { AuthService } from './core/auth.service';
 import { BackgroundLocationService } from './core/background-location.service';
+import { DevLocationService } from './core/dev-location.service';
 
 interface ActiveTrip {
   id: number;
@@ -16,12 +17,17 @@ interface ActiveTrip {
   standalone: false,
 })
 export class AppComponent implements OnInit {
+  showDevBadge = false;
+
   constructor(
     private auth: AuthService,
     private api: ApiService,
     private router: Router,
-    private bgLocation: BackgroundLocationService
-  ) {}
+    private bgLocation: BackgroundLocationService,
+    private devLocation: DevLocationService,
+  ) {
+    this.showDevBadge = this.devLocation.isEnabled();
+  }
 
   ngOnInit(): void {
     if (!this.auth.isLoggedIn()) return;

@@ -59,14 +59,9 @@ class RatingsController extends Controller
 
         $query = Trip::query()->where('customer_id', $user->id);
 
-        // ── product_kind filter ─────────────────────────────────────
-        // 'all' (or missing) returns everything; otherwise must match the enum.
-        $productKind = $request->query('product_kind');
-        if ($productKind && $productKind !== 'all') {
-            if (in_array($productKind, ['local', 'rental', 'outstation'], true)) {
-                $query->where('product_kind', $productKind);
-            }
-        }
+        // product_kind filter removed — local/rental/outstation are no longer
+        // a property of a trip. The mode filter (if added later) should live
+        // on the city's service-mode catalogue or be derived from ride_type.
 
         // ── status filter ───────────────────────────────────────────
         // completed = ride finished cleanly

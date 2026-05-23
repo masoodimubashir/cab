@@ -37,7 +37,7 @@ class WakeScheduledTrips extends Command
             ->where('scheduled_at', '>=', $now->copy()->subMinutes(5))
             ->cursor()
             ->each(function (Trip $trip) use ($stateMachine, $now, &$woken) {
-                $kind = $trip->product_kind ?? 'local';
+                $kind = 'local';
                 $cfg = DispatcherSetting::forTrip($trip->city_id, $kind);
                 if (!$cfg) {
                     return;
