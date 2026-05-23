@@ -114,6 +114,9 @@ export class CustomerBookPage implements OnDestroy {
     { kind: 'rental',     label: 'Rental',     icon: 'time-outline' },
   ];
   selectedProductKind: 'local' | 'outstation' | 'rental' = 'local';
+  // Outstation packages (One Way / Round Trip …) for the picked ride type.
+  outstationPackages: { id: number; name: string }[] = [];
+  selectedPackageId: number | null = null;
   // Set when the destination falls outside the selected city's polygon and we
   // auto-switch to Outstation. The banner above the driver list shows this.
   outsideServiceAreaNotice: string | null = null;
@@ -727,12 +730,54 @@ export class CustomerBookPage implements OnDestroy {
     if (this.outsideServiceAreaNotice && kind !== 'local') {
       this.outsideServiceAreaNotice = null;
     }
+    if (kind === 'outstation') {
+      void this.loadOutstationPackages();
+    } else {
+      this.outstationPackages = [];
+      this.selectedPackageId = null;
+      void this.fetchEstimate();
+    }
   }
 
   selectRideType(id: number): void {
     this.selectedRideTypeId = id;
-    void this.fetchEstimate();
     void this.refreshDriverList();
+    if (this.selectedProductKind === 'outstation') {
+      void this.loadOutstationPackages();
+    } else {
+      void this.fetchEstimate();
+    }
+  }
+
+  selectPackage(id: number): void {
+    this.selectedPackageId = id;
+    void this.fetchEstimate();
+  }
+
+  /** Loads the outstation packages for the current city + ride type. */
+  private async loadOutstationPackages(): Promise<void> {
+    const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
+    if (!cityId || this.selectedRideTypeId == null) {
+      this.outstationPackages = [];
+      this.selectedPackageId = null;
+      await this.fetchEstimate();
+      return;
+    }
+    try {
+      const res = await this.api
+        .get<{ data: { id: number; name: string }[] }>(
+          `/pricing/outstation-packages?city_id=${cityId}&ride_type_id=${this.selectedRideTypeId}`,
+        )
+        .toPromise();
+      this.outstationPackages = res?.data ?? [];
+      if (!this.outstationPackages.some((p) => p.id === this.selectedPackageId)) {
+        this.selectedPackageId = this.outstationPackages[0]?.id ?? null;
+      }
+    } catch {
+      this.outstationPackages = [];
+      this.selectedPackageId = null;
+    }
+    await this.fetchEstimate();
   }
 
   /**
@@ -857,6 +902,8 @@ export class CustomerBookPage implements OnDestroy {
           // Kept for the legacy fallback when no vehicle catalog is seeded.
           ride_type_id: this.selectedRideTypeId,
           product_kind: this.selectedProductKind,
+          outstation_package_id:
+            this.selectedProductKind === 'outstation' ? this.selectedPackageId : null,
           pickup_lat: this.pickup.lat,
           pickup_lng: this.pickup.lng,
           drop_lat: this.drop.lat,
@@ -924,6 +971,8 @@ export class CustomerBookPage implements OnDestroy {
         vehicle_type_id: this.selectedVehicleTypeId,
         ride_type_id: this.selectedRideTypeId,
         product_kind: this.selectedProductKind,
+        outstation_package_id:
+          this.selectedProductKind === 'outstation' ? this.selectedPackageId : null,
         pickup_address: this.pickup.address,
         pickup_lat: this.pickup.lat,
         pickup_lng: this.pickup.lng,

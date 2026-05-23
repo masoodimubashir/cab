@@ -6,5 +6,6 @@
 export * from './shell/shell.component';
 export * from './sidebar/sidebar.component';
 export * from './topbar/topbar.component';
+export * from './topbar/city-switcher.component';
 export * from './page/page.component';
 export * from './nav.types';

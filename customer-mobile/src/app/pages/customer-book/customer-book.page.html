@@ -94,6 +94,25 @@
         </button>
       </div>
 
+      <!-- Outstation packages — One Way / Round Trip … -->
+      <div
+        class="package-picker"
+        *ngIf="selectedProductKind === 'outstation' && outstationPackages.length"
+      >
+        <span class="package-picker__label">Package</span>
+        <div class="package-picker__chips">
+          <button
+            *ngFor="let pkg of outstationPackages"
+            type="button"
+            class="package-chip"
+            [class.active]="pkg.id === selectedPackageId"
+            (click)="selectPackage(pkg.id)"
+          >
+            {{ pkg.name }}
+          </button>
+        </div>
+      </div>
+
       <!-- Premium New Trip CTA -->
       <button class="new-trip-cta-btn" (click)="goRoute()">
         <div class="cta-left">
