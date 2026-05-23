@@ -186,6 +186,29 @@ class FareEstimationService
     }
 
     /**
+     * Builds the fare-input array for the estimator. When an outstation
+     * package is supplied, its fare_config overrides the base pricing rule —
+     * the rule fills any field the package leaves blank. Surge is never left
+     * at 0 (an unset surge would zero the whole fare).
+     */
+    public function fareInput(array $pricingRule, ?int $outstationPackageId): array
+    {
+        if (!$outstationPackageId) {
+            return $pricingRule;
+        }
+        $package = \App\Models\OutstationPackage::query()->find($outstationPackageId);
+        if (!$package || !is_array($package->fare_config)) {
+            return $pricingRule;
+        }
+        $override = array_filter($package->fare_config, fn ($v) => $v !== null);
+        $merged = array_merge($pricingRule, $override);
+        if (!isset($merged['surge_multiplier']) || $merged['surge_multiplier'] === null) {
+            $merged['surge_multiplier'] = 1;
+        }
+        return $merged;
+    }
+
+    /**
      * @param  array{customer_factor: float, driver_factor: float, rule_id: ?int, fare_type: ?string}|null  $dynamicFactors
      * @param  float|null  $pickupDistanceKm  driver→customer distance (when a driver is already picked)
      * @param  float|null  $routeDistanceKm   real routed distance (from Google Directions) — overrides haversine when set
@@ -312,7 +335,7 @@ class FareEstimationService
                 'breakdown' => [],
             ];
         }
-        $r = $rule->toArray();
+        $r = $this->fareInput($rule->toArray(), $trip->outstation_package_id);
 
         // Telemetry window. If the trip lacks the drop-leg timestamps (older
         // trips, manual completions), zero distance/time → only the base fare

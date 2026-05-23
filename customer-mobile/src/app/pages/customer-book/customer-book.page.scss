@@ -1565,3 +1565,36 @@
     margin-bottom: 0 !important;
   }
 }
+
+/* Outstation package picker */
+.package-picker {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.package-picker__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ion-color-medium, #8a8a8a);
+}
+.package-picker__chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.package-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+}
+.package-chip.active {
+  background: var(--ion-color-primary, #3880ff);
+  border-color: var(--ion-color-primary, #3880ff);
+  color: #fff;
+}

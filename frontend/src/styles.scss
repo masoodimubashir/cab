@@ -3,3 +3,13 @@
 
 /* Third-party — Dan Grossman daterangepicker (jQuery plugin) */
 @import "daterangepicker/daterangepicker.css";
+
+/*
+ * Google Places Autocomplete dropdown. Google appends `.pac-container` to
+ * <body> with a default z-index of 1000 — below our drawer/modal (1100), so
+ * the city-search suggestions render hidden behind them. Lift it above.
+ */
+.pac-container {
+  z-index: 100000 !important;
+}
+

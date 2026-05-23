@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { AuthService } from './core/auth.service';
-import { ShellComponent, TopbarComponent, NavSection, NavItem } from './layout';
+import { ShellComponent, TopbarComponent, CitySwitcherComponent, NavSection, NavItem } from './layout';
 import { ToastComponent } from './ui';
 
 /**
@@ -14,7 +14,7 @@ import { ToastComponent } from './ui';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, ShellComponent, TopbarComponent, ToastComponent],
+  imports: [CommonModule, RouterOutlet, ShellComponent, TopbarComponent, CitySwitcherComponent, ToastComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
@@ -25,7 +25,6 @@ export class AppComponent implements OnInit {
   private static readonly TITLES: Array<[RegExp, string]> = [
     [/^\/dashboard/,                'Dashboard'],
     [/^\/maps/,                     'Maps'],
-    [/^\/users/,                    'Users'],
     [/^\/customers\/[^/]+$/,        'Customer Details'],
     [/^\/customers/,                'Customers'],
     [/^\/drivers\/active/,          'Active Drivers'],
@@ -36,8 +35,8 @@ export class AppComponent implements OnInit {
     [/^\/drivers\/approvals/,       'Driver Approvals'],
     [/^\/drivers\/documents/,       'Document Catalog'],
     [/^\/contact-drivers/,          'Contact Drivers'],
-    [/^\/pricing/,                  'Base Pricing'],
-    [/^\/dynamic-pricing/,          'Dynamic Pricing'],
+    [/^\/pricing/,                  'Pricing'],
+    [/^\/vehicle-fares/,            'Vehicle Fares'],
     [/^\/vehicles/,                 'Vehicles'],
     [/^\/promotions\/city-wide/,    'City Wide Promotions'],
     [/^\/promotions\/promo-codes/,  'Promo Codes'],
@@ -48,7 +47,6 @@ export class AppComponent implements OnInit {
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
     [/^\/settings\/operator/,       'Operator Settings'],
     [/^\/settings\/city/,           'City Settings'],
-    [/^\/settings\/geofencing/,     'Geofencing'],
     [/^\/settings\/fleets/,         'Fleets'],
     [/^\/settings\/vehicle-types/,  'Vehicle Type'],
     [/^\/managers/,                 'Managers'],
@@ -58,6 +56,22 @@ export class AppComponent implements OnInit {
     [/^\/analytics\/reports/,       'Reports'],
     [/^\/safety/,                   'Safety'],
     [/^\/reports/,                  'Reports'],
+  ];
+
+  /**
+   * Routes whose page actually re-scopes to the city chosen in the topbar
+   * switcher (they observe CityContextService). The switcher is hidden
+   * everywhere else — Vehicles/Ride types, RBAC, Managers, Maps, Operator
+   * Settings, etc. are global or carry their own
+   * city picker, so showing the global switcher there wrongly implies the
+   * page's data is per-city. Keep in sync with app.routes.ts.
+   */
+  private static readonly CITY_SCOPED: RegExp[] = [
+    /^\/city\b/,
+    /^\/pricing\b/,
+    /^\/vehicle-fares\b/,
+    /^\/promotions\/(city-wide|promo-codes|coupons|referrals)\b/,
+    /^\/settings\/(city|fleets|vehicle-types)\b/,
   ];
 
   private url = signal(this.router.url);
@@ -72,6 +86,11 @@ export class AppComponent implements OnInit {
     const first = name.split(/\s+/)[0];
     return first ? `Welcome, ${first}` : 'Welcome';
   });
+
+  /** True only on pages that genuinely re-scope to the switched city. */
+  showCitySwitcher = computed(() =>
+    AppComponent.CITY_SCOPED.some((re) => re.test(this.url())),
+  );
 
   constructor(public router: Router, public auth: AuthService) {}
 
@@ -100,31 +119,26 @@ export class AppComponent implements OnInit {
     const filterTruthy = (xs: (NavItem | false | 0 | null | undefined)[]): NavItem[] =>
       xs.filter((x): x is NavItem => !!x);
 
-    const items: NavItem[] = [];
+    // Sidebar groups follow the city onboarding workflow:
+    //   City Setup  → configure a city (dependency-ordered)
+    //   Operations  → run the city day-to-day
+    //   Insights    → analytics & reports
+    //   Platform    → global, not city-scoped
+    const citySetup: NavItem[] = [];
+    const operations: NavItem[] = [];
+    const insights: NavItem[] = [];
+    const platform: NavItem[] = [];
 
-    if (can('dashboard.view'))  items.push({ label: 'Dashboard', icon: 'home',      route: '/dashboard' });
-    if (can('maps.view'))       items.push({ label: 'Maps',      icon: 'map',       route: '/maps' });
-    if (can('users.view'))      items.push({ label: 'Users',     icon: 'users',     route: '/users' });
-    if (can('customers.view'))  items.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
-
-    if (canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])) {
-      items.push({
-        label: 'Drivers', icon: 'id-card',
-        children: filterTruthy([
-          can('drivers.view')     && { label: 'All Drivers',          icon: 'user',  route: '/drivers' },
-          can('drivers.approve')  && { label: 'Approvals & Documents', icon: 'check', route: '/drivers', queryParams: { tab: 'approvals' } },
-          can('documents.manage') && { label: 'Documents Catalog',     icon: 'edit',  route: '/drivers', queryParams: { tab: 'documents' } },
-        ]),
-      });
-    }
-
-    if (can('pricing.view'))           items.push({ label: 'Base Pricing',    icon: 'tag',      route: '/pricing' });
-    if (can('dynamic_pricing.manage')) items.push({ label: 'Dynamic Pricing', icon: 'bolt',     route: '/dynamic-pricing' });
-    if (can('contact_drivers.send'))   items.push({ label: 'Contact Drivers', icon: 'envelope', route: '/contact-drivers' });
-    if (can('vehicles.view'))          items.push({ label: 'Vehicles',        icon: 'car',      route: '/vehicles' });
+    // --- City Setup (dependency order) ---
+    citySetup.push({ label: 'City Workspace', icon: 'map-marker', route: '/city' });
+    if (can('vehicles.view'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
+    if (canAny(['pricing.view','dynamic_pricing.manage']))
+                                       citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
+    if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Fares', icon: 'car', route: '/vehicle-fares' });
+    if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (canAny(['promotions.manage','promo_codes.manage','coupons.manage','referrals.manage'])) {
-      items.push({
+      citySetup.push({
         label: 'Promotions', icon: 'gift',
         children: filterTruthy([
           can('promotions.manage')  && { label: 'City Wide',   icon: 'pin',  route: '/promotions/city-wide' },
@@ -135,9 +149,14 @@ export class AppComponent implements OnInit {
       });
     }
 
+    if (can('fleets.manage')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
+
+    // --- Operations ---
+    if (can('dashboard.view')) operations.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
+
     if (canAny(['trips.view','rides.map','rides.dispatch'])) {
-      items.push({
-        label: 'Rides', icon: 'car',
+      operations.push({
+        label: 'Rides', icon: 'road',
         children: filterTruthy([
           can('trips.view') && { label: 'All Rides', icon: 'car', route: '/rides/all' },
           can('rides.map')  && { label: 'Map View',  icon: 'map', route: '/rides/map' },
@@ -145,24 +164,27 @@ export class AppComponent implements OnInit {
       });
     }
 
-    if (can('rides.dispatch')) items.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
+    if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 
-    if (canAny(['settings.manage','fleets.manage','managers.manage','roles.manage'])) {
-      items.push({
-        label: 'Settings', icon: 'cog',
+    if (canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])) {
+      operations.push({
+        label: 'Drivers', icon: 'id-card',
         children: filterTruthy([
-          can('settings.manage') && { label: 'Operator Settings',    icon: 'cog',    route: '/settings/operator' },
-          can('settings.manage') && { label: 'City Settings',        icon: 'pin',    route: '/settings/city' },
-          can('settings.manage') && { label: 'Geofencing',           icon: 'map',    route: '/settings/geofencing' },
-          can('fleets.manage')   && { label: 'Fleets',               icon: 'car',    route: '/settings/fleets' },
-          can('managers.manage') && { label: 'Managers',             icon: 'users',  route: '/managers' },
-          can('roles.manage')    && { label: 'Roles & Permissions',  icon: 'shield', route: '/roles-permissions' },
+          can('drivers.view')     && { label: 'All Drivers',           icon: 'user',  route: '/drivers' },
+          can('drivers.approve')  && { label: 'Approvals & Documents',  icon: 'check', route: '/drivers', queryParams: { tab: 'approvals' } },
+          can('documents.manage') && { label: 'Documents Catalog',      icon: 'edit',  route: '/drivers', queryParams: { tab: 'documents' } },
         ]),
       });
     }
 
+    if (can('contact_drivers.send')) operations.push({ label: 'Contact Drivers', icon: 'envelope',   route: '/contact-drivers' });
+    if (can('customers.view'))       operations.push({ label: 'Customers',       icon: 'user-plus',  route: '/customers' });
+    if (can('maps.view'))            operations.push({ label: 'Maps',            icon: 'map',        route: '/maps' });
+    if (can('safety.view'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
+
+    // --- Insights ---
     if (canAny(['analytics.view','reports.view'])) {
-      items.push({
+      insights.push({
         label: 'Analytics', icon: 'chart-bar',
         children: filterTruthy([
           can('analytics.view') && { label: 'Real Time', icon: 'chart-line', route: '/analytics/real-time' },
@@ -171,11 +193,19 @@ export class AppComponent implements OnInit {
         ]),
       });
     }
+    if (can('reports.view')) insights.push({ label: 'Reports', icon: 'chart-line', route: '/reports' });
 
-    if (can('safety.view'))  items.push({ label: 'Safety',  icon: 'shield',     route: '/safety' });
-    if (can('reports.view')) items.push({ label: 'Reports', icon: 'chart-line', route: '/reports' });
+    // --- Platform (global, not city-scoped) ---
+    if (can('settings.manage')) platform.push({ label: 'Operator Settings',  icon: 'cog',    route: '/settings/operator' });
+    if (can('managers.manage')) platform.push({ label: 'Managers',           icon: 'users',  route: '/managers' });
+    if (can('roles.manage'))    platform.push({ label: 'Roles & Permissions', icon: 'shield', route: '/roles-permissions' });
 
-    return [{ items }];
+    return [
+      { label: 'City Setup', items: citySetup },
+      { label: 'Operations', items: operations },
+      { label: 'Insights',   items: insights },
+      { label: 'Platform',   items: platform },
+    ].filter((s) => s.items.length > 0);
   }
 
   /** Topbar user card — name + initials from auth profile. */
