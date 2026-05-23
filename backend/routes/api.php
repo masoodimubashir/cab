@@ -381,6 +381,7 @@ Route::get('/trip-share/{token}', [TripTrackingController::class, 'showShare']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/pay/upi', [PaymentsController::class, 'payUpi'])->middleware('idempotent');
+    Route::post('/trips/{trip}/pay/upi/verify', [PaymentsController::class, 'verifyUpi'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/qr', [PaymentsController::class, 'payQr'])->middleware('idempotent');
     Route::get('/trips/{trip}/invoice', [InvoicesController::class, 'show']);
