@@ -276,12 +276,30 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        overflow: hidden;
         transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         box-shadow: 0 8px 20px rgba(13, 27, 42, 0.12);
 
         ion-icon {
           font-size: 26px;
           color: #ffffff;
+        }
+
+        /* Banner from city_ride_products.image_url — fills the circle. */
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        /* No banner uploaded yet — show an empty image-box placeholder. */
+        &.is-empty {
+          background: #F3F4F6;
+          border: 1px dashed #D1D5DB;
+          box-shadow: none;
+
+          ion-icon { color: #9CA3AF; }
         }
       }
 
@@ -311,6 +329,20 @@
           background: var(--ion-color-primary, #12B35B);
           box-shadow: 0 8px 22px rgba(18, 179, 91, 0.35);
           transform: scale(1.05);
+
+          /* Selected chip without a banner: tint the empty-box variant in
+             the primary color so it still reads as the active choice. */
+          &.is-empty {
+            background: var(--ion-color-primary, #12B35B);
+            border-color: transparent;
+            ion-icon { color: #ffffff; }
+          }
+
+          /* Selected chip with a banner: add a primary-tinted ring instead of
+             tinting the image. */
+          &.has-banner {
+            box-shadow: 0 0 0 3px var(--ion-color-primary, #12B35B), 0 8px 22px rgba(18, 179, 91, 0.35);
+          }
         }
 
         .chip-label {

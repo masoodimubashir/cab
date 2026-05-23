@@ -48,22 +48,20 @@ class DispatchHopJob implements ShouldQueue
             return;
         }
 
-        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->product_kind ?? 'local');
+        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
         if (!$settings || !$settings->automatic_dispatcher_type) {
             return; // operator must dispatch manually for this product/city
         }
 
-        // Per-vehicle dispatcher overrides (city × ride_type × product_kind).
-        // We resolve via the trip's vehicle_type_id when set, otherwise fall
-        // back to a tuple lookup so legacy trips still benefit from any
-        // matching catalogue row.
-        $vehicleType = $trip->vehicle_type_id
-            ? CityVehicleType::query()->find($trip->vehicle_type_id)
+        // Per-vehicle dispatcher overrides — the trip is bound to the exact
+        // city_vehicle_types row now. Fall back to the (city, ride_type) tuple
+        // for legacy trips that pre-date the city_vehicle_type_id column.
+        $vehicleType = $trip->city_vehicle_type_id
+            ? CityVehicleType::query()->find($trip->city_vehicle_type_id)
             : ($trip->city_id && $trip->ride_type_id
                 ? CityVehicleType::query()
                     ->where('city_id', $trip->city_id)
                     ->where('ride_type_id', $trip->ride_type_id)
-                    ->where('product_kind', $trip->product_kind ?? 'local')
                     ->first()
                 : null);
 

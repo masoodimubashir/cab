@@ -53,9 +53,10 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        // Pricing rules are now keyed by (city_id, vehicle_type_id, product_kind).
-        // Each rule has thresholded distance + time slabs so the fare estimator
-        // returns 10×10 + 3×7 = ₹121 for a 13 km Sedan ride, etc.
+        // Pricing rules are now keyed by city_vehicle_type_id (one rate card
+        // per vehicle). The seeder skips here in dev since vehicles are added
+        // through the admin UI; PricingRule rows are created when the operator
+        // saves the Base Pricing tab for each vehicle.
         $pricing = [
             'Sedan' => [
                 'base_fare' => 50, 'per_km' => 10, 'per_min' => 1.5,
@@ -99,26 +100,8 @@ class DatabaseSeeder extends Seeder
             ],
         ];
 
-        // Apply the same rate card to every existing city so the customer app
-        // never hits a "pricing rule not found" 404 just because the active
-        // city was set up by hand without rules.
-        $allCities = City::query()->get();
-        foreach ($allCities as $c) {
-            foreach ($pricing as $vehicleName => $rule) {
-                $vehicleType = VehicleType::query()->where('name', $vehicleName)->first();
-                if (!$vehicleType) {
-                    continue;
-                }
-                PricingRule::updateOrCreate(
-                    [
-                        'city_id' => $c->id,
-                        'vehicle_type_id' => $vehicleType->id,
-                        'product_kind' => 'local',
-                    ],
-                    $rule + ['product_kind' => 'local'],
-                );
-            }
-        }
+        // Pricing seeding is intentionally skipped now — see comment above.
+        unset($pricing);
 
         // Create a simple dev user for quick manual API testing (optional).
         // $testUser = User::query()->updateOrCreate(

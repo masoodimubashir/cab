@@ -11,7 +11,6 @@ use Illuminate\Validation\Rule;
 
 class AdminVehicleTypesController
 {
-    private const KINDS = ['local', 'rental', 'outstation'];
     private const TOLL_MODES = ['no', 'yes', 'yes_locked'];
 
     /**
@@ -21,7 +20,7 @@ class AdminVehicleTypesController
     public function index(Request $request, City $city)
     {
         $rows = CityVehicleType::query()
-            ->with(['rideType:id,name', 'vehicleType:id,name'])
+            ->with(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name'])
             ->where('city_id', $city->id)
             ->orderBy('display_order')
             ->orderBy('id')
@@ -40,27 +39,27 @@ class AdminVehicleTypesController
                 ->orderBy('sort_order')
                 ->get(['id', 'name'])
                 ->toArray(),
+            'available_vehicle_sets' => \App\Models\VehicleSet::query()
+                ->where('city_id', $city->id)
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->toArray(),
         ]);
     }
 
     public function show(City $city, CityVehicleType $vehicleType)
     {
         $this->guard($city, $vehicleType);
-        $vehicleType->load(['rideType:id,name', 'vehicleType:id,name']);
+        $vehicleType->load(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name']);
 
         return response()->json(['vehicle_type' => $this->shape($vehicleType)]);
     }
 
     /**
-     * Create a vehicle in this city. The operator picks which product kinds
-     * to enable (Local / Rental / Outstation, at least one required) and we
-     * fan out one row per requested kind — all is_active=true — sharing the
-     * same ride_type_id, vehicle_type_id and display_name.
-     *
-     * Idempotent for the (city, ride_type, vehicle, kind) tuple: re-submitting
-     * the same vehicle with a kind that already exists leaves that row alone.
-     * That makes it cheap to "add a missing kind later" by re-running this
-     * endpoint with just the new kind in the kinds[] array.
+     * Create a vehicle in this city — one row per Vehicle Name + ride type.
+     * The (city, ride_type, display_name) tuple is unique at the DB level, so
+     * re-posting the same vehicle returns a conflict.
      */
     public function store(Request $request, City $city)
     {
@@ -75,56 +74,27 @@ class AdminVehicleTypesController
             'fare_mandatory' => ['required', 'boolean'],
             'toll_mode' => ['required', Rule::in(self::TOLL_MODES)],
             'commission_percent' => ['required', 'numeric', 'min:0', 'max:100'],
-
-            // At least one product kind must be enabled at creation.
-            'kinds' => ['required', 'array', 'min:1'],
-            'kinds.*' => [Rule::in(self::KINDS)],
         ]);
 
-        $kindsRequested = array_values(array_unique($data['kinds']));
-        unset($data['kinds']);
-
-        // A vehicle is identified by its Vehicle Name within the (city, ride
-        // type, vehicle type) — many vehicles can share one ride type. The
-        // idempotency check is per (vehicle, kind): re-adding a kind that
-        // already exists for THIS vehicle is a no-op; a different Vehicle Name
-        // is an independent vehicle.
-        $matchVehicle = function ($query) use ($city, $data) {
-            $query->where('city_id', $city->id)
-                ->where('ride_type_id', $data['ride_type_id'])
-                ->where('vehicle_type_id', $data['vehicle_type_id'])
-                ->where('display_name', $data['display_name']);
-        };
-
         $existing = CityVehicleType::query()
-            ->where($matchVehicle)
-            ->pluck('product_kind')
-            ->all();
-
-        $created = [];
-        foreach ($kindsRequested as $kind) {
-            if (in_array($kind, $existing, true)) {
-                continue;
-            }
-            $created[] = CityVehicleType::query()->create(array_merge(
-                ['city_id' => $city->id, 'product_kind' => $kind, 'is_active' => true],
-                $data,
-            ));
+            ->where('city_id', $city->id)
+            ->where('ride_type_id', $data['ride_type_id'])
+            ->where('display_name', $data['display_name'])
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'message' => 'A vehicle with this name already exists for this ride type.',
+            ], 409);
         }
 
-        $allRows = CityVehicleType::query()
-            ->with('rideType:id,name')
-            ->where($matchVehicle)
-            ->orderBy('product_kind')
-            ->get()
-            ->map(fn (CityVehicleType $v) => $this->shape($v));
+        $row = CityVehicleType::query()->create(array_merge(
+            ['city_id' => $city->id, 'is_active' => true],
+            $data,
+        ));
 
         return response()->json([
-            'data' => $allRows,
-            'created_count' => count($created),
-            'message' => count($created) === 0
-                ? 'Vehicle already exists for all three kinds.'
-                : 'Vehicle created. Enable the kinds you want from the details page.',
+            'vehicle_type' => $this->shape($row->fresh()->load(['rideType:id,name', 'vehicleType:id,name'])),
+            'message' => 'Vehicle created.',
         ], 201);
     }
 
@@ -136,16 +106,10 @@ class AdminVehicleTypesController
     {
         $this->guard($city, $vehicleType);
 
-        // The Vehicle Name + class identify the vehicle and are shared by all
-        // its product-kind rows — captured here so a rename can be propagated
-        // to the siblings after the save.
-        $origRideTypeId = $vehicleType->ride_type_id;
-        $origDisplayName = $vehicleType->display_name;
-
         $data = $request->validate([
             'ride_type_id' => ['sometimes', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
-            'product_kind' => ['sometimes', Rule::in(self::KINDS)],
+            'vehicle_set_id' => ['nullable', 'integer', 'exists:vehicle_sets,id'],
 
             'display_name' => ['sometimes', 'string', 'max:120'],
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
@@ -202,22 +166,8 @@ class AdminVehicleTypesController
         }
         $vehicleType->save();
 
-        // Keep the vehicle's other product-kind rows in sync on identity
-        // changes, so a rename doesn't split one vehicle into two cards.
-        if ($vehicleType->display_name !== $origDisplayName || $request->has('vehicle_type_id')) {
-            CityVehicleType::query()
-                ->where('city_id', $city->id)
-                ->where('ride_type_id', $origRideTypeId)
-                ->where('display_name', $origDisplayName)
-                ->where('id', '!=', $vehicleType->id)
-                ->update([
-                    'display_name' => $vehicleType->display_name,
-                    'vehicle_type_id' => $vehicleType->vehicle_type_id,
-                ]);
-        }
-
         return response()->json([
-            'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name', 'vehicleType:id,name'])),
+            'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name'])),
             'message' => 'Vehicle type updated.',
         ]);
     }
@@ -252,7 +202,8 @@ class AdminVehicleTypesController
             'ride_type_name' => $v->rideType?->name,
             'vehicle_type_id' => $v->vehicle_type_id,
             'vehicle_type_name' => $v->vehicleType?->name,
-            'product_kind' => $v->product_kind,
+            'vehicle_set_id' => $v->vehicle_set_id,
+            'vehicle_set_name' => $v->vehicleSet?->name,
             'display_name' => $v->display_name,
             'display_order' => (int) $v->display_order,
             'android_image_path' => $v->android_image_path,

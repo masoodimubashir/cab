@@ -42,6 +42,7 @@ use App\Http\Controllers\RatingsController;
 use App\Http\Controllers\SafetyController;
 use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
+use App\Http\Controllers\Admin\AdminVehicleSetsController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminOutstationPackagesController;
@@ -257,6 +258,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'store']);
         Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'update']);
         Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'destroy']);
+
+        // Vehicle Sets — per-city bundles of related vehicles.
+        Route::get('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'index']);
+        Route::post('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'store']);
+        Route::patch('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'update']);
+        Route::delete('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'destroy']);
     });
     Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
     Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);

@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { Geolocation } from '@capacitor/geolocation';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { GeolocationService } from '../../core/geolocation.service';
 
 /**
  * Welcome screen shown on first launch. Explains why the app needs location
@@ -20,7 +20,7 @@ export class IntroPage implements OnInit {
   loading = false;
   error: string | null = null;
 
-  constructor(private router: Router) {}
+  constructor(private router: Router, private geo: GeolocationService) {}
 
   ngOnInit(): void {
     if (localStorage.getItem('dreamcabs_permissions_intro_done') === '1') {
@@ -32,13 +32,7 @@ export class IntroPage implements OnInit {
     this.error = null;
     this.loading = true;
     try {
-      // Request the two permissions we actually need on the web/native runtimes.
-      // Location is the critical one — the booking flow can't work without it.
-      try {
-        await Geolocation.requestPermissions();
-      } catch {
-        /* ignore — user can still proceed; we re-prompt later when booking */
-      }
+      await this.geo.requestPermissions();
       try {
         await FirebaseMessaging.requestPermissions();
       } catch {

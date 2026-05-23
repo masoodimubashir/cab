@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { Geolocation } from '@capacitor/geolocation';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { GeolocationService } from '../../core/geolocation.service';
 
 /**
  * Driver-app welcome screen — mirrors customer-app/intro.
@@ -17,7 +17,7 @@ export class IntroPage implements OnInit {
   loading = false;
   error: string | null = null;
 
-  constructor(private router: Router) {}
+  constructor(private router: Router, private geo: GeolocationService) {}
 
   ngOnInit(): void {
     if (localStorage.getItem('dreamcabs_permissions_intro_done') === '1') {
@@ -29,7 +29,7 @@ export class IntroPage implements OnInit {
     this.error = null;
     this.loading = true;
     try {
-      try { await Geolocation.requestPermissions(); } catch { /* ignore */ }
+      await this.geo.requestPermissions();
       try { await FirebaseMessaging.requestPermissions(); } catch { /* ignore */ }
       localStorage.setItem('dreamcabs_permissions_intro_done', '1');
       await this.router.navigateByUrl('/auth/login', { replaceUrl: true });

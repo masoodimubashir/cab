@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\City;
+use App\Models\CityRideProduct;
 use App\Models\CityVehicleType;
 use App\Models\OutstationPackage;
 use App\Models\RideType;
@@ -37,6 +38,33 @@ class PricingController extends Controller
         return response()->json(['data' => $rideTypes]);
     }
 
+    /**
+     * Public list of ride products (Local / Rental / Out Station …) for a
+     * city. Driven by the city_ride_products table — the customer mobile
+     * renders the idle-screen chips from this, instead of a hardcoded enum.
+     * Disabled products are filtered out.
+     */
+    public function products(City $city)
+    {
+        $rows = CityRideProduct::query()
+            ->where('city_id', $city->id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get(['id', 'kind', 'name', 'description', 'info', 'image_path', 'sort_order'])
+            ->map(fn (CityRideProduct $p) => [
+                'id' => $p->id,
+                'kind' => $p->kind,
+                'name' => $p->name,
+                'description' => $p->description,
+                'info' => $p->info,
+                'image_url' => $p->image_url,
+                'sort_order' => (int) $p->sort_order,
+            ]);
+
+        return response()->json(['data' => $rows]);
+    }
+
     public function vehicleTypes(Request $request)
     {
         $rows = VehicleType::query()
@@ -49,28 +77,18 @@ class PricingController extends Controller
     }
 
     /**
-     * Outstation fare packages for a (city, ride type) — the customer app
-     * shows these so the rider can pick One Way / Round Trip before booking.
+     * Outstation fare packages for a specific vehicle — the customer app shows
+     * these so the rider can pick One Way / Round Trip / per-destination before
+     * booking.
      */
     public function outstationPackages(Request $request)
     {
         $data = $request->validate([
-            'city_id' => ['required', 'integer', 'exists:cities,id'],
-            'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
+            'city_vehicle_type_id' => ['required', 'integer', 'exists:city_vehicle_types,id'],
         ]);
 
-        $vehicle = CityVehicleType::query()
-            ->where('city_id', $data['city_id'])
-            ->where('ride_type_id', $data['ride_type_id'])
-            ->where('product_kind', 'outstation')
-            ->first();
-
-        if (!$vehicle) {
-            return response()->json(['data' => []]);
-        }
-
         $packages = OutstationPackage::query()
-            ->where('city_vehicle_type_id', $vehicle->id)
+            ->where('city_vehicle_type_id', $data['city_vehicle_type_id'])
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
@@ -85,46 +103,39 @@ class PricingController extends Controller
         DynamicPricingService $dynamicPricingService,
     ) {
         $data = $request->validate([
-            'city_id' => ['required', 'integer', 'exists:cities,id'],
-            // Either vehicle_type_id (preferred, new model) or ride_type_id
-            // (legacy) is acceptable. At least one must be provided.
-            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id', 'required_without:ride_type_id'],
-            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id', 'required_without:vehicle_type_id'],
-            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+            // Primary axis: the exact per-city vehicle the customer picked.
+            // Either send it directly, or send the legacy (vehicle_type_id |
+            // ride_type_id) combo and the server resolves to a row.
+            'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
+            'city_id' => ['required_without:city_vehicle_type_id', 'integer', 'exists:cities,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
             'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
             'drop_lat' => ['required', 'numeric', 'between:-90,90'],
             'drop_lng' => ['required', 'numeric', 'between:-180,180'],
-            // Optional: real route metrics from Google DirectionsService.
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
         ]);
 
-        $pricingRule = PricingRule::resolveFor(
-            cityId: (int) $data['city_id'],
-            vehicleTypeId: isset($data['vehicle_type_id']) ? (int) $data['vehicle_type_id'] : null,
-            productKind: $data['product_kind'] ?? 'local',
-            rideTypeId: isset($data['ride_type_id']) ? (int) $data['ride_type_id'] : null,
-        );
+        $cityVehicleTypeId = isset($data['city_vehicle_type_id'])
+            ? (int) $data['city_vehicle_type_id']
+            : CityVehicleType::resolveId(
+                cityId: (int) $data['city_id'],
+                rideTypeId: isset($data['ride_type_id']) ? (int) $data['ride_type_id'] : null,
+                vehicleTypeId: isset($data['vehicle_type_id']) ? (int) $data['vehicle_type_id'] : null,
+            );
 
-        if (!$pricingRule) {
-            return response()->json(['message' => 'Pricing rule not found for given city/vehicle type/product kind.'], 404);
+        if (!$cityVehicleTypeId) {
+            return response()->json(['message' => 'No matching vehicle for this booking.'], 404);
         }
 
-        // Surge is keyed by the per-city vehicle (city_vehicle_types). Resolve
-        // it from the booking axes so a rule scoped to e.g. "SWIFT/SEDAN O"
-        // only surges that exact vehicle.
-        $cityVehicleTypeId = CityVehicleType::resolveId(
-            cityId: (int) $data['city_id'],
-            productKind: $data['product_kind'] ?? 'local',
-            rideTypeId: isset($data['ride_type_id'])
-                ? (int) $data['ride_type_id']
-                : ($pricingRule->ride_type_id ? (int) $pricingRule->ride_type_id : null),
-            vehicleTypeId: isset($data['vehicle_type_id'])
-                ? (int) $data['vehicle_type_id']
-                : ($pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null),
-        );
+        $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
+        if (!$pricingRule) {
+            return response()->json(['message' => 'Pricing rule not set for this vehicle.'], 404);
+        }
+
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],

@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'ride_type_id',
     'vehicle_type_id',
     'requested_vehicle_type_id',
-    'product_kind',
+    'city_vehicle_type_id',
     'outstation_package_id',
     'pricing_rule_id',
     'status',
