@@ -16,8 +16,8 @@ class DynamicPricingService
      *   - date_from / date_to (if set) bracket the moment
      *   - day-of-week bitmask matches
      *   - start_time / end_time (if set) bracket the moment
-     *   - ride_type_id matches OR is null (rule applies to all ride types)
-     *   - vehicle_type matches OR is null
+     *   - the booked per-city vehicle is in the rule's city_vehicle_type_ids
+     *     (an empty list means the rule applies to every vehicle)
      *   - pickup point lies inside the polygon
      *
      * Highest customer_priority wins (ties broken by id desc).
@@ -25,8 +25,7 @@ class DynamicPricingService
     public function findApplicable(
         float $pickupLat,
         float $pickupLng,
-        ?int $rideTypeId,
-        ?string $vehicleType,
+        ?int $cityVehicleTypeId,
         ?CarbonInterface $when = null,
     ): ?DynamicPricingRule {
         $when = $when ?: Carbon::now();
@@ -36,18 +35,6 @@ class DynamicPricingService
 
         $candidates = DynamicPricingRule::query()
             ->where('is_active', true)
-            ->where(function ($q) use ($rideTypeId) {
-                $q->whereNull('ride_type_id');
-                if ($rideTypeId !== null) {
-                    $q->orWhere('ride_type_id', $rideTypeId);
-                }
-            })
-            ->where(function ($q) use ($vehicleType) {
-                $q->whereNull('vehicle_type');
-                if ($vehicleType !== null && $vehicleType !== '') {
-                    $q->orWhere('vehicle_type', $vehicleType);
-                }
-            })
             ->where(function ($q) use ($date) {
                 $q->whereNull('date_from')->orWhereDate('date_from', '<=', $date);
             })
@@ -60,6 +47,9 @@ class DynamicPricingService
             ->get();
 
         foreach ($candidates as $rule) {
+            if (!$this->vehicleMatches($rule, $cityVehicleTypeId)) {
+                continue;
+            }
             if (!$this->timeWindowMatches($rule, $time)) {
                 continue;
             }
@@ -70,6 +60,20 @@ class DynamicPricingService
         }
 
         return null;
+    }
+
+    /**
+     * A rule with no city_vehicle_type_ids applies to every vehicle;
+     * otherwise the booked per-city vehicle must be in the list.
+     */
+    private function vehicleMatches(DynamicPricingRule $rule, ?int $cityVehicleTypeId): bool
+    {
+        $ids = $rule->city_vehicle_type_ids;
+        if (!is_array($ids) || count($ids) === 0) {
+            return true;
+        }
+        return $cityVehicleTypeId !== null
+            && in_array($cityVehicleTypeId, array_map('intval', $ids), true);
     }
 
     /**

@@ -26,10 +26,8 @@ class DatabaseSeeder extends Seeder
         );
 
         $rideTypes = [
-            ['name' => 'Airport', 'description' => 'Airport transfer', 'sort_order' => 10],
-            ['name' => 'Carpool', 'description' => 'Carpooling service', 'sort_order' => 20],
-            ['name' => 'Car Rental', 'description' => 'Car rental service', 'sort_order' => 30],
-            ['name' => 'Delivery', 'description' => 'Package delivery', 'sort_order' => 40],
+            ['name' => 'Shuttle', 'description' => 'Car rental service', 'sort_order' => 30],
+            ['name' => 'Outstation', 'description' => 'Package delivery', 'sort_order' => 40],
             ['name' => 'Normal', 'description' => 'Regular ride', 'sort_order' => 50],
         ];
 

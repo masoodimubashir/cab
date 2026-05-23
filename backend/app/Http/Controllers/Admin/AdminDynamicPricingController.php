@@ -2,21 +2,19 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Models\CityVehicleType;
 use App\Models\DynamicPricingRule;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class AdminDynamicPricingController
 {
     public function index(Request $request)
     {
-        $query = DynamicPricingRule::query()
-            ->with(['city', 'rideType']);
+        $query = DynamicPricingRule::query()->with(['city']);
 
-        if ($vehicleType = $request->query('vehicle_type')) {
-            $query->where('vehicle_type', $vehicleType);
-        }
-        if ($rideTypeId = $request->query('ride_type_id')) {
-            $query->where('ride_type_id', (int) $rideTypeId);
+        if ($cvtId = $request->query('city_vehicle_type_id')) {
+            $query->whereJsonContains('city_vehicle_type_ids', (int) $cvtId);
         }
         if ($cityId = $request->query('city_id')) {
             $query->where('city_id', (int) $cityId);
@@ -30,17 +28,18 @@ class AdminDynamicPricingController
     public function show(DynamicPricingRule $dynamicPricingRule)
     {
         return response()->json([
-            'rule' => $dynamicPricingRule->load(['city', 'rideType']),
+            'rule' => $dynamicPricingRule->load(['city']),
         ]);
     }
 
     public function store(Request $request)
     {
         $data = $this->validatePayload($request);
+        $this->assertVehiclesInCity($data, null);
         $rule = DynamicPricingRule::query()->create($data);
 
         return response()->json([
-            'rule' => $rule->fresh(['city', 'rideType']),
+            'rule' => $rule->fresh(['city']),
             'message' => 'Dynamic pricing rule created.',
         ], 201);
     }
@@ -48,11 +47,12 @@ class AdminDynamicPricingController
     public function update(Request $request, DynamicPricingRule $dynamicPricingRule)
     {
         $data = $this->validatePayload($request, partial: true);
+        $this->assertVehiclesInCity($data, $dynamicPricingRule->city_id);
         $dynamicPricingRule->fill($data);
         $dynamicPricingRule->save();
 
         return response()->json([
-            'rule' => $dynamicPricingRule->fresh(['city', 'rideType']),
+            'rule' => $dynamicPricingRule->fresh(['city']),
             'message' => 'Dynamic pricing rule updated.',
         ]);
     }
@@ -64,6 +64,32 @@ class AdminDynamicPricingController
         return response()->json(['message' => 'Dynamic pricing rule deleted.']);
     }
 
+    /**
+     * Every selected vehicle must belong to the rule's own city — a Baramulla
+     * surge rule cannot reference a Srinagar vehicle. On a partial update the
+     * city falls back to the rule's existing city_id.
+     */
+    private function assertVehiclesInCity(array $data, ?int $fallbackCityId): void
+    {
+        $ids = $data['city_vehicle_type_ids'] ?? [];
+        if (!is_array($ids) || count($ids) === 0) {
+            return;
+        }
+        $cityId = $data['city_id'] ?? $fallbackCityId;
+        if ($cityId === null) {
+            return;
+        }
+        $foreign = CityVehicleType::query()
+            ->whereIn('id', $ids)
+            ->where('city_id', '!=', $cityId)
+            ->exists();
+        if ($foreign) {
+            throw ValidationException::withMessages([
+                'city_vehicle_type_ids' => "All selected vehicles must belong to the rule's city.",
+            ]);
+        }
+    }
+
     private function validatePayload(Request $request, bool $partial = false): array
     {
         $required = $partial ? 'sometimes' : 'required';
@@ -71,8 +97,8 @@ class AdminDynamicPricingController
         return $request->validate([
             'name' => [$required, 'string', 'max:200'],
             'city_id' => ['nullable', 'integer', 'exists:cities,id'],
-            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
-            'vehicle_type' => ['nullable', 'string', 'max:80'],
+            'city_vehicle_type_ids' => ['nullable', 'array'],
+            'city_vehicle_type_ids.*' => ['integer', 'exists:city_vehicle_types,id'],
 
             'fare_type' => ['nullable', 'in:flat,percentage'],
 

@@ -19,6 +19,29 @@ class AdminPricingController
         return response()->json(['data' => $rules]);
     }
 
+    /**
+     * Resolve the single rate card for a (city, vehicle type, product kind)
+     * — used by the Base Pricing editor on a vehicle's detail page.
+     */
+    public function resolve(Request $request)
+    {
+        $data = $request->validate([
+            'city_id' => ['required', 'integer', 'exists:cities,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
+            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+        ]);
+
+        $rule = PricingRule::resolveFor(
+            cityId: (int) $data['city_id'],
+            vehicleTypeId: isset($data['vehicle_type_id']) ? (int) $data['vehicle_type_id'] : null,
+            productKind: $data['product_kind'] ?? 'local',
+            rideTypeId: isset($data['ride_type_id']) ? (int) $data['ride_type_id'] : null,
+        );
+
+        return response()->json(['rule' => $rule]);
+    }
+
     public function update(Request $request, PricingRule $pricingRule)
     {
         $data = $request->validate([
@@ -53,6 +76,13 @@ class AdminPricingController
             'cancel_subsidy_threshold_minutes' => ['nullable', 'numeric', 'min:0'],
             'cancel_subsidy_threshold_distance_km' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        // per_min and commission_percent columns are NOT NULL — keep 0 when blank.
+        foreach (['per_min', 'commission_percent'] as $col) {
+            if (array_key_exists($col, $data) && $data[$col] === null) {
+                $data[$col] = 0;
+            }
+        }
 
         $pricingRule->fill($data);
         $pricingRule->save();
@@ -91,10 +121,10 @@ class AdminPricingController
             'product_kind' => ['nullable', 'in:local,rental,outstation'],
             'base_fare' => ['required', 'numeric', 'min:0'],
             'per_km' => ['required', 'numeric', 'min:0'],
-            'per_min' => ['required', 'numeric', 'min:0'],
+            'per_min' => ['nullable', 'numeric', 'min:0'],
             'surge_multiplier' => ['required', 'numeric', 'min:0'],
-            'commission_percent' => ['required', 'numeric', 'min:0', 'max:100'],
-            'min_fare' => ['nullable', 'numeric', 'min:0'],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'min_fare' => ['required', 'numeric', 'min:0'],
             'threshold_distance_1_km' => ['nullable', 'numeric', 'min:0'],
             'fare_per_km_after_threshold_1' => ['nullable', 'numeric', 'min:0'],
             'threshold_distance_2_km' => ['nullable', 'numeric', 'min:0'],
@@ -120,6 +150,14 @@ class AdminPricingController
             'cancel_subsidy_threshold_minutes' => ['nullable', 'numeric', 'min:0'],
             'cancel_subsidy_threshold_distance_km' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        // per_min and commission_percent are optional on the form, but their
+        // columns are NOT NULL — fall back to 0 when the admin leaves them blank.
+        foreach (['per_min', 'commission_percent'] as $col) {
+            if (array_key_exists($col, $data) && $data[$col] === null) {
+                $data[$col] = 0;
+            }
+        }
 
         // Upsert: prefer the new (city, vehicle_type, product_kind) unique;
         // fall back to (city, ride_type) for callers that still POST only the

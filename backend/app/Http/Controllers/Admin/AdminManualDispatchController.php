@@ -68,12 +68,12 @@ class AdminManualDispatchController
             return response()->json(['message' => 'No pricing rule configured for this city.'], 404);
         }
         $rideTypeId = (int) $pricingRule->ride_type_id;
+        $vehicleTypeId = $pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null;
 
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
-            $rideTypeId,
-            null,
+            $vehicleTypeId,
         );
 
         $dynamicFactors = $dynamicRule ? [
@@ -179,12 +179,12 @@ class AdminManualDispatchController
             return response()->json(['message' => 'No pricing rule configured for this city.'], 404);
         }
         $rideTypeId = (int) $pricingRule->ride_type_id;
+        $vehicleTypeId = $pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null;
 
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
-            $rideTypeId,
-            null,
+            $vehicleTypeId,
         );
 
         $dynamicFactors = $dynamicRule ? [
