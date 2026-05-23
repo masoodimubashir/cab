@@ -79,7 +79,8 @@ type DriverOffer = {
  *   bids    → driver countered; customer accepts/rejects the counter
  *   map-select → focused mode for map-based location selection
  */
-type RideState = 'idle' | 'route' | 'vehicle' | 'payment' | 'preview' | 'waiting' | 'bids' | 'map-select';
+// Vehicle step removed — the booking flow is Route → Payment → Match.
+type RideState = 'idle' | 'route' | 'payment' | 'preview' | 'waiting' | 'bids' | 'map-select';
 
 @Component({
   selector: 'app-customer-book',
@@ -108,11 +109,20 @@ export class CustomerBookPage implements OnDestroy {
   cities: City[] = [];
   selectedCity: City | null = null;
 
-  productKinds: { kind: 'local' | 'outstation' | 'rental'; label: string; icon: string }[] = [
-    { kind: 'local',      label: 'Local',      icon: 'car-outline' },
-    { kind: 'outstation', label: 'Outstation', icon: 'airplane-outline' },
-    { kind: 'rental',     label: 'Rental',     icon: 'time-outline' },
-  ];
+  /**
+   * Ride products are loaded from the `city_ride_products` table — what the
+   * operator enabled for the active city (Local / Rental / Out Station …).
+   * No more hardcoded list; only the icon mapping stays in the client since
+   * the DB stores banners, not Ionicon names.
+   */
+  productKinds: {
+    kind: 'local' | 'outstation' | 'rental';
+    label: string;
+    description: string | null;
+    info: string | null;
+    image_url: string | null;
+    icon: string;
+  }[] = [];
   selectedProductKind: 'local' | 'outstation' | 'rental' = 'local';
   // Outstation packages (One Way / Round Trip …) for the picked ride type.
   outstationPackages: { id: number; name: string }[] = [];
@@ -131,7 +141,7 @@ export class CustomerBookPage implements OnDestroy {
   suggestions: PlaceSuggestion[] = [];
 
   estimate: EstimateResponse | null = null;
-  paymentMethod: PaymentMethod = 'cash';
+  paymentMethod: PaymentMethod = 'upi';
   // Review Ride modal — opened from the preview sheet so the customer can see
   // the fare breakdown before picking a driver.
   showReviewModal = false;
@@ -254,17 +264,15 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   openReviewModal(): void {
+    // The Vehicle step has been retired — only payment needs validation here.
     this.vehicleError = null;
     this.paymentError = null;
 
-    if (this.vehicleTypes.length && this.selectedVehicleTypeId == null) {
-      this.vehicleError = 'Choose a vehicle type';
-    }
     if (!this.paymentMethod) {
       this.paymentError = 'Select a payment method';
     }
 
-    if (this.vehicleError || this.paymentError) {
+    if (this.paymentError) {
       return;
     }
 
@@ -285,6 +293,9 @@ export class CustomerBookPage implements OnDestroy {
           this.selectedCity = this.cities[0];
         }
         this.resolveCityForPickup();
+        if (this.selectedCity) {
+          this.loadRideProducts(this.selectedCity.id);
+        }
       },
       error: () => (this.cities = []),
     });
@@ -297,9 +308,50 @@ export class CustomerBookPage implements OnDestroy {
     const containing = this.cities.find(
       (c) => c.boundary_polygon && this.pointInPolygon(this.pickup!.lat, this.pickup!.lng, c.boundary_polygon)
     );
-    if (containing) {
+    if (containing && containing.id !== this.selectedCity?.id) {
       this.selectedCity = containing;
+      this.loadRideProducts(containing.id);
     }
+  }
+
+  /**
+   * Fetch the city's enabled ride products — what powers the chips on the
+   * idle screen. The DB holds the labels, descriptions and banners; the
+   * client only contributes the Ionicon name (the DB stores banners, not
+   * icon names).
+   */
+  private loadRideProducts(cityId: number): void {
+    type ApiProduct = {
+      kind: 'local' | 'outstation' | 'rental';
+      name: string;
+      description: string | null;
+      info: string | null;
+      image_url: string | null;
+    };
+    this.api.get<{ data: ApiProduct[] }>(`/pricing/cities/${cityId}/products`).subscribe({
+      next: (res) => {
+        const rows = res?.data ?? [];
+        this.productKinds = rows.map((p) => ({
+          kind: p.kind,
+          label: p.name,
+          description: p.description,
+          info: p.info,
+          image_url: p.image_url,
+          icon: this.iconForKind(p.kind),
+        }));
+        // Snap to the first enabled product if the current selection isn't.
+        if (!this.productKinds.some((p) => p.kind === this.selectedProductKind) && this.productKinds.length) {
+          this.selectedProductKind = this.productKinds[0].kind;
+        }
+      },
+      error: () => (this.productKinds = []),
+    });
+  }
+
+  private iconForKind(kind: 'local' | 'outstation' | 'rental'): string {
+    if (kind === 'outstation') return 'airplane-outline';
+    if (kind === 'rental') return 'time-outline';
+    return 'car-outline';
   }
 
   private async initMap(): Promise<void> {
@@ -578,12 +630,18 @@ export class CustomerBookPage implements OnDestroy {
     this.pickupQuery = this.pickup.address;
     
     void this.showRouteOnMap();
-    if (this.state === 'vehicle' || this.state === 'payment' || this.state === 'preview') {
+    if (this.state === 'payment' || this.state === 'preview') {
       void this.onRouteReady();
     }
   }
 
-  goToVehicle(): void {
+  /**
+   * Continue from the Route step. The Vehicle step has been retired — any
+   * available driver (Sedan / SUV / Hatchback / Auto) can pick the trip up
+   * in the Match step, so we go straight to Payment after validating the
+   * pickup + drop addresses.
+   */
+  goToPayment(): void {
     this.pickupError = null;
     this.dropError = null;
 
@@ -599,20 +657,8 @@ export class CustomerBookPage implements OnDestroy {
     }
 
     this.suggestions = [];
-    this.state = 'vehicle';
-    void this.showRouteOnMap();
-    void this.fetchEstimate();
-  }
-
-  goToPayment(): void {
-    this.vehicleError = null;
-
-    if (this.vehicleTypes.length && this.selectedVehicleTypeId == null) {
-      this.vehicleError = 'Choose a vehicle type';
-      return;
-    }
-
     this.state = 'payment';
+    void this.showRouteOnMap();
     void this.fetchEstimate();
   }
 
@@ -889,19 +935,18 @@ export class CustomerBookPage implements OnDestroy {
 
   private async fetchEstimate(): Promise<void> {
     if (!this.pickup || !this.drop) return;
-    if (this.selectedVehicleTypeId == null && this.selectedRideTypeId == null) return;
     const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
     if (!cityId) return;
 
     try {
+      // The customer no longer picks a vehicle — the server resolves the
+      // city's default vehicle for the fare baseline. ride_type_id is only
+      // sent for outstation/rental so an outstation rate card is used.
       const res = await this.api
         .post<EstimateResponse>('/pricing/estimate', {
           city_id: cityId,
-          // New pricing axis — backend resolves rules by (city, vehicle, kind).
-          vehicle_type_id: this.selectedVehicleTypeId,
-          // Kept for the legacy fallback when no vehicle catalog is seeded.
-          ride_type_id: this.selectedRideTypeId,
-          product_kind: this.selectedProductKind,
+          ride_type_id:
+            this.selectedProductKind !== 'local' ? this.selectedRideTypeId : null,
           outstation_package_id:
             this.selectedProductKind === 'outstation' ? this.selectedPackageId : null,
           pickup_lat: this.pickup.lat,
@@ -968,9 +1013,11 @@ export class CustomerBookPage implements OnDestroy {
     const tripRes = await this.api
       .post<{ trip: { id: number } }>('/trips', {
         city_id: cityId,
-        vehicle_type_id: this.selectedVehicleTypeId,
-        ride_type_id: this.selectedRideTypeId,
-        product_kind: this.selectedProductKind,
+        // No vehicle is requested — the trip stays open to any-vehicle drivers
+        // in the Match step. ride_type_id only goes through for outstation/
+        // rental so the right rate card and ride family are used.
+        ride_type_id:
+          this.selectedProductKind !== 'local' ? this.selectedRideTypeId : null,
         outstation_package_id:
           this.selectedProductKind === 'outstation' ? this.selectedPackageId : null,
         pickup_address: this.pickup.address,
@@ -992,12 +1039,11 @@ export class CustomerBookPage implements OnDestroy {
   // ─────────────────────────────────────────────────────────────────
 
   async openPaymentSheet(): Promise<void> {
+    // Cash & QR are temporarily disabled — only Online (UPI) is offered.
     const alert = await this.alertCtrl.create({
       header: 'Payment method',
       inputs: ([
-        { type: 'radio', label: 'Cash', value: 'cash', checked: this.paymentMethod === 'cash' },
-        { type: 'radio', label: 'UPI', value: 'upi', checked: this.paymentMethod === 'upi' },
-        { type: 'radio', label: 'QR code', value: 'qr', checked: this.paymentMethod === 'qr' },
+        { type: 'radio', label: 'Online', value: 'upi', checked: true },
       ] as any[]),
       buttons: [
         { text: 'Cancel', role: 'cancel' },

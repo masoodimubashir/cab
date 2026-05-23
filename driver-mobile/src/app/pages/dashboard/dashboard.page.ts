@@ -1,8 +1,8 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
-import { Geolocation } from '@capacitor/geolocation';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.service';
+import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 
 declare const google: any;
@@ -40,6 +40,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     public auth: AuthService,
     private presence: DriverPresenceService,
     private mapsLoader: MapsLoaderService,
+    private geo: GeolocationService,
   ) {
     this.presence.onError((err) => {
       this.error = err.message;
@@ -162,11 +163,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     try {
       // 1. Permission. On native this opens the OS dialog; on web the prompt
       //    is shown by getCurrentPosition shortly after.
-      try {
-        await Geolocation.requestPermissions();
-      } catch {
-        /* ignored — browsers handle the prompt lazily */
-      }
+      await this.geo.requestPermissions();
 
       // 2. Backend "I'm online" flip.
       await new Promise<void>((resolve, reject) => {
@@ -224,24 +221,22 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
    */
   private async refreshMarkerFromCurrentPosition(): Promise<void> {
     if (!this.map) return;
-    let pos: { coords: { latitude: number; longitude: number } };
     try {
-      pos = await Geolocation.getCurrentPosition({
+      const fix = await this.geo.getCurrentPosition({
         enableHighAccuracy: true,
         maximumAge: 4000,
         timeout: 15000,
       });
+      this.applyFixToMap({
+        lat: fix.lat,
+        lng: fix.lng,
+        accuracy: fix.accuracy,
+        speedKmh: null,
+        bearing: null,
+      });
     } catch (e) {
       this.error = `Could not read GPS: ${(e as Error)?.message || 'permission denied'}`;
-      return;
     }
-    this.applyFixToMap({
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      accuracy: null,
-      speedKmh: null,
-      bearing: null,
-    });
   }
 
   /**

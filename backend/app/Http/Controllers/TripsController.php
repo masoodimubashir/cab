@@ -31,12 +31,13 @@ class TripsController extends Controller
         SchedulingPolicyService $schedulingPolicy,
     ) {
         $data = $request->validate([
-            'city_id' => ['required', 'integer', 'exists:cities,id'],
-            // Pricing axis: either vehicle_type_id (new, preferred) or
-            // ride_type_id (legacy). At least one is required.
-            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id', 'required_without:ride_type_id'],
-            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id', 'required_without:vehicle_type_id'],
-            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+            // Primary axis: the exact per-city vehicle the customer picked.
+            // Legacy combo (vehicle_type_id|ride_type_id) still accepted while
+            // the customer mobile is being switched over.
+            'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
+            'city_id' => ['required_without:city_vehicle_type_id', 'integer', 'exists:cities,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
 
             'pickup_address' => ['nullable', 'string', 'max:500'],
             'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
@@ -55,13 +56,28 @@ class TripsController extends Controller
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
         ]);
 
-        $kind = $data['product_kind'] ?? 'local';
         $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
+
+        // Resolve the city_vehicle_type up front — it carries city_id,
+        // ride_type_id and vehicle_type_id, so the downstream code stops
+        // needing them as separate booking inputs.
+        $cityVehicleTypeId = isset($data['city_vehicle_type_id'])
+            ? (int) $data['city_vehicle_type_id']
+            : CityVehicleType::resolveId(
+                cityId: (int) ($data['city_id'] ?? 0),
+                rideTypeId: isset($data['ride_type_id']) ? (int) $data['ride_type_id'] : null,
+                vehicleTypeId: isset($data['vehicle_type_id']) ? (int) $data['vehicle_type_id'] : null,
+            );
+        $cvt = $cityVehicleTypeId ? CityVehicleType::query()->find($cityVehicleTypeId) : null;
+        if (!$cvt) {
+            return response()->json(['message' => 'No matching vehicle for this booking.'], 404);
+        }
+        $cityId = (int) $cvt->city_id;
 
         $policyError = $schedulingPolicy->validateBooking(
             customerId: $request->user()->id,
-            cityId: (int) $data['city_id'],
-            kind: $kind,
+            cityId: $cityId,
+            kind: 'local',
             scheduledAt: $scheduledAt,
         );
         if ($policyError) {
@@ -71,7 +87,7 @@ class TripsController extends Controller
             ], 422);
         }
 
-        $city = City::query()->find((int) $data['city_id']);
+        $city = City::query()->find($cityId);
         if (!$city) {
             return response()->json(['message' => 'City not found.'], 404);
         }
@@ -90,30 +106,11 @@ class TripsController extends Controller
             }
         }
 
-        $pricingRule = PricingRule::resolveFor(
-            cityId: (int) $data['city_id'],
-            vehicleTypeId: isset($data['vehicle_type_id']) ? (int) $data['vehicle_type_id'] : null,
-            productKind: $kind,
-            rideTypeId: isset($data['ride_type_id']) ? (int) $data['ride_type_id'] : null,
-        );
-
+        $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
         if (!$pricingRule) {
-            return response()->json(['message' => 'Pricing rule not found.'], 404);
+            return response()->json(['message' => 'Pricing rule not set for this vehicle.'], 404);
         }
 
-        // Surge is keyed by the per-city vehicle (city_vehicle_types). Resolve
-        // it from the booking axes so a rule scoped to e.g. "SWIFT/SEDAN O"
-        // only surges that exact vehicle.
-        $cityVehicleTypeId = CityVehicleType::resolveId(
-            cityId: (int) $data['city_id'],
-            productKind: $kind,
-            rideTypeId: isset($data['ride_type_id'])
-                ? (int) $data['ride_type_id']
-                : ($pricingRule->ride_type_id ? (int) $pricingRule->ride_type_id : null),
-            vehicleTypeId: isset($data['vehicle_type_id'])
-                ? (int) $data['vehicle_type_id']
-                : ($pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null),
-        );
         $dynamicRule = $dynamicPricingService->findApplicable(
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
@@ -142,20 +139,27 @@ class TripsController extends Controller
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
         );
 
+        // "Any vehicle / ride now" mode — client sent only city info, no
+        // vehicle preference. Keep requested_vehicle_type_id null so drivers
+        // of any vehicle type match this trip in /nearby-drivers and
+        // /select-driver. The city_vehicle_type_id we resolved above is just
+        // the city's default vehicle (used to anchor the fare estimate).
+        $customerPickedVehicle = isset($data['city_vehicle_type_id'])
+            || isset($data['vehicle_type_id'])
+            || isset($data['ride_type_id']);
+
         $trip = Trip::query()->create([
             'customer_id' => $request->user()->id,
             'driver_id' => null,
-            'city_id' => (int) $data['city_id'],
-            // Persist both axes so legacy reads (ride_type) and new dispatch
-            // (vehicle_type) both work. Either may be null depending on what
-            // the client sent.
-            'ride_type_id' => isset($data['ride_type_id'])
-                ? (int) $data['ride_type_id']
-                : ($pricingRule->ride_type_id ? (int) $pricingRule->ride_type_id : null),
-            'requested_vehicle_type_id' => isset($data['vehicle_type_id'])
-                ? (int) $data['vehicle_type_id']
-                : ($pricingRule->vehicle_type_id ? (int) $pricingRule->vehicle_type_id : null),
-            'product_kind' => $kind,
+            'city_id' => $cityId,
+            'city_vehicle_type_id' => $cityVehicleTypeId,
+            // Denormalised legacy axes — kept so dispatcher matching and older
+            // queries (driver vehicle_type_id match, etc.) still resolve when
+            // the customer did pick a specific vehicle.
+            'ride_type_id' => (int) $cvt->ride_type_id,
+            'requested_vehicle_type_id' => $customerPickedVehicle && $cvt->vehicle_type_id
+                ? (int) $cvt->vehicle_type_id
+                : null,
             'outstation_package_id' => isset($data['outstation_package_id'])
                 ? (int) $data['outstation_package_id']
                 : null,
@@ -507,10 +511,26 @@ class TripsController extends Controller
             ->where('is_online', true)
             ->whereNotIn('user_id', $busyDriverIds)
             ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
-                // Match drivers whose registered vehicle_type matches what the
-                // customer asked for. Falls back to "any" when the trip has no
-                // requested_vehicle_type_id (legacy bookings).
+                // Customer asked for a specific global vehicle_type — drivers
+                // must match it. Skipped in "any vehicle / Ride Now" mode.
                 $q->where('vehicle_type_id', $trip->requested_vehicle_type_id);
+            })
+            // Hide drivers whose vehicle isn't *configured + priced* in this
+            // city. A driver shows up only if there's an active city_vehicle_
+            // types row for (this city × driver's vehicle_type_id) AND that
+            // row carries a pricing_rule. Vehicles without a rate card are
+            // considered "not set up yet" and excluded.
+            ->whereExists(function ($sub) use ($trip) {
+                $sub->select(DB::raw(1))
+                    ->from('city_vehicle_types')
+                    ->whereColumn('city_vehicle_types.vehicle_type_id', 'drivers.vehicle_type_id')
+                    ->where('city_vehicle_types.city_id', $trip->city_id)
+                    ->where('city_vehicle_types.is_active', true)
+                    ->whereExists(function ($sub2) {
+                        $sub2->select(DB::raw(1))
+                            ->from('pricing_rules')
+                            ->whereColumn('pricing_rules.city_vehicle_type_id', 'city_vehicle_types.id');
+                    });
             })
             ->with(['user:id,name,phone,avatar_path'])
             ->get([

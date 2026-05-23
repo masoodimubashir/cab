@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { DevLocationService } from './core/dev-location.service';
 
 @Component({
   selector: 'app-root',
@@ -7,5 +8,9 @@ import { Component } from '@angular/core';
   standalone: false,
 })
 export class AppComponent {
-  constructor() {}
+  showDevBadge = false;
+
+  constructor(private devLocation: DevLocationService) {
+    this.showDevBadge = this.devLocation.isEnabled();
+  }
 }

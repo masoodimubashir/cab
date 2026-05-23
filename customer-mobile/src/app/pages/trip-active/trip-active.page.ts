@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ActionSheetController, AlertController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
+import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { PlacesService } from '../../core/places.service';
 import {
   RealtimeService,
@@ -80,7 +81,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   private distanceMatrix: any | null = null;
 
   // Customer's own location stream (so the driver app can render us moving).
-  private geoWatchId: number | null = null;
+  private geoWatchId: string | null = null;
   private lastCustomerPostAt = 0;
   private readonly customerPostMinIntervalMs = 5_000;
   private selfMarker: any | null = null;
@@ -95,7 +96,8 @@ export class TripActivePage implements OnInit, OnDestroy {
     private actionSheetCtrl: ActionSheetController,
     private toastCtrl: ToastController,
     private places: PlacesService,
-    private realtime: RealtimeService
+    private realtime: RealtimeService,
+    private geo: GeolocationService,
   ) {}
 
   /**
@@ -413,29 +415,29 @@ export class TripActivePage implements OnInit, OnDestroy {
     else this.stopCustomerLocationStream();
   }
 
-  private startCustomerLocationStream(): void {
+  private async startCustomerLocationStream(): Promise<void> {
     if (this.geoWatchId !== null) return;
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
-
-    this.geoWatchId = navigator.geolocation.watchPosition(
-      (pos) => this.onOwnPosition(pos),
-      () => {
-        // permission denied or other error — quietly stop trying
-        this.stopCustomerLocationStream();
+    this.geoWatchId = await this.geo.watchPosition(
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 },
+      (fix, err) => {
+        if (err) {
+          void this.stopCustomerLocationStream();
+          return;
+        }
+        if (fix) this.onOwnPosition(fix);
       },
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 }
     );
   }
 
-  private stopCustomerLocationStream(): void {
-    if (this.geoWatchId !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(this.geoWatchId);
+  private async stopCustomerLocationStream(): Promise<void> {
+    if (this.geoWatchId !== null) {
+      await this.geo.clearWatch(this.geoWatchId);
     }
     this.geoWatchId = null;
   }
 
-  private onOwnPosition(pos: GeolocationPosition): void {
-    const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  private onOwnPosition(fix: GeoFix): void {
+    const p = { lat: fix.lat, lng: fix.lng };
     this.selfPosition = p;
 
     // Render/move our own marker every tick so the customer can visually
@@ -461,9 +463,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.lastCustomerPostAt = now;
 
     const body = {
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      accuracy_m: pos.coords.accuracy ?? null,
+      lat: fix.lat,
+      lng: fix.lng,
+      accuracy_m: fix.accuracy,
     };
 
     this.api.post(`/trips/${this.tripId}/customer-location`, body).subscribe({
@@ -744,17 +746,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   private getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
-    return new Promise((resolve) => {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) {
-        resolve(null);
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10_000 }
-      );
-    });
+    return this.geo.getCurrentPosition();
   }
 
   // ─────────────────────────────────────────────────────────────────

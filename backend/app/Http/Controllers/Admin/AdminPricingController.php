@@ -20,24 +20,16 @@ class AdminPricingController
     }
 
     /**
-     * Resolve the single rate card for a (city, vehicle type, product kind)
-     * — used by the Base Pricing editor on a vehicle's detail page.
+     * Resolve the single rate card attached to a city_vehicle_types row — used
+     * by the Base Pricing editor on a vehicle's detail page.
      */
     public function resolve(Request $request)
     {
         $data = $request->validate([
-            'city_id' => ['required', 'integer', 'exists:cities,id'],
-            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
-            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
-            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+            'city_vehicle_type_id' => ['required', 'integer', 'exists:city_vehicle_types,id'],
         ]);
 
-        $rule = PricingRule::resolveFor(
-            cityId: (int) $data['city_id'],
-            vehicleTypeId: isset($data['vehicle_type_id']) ? (int) $data['vehicle_type_id'] : null,
-            productKind: $data['product_kind'] ?? 'local',
-            rideTypeId: isset($data['ride_type_id']) ? (int) $data['ride_type_id'] : null,
-        );
+        $rule = PricingRule::resolveFor((int) $data['city_vehicle_type_id']);
 
         return response()->json(['rule' => $rule]);
     }
@@ -113,12 +105,7 @@ class AdminPricingController
     public function store(Request $request)
     {
         $data = $request->validate([
-            'city_id' => ['required', 'integer', 'exists:cities,id'],
-            // New primary axis. Either vehicle_type_id (preferred) or
-            // ride_type_id (legacy) must be present; both can be sent.
-            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id', 'required_without:ride_type_id'],
-            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id', 'required_without:vehicle_type_id'],
-            'product_kind' => ['nullable', 'in:local,rental,outstation'],
+            'city_vehicle_type_id' => ['required', 'integer', 'exists:city_vehicle_types,id'],
             'base_fare' => ['required', 'numeric', 'min:0'],
             'per_km' => ['required', 'numeric', 'min:0'],
             'per_min' => ['nullable', 'numeric', 'min:0'],
@@ -159,25 +146,17 @@ class AdminPricingController
             }
         }
 
-        // Upsert: prefer the new (city, vehicle_type, product_kind) unique;
-        // fall back to (city, ride_type) for callers that still POST only the
-        // legacy axis. Either tuple stays unique in the DB.
-        $kind = $data['product_kind'] ?? 'local';
-        if (!empty($data['vehicle_type_id'])) {
-            $pricingRule = PricingRule::query()->updateOrCreate(
-                [
-                    'city_id' => $data['city_id'],
-                    'vehicle_type_id' => $data['vehicle_type_id'],
-                    'product_kind' => $kind,
-                ],
-                $data + ['product_kind' => $kind],
-            );
-        } else {
-            $pricingRule = PricingRule::query()->updateOrCreate(
-                ['city_id' => $data['city_id'], 'ride_type_id' => $data['ride_type_id']],
-                $data + ['product_kind' => $kind],
-            );
-        }
+        // Upsert by the single (city_vehicle_type_id) unique. Denormalise
+        // city/ride/vehicle from the row for queries that lean on them.
+        $cvt = \App\Models\CityVehicleType::query()->find($data['city_vehicle_type_id']);
+        $pricingRule = PricingRule::query()->updateOrCreate(
+            ['city_vehicle_type_id' => $data['city_vehicle_type_id']],
+            $data + [
+                'city_id' => $cvt?->city_id,
+                'ride_type_id' => $cvt?->ride_type_id,
+                'vehicle_type_id' => $cvt?->vehicle_type_id,
+            ],
+        );
 
         return response()->json([
             'pricing_rule' => $pricingRule->fresh(['city', 'rideType', 'vehicleType']),

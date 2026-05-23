@@ -3,6 +3,7 @@ import { AlertController, ModalController, ToastController } from '@ionic/angula
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
+import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { RealtimeService, TripCustomerLocationPayload } from '../../core/realtime.service';
 import { TripSummaryModal } from './trip-summary.modal';
@@ -79,7 +80,7 @@ export class RidesPage implements OnInit, OnDestroy {
   private selfMarker: any | null = null;
   customerPosition: { lat: number; lng: number } | null = null;
   mapReady = false;
-  private selfWatchId: number | null = null;
+  private selfWatchId: string | null = null;
 
   constructor(
     private api: ApiService,
@@ -89,7 +90,8 @@ export class RidesPage implements OnInit, OnDestroy {
     private alertCtrl: AlertController,
     private toastCtrl: ToastController,
     private mapsLoader: MapsLoaderService,
-    private modalCtrl: ModalController
+    private modalCtrl: ModalController,
+    private geo: GeolocationService,
   ) {}
 
   canSOS(): boolean {
@@ -155,18 +157,17 @@ export class RidesPage implements OnInit, OnDestroy {
     });
   }
 
-  private getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
-    return new Promise((resolve) => {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) {
-        resolve(null);
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10_000 }
-      );
-    });
+  private async getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+    try {
+      const fix = await this.geo.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 10_000,
+      });
+      return { lat: fix.lat, lng: fix.lng };
+    } catch {
+      return null;
+    }
   }
 
   ngOnInit(): void {
@@ -701,42 +702,44 @@ export class RidesPage implements OnInit, OnDestroy {
     }
   }
 
-  private startSelfPositionWatch(): void {
+  private async startSelfPositionWatch(): Promise<void> {
     if (this.selfWatchId !== null) return;
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
-    this.selfWatchId = navigator.geolocation.watchPosition(
-      (pos) => this.onSelfPosition(pos),
-      () => this.stopSelfPositionWatch(),
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 }
+    this.selfWatchId = await this.geo.watchPosition(
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 },
+      (fix, err) => {
+        if (err) {
+          void this.stopSelfPositionWatch();
+          return;
+        }
+        if (fix) this.onSelfPosition(fix);
+      },
     );
   }
 
-  private stopSelfPositionWatch(): void {
-    if (this.selfWatchId !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(this.selfWatchId);
+  private async stopSelfPositionWatch(): Promise<void> {
+    if (this.selfWatchId !== null) {
+      await this.geo.clearWatch(this.selfWatchId);
     }
     this.selfWatchId = null;
   }
 
-  private onSelfPosition(pos: GeolocationPosition): void {
+  private onSelfPosition(fix: GeoFix): void {
     if (!this.map) return;
-    const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    const p = { lat: fix.lat, lng: fix.lng };
     if (!this.selfMarker) {
       this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
         position: p,
         map: this.map,
         title: 'You',
-        content: this.buildArrow(pos.coords.heading ?? 0, '#1f8b4c'),
+        content: this.buildArrow(fix.bearing ?? 0, '#1f8b4c'),
         zIndex: 2,
       });
       this.fitMap();
     } else {
       this.selfMarker.position = p;
-      // Re-spin the arrow if a fresh heading came in. Stable marker DOM
-      // means we only rotate the inner element, not rebuild the marker.
       const arrow = (this.selfMarker.content as HTMLElement | null)?.firstElementChild as HTMLElement | null;
-      if (arrow && pos.coords.heading != null) {
-        arrow.style.transform = `rotate(${pos.coords.heading}deg)`;
+      if (arrow && fix.bearing != null) {
+        arrow.style.transform = `rotate(${fix.bearing}deg)`;
       }
     }
   }
