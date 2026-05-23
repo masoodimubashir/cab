@@ -12,6 +12,12 @@ import {
 } from '../../core/realtime.service';
 
 declare const google: any;
+declare const Razorpay: any;
+
+type UpiOrderResponse = {
+  payment: { id: number };
+  razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
+};
 
 type TripDetail = {
   id: number;
@@ -618,6 +624,10 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   private async doPay(method: PaymentMethod): Promise<void> {
+    if (method === 'upi') {
+      await this.doPayUpi();
+      return;
+    }
     try {
       await this.api.post(`/trips/${this.tripId}/pay/${method}`, {}).toPromise();
       const t = await this.toastCtrl.create({
@@ -631,6 +641,101 @@ export class TripActivePage implements OnInit, OnDestroy {
       const t = await this.toastCtrl.create({
         message: e?.error?.message || 'Payment failed.',
         duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+    }
+  }
+
+  private async doPayUpi(): Promise<void> {
+    if (typeof Razorpay === 'undefined') {
+      const t = await this.toastCtrl.create({
+        message: 'Payment library not loaded. Check your connection.',
+        duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+      return;
+    }
+
+    let order: UpiOrderResponse;
+    try {
+      order = (await this.api
+        .post<UpiOrderResponse>(`/trips/${this.tripId}/pay/upi`, {})
+        .toPromise()) as UpiOrderResponse;
+    } catch (e: any) {
+      const t = await this.toastCtrl.create({
+        message: e?.error?.message || 'Could not start payment.',
+        duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+      return;
+    }
+
+    const user = this.auth.getUser();
+    const rzp = new Razorpay({
+      key: order.razorpay.key_id,
+      order_id: order.razorpay.order_id,
+      amount: order.razorpay.amount_paise,
+      currency: order.razorpay.currency,
+      name: 'DreamCabs',
+      description: `Trip #${this.tripId}`,
+      prefill: {
+        name: user?.name || '',
+        email: user?.email || '',
+        contact: user?.phone || '',
+      },
+      theme: { color: '#000000' },
+      handler: (resp: {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+      }) => {
+        this.verifyUpiPayment(resp);
+      },
+      modal: {
+        ondismiss: async () => {
+          const t = await this.toastCtrl.create({
+            message: 'Payment cancelled.',
+            duration: 2000,
+            color: 'warning',
+          });
+          await t.present();
+        },
+      },
+    });
+
+    rzp.on('payment.failed', async (resp: any) => {
+      const t = await this.toastCtrl.create({
+        message: resp?.error?.description || 'Payment failed.',
+        duration: 3000,
+        color: 'danger',
+      });
+      await t.present();
+    });
+
+    rzp.open();
+  }
+
+  private async verifyUpiPayment(resp: {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+  }): Promise<void> {
+    try {
+      await this.api.post(`/trips/${this.tripId}/pay/upi/verify`, resp).toPromise();
+      const t = await this.toastCtrl.create({
+        message: 'Payment successful.',
+        duration: 2000,
+        color: 'success',
+      });
+      await t.present();
+      this.refresh();
+    } catch (e: any) {
+      const t = await this.toastCtrl.create({
+        message: e?.error?.message || 'Payment verification failed.',
+        duration: 3000,
         color: 'danger',
       });
       await t.present();

@@ -67,6 +67,63 @@ class PaymentsController extends Controller
         });
     }
 
+    public function verifyUpi(Request $request, Trip $trip, RazorpayService $razorpayService)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $data = $request->validate([
+            'razorpay_payment_id' => 'required|string',
+            'razorpay_order_id' => 'required|string',
+            'razorpay_signature' => 'required|string',
+        ]);
+
+        $payment = Payment::query()->where('trip_id', $trip->id)->first();
+        if (!$payment) {
+            return response()->json(['message' => 'Payment record not found.'], 404);
+        }
+        if ($payment->razorpay_order_id !== $data['razorpay_order_id']) {
+            return response()->json(['message' => 'Order ID mismatch.'], 409);
+        }
+        if ($payment->status === 'SUCCESS') {
+            return response()->json(['payment' => $payment]);
+        }
+
+        $valid = $razorpayService->verifyPaymentSignature(
+            $data['razorpay_order_id'],
+            $data['razorpay_payment_id'],
+            $data['razorpay_signature']
+        );
+
+        if (!$valid) {
+            $payment->status = 'FAILED';
+            $payment->save();
+            Log::warning('DreamCabs Razorpay payment signature invalid', [
+                'trip_id' => $trip->id,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+            ]);
+            return response()->json(['message' => 'Invalid payment signature.'], 400);
+        }
+
+        return DB::transaction(function () use ($payment, $data, $trip) {
+            $payment->razorpay_payment_id = $data['razorpay_payment_id'];
+            $payment->status = 'SUCCESS';
+            $payment->paid_at = now();
+            $payment->save();
+
+            try {
+                app(InvoiceGeneratorService::class)->generateForTrip($trip);
+            } catch (\Throwable) {
+                // Invoice generation is best-effort; webhook will retry.
+            }
+
+            return response()->json(['payment' => $payment]);
+        });
+    }
+
     public function payCash(Request $request, Trip $trip)
     {
         $user = $request->user();
