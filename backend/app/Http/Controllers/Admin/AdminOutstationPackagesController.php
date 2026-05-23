@@ -120,7 +120,8 @@ class AdminOutstationPackagesController
         if ($vehicleType->city_id !== $city->id) {
             throw new NotFoundHttpException('Vehicle type not found in this city.');
         }
-        if ($vehicleType->product_kind !== 'outstation') {
+        $rideTypeName = strtolower((string) $vehicleType->rideType?->name);
+        if ($rideTypeName !== 'outstation') {
             throw new NotFoundHttpException('Packages are only available for outstation vehicles.');
         }
         if ($package && $package->city_vehicle_type_id !== $vehicleType->id) {

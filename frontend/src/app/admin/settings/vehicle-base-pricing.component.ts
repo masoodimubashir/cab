@@ -157,9 +157,7 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
 })
 export class VehicleBasePricingComponent implements OnChanges {
   @Input() cityId: number | null = null;
-  @Input() vehicleTypeId: number | null = null;
-  @Input() rideTypeId: number | null = null;
-  @Input() productKind: 'local' | 'rental' | 'outstation' = 'local';
+  @Input() cityVehicleTypeId: number | null = null;
 
   readonly sections = FARE_SECTIONS;
 
@@ -170,7 +168,7 @@ export class VehicleBasePricingComponent implements OnChanges {
   constructor(private api: ApiService, private toast: ToastService) {}
 
   ngOnChanges(): void {
-    if (this.cityId != null && (this.vehicleTypeId != null || this.rideTypeId != null)) {
+    if (this.cityId != null && this.cityVehicleTypeId != null) {
       this.load();
     }
   }
@@ -181,11 +179,9 @@ export class VehicleBasePricingComponent implements OnChanges {
   }
 
   load(): void {
-    if (this.cityId == null) return;
+    if (this.cityId == null || this.cityVehicleTypeId == null) return;
     this.loading = true;
-    const params = new URLSearchParams({ city_id: String(this.cityId), product_kind: this.productKind });
-    if (this.vehicleTypeId != null) params.set('vehicle_type_id', String(this.vehicleTypeId));
-    if (this.rideTypeId != null) params.set('ride_type_id', String(this.rideTypeId));
+    const params = new URLSearchParams({ city_vehicle_type_id: String(this.cityVehicleTypeId) });
 
     this.api.get<{ rule: Record<string, any> | null }>(`/admin/pricing-rules/resolve?${params}`).subscribe({
       next: (res) => {
@@ -205,13 +201,10 @@ export class VehicleBasePricingComponent implements OnChanges {
   }
 
   save(): void {
-    if (!this.canSave || this.saving || this.cityId == null) return;
+    if (!this.canSave || this.saving || this.cityVehicleTypeId == null) return;
     this.saving = true;
     const payload: Record<string, unknown> = {
-      city_id: this.cityId,
-      vehicle_type_id: this.vehicleTypeId,
-      ride_type_id: this.rideTypeId,
-      product_kind: this.productKind,
+      city_vehicle_type_id: this.cityVehicleTypeId,
       surge_multiplier: 1,
     };
     for (const k of ALL_KEYS) {

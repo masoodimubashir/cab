@@ -86,7 +86,7 @@ class SchedulingPolicyService
         if (!$trip->scheduled_at) {
             return false;
         }
-        $cfg = DispatcherSetting::forTrip($trip->city_id, $trip->product_kind ?? 'local');
+        $cfg = DispatcherSetting::forTrip($trip->city_id, 'local');
         if (!$cfg) {
             return false;
         }

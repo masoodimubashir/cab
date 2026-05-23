@@ -319,12 +319,9 @@ class FareEstimationService
      */
     public function recomputeFinal(Trip $trip, float $negotiatedFloor): array
     {
-        $rule = PricingRule::resolveFor(
-            cityId: (int) $trip->city_id,
-            vehicleTypeId: $trip->requested_vehicle_type_id ? (int) $trip->requested_vehicle_type_id : null,
-            productKind: $trip->product_kind ?: 'local',
-            rideTypeId: $trip->ride_type_id ? (int) $trip->ride_type_id : null,
-        );
+        $rule = $trip->city_vehicle_type_id
+            ? PricingRule::resolveFor((int) $trip->city_vehicle_type_id)
+            : null;
 
         if (!$rule) {
             // No rule means we can't recompute — fall back to the negotiated
