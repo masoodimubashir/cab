@@ -46,6 +46,24 @@ class RazorpayService
     }
 
     /**
+     * Verifies a payment signature returned by Razorpay Checkout on the client.
+     * Returns true if the signature matches the order_id + payment_id pair.
+     */
+    public function verifyPaymentSignature(string $orderId, string $paymentId, string $signature): bool
+    {
+        try {
+            $this->api->utility->verifyPaymentSignature([
+                'razorpay_order_id' => $orderId,
+                'razorpay_payment_id' => $paymentId,
+                'razorpay_signature' => $signature,
+            ]);
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * Verifies webhook signature. Returns boolean.
      */
     public function verifyWebhookSignature(string $body, string $signature): bool
