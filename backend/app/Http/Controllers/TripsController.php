@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\FareNegotiationOfferAdded;
+use App\Jobs\DispatchHopJob;
 use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
@@ -221,6 +222,12 @@ class TripsController extends Controller
         //   1. Open auto-dispatch trips (driver_id null) — anyone in range may bid.
         //   2. Trips the customer selected *this* driver for (driver_id == me) —
         //      no one else sees them; only this driver can ACCEPT or COUNTER.
+        //
+        // We also require an actual PENDING customer offer to exist. Without
+        // that filter, the driver-mobile would surface every trip the moment
+        // it was created (POST /trips immediately transitions to NEGOTIATION),
+        // even before the customer commits via /customer-offer or
+        // /select-driver. Drivers should only see live, biddable requests.
         $trips = Trip::query()
             ->where('status', 'NEGOTIATION')
             ->where(function ($q) use ($user) {
@@ -230,6 +237,18 @@ class TripsController extends Controller
             ->where(function ($q) use ($accepted) {
                 $q->whereNull('payment_method')
                   ->orWhereIn('payment_method', $accepted);
+            })
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('fare_negotiations')
+                    ->whereColumn('fare_negotiations.trip_id', 'trips.id')
+                    ->whereExists(function ($inner) {
+                        $inner->select(DB::raw(1))
+                            ->from('fare_negotiation_offers')
+                            ->whereColumn('fare_negotiation_offers.fare_negotiation_id', 'fare_negotiations.id')
+                            ->where('from_role', 'customer')
+                            ->where('status', 'PENDING');
+                    });
             })
             ->orderByDesc('created_at')
             ->limit(20)
@@ -466,6 +485,40 @@ class TripsController extends Controller
         }
 
         return response()->json($payload);
+    }
+
+    /**
+     * Discovery-only expanding-ring search. Runs DispatchHopJob in
+     * discoveryMode = true, which broadcasts DispatchRingExpanded events
+     * with the driver details found in each ring — but does NOT push
+     * notifications to those drivers. The customer-mobile populates the
+     * driver list and map markers from the broadcasts, then picks one
+     * via /select-driver to actually send the request.
+     */
+    public function searchDrivers(Request $request, Trip $trip)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION'], true)) {
+            return response()->json(['message' => 'Trip is not in a searchable state.'], 409);
+        }
+        if ($trip->driver_id !== null) {
+            return response()->json(['message' => 'Trip already has a driver assigned.'], 409);
+        }
+
+        DispatchHopJob::dispatch(
+            $trip->id,
+            (float) ($trip->estimated_fare ?? 0),
+            1,
+            true,
+        );
+
+        return response()->json([
+            'status' => 'searching',
+            'message' => 'Driver search started.',
+        ]);
     }
 
     /**

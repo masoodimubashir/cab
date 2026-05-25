@@ -117,6 +117,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     // List drivers eligible for this trip + customer picks one to negotiate with.
     Route::get('/trips/{trip}/nearby-drivers', [TripsController::class, 'nearbyDrivers']);
     Route::post('/trips/{trip}/select-driver', [TripsController::class, 'selectDriver']);
+    Route::post('/trips/{trip}/search-drivers', [TripsController::class, 'searchDrivers'])->middleware('throttle:booking');
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {

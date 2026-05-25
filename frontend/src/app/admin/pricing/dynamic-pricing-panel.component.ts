@@ -39,7 +39,7 @@ interface RuleForm {
   fare_type: 'flat' | 'percentage';
   customer_fare_factor: number | null;
   customer_priority: number | null;
-  driver_priority: number | null;
+  driver_fare_factor: number | null;
   city_vehicle_type_ids: number[];
   date_from: string | null;
   date_to: string | null;
@@ -225,34 +225,50 @@ type PolygonSource = 'city' | 'custom';
               </select>
             </label>
             <div class="pfield pfield--full">
-              <span class="pfield__lbl">Vehicles</span>
+              <span class="pfield__lbl">Vehicles <i>*</i></span>
+              <div class="vtchips vtchips--cat" *ngIf="vehicleCategories.length">
+                <button
+                  type="button"
+                  class="vtchip vtchip--cat"
+                  [class.is-on]="vehicleCategoryId == null"
+                  (click)="vehicleCategoryId = null"
+                >All</button>
+                <button
+                  *ngFor="let cat of vehicleCategories"
+                  type="button"
+                  class="vtchip vtchip--cat"
+                  [class.is-on]="vehicleCategoryId === cat.id"
+                  (click)="vehicleCategoryId = cat.id"
+                >{{ cat.name }}</button>
+              </div>
               <div class="vtchips">
                 <button
-                  *ngFor="let vt of vehicleTypes"
+                  *ngFor="let vt of filteredVehicleChips"
                   type="button"
                   class="vtchip"
                   [class.is-on]="form.city_vehicle_type_ids.includes(vt.id)"
                   (click)="toggleVehicleType(vt.id)"
                 >{{ vt.name }}</button>
                 <span class="vtchips__empty" *ngIf="!vehicleTypes.length">No vehicles in this city yet</span>
+                <span class="vtchips__empty" *ngIf="vehicleTypes.length && !filteredVehicleChips.length">No vehicles in this category.</span>
               </div>
-              <span class="pfield__hint">Pick none to apply this surge to every vehicle.</span>
+              <span class="pfield__hint">Pick at least one vehicle this surge applies to.</span>
             </div>
             <label class="pfield">
-              <span class="pfield__lbl">Customer fare factor <i>*</i></span>
-              <input type="number" min="0" step="0.1" [(ngModel)]="form.customer_fare_factor" />
+              <span class="pfield__lbl">{{ form.fare_type === 'flat' ? 'Flat Customer Charge' : 'Customer fare factor' }} <i>*</i></span>
+              <input type="number" min="0" step="0.1" [placeholder]="form.fare_type === 'flat' ? '0' : '1'" [(ngModel)]="form.customer_fare_factor" />
             </label>
             <label class="pfield">
-              <span class="pfield__lbl">Customer priority</span>
-              <input type="number" min="0" [(ngModel)]="form.customer_priority" />
+              <span class="pfield__lbl">{{ form.fare_type === 'flat' ? 'Customer Fare Factor Priority' : 'Customer priority' }} <i>*</i></span>
+              <input type="number" min="0" placeholder="1" [(ngModel)]="form.customer_priority" />
             </label>
             <label class="pfield">
-              <span class="pfield__lbl">Driver fare factor</span>
-              <div class="locked"><span>1.0</span><em>Fixed</em></div>
+              <span class="pfield__lbl">{{ form.fare_type === 'flat' ? 'Flat Driver Charge' : 'Driver fare factor' }} <i>*</i></span>
+              <input type="number" min="0" step="0.1" [placeholder]="form.fare_type === 'flat' ? '0' : '1'" [(ngModel)]="form.driver_fare_factor" />
             </label>
             <label class="pfield">
-              <span class="pfield__lbl">Driver priority</span>
-              <input type="number" min="0" [(ngModel)]="form.driver_priority" />
+              <span class="pfield__lbl">{{ form.fare_type === 'flat' ? 'Driver Fare Factor Priority' : 'Driver priority' }}</span>
+              <div class="locked"><span>1</span><em>Fixed</em></div>
             </label>
           </div>
         </section>
@@ -262,24 +278,24 @@ type PolygonSource = 'city' | 'custom';
           <h3 class="psec__title"><tm-icon name="calendar" [size]="14" /> When it applies</h3>
           <div class="pgrid">
             <label class="pfield">
-              <span class="pfield__lbl">Date from</span>
+              <span class="pfield__lbl">Date from <i>*</i></span>
               <input type="date" [(ngModel)]="form.date_from" />
             </label>
             <label class="pfield">
-              <span class="pfield__lbl">Date to</span>
+              <span class="pfield__lbl">Date to <i>*</i></span>
               <input type="date" [(ngModel)]="form.date_to" />
             </label>
             <label class="pfield">
-              <span class="pfield__lbl">Start time</span>
+              <span class="pfield__lbl">Start time <i>*</i></span>
               <input type="time" [(ngModel)]="form.start_time" />
             </label>
             <label class="pfield">
-              <span class="pfield__lbl">End time</span>
+              <span class="pfield__lbl">End time <i>*</i></span>
               <input type="time" [(ngModel)]="form.end_time" />
             </label>
           </div>
           <div class="pfield pfield--full">
-            <span class="pfield__lbl">Days of week</span>
+            <span class="pfield__lbl">Days of week <i>*</i></span>
             <div class="daypills">
               <button
                 *ngFor="let d of dayLabels; let i = index"
@@ -351,6 +367,7 @@ type PolygonSource = 'city' | 'custom';
     .dp__filter:focus { border-color: var(--tm-green); }
 
     .vtchips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .vtchips--cat { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed var(--tm-line); }
     .vtchip {
       padding: 7px 12px; border-radius: 999px;
       border: 1px solid var(--tm-line); background: var(--tm-canvas);
@@ -359,6 +376,15 @@ type PolygonSource = 'city' | 'custom';
     .vtchip.is-on {
       background: var(--tm-green-tint, #e0f7fa);
       border-color: var(--tm-green); color: var(--tm-green);
+    }
+    .vtchip--cat {
+      padding: 5px 11px; font-size: 11px; letter-spacing: 0.02em;
+      background: var(--tm-canvas-2); border-color: transparent;
+    }
+    .vtchip--cat.is-on {
+      background: var(--tm-text);
+      border-color: var(--tm-text);
+      color: var(--tm-surface);
     }
     .vtchips__empty { font-size: 12px; color: var(--tm-text-muted); }
     .pfield__hint { font-size: 11px; color: var(--tm-text-muted); margin-top: 2px; }
@@ -519,8 +545,9 @@ type PolygonSource = 'city' | 'custom';
 })
 export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   rules: DynamicRule[] = [];
-  vehicleTypes: { id: number; name: string }[] = [];
+  vehicleTypes: { id: number; name: string; vehicle_type_id: number | null; vehicle_type_name: string | null }[] = [];
   filterVehicleTypeId: number | null = null;
+  vehicleCategoryId: number | null = null;
   loading = false;
 
   cityId: number | null = null;
@@ -544,6 +571,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   private ovMap: google.maps.Map | null = null;
   private ovMapEl: HTMLElement | null = null;
   private ovPolygons: google.maps.Polygon[] = [];
+  private ovCityFence: google.maps.Polygon | null = null;
 
   // Drawer map
   private editMap: google.maps.Map | null = null;
@@ -605,6 +633,8 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
     this.ovPolygons.forEach((p) => p.setMap(null));
+    this.ovCityFence?.setMap(null);
+    this.ovCityFence = null;
     this.teardownEditMap();
     if (this.outsideTimer) clearTimeout(this.outsideTimer);
   }
@@ -614,11 +644,22 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   }
 
   get canSubmit(): boolean {
+    const f = this.form;
+    const cff = Number(f.customer_fare_factor);
+    const cp = Number(f.customer_priority);
+    const dff = Number(f.driver_fare_factor);
     return (
-      !!this.form.name.trim() &&
+      !!f.name.trim() &&
       this.polygon.length >= 3 &&
-      this.form.customer_fare_factor != null &&
-      Number(this.form.customer_fare_factor) > 0
+      f.city_vehicle_type_ids.length > 0 &&
+      f.customer_fare_factor != null && Number.isFinite(cff) && cff >= 0 &&
+      f.customer_priority != null && Number.isFinite(cp) && cp >= 0 &&
+      f.driver_fare_factor != null && Number.isFinite(dff) && dff >= 0 &&
+      !!f.date_from &&
+      !!f.date_to &&
+      !!f.start_time &&
+      !!f.end_time &&
+      f.days_of_week > 0
     );
   }
 
@@ -642,12 +683,34 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
       return;
     }
     this.api
-      .get<{ data: { id: number; display_name: string }[] }>(`/admin/cities/${this.cityId}/vehicle-types`)
+      .get<{ data: { id: number; display_name: string; vehicle_type_id: number | null; vehicle_type_name: string | null }[] }>(
+        `/admin/cities/${this.cityId}/vehicle-types`,
+      )
       .subscribe({
         next: (res) =>
-          (this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, name: v.display_name }))),
+          (this.vehicleTypes = (res?.data || []).map((v) => ({
+            id: v.id,
+            name: v.display_name,
+            vehicle_type_id: v.vehicle_type_id ?? null,
+            vehicle_type_name: v.vehicle_type_name ?? null,
+          }))),
         error: () => (this.vehicleTypes = []),
       });
+  }
+
+  get vehicleCategories(): { id: number; name: string }[] {
+    const seen = new Map<number, string>();
+    for (const v of this.vehicleTypes) {
+      if (v.vehicle_type_id != null && v.vehicle_type_name && !seen.has(v.vehicle_type_id)) {
+        seen.set(v.vehicle_type_id, v.vehicle_type_name);
+      }
+    }
+    return Array.from(seen, ([id, name]) => ({ id, name }));
+  }
+
+  get filteredVehicleChips(): typeof this.vehicleTypes {
+    if (this.vehicleCategoryId == null) return this.vehicleTypes;
+    return this.vehicleTypes.filter((v) => v.vehicle_type_id === this.vehicleCategoryId);
   }
 
   /** Rules visible under the current vehicle-type filter. */
@@ -696,6 +759,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
         if (c.center_lat != null && c.center_lng != null) {
           this.cityCenter = { lat: Number(c.center_lat), lng: Number(c.center_lng) };
         }
+        this.drawOverview();
       },
       error: () => {},
     });
@@ -729,6 +793,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     if (this.cityId == null) return;
     this.editMode = false;
     this.form = this.blankForm();
+    this.vehicleCategoryId = null;
     this.outsideWarning = null;
     if (this.cityFence?.length) {
       this.polygonSource = 'city';
@@ -742,6 +807,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
 
   openEdit(rule: DynamicRule): void {
     this.editMode = true;
+    this.vehicleCategoryId = null;
     this.outsideWarning = null;
     this.api.get<{ rule: any }>(`/admin/dynamic-pricing-rules/${rule.id}`).subscribe({
       next: (res) => {
@@ -750,9 +816,9 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
           id: r.id,
           name: r.name ?? '',
           fare_type: r.fare_type ?? 'percentage',
-          customer_fare_factor: r.customer_fare_factor ?? 1.5,
-          customer_priority: r.customer_priority ?? 10,
-          driver_priority: r.driver_priority ?? 10,
+          customer_fare_factor: r.customer_fare_factor ?? null,
+          customer_priority: r.customer_priority ?? null,
+          driver_fare_factor: r.driver_fare_factor ?? null,
           city_vehicle_type_ids: Array.isArray(r.city_vehicle_type_ids) ? [...r.city_vehicle_type_ids] : [],
           date_from: r.date_from ?? null,
           date_to: r.date_to ?? null,
@@ -788,10 +854,10 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
       city_id: this.cityId,
       city_vehicle_type_ids: this.form.city_vehicle_type_ids,
       fare_type: this.form.fare_type,
-      customer_fare_factor: Number(this.form.customer_fare_factor),
-      customer_priority: Number(this.form.customer_priority ?? 0),
-      driver_fare_factor: 1,
-      driver_priority: Number(this.form.driver_priority ?? 0),
+      customer_fare_factor: Number(this.form.customer_fare_factor ?? 1),
+      customer_priority: Number(this.form.customer_priority ?? 1),
+      driver_fare_factor: Number(this.form.driver_fare_factor ?? 1),
+      driver_priority: 1,
       region_polygon: this.polygon,
       date_from: this.form.date_from || null,
       date_to: this.form.date_to || null,
@@ -873,15 +939,15 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     return {
       name: '',
       fare_type: 'percentage',
-      customer_fare_factor: 1.5,
-      customer_priority: 10,
-      driver_priority: 10,
+      customer_fare_factor: 1,
+      customer_priority: 1,
+      driver_fare_factor: 1,
       city_vehicle_type_ids: [],
       date_from: null,
       date_to: null,
       start_time: null,
       end_time: null,
-      days_of_week: 127,
+      days_of_week: 0,
       is_active: true,
       is_visible: true,
     };
@@ -926,8 +992,25 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     if (!this.ovMap) return;
     this.ovPolygons.forEach((p) => p.setMap(null));
     this.ovPolygons = [];
+    this.ovCityFence?.setMap(null);
+    this.ovCityFence = null;
     const bounds = new google.maps.LatLngBounds();
     let any = false;
+
+    if (this.cityFence?.length) {
+      this.ovCityFence = new google.maps.Polygon({
+        paths: this.cityFence,
+        strokeColor: '#94a3b8',
+        strokeWeight: 1,
+        strokeOpacity: 0.7,
+        fillColor: '#94a3b8',
+        fillOpacity: 0.08,
+        clickable: false,
+        zIndex: 1,
+      });
+      this.ovCityFence.setMap(this.ovMap);
+      this.cityFence.forEach((c) => { bounds.extend(c); any = true; });
+    }
 
     for (const rule of this.filteredRules()) {
       const coords = (rule.region_polygon || []).filter(
@@ -942,6 +1025,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
         fillColor: color,
         fillOpacity: rule.is_active ? 0.2 : 0.07,
         clickable: false,
+        zIndex: 2,
       });
       poly.setMap(this.ovMap);
       this.ovPolygons.push(poly);
