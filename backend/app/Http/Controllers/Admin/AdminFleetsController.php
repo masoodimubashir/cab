@@ -19,6 +19,18 @@ class AdminFleetsController
         if ($request->has('status') && $request->query('status') !== '') {
             $query->where('status', $request->query('status'));
         }
+        if ($request->has('vat') && $request->query('vat') !== '') {
+            $query->where('vat_enabled', $request->query('vat') === 'enabled');
+        }
+        if ($q = trim((string) $request->query('q', ''))) {
+            $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+            $query->where(function ($w) use ($like) {
+                $w->where('name', 'like', $like)
+                  ->orWhere('phone_number', 'like', $like)
+                  ->orWhere('bank', 'like', $like)
+                  ->orWhere('vat_number', 'like', $like);
+            });
+        }
         // City-scoped managers only see their city's fleets. Super Admin sees all.
         ManagerScope::applyCityScope($query);
 

@@ -117,6 +117,11 @@ class Trip extends Model
         return $this->belongsTo(RideType::class, 'ride_type_id');
     }
 
+    public function cityVehicleType(): BelongsTo
+    {
+        return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
+    }
+
     public function fleet(): BelongsTo
     {
         return $this->belongsTo(Fleet::class, 'fleet_id');

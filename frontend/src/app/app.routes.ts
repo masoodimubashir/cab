@@ -7,8 +7,8 @@ import { CustomersListComponent } from './admin/customers/customers-list.compone
 import { CustomerDetailComponent } from './admin/customers/customer-detail.component';
 import { AdminSafetyEventsComponent } from './admin/admin-safety-events.component';
 import { AdminReportsComponent } from './admin/admin-reports.component';
-import { RidesMapComponent } from './admin/rides/rides-map.component';
 import { RidesAllComponent } from './admin/rides/rides-all.component';
+import { RideDetailComponent } from './admin/rides/ride-detail.component';
 import { VehiclesComponent } from './admin/vehicles/vehicles.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
 import { MapsComponent } from './admin/maps/maps.component';
@@ -73,10 +73,13 @@ export const routes: Routes = [
   },
   { path: 'contact-drivers', component: ContactDriversComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'rides', redirectTo: 'rides/all', pathMatch: 'full' },
-  { path: 'rides/all', component: RidesAllComponent, canActivate: [adminAuthGuard] },
-  { path: 'rides/map', component: RidesMapComponent, canActivate: [adminAuthGuard] },
+  { path: 'rides', component: RidesAllComponent, canActivate: [adminAuthGuard] },
+  // Backward-compat: old bookmarks for the sub-tabs land on the flat Rides page.
+  { path: 'rides/all', redirectTo: 'rides', pathMatch: 'full' },
+  { path: 'rides/map', redirectTo: 'rides', pathMatch: 'full' },
   { path: 'rides/manual-dispatch', component: ManualDispatchComponent, canActivate: [adminAuthGuard] },
+  // Dynamic trip-id route — placed AFTER manual-dispatch so the static path wins.
+  { path: 'rides/:tripId', component: RideDetailComponent, canActivate: [adminAuthGuard] },
 
   { path: 'maps', component: MapsComponent, canActivate: [adminAuthGuard] },
 
