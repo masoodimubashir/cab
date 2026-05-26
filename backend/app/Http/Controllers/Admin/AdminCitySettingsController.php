@@ -5,16 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Models\City;
 use App\Models\CitySetting;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class AdminCitySettingsController
 {
-    private const IMAGE_FIELDS = [
-        'logo' => ['column' => 'logo_path', 'dir' => 'city_settings/logo'],
-        'splash_screen' => ['column' => 'splash_screen_path', 'dir' => 'city_settings/splash'],
-        'home_bg' => ['column' => 'home_bg_path', 'dir' => 'city_settings/home_bg'],
-    ];
-
     public function show(City $city)
     {
         $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id])->fresh();
@@ -40,9 +33,6 @@ class AdminCitySettingsController
             'night_end_time' => ['nullable', 'date_format:H:i:s'],
             'advertise_credits' => ['nullable', 'integer', 'min:0'],
 
-            'theme_color' => ['nullable', 'string', 'max:16'],
-            'onboarding_info' => ['nullable', 'string'],
-            'customer_rate_card_info' => ['nullable', 'string'],
             'customer_login_otp_message' => ['nullable', 'string', 'max:500'],
             'customer_login_otp_message_ios' => ['nullable', 'string', 'max:500'],
 
@@ -53,12 +43,6 @@ class AdminCitySettingsController
             'driver_support_no' => ['nullable', 'string', 'max:20'],
             'customer_support_no' => ['nullable', 'string', 'max:20'],
             'support_email' => ['nullable', 'email', 'max:255'],
-            'operator_name' => ['nullable', 'string', 'max:255'],
-            'operational_info' => ['nullable', 'string', 'max:5000'],
-
-            'logo' => ['nullable', 'file', 'image', 'max:4096'],
-            'splash_screen' => ['nullable', 'file', 'image', 'max:4096'],
-            'home_bg' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
 
         $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
@@ -75,21 +59,7 @@ class AdminCitySettingsController
         }
 
         foreach ($data as $field => $value) {
-            if (array_key_exists($field, self::IMAGE_FIELDS)) {
-                continue;
-            }
             $settings->{$field} = $value;
-        }
-
-        foreach (self::IMAGE_FIELDS as $field => $cfg) {
-            if (! $request->hasFile($field)) {
-                continue;
-            }
-            $col = $cfg['column'];
-            if ($settings->{$col} && Storage::disk('public')->exists($settings->{$col})) {
-                Storage::disk('public')->delete($settings->{$col});
-            }
-            $settings->{$col} = $request->file($field)->store($cfg['dir'], 'public');
         }
 
         $settings->save();
@@ -118,16 +88,6 @@ class AdminCitySettingsController
             'night_end_time' => $s->night_end_time,
             'advertise_credits' => (int) $s->advertise_credits,
 
-            'theme_color' => $s->theme_color,
-            'logo_path' => $s->logo_path,
-            'logo_url' => $s->logo_url,
-            'splash_screen_path' => $s->splash_screen_path,
-            'splash_screen_url' => $s->splash_screen_url,
-            'home_bg_path' => $s->home_bg_path,
-            'home_bg_url' => $s->home_bg_url,
-
-            'onboarding_info' => $s->onboarding_info,
-            'customer_rate_card_info' => $s->customer_rate_card_info,
             'customer_login_otp_message' => $s->customer_login_otp_message,
             'customer_login_otp_message_ios' => $s->customer_login_otp_message_ios,
 
@@ -138,8 +98,6 @@ class AdminCitySettingsController
             'driver_support_no' => $s->driver_support_no,
             'customer_support_no' => $s->customer_support_no,
             'support_email' => $s->support_email,
-            'operator_name' => $s->operator_name,
-            'operational_info' => $s->operational_info,
 
             'updated_at' => optional($s->updated_at)->toIso8601String(),
         ];

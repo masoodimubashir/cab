@@ -49,8 +49,16 @@ export class TripActivePage implements OnInit, OnDestroy {
   tripId!: number;
   loading = true;
   trip: TripDetail | null = null;
-  driverAccepts: PaymentMethod[] = ['cash', 'upi', 'qr'];
+  driverAccepts: PaymentMethod[] = ['cash', 'razorpay'];
+  cityAcceptsUpper: string[] = ['CASH', 'RAZORPAY'];
   selectedPaymentMethod: PaymentMethod | null = null;
+
+  // Coupon entered on the payment screen. `couponPreview` is the validated
+  // server response; until set, the payable amount equals trip.final_fare.
+  couponInput = '';
+  couponApplying = false;
+  couponError: string | null = null;
+  couponPreview: { discount: number; final_amount: number; coupon: { assignment_id: number; title: string } } | null = null;
   driverPosition: { lat: number; lng: number } | null = null;
   liveConnected = false;
   etaMinutes: number | null = null;
@@ -200,9 +208,12 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   private refresh(): void {
     this.api
-      .get<{ trip_id: number; trip?: TripDetail; negotiation?: { final_amount: number } }>(
-        `/trips/${this.tripId}/negotiation`
-      )
+      .get<{
+        trip_id: number;
+        trip?: TripDetail;
+        negotiation?: { final_amount: number };
+        city_payment_modes?: string[];
+      }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
         next: (res) => {
           this.loading = false;
@@ -211,6 +222,9 @@ export class TripActivePage implements OnInit, OnDestroy {
             const driver = res.trip.driver;
             if (driver?.accepted_payment_methods?.length) {
               this.driverAccepts = driver.accepted_payment_methods;
+            }
+            if (res.city_payment_modes?.length) {
+              this.cityAcceptsUpper = res.city_payment_modes;
             }
             if (this.selectedPaymentMethod == null && this.trip.payment_method) {
               this.selectedPaymentMethod = this.trip.payment_method;
@@ -223,6 +237,63 @@ export class TripActivePage implements OnInit, OnDestroy {
           this.loading = false;
         },
       });
+  }
+
+  /**
+   * Methods the customer can actually use on this trip — intersection of:
+   *   • city_settings.allowed_driver_payment_modes (operator-level cap)
+   *   • driver.accepted_payment_methods (what this driver opted into)
+   */
+  get availablePaymentMethods(): PaymentMethod[] {
+    const cityLower = this.cityAcceptsUpper
+      .map((m) => m.toLowerCase())
+      .filter((m): m is PaymentMethod => m === 'cash' || m === 'razorpay');
+    return cityLower.filter((m) => this.driverAccepts.includes(m));
+  }
+
+  get payableAmount(): number | null {
+    if (this.couponPreview) return this.couponPreview.final_amount;
+    return this.trip?.final_fare ?? null;
+  }
+
+  async applyCoupon(): Promise<void> {
+    if (this.couponPreview) {
+      this.couponPreview = null;
+      this.couponInput = '';
+      this.couponError = null;
+      return;
+    }
+    const code = (this.couponInput || '').trim();
+    if (!code) return;
+    this.couponApplying = true;
+    this.couponError = null;
+    try {
+      const res = await this.api
+        .post<{
+          discount?: number;
+          final_amount?: number;
+          coupon?: { assignment_id: number; title: string };
+          error?: string;
+        }>(`/trips/${this.tripId}/coupon-preview`, { coupon_title: code })
+        .toPromise();
+      if (res?.error) {
+        this.couponError = res.error;
+        return;
+      }
+      if (res?.discount != null && res?.final_amount != null && res?.coupon) {
+        this.couponPreview = {
+          discount: res.discount,
+          final_amount: res.final_amount,
+          coupon: res.coupon,
+        };
+      } else {
+        this.couponError = 'Could not apply coupon.';
+      }
+    } catch (e: any) {
+      this.couponError = e?.error?.message || 'Could not apply coupon.';
+    } finally {
+      this.couponApplying = false;
+    }
   }
 
   private updateRouteMarkers(): void {
@@ -597,12 +668,10 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   async pay(): Promise<void> {
-    const allowed: PaymentMethod[] = (['cash', 'upi', 'qr'] as PaymentMethod[]).filter((m) =>
-      this.driverAccepts.includes(m)
-    );
+    const allowed = this.availablePaymentMethods;
     if (!allowed.length) {
       const t = await this.toastCtrl.create({
-        message: 'Driver has no payment methods enabled.',
+        message: 'No payment methods available for this trip.',
         duration: 2500,
         color: 'danger',
       });
@@ -624,12 +693,16 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   private async doPay(method: PaymentMethod): Promise<void> {
-    if (method === 'upi') {
-      await this.doPayUpi();
+    if (method === 'razorpay') {
+      await this.doPayRazorpay();
       return;
     }
     try {
-      await this.api.post(`/trips/${this.tripId}/pay/${method}`, {}).toPromise();
+      await this.api
+        .post(`/trips/${this.tripId}/pay/${method}`, {
+          coupon_title: this.couponPreview?.coupon.title ?? null,
+        })
+        .toPromise();
       const t = await this.toastCtrl.create({
         message: 'Payment recorded.',
         duration: 2000,
@@ -647,7 +720,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     }
   }
 
-  private async doPayUpi(): Promise<void> {
+  private async doPayRazorpay(): Promise<void> {
     if (typeof Razorpay === 'undefined') {
       const t = await this.toastCtrl.create({
         message: 'Payment library not loaded. Check your connection.',
@@ -661,7 +734,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     let order: UpiOrderResponse;
     try {
       order = (await this.api
-        .post<UpiOrderResponse>(`/trips/${this.tripId}/pay/upi`, {})
+        .post<UpiOrderResponse>(`/trips/${this.tripId}/pay/razorpay`, {
+          coupon_title: this.couponPreview?.coupon.title ?? null,
+        })
         .toPromise()) as UpiOrderResponse;
     } catch (e: any) {
       const t = await this.toastCtrl.create({
@@ -724,7 +799,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     razorpay_signature: string;
   }): Promise<void> {
     try {
-      await this.api.post(`/trips/${this.tripId}/pay/upi/verify`, resp).toPromise();
+      await this.api.post(`/trips/${this.tripId}/pay/razorpay/verify`, resp).toPromise();
       const t = await this.toastCtrl.create({
         message: 'Payment successful.',
         duration: 2000,

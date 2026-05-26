@@ -128,7 +128,7 @@ class User extends Authenticatable
 
     public function acceptsPaymentMethod(string $method): bool
     {
-        $methods = $this->accepted_payment_methods ?? ['cash', 'upi', 'qr'];
+        $methods = $this->accepted_payment_methods ?? ['cash', 'razorpay'];
         return in_array($method, $methods, true);
     }
 

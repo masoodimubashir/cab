@@ -504,13 +504,13 @@ export class RidesPage implements OnInit, OnDestroy {
 
   get tripPaymentMethod(): PaymentMethod | null {
     const m = this.lastTrip?.['payment_method'];
-    return m === 'cash' || m === 'upi' || m === 'qr' ? m : null;
+    return m === 'cash' || m === 'razorpay' ? m : null;
   }
 
   get acceptsTripPayment(): boolean {
     const m = this.tripPaymentMethod;
     if (!m) return true;
-    const accepted = this.auth.getUser()?.accepted_payment_methods ?? ['cash', 'upi', 'qr'];
+    const accepted = this.auth.getUser()?.accepted_payment_methods ?? ['cash', 'razorpay'];
     return accepted.includes(m);
   }
 

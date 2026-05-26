@@ -47,7 +47,7 @@ class AccountController extends Controller
     {
         $data = $request->validate([
             'methods' => ['required', 'array', 'min:1'],
-            'methods.*' => ['in:cash,upi,qr'],
+            'methods.*' => ['in:cash,razorpay'],
         ]);
 
         $user = $request->user();

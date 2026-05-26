@@ -9,6 +9,16 @@ import {
 
 type ProductKind = 'all' | 'local' | 'rental' | 'outstation';
 type StatusFilter = 'all' | 'completed' | 'cancelled' | 'missed';
+type PaymentFilter = 'all' | 'paid' | 'unpaid';
+
+interface TripPayment {
+  id: number;
+  method?: string | null;
+  status?: 'PENDING' | 'SUCCESS' | 'FAILED' | string | null;
+  amount?: number | null;
+  discount_amount?: number | null;
+  paid_at?: string | null;
+}
 
 interface TripRow {
   id: number;
@@ -28,6 +38,7 @@ interface TripRow {
   created_at?: string | null;
   cancelled_reason?: string | null;
   no_show_by?: string | null;
+  payment?: TripPayment | null;
 }
 
 /**
@@ -54,6 +65,7 @@ export class CustomerTripsPage {
 
   productKind: ProductKind = 'all';
   status: StatusFilter = 'all';
+  payment: PaymentFilter = 'all';
 
   constructor(
     private api: ApiService,
@@ -70,6 +82,7 @@ export class CustomerTripsPage {
     const params = new URLSearchParams({
       product_kind: this.productKind,
       status: this.status,
+      payment: this.payment,
     }).toString();
     this.api.get<{ data: { data?: TripRow[] } }>(`/customer/trips/history?${params}`).subscribe({
       next: (res) => {
@@ -94,6 +107,27 @@ export class CustomerTripsPage {
     if (this.status === s) return;
     this.status = s;
     this.refresh();
+  }
+
+  setPayment(p: PaymentFilter): void {
+    if (this.payment === p) return;
+    this.payment = p;
+    this.refresh();
+  }
+
+  /**
+   * Payment chip shown on each card. Completed trips with no SUCCESS payment
+   * are flagged Unpaid so the customer sees what they still owe. Other trip
+   * states don't get a payment chip (no payment is expected yet).
+   */
+  paymentBadge(t: TripRow): { label: string; color: string } | null {
+    if (t.payment?.status === 'SUCCESS') {
+      return { label: 'Paid', color: 'success' };
+    }
+    if (t.status === 'COMPLETED') {
+      return { label: 'Unpaid', color: 'danger' };
+    }
+    return null;
   }
 
   // ── Display helpers ──────────────────────────────────────────────
@@ -143,5 +177,23 @@ export class CustomerTripsPage {
   navigateToNegotiation(t: TripRow): void {
     if (!Number.isFinite(t.id) || t.id < 1) return;
     this.router.navigateByUrl(`/customer-tabs/trip/${t.id}`, { replaceUrl: true });
+  }
+
+  /**
+   * Tap on the card opens the read-only details view. Negotiation trips
+   * still get their own Negotiate button — they should go to trip-active,
+   * not details — so the card-level tap short-circuits them.
+   */
+  openTripDetails(t: TripRow, event?: Event): void {
+    if (event) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('ion-button, ion-icon, button, a')) return;
+    }
+    if (!Number.isFinite(t.id) || t.id < 1) return;
+    if (t.status === 'NEGOTIATION') {
+      this.navigateToNegotiation(t);
+      return;
+    }
+    this.router.navigateByUrl(`/customer-tabs/trip-details/${t.id}`);
   }
 }

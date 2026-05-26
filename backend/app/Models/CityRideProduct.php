@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['city_id', 'kind', 'name', 'description', 'info', 'image_path', 'is_active', 'sort_order'])]
+#[Fillable(['city_id', 'kind', 'name', 'image_path', 'is_active', 'sort_order'])]
 class CityRideProduct extends Model
 {
     use HasFactory;

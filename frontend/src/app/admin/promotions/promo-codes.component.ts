@@ -1,7 +1,8 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -23,6 +24,13 @@ interface PromoCodeRow {
   can_use_with_referral: boolean;
   amount: number;
   is_active: boolean;
+}
+
+interface CustomerRow {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
 }
 
 /**
@@ -80,6 +88,9 @@ interface PromoCodeRow {
               <div *ngIf="r.can_use_with_referral"><tm-icon name="check" [size]="13" /> Stacks with referral</div>
             </div>
             <div class="card__foot">
+              <button class="icon-btn" (click)="openGive(r)" aria-label="Give to users" title="Give to users">
+                <tm-icon name="eye" [size]="14" />
+              </button>
               <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
               <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
             </div>
@@ -133,12 +144,14 @@ interface PromoCodeRow {
         </div>
         <div class="row">
           <label class="field">
-            <span class="field__lbl">Start date</span>
-            <input type="date" [(ngModel)]="form.start_date" />
+            <span class="field__lbl">Start date <i>*</i></span>
+            <input type="date" [(ngModel)]="form.start_date" (ngModelChange)="touched = true" />
+            <span class="field__err" *ngIf="touched && !form.start_date">Start date is required.</span>
           </label>
           <label class="field">
-            <span class="field__lbl">End date</span>
-            <input type="date" [(ngModel)]="form.end_date" />
+            <span class="field__lbl">End date <i>*</i></span>
+            <input type="date" [(ngModel)]="form.end_date" (ngModelChange)="touched = true" />
+            <span class="field__err" *ngIf="touched && !form.end_date">End date is required.</span>
           </label>
         </div>
         <label class="toggle">
@@ -157,6 +170,90 @@ interface PromoCodeRow {
         </tm-button>
       </div>
     </tm-drawer>
+
+    <!-- Give-to-users modal: Select customers OR Import CSV -->
+    <tm-modal [open]="!!giveTarget" [title]="'Give code: ' + (giveTarget?.code || '')" (closed)="closeGive()">
+      <div slot="body" class="give">
+        <div class="give-tabs">
+          <button class="give-tab" [class.is-on]="giveTab === 'customers'" (click)="giveTab = 'customers'">
+            Select from customers
+          </button>
+          <button class="give-tab" [class.is-on]="giveTab === 'csv'" (click)="giveTab = 'csv'">
+            Import from CSV
+          </button>
+        </div>
+
+        <ng-container *ngIf="giveTab === 'customers'">
+          <label class="search--inline">
+            <tm-icon name="search" [size]="14" />
+            <input
+              type="search"
+              placeholder="Search by name, phone or email"
+              [ngModel]="customerSearch"
+              (ngModelChange)="onCustomerSearchChange($event)"
+            />
+          </label>
+          <div class="cust-list" *ngIf="customerRows.length; else noCust">
+            <label class="cust-row" *ngFor="let c of customerRows">
+              <input
+                type="checkbox"
+                [checked]="selectedUserIds.has(c.id)"
+                (change)="toggleSelectedUser(c.id, $event)"
+              />
+              <div class="cust-info">
+                <div class="strong">{{ c.name || 'Customer #' + c.id }}</div>
+                <div class="muted small">{{ c.phone || '—' }}<span *ngIf="c.email"> · {{ c.email }}</span></div>
+              </div>
+            </label>
+          </div>
+          <ng-template #noCust>
+            <div class="muted small" style="padding:18px 0; text-align:center">No customers found.</div>
+          </ng-template>
+          <div class="give-paginator" *ngIf="customerRows.length">
+            <span class="muted small">{{ selectedUserIds.size }} selected · Page {{ customerPage }} of {{ customerLastPage }}</span>
+            <div>
+              <button class="pg-btn" [disabled]="customerPage <= 1" (click)="goToCustomerPage(customerPage - 1)">Prev</button>
+              <button class="pg-btn" [disabled]="customerPage >= customerLastPage" (click)="goToCustomerPage(customerPage + 1)">Next</button>
+            </div>
+          </div>
+        </ng-container>
+
+        <ng-container *ngIf="giveTab === 'csv'">
+          <label class="csv-drop">
+            <input type="file" accept=".csv,text/csv" (change)="onCsvSelected($event)" hidden />
+            <tm-icon name="upload" [size]="20" />
+            <div>
+              <div class="strong">{{ csvFile?.name || 'Choose CSV' }}</div>
+              <div class="muted small">CSV with a <code>user_id</code> column. One id per row.</div>
+            </div>
+          </label>
+          <button type="button" class="link-btn" (click)="downloadSampleCsv()">
+            <tm-icon name="download" [size]="13" /> Download sample CSV
+          </button>
+        </ng-container>
+
+        <div class="give-fields">
+          <label class="field">
+            <span class="field__lbl">Reason <i>*</i></span>
+            <input type="text" [(ngModel)]="giveForm.reason" placeholder="Why this code is being issued" />
+          </label>
+          <label class="field">
+            <span class="field__lbl">Push message</span>
+            <textarea rows="3" [(ngModel)]="giveForm.push_message" placeholder="Optional notification message"></textarea>
+          </label>
+          <label class="field">
+            <span class="field__lbl">Expiry date</span>
+            <input type="datetime-local" [(ngModel)]="giveForm.expires_at" />
+          </label>
+        </div>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="closeGive()">Cancel</tm-button>
+        <tm-button variant="green" [disabled]="!canSubmitGive() || giving" (clicked)="submitGive()">
+          {{ giving ? 'Sending…' : 'Send' }}
+        </tm-button>
+      </div>
+    </tm-modal>
 
     <!-- Delete confirm -->
     <tm-modal [open]="!!deleteTarget" title="Delete promo code" (closed)="deleteTarget = null">
@@ -236,6 +333,69 @@ interface PromoCodeRow {
       display: flex; justify-content: flex-end; gap: 6px;
       margin-top: 10px;
     }
+
+    /* Give-to-users modal — mirrors the coupons admin modal. */
+    .give { display: flex; flex-direction: column; gap: 14px; width: 100%; box-sizing: border-box; }
+    .give *, .give *::before, .give *::after { box-sizing: border-box; }
+    .give-tabs {
+      display: flex; gap: 4px; padding: 4px; width: 100%;
+      background: var(--tm-canvas-2); border-radius: 10px;
+    }
+    .give-tab {
+      flex: 1; padding: 8px 14px; border-radius: 8px;
+      background: transparent; cursor: pointer; border: none;
+      font-size: 13px; font-weight: 700; color: var(--tm-text-muted); text-align: center;
+    }
+    .give-tab.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
+    .search--inline {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 10px; width: 100%;
+      background: var(--tm-canvas); border: 1px solid var(--tm-line); border-radius: 8px;
+      color: var(--tm-text-muted);
+    }
+    .search--inline input {
+      border: none; outline: none; background: transparent; flex: 1; min-width: 0;
+      color: var(--tm-text); font-size: 13px; font-family: inherit;
+    }
+    .cust-list {
+      max-height: 240px; overflow: auto;
+      border: 1px solid var(--tm-line); border-radius: 9px;
+    }
+    .cust-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; cursor: pointer;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .cust-row:last-child { border-bottom: 0; }
+    .cust-row:hover { background: var(--tm-canvas-2); }
+    .cust-info { display: flex; flex-direction: column; min-width: 0; }
+    .strong { color: var(--tm-text); font-weight: 700; }
+    .muted { color: var(--tm-text-muted); }
+    .small { font-size: 11px; }
+    .give-paginator {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .pg-btn {
+      padding: 6px 12px; border-radius: 8px;
+      border: 1px solid var(--tm-line); background: var(--tm-surface);
+      color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 4px;
+    }
+    .pg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .csv-drop {
+      display: flex; align-items: center; gap: 12px;
+      padding: 18px; cursor: pointer;
+      background: var(--tm-canvas); border: 1px dashed var(--tm-line); border-radius: 10px;
+    }
+    .csv-drop:hover { border-color: var(--tm-green); }
+    .link-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--tm-green); font-size: 12px; font-weight: 700;
+      background: transparent; cursor: pointer; padding: 0; border: none;
+    }
+    .give-fields {
+      display: flex; flex-direction: column; gap: 12px;
+      padding-top: 8px; border-top: 1px solid var(--tm-line);
+    }
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 7px;
@@ -275,6 +435,25 @@ export class PromoCodesComponent implements OnInit, OnDestroy {
   form = this.blankForm();
   deleteTarget: PromoCodeRow | null = null;
 
+  // Give-to-users state — same shape as the coupons admin page.
+  giveTarget: PromoCodeRow | null = null;
+  giveTab: 'customers' | 'csv' = 'customers';
+  giving = false;
+  giveForm: { reason: string; push_message: string; expires_at: string } = {
+    reason: '',
+    push_message: '',
+    expires_at: '',
+  };
+  customerRows: CustomerRow[] = [];
+  customerSearch = '';
+  customerPage = 1;
+  customerLastPage = 1;
+  customerPerPage = 10;
+  selectedUserIds = new Set<number>();
+  csvFile: File | null = null;
+  private custSearch$ = new Subject<string>();
+  private custSearchSub?: Subscription;
+
   private sub?: Subscription;
 
   constructor(
@@ -290,9 +469,18 @@ export class PromoCodesComponent implements OnInit, OnDestroy {
       if (id != null) this.fetch();
       else this.rows = [];
     });
+    this.custSearchSub = this.custSearch$
+      .pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe(() => {
+        this.customerPage = 1;
+        this.fetchCustomers();
+      });
   }
 
-  ngOnDestroy(): void { this.sub?.unsubscribe(); }
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+    this.custSearchSub?.unsubscribe();
+  }
 
   setTab(t: 'active' | 'inactive'): void {
     if (this.tab === t) return;
@@ -311,12 +499,11 @@ export class PromoCodesComponent implements OnInit, OnDestroy {
   }
 
   blankForm() {
-    const today = this.toIso(new Date());
     return {
       code: '',
       max_number: null as number | null,
-      start_date: today,
-      end_date: today,
+      start_date: '' as string,
+      end_date: '' as string,
       validity_in_days: 30 as number | null,
       bonus_type: 'cash',
       can_use_with_referral: false,
@@ -351,7 +538,8 @@ export class PromoCodesComponent implements OnInit, OnDestroy {
 
   submit(): void {
     this.touched = true;
-    if (this.cityId == null || !this.form.code.trim() || this.saving) return;
+    if (this.cityId == null || this.saving) return;
+    if (!this.form.code.trim() || !this.form.start_date || !this.form.end_date) return;
     this.saving = true;
     const body: any = { ...this.form, code: this.form.code.trim() };
     const path = this.editingId
@@ -395,5 +583,120 @@ export class PromoCodesComponent implements OnInit, OnDestroy {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // ── Give-to-users modal ─────────────────────────────────────────────
+  openGive(r: PromoCodeRow): void {
+    this.giveTarget = r;
+    this.giveTab = 'customers';
+    this.giveForm = { reason: '', push_message: '', expires_at: '' };
+    this.selectedUserIds = new Set<number>();
+    this.csvFile = null;
+    this.customerSearch = '';
+    this.customerPage = 1;
+    this.fetchCustomers();
+  }
+
+  closeGive(): void {
+    this.giveTarget = null;
+    this.giving = false;
+  }
+
+  onCustomerSearchChange(val: string): void {
+    this.customerSearch = val;
+    this.custSearch$.next(val);
+  }
+
+  goToCustomerPage(page: number): void {
+    if (page < 1 || page > this.customerLastPage || page === this.customerPage) return;
+    this.customerPage = page;
+    this.fetchCustomers();
+  }
+
+  toggleSelectedUser(id: number, ev: Event): void {
+    const checked = (ev.target as HTMLInputElement).checked;
+    if (checked) this.selectedUserIds.add(id);
+    else this.selectedUserIds.delete(id);
+  }
+
+  onCsvSelected(ev: Event): void {
+    const file = (ev.target as HTMLInputElement).files?.[0];
+    this.csvFile = file ?? null;
+  }
+
+  downloadSampleCsv(): void {
+    const csv = 'user_id\n123\n456\n';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'promo_code_recipients_sample.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  canSubmitGive(): boolean {
+    if (!this.giveTarget) return false;
+    if (!this.giveForm.reason.trim()) return false;
+    if (this.giveTab === 'customers') return this.selectedUserIds.size > 0;
+    return !!this.csvFile;
+  }
+
+  fetchCustomers(): void {
+    const params = new URLSearchParams();
+    if (this.customerSearch.trim()) params.set('search', this.customerSearch.trim());
+    params.set('page', String(this.customerPage));
+    params.set('per_page', String(this.customerPerPage));
+    this.api
+      .get<any>(`/admin/customers?${params.toString()}`)
+      .subscribe({
+        next: (r) => {
+          // AdminCustomersController nests Laravel's paginator under `data`.
+          const payload = r?.data ?? {};
+          const rows: CustomerRow[] = Array.isArray(payload) ? payload : (payload.data ?? []);
+          this.customerRows = rows;
+          if (!Array.isArray(payload) && typeof payload === 'object') {
+            this.customerPage = payload.current_page ?? this.customerPage;
+            this.customerLastPage = payload.last_page ?? this.customerLastPage;
+            this.customerPerPage = payload.per_page ?? this.customerPerPage;
+          }
+        },
+        error: () => (this.customerRows = []),
+      });
+  }
+
+  submitGive(): void {
+    if (!this.giveTarget || this.cityId == null || !this.canSubmitGive() || this.giving) return;
+    this.giving = true;
+
+    const fd = new FormData();
+    fd.append('mode', this.giveTab);
+    fd.append('reason', this.giveForm.reason.trim());
+    if (this.giveForm.push_message.trim()) fd.append('push_message', this.giveForm.push_message.trim());
+    if (this.giveForm.expires_at) {
+      fd.append('expires_at', new Date(this.giveForm.expires_at).toISOString());
+    }
+    if (this.giveTab === 'customers') {
+      Array.from(this.selectedUserIds).forEach((id) => fd.append('user_ids[]', String(id)));
+    } else if (this.csvFile) {
+      fd.append('csv', this.csvFile);
+    }
+
+    this.api
+      .postMultipart<{ assigned_count: number; skipped_invalid: number; message: string }>(
+        `/admin/cities/${this.cityId}/promo-codes/${this.giveTarget.id}/give`,
+        fd,
+      )
+      .subscribe({
+        next: (r) => {
+          this.giving = false;
+          this.toast.success(r?.message || 'Promo code issued.');
+          this.closeGive();
+        },
+        error: (e) => {
+          this.giving = false;
+          this.toast.error(e?.error?.message || 'Failed to issue promo code');
+        },
+      });
   }
 }

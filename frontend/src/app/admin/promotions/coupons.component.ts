@@ -1,7 +1,8 @@
 import { Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
@@ -26,6 +27,7 @@ interface CouponRow {
   benefit_type: string;
   description: string | null;
   promo_type: string;
+  location_type: string | null;
   latitude: number | null;
   longitude: number | null;
   radius_meters: number | null;
@@ -38,10 +40,16 @@ interface CouponRow {
   is_active: boolean;
 }
 
+interface CustomerRow {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
 const PROMO_TYPES = [
   { label: 'Location insensitive', value: 'location_insensitive' },
-  { label: 'Pickup based', value: 'pickup_based' },
-  { label: 'Drop based', value: 'drop_based' },
+  { label: 'Location sensitive', value: 'location_sensitive' },
 ];
 
 /** Coupons — redeemable discounts for the city chosen in the topbar switcher. */
@@ -71,46 +79,110 @@ const PROMO_TYPES = [
       </div>
 
       <ng-container *ngIf="cityId != null">
-        <div class="seg">
-          <button class="seg__btn" [class.is-on]="tab === 'active'" (click)="setTab('active')">Active</button>
-          <button class="seg__btn" [class.is-on]="tab === 'inactive'" (click)="setTab('inactive')">Inactive</button>
+        <div class="toolbar">
+          <label class="search">
+            <tm-icon name="search" [size]="14" />
+            <input
+              type="search"
+              placeholder="Search by title or subtitle"
+              [ngModel]="searchQuery"
+              (ngModelChange)="onSearchChange($event)"
+            />
+          </label>
+          <div class="toolbar__right">
+            <label class="toggle toggle--inline">
+              <input type="checkbox" [(ngModel)]="showInactive" (ngModelChange)="onFilterChange()" />
+              <span>Show inactive</span>
+            </label>
+            <select class="vfilter" [(ngModel)]="vehicleFilter" (ngModelChange)="onFilterChange()">
+              <option [ngValue]="null">All vehicles</option>
+              <option *ngFor="let v of vehicleOptions" [ngValue]="v.id">{{ v.display_name }}</option>
+            </select>
+          </div>
         </div>
 
-        <div class="grid" *ngIf="rows.length; else empty">
-          <article class="card" *ngFor="let r of rows">
-            <div class="card__top">
-              <span class="card__title-t">{{ r.title }}</span>
-              <span class="card__status" [class.on]="r.is_active" [class.off]="!r.is_active">
-                {{ r.is_active ? 'Active' : 'Inactive' }}
-              </span>
-            </div>
-            <p class="card__sub">{{ r.subtitle || r.description || '—' }}</p>
-            <div class="card__discount">
-              <span class="card__discount-v">{{ r.discount_value }}{{ r.discount_type === 'percentage' ? '%' : '' }}</span>
-              <span class="card__discount-l">off{{ r.discount_maximum ? ' · max ' + r.discount_maximum : '' }}</span>
-            </div>
-            <div class="card__meta">
-              <span class="tagx">{{ humanPromoType(r.promo_type) }}</span>
-              <span class="tagx" *ngIf="r.per_user_limit != null">{{ r.per_user_limit }}/user</span>
-              <span class="tagx" *ngIf="r.location_name"><tm-icon name="pin" [size]="11" /> {{ r.location_name }}</span>
-            </div>
-            <div class="card__foot">
-              <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
-              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
-            </div>
-          </article>
+        <div class="table-wrap" *ngIf="rows.length; else empty">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Discount</th>
+                <th>Vehicles</th>
+                <th>Per-user</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th class="num">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of rows">
+                <td>
+                  <div class="strong">{{ r.title }}</div>
+                  <div class="muted small" *ngIf="r.subtitle">{{ r.subtitle }}</div>
+                </td>
+                <td>
+                  {{ humanPromoType(r.promo_type) }}
+                  <span class="muted small" *ngIf="r.promo_type === 'location_sensitive' && r.location_type">
+                    · {{ r.location_type === 'pickup' ? 'Pickup' : 'Drop' }}
+                  </span>
+                </td>
+                <td class="strong">
+                  {{ r.discount_value }}{{ r.discount_type === 'percentage' ? '%' : '' }} off
+                  <span class="muted small" *ngIf="r.discount_maximum"> · max {{ r.discount_maximum }}</span>
+                </td>
+                <td>
+                  <span class="muted" *ngIf="!r.allowed_vehicle_type_ids?.length">All</span>
+                  <span class="tagx" *ngFor="let id of r.allowed_vehicle_type_ids">{{ vehicleName(id) }}</span>
+                </td>
+                <td>
+                  <span *ngIf="r.per_user_limit != null">{{ r.per_user_limit }}</span>
+                  <span class="muted" *ngIf="r.per_user_limit == null">∞</span>
+                </td>
+                <td>
+                  <span *ngIf="r.location_name; else noLoc"><tm-icon name="pin" [size]="11" /> {{ r.location_name }}</span>
+                  <ng-template #noLoc><span class="muted">—</span></ng-template>
+                </td>
+                <td>
+                  <span class="status" [class.on]="r.is_active" [class.off]="!r.is_active">
+                    {{ r.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+                <td class="num actions">
+                  <button class="icon-btn" (click)="openGive(r)" aria-label="Give to users" title="Give to users">
+                    <tm-icon name="eye" [size]="14" />
+                  </button>
+                  <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
+                  <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+
+        <div class="paginator" *ngIf="rows.length">
+          <span class="paginator__count">
+            Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }}
+          </span>
+          <div class="paginator__nav">
+            <button class="pg-btn" [disabled]="currentPage <= 1" (click)="goToPage(currentPage - 1)">Prev</button>
+            <span class="pg-page">Page {{ currentPage }} of {{ lastPage }}</span>
+            <button class="pg-btn" [disabled]="currentPage >= lastPage" (click)="goToPage(currentPage + 1)">Next</button>
+          </div>
+        </div>
+
         <ng-template #empty>
           <div class="cue">
             <tm-icon name="tag" [size]="24" />
-            <p class="cue__title">No {{ tab }} coupons</p>
-            <p class="cue__text" *ngIf="tab === 'active'">Create a coupon to offer riders a discount.</p>
+            <p class="cue__title">No coupons found</p>
+            <p class="cue__text" *ngIf="searchQuery || showInactive || vehicleFilter">Try a different search or filter.</p>
+            <p class="cue__text" *ngIf="!searchQuery && !showInactive && !vehicleFilter">Create a coupon to offer riders a discount.</p>
           </div>
         </ng-template>
       </ng-container>
     </div>
 
-    <!-- Drawer -->
+    <!-- Drawer: create / edit coupon -->
     <tm-drawer
       [open]="open"
       [title]="editingId ? 'Edit coupon' : 'Add coupon'"
@@ -120,16 +192,16 @@ const PROMO_TYPES = [
       <div slot="body" class="form">
         <label class="field">
           <span class="field__lbl">Title <i>*</i></span>
-          <input type="text" [(ngModel)]="form.title" (ngModelChange)="touched = true" />
+          <input type="text" [(ngModel)]="form.title" (ngModelChange)="touched = true" placeholder="Name of the coupon" />
           <span class="field__err" *ngIf="touched && !form.title.trim()">Title is required.</span>
         </label>
         <label class="field">
           <span class="field__lbl">Subtitle</span>
-          <input type="text" [(ngModel)]="form.subtitle" />
+          <input type="text" [(ngModel)]="form.subtitle" placeholder="What it's for" />
         </label>
         <label class="field">
           <span class="field__lbl">Description</span>
-          <textarea rows="2" [(ngModel)]="form.description"></textarea>
+          <textarea rows="2" [(ngModel)]="form.description" placeholder="Any description"></textarea>
         </label>
 
         <label class="field">
@@ -139,7 +211,20 @@ const PROMO_TYPES = [
           </select>
         </label>
 
-        <ng-container *ngIf="isLocationBased()">
+        <ng-container *ngIf="form.promo_type === 'location_sensitive'">
+          <div class="row">
+            <label class="field">
+              <span class="field__lbl">Location type</span>
+              <select [(ngModel)]="form.location_type">
+                <option value="pickup">Pick-up</option>
+                <option value="drop">Drop</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field__lbl">Request radius (m) <i>*</i></span>
+              <input type="number" min="0" [(ngModel)]="form.radius_meters" />
+            </label>
+          </div>
           <label class="field">
             <span class="field__lbl">Location <i>*</i></span>
             <input #locationInput type="text" [(ngModel)]="form.location_name"
@@ -147,10 +232,6 @@ const PROMO_TYPES = [
             <span class="field__ok" *ngIf="form.location_name && form.latitude">
               <tm-icon name="check" [size]="12" /> Location pinned
             </span>
-          </label>
-          <label class="field">
-            <span class="field__lbl">Request radius (meters) <i>*</i></span>
-            <input type="number" min="0" [(ngModel)]="form.radius_meters" />
           </label>
         </ng-container>
 
@@ -210,6 +291,90 @@ const PROMO_TYPES = [
       </div>
     </tm-drawer>
 
+    <!-- Give-to-users modal: Select customers OR Import CSV -->
+    <tm-modal [open]="!!giveTarget" [title]="'Give coupon: ' + (giveTarget?.title || '')" (closed)="closeGive()">
+      <div slot="body" class="give">
+        <div class="give-tabs">
+          <button class="give-tab" [class.is-on]="giveTab === 'customers'" (click)="setGiveTab('customers')">
+            Select from customers
+          </button>
+          <button class="give-tab" [class.is-on]="giveTab === 'csv'" (click)="setGiveTab('csv')">
+            Import from CSV
+          </button>
+        </div>
+
+        <ng-container *ngIf="giveTab === 'customers'">
+          <label class="search search--inline">
+            <tm-icon name="search" [size]="14" />
+            <input
+              type="search"
+              placeholder="Search by name, phone or email"
+              [ngModel]="customerSearch"
+              (ngModelChange)="onCustomerSearchChange($event)"
+            />
+          </label>
+          <div class="cust-list" *ngIf="customerRows.length; else noCust">
+            <label class="cust-row" *ngFor="let c of customerRows">
+              <input
+                type="checkbox"
+                [checked]="selectedUserIds.has(c.id)"
+                (change)="toggleSelectedUser(c.id, $event)"
+              />
+              <div class="cust-info">
+                <div class="strong">{{ c.name || 'Customer #' + c.id }}</div>
+                <div class="muted small">{{ c.phone || '—' }}<span *ngIf="c.email"> · {{ c.email }}</span></div>
+              </div>
+            </label>
+          </div>
+          <ng-template #noCust>
+            <div class="muted small ion-text-center" style="padding:18px 0">No customers found.</div>
+          </ng-template>
+          <div class="paginator" *ngIf="customerRows.length">
+            <span class="paginator__count">{{ selectedUserIds.size }} selected · Showing page {{ customerPage }} of {{ customerLastPage }}</span>
+            <div class="paginator__nav">
+              <button class="pg-btn" [disabled]="customerPage <= 1" (click)="goToCustomerPage(customerPage - 1)">Prev</button>
+              <button class="pg-btn" [disabled]="customerPage >= customerLastPage" (click)="goToCustomerPage(customerPage + 1)">Next</button>
+            </div>
+          </div>
+        </ng-container>
+
+        <ng-container *ngIf="giveTab === 'csv'">
+          <label class="csv-drop">
+            <input type="file" accept=".csv,text/csv" (change)="onCsvSelected($event)" hidden />
+            <tm-icon name="upload" [size]="20" />
+            <div>
+              <div class="strong">{{ csvFile?.name || 'Choose CSV' }}</div>
+              <div class="muted small">CSV with a <code>user_id</code> column. One id per row.</div>
+            </div>
+          </label>
+          <button type="button" class="link-btn" (click)="downloadSampleCsv()">
+            <tm-icon name="download" [size]="13" /> Download sample CSV
+          </button>
+        </ng-container>
+
+        <div class="give-fields">
+          <label class="field">
+            <span class="field__lbl">Reason <i>*</i></span>
+            <input type="text" [(ngModel)]="giveForm.reason" placeholder="Why this coupon is being issued" />
+          </label>
+          <label class="field">
+            <span class="field__lbl">Push message</span>
+            <textarea rows="3" [(ngModel)]="giveForm.push_message" placeholder="Optional message to send via notification"></textarea>
+          </label>
+          <label class="field">
+            <span class="field__lbl">Expiry date</span>
+            <input type="datetime-local" [(ngModel)]="giveForm.expires_at" />
+          </label>
+        </div>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="closeGive()">Cancel</tm-button>
+        <tm-button variant="green" [disabled]="!canSubmitGive() || giving" (clicked)="submitGive()">
+          {{ giving ? 'Sending…' : 'Send' }}
+        </tm-button>
+      </div>
+    </tm-modal>
+
     <!-- Delete confirm -->
     <tm-modal [open]="!!deleteTarget" title="Delete coupon" (closed)="deleteTarget = null">
       <div slot="body"><p>Delete coupon <strong>{{ deleteTarget?.title }}</strong>? This cannot be undone.</p></div>
@@ -234,56 +399,83 @@ const PROMO_TYPES = [
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .seg {
-      display: inline-flex; gap: 4px; padding: 4px;
-      background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
+    .toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 10px; background: var(--tm-surface);
+      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md, 10px);
     }
-    .seg__btn {
-      padding: 7px 18px; border-radius: 8px;
-      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      background: transparent; cursor: pointer;
+    .toolbar__right { display: inline-flex; align-items: center; gap: 12px; }
+    .search {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 10px; min-width: 280px;
+      background: var(--tm-canvas); border: 1px solid var(--tm-line); border-radius: 8px;
+      color: var(--tm-text-muted);
     }
-    .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
+    .search--inline { width: 100%; min-width: 0; margin-bottom: 10px; }
+    .search input {
+      border: none; outline: none; background: transparent;
+      color: var(--tm-text); font-size: 13px; flex: 1; min-width: 0;
+    }
+    .vfilter {
+      padding: 7px 12px; border: 1px solid var(--tm-line); border-radius: 8px;
+      background: var(--tm-canvas); color: var(--tm-text); font-size: 13px;
+      font-family: inherit;
+    }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-      gap: 12px;
-    }
-    .card {
+    .table-wrap {
       background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px); padding: 14px;
+      border-radius: var(--tm-radius-lg, 14px); overflow: auto;
     }
-    .card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .card__title-t { font-size: 15px; font-weight: 800; color: var(--tm-text); }
-    .card__status {
+    .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .table th, .table td {
+      padding: 10px 14px; text-align: left; vertical-align: middle;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .table thead th {
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .table tbody tr:last-child td { border-bottom: 0; }
+    .table tbody tr:hover { background: var(--tm-canvas-2); }
+    .table td.num { text-align: right; }
+    .table td.actions { white-space: nowrap; }
+    .strong { color: var(--tm-text); font-weight: 700; }
+    .muted { color: var(--tm-text-muted); }
+    .small { font-size: 11px; }
+    .status {
       font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
       padding: 3px 8px; border-radius: 999px;
     }
-    .card__status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .card__status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
-    .card__sub {
-      margin: 5px 0 0; font-size: 12px; color: var(--tm-text-muted);
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .card__discount { display: flex; align-items: baseline; gap: 6px; margin: 10px 0; }
-    .card__discount-v { font-size: 26px; font-weight: 800; color: var(--tm-text); line-height: 1; }
-    .card__discount-l { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
-    .card__meta {
-      display: flex; gap: 6px; flex-wrap: wrap;
-      border-top: 1px solid var(--tm-line); padding-top: 10px;
-    }
+    .status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .tagx {
       display: inline-flex; align-items: center; gap: 3px;
       font-size: 10px; font-weight: 700;
       padding: 3px 7px; border-radius: 6px;
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      margin-right: 4px;
     }
-    .card__foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+
+    .paginator {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 4px 2px;
+    }
+    .paginator__count { font-size: 12px; color: var(--tm-text-muted); }
+    .paginator__nav { display: inline-flex; align-items: center; gap: 8px; }
+    .pg-btn {
+      padding: 6px 12px; border-radius: 8px;
+      border: 1px solid var(--tm-line); background: var(--tm-surface);
+      color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .pg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .pg-page { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 7px;
       background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
+      margin-left: 4px;
     }
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
@@ -314,14 +506,67 @@ const PROMO_TYPES = [
     .vchip.is-on { background: var(--tm-green-tint, #e0f7fa); border-color: var(--tm-green); color: var(--tm-green); }
 
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
+    .toggle--inline { gap: 6px; cursor: pointer; }
     .toggle input { width: 16px; height: 16px; }
+
+    /* Give-to-users modal */
+    .give {
+      display: flex; flex-direction: column; gap: 14px;
+      width: 100%; box-sizing: border-box;
+    }
+    .give *, .give *::before, .give *::after { box-sizing: border-box; }
+    .give-tabs {
+      display: flex; gap: 4px; padding: 4px; width: 100%;
+      background: var(--tm-canvas-2); border-radius: 10px;
+    }
+    .give-tab {
+      flex: 1; padding: 8px 14px; border-radius: 8px;
+      background: transparent; cursor: pointer;
+      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
+      text-align: center; border: none;
+    }
+    .give-tab.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
+    .cust-list {
+      max-height: 240px; overflow: auto;
+      border: 1px solid var(--tm-line); border-radius: 9px;
+    }
+    .cust-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; cursor: pointer;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .cust-row:last-child { border-bottom: 0; }
+    .cust-row:hover { background: var(--tm-canvas-2); }
+    .cust-info { display: flex; flex-direction: column; min-width: 0; }
+    .csv-drop {
+      display: flex; align-items: center; gap: 12px;
+      padding: 18px; cursor: pointer;
+      background: var(--tm-canvas); border: 1px dashed var(--tm-line); border-radius: 10px;
+    }
+    .csv-drop:hover { border-color: var(--tm-green); color: var(--tm-text); }
+    .link-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--tm-green); font-size: 12px; font-weight: 700;
+      background: transparent; cursor: pointer; padding: 0;
+    }
+    .give-fields { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; border-top: 1px solid var(--tm-line); }
   `],
 })
 export class CouponsComponent implements OnInit, OnDestroy {
   cityId: number | null = null;
-  tab: 'active' | 'inactive' = 'active';
   rows: CouponRow[] = [];
   vehicleOptions: VehicleTypeOption[] = [];
+
+  // Listing filters / pagination
+  searchQuery = '';
+  showInactive = false;
+  vehicleFilter: number | null = null;
+  currentPage = 1;
+  lastPage = 1;
+  perPage = 10;
+  total = 0;
+  private search$ = new Subject<string>();
+  private searchSub?: Subscription;
 
   open = false;
   editingId: number | null = null;
@@ -332,11 +577,37 @@ export class CouponsComponent implements OnInit, OnDestroy {
 
   promoTypes = PROMO_TYPES;
 
+  // Give-to-users state
+  giveTarget: CouponRow | null = null;
+  giveTab: 'customers' | 'csv' = 'customers';
+  giving = false;
+  giveForm: { reason: string; push_message: string; expires_at: string } = {
+    reason: '',
+    push_message: '',
+    expires_at: '',
+  };
+  customerRows: CustomerRow[] = [];
+  customerSearch = '';
+  customerPage = 1;
+  customerLastPage = 1;
+  customerPerPage = 10;
+  selectedUserIds = new Set<number>();
+  csvFile: File | null = null;
+  private custSearch$ = new Subject<string>();
+  private custSearchSub?: Subscription;
+
   @ViewChild('locationInput') locationInputRef?: ElementRef<HTMLInputElement>;
   private autocomplete: google.maps.places.Autocomplete | null = null;
   private autocompleteListener: google.maps.MapsEventListener | null = null;
 
   private sub?: Subscription;
+
+  get rangeStart(): number {
+    return this.total === 0 ? 0 : (this.currentPage - 1) * this.perPage + 1;
+  }
+  get rangeEnd(): number {
+    return Math.min(this.currentPage * this.perPage, this.total);
+  }
 
   constructor(
     private api: ApiService,
@@ -359,25 +630,50 @@ export class CouponsComponent implements OnInit, OnDestroy {
         this.vehicleOptions = [];
       }
     });
+    this.searchSub = this.search$
+      .pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe(() => {
+        this.currentPage = 1;
+        this.fetch();
+      });
+    this.custSearchSub = this.custSearch$
+      .pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe(() => {
+        this.customerPage = 1;
+        this.fetchCustomers();
+      });
   }
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+    this.searchSub?.unsubscribe();
+    this.custSearchSub?.unsubscribe();
     this.detachAutocomplete();
   }
 
-  setTab(t: 'active' | 'inactive'): void {
-    if (this.tab === t) return;
-    this.tab = t;
+  // ── Listing ─────────────────────────────────────────────────────────
+  onSearchChange(val: string): void {
+    this.searchQuery = val;
+    this.search$.next(val);
+  }
+
+  onFilterChange(): void {
+    this.currentPage = 1;
     this.fetch();
   }
 
-  isLocationBased(): boolean {
-    return this.form.promo_type === 'pickup_based' || this.form.promo_type === 'drop_based';
+  goToPage(page: number): void {
+    if (page < 1 || page > this.lastPage || page === this.currentPage) return;
+    this.currentPage = page;
+    this.fetch();
   }
 
   humanPromoType(p: string): string {
     return PROMO_TYPES.find((x) => x.value === p)?.label || p;
+  }
+
+  vehicleName(id: number): string {
+    return this.vehicleOptions.find((v) => v.id === id)?.display_name || `#${id}`;
   }
 
   toggleVehicle(id: number): void {
@@ -389,10 +685,28 @@ export class CouponsComponent implements OnInit, OnDestroy {
 
   fetch(): void {
     if (this.cityId == null) return;
-    const active = this.tab === 'active' ? '1' : '0';
-    this.api.get<{ data: CouponRow[] }>(`/admin/cities/${this.cityId}/coupons?is_active=${active}`)
+    const params = new URLSearchParams();
+    params.set('is_active', this.showInactive ? '0' : '1');
+    if (this.searchQuery.trim()) params.set('q', this.searchQuery.trim());
+    if (this.vehicleFilter != null) params.set('city_vehicle_type_id', String(this.vehicleFilter));
+    params.set('page', String(this.currentPage));
+    params.set('per_page', String(this.perPage));
+    this.api
+      .get<{
+        data: CouponRow[];
+        meta?: { current_page: number; last_page: number; per_page: number; total: number };
+      }>(`/admin/cities/${this.cityId}/coupons?${params.toString()}`)
       .subscribe({
-        next: (r) => (this.rows = r.data ?? []),
+        next: (r) => {
+          this.rows = r.data ?? [];
+          const meta = r.meta;
+          if (meta) {
+            this.currentPage = meta.current_page;
+            this.lastPage = meta.last_page;
+            this.perPage = meta.per_page;
+            this.total = meta.total;
+          }
+        },
         error: () => this.toast.error('Failed to load coupons'),
       });
   }
@@ -409,6 +723,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
       });
   }
 
+  // ── Create / edit drawer ────────────────────────────────────────────
   blankForm() {
     return {
       title: '',
@@ -416,6 +731,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
       benefit_type: 'discount',
       description: '',
       promo_type: 'location_insensitive',
+      location_type: 'pickup',
       location_name: '' as string | null,
       latitude: null as number | null,
       longitude: null as number | null,
@@ -446,6 +762,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
       benefit_type: r.benefit_type,
       description: r.description || '',
       promo_type: r.promo_type,
+      location_type: r.location_type || 'pickup',
       location_name: r.location_name || '',
       latitude: r.latitude,
       longitude: r.longitude,
@@ -462,10 +779,11 @@ export class CouponsComponent implements OnInit, OnDestroy {
   }
 
   onPromoTypeChange(): void {
-    if (this.isLocationBased()) {
+    if (this.form.promo_type === 'location_sensitive') {
       this.maybeAttachAutocomplete();
     } else {
       this.detachAutocomplete();
+      this.form.location_type = 'pickup';
       this.form.location_name = '';
       this.form.latitude = null;
       this.form.longitude = null;
@@ -479,9 +797,8 @@ export class CouponsComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Wait for the drawer to mount the location input, then bind Places autocomplete. */
   private maybeAttachAutocomplete(): void {
-    if (!this.isLocationBased()) return;
+    if (this.form.promo_type !== 'location_sensitive') return;
     setTimeout(() => this.attachAutocomplete(), 320);
   }
 
@@ -513,9 +830,9 @@ export class CouponsComponent implements OnInit, OnDestroy {
   submit(): void {
     this.touched = true;
     if (this.cityId == null || !this.form.title.trim() || this.saving) return;
-    if (this.isLocationBased()) {
+    if (this.form.promo_type === 'location_sensitive') {
       if (!this.form.radius_meters || this.form.radius_meters <= 0) {
-        this.toast.warning('Request radius is required for location-based coupons');
+        this.toast.warning('Request radius is required for location-sensitive coupons');
         return;
       }
       if (!this.form.latitude || !this.form.longitude) {
@@ -525,7 +842,8 @@ export class CouponsComponent implements OnInit, OnDestroy {
     }
 
     const body: any = { ...this.form };
-    if (!this.isLocationBased()) {
+    if (this.form.promo_type !== 'location_sensitive') {
+      body.location_type = null;
       body.location_name = null;
       body.latitude = null;
       body.longitude = null;
@@ -568,5 +886,131 @@ export class CouponsComponent implements OnInit, OnDestroy {
         this.toast.error(e?.error?.message || 'Delete failed');
       },
     });
+  }
+
+  // ── Give-to-users modal ─────────────────────────────────────────────
+  openGive(r: CouponRow): void {
+    this.giveTarget = r;
+    this.giveTab = 'customers';
+    this.giveForm = { reason: '', push_message: '', expires_at: '' };
+    this.selectedUserIds = new Set<number>();
+    this.csvFile = null;
+    this.customerSearch = '';
+    this.customerPage = 1;
+    this.fetchCustomers();
+  }
+
+  closeGive(): void {
+    this.giveTarget = null;
+    this.giving = false;
+  }
+
+  setGiveTab(tab: 'customers' | 'csv'): void {
+    this.giveTab = tab;
+  }
+
+  onCustomerSearchChange(val: string): void {
+    this.customerSearch = val;
+    this.custSearch$.next(val);
+  }
+
+  goToCustomerPage(page: number): void {
+    if (page < 1 || page > this.customerLastPage || page === this.customerPage) return;
+    this.customerPage = page;
+    this.fetchCustomers();
+  }
+
+  toggleSelectedUser(id: number, ev: Event): void {
+    const checked = (ev.target as HTMLInputElement).checked;
+    if (checked) this.selectedUserIds.add(id);
+    else this.selectedUserIds.delete(id);
+  }
+
+  onCsvSelected(ev: Event): void {
+    const file = (ev.target as HTMLInputElement).files?.[0];
+    this.csvFile = file ?? null;
+  }
+
+  downloadSampleCsv(): void {
+    const csv = 'user_id\n123\n456\n';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'coupon_recipients_sample.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  canSubmitGive(): boolean {
+    if (!this.giveTarget) return false;
+    if (!this.giveForm.reason.trim()) return false;
+    if (this.giveTab === 'customers') return this.selectedUserIds.size > 0;
+    return !!this.csvFile;
+  }
+
+  fetchCustomers(): void {
+    const params = new URLSearchParams();
+    if (this.customerSearch.trim()) params.set('search', this.customerSearch.trim());
+    params.set('page', String(this.customerPage));
+    params.set('per_page', String(this.customerPerPage));
+    this.api
+      .get<any>(`/admin/customers?${params.toString()}`)
+      .subscribe({
+        next: (r) => {
+          // AdminCustomersController returns Laravel's native paginator nested
+          // under `data` — i.e. { data: { data: [...], current_page, ... } }.
+          // Normalise both that shape and the simpler { data, meta } shape.
+          const payload = r?.data ?? {};
+          const rows: CustomerRow[] = Array.isArray(payload) ? payload : (payload.data ?? []);
+          this.customerRows = rows;
+          if (!Array.isArray(payload) && typeof payload === 'object') {
+            this.customerPage = payload.current_page ?? this.customerPage;
+            this.customerLastPage = payload.last_page ?? this.customerLastPage;
+            this.customerPerPage = payload.per_page ?? this.customerPerPage;
+          } else if (r?.meta) {
+            this.customerPage = r.meta.current_page;
+            this.customerLastPage = r.meta.last_page;
+            this.customerPerPage = r.meta.per_page;
+          }
+        },
+        error: () => (this.customerRows = []),
+      });
+  }
+
+  submitGive(): void {
+    if (!this.giveTarget || this.cityId == null || !this.canSubmitGive() || this.giving) return;
+    this.giving = true;
+
+    const fd = new FormData();
+    fd.append('mode', this.giveTab);
+    fd.append('reason', this.giveForm.reason.trim());
+    if (this.giveForm.push_message.trim()) fd.append('push_message', this.giveForm.push_message.trim());
+    if (this.giveForm.expires_at) {
+      // datetime-local → ISO; backend's date validator accepts both.
+      fd.append('expires_at', new Date(this.giveForm.expires_at).toISOString());
+    }
+    if (this.giveTab === 'customers') {
+      Array.from(this.selectedUserIds).forEach((id) => fd.append('user_ids[]', String(id)));
+    } else if (this.csvFile) {
+      fd.append('csv', this.csvFile);
+    }
+
+    this.api
+      .postMultipart<{ assigned_count: number; skipped_invalid: number; message: string }>(
+        `/admin/cities/${this.cityId}/coupons/${this.giveTarget.id}/give`,
+        fd,
+      )
+      .subscribe({
+        next: (r) => {
+          this.giving = false;
+          this.toast.success(r?.message || 'Coupon issued.');
+          this.closeGive();
+        },
+        error: (e) => {
+          this.giving = false;
+          this.toast.error(e?.error?.message || 'Failed to issue coupon');
+        },
+      });
   }
 }
