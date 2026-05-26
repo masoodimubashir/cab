@@ -30,16 +30,6 @@ interface CitySettings {
   night_end_time: string | null;
   advertise_credits: number;
 
-  theme_color: string | null;
-  logo_path: string | null;
-  logo_url: string | null;
-  splash_screen_path: string | null;
-  splash_screen_url: string | null;
-  home_bg_path: string | null;
-  home_bg_url: string | null;
-
-  onboarding_info: string | null;
-  customer_rate_card_info: string | null;
   customer_login_otp_message: string | null;
   customer_login_otp_message_ios: string | null;
 
@@ -50,16 +40,11 @@ interface CitySettings {
   driver_support_no: string | null;
   customer_support_no: string | null;
   support_email: string | null;
-  operator_name: string | null;
-  operational_info: string | null;
 }
 
 const PAYMENT_MODE_OPTIONS = [
   { label: 'Cash', value: 'CASH' },
   { label: 'Razorpay', value: 'RAZORPAY' },
-  { label: 'UPI', value: 'UPI' },
-  { label: 'Wallet', value: 'WALLET' },
-  { label: 'Card', value: 'CARD' },
 ];
 
 const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
@@ -74,11 +59,9 @@ const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
 const NAV: { id: string; label: string; icon: IconName }[] = [
   { id: 'sec-toggles', label: 'Feature toggles', icon: 'bolt' },
   { id: 'sec-limits', label: 'Time & limits', icon: 'calendar' },
-  { id: 'sec-branding', label: 'Branding', icon: 'gift' },
   { id: 'sec-messaging', label: 'Customer messaging', icon: 'envelope' },
   { id: 'sec-payment', label: 'Payment', icon: 'tag' },
   { id: 'sec-contacts', label: 'Support contacts', icon: 'phone' },
-  { id: 'sec-operator', label: 'Operator', icon: 'id-card' },
 ];
 
 /**
@@ -172,49 +155,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
           </div>
         </section>
 
-        <!-- Branding -->
-        <section class="sec" id="sec-branding">
-          <header class="sec__head">
-            <span class="sec__icon"><tm-icon name="gift" [size]="16" /></span>
-            <div>
-              <h3 class="sec__title">Branding</h3>
-              <p class="sec__desc">Theme colour, app imagery and rich-text content.</p>
-            </div>
-          </header>
-          <div class="sec__body">
-            <label class="field field--color">
-              <span class="field__lbl">Theme colour</span>
-              <div class="color-row">
-                <input type="color" [(ngModel)]="themeColorSafe" />
-                <input type="text" [(ngModel)]="form.theme_color" placeholder="#06b6d4" maxlength="16" />
-              </div>
-            </label>
-
-            <div class="media-grid">
-              <div class="media" *ngFor="let m of mediaSlots">
-                <span class="field__lbl">{{ m.label }}</span>
-                <div class="media__box" [class.has-img]="previewUrl(m.key)">
-                  <img *ngIf="previewUrl(m.key)" [src]="previewUrl(m.key)" alt="" />
-                  <span *ngIf="!previewUrl(m.key)" class="media__ph"><tm-icon name="upload" [size]="20" /></span>
-                </div>
-                <label class="media__btn">
-                  <tm-icon name="upload" [size]="13" /> Choose file
-                  <input type="file" accept="image/*" (change)="pickFile($event, m.key)" hidden />
-                </label>
-              </div>
-            </div>
-
-            <label class="field">
-              <span class="field__lbl">Onboarding info (HTML)</span>
-              <textarea rows="4" [(ngModel)]="form.onboarding_info"></textarea>
-            </label>
-            <label class="field">
-              <span class="field__lbl">Customer rate-card info (HTML)</span>
-              <textarea rows="4" [(ngModel)]="form.customer_rate_card_info"></textarea>
-            </label>
-          </div>
-        </section>
-
         <!-- Messaging -->
         <section class="sec" id="sec-messaging">
           <header class="sec__head">
@@ -290,27 +230,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <label class="field">
               <span class="field__lbl">Support email</span>
               <input type="email" [(ngModel)]="form.support_email" />
-            </label>
-          </div>
-        </section>
-
-        <!-- Operator -->
-        <section class="sec" id="sec-operator">
-          <header class="sec__head">
-            <span class="sec__icon"><tm-icon name="id-card" [size]="16" /></span>
-            <div>
-              <h3 class="sec__title">Operator</h3>
-              <p class="sec__desc">Operator identity and operational notes.</p>
-            </div>
-          </header>
-          <div class="sec__body">
-            <label class="field">
-              <span class="field__lbl">Operator name</span>
-              <input type="text" [(ngModel)]="form.operator_name" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Operational info</span>
-              <textarea rows="3" [(ngModel)]="form.operational_info"></textarea>
             </label>
           </div>
         </section>
@@ -508,14 +427,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
   toggles = TOGGLES;
   nav = NAV;
   activeId = NAV[0].id;
-  mediaSlots: { key: 'logo' | 'splash_screen' | 'home_bg'; label: string }[] = [
-    { key: 'logo', label: 'Logo' },
-    { key: 'splash_screen', label: 'Splash screen' },
-    { key: 'home_bg', label: 'Home background' },
-  ];
 
-  private files: { logo?: File; splash_screen?: File; home_bg?: File } = {};
-  private localPreviews: { [k: string]: string } = {};
   private sub?: Subscription;
   private spy?: IntersectionObserver;
 
@@ -532,8 +444,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.sub = this.cityCtx.cityId$.subscribe((id) => {
       this.cityId = id;
       this.form = null;
-      this.files = {};
-      this.localPreviews = {};
       if (id != null) this.fetch();
     });
   }
@@ -585,14 +495,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.form) (this.form as any)[key] = val;
   }
 
-  get themeColorSafe(): string {
-    const c = this.form?.theme_color || '';
-    return /^#[0-9a-fA-F]{6}$/.test(c) ? c : '#06b6d4';
-  }
-  set themeColorSafe(val: string) {
-    if (this.form) this.form.theme_color = val;
-  }
-
   isMode(mode: string): boolean {
     return (this.form?.allowed_driver_payment_modes ?? []).includes(mode);
   }
@@ -602,11 +504,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.form.allowed_driver_payment_modes = list.includes(mode)
       ? list.filter((m) => m !== mode)
       : [...list, mode];
-  }
-
-  previewUrl(key: 'logo' | 'splash_screen' | 'home_bg'): string | null {
-    if (this.localPreviews[key]) return this.localPreviews[key];
-    return (this.form as any)?.[`${key}_url`] ?? null;
   }
 
   fetch(): void {
@@ -631,15 +528,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
           this.toast.error('Failed to load settings');
         },
       });
-  }
-
-  pickFile(e: Event, key: 'logo' | 'splash_screen' | 'home_bg'): void {
-    const f = (e.target as HTMLInputElement).files?.[0];
-    if (!f) return;
-    this.files[key] = f;
-    const reader = new FileReader();
-    reader.onload = () => (this.localPreviews[key] = reader.result as string);
-    reader.readAsDataURL(f);
   }
 
   save(): void {
@@ -668,9 +556,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     append('night_end_time', f.night_end_time);
     append('advertise_credits', f.advertise_credits);
 
-    append('theme_color', f.theme_color);
-    append('onboarding_info', f.onboarding_info);
-    append('customer_rate_card_info', f.customer_rate_card_info);
     append('customer_login_otp_message', f.customer_login_otp_message);
     append('customer_login_otp_message_ios', f.customer_login_otp_message_ios);
 
@@ -684,20 +569,12 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     append('driver_support_no', f.driver_support_no);
     append('customer_support_no', f.customer_support_no);
     append('support_email', f.support_email);
-    append('operator_name', f.operator_name);
-    append('operational_info', f.operational_info);
-
-    if (this.files.logo) fd.append('logo', this.files.logo);
-    if (this.files.splash_screen) fd.append('splash_screen', this.files.splash_screen);
-    if (this.files.home_bg) fd.append('home_bg', this.files.home_bg);
 
     this.api
       .postMultipart<{ settings: CitySettings }>(`/admin/cities/${this.cityId}/settings`, fd)
       .subscribe({
         next: (res) => {
           this.saving = false;
-          this.files = {};
-          this.localPreviews = {};
           if (res.settings) {
             if (!Array.isArray(res.settings.allowed_driver_payment_modes)) {
               res.settings.allowed_driver_payment_modes = [];

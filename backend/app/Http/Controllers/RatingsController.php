@@ -53,16 +53,67 @@ class RatingsController extends Controller
         return response()->json(['rating' => $rating->fresh()]);
     }
 
+    /**
+     * Detail view for a single customer trip — the trip-details screen.
+     * Loads payment + driver + applied_promotion eager so the breakdown,
+     * payment status, and Pay-button gating can be rendered in one round-trip.
+     */
+    public function customerTripDetail(Request $request, Trip $trip)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $trip->load([
+            'payment:id,trip_id,method,status,amount,discount_amount,paid_at,coupon_assignment_id',
+            'driver:id,name,phone,avatar_path',
+            'appliedPromotion:id,title,discount_type,discount_value',
+        ]);
+
+        return response()->json(['trip' => $trip]);
+    }
+
     public function historyCustomer(Request $request)
     {
         $user = $request->user();
 
         $query = Trip::query()->where('customer_id', $user->id);
 
-        // product_kind filter removed — local/rental/outstation are no longer
-        // a property of a trip. The mode filter (if added later) should live
-        // on the city's service-mode catalogue or be derived from ride_type.
+        $this->applyTripFilters($request, $query);
 
+        $trips = $query
+            ->with('payment:id,trip_id,method,status,amount,discount_amount,paid_at')
+            ->orderByDesc('completed_at')
+            ->orderByDesc('created_at')
+            ->paginate(20);
+
+        return response()->json(['data' => $trips]);
+    }
+
+    public function historyDriver(Request $request)
+    {
+        $user = $request->user();
+
+        $query = Trip::query()->where('driver_id', $user->id);
+
+        $this->applyTripFilters($request, $query);
+
+        $trips = $query
+            ->with('payment:id,trip_id,method,status,amount,discount_amount,paid_at')
+            ->orderByDesc('completed_at')
+            ->orderByDesc('created_at')
+            ->paginate(20);
+
+        return response()->json(['data' => $trips]);
+    }
+
+    /**
+     * Shared status + payment + city/date filters for the customer and driver
+     * history endpoints. Mutates the query in place.
+     */
+    private function applyTripFilters(Request $request, $query): void
+    {
         // ── status filter ───────────────────────────────────────────
         // completed = ride finished cleanly
         // cancelled = cancelled without a no-show flag (either side bailed early)
@@ -76,6 +127,24 @@ class RatingsController extends Controller
             $query->where('status', 'CANCELLED')->whereNotNull('no_show_by');
         }
 
+        // ── payment filter ──────────────────────────────────────────
+        // paid    = a payments row exists with status SUCCESS
+        // unpaid  = no SUCCESS payment row yet (still owed, pending, or failed)
+        $payment = $request->query('payment', 'all');
+        if ($payment === 'paid') {
+            $query->whereHas('payment', function ($q) {
+                $q->where('status', 'SUCCESS');
+            });
+        } elseif ($payment === 'unpaid') {
+            $query->where('status', 'COMPLETED')
+                ->where(function ($q) {
+                    $q->whereDoesntHave('payment')
+                      ->orWhereHas('payment', function ($p) {
+                          $p->where('status', '!=', 'SUCCESS');
+                      });
+                });
+        }
+
         // Optional city + date-range filters (untouched when omitted).
         if ($cityId = $request->query('city_id')) {
             $query->where('city_id', (int) $cityId);
@@ -86,24 +155,6 @@ class RatingsController extends Controller
         if ($to = $request->query('to')) {
             $query->where('created_at', '<=', $to);
         }
-
-        $trips = $query
-            ->orderByDesc('completed_at')
-            ->orderByDesc('created_at')
-            ->paginate(20);
-
-        return response()->json(['data' => $trips]);
-    }
-
-    public function historyDriver(Request $request)
-    {
-        $user = $request->user();
-        $trips = Trip::query()
-            ->where('driver_id', $user->id)
-            ->orderByDesc('completed_at')
-            ->paginate(20);
-
-        return response()->json(['data' => $trips]);
     }
 }
 

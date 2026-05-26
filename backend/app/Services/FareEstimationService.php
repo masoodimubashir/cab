@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CityWidePromotion;
 use App\Models\DriverLocation;
 use App\Models\PricingRule;
 use App\Models\Trip;
@@ -213,6 +214,7 @@ class FareEstimationService
      * @param  float|null  $pickupDistanceKm  driver→customer distance (when a driver is already picked)
      * @param  float|null  $routeDistanceKm   real routed distance (from Google Directions) — overrides haversine when set
      * @param  float|null  $routeTimeMin      real routed time — overrides the speed-heuristic when set
+     * @param  CityWidePromotion|null  $promo  resolved by PromotionApplicationService — applied pre-tax, never sinks subtotal below min_fare
      */
     public function estimateFare(
         array $pricingRule,
@@ -224,6 +226,7 @@ class FareEstimationService
         ?float $pickupDistanceKm = null,
         ?float $routeDistanceKm = null,
         ?float $routeTimeMin = null,
+        ?CityWidePromotion $promo = null,
     ): array {
         // Prefer the real routed distance from Google Directions when the
         // client supplies it; fall back to great-circle if not available.
@@ -279,6 +282,8 @@ class FareEstimationService
             $subtotal = $minFare;
         }
 
+        [$subtotal, $promoDiscount, $appliedPromoMeta] = $this->applyPromotion($subtotal, $minFare, $promo);
+
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $fare = $subtotal + $taxAmount;
 
@@ -296,6 +301,8 @@ class FareEstimationService
                 'dynamic_driver_factor' => round($driverFactor, 3),
                 'dynamic_rule_id' => $dynamicFactors['rule_id'] ?? null,
                 'dynamic_fare_type' => $dynamicFactors['fare_type'] ?? null,
+                'promo_discount' => round($promoDiscount, 2),
+                'applied_promotion' => $appliedPromoMeta,
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),
@@ -303,6 +310,32 @@ class FareEstimationService
             'estimated_fare' => round($fare, 2),
             'commission_percent' => round($commissionPercent, 2),
         ];
+    }
+
+    /**
+     * Apply a city-wide promo's discount to the pre-tax subtotal. The
+     * discount is clipped so the subtotal never falls below min_fare (if
+     * configured), which keeps drivers from being underpaid on cheap rides.
+     *
+     * @return array{0: float, 1: float, 2: array{id:int,title:string,discount_type:string,discount_value:float}|null}
+     */
+    private function applyPromotion(float $subtotal, ?float $minFare, ?CityWidePromotion $promo): array
+    {
+        if ($promo === null) {
+            return [$subtotal, 0.0, null];
+        }
+        $discount = $promo->computeDiscount($subtotal);
+        if ($minFare !== null && ($subtotal - $discount) < $minFare) {
+            $discount = max(0.0, $subtotal - $minFare);
+        }
+        $subtotal = max(0.0, $subtotal - $discount);
+        $meta = [
+            'id' => (int) $promo->id,
+            'title' => (string) $promo->title,
+            'discount_type' => (string) $promo->discount_type,
+            'discount_value' => (float) $promo->discount_value,
+        ];
+        return [$subtotal, $discount, $meta];
     }
 
     /**
@@ -404,6 +437,14 @@ class FareEstimationService
         if ($minFare !== null && $subtotal < $minFare) {
             $subtotal = $minFare;
         }
+
+        // Honour the promo captured at booking time so the final fare actually
+        // delivers the discount the customer was shown in the estimate.
+        $promo = $trip->relationLoaded('appliedPromotion')
+            ? $trip->appliedPromotion
+            : $trip->appliedPromotion()->first();
+        [$subtotal, $promoDiscount, $appliedPromoMeta] = $this->applyPromotion($subtotal, $minFare, $promo);
+
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $computed = $subtotal + $taxAmount;
 
@@ -423,6 +464,8 @@ class FareEstimationService
                 'time_component' => round($timeComponent, 2),
                 'waiting_charge' => round($waitingCharge, 2),
                 'surge_multiplier' => $surge,
+                'promo_discount' => round($promoDiscount, 2),
+                'applied_promotion' => $appliedPromoMeta,
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),

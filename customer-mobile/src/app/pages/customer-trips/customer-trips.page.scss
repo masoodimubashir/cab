@@ -32,6 +32,11 @@
   justify-content: space-between;
   gap: 8px;
 }
+.badges {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
 .addr {
   display: flex;
   align-items: flex-start;

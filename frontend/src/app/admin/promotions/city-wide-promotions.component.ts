@@ -1,7 +1,8 @@
 import { Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
@@ -75,42 +76,99 @@ const PROMO_TYPES = [
       </div>
 
       <ng-container *ngIf="cityId != null">
-        <div class="seg">
-          <button class="seg__btn" [class.is-on]="tab === 'active'" (click)="setTab('active')">Active</button>
-          <button class="seg__btn" [class.is-on]="tab === 'inactive'" (click)="setTab('inactive')">Inactive</button>
+        <div class="toolbar">
+          <label class="search">
+            <tm-icon name="search" [size]="14" />
+            <input
+              type="search"
+              placeholder="Search by title"
+              [ngModel]="searchQuery"
+              (ngModelChange)="onSearchChange($event)"
+            />
+          </label>
+          <label class="toggle toggle--inline">
+            <input type="checkbox" [(ngModel)]="showInactive" (ngModelChange)="onFilterChange()" />
+            <span>Show inactive</span>
+          </label>
         </div>
 
-        <div class="grid" *ngIf="rows.length; else empty">
-          <article class="card" *ngFor="let r of rows">
-            <div class="card__top">
-              <span class="card__title-t">{{ r.title }}</span>
-              <span class="card__status" [class.on]="r.is_active" [class.off]="!r.is_active">
-                {{ r.is_active ? 'Active' : 'Inactive' }}
-              </span>
-            </div>
-            <div class="card__discount">
-              <span class="card__discount-v">{{ r.discount_value }}{{ r.discount_type === 'percentage' ? '%' : '' }}</span>
-              <span class="card__discount-l">off{{ r.discount_maximum ? ' · max ' + r.discount_maximum : '' }}</span>
-            </div>
-            <div class="card__dates">
-              <tm-icon name="calendar" [size]="13" /> {{ r.start_date }} → {{ r.end_date }}
-            </div>
-            <div class="card__meta">
-              <span class="tagx">{{ humanPromoType(r.promo_type) }}</span>
-              <span class="tagx" *ngIf="r.per_user_limit != null">{{ r.per_user_limit }}/user</span>
-              <span class="tagx" *ngIf="r.location_name"><tm-icon name="pin" [size]="11" /> {{ r.location_name }}</span>
-            </div>
-            <div class="card__foot">
-              <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
-              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
-            </div>
-          </article>
+        <div class="table-wrap" *ngIf="rows.length; else empty">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Discount</th>
+                <th>Dates</th>
+                <th>Limits</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th class="num">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of rows">
+                <td class="strong">{{ r.title }}</td>
+                <td>{{ humanPromoType(r.promo_type) }}</td>
+                <td class="strong">
+                  {{ r.discount_value }}{{ r.discount_type === 'percentage' ? '%' : '' }} off
+                  <span class="muted" *ngIf="r.discount_maximum"> · max {{ r.discount_maximum }}</span>
+                </td>
+                <td>
+                  <ng-container *ngIf="r.start_date || r.end_date; else noDates">
+                    {{ r.start_date || '—' }} → {{ r.end_date || '—' }}
+                  </ng-container>
+                  <ng-template #noDates><span class="muted">Always</span></ng-template>
+                </td>
+                <td>
+                  <span class="tagx" *ngIf="r.per_user_limit != null">{{ r.per_user_limit }}/user</span>
+                  <span class="tagx" *ngIf="r.per_day_limit != null">{{ r.per_day_limit }}/day</span>
+                  <span class="tagx" *ngIf="r.maximum_allowed != null">{{ r.maximum_allowed }} total</span>
+                  <span class="muted" *ngIf="r.per_user_limit == null && r.per_day_limit == null && r.maximum_allowed == null">—</span>
+                </td>
+                <td>
+                  <span *ngIf="r.location_name; else noLoc"><tm-icon name="pin" [size]="11" /> {{ r.location_name }}</span>
+                  <ng-template #noLoc><span class="muted">—</span></ng-template>
+                </td>
+                <td>
+                  <span class="status" [class.on]="r.is_active" [class.off]="!r.is_active">
+                    {{ r.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+                <td class="num actions">
+                  <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
+                  <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+
+        <div class="paginator" *ngIf="rows.length">
+          <span class="paginator__count">
+            Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }}
+          </span>
+          <div class="paginator__nav">
+            <button
+              class="pg-btn"
+              [disabled]="currentPage <= 1"
+              (click)="goToPage(currentPage - 1)"
+            >Prev</button>
+            <span class="pg-page">Page {{ currentPage }} of {{ lastPage }}</span>
+            <button
+              class="pg-btn"
+              [disabled]="currentPage >= lastPage"
+              (click)="goToPage(currentPage + 1)"
+            >Next</button>
+          </div>
+        </div>
+
         <ng-template #empty>
           <div class="cue">
             <tm-icon name="gift" [size]="24" />
-            <p class="cue__title">No {{ tab }} promotions</p>
-            <p class="cue__text" *ngIf="tab === 'active'">Launch a promotion to give riders a city-wide discount.</p>
+            <p class="cue__title">No promotions found</p>
+            <p class="cue__text" *ngIf="searchQuery || showInactive">Try a different search term or toggle.</p>
+            <p class="cue__text" *ngIf="!searchQuery && !showInactive">Launch a promotion to give riders a city-wide discount.</p>
           </div>
         </ng-template>
       </ng-container>
@@ -266,49 +324,72 @@ const PROMO_TYPES = [
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .seg {
-      display: inline-flex; gap: 4px; padding: 4px;
-      background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
+    .toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 10px; background: var(--tm-surface);
+      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md, 10px);
     }
-    .seg__btn {
-      padding: 7px 18px; border-radius: 8px;
-      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      background: transparent; cursor: pointer;
+    .search {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 10px; min-width: 280px;
+      background: var(--tm-canvas); border: 1px solid var(--tm-line); border-radius: 8px;
+      color: var(--tm-text-muted);
     }
-    .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
+    .search input {
+      border: none; outline: none; background: transparent;
+      color: var(--tm-text); font-size: 13px; flex: 1; min-width: 0;
+    }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-      gap: 12px;
-    }
-    .card {
+    .table-wrap {
       background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px); padding: 14px;
+      border-radius: var(--tm-radius-lg, 14px); overflow: auto;
     }
-    .card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .card__title-t { font-size: 15px; font-weight: 800; color: var(--tm-text); }
-    .card__status {
+    .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .table th, .table td {
+      padding: 10px 14px; text-align: left; vertical-align: middle;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .table thead th {
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .table tbody tr:last-child td { border-bottom: 0; }
+    .table tbody tr:hover { background: var(--tm-canvas-2); }
+    .table td.strong { color: var(--tm-text); font-weight: 700; }
+    .table td.num { text-align: right; }
+    .table td.actions { white-space: nowrap; }
+    .muted { color: var(--tm-text-muted); }
+    .status {
       font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
       padding: 3px 8px; border-radius: 999px;
     }
-    .card__status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .card__status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
-    .card__discount { display: flex; align-items: baseline; gap: 6px; margin: 10px 0 6px; }
-    .card__discount-v { font-size: 26px; font-weight: 800; color: var(--tm-text); line-height: 1; }
-    .card__discount-l { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
-    .card__dates { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--tm-text-muted); }
-    .card__meta {
-      display: flex; gap: 6px; flex-wrap: wrap;
-      border-top: 1px solid var(--tm-line); margin-top: 10px; padding-top: 10px;
-    }
+    .status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .tagx {
       display: inline-flex; align-items: center; gap: 3px;
       font-size: 10px; font-weight: 700;
       padding: 3px 7px; border-radius: 6px;
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      margin-right: 4px;
     }
-    .card__foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+
+    .paginator {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 4px 2px;
+    }
+    .paginator__count { font-size: 12px; color: var(--tm-text-muted); }
+    .paginator__nav { display: inline-flex; align-items: center; gap: 8px; }
+    .pg-btn {
+      padding: 6px 12px; border-radius: 8px;
+      border: 1px solid var(--tm-line); background: var(--tm-surface);
+      color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .pg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .pg-page { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+
+    .toggle--inline { gap: 6px; cursor: pointer; }
+
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 7px;
@@ -350,9 +431,18 @@ const PROMO_TYPES = [
 })
 export class CityWidePromotionsComponent implements OnInit, OnDestroy {
   cityId: number | null = null;
-  tab: 'active' | 'inactive' = 'active';
   rows: PromotionRow[] = [];
   vehicleOptions: VehicleTypeOption[] = [];
+
+  // Filter / search / pagination state — kept in sync with the backend index params.
+  searchQuery = '';
+  showInactive = false;
+  currentPage = 1;
+  lastPage = 1;
+  perPage = 10;
+  total = 0;
+  private search$ = new Subject<string>();
+  private searchSub?: Subscription;
 
   open = false;
   editingId: number | null = null;
@@ -368,6 +458,13 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
   private autocompleteListener: google.maps.MapsEventListener | null = null;
 
   private sub?: Subscription;
+
+  get rangeStart(): number {
+    return this.total === 0 ? 0 : (this.currentPage - 1) * this.perPage + 1;
+  }
+  get rangeEnd(): number {
+    return Math.min(this.currentPage * this.perPage, this.total);
+  }
 
   constructor(
     private api: ApiService,
@@ -390,16 +487,33 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
         this.vehicleOptions = [];
       }
     });
+    this.searchSub = this.search$
+      .pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe(() => {
+        this.currentPage = 1;
+        this.fetch();
+      });
   }
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+    this.searchSub?.unsubscribe();
     this.detachAutocomplete();
   }
 
-  setTab(t: 'active' | 'inactive'): void {
-    if (this.tab === t) return;
-    this.tab = t;
+  onSearchChange(val: string): void {
+    this.searchQuery = val;
+    this.search$.next(val);
+  }
+
+  onFilterChange(): void {
+    this.currentPage = 1;
+    this.fetch();
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.lastPage || page === this.currentPage) return;
+    this.currentPage = page;
     this.fetch();
   }
 
@@ -416,10 +530,27 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
 
   fetch(): void {
     if (this.cityId == null) return;
-    const active = this.tab === 'active' ? '1' : '0';
-    this.api.get<{ data: PromotionRow[] }>(`/admin/cities/${this.cityId}/promotions?is_active=${active}`)
+    const params = new URLSearchParams();
+    params.set('is_active', this.showInactive ? '0' : '1');
+    if (this.searchQuery.trim()) params.set('q', this.searchQuery.trim());
+    params.set('page', String(this.currentPage));
+    params.set('per_page', String(this.perPage));
+    this.api
+      .get<{
+        data: PromotionRow[];
+        meta?: { current_page: number; last_page: number; per_page: number; total: number };
+      }>(`/admin/cities/${this.cityId}/promotions?${params.toString()}`)
       .subscribe({
-        next: (r) => (this.rows = r.data ?? []),
+        next: (r) => {
+          this.rows = r.data ?? [];
+          const meta = r.meta;
+          if (meta) {
+            this.currentPage = meta.current_page;
+            this.lastPage = meta.last_page;
+            this.perPage = meta.per_page;
+            this.total = meta.total;
+          }
+        },
         error: () => this.toast.error('Failed to load promotions'),
       });
   }
@@ -437,7 +568,6 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
   }
 
   blankForm() {
-    const today = this.toIso(new Date());
     return {
       title: '',
       benefit_type: 'discount',
@@ -450,8 +580,8 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
       discount_type: 'percentage',
       discount_value: 0,
       discount_maximum: 0 as number | null,
-      start_date: today,
-      end_date: today,
+      start_date: '' as string,
+      end_date: '' as string,
       maximum_allowed: null as number | null,
       per_user_limit: null as number | null,
       per_day_limit: null as number | null,

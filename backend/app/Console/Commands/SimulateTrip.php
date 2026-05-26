@@ -148,9 +148,9 @@ class SimulateTrip extends Command
             usleep(250_000);
         }
 
-        // ── Step 11: Razorpay UPI order ──────────────────────────────────────
-        $this->header('Step 11: Customer initiates Razorpay UPI order');
-        $res = $this->cust($customerToken)->post("/trips/{$tripId}/pay/upi");
+        // ── Step 11: Razorpay order ──────────────────────────────────────────
+        $this->header('Step 11: Customer initiates Razorpay order');
+        $res = $this->cust($customerToken)->post("/trips/{$tripId}/pay/razorpay");
         if ($res->ok() || $res->status() === 201) {
             $this->info('  Razorpay order created: ' . json_encode($res->json()));
         } else {

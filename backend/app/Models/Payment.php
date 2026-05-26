@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'razorpay_payment_id',
     'provider_response',
     'paid_at',
+    'coupon_assignment_id',
+    'discount_amount',
 ])]
 class Payment extends Model
 {
@@ -25,6 +27,7 @@ class Payment extends Model
 
     protected $casts = [
         'amount' => 'float',
+        'discount_amount' => 'float',
         'provider_response' => 'array',
         'paid_at' => 'datetime',
     ];
@@ -32,6 +35,11 @@ class Payment extends Model
     public function trip(): BelongsTo
     {
         return $this->belongsTo(Trip::class, 'trip_id');
+    }
+
+    public function couponAssignment(): BelongsTo
+    {
+        return $this->belongsTo(CouponAssignment::class, 'coupon_assignment_id');
     }
 }
 

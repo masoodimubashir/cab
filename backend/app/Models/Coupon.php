@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'city_id', 'title', 'subtitle',
-    'benefit_type', 'description', 'promo_type',
+    'benefit_type', 'description', 'promo_type', 'location_type',
     'latitude', 'longitude', 'radius_meters', 'location_name',
     'per_user_limit',
     'discount_type', 'discount_value', 'discount_maximum',

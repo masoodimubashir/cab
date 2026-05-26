@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 import { Subject, debounceTime, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { AuthService, PaymentMethod, AuthUser } from '../../core/auth.service';
+import { AuthService, AuthUser } from '../../core/auth.service';
 import { GeolocationService, LatLng } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { RealtimeService, DispatchRingExpandedPayload } from '../../core/realtime.service';
@@ -21,6 +21,8 @@ type City = {
   center_lat?: number | null;
   center_lng?: number | null;
   boundary_polygon?: { lat: number; lng: number }[] | null;
+  // Uppercase CASH / RAZORPAY values mirroring the city_settings storage.
+  allowed_payment_modes?: string[] | null;
 };
 
 type EstimateResponse = {
@@ -35,6 +37,13 @@ type EstimateResponse = {
     time_component?: number;
     pickup_component?: number;
     surge_multiplier?: number;
+    promo_discount?: number;
+    applied_promotion?: {
+      id: number;
+      title: string;
+      discount_type: 'percentage' | 'flat';
+      discount_value: number;
+    } | null;
     subtotal_before_tax?: number;
     tax_percent?: number;
     tax_amount?: number;
@@ -57,7 +66,10 @@ type NearbyDriver = {
   lat: number;
   lng: number;
   bearing_deg?: number | null;
+  // Road distance from Google Distance Matrix. Falls back to the backend's
+  // haversine value until the Matrix call resolves (or if it fails).
   distance_km: number;
+  eta_min?: number | null;
 };
 
 type DriverOffer = {
@@ -118,8 +130,6 @@ export class CustomerBookPage implements OnDestroy {
   productKinds: {
     kind: 'local' | 'outstation' | 'rental';
     label: string;
-    description: string | null;
-    info: string | null;
     image_url: string | null;
     icon: string;
   }[] = [];
@@ -141,7 +151,7 @@ export class CustomerBookPage implements OnDestroy {
   suggestions: PlaceSuggestion[] = [];
 
   estimate: EstimateResponse | null = null;
-  paymentMethod: PaymentMethod = 'upi';
+
   // Review Ride modal — opened from the preview sheet so the customer can see
   // the fare breakdown before picking a driver.
   showReviewModal = false;
@@ -154,7 +164,6 @@ export class CustomerBookPage implements OnDestroy {
   pickupError: string | null = null;
   dropError: string | null = null;
   vehicleError: string | null = null;
-  paymentError: string | null = null;
 
   tripId: number | null = null;
   selectedDriverId: number | null = null;
@@ -194,6 +203,11 @@ export class CustomerBookPage implements OnDestroy {
   // radius; the Circle's radius is animated smoothly via a brief tween.
   private searchCircle: any | null = null;
   private searchCircleTween: any = null;
+
+  // Lazily-built Google Distance Matrix client used to replace the backend's
+  // haversine driver→pickup distance with the actual road distance + ETA as
+  // each ring of drivers arrives. One service instance reused across hops.
+  private distanceMatrix: any = null;
   dispatchRing: { hop: number; max_hops: number; radius_m: number; eligible: number; hop_interval_sec?: number } | null = null;
 
   // True while the discovery-only search is running (hop 1 to max_hops).
@@ -276,18 +290,9 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   openReviewModal(): void {
-    // The Vehicle step has been retired — only payment needs validation here.
+    // Payment method is chosen on the trip-active payment page, so the
+    // review modal opens unconditionally here.
     this.vehicleError = null;
-    this.paymentError = null;
-
-    if (!this.paymentMethod) {
-      this.paymentError = 'Select a payment method';
-    }
-
-    if (this.paymentError) {
-      return;
-    }
-
     this.showReviewModal = true;
   }
 
@@ -336,8 +341,6 @@ export class CustomerBookPage implements OnDestroy {
     type ApiProduct = {
       kind: 'local' | 'outstation' | 'rental';
       name: string;
-      description: string | null;
-      info: string | null;
       image_url: string | null;
     };
     this.api.get<{ data: ApiProduct[] }>(`/pricing/cities/${cityId}/products`).subscribe({
@@ -346,8 +349,6 @@ export class CustomerBookPage implements OnDestroy {
         this.productKinds = rows.map((p) => ({
           kind: p.kind,
           label: p.name,
-          description: p.description,
-          info: p.info,
           image_url: p.image_url,
           icon: this.iconForKind(p.kind),
         }));
@@ -675,13 +676,6 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   goToDrivers(): void {
-    this.paymentError = null;
-
-    if (!this.paymentMethod) {
-      this.paymentError = 'Select a payment method';
-      return;
-    }
-
     this.state = 'preview';
     void this.onRouteReady();
   }
@@ -1038,7 +1032,6 @@ export class CustomerBookPage implements OnDestroy {
         drop_address: this.drop.address,
         drop_lat: this.drop.lat,
         drop_lng: this.drop.lng,
-        payment_method: this.paymentMethod,
         route_distance_km: this.routeDistanceKm,
         route_time_min: this.routeTimeMin,
       })
@@ -1050,25 +1043,6 @@ export class CustomerBookPage implements OnDestroy {
   // Confirm request → select a specific driver
   // ─────────────────────────────────────────────────────────────────
 
-  async openPaymentSheet(): Promise<void> {
-    // Cash & QR are temporarily disabled — only Online (UPI) is offered.
-    const alert = await this.alertCtrl.create({
-      header: 'Payment method',
-      inputs: ([
-        { type: 'radio', label: 'Online', value: 'upi', checked: true },
-      ] as any[]),
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Select',
-          handler: (val: PaymentMethod) => {
-            if (val) this.paymentMethod = val;
-          },
-        },
-      ],
-    });
-    await alert.present();
-  }
 
   /**
    * Customer taps a driver row → we send /trips/{id}/select-driver with the
@@ -1226,17 +1200,21 @@ export class CustomerBookPage implements OnDestroy {
     // Merge discovered drivers (discovery mode payload). Dedupe by driver_id.
     if (Array.isArray(p.drivers) && p.drivers.length > 0) {
       const existingIds = new Set(this.drivers.map((d) => d.driver_id));
+      const newlyAdded: NearbyDriver[] = [];
       for (const d of p.drivers) {
         if (d.driver_id != null && !existingIds.has(d.driver_id)) {
-          this.drivers.push({
+          const entry = {
             driver_id: d.driver_id,
             name: d.name ?? 'Driver',
             vehicle: d.vehicle ? { brand: d.vehicle, model: '', color: '' } : null,
             distance_km: d.distance_km ?? 0,
+            eta_min: null,
             rating_avg: null,
             lat: d.lat ?? 0,
             lng: d.lng ?? 0,
-          } as any);
+          } as any;
+          this.drivers.push(entry);
+          newlyAdded.push(entry);
           existingIds.add(d.driver_id);
         }
       }
@@ -1245,11 +1223,68 @@ export class CustomerBookPage implements OnDestroy {
         .filter((d: any) => Number.isFinite(d.lat) && Number.isFinite(d.lng))
         .map((d: any) => ({ id: d.driver_id, lat: d.lat, lng: d.lng, bearing_deg: 0 }));
       if (markerData.length) this.renderNearbyDrivers(markerData);
+
+      // Replace the backend's haversine distance with Google's road distance
+      // + ETA for the drivers we just added. One Matrix call per ring.
+      if (newlyAdded.length) void this.enrichDriversWithRoadDistance(newlyAdded);
     }
 
     // Search complete on the last hop.
     if (p.hop >= p.max_hops) {
       this.searching = false;
+    }
+  }
+
+  /**
+   * Batch-resolve road distance + ETA for a set of newly-discovered drivers
+   * via Google Distance Matrix. Origins = each driver's current location,
+   * destination = the customer's pickup. Patches the matching entries in
+   * `this.drivers` in place so the picker shows accurate "X km · Y min away".
+   *
+   * Failures (no SDK, no quota, ZERO_RESULTS, etc.) are silent — the
+   * pre-populated haversine distance from the backend stays as the fallback.
+   */
+  private async enrichDriversWithRoadDistance(newDrivers: NearbyDriver[]): Promise<void> {
+    if (!this.pickup) return;
+    const origins = newDrivers
+      .filter((d) => Number.isFinite(d.lat) && Number.isFinite(d.lng))
+      .map((d) => ({ driver_id: d.driver_id, lat: d.lat, lng: d.lng }));
+    if (!origins.length) return;
+
+    try {
+      await this.places.ensureLoaded();
+      if (!this.distanceMatrix && typeof google !== 'undefined') {
+        this.distanceMatrix = new google.maps.DistanceMatrixService();
+      }
+      if (!this.distanceMatrix) return;
+
+      const destination = { lat: this.pickup.lat, lng: this.pickup.lng };
+
+      this.distanceMatrix.getDistanceMatrix(
+        {
+          origins: origins.map((o) => ({ lat: o.lat, lng: o.lng })),
+          destinations: [destination],
+          travelMode: 'DRIVING',
+        },
+        (response: any, status: string) => {
+          if (status !== 'OK' || !response?.rows) return;
+          response.rows.forEach((row: any, i: number) => {
+            const el = row?.elements?.[0];
+            if (!el || el.status !== 'OK') return;
+            const driverId = origins[i].driver_id;
+            const entry = this.drivers.find((d) => d.driver_id === driverId);
+            if (!entry) return;
+            if (el.distance?.value != null) {
+              entry.distance_km = Math.round((el.distance.value / 1000) * 1000) / 1000;
+            }
+            if (el.duration?.value != null) {
+              entry.eta_min = Math.max(1, Math.round(el.duration.value / 60));
+            }
+          });
+        }
+      );
+    } catch {
+      // Swallow — haversine distance from backend remains as the fallback.
     }
   }
 

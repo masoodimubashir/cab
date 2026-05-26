@@ -27,6 +27,67 @@ ion-card + ion-button {
   }
 }
 
+.coupon-section {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--ion-color-light, #f6f7f8);
+  border-radius: 0.5rem;
+
+  .coupon-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    ion-icon {
+      font-size: 1.25rem;
+      color: var(--ion-color-medium);
+    }
+
+    input {
+      flex: 1;
+      min-width: 0;
+      padding: 0.5rem 0.6rem;
+      border: 1px solid var(--ion-color-light-shade, #d7dade);
+      border-radius: 0.4rem;
+      font-size: 0.95rem;
+      background: #fff;
+
+      &:disabled {
+        background: var(--ion-color-light-tint, #fafbfc);
+        color: var(--ion-color-medium);
+      }
+    }
+
+    button {
+      padding: 0.5rem 0.85rem;
+      border: 0;
+      border-radius: 0.4rem;
+      background: var(--ion-color-dark, #1c1c1c);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+
+      &:disabled {
+        background: var(--ion-color-medium, #92949c);
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  .coupon-status {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+
+    &.ok {
+      color: var(--ion-color-success-shade, #2dd36f);
+    }
+    &.err {
+      color: var(--ion-color-danger-shade, #eb445a);
+    }
+  }
+}
+
 .rating-card {
   .stars {
     display: flex;

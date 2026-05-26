@@ -16,11 +16,22 @@ class AdminCityWidePromotionsController
             $q->where('is_active', $request->boolean('is_active'));
         }
 
-        $rows = $q->orderByDesc('id')->get()->map(fn ($r) => $this->shape($r));
+        if ($search = trim((string) $request->query('q', ''))) {
+            $q->where('title', 'like', '%' . $search . '%');
+        }
+
+        $perPage = min(100, max(1, (int) $request->query('per_page', 10)));
+        $paginator = $q->orderByDesc('id')->paginate($perPage);
 
         return response()->json([
             'city_id' => $city->id,
-            'data' => $rows,
+            'data' => $paginator->getCollection()->map(fn ($r) => $this->shape($r))->all(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
         ]);
     }
 
@@ -85,8 +96,8 @@ class AdminCityWidePromotionsController
             'discount_value' => [$sometimes, 'numeric', 'min:0'],
             'discount_maximum' => ['nullable', 'numeric', 'min:0'],
 
-            'start_date' => [$sometimes, 'date'],
-            'end_date' => [$sometimes, 'date', 'after_or_equal:start_date'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
 
             'maximum_allowed' => ['nullable', 'integer', 'min:0'],
             'per_user_limit' => ['nullable', 'integer', 'min:0'],

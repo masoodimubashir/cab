@@ -49,8 +49,6 @@ class AdminCityRideProductsController
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:120'],
-            'description' => ['nullable', 'string', 'max:255'],
-            'info' => ['nullable', 'string', 'max:5000'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'image' => ['nullable', 'file', 'image', 'max:4096'],
@@ -63,7 +61,7 @@ class AdminCityRideProductsController
             $product->image_path = $request->file('image')->store('city_ride_products', 'public');
         }
 
-        foreach (['name', 'description', 'info', 'is_active', 'sort_order'] as $field) {
+        foreach (['name', 'is_active', 'sort_order'] as $field) {
             if (array_key_exists($field, $data)) {
                 $product->{$field} = $data[$field];
             }
@@ -84,8 +82,6 @@ class AdminCityRideProductsController
             'city_id' => $p->city_id,
             'kind' => $p->kind,
             'name' => $p->name,
-            'description' => $p->description,
-            'info' => $p->info,
             'image_path' => $p->image_path,
             'image_url' => $p->image_url,
             'is_active' => (bool) $p->is_active,

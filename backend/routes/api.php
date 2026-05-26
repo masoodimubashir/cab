@@ -49,7 +49,6 @@ use App\Http\Controllers\Admin\AdminOutstationPackagesController;
 use App\Http\Controllers\Admin\AdminCityWidePromotionsController;
 use App\Http\Controllers\Admin\AdminPromoCodesController;
 use App\Http\Controllers\Admin\AdminCouponsController;
-use App\Http\Controllers\Admin\AdminReferralsController;
 use App\Http\Controllers\Admin\AdminPermissionsController;
 use App\Http\Controllers\Admin\AdminManagerRolesController;
 use App\Http\Controllers\Admin\AdminManagersController;
@@ -328,6 +327,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'show']);
         Route::patch('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'update']);
         Route::delete('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/promo-codes/{promoCode}/assignments', [AdminPromoCodesController::class, 'assignments']);
+        Route::post('/admin/cities/{city}/promo-codes/{promoCode}/give', [AdminPromoCodesController::class, 'give']);
 
         // ── Promotions: coupons ─────────────────────────────────────────
         Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index']);
@@ -335,11 +336,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'show']);
         Route::patch('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'update']);
         Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy']);
-
-        // ── Promotions: referrals (singleton-per-city) ──────────────────
-        Route::get('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'show']);
-        Route::patch('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
-        Route::post('/admin/cities/{city}/referrals', [AdminReferralsController::class, 'update']);
+        Route::get('/admin/cities/{city}/coupons/{coupon}/assignments', [AdminCouponsController::class, 'assignments']);
+        Route::post('/admin/cities/{city}/coupons/{coupon}/give', [AdminCouponsController::class, 'give']);
     });
 
     // ── RBAC: permissions catalog (read-only) ───────────────────────
@@ -381,16 +379,17 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 Route::get('/trip-share/{token}', [TripTrackingController::class, 'showShare']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
-    Route::post('/trips/{trip}/pay/upi', [PaymentsController::class, 'payUpi'])->middleware('idempotent');
-    Route::post('/trips/{trip}/pay/upi/verify', [PaymentsController::class, 'verifyUpi'])->middleware('idempotent');
+    Route::post('/trips/{trip}/coupon-preview', [PaymentsController::class, 'couponPreview']);
+    Route::post('/trips/{trip}/pay/razorpay', [PaymentsController::class, 'payRazorpay'])->middleware('idempotent');
+    Route::post('/trips/{trip}/pay/razorpay/verify', [PaymentsController::class, 'verifyRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash'])->middleware('idempotent');
-    Route::post('/trips/{trip}/pay/qr', [PaymentsController::class, 'payQr'])->middleware('idempotent');
     Route::get('/trips/{trip}/invoice', [InvoicesController::class, 'show']);
     Route::post('/trips/{trip}/invoice', [InvoicesController::class, 'generate']);
     Route::get('/trips/{trip}/invoice/download', [InvoicesController::class, 'download']);
     Route::post('/trips/{trip}/rating', [RatingsController::class, 'store']);
     Route::post('/trips/{trip}/tip', [TripsController::class, 'tip']);
     Route::get('/customer/trips/history', [RatingsController::class, 'historyCustomer']);
+    Route::get('/customer/trips/{trip}', [RatingsController::class, 'customerTripDetail']);
 });
 
 // Public operator config slices used by the customer/driver apps.
