@@ -11,6 +11,7 @@ use App\Models\PricingRule;
 use App\Models\VehicleType;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
+use App\Services\PromotionApplicationService;
 use Illuminate\Http\Request;
 
 class PricingController extends Controller
@@ -20,10 +21,29 @@ class PricingController extends Controller
         // boundary_polygon + center are returned so the customer mobile can
         // detect when a destination is outside the service area and steer the
         // user toward the Outstation flow without an extra round-trip.
+        // allowed_payment_modes is joined from city_settings so the booking
+        // sheet can render only the modes operators enabled for the city.
         $cities = City::query()
-            ->select(['id', 'name', 'country_code', 'center_lat', 'center_lng', 'boundary_polygon'])
-            ->orderBy('name')
-            ->get();
+            ->leftJoin('city_settings', 'city_settings.city_id', '=', 'cities.id')
+            ->orderBy('cities.name')
+            ->get([
+                'cities.id',
+                'cities.name',
+                'cities.country_code',
+                'cities.center_lat',
+                'cities.center_lng',
+                'cities.boundary_polygon',
+                'city_settings.allowed_driver_payment_modes as allowed_payment_modes',
+            ])
+            ->map(function ($row) {
+                $modes = is_string($row->allowed_payment_modes)
+                    ? json_decode($row->allowed_payment_modes, true)
+                    : $row->allowed_payment_modes;
+                $row->allowed_payment_modes = is_array($modes) && $modes
+                    ? array_values(array_intersect($modes, ['CASH', 'RAZORPAY']))
+                    : ['RAZORPAY'];
+                return $row;
+            });
 
         return response()->json(['data' => $cities]);
     }
@@ -51,13 +71,11 @@ class PricingController extends Controller
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get(['id', 'kind', 'name', 'description', 'info', 'image_path', 'sort_order'])
+            ->get(['id', 'kind', 'name', 'image_path', 'sort_order'])
             ->map(fn (CityRideProduct $p) => [
                 'id' => $p->id,
                 'kind' => $p->kind,
                 'name' => $p->name,
-                'description' => $p->description,
-                'info' => $p->info,
                 'image_url' => $p->image_url,
                 'sort_order' => (int) $p->sort_order,
             ]);
@@ -101,6 +119,7 @@ class PricingController extends Controller
         Request $request,
         FareEstimationService $fareEstimationService,
         DynamicPricingService $dynamicPricingService,
+        PromotionApplicationService $promotionApplicationService,
     ) {
         $data = $request->validate([
             // Primary axis: the exact per-city vehicle the customer picked.
@@ -149,11 +168,12 @@ class PricingController extends Controller
             'fare_type' => $dynamicRule->fare_type,
         ] : null;
 
-        $estimate = $fareEstimationService->estimateFare(
-            $fareEstimationService->fareInput(
-                $pricingRule->toArray(),
-                isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
-            ),
+        $fareInput = $fareEstimationService->fareInput(
+            $pricingRule->toArray(),
+            isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
+        );
+        $previewEstimate = $fareEstimationService->estimateFare(
+            $fareInput,
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
             (float) $data['drop_lat'],
@@ -162,6 +182,28 @@ class PricingController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+        );
+        $promo = $promotionApplicationService->findBestForBooking(
+            cityId: $pricingRule->city_id ? (int) $pricingRule->city_id : 0,
+            cityVehicleTypeId: $cityVehicleTypeId,
+            pickupLat: (float) $data['pickup_lat'],
+            pickupLng: (float) $data['pickup_lng'],
+            dropLat: (float) $data['drop_lat'],
+            dropLng: (float) $data['drop_lng'],
+            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
+        );
+
+        $estimate = $fareEstimationService->estimateFare(
+            $fareInput,
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (float) $data['drop_lat'],
+            (float) $data['drop_lng'],
+            $dynamicFactors,
+            null,
+            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
+            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            $promo,
         );
 
         return response()->json([

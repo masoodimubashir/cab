@@ -84,7 +84,7 @@
           </div>
           <span class="chip-label">{{ p.label }}</span>
           <span class="chip-desc">
-            {{ p.description || (p.kind === 'local' ? 'City rides' : (p.kind === 'outstation' ? 'Inter-city' : 'Hourly rental')) }}
+            {{ p.kind === 'local' ? 'City rides' : (p.kind === 'outstation' ? 'Inter-city' : 'Hourly rental') }}
           </span>
         </button>
       </div>
@@ -276,30 +276,6 @@
         <span>{{ outsideServiceAreaNotice }}</span>
       </div>
 
-      <!-- Payment options (Cash & QR temporarily disabled — only Online for now) -->
-      <div class="payment-grid">
-        <button class="payment-card active" (click)="paymentMethod = 'upi'; paymentError = null">
-          <div class="pay-icon-circle"><ion-icon name="phone-portrait-outline"></ion-icon></div>
-          <div class="pay-info">
-            <span class="pay-title">Online</span>
-            <span class="pay-desc">UPI / cards / wallets</span>
-          </div>
-          <div class="pay-select-dot"></div>
-        </button>
-      </div>
-      <div class="input-error-msg payment-error" [class.show]="paymentError">
-        {{ paymentError }}
-      </div>
-
-      <!-- Optional compact promo code section -->
-      <div class="promo-section">
-        <div class="promo-input-wrapper">
-          <ion-icon name="gift-outline" class="promo-icon"></ion-icon>
-          <input type="text" placeholder="Add promo code" class="promo-input" />
-          <button class="promo-apply-btn">Apply</button>
-        </div>
-      </div>
-
       <div class="action-footer">
         <button class="action-btn-back" (click)="goRoute()">Back</button>
         <button class="action-btn-continue" (click)="goToDrivers()">Continue</button>
@@ -386,7 +362,9 @@
               <span *ngIf="d.vehicle?.color"> · {{ d.vehicle?.color }}</span>
             </p>
             <small>
-              {{ d.distance_km }} km away
+              {{ d.distance_km }} km
+              <span *ngIf="d.eta_min != null"> · {{ d.eta_min }} min</span>
+              away
               <span *ngIf="d.rating_avg"> · ★ {{ d.rating_avg }}</span>
             </small>
           </ion-label>
@@ -536,6 +514,13 @@
         <span>Surge × {{ estimate?.fare_breakdown?.surge_multiplier }}</span>
         <span></span>
       </div>
+      <div
+        class="breakdown-row promo"
+        *ngIf="estimate?.fare_breakdown?.promo_discount && (estimate?.fare_breakdown?.promo_discount ?? 0) > 0"
+      >
+        <span>{{ estimate?.fare_breakdown?.applied_promotion?.title || 'Promo discount' }}</span>
+        <span>-₹{{ estimate?.fare_breakdown?.promo_discount }}</span>
+      </div>
       <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.tax_amount">
         <span>Tax ({{ estimate?.fare_breakdown?.tax_percent }}%)</span>
         <span>₹{{ estimate?.fare_breakdown?.tax_amount }}</span>
@@ -544,14 +529,6 @@
         <span>Estimated total</span>
         <span>₹{{ estimate?.estimated_fare }}</span>
       </div>
-    </div>
-
-    <div class="review-section payment-section">
-      <ion-item button lines="none" (click)="openPaymentSheet()">
-        <ion-icon slot="start" name="phone-portrait-outline" aria-hidden="true"></ion-icon>
-        <ion-label>Payment: <strong>ONLINE</strong></ion-label>
-        <ion-icon slot="end" name="chevron-forward-outline" aria-hidden="true"></ion-icon>
-      </ion-item>
     </div>
 
     <ion-button expand="block" (click)="closeReviewModal()" class="review-done">

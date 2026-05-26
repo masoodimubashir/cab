@@ -1,0 +1,88 @@
+ion-card {
+  margin: 12px;
+  border-radius: 12px;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.badges {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.addr {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 0.92rem;
+
+  ion-icon { font-size: 1rem; margin-top: 2px; flex-shrink: 0; }
+}
+
+.open-maps {
+  margin-top: 8px;
+}
+
+.pay-cta {
+  margin: 4px 12px 12px;
+}
+
+.break-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 0.92rem;
+
+  &.negative span:last-child {
+    color: var(--ion-color-success-shade, #2dd36f);
+  }
+
+  &.emphasis {
+    border-top: 1px dashed var(--ion-color-light-shade, #d7dade);
+    margin-top: 6px;
+    padding-top: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+  }
+}
+
+.meta-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 0.92rem;
+}
+
+.muted {
+  color: var(--ion-color-medium, #666);
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+}
+
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+
+  ion-icon { font-size: 0.7rem; }
+}
+.tl-text {
+  display: flex;
+  flex-direction: column;
+}
+.tl-label {
+  font-size: 0.92rem;
+}
+.tl-time {
+  font-size: 0.78rem;
+  color: var(--ion-color-medium, #666);
+}

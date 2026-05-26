@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
     'city_id',
@@ -20,12 +19,6 @@ use Illuminate\Support\Facades\Storage;
     'night_start_time',
     'night_end_time',
     'advertise_credits',
-    'theme_color',
-    'logo_path',
-    'splash_screen_path',
-    'home_bg_path',
-    'onboarding_info',
-    'customer_rate_card_info',
     'customer_login_otp_message',
     'customer_login_otp_message_ios',
     'allowed_driver_payment_modes',
@@ -34,8 +27,6 @@ use Illuminate\Support\Facades\Storage;
     'driver_support_no',
     'customer_support_no',
     'support_email',
-    'operator_name',
-    'operational_info',
 ])]
 class CitySetting extends Model
 {
@@ -55,25 +46,18 @@ class CitySetting extends Model
         'allowed_driver_payment_modes' => 'array',
     ];
 
-    protected $appends = ['logo_url', 'splash_screen_url', 'home_bg_url'];
+    protected static function booted(): void
+    {
+        static::creating(function (self $settings) {
+            // Every city defaults to Razorpay-only — cash stays opt-in.
+            if (empty($settings->allowed_driver_payment_modes)) {
+                $settings->allowed_driver_payment_modes = ['RAZORPAY'];
+            }
+        });
+    }
 
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class, 'city_id');
-    }
-
-    public function getLogoUrlAttribute(): ?string
-    {
-        return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
-    }
-
-    public function getSplashScreenUrlAttribute(): ?string
-    {
-        return $this->splash_screen_path ? Storage::disk('public')->url($this->splash_screen_path) : null;
-    }
-
-    public function getHomeBgUrlAttribute(): ?string
-    {
-        return $this->home_bg_path ? Storage::disk('public')->url($this->home_bg_path) : null;
     }
 }

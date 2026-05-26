@@ -21,7 +21,6 @@ import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component
 import { CityWidePromotionsComponent } from './admin/promotions/city-wide-promotions.component';
 import { PromoCodesComponent } from './admin/promotions/promo-codes.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
-import { ReferralsComponent } from './admin/promotions/referrals.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
 import { ManagersComponent } from './admin/rbac/managers.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
@@ -87,7 +86,6 @@ export const routes: Routes = [
   { path: 'promotions/city-wide', component: CityWidePromotionsComponent, canActivate: [adminAuthGuard] },
   { path: 'promotions/promo-codes', component: PromoCodesComponent, canActivate: [adminAuthGuard] },
   { path: 'promotions/coupons', component: CouponsComponent, canActivate: [adminAuthGuard] },
-  { path: 'promotions/referrals', component: ReferralsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard] },
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard] },

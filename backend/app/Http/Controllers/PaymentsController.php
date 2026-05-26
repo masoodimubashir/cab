@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\Trip;
+use App\Services\CouponService;
 use App\Services\InvoiceGeneratorService;
 use App\Services\RazorpayService;
 use Illuminate\Http\Request;
@@ -12,7 +13,54 @@ use Illuminate\Support\Facades\Log;
 
 class PaymentsController extends Controller
 {
-    public function payUpi(Request $request, Trip $trip, RazorpayService $razorpayService)
+    /**
+     * Validate a typed coupon against this trip and return the discount it
+     * would apply to `final_fare`. Read-only — does not mark the coupon used.
+     */
+    public function couponPreview(Request $request, Trip $trip, CouponService $couponService)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        if ($trip->status !== 'COMPLETED') {
+            return response()->json(['message' => 'Trip must be completed before applying a coupon.'], 409);
+        }
+        if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
+            return response()->json(['message' => 'Final fare not available.'], 422);
+        }
+
+        $data = $request->validate([
+            'coupon_title' => ['required', 'string', 'max:128'],
+        ]);
+
+        $result = $couponService->resolveForUser(
+            code: $data['coupon_title'],
+            userId: (int) $user->id,
+            cityId: (int) $trip->city_id,
+            baseAmount: (float) $trip->final_fare,
+            cityVehicleTypeId: $trip->city_vehicle_type_id ? (int) $trip->city_vehicle_type_id : null,
+            pickupLat: $trip->pickup_lat !== null ? (float) $trip->pickup_lat : null,
+            pickupLng: $trip->pickup_lng !== null ? (float) $trip->pickup_lng : null,
+            dropLat: $trip->drop_lat !== null ? (float) $trip->drop_lat : null,
+            dropLng: $trip->drop_lng !== null ? (float) $trip->drop_lng : null,
+        );
+
+        if (!$result['ok']) {
+            return response()->json(['error' => $result['error']], 200);
+        }
+
+        return response()->json([
+            'discount' => $result['discount'],
+            'final_amount' => $result['final_amount'],
+            'coupon' => [
+                'assignment_id' => (int) $result['assignment']->id,
+                'title' => (string) $result['assignment']->coupon->title,
+            ],
+        ]);
+    }
+
+    public function payRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService, CouponService $couponService)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -27,10 +75,41 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Final fare not available.'], 422);
         }
 
-        $amountPaise = (int) round(((float) $trip->final_fare) * 100);
+        $data = $request->validate([
+            'coupon_title' => ['nullable', 'string', 'max:128'],
+        ]);
+
+        $couponAssignmentId = null;
+        $discountAmount = null;
+        $payableAmount = (float) $trip->final_fare;
+
+        if (!empty($data['coupon_title'])) {
+            $result = $couponService->resolveForUser(
+                code: $data['coupon_title'],
+                userId: (int) $user->id,
+                cityId: (int) $trip->city_id,
+                baseAmount: (float) $trip->final_fare,
+                cityVehicleTypeId: $trip->city_vehicle_type_id ? (int) $trip->city_vehicle_type_id : null,
+                pickupLat: $trip->pickup_lat !== null ? (float) $trip->pickup_lat : null,
+                pickupLng: $trip->pickup_lng !== null ? (float) $trip->pickup_lng : null,
+                dropLat: $trip->drop_lat !== null ? (float) $trip->drop_lat : null,
+                dropLng: $trip->drop_lng !== null ? (float) $trip->drop_lng : null,
+            );
+            if (!$result['ok']) {
+                return response()->json(['message' => $result['error']], 422);
+            }
+            $couponAssignmentId = (int) $result['assignment']->id;
+            $discountAmount = (float) $result['discount'];
+            $payableAmount = (float) $result['final_amount'];
+        }
+
+        $amountPaise = (int) round($payableAmount * 100);
+        if ($amountPaise <= 0) {
+            return response()->json(['message' => 'Payable amount must be greater than zero.'], 422);
+        }
         $receipt = 'trip_' . $trip->id . '_' . now()->format('YmdHis');
 
-        return DB::transaction(function () use ($trip, $amountPaise, $receipt, $razorpayService) {
+        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $couponAssignmentId, $discountAmount, $receipt, $razorpayService) {
             $payment = Payment::query()->where('trip_id', $trip->id)->first();
             if ($payment && $payment->status === 'SUCCESS') {
                 return response()->json(['payment' => $payment]);
@@ -39,15 +118,17 @@ class PaymentsController extends Controller
             $payment = Payment::query()->updateOrCreate(
                 ['trip_id' => $trip->id],
                 [
-                    'method' => 'UPI',
+                    'method' => 'RAZORPAY',
                     'provider' => 'RAZORPAY',
                     'status' => 'PENDING',
-                    'amount' => (float) $trip->final_fare,
+                    'amount' => $payableAmount,
                     'currency' => 'INR',
                     'paid_at' => null,
                     'razorpay_payment_id' => null,
                     'razorpay_order_id' => null,
                     'provider_response' => null,
+                    'coupon_assignment_id' => $couponAssignmentId,
+                    'discount_amount' => $discountAmount,
                 ]
             );
 
@@ -67,7 +148,7 @@ class PaymentsController extends Controller
         });
     }
 
-    public function verifyUpi(Request $request, Trip $trip, RazorpayService $razorpayService)
+    public function verifyRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -114,6 +195,8 @@ class PaymentsController extends Controller
             $payment->paid_at = now();
             $payment->save();
 
+            $this->markCouponRedeemed($payment, $trip);
+
             try {
                 app(InvoiceGeneratorService::class)->generateForTrip($trip);
             } catch (\Throwable) {
@@ -124,7 +207,7 @@ class PaymentsController extends Controller
         });
     }
 
-    public function payCash(Request $request, Trip $trip)
+    public function payCash(Request $request, Trip $trip, CouponService $couponService)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -139,49 +222,73 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Final fare not available.'], 422);
         }
 
-        $payment = Payment::query()->updateOrCreate(
-            ['trip_id' => $trip->id],
-            [
-                'method' => 'CASH',
-                'provider' => 'NONE',
-                'status' => 'SUCCESS',
-                'amount' => (float) $trip->final_fare,
-                'currency' => 'INR',
-                'paid_at' => now(),
-            ]
-        );
+        $data = $request->validate([
+            'coupon_title' => ['nullable', 'string', 'max:128'],
+        ]);
 
-        return response()->json(['payment' => $payment]);
+        $couponAssignmentId = null;
+        $discountAmount = null;
+        $payableAmount = (float) $trip->final_fare;
+
+        if (!empty($data['coupon_title'])) {
+            $result = $couponService->resolveForUser(
+                code: $data['coupon_title'],
+                userId: (int) $user->id,
+                cityId: (int) $trip->city_id,
+                baseAmount: (float) $trip->final_fare,
+                cityVehicleTypeId: $trip->city_vehicle_type_id ? (int) $trip->city_vehicle_type_id : null,
+                pickupLat: $trip->pickup_lat !== null ? (float) $trip->pickup_lat : null,
+                pickupLng: $trip->pickup_lng !== null ? (float) $trip->pickup_lng : null,
+                dropLat: $trip->drop_lat !== null ? (float) $trip->drop_lat : null,
+                dropLng: $trip->drop_lng !== null ? (float) $trip->drop_lng : null,
+            );
+            if (!$result['ok']) {
+                return response()->json(['message' => $result['error']], 422);
+            }
+            $couponAssignmentId = (int) $result['assignment']->id;
+            $discountAmount = (float) $result['discount'];
+            $payableAmount = (float) $result['final_amount'];
+        }
+
+        return DB::transaction(function () use ($trip, $payableAmount, $couponAssignmentId, $discountAmount) {
+            $payment = Payment::query()->updateOrCreate(
+                ['trip_id' => $trip->id],
+                [
+                    'method' => 'CASH',
+                    'provider' => 'NONE',
+                    'status' => 'SUCCESS',
+                    'amount' => $payableAmount,
+                    'currency' => 'INR',
+                    'paid_at' => now(),
+                    'coupon_assignment_id' => $couponAssignmentId,
+                    'discount_amount' => $discountAmount,
+                ]
+            );
+
+            $this->markCouponRedeemed($payment, $trip);
+
+            return response()->json(['payment' => $payment]);
+        });
     }
 
-    public function payQr(Request $request, Trip $trip)
+    /**
+     * Burn the coupon assignment linked to a successful Payment: stamps
+     * used_at + redeemed_trip_id so the same coupon can't be reused.
+     * Best-effort and idempotent — re-calling with an already-used assignment
+     * is a no-op.
+     */
+    private function markCouponRedeemed(Payment $payment, Trip $trip): void
     {
-        $user = $request->user();
-        if ($trip->customer_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden.'], 403);
+        if (!$payment->coupon_assignment_id) {
+            return;
         }
-
-        if ($trip->status !== 'COMPLETED') {
-            return response()->json(['message' => 'Trip must be completed before payment.'], 409);
-        }
-
-        if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
-            return response()->json(['message' => 'Final fare not available.'], 422);
-        }
-
-        $payment = Payment::query()->updateOrCreate(
-            ['trip_id' => $trip->id],
-            [
-                'method' => 'QR',
-                'provider' => 'NONE',
-                'status' => 'SUCCESS',
-                'amount' => (float) $trip->final_fare,
-                'currency' => 'INR',
-                'paid_at' => now(),
-            ]
-        );
-
-        return response()->json(['payment' => $payment]);
+        \App\Models\CouponAssignment::query()
+            ->where('id', $payment->coupon_assignment_id)
+            ->whereNull('used_at')
+            ->update([
+                'used_at' => now(),
+                'redeemed_trip_id' => $trip->id,
+            ]);
     }
 
     public function razorpayWebhook(Request $request, RazorpayService $razorpayService)
@@ -237,11 +344,12 @@ class PaymentsController extends Controller
             'status' => $status,
         ]);
 
-        // Generate invoice on successful payment (best-effort).
+        // Generate invoice on successful payment (best-effort) + burn coupon.
         if ($captured) {
             try {
                 $trip = $payment->trip()->first();
                 if ($trip) {
+                    $this->markCouponRedeemed($payment, $trip);
                     app(InvoiceGeneratorService::class)->generateForTrip($trip);
                 }
             } catch (\Throwable) {

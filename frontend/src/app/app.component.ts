@@ -41,7 +41,6 @@ export class AppComponent implements OnInit {
     [/^\/promotions\/city-wide/,    'City Wide Promotions'],
     [/^\/promotions\/promo-codes/,  'Promo Codes'],
     [/^\/promotions\/coupons/,      'Coupons'],
-    [/^\/promotions\/referrals/,    'Referrals'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -70,7 +69,7 @@ export class AppComponent implements OnInit {
     /^\/city\b/,
     /^\/pricing\b/,
     /^\/vehicle-fares\b/,
-    /^\/promotions\/(city-wide|promo-codes|coupons|referrals)\b/,
+    /^\/promotions\/(city-wide|promo-codes|coupons)\b/,
     /^\/settings\/(city|fleets|vehicle-types)\b/,
   ];
 
@@ -137,14 +136,13 @@ export class AppComponent implements OnInit {
     if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Fares', icon: 'car', route: '/vehicle-fares' });
     if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
-    if (canAny(['promotions.manage','promo_codes.manage','coupons.manage','referrals.manage'])) {
+    if (canAny(['promotions.manage','promo_codes.manage','coupons.manage'])) {
       citySetup.push({
         label: 'Promotions', icon: 'gift',
         children: filterTruthy([
           can('promotions.manage')  && { label: 'City Wide',   icon: 'pin',  route: '/promotions/city-wide' },
           can('promo_codes.manage') && { label: 'Promo Codes', icon: 'tag',  route: '/promotions/promo-codes' },
           can('coupons.manage')     && { label: 'Coupons',     icon: 'tag',  route: '/promotions/coupons' },
-          can('referrals.manage')   && { label: 'Referrals',   icon: 'send', route: '/promotions/referrals' },
         ]),
       });
     }
