@@ -83,6 +83,19 @@ export class TripActivePage implements OnInit, OnDestroy {
   sosBusy = false;
   shareBusy = false;
 
+  // Cancel overlay state
+  showCancelModal = false;
+  cancelReasons = {
+    waitingLongTime: false,
+    unableToContact: false,
+    deniedDestination: false,
+    deniedPickup: false,
+    wrongAddress: false,
+    priceNotReasonable: false,
+    carConditionBad: false
+  };
+  cancelCustomReason = '';
+
   private poll: any = null;
   private unsubscribeRealtime: (() => void) | null = null;
   private map: any | null = null;
@@ -639,32 +652,65 @@ export class TripActivePage implements OnInit, OnDestroy {
     });
   }
 
-  async cancel(): Promise<void> {
-    const a = await this.alertCtrl.create({
-      header: 'Cancel trip?',
-      message: 'The driver will be notified.',
-      buttons: [
-        { text: 'Keep trip', role: 'cancel' },
-        {
-          text: 'Cancel trip',
-          role: 'destructive',
-          handler: async () => {
-            try {
-              await this.api.post(`/trips/${this.tripId}/cancel`, {}).toPromise();
-              this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
-            } catch (e: any) {
-              const t = await this.toastCtrl.create({
-                message: e?.error?.message || 'Could not cancel.',
-                duration: 2500,
-                color: 'danger',
-              });
-              await t.present();
-            }
-          },
-        },
-      ],
-    });
-    await a.present();
+  cancel(): void {
+    this.cancelReasons = {
+      waitingLongTime: false,
+      unableToContact: false,
+      deniedDestination: false,
+      deniedPickup: false,
+      wrongAddress: false,
+      priceNotReasonable: false,
+      carConditionBad: false
+    };
+    this.cancelCustomReason = '';
+    this.showCancelModal = true;
+  }
+
+  async submitCancellation(): Promise<void> {
+    const selected: string[] = [];
+    if (this.cancelReasons.waitingLongTime) selected.push('Waiting for long time');
+    if (this.cancelReasons.unableToContact) selected.push('Unable to contact driver');
+    if (this.cancelReasons.deniedDestination) selected.push('Driver denied to go to destination');
+    if (this.cancelReasons.deniedPickup) selected.push('Driver denied to come to pickup');
+    if (this.cancelReasons.wrongAddress) selected.push('Wrong address shown');
+    if (this.cancelReasons.priceNotReasonable) selected.push('The Price is not reasonable');
+    if (this.cancelReasons.carConditionBad) selected.push('Car condition is not good');
+
+    let reasonStr = selected.join(', ');
+    if (this.cancelCustomReason?.trim()) {
+      reasonStr += (reasonStr ? '. Other: ' : '') + this.cancelCustomReason.trim();
+    }
+
+    if (!reasonStr) {
+      const t = await this.toastCtrl.create({
+        message: 'Please select a reason or write one below.',
+        duration: 2000,
+        color: 'warning'
+      });
+      await t.present();
+      return;
+    }
+
+    try {
+      this.loading = true;
+      await this.api.post(`/trips/${this.tripId}/cancel`, { reason: reasonStr }).toPromise();
+      this.showCancelModal = false;
+      const t = await this.toastCtrl.create({
+        message: 'Trip cancelled successfully.',
+        duration: 2000,
+        color: 'success'
+      });
+      await t.present();
+      this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+    } catch (e: any) {
+      this.loading = false;
+      const t = await this.toastCtrl.create({
+        message: e?.error?.message || 'Could not cancel.',
+        duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+    }
   }
 
   async pay(): Promise<void> {
