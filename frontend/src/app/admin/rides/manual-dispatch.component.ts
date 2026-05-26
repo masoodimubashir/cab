@@ -827,8 +827,8 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
     this.api.post<{ trip: { id: number } }>('/admin/manual-dispatch/book', payload).subscribe({
       next: (res) => {
         this.message = `Trip #${res.trip.id} dispatched.`;
-        // Send the operator to All Rides so they can watch it.
-        setTimeout(() => this.router.navigateByUrl('/rides/all'), 800);
+        // Send the operator to Rides so they can watch it.
+        setTimeout(() => this.router.navigateByUrl('/rides'), 800);
       },
       error: (err) => (this.error = err?.error?.message || 'Failed to book ride'),
       complete: () => (this.booking = false),

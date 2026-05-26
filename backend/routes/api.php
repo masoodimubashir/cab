@@ -310,6 +310,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'update']);
     Route::delete('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'destroy']);
     Route::get('/admin/trips', [AdminTripsController::class, 'index']);
+    Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show']);
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation']);
     Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate']);
 
