@@ -6,7 +6,7 @@ import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod, AuthUser } from '../../core/auth.service';
 import { GeolocationService, LatLng } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
-import { RealtimeService } from '../../core/realtime.service';
+import { RealtimeService, DispatchRingExpandedPayload } from '../../core/realtime.service';
 import { environment } from '../../../environments/environment';
 
 declare const google: any;
@@ -188,6 +188,18 @@ export class CustomerBookPage implements OnDestroy {
   // Map markers for nearby drivers (Uber-style icons sliding around).
   private nearbyDriverMarkers = new Map<number, any>();
   private nearbyPollHandle: any = null;
+
+  // Dispatch search-ring (expanding circle on the map while we're waiting
+  // for a driver to accept). Each DispatchRingExpanded broadcast bumps the
+  // radius; the Circle's radius is animated smoothly via a brief tween.
+  private searchCircle: any | null = null;
+  private searchCircleTween: any = null;
+  dispatchRing: { hop: number; max_hops: number; radius_m: number; eligible: number; hop_interval_sec?: number } | null = null;
+
+  // True while the discovery-only search is running (hop 1 to max_hops).
+  // Flips to false when the final hop arrives. Drives the "Search drivers"
+  // button state and the "Searching…" UI hint.
+  searching = false;
 
   constructor(
     private api: ApiService,
@@ -1116,6 +1128,48 @@ export class CustomerBookPage implements OnDestroy {
     }
   }
 
+  /**
+   * Auto-dispatch: POST /customer-offer instead of locking to one specific
+   * driver. Backend fires DispatchHopJob which expands the search radius
+   * each `hop_interval_sec` and broadcasts DispatchRingExpanded events for
+   * the map circle animation. First driver in the ring to accept wins.
+   */
+  async requestAutoDispatch(): Promise<void> {
+    if (!this.estimate?.estimated_fare) {
+      const t = await this.toastCtrl.create({
+        message: 'Still calculating fare — please wait a moment.',
+        duration: 2000,
+      });
+      await t.present();
+      return;
+    }
+
+    const amount = Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5;
+    this.loading = true;
+    this.error = null;
+    try {
+      if (!this.tripId) {
+        await this.createTrip();
+      }
+      if (!this.tripId) throw new Error('Trip creation failed.');
+
+      // Close the review modal if it was open.
+      this.showReviewModal = false;
+
+      await this.api
+        .post(`/trips/${this.tripId}/negotiation/customer-offer`, { amount })
+        .toPromise();
+
+      this.selectedDriverId = null;
+      this.stopDriverListPoll();
+      this.startWaitingForDriver(amount);
+    } catch (e: any) {
+      this.error = e?.error?.message || e?.message || 'Could not start search.';
+    } finally {
+      this.loading = false;
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // Waiting for the chosen driver to act
   // ─────────────────────────────────────────────────────────────────
@@ -1138,15 +1192,171 @@ export class CustomerBookPage implements OnDestroy {
       }
     }, 60_000);
 
-    if (this.tripId) {
+    // searchDrivers() may have already opened the negotiation subscription
+    // for the ring broadcasts — reuse it instead of double-binding.
+    if (this.tripId && !this.unsubscribeRealtime) {
       this.unsubscribeRealtime = this.realtime.subscribeNegotiation(
         this.tripId,
         (p) => this.onIncomingOffer(p.offer),
-        () => this.onLocked()
+        () => this.onLocked(),
+        (p) => this.onDispatchRing(p)
       );
     }
 
     this.pollHandle = setInterval(() => this.pollNegotiation(), 4000);
+  }
+
+  /**
+   * Backend just expanded the search ring. Update the UI panel, animate
+   * the Google Maps Circle from its current radius up to the new one, and
+   * merge any newly-discovered drivers into the selectable list.
+   */
+  private onDispatchRing(p: DispatchRingExpandedPayload): void {
+    // eslint-disable-next-line no-console
+    console.log('[dispatch-ring] hop=' + p.hop + '/' + p.max_hops + ' radius=' + p.radius_m + ' eligible_count=' + p.eligible_drivers + ' drivers=' + (p.drivers?.length ?? 0) + ' payload=', p);
+    this.dispatchRing = {
+      hop: p.hop,
+      max_hops: p.max_hops,
+      radius_m: p.radius_m,
+      eligible: p.eligible_drivers,
+      hop_interval_sec: p.hop_interval_sec,
+    };
+    this.updateSearchCircle(p.radius_m, p.hop_interval_sec * 1000);
+
+    // Merge discovered drivers (discovery mode payload). Dedupe by driver_id.
+    if (Array.isArray(p.drivers) && p.drivers.length > 0) {
+      const existingIds = new Set(this.drivers.map((d) => d.driver_id));
+      for (const d of p.drivers) {
+        if (d.driver_id != null && !existingIds.has(d.driver_id)) {
+          this.drivers.push({
+            driver_id: d.driver_id,
+            name: d.name ?? 'Driver',
+            vehicle: d.vehicle ? { brand: d.vehicle, model: '', color: '' } : null,
+            distance_km: d.distance_km ?? 0,
+            rating_avg: null,
+            lat: d.lat ?? 0,
+            lng: d.lng ?? 0,
+          } as any);
+          existingIds.add(d.driver_id);
+        }
+      }
+      // Re-plot map markers using the accumulated driver list.
+      const markerData = this.drivers
+        .filter((d: any) => Number.isFinite(d.lat) && Number.isFinite(d.lng))
+        .map((d: any) => ({ id: d.driver_id, lat: d.lat, lng: d.lng, bearing_deg: 0 }));
+      if (markerData.length) this.renderNearbyDrivers(markerData);
+    }
+
+    // Search complete on the last hop.
+    if (p.hop >= p.max_hops) {
+      this.searching = false;
+    }
+  }
+
+  /**
+   * Discovery-only search. Triggers DispatchHopJob in discoveryMode = true
+   * on the backend — drivers in each expanding ring are revealed to the
+   * customer but NOT notified. Customer manually picks one via the existing
+   * REQUEST flow (confirmRequest → /select-driver) after search ends.
+   */
+  async searchDrivers(): Promise<void> {
+    if (!this.estimate?.estimated_fare) {
+      const t = await this.toastCtrl.create({
+        message: 'Still calculating fare — please wait a moment.',
+        duration: 2000,
+      });
+      await t.present();
+      return;
+    }
+    this.loading = true;
+    this.error = null;
+    try {
+      if (!this.tripId) {
+        await this.createTrip();
+      }
+      if (!this.tripId) throw new Error('Trip creation failed.');
+
+      // Reset UI state for a fresh search.
+      this.drivers = [];
+      this.dispatchRing = null;
+      this.clearSearchCircle();
+      this.searching = true;
+
+      // Subscribe BEFORE firing the search so we don't miss hop 1.
+      if (!this.unsubscribeRealtime) {
+        this.unsubscribeRealtime = this.realtime.subscribeNegotiation(
+          this.tripId,
+          (p) => this.onIncomingOffer(p.offer),
+          () => this.onLocked(),
+          (p) => this.onDispatchRing(p)
+        );
+      }
+
+      await this.api.post(`/trips/${this.tripId}/search-drivers`, {}).toPromise();
+    } catch (e: any) {
+      this.searching = false;
+      this.error = e?.error?.message || e?.message || 'Could not start search.';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private updateSearchCircle(targetRadiusM: number, animMs: number): void {
+    if (!this.map || !this.pickupMarker) return;
+    const center = this.pickupMarker.position;
+    if (!center) return;
+
+    if (!this.searchCircle) {
+      this.searchCircle = new google.maps.Circle({
+        map: this.map,
+        center,
+        radius: 0,
+        strokeColor: '#10b981',
+        strokeOpacity: 0.85,
+        strokeWeight: 2,
+        fillColor: '#10b981',
+        fillOpacity: 0.10,
+        clickable: false,
+        zIndex: 1,
+      });
+    } else {
+      this.searchCircle.setCenter(center);
+    }
+
+    // Smooth radius interpolation so the ring visibly "grows" rather than
+    // snapping. 30 fps over animMs milliseconds.
+    if (this.searchCircleTween) clearInterval(this.searchCircleTween);
+    const startRadius = this.searchCircle.getRadius() || 0;
+    const startedAt = performance.now();
+    const duration = Math.max(300, Math.min(animMs, 4000));
+    this.searchCircleTween = setInterval(() => {
+      if (!this.searchCircle) return;
+      const t = Math.min(1, (performance.now() - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      this.searchCircle.setRadius(startRadius + (targetRadiusM - startRadius) * eased);
+      if (t >= 1) {
+        clearInterval(this.searchCircleTween);
+        this.searchCircleTween = null;
+      }
+    }, 33);
+
+    try {
+      // Keep the ring visible by zooming out a touch as it grows.
+      const bounds = this.searchCircle.getBounds?.();
+      if (bounds && this.map.fitBounds) this.map.fitBounds(bounds, 80);
+    } catch {}
+  }
+
+  private clearSearchCircle(): void {
+    if (this.searchCircleTween) {
+      clearInterval(this.searchCircleTween);
+      this.searchCircleTween = null;
+    }
+    if (this.searchCircle) {
+      this.searchCircle.setMap(null);
+      this.searchCircle = null;
+    }
+    this.dispatchRing = null;
   }
 
   /**
@@ -1189,6 +1399,7 @@ export class CustomerBookPage implements OnDestroy {
       clearTimeout(this.findAnotherTimeoutHandle);
       this.findAnotherTimeoutHandle = null;
     }
+    this.clearSearchCircle();
     this.showFindAnother = false;
   }
 

@@ -21,6 +21,27 @@ export type NegotiationLockedPayload = {
   final_fare: number;
 };
 
+export type DispatchRingDriver = {
+  driver_id: number;
+  name: string | null;
+  vehicle: string | null;
+  reg_no: string | null;
+  lat: number | null;
+  lng: number | null;
+  distance_km: number | null;
+};
+
+export type DispatchRingExpandedPayload = {
+  type: 'dispatch_ring_expanded';
+  trip_id: number;
+  hop: number;
+  max_hops: number;
+  radius_m: number;
+  hop_interval_sec: number;
+  eligible_drivers: number;
+  drivers: DispatchRingDriver[];
+};
+
 export type TripLocationPayload = {
   type: 'location_updated';
   trip_id: number;
@@ -99,7 +120,8 @@ export class RealtimeService {
   subscribeNegotiation(
     tripId: number,
     onOffer: (p: NegotiationOfferPayload) => void,
-    onLocked: (p: NegotiationLockedPayload) => void
+    onLocked: (p: NegotiationLockedPayload) => void,
+    onDispatchRing?: (p: DispatchRingExpandedPayload) => void
   ): () => void {
     const pusher = this.ensure();
     if (!pusher) return () => {};
@@ -109,13 +131,21 @@ export class RealtimeService {
 
     const offerHandler = (data: NegotiationOfferPayload) => onOffer(data);
     const lockedHandler = (data: NegotiationLockedPayload) => onLocked(data);
+    const ringHandler = (data: DispatchRingExpandedPayload) => onDispatchRing?.(data);
 
     channel.bind('FareNegotiationOfferAdded', offerHandler);
     channel.bind('FareNegotiationLocked', lockedHandler);
+    if (onDispatchRing) channel.bind('DispatchRingExpanded', ringHandler);
+
+    // eslint-disable-next-line no-console
+    channel.bind('pusher:subscription_succeeded', () => console.log('[realtime] subscribed to ' + channelName));
+    // eslint-disable-next-line no-console
+    channel.bind('pusher:subscription_error', (err: any) => console.error('[realtime] subscription_error on ' + channelName, err));
 
     return () => {
       channel.unbind('FareNegotiationOfferAdded', offerHandler);
       channel.unbind('FareNegotiationLocked', lockedHandler);
+      if (onDispatchRing) channel.unbind('DispatchRingExpanded', ringHandler);
       pusher.unsubscribe(channelName);
     };
   }

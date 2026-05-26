@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Events\DispatchRingExpanded;
 use App\Models\CityVehicleType;
 use App\Models\DispatcherSetting;
 use App\Models\Driver;
@@ -37,6 +38,7 @@ class DispatchHopJob implements ShouldQueue
         public int $tripId,
         public float $amount,
         public int $hop = 1,
+        public bool $discoveryMode = false,
     ) {
     }
 
@@ -94,6 +96,7 @@ class DispatchHopJob implements ShouldQueue
             return;
         }
 
+        $eligibleBeforeFilter = $eligible->toArray();
         $eligible = $this->filterByPickupRadius(
             $eligible,
             (float) $trip->pickup_lat,
@@ -102,7 +105,28 @@ class DispatchHopJob implements ShouldQueue
             5,
         );
 
-        if ($eligible->isNotEmpty()) {
+        \Illuminate\Support\Facades\Log::info('[dispatch-hop] tripId=' . $trip->id . ' hop=' . $this->hop . ' radiusKm=' . $radiusKm . ' eligibleBefore=' . json_encode($eligibleBeforeFilter) . ' eligibleAfter=' . json_encode($eligible->toArray()) . ' discoveryMode=' . ($this->discoveryMode ? 'true' : 'false'));
+
+        // Discovery-mode hops are search-only — find drivers in the ring,
+        // hand them back to the customer-mobile via the broadcast payload,
+        // but DO NOT push notifications. The customer manually picks a driver
+        // from the consolidated list after search ends and select-driver
+        // sends the request to the chosen one.
+        $driverDetails = $this->discoveryMode
+            ? $this->buildDriverDetails($eligible, (float) $trip->pickup_lat, (float) $trip->pickup_lng)
+            : [];
+
+        broadcast(new DispatchRingExpanded(
+            tripId: $trip->id,
+            hop: $this->hop,
+            maxHops: $maxHops,
+            radiusMeters: $radiusMeters,
+            hopIntervalSec: $hopIntervalSec,
+            eligibleDriverCount: $eligible->count(),
+            drivers: $driverDetails,
+        ));
+
+        if (!$this->discoveryMode && $eligible->isNotEmpty()) {
             SendDispatchNotificationsJob::dispatch(
                 driverUserIds: $eligible->values()->all(),
                 tripId: $trip->id,
@@ -115,12 +139,73 @@ class DispatchHopJob implements ShouldQueue
         $this->requeue($maxHops, $hopIntervalSec);
     }
 
+    /**
+     * Build the driver detail payload broadcast to the customer in discovery
+     * mode. Includes name, vehicle, distance from pickup, and current location.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $driverUserIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDriverDetails(
+        \Illuminate\Support\Collection $driverUserIds,
+        float $pickupLat,
+        float $pickupLng,
+    ): array {
+        if ($driverUserIds->isEmpty()) {
+            return [];
+        }
+        $userIds = $driverUserIds->values()->all();
+
+        // Users + driver profile in one query
+        $users = DB::table('users as u')
+            ->leftJoin('drivers as d', 'd.user_id', '=', 'u.id')
+            ->whereIn('u.id', $userIds)
+            ->get(['u.id', 'u.name', 'd.vehicle_type', 'd.vehicle_reg_no'])
+            ->keyBy('id');
+
+        // Latest location per driver, separate query (correlated subqueries
+        // in leftJoin clauses don't compose reliably under MySQL).
+        $locations = DB::table('driver_locations as dl')
+            ->whereIn('dl.id', function ($q) use ($userIds) {
+                $q->select(DB::raw('MAX(id)'))
+                    ->from('driver_locations')
+                    ->whereIn('driver_id', $userIds)
+                    ->groupBy('driver_id');
+            })
+            ->get(['dl.driver_id', 'dl.lat', 'dl.lng'])
+            ->keyBy('driver_id');
+
+        $out = [];
+        foreach ($userIds as $uid) {
+            $u = $users->get($uid);
+            if (!$u) {
+                continue;
+            }
+            $loc = $locations->get($uid);
+            $lat = $loc && $loc->lat !== null ? (float) $loc->lat : null;
+            $lng = $loc && $loc->lng !== null ? (float) $loc->lng : null;
+            $dKm = ($lat !== null && $lng !== null)
+                ? round($this->haversineKm($pickupLat, $pickupLng, $lat, $lng), 3)
+                : null;
+            $out[] = [
+                'driver_id' => (int) $u->id,
+                'name' => $u->name,
+                'vehicle' => $u->vehicle_type,
+                'reg_no' => $u->vehicle_reg_no,
+                'lat' => $lat,
+                'lng' => $lng,
+                'distance_km' => $dKm,
+            ];
+        }
+        return $out;
+    }
+
     private function requeue(int $maxHops, int $hopIntervalSec): void
     {
         if ($this->hop >= $maxHops) {
             return;
         }
-        self::dispatch($this->tripId, $this->amount, $this->hop + 1)
+        self::dispatch($this->tripId, $this->amount, $this->hop + 1, $this->discoveryMode)
             ->delay(now()->addSeconds($hopIntervalSec));
     }
 

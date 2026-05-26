@@ -353,22 +353,36 @@
         </div>
       </div>
 
-      <h3 class="drivers-heading">Available drivers</h3>
+      <h3 class="drivers-heading">
+        Drivers found
+        <span *ngIf="dispatchRing" class="drivers-ring-meta">
+          · hop {{ dispatchRing.hop }}/{{ dispatchRing.max_hops }} · {{ dispatchRing.radius_m }} m
+        </span>
+      </h3>
+      <p class="drivers-subhint" *ngIf="!dispatchRing && !drivers.length">
+        Tap <strong>Search drivers</strong> to look for available drivers around you.
+      </p>
+      <p class="drivers-subhint" *ngIf="dispatchRing && searching">
+        Searching… ring expanding every {{ dispatchRing.hop_interval_sec || 5 }} s.
+      </p>
+      <p class="drivers-subhint" *ngIf="!searching && drivers.length">
+        Pick a driver to send your request.
+      </p>
 
-      <div *ngIf="loadingDrivers && !drivers.length" class="drivers-empty">
-        Looking for nearby drivers…
+      <div *ngIf="searching && !drivers.length" class="drivers-empty">
+        Searching for drivers…
       </div>
-      <div *ngIf="!loadingDrivers && !drivers.length" class="drivers-empty">
-        No drivers nearby right now. Try again in a moment.
+      <div *ngIf="!searching && !drivers.length && dispatchRing" class="drivers-empty">
+        No drivers found within {{ dispatchRing.radius_m }} m. Try again later.
       </div>
 
       <ion-list lines="full" class="drivers-list" *ngIf="drivers.length">
-        <ion-item *ngFor="let d of drivers" button (click)="confirmRequest(d)">
+        <ion-item *ngFor="let d of drivers">
           <ion-icon name="person-circle-outline" slot="start" aria-hidden="true"></ion-icon>
           <ion-label class="ion-text-wrap">
             <h3>{{ d.name || 'Driver' }}</h3>
             <p>
-              {{ d.vehicle?.brand }} {{ d.vehicle?.model }}
+              {{ d.vehicle?.brand || d.vehicle || '' }} {{ d.vehicle?.model }}
               <span *ngIf="d.vehicle?.color"> · {{ d.vehicle?.color }}</span>
             </p>
             <small>
@@ -376,15 +390,21 @@
               <span *ngIf="d.rating_avg"> · ★ {{ d.rating_avg }}</span>
             </small>
           </ion-label>
-          <ion-button slot="end" size="small">Request</ion-button>
+          <ion-button slot="end" size="small" (click)="confirmRequest(d)" [disabled]="loading">
+            Request
+          </ion-button>
         </ion-item>
       </ion-list>
 
       <div class="action-footer">
         <button class="action-btn-back" (click)="state = 'payment'">Back</button>
-        <button class="action-btn-continue" (click)="openReviewModal()" [disabled]="!estimate?.estimated_fare">
-          <ion-icon name="receipt-outline" aria-hidden="true" style="margin-right: 6px; font-size: 18px; vertical-align: middle;"></ion-icon>
-          Review Ride
+        <button
+          class="action-btn-continue"
+          (click)="searchDrivers()"
+          [disabled]="!estimate?.estimated_fare || searching"
+        >
+          <ion-icon name="search-outline" aria-hidden="true" style="margin-right: 6px; font-size: 18px; vertical-align: middle;"></ion-icon>
+          {{ searching ? 'Searching…' : 'Search drivers' }}
         </button>
       </div>
 
@@ -406,10 +426,30 @@
     <!-- WAITING: chosen driver hasn't responded yet -->
     <div *ngSwitchCase="'waiting'" class="sheet-searching">
       <div class="searching-head">
-        <span>Waiting for the driver to accept…</span>
+        <span *ngIf="!dispatchRing">Waiting for the driver to accept…</span>
+        <span *ngIf="dispatchRing">
+          <span class="search-pulse" aria-hidden="true"></span>
+          Searching nearby drivers…
+        </span>
         <span class="timer">0:{{ searchSecondsLeft.toString().padStart(2, '0') }}</span>
       </div>
       <ion-progress-bar [value]="searchSecondsLeft / 60"></ion-progress-bar>
+
+      <!-- Live expanding-ring readout -->
+      <div *ngIf="dispatchRing" class="dispatch-ring">
+        <div class="ring-row">
+          <span class="ring-label">Radius</span>
+          <span class="ring-value">{{ dispatchRing.radius_m }} m</span>
+        </div>
+        <div class="ring-row">
+          <span class="ring-label">Hop</span>
+          <span class="ring-value">{{ dispatchRing.hop }} / {{ dispatchRing.max_hops }}</span>
+        </div>
+        <div class="ring-row">
+          <span class="ring-label">Drivers in ring</span>
+          <span class="ring-value">{{ dispatchRing.eligible }}</span>
+        </div>
+      </div>
 
       <p class="searching-hint">
         Your request was sent. They’ll either accept the fare or send you a counter-offer.
@@ -515,7 +555,7 @@
     </div>
 
     <ion-button expand="block" (click)="closeReviewModal()" class="review-done">
-      Done — pick a driver
+      Done
     </ion-button>
   </div>
 </ion-content>
