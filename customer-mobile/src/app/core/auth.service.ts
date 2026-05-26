@@ -21,7 +21,7 @@ export type AuthUser = {
   accepted_payment_methods?: string[];
 };
 
-export type PaymentMethod = 'cash' | 'upi' | 'qr';
+export type PaymentMethod = 'cash' | 'razorpay';
 
 @Injectable({
   providedIn: 'root',

@@ -964,7 +964,7 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
       {
         key: 'promotions',
         title: 'Promotions',
-        description: 'City-wide promotions, promo codes, coupons and referrals.',
+        description: 'City-wide promotions, promo codes and coupons.',
         icon: 'gift',
         route: '/promotions/city-wide',
         state: promoTotal > 0 ? 'done' : 'optional',

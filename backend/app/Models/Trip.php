@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'requested_vehicle_type_id',
     'city_vehicle_type_id',
     'outstation_package_id',
+    'applied_promotion_id',
+    'promo_discount_amount',
     'pricing_rule_id',
     'status',
     'estimated_fare',
@@ -81,6 +83,7 @@ class Trip extends Model
         'drop_lng' => 'float',
         'estimated_fare' => 'float',
         'final_fare' => 'float',
+        'promo_discount_amount' => 'float',
         'stops' => 'array',
         'is_round_trip' => 'boolean',
         'is_manual_dispatch' => 'boolean',
@@ -127,6 +130,11 @@ class Trip extends Model
     public function pricingRule(): BelongsTo
     {
         return $this->belongsTo(PricingRule::class, 'pricing_rule_id');
+    }
+
+    public function appliedPromotion(): BelongsTo
+    {
+        return $this->belongsTo(CityWidePromotion::class, 'applied_promotion_id');
     }
 
     public function fareNegotiation(): HasOne

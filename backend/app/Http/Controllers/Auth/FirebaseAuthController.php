@@ -81,7 +81,7 @@ class FirebaseAuthController extends Controller
                     'dob' => $user->dob?->toDateString(),
                     'address' => $user->address,
                     'roles' => $user->roleNames(),
-                    'accepted_payment_methods' => $user->accepted_payment_methods ?? ['cash', 'upi', 'qr'],
+                    'accepted_payment_methods' => $user->accepted_payment_methods ?? ['cash', 'razorpay'],
                 ],
             ]);
         } catch (\InvalidArgumentException $e) {

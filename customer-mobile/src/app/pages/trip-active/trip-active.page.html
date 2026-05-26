@@ -35,7 +35,12 @@
           Driver location: {{ driverPosition.lat | number:'1.5-5' }}, {{ driverPosition.lng | number:'1.5-5' }}
         </p>
         <p *ngIf="t.final_fare != null">Final fare: <strong>₹{{ t.final_fare }}</strong></p>
-        <p *ngIf="t.payment_method">Selected payment: <strong>{{ t.payment_method | uppercase }}</strong></p>
+        <p *ngIf="couponPreview">
+          Coupon discount: <strong>-₹{{ couponPreview.discount }}</strong>
+        </p>
+        <p *ngIf="payableAmount != null && couponPreview">
+          You pay: <strong>₹{{ payableAmount }}</strong>
+        </p>
       </ion-card-content>
     </ion-card>
 
@@ -71,13 +76,37 @@
       </ion-button>
     </div>
 
+    <div *ngIf="isCompleted()" class="coupon-section">
+      <div class="coupon-input-row">
+        <ion-icon name="gift-outline" aria-hidden="true"></ion-icon>
+        <input
+          type="text"
+          placeholder="Coupon title"
+          [(ngModel)]="couponInput"
+          [disabled]="couponApplying || !!couponPreview"
+          (keyup.enter)="applyCoupon()"
+        />
+        <button
+          type="button"
+          [disabled]="couponApplying || (!couponPreview && !couponInput?.trim())"
+          (click)="applyCoupon()"
+        >
+          {{ couponApplying ? '…' : (couponPreview ? 'Remove' : 'Apply') }}
+        </button>
+      </div>
+      <small *ngIf="couponPreview" class="coupon-status ok">
+        ✓ {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
+      </small>
+      <small *ngIf="couponError" class="coupon-status err">{{ couponError }}</small>
+    </div>
+
     <ion-button
       *ngIf="isCompleted()"
       expand="block"
       color="success"
       (click)="pay()"
     >
-      Pay
+      Pay ₹{{ payableAmount }}
     </ion-button>
 
     <!-- Post-trip rating -->

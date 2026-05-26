@@ -430,8 +430,7 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
 
   paymentOptions = [
     { label: 'CASH', value: 'cash' },
-    { label: 'UPI', value: 'upi' },
-    { label: 'QR', value: 'qr' },
+    { label: 'RAZORPAY', value: 'razorpay' },
   ];
 
   form = {
@@ -439,7 +438,7 @@ export class ManualDispatchComponent implements OnInit, AfterViewInit, OnDestroy
     user_name: '',
     city_id: null as number | null,
     vehicle_type_id: null as number | null,
-    payment_method: 'cash' as 'cash' | 'upi' | 'qr',
+    payment_method: 'cash' as 'cash' | 'razorpay',
     scheduleMode: 'asap' as 'asap' | 'scheduled',
     scheduled_at: null as Date | null,
     pickup: { address: '', lat: 0, lng: 0 } as PlacePoint,

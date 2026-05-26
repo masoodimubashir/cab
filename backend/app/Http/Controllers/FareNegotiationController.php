@@ -43,10 +43,20 @@ class FareNegotiationController extends Controller
             'driver:id,name,avatar_path,accepted_payment_methods',
         ]);
 
+        // City-level payment modes — the customer-mobile pay screen intersects
+        // these with the driver's accepted methods to render the final picker.
+        $cityModes = \App\Models\CitySetting::query()
+            ->where('city_id', $trip->city_id)
+            ->value('allowed_driver_payment_modes');
+        $cityPaymentModes = is_array($cityModes) && $cityModes
+            ? array_values(array_intersect($cityModes, ['CASH', 'RAZORPAY']))
+            : ['RAZORPAY'];
+
         return response()->json([
             'trip_id' => $trip->id,
             'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
+            'city_payment_modes' => $cityPaymentModes,
         ]);
     }
 

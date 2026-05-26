@@ -5,7 +5,7 @@ import { Subject, debounceTime } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
 
-const ALL_METHODS: PaymentMethod[] = ['cash', 'upi', 'qr'];
+const ALL_METHODS: PaymentMethod[] = ['cash', 'razorpay'];
 
 /**
  * Payment methods the driver accepts. Toggles persist via
@@ -22,8 +22,7 @@ const ALL_METHODS: PaymentMethod[] = ['cash', 'upi', 'qr'];
 })
 export class PaymentMethodsPage implements OnInit, OnDestroy {
   acceptCash = true;
-  acceptUpi = true;
-  acceptQr = true;
+  acceptRazorpay = true;
 
   private save$ = new Subject<void>();
   private saveSub?: { unsubscribe: () => void };
@@ -39,8 +38,7 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
     const u = this.auth.getUser();
     const methods = u?.accepted_payment_methods ?? ALL_METHODS;
     this.acceptCash = methods.includes('cash');
-    this.acceptUpi = methods.includes('upi');
-    this.acceptQr = methods.includes('qr');
+    this.acceptRazorpay = methods.includes('razorpay');
 
     this.saveSub = this.save$.pipe(debounceTime(500)).subscribe(() => this.save());
   }
@@ -56,8 +54,7 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
   private currentMethods(): PaymentMethod[] {
     const m: PaymentMethod[] = [];
     if (this.acceptCash) m.push('cash');
-    if (this.acceptUpi) m.push('upi');
-    if (this.acceptQr) m.push('qr');
+    if (this.acceptRazorpay) m.push('razorpay');
     return m;
   }
 
@@ -69,7 +66,7 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
         duration: 2500, color: 'warning',
       });
       await t.present();
-      this.acceptCash = true;
+      this.acceptRazorpay = true;
       return;
     }
 

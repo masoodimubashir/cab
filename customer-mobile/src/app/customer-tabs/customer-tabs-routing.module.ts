@@ -43,6 +43,11 @@ const routes: Routes = [
           import('../pages/trip-active/trip-active.module').then((m) => m.TripActivePageModule),
       },
       {
+        path: 'trip-details/:tripId',
+        loadChildren: () =>
+          import('../pages/trip-details/trip-details.module').then((m) => m.TripDetailsPageModule),
+      },
+      {
         path: 'negotiation/:tripId',
         redirectTo: 'trip/:tripId',
       },

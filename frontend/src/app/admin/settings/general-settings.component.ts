@@ -12,8 +12,6 @@ interface RideProduct {
   city_id: number;
   kind: 'local' | 'rental' | 'outstation';
   name: string;
-  description: string | null;
-  info: string | null;
   image_path: string | null;
   image_url: string | null;
   is_active: boolean;
@@ -22,8 +20,6 @@ interface RideProduct {
 
 interface ProductForm {
   name: string;
-  description: string;
-  info: string;
   is_active: boolean;
   imageFile: File | null;
   preview: string | null;
@@ -39,8 +35,8 @@ interface ProductForm {
   imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   template: `
     <p class="intro">
-      Configure the ride products offered in this city. Each can have its own banner,
-      short description and info copy — save them independently.
+      Configure the ride products offered in this city. Each can have its own banner —
+      save them independently.
     </p>
 
     <div class="cue" *ngIf="!cityId">
@@ -87,15 +83,6 @@ interface ProductForm {
             <label class="field">
               <span class="field__lbl">Product name</span>
               <input type="text" [(ngModel)]="forms[p.id].name" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Short description</span>
-              <input type="text" [(ngModel)]="forms[p.id].description" placeholder="Short tagline" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Info copy</span>
-              <textarea rows="4" [(ngModel)]="forms[p.id].info"
-                        [placeholder]="placeholderFor(p.kind)"></textarea>
             </label>
           </div>
         </div>
@@ -254,12 +241,6 @@ export class GeneralSettingsComponent implements OnInit, OnDestroy {
     return 'car';
   }
 
-  placeholderFor(kind: string): string {
-    if (kind === 'rental') return 'Describe the rental product…';
-    if (kind === 'outstation') return 'Describe the outstation product…';
-    return 'Quick rides inside the city';
-  }
-
   fetch(): void {
     if (this.cityId == null) return;
     this.loading = true;
@@ -272,8 +253,6 @@ export class GeneralSettingsComponent implements OnInit, OnDestroy {
           for (const p of this.products) {
             this.forms[p.id] = {
               name: p.name ?? '',
-              description: p.description ?? '',
-              info: p.info ?? '',
               is_active: !!p.is_active,
               imageFile: null,
               preview: null,
@@ -309,8 +288,6 @@ export class GeneralSettingsComponent implements OnInit, OnDestroy {
     const fd = new FormData();
     fd.append('_method', 'PATCH');
     fd.append('name', f.name);
-    fd.append('description', f.description ?? '');
-    fd.append('info', f.info ?? '');
     fd.append('is_active', f.is_active ? '1' : '0');
     if (f.imageFile) fd.append('image', f.imageFile);
 
@@ -327,8 +304,6 @@ export class GeneralSettingsComponent implements OnInit, OnDestroy {
           if (res.product) {
             this.forms[p.id] = {
               name: res.product.name ?? '',
-              description: res.product.description ?? '',
-              info: res.product.info ?? '',
               is_active: !!res.product.is_active,
               imageFile: null,
               preview: null,

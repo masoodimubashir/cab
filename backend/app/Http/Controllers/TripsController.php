@@ -16,6 +16,7 @@ use App\Models\WalletTransaction;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\NotificationService;
+use App\Services\PromotionApplicationService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use Carbon\Carbon;
@@ -30,6 +31,7 @@ class TripsController extends Controller
         TripStateMachineService $tripStateMachineService,
         DynamicPricingService $dynamicPricingService,
         SchedulingPolicyService $schedulingPolicy,
+        PromotionApplicationService $promotionApplicationService,
     ) {
         $data = $request->validate([
             // Primary axis: the exact per-city vehicle the customer picked.
@@ -48,7 +50,7 @@ class TripsController extends Controller
             'drop_lat' => ['required', 'numeric', 'between:-90,90'],
             'drop_lng' => ['required', 'numeric', 'between:-180,180'],
 
-            'payment_method' => ['nullable', 'in:cash,upi,qr'],
+            'payment_method' => ['nullable', 'in:cash,razorpay'],
             'scheduled_at' => ['nullable', 'date'],
             // Real route metrics from the client's Google DirectionsService.
             // When present the estimator uses them instead of haversine.
@@ -125,11 +127,15 @@ class TripsController extends Controller
             'fare_type' => $dynamicRule->fare_type,
         ] : null;
 
-        $estimate = $fareEstimationService->estimateFare(
-            $fareEstimationService->fareInput(
-                $pricingRule->toArray(),
-                isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
-            ),
+        // Resolve the best applicable city-wide promotion using a quick
+        // promo-free estimate as the subtotal proxy, then re-estimate with
+        // the promo applied so the breakdown matches what gets persisted.
+        $fareInput = $fareEstimationService->fareInput(
+            $pricingRule->toArray(),
+            isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
+        );
+        $previewEstimate = $fareEstimationService->estimateFare(
+            $fareInput,
             (float) $data['pickup_lat'],
             (float) $data['pickup_lng'],
             (float) $data['drop_lat'],
@@ -138,6 +144,28 @@ class TripsController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+        );
+        $promo = $promotionApplicationService->findBestForBooking(
+            cityId: $cityId,
+            cityVehicleTypeId: $cityVehicleTypeId,
+            pickupLat: (float) $data['pickup_lat'],
+            pickupLng: (float) $data['pickup_lng'],
+            dropLat: (float) $data['drop_lat'],
+            dropLng: (float) $data['drop_lng'],
+            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
+        );
+
+        $estimate = $fareEstimationService->estimateFare(
+            $fareInput,
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (float) $data['drop_lat'],
+            (float) $data['drop_lng'],
+            $dynamicFactors,
+            null,
+            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
+            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            $promo,
         );
 
         // "Any vehicle / ride now" mode — client sent only city info, no
@@ -163,6 +191,10 @@ class TripsController extends Controller
                 : null,
             'outstation_package_id' => isset($data['outstation_package_id'])
                 ? (int) $data['outstation_package_id']
+                : null,
+            'applied_promotion_id' => $promo?->id,
+            'promo_discount_amount' => $promo
+                ? (float) ($estimate['fare_breakdown']['promo_discount'] ?? 0)
                 : null,
             'pricing_rule_id' => $pricingRule->id,
             'scheduled_at' => $scheduledAt,
