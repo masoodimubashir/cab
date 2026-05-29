@@ -8,9 +8,15 @@ import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
+  InputComponent,
   ModalComponent,
+  StatusPillComponent,
 } from '../../ui';
 
 interface PromoCodeRow {
@@ -42,7 +48,9 @@ interface CustomerRow {
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent, StatusPillComponent,
   ],
   template: `
     <div class="pc">
@@ -63,47 +71,83 @@ interface CustomerRow {
         <p class="cue__text">Pick a city from the switcher in the top bar to manage promo codes.</p>
       </div>
 
-      <ng-container *ngIf="cityId != null">
-        <div class="seg">
-          <button class="seg__btn" [class.is-on]="tab === 'active'" (click)="setTab('active')">Active</button>
-          <button class="seg__btn" [class.is-on]="tab === 'inactive'" (click)="setTab('inactive')">Inactive</button>
-        </div>
+      <tm-data-table
+        *ngIf="cityId != null"
+        [rows]="pageRows"
+        [total]="total"
+        [page]="page"
+        [pageSize]="pageSize"
+        [loading]="loading"
+        emptyTitle="No promo codes"
+        emptyHint="Create a promo code, or try a different search."
+        (pageChange)="onPage($event)"
+        (pageSizeChange)="onPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search by code"
+          [(ngModel)]="search"
+          (ngModelChange)="onSearchChange()"
+        />
 
-        <div class="grid" *ngIf="rows.length; else empty">
-          <article class="card" *ngFor="let r of rows">
-            <div class="card__top">
-              <span class="card__code">{{ r.code }}</span>
-              <span class="card__status" [class.on]="r.is_active" [class.off]="!r.is_active">
-                {{ r.is_active ? 'Active' : 'Inactive' }}
-              </span>
+        <ng-container slot="filters">
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Status filter"
+            allLabel="Active"
+            allValue="active"
+            [options]="statusOptions"
+            [value]="status"
+            (valueChange)="onStatusChange($event)"
+          />
+        </ng-container>
+
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+          <tm-filter-pill *ngIf="status !== 'active'" icon="bolt" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+        </ng-container>
+
+        <tm-column key="code" label="Code" width="200">
+          <ng-template let-row>
+            <div class="cell-id">
+              <span class="cell-code">{{ row.code }}</span>
+              <span class="cell-sub" *ngIf="row.can_use_with_referral">Stacks with referral</span>
             </div>
-            <div class="card__amount">
-              <span class="card__amount-v">{{ r.amount }}</span>
-              <span class="card__amount-l">{{ r.bonus_type }} bonus</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="amount" label="Bonus" width="150">
+          <ng-template let-row>
+            <span class="cell-strong">{{ row.amount }}</span>
+            <span class="muted"> {{ row.bonus_type }}</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="dates" label="Window" width="200">
+          <ng-template let-row>{{ row.start_date }} → {{ row.end_date }}</ng-template>
+        </tm-column>
+        <tm-column key="validity_in_days" label="Validity" width="120">
+          <ng-template let-row>{{ row.validity_in_days != null ? row.validity_in_days + ' days' : '—' }}</ng-template>
+        </tm-column>
+        <tm-column key="max_number" label="Max uses" width="120">
+          <ng-template let-row>{{ row.max_number ?? 'Unlimited' }}</ng-template>
+        </tm-column>
+        <tm-column key="status" label="Status" width="120">
+          <ng-template let-row>
+            <tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">
+              {{ row.is_active ? 'Active' : 'Inactive' }}
+            </tm-status-pill>
+          </ng-template>
+        </tm-column>
+        <tm-column key="actions" label="" width="130" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <button class="icon-btn" (click)="openGive(row)" aria-label="Give to users" title="Give to users"><tm-icon name="eye" [size]="14" /></button>
+              <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit promo code"><tm-icon name="edit" [size]="14" /></button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = row" aria-label="Delete promo code"><tm-icon name="trash" [size]="14" /></button>
             </div>
-            <div class="card__meta">
-              <div><tm-icon name="calendar" [size]="13" /> {{ r.start_date }} → {{ r.end_date }}</div>
-              <div><tm-icon name="refresh" [size]="13" /> Valid {{ r.validity_in_days ?? '—' }} days</div>
-              <div><tm-icon name="users" [size]="13" /> Max {{ r.max_number ?? 'unlimited' }} uses</div>
-              <div *ngIf="r.can_use_with_referral"><tm-icon name="check" [size]="13" /> Stacks with referral</div>
-            </div>
-            <div class="card__foot">
-              <button class="icon-btn" (click)="openGive(r)" aria-label="Give to users" title="Give to users">
-                <tm-icon name="eye" [size]="14" />
-              </button>
-              <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
-              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
-            </div>
-          </article>
-        </div>
-        <ng-template #empty>
-          <div class="cue">
-            <tm-icon name="tag" [size]="24" />
-            <p class="cue__title">No {{ tab }} promo codes</p>
-            <p class="cue__text" *ngIf="tab === 'active'">Create a promo code to give riders a bonus.</p>
-          </div>
-        </ng-template>
-      </ng-container>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
     </div>
 
     <!-- Drawer -->
@@ -281,58 +325,15 @@ interface CustomerRow {
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .seg {
-      display: inline-flex; gap: 4px; padding: 4px;
-      background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
-    }
-    .seg__btn {
-      padding: 7px 18px; border-radius: 8px;
-      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      background: transparent; cursor: pointer;
-    }
-    .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-      gap: 12px;
-    }
-    .card {
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px);
-      padding: 14px;
-    }
-    .card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .card__code {
+    /* cell renderers */
+    .cell-id { display: flex; flex-direction: column; min-width: 0; }
+    .cell-code {
       font-family: var(--tm-font-mono, monospace);
-      font-size: 16px; font-weight: 800; color: var(--tm-text);
-      letter-spacing: 0.5px;
+      font-size: 14px; font-weight: 800; color: var(--tm-text); letter-spacing: 0.5px;
     }
-    .card__status {
-      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-      padding: 3px 8px; border-radius: 999px;
-    }
-    .card__status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .card__status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
-
-    .card__amount { display: flex; align-items: baseline; gap: 7px; margin: 12px 0 10px; }
-    .card__amount-v { font-size: 26px; font-weight: 800; color: var(--tm-text); line-height: 1; }
-    .card__amount-l { font-size: 11px; font-weight: 700; text-transform: capitalize; color: var(--tm-text-muted); }
-
-    .card__meta {
-      display: flex; flex-direction: column; gap: 5px;
-      border-top: 1px solid var(--tm-line); padding-top: 10px;
-    }
-    .card__meta > div {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 12px; color: var(--tm-text-muted);
-    }
-
-    .card__foot {
-      display: flex; justify-content: flex-end; gap: 6px;
-      margin-top: 10px;
-    }
+    .cell-sub { font-size: 11px; color: var(--tm-text-muted); }
+    .cell-strong { color: var(--tm-text); font-weight: 700; }
+    .cell-actions { display: inline-flex; gap: 6px; }
 
     /* Give-to-users modal — mirrors the coupons admin modal. */
     .give { display: flex; flex-direction: column; gap: 14px; width: 100%; box-sizing: border-box; }
@@ -425,8 +426,18 @@ interface CustomerRow {
 })
 export class PromoCodesComponent implements OnInit, OnDestroy {
   cityId: number | null = null;
-  tab: 'active' | 'inactive' = 'active';
   rows: PromoCodeRow[] = [];
+
+  // ── Filter / search / pagination ────────────────────────────────
+  status: 'active' | 'inactive' = 'active';
+  statusOptions = [{ label: 'Inactive', value: 'inactive' }];
+  search = '';
+  page = 1;
+  pageSize = 25;
+  loading = false;
+  pageRows: PromoCodeRow[] = [];
+  total = 0;
+  private searchDebounce: any = null;
 
   open = false;
   editingId: number | null = null;
@@ -480,22 +491,75 @@ export class PromoCodesComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
     this.custSearchSub?.unsubscribe();
-  }
-
-  setTab(t: 'active' | 'inactive'): void {
-    if (this.tab === t) return;
-    this.tab = t;
-    this.fetch();
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
   }
 
   fetch(): void {
     if (this.cityId == null) return;
-    const active = this.tab === 'active' ? '1' : '0';
+    const active = this.status === 'active' ? '1' : '0';
+    this.loading = true;
     this.api.get<{ data: PromoCodeRow[] }>(`/admin/cities/${this.cityId}/promo-codes?is_active=${active}`)
       .subscribe({
-        next: (r) => (this.rows = r.data ?? []),
-        error: () => this.toast.error('Failed to load promo codes'),
+        next: (r) => {
+          this.rows = r.data ?? [];
+          this.loading = false;
+          this.applyView();
+        },
+        error: () => {
+          this.loading = false;
+          this.toast.error('Failed to load promo codes');
+        },
       });
+  }
+
+  // ── Filtering + client-side pagination ──────────────────────────
+  private applyView(): void {
+    const q = this.search.trim().toLowerCase();
+    let list = this.rows;
+    if (q) list = list.filter((r) => r.code.toLowerCase().includes(q));
+    this.total = list.length;
+    const maxPage = Math.max(1, Math.ceil(this.total / this.pageSize));
+    if (this.page > maxPage) this.page = maxPage;
+    const start = (this.page - 1) * this.pageSize;
+    this.pageRows = list.slice(start, start + this.pageSize);
+  }
+
+  onSearchChange(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => {
+      this.page = 1;
+      this.applyView();
+    }, 250);
+  }
+  clearSearch(): void {
+    this.search = '';
+    this.page = 1;
+    this.applyView();
+  }
+
+  statusLabel(): string {
+    return this.status === 'inactive' ? 'Inactive' : 'Active';
+  }
+  onStatusChange(value: string): void {
+    this.status = value as 'active' | 'inactive';
+    this.page = 1;
+    this.fetch();
+  }
+  clearStatus(): void {
+    if (this.status === 'active') return;
+    this.status = 'active';
+    this.page = 1;
+    this.fetch();
+  }
+
+  onPage(p: number): void {
+    this.page = p;
+    this.applyView();
+  }
+  onPageSize(s: number): void {
+    this.pageSize = s;
+    this.page = 1;
+    this.applyView();
   }
 
   blankForm() {

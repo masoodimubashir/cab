@@ -1,4 +1,4 @@
-import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -10,6 +10,8 @@ import {
   ColumnComponent,
   DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
   InputComponent,
   ModalComponent,
@@ -53,7 +55,8 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
   imports: [
     CommonModule, FormsModule,
     ButtonComponent, ColumnComponent, DataTableComponent,
-    DrawerComponent, IconComponent, InputComponent, ModalComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent,
   ],
   template: `
     <div class="page">
@@ -95,115 +98,29 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
 
           <!-- Toolbar: filters on the RIGHT -->
           <ng-container slot="filters">
-            <!-- Status dropdown -->
-            <div class="state-select" [class.has-value]="status !== 'all'" [class.is-open]="statusOpen">
-              <button
-                type="button"
-                class="state-select__trigger"
-                (click)="toggleStatusMenu($event)"
-                [attr.aria-expanded]="statusOpen"
-                aria-haspopup="listbox"
-                aria-label="Status filter"
-              >
-                <span class="state-select__icon" aria-hidden="true">
-                  <tm-icon name="shield" [size]="14" />
-                </span>
-                <span class="state-select__value">{{ statusLabel() }}</span>
-                <tm-icon name="chevron-down" [size]="12" class="state-select__caret" />
-              </button>
-              <ul
-                class="state-select__menu"
-                *ngIf="statusOpen"
-                role="listbox"
-                (click)="$event.stopPropagation()"
-              >
-                <li
-                  class="state-select__option"
-                  [class.is-selected]="status === 'all'"
-                  role="option"
-                  [attr.aria-selected]="status === 'all'"
-                  (click)="selectStatus('all')"
-                >
-                  <tm-icon *ngIf="status === 'all'" name="check" [size]="12" class="state-select__option-check" />
-                  <span class="state-select__option-label">All statuses</span>
-                </li>
-                <li
-                  *ngFor="let opt of statusOptions"
-                  class="state-select__option"
-                  [class.is-selected]="status === opt.value"
-                  role="option"
-                  [attr.aria-selected]="status === opt.value"
-                  (click)="selectStatus(opt.value)"
-                >
-                  <tm-icon *ngIf="status === opt.value" name="check" [size]="12" class="state-select__option-check" />
-                  <span class="state-select__option-label">{{ opt.label }}</span>
-                </li>
-              </ul>
-            </div>
-
-            <!-- VAT dropdown -->
-            <div class="state-select" [class.has-value]="vat !== 'all'" [class.is-open]="vatOpen">
-              <button
-                type="button"
-                class="state-select__trigger"
-                (click)="toggleVatMenu($event)"
-                [attr.aria-expanded]="vatOpen"
-                aria-haspopup="listbox"
-                aria-label="VAT filter"
-              >
-                <span class="state-select__icon" aria-hidden="true">
-                  <tm-icon name="tag" [size]="14" />
-                </span>
-                <span class="state-select__value">{{ vatLabel() }}</span>
-                <tm-icon name="chevron-down" [size]="12" class="state-select__caret" />
-              </button>
-              <ul
-                class="state-select__menu"
-                *ngIf="vatOpen"
-                role="listbox"
-                (click)="$event.stopPropagation()"
-              >
-                <li
-                  *ngFor="let opt of vatOptions"
-                  class="state-select__option"
-                  [class.is-selected]="vat === opt.value"
-                  role="option"
-                  [attr.aria-selected]="vat === opt.value"
-                  (click)="selectVat(opt.value)"
-                >
-                  <tm-icon *ngIf="vat === opt.value" name="check" [size]="12" class="state-select__option-check" />
-                  <span class="state-select__option-label">{{ opt.label }}</span>
-                </li>
-              </ul>
-            </div>
+            <tm-filter-select
+              icon="shield"
+              ariaLabel="Status filter"
+              allLabel="All statuses"
+              [options]="statusOptions"
+              [value]="status"
+              (valueChange)="onStatusChange($event)"
+            />
+            <tm-filter-select
+              icon="tag"
+              ariaLabel="VAT filter"
+              allLabel="Any VAT"
+              [options]="vatFilterOptions"
+              [value]="vat"
+              (valueChange)="onVatChange($event)"
+            />
           </ng-container>
 
           <!-- Active filter pills below the toolbar -->
           <ng-container slot="banner">
-            <span class="filter-pill" *ngIf="search.trim()">
-              <span class="filter-pill__icon"><tm-icon name="search" [size]="11" /></span>
-              <span class="filter-pill__label">Search</span>
-              <span class="filter-pill__value">{{ search }}</span>
-              <button type="button" class="filter-pill__close" (click)="clearSearch()" aria-label="Clear search">
-                <tm-icon name="x" [size]="12" />
-              </button>
-            </span>
-            <span class="filter-pill" *ngIf="status !== 'all'">
-              <span class="filter-pill__icon"><tm-icon name="shield" [size]="11" /></span>
-              <span class="filter-pill__label">Status</span>
-              <span class="filter-pill__value">{{ statusLabel() }}</span>
-              <button type="button" class="filter-pill__close" (click)="clearStatus()" aria-label="Clear status filter">
-                <tm-icon name="x" [size]="12" />
-              </button>
-            </span>
-            <span class="filter-pill" *ngIf="vat !== 'all'">
-              <span class="filter-pill__icon"><tm-icon name="tag" [size]="11" /></span>
-              <span class="filter-pill__label">VAT</span>
-              <span class="filter-pill__value">{{ vatLabel() }}</span>
-              <button type="button" class="filter-pill__close" (click)="clearVat()" aria-label="Clear VAT filter">
-                <tm-icon name="x" [size]="12" />
-              </button>
-            </span>
+            <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+            <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+            <tm-filter-pill *ngIf="vat !== 'all'" icon="tag" label="VAT" [value]="vatLabel()" (clear)="clearVat()" />
           </ng-container>
 
           <!-- ============ Columns ============ -->
@@ -363,101 +280,8 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    /* ---------- Custom state-select dropdown (button + popover) ---------- */
-    .state-select { position: relative; display: inline-block; }
-    .state-select__trigger {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 9px 14px;
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      background: transparent;
-      font-family: var(--tm-font-body);
-      font-size: 13px; font-weight: 700;
-      color: var(--tm-text);
-      cursor: pointer;
-      line-height: 1.2;
-      transition: border-color var(--tm-duration-fast) var(--tm-ease),
-                  background var(--tm-duration-fast) var(--tm-ease);
-    }
-    .state-select__trigger:hover { border-color: var(--tm-ink); }
-    .state-select.is-open .state-select__trigger { border-color: var(--tm-ink); }
-    .state-select.has-value .state-select__trigger {
-      background: var(--tm-green-tint);
-      border-color: var(--tm-green-deep);
-    }
-    .state-select__icon { color: var(--tm-text-muted); display: inline-flex; }
-    .state-select.has-value .state-select__icon { color: var(--tm-green-deep); }
-    .state-select__value { min-width: 110px; text-align: left; }
-    .state-select__caret {
-      color: var(--tm-text-soft);
-      transition: transform var(--tm-duration-fast) var(--tm-ease);
-    }
-    .state-select.is-open .state-select__caret { transform: rotate(180deg); }
-    .state-select.has-value .state-select__caret { color: var(--tm-green-deep); }
-
-    .state-select__menu {
-      position: absolute; top: calc(100% + 6px); left: 0; right: 0;
-      min-width: 180px; margin: 0; padding: 6px;
-      list-style: none;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      box-shadow: var(--tm-shadow-pop);
-      z-index: 1100;
-      animation: state-select-in 140ms var(--tm-ease) both;
-    }
-    @keyframes state-select-in {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .state-select__option {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 10px; border-radius: var(--tm-radius-sm);
-      font-size: 12px; font-weight: 600; color: var(--tm-text);
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .state-select__option:hover { background: var(--tm-canvas-2); }
-    .state-select__option.is-selected {
-      background: var(--tm-green-tint);
-      color: var(--tm-green-deep);
-      font-weight: 700;
-    }
-    .state-select__option-check { color: var(--tm-green-deep); flex-shrink: 0; }
-    .state-select__option-label { flex: 1; }
-
-    /* ---------- Filter pills (below toolbar) ---------- */
-    .filter-pill {
-      display: inline-flex; align-items: center; gap: 8px;
-      margin-right: 8px;
-      padding: 6px 6px 6px 12px;
-      border-radius: var(--tm-radius-pill);
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line-2);
-      font-size: 12px; font-weight: 700;
-      color: var(--tm-text);
-    }
-    .filter-pill__icon { display: inline-flex; color: var(--tm-text-muted); }
-    .filter-pill__label {
-      font-size: 10px; font-weight: 800;
-      letter-spacing: 0.08em; text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-    .filter-pill__value {
-      font-family: var(--tm-font-mono);
-      font-weight: 700;
-      color: var(--tm-text);
-    }
-    .filter-pill__close {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 22px; height: 22px;
-      border-radius: 50%;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .filter-pill__close:hover { background: var(--tm-ink); color: #fff; }
+    /* Filter dropdowns + active-filter pills now use the shared
+       tm-filter-select / tm-filter-pill primitives. */
 
     /* ---------- Cell renderers ---------- */
     .cell-fleet { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
@@ -548,8 +372,6 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
   search = '';
   status: StatusFilter = 'all';
   vat: VatFilter = 'all';
-  statusOpen = false;
-  vatOpen = false;
 
   statusOptions = STATUS_OPTIONS;
   vatOptions: { label: string; value: VatFilter }[] = [
@@ -557,6 +379,11 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
     { label: 'VAT enabled', value: 'enabled' },
     { label: 'VAT disabled', value: 'disabled' },
   ];
+
+  // Filter-select options exclude the "all" entry — the component renders it.
+  get vatFilterOptions(): { label: string; value: string }[] {
+    return this.vatOptions.filter((o) => o.value !== 'all');
+  }
 
   // ── Drawer / delete state ───────────────────────────────────────
   open = false;
@@ -638,15 +465,8 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
     if (this.status === 'all') return 'All statuses';
     return this.statusOptions.find((o) => o.value === this.status)?.label ?? 'All statuses';
   }
-  toggleStatusMenu(event: MouseEvent): void {
-    event.stopPropagation();
-    this.vatOpen = false;
-    this.statusOpen = !this.statusOpen;
-  }
-  selectStatus(value: StatusFilter): void {
-    this.statusOpen = false;
-    if (this.status === value) return;
-    this.status = value;
+  onStatusChange(value: string): void {
+    this.status = value as StatusFilter;
     this.fetchFleets();
   }
   clearStatus(): void {
@@ -658,33 +478,14 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
   vatLabel(): string {
     return this.vatOptions.find((o) => o.value === this.vat)?.label ?? 'Any VAT';
   }
-  toggleVatMenu(event: MouseEvent): void {
-    event.stopPropagation();
-    this.statusOpen = false;
-    this.vatOpen = !this.vatOpen;
-  }
-  selectVat(value: VatFilter): void {
-    this.vatOpen = false;
-    if (this.vat === value) return;
-    this.vat = value;
+  onVatChange(value: string): void {
+    this.vat = value as VatFilter;
     this.fetchFleets();
   }
   clearVat(): void {
     if (this.vat === 'all') return;
     this.vat = 'all';
     this.fetchFleets();
-  }
-
-  @HostListener('document:click')
-  onDocumentClick(): void {
-    if (this.statusOpen) this.statusOpen = false;
-    if (this.vatOpen) this.vatOpen = false;
-  }
-
-  @HostListener('document:keydown.escape')
-  onDocumentEscape(): void {
-    if (this.statusOpen) this.statusOpen = false;
-    if (this.vatOpen) this.vatOpen = false;
   }
 
   // ── Drawer / form ───────────────────────────────────────────────

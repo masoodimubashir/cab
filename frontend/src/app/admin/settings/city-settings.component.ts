@@ -21,14 +21,6 @@ interface CitySettings {
   chat_enabled: boolean;
   show_region_specific_fare: boolean;
   show_vehicle_make_model: boolean;
-  driver_qr_booking_enabled: boolean;
-  driver_qr_booking_force_assign: boolean;
-  city_level_otp: boolean;
-
-  mandatory_fare_capping_threshold: number;
-  night_start_time: string | null;
-  night_end_time: string | null;
-  advertise_credits: number;
 
   customer_login_otp_message: string | null;
   customer_login_otp_message_ios: string | null;
@@ -51,14 +43,10 @@ const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
   { key: 'chat_enabled', label: 'In-app chat', hint: 'Let riders and drivers message during a trip.' },
   { key: 'show_region_specific_fare', label: 'Region-specific fare', hint: 'Show area-based fares in the booking flow.' },
   { key: 'show_vehicle_make_model', label: 'Vehicle make & model', hint: 'Display the car make/model to the rider.' },
-  { key: 'driver_qr_booking_enabled', label: 'Driver QR booking', hint: 'Allow bookings started from a driver QR code.' },
-  { key: 'driver_qr_booking_force_assign', label: 'QR force-assign', hint: 'Auto-assign the scanning driver to the trip.' },
-  { key: 'city_level_otp', label: 'City-level OTP', hint: 'Use a single OTP policy across the city.' },
 ];
 
 const NAV: { id: string; label: string; icon: IconName }[] = [
   { id: 'sec-toggles', label: 'Feature toggles', icon: 'bolt' },
-  { id: 'sec-limits', label: 'Time & limits', icon: 'calendar' },
   { id: 'sec-messaging', label: 'Customer messaging', icon: 'envelope' },
   { id: 'sec-payment', label: 'Payment', icon: 'tag' },
   { id: 'sec-contacts', label: 'Support contacts', icon: 'phone' },
@@ -122,35 +110,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <span class="tgl__label">{{ t.label }}</span>
                 <span class="tgl__hint">{{ t.hint }}</span>
               </span>
-            </label>
-          </div>
-        </section>
-
-        <!-- Time & limits -->
-        <section class="sec" id="sec-limits">
-          <header class="sec__head">
-            <span class="sec__icon"><tm-icon name="calendar" [size]="16" /></span>
-            <div>
-              <h3 class="sec__title">Time & limits</h3>
-              <p class="sec__desc">Fare capping, night hours and advertising credits.</p>
-            </div>
-          </header>
-          <div class="sec__body grid grid-4">
-            <label class="field">
-              <span class="field__lbl">Fare capping threshold</span>
-              <input type="number" min="0" max="10000" [(ngModel)]="form.mandatory_fare_capping_threshold" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Night start time</span>
-              <input type="text" [(ngModel)]="form.night_start_time" placeholder="HH:MM:SS" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Night end time</span>
-              <input type="text" [(ngModel)]="form.night_end_time" placeholder="HH:MM:SS" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Advertise credits</span>
-              <input type="number" min="0" [(ngModel)]="form.advertise_credits" />
             </label>
           </div>
         </section>
@@ -547,14 +506,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     append('chat_enabled', f.chat_enabled);
     append('show_region_specific_fare', f.show_region_specific_fare);
     append('show_vehicle_make_model', f.show_vehicle_make_model);
-    append('driver_qr_booking_enabled', f.driver_qr_booking_enabled);
-    append('driver_qr_booking_force_assign', f.driver_qr_booking_force_assign);
-    append('city_level_otp', f.city_level_otp);
-
-    append('mandatory_fare_capping_threshold', f.mandatory_fare_capping_threshold);
-    append('night_start_time', f.night_start_time);
-    append('night_end_time', f.night_end_time);
-    append('advertise_credits', f.advertise_credits);
 
     append('customer_login_otp_message', f.customer_login_otp_message);
     append('customer_login_otp_message_ios', f.customer_login_otp_message_ios);

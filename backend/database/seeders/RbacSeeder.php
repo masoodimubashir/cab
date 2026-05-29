@@ -70,6 +70,7 @@ class RbacSeeder extends Seeder
             'trips.view', 'trips.manage', 'rides.map', 'rides.dispatch',
             'pricing.view', 'pricing.manage', 'dynamic_pricing.manage',
             'promotions.manage', 'coupons.manage', 'promo_codes.manage', 'referrals.manage',
+            'subscriptions.manage',
             'fleets.manage',
             'analytics.view', 'reports.view',
             'safety.view',
@@ -93,7 +94,7 @@ class RbacSeeder extends Seeder
             'drivers.view', 'drivers.edit', 'drivers.approve',
             'trips.view', 'trips.manage', 'rides.map', 'rides.dispatch',
             'analytics.view', 'reports.view', 'safety.view',
-            'contact_drivers.send',
+            'contact_drivers.send', 'subscriptions.manage',
         ]);
 
         $manualDispatch = ManagerRole::query()->updateOrCreate(
@@ -236,6 +237,9 @@ class RbacSeeder extends Seeder
             ],
             'Fleets' => [
                 ['fleets.manage', 'Manage Fleets', 'Create and edit fleet operators.'],
+            ],
+            'Subscriptions' => [
+                ['subscriptions.manage', 'Manage Subscriptions', 'Create and edit driver subscription plans.'],
             ],
             'Analytics' => [
                 ['analytics.view', 'View Analytics', 'See real-time analytics, graphs and reports.'],

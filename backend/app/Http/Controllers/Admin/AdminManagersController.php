@@ -75,11 +75,16 @@ class AdminManagersController
             'password' => ['required', 'string', 'min:6', 'max:120'],
             'manager_role_id' => ['required', 'integer', 'exists:manager_roles,id'],
             'manager_city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'manager_all_cities' => ['nullable', 'boolean'],
             'manager_fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
         ]);
 
         $role = ManagerRole::query()->findOrFail($data['manager_role_id']);
-        $this->validateRoleConstraints($role, $data);
+        $allCities = (bool) ($data['manager_all_cities'] ?? false);
+        if ($allCities) {
+            $data['manager_city_id'] = null;
+        }
+        $this->validateRoleConstraints($role, array_merge($data, ['manager_all_cities' => $allCities]));
 
         $user = User::query()->create([
             'name' => $data['name'],
@@ -87,7 +92,8 @@ class AdminManagersController
             'phone' => $data['phone'] ?? null,
             'password' => Hash::make($data['password']),
             'manager_role_id' => $role->id,
-            'manager_city_id' => $data['manager_city_id'] ?? null,
+            'manager_city_id' => $allCities ? null : ($data['manager_city_id'] ?? null),
+            'manager_all_cities' => $allCities,
             'manager_fleet_id' => $data['manager_fleet_id'] ?? null,
             'is_suspended' => false,
             'email_verified_at' => now(),
@@ -112,15 +118,24 @@ class AdminManagersController
             'password' => ['nullable', 'string', 'min:6', 'max:120'],
             'manager_role_id' => ['sometimes', 'integer', 'exists:manager_roles,id'],
             'manager_city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'manager_all_cities' => ['nullable', 'boolean'],
             'manager_fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
         ]);
 
         $effectiveRoleId = $data['manager_role_id'] ?? $user->manager_role_id;
         $role = ManagerRole::query()->findOrFail($effectiveRoleId);
 
+        $allCities = array_key_exists('manager_all_cities', $data)
+            ? (bool) $data['manager_all_cities']
+            : (bool) $user->manager_all_cities;
+        if ($allCities) {
+            $data['manager_city_id'] = null;
+        }
+        $data['manager_all_cities'] = $allCities;
+
         $merged = array_merge([
-            'manager_city_id' => $data['manager_city_id'] ?? $user->manager_city_id,
-            'manager_fleet_id' => $data['manager_fleet_id'] ?? $user->manager_fleet_id,
+            'manager_city_id' => $user->manager_city_id,
+            'manager_fleet_id' => $user->manager_fleet_id,
         ], $data);
         $this->validateRoleConstraints($role, $merged);
 
@@ -183,12 +198,23 @@ class AdminManagersController
 
     private function validateRoleConstraints(ManagerRole $role, array $data): void
     {
+        $allCities = (bool) ($data['manager_all_cities'] ?? false);
+
         if ($role->requires_fleet && empty($data['manager_fleet_id'])) {
             abort(422, 'This role requires a franchise (fleet).');
         }
-        // Super Admin doesn't need a city; other roles must have one.
-        if (! $role->isSuperAdmin() && empty($data['manager_city_id'])) {
+        // A franchise role is tied to a single fleet in a single city.
+        if ($role->requires_fleet && $allCities) {
+            abort(422, 'A franchise role must be assigned to a single city.');
+        }
+        // Super Admin doesn't need a city; other roles need a city OR all-cities.
+        if (! $role->isSuperAdmin() && ! $allCities && empty($data['manager_city_id'])) {
             abort(422, 'A city must be selected for this role.');
+        }
+        // Granting all-cities access requires an unrestricted (Super Admin or
+        // all-cities) caller — a city-scoped manager can't escalate beyond their city.
+        if ($allCities && ManagerScope::cityIds() !== null) {
+            abort(403, 'Only an all-cities admin can grant all-cities access.');
         }
         // A non-Super-Admin caller can't create/edit managers outside their scope.
         if (! empty($data['manager_city_id'])) {
@@ -217,6 +243,7 @@ class AdminManagersController
                 'is_system' => (bool) $u->managerRole->is_system,
             ] : null,
             'manager_city_id' => $u->manager_city_id,
+            'manager_all_cities' => (bool) $u->manager_all_cities,
             'city_name' => $u->managerCity?->name,
             'manager_fleet_id' => $u->manager_fleet_id,
             'fleet_name' => $u->managerFleet?->name,

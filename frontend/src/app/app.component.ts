@@ -41,6 +41,7 @@ export class AppComponent implements OnInit {
     [/^\/promotions\/city-wide/,    'City Wide Promotions'],
     [/^\/promotions\/promo-codes/,  'Promo Codes'],
     [/^\/promotions\/coupons/,      'Coupons'],
+    [/^\/subscriptions/,            'Subscriptions'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -70,6 +71,7 @@ export class AppComponent implements OnInit {
     /^\/pricing\b/,
     /^\/vehicle-fares\b/,
     /^\/promotions\/(city-wide|promo-codes|coupons)\b/,
+    /^\/subscriptions\b/,
     /^\/settings\/(city|fleets|vehicle-types)\b/,
   ];
 
@@ -151,6 +153,9 @@ export class AppComponent implements OnInit {
         ]),
       });
     }
+
+    if (canAny(['subscriptions.manage', 'settings.manage']))
+                                       citySetup.push({ label: 'Subscriptions', icon: 'star', route: '/subscriptions' });
 
     if (can('fleets.manage')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
 

@@ -9,9 +9,15 @@ import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
+  InputComponent,
   ModalComponent,
+  StatusPillComponent,
 } from '../../ui';
 
 interface VehicleTypeOption {
@@ -55,7 +61,9 @@ const PROMO_TYPES = [
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent, StatusPillComponent,
   ],
   template: `
     <div class="cwp">
@@ -75,103 +83,93 @@ const PROMO_TYPES = [
         <p class="cue__text">Pick a city from the switcher in the top bar to manage promotions.</p>
       </div>
 
-      <ng-container *ngIf="cityId != null">
-        <div class="toolbar">
-          <label class="search">
-            <tm-icon name="search" [size]="14" />
-            <input
-              type="search"
-              placeholder="Search by title"
-              [ngModel]="searchQuery"
-              (ngModelChange)="onSearchChange($event)"
-            />
-          </label>
-          <label class="toggle toggle--inline">
-            <input type="checkbox" [(ngModel)]="showInactive" (ngModelChange)="onFilterChange()" />
-            <span>Show inactive</span>
-          </label>
-        </div>
+      <tm-data-table
+        *ngIf="cityId != null"
+        [rows]="rows"
+        [total]="total"
+        [page]="currentPage"
+        [pageSize]="perPage"
+        [loading]="loading"
+        emptyTitle="No promotions found"
+        emptyHint="Try a different search, or clear the filters."
+        (pageChange)="onPage($event)"
+        (pageSizeChange)="onPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search by title"
+          [ngModel]="searchQuery"
+          (ngModelChange)="onSearchChange($event)"
+        />
 
-        <div class="table-wrap" *ngIf="rows.length; else empty">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Discount</th>
-                <th>Dates</th>
-                <th>Limits</th>
-                <th>Location</th>
-                <th>Status</th>
-                <th class="num">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let r of rows">
-                <td class="strong">{{ r.title }}</td>
-                <td>{{ humanPromoType(r.promo_type) }}</td>
-                <td class="strong">
-                  {{ r.discount_value }}{{ r.discount_type === 'percentage' ? '%' : '' }} off
-                  <span class="muted" *ngIf="r.discount_maximum"> · max {{ r.discount_maximum }}</span>
-                </td>
-                <td>
-                  <ng-container *ngIf="r.start_date || r.end_date; else noDates">
-                    {{ r.start_date || '—' }} → {{ r.end_date || '—' }}
-                  </ng-container>
-                  <ng-template #noDates><span class="muted">Always</span></ng-template>
-                </td>
-                <td>
-                  <span class="tagx" *ngIf="r.per_user_limit != null">{{ r.per_user_limit }}/user</span>
-                  <span class="tagx" *ngIf="r.per_day_limit != null">{{ r.per_day_limit }}/day</span>
-                  <span class="tagx" *ngIf="r.maximum_allowed != null">{{ r.maximum_allowed }} total</span>
-                  <span class="muted" *ngIf="r.per_user_limit == null && r.per_day_limit == null && r.maximum_allowed == null">—</span>
-                </td>
-                <td>
-                  <span *ngIf="r.location_name; else noLoc"><tm-icon name="pin" [size]="11" /> {{ r.location_name }}</span>
-                  <ng-template #noLoc><span class="muted">—</span></ng-template>
-                </td>
-                <td>
-                  <span class="status" [class.on]="r.is_active" [class.off]="!r.is_active">
-                    {{ r.is_active ? 'Active' : 'Inactive' }}
-                  </span>
-                </td>
-                <td class="num actions">
-                  <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
-                  <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ng-container slot="filters">
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Status filter"
+            allLabel="Active"
+            allValue="active"
+            [options]="statusOptions"
+            [value]="status"
+            (valueChange)="onStatusChange($event)"
+          />
+        </ng-container>
 
-        <div class="paginator" *ngIf="rows.length">
-          <span class="paginator__count">
-            Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }}
-          </span>
-          <div class="paginator__nav">
-            <button
-              class="pg-btn"
-              [disabled]="currentPage <= 1"
-              (click)="goToPage(currentPage - 1)"
-            >Prev</button>
-            <span class="pg-page">Page {{ currentPage }} of {{ lastPage }}</span>
-            <button
-              class="pg-btn"
-              [disabled]="currentPage >= lastPage"
-              (click)="goToPage(currentPage + 1)"
-            >Next</button>
-          </div>
-        </div>
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="searchQuery.trim()" icon="search" label="Search" [value]="searchQuery" (clear)="clearSearch()" />
+          <tm-filter-pill *ngIf="status !== 'active'" icon="bolt" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+        </ng-container>
 
-        <ng-template #empty>
-          <div class="cue">
-            <tm-icon name="gift" [size]="24" />
-            <p class="cue__title">No promotions found</p>
-            <p class="cue__text" *ngIf="searchQuery || showInactive">Try a different search term or toggle.</p>
-            <p class="cue__text" *ngIf="!searchQuery && !showInactive">Launch a promotion to give riders a city-wide discount.</p>
-          </div>
-        </ng-template>
-      </ng-container>
+        <tm-column key="title" label="Title">
+          <ng-template let-row><span class="cell-strong">{{ row.title }}</span></ng-template>
+        </tm-column>
+        <tm-column key="promo_type" label="Type" width="150">
+          <ng-template let-row>{{ humanPromoType(row.promo_type) }}</ng-template>
+        </tm-column>
+        <tm-column key="discount" label="Discount" width="160">
+          <ng-template let-row>
+            <span class="cell-strong">{{ row.discount_value }}{{ row.discount_type === 'percentage' ? '%' : '' }} off</span>
+            <span class="muted" *ngIf="row.discount_maximum"> · max {{ row.discount_maximum }}</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="dates" label="Dates" width="180">
+          <ng-template let-row>
+            <ng-container *ngIf="row.start_date || row.end_date; else noDates">
+              {{ row.start_date || '—' }} → {{ row.end_date || '—' }}
+            </ng-container>
+            <ng-template #noDates><span class="muted">Always</span></ng-template>
+          </ng-template>
+        </tm-column>
+        <tm-column key="limits" label="Limits" [wrap]="true">
+          <ng-template let-row>
+            <span class="tagx" *ngIf="row.per_user_limit != null">{{ row.per_user_limit }}/user</span>
+            <span class="tagx" *ngIf="row.per_day_limit != null">{{ row.per_day_limit }}/day</span>
+            <span class="tagx" *ngIf="row.maximum_allowed != null">{{ row.maximum_allowed }} total</span>
+            <span class="muted" *ngIf="row.per_user_limit == null && row.per_day_limit == null && row.maximum_allowed == null">—</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="location" label="Location">
+          <ng-template let-row>
+            <span *ngIf="row.location_name; else noLoc" class="cell-loc"><tm-icon name="pin" [size]="12" /> {{ row.location_name }}</span>
+            <ng-template #noLoc><span class="muted">—</span></ng-template>
+          </ng-template>
+        </tm-column>
+        <tm-column key="status" label="Status" width="120">
+          <ng-template let-row>
+            <tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">
+              {{ row.is_active ? 'Active' : 'Inactive' }}
+            </tm-status-pill>
+          </ng-template>
+        </tm-column>
+        <tm-column key="actions" label="" width="100" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit promotion"><tm-icon name="edit" [size]="14" /></button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = row" aria-label="Delete promotion"><tm-icon name="trash" [size]="14" /></button>
+            </div>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
     </div>
 
     <!-- Drawer -->
@@ -324,48 +322,10 @@ const PROMO_TYPES = [
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .toolbar {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 8px 10px; background: var(--tm-surface);
-      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md, 10px);
-    }
-    .search {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 10px; min-width: 280px;
-      background: var(--tm-canvas); border: 1px solid var(--tm-line); border-radius: 8px;
-      color: var(--tm-text-muted);
-    }
-    .search input {
-      border: none; outline: none; background: transparent;
-      color: var(--tm-text); font-size: 13px; flex: 1; min-width: 0;
-    }
-
-    .table-wrap {
-      background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px); overflow: auto;
-    }
-    .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .table th, .table td {
-      padding: 10px 14px; text-align: left; vertical-align: middle;
-      border-bottom: 1px solid var(--tm-line);
-    }
-    .table thead th {
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-      font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-      border-bottom: 1px solid var(--tm-line);
-    }
-    .table tbody tr:last-child td { border-bottom: 0; }
-    .table tbody tr:hover { background: var(--tm-canvas-2); }
-    .table td.strong { color: var(--tm-text); font-weight: 700; }
-    .table td.num { text-align: right; }
-    .table td.actions { white-space: nowrap; }
+    /* cell renderers */
+    .cell-strong { color: var(--tm-text); font-weight: 700; }
+    .cell-loc { display: inline-flex; align-items: center; gap: 4px; }
     .muted { color: var(--tm-text-muted); }
-    .status {
-      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-      padding: 3px 8px; border-radius: 999px;
-    }
-    .status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .tagx {
       display: inline-flex; align-items: center; gap: 3px;
       font-size: 10px; font-weight: 700;
@@ -374,26 +334,11 @@ const PROMO_TYPES = [
       margin-right: 4px;
     }
 
-    .paginator {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; padding: 4px 2px;
-    }
-    .paginator__count { font-size: 12px; color: var(--tm-text-muted); }
-    .paginator__nav { display: inline-flex; align-items: center; gap: 8px; }
-    .pg-btn {
-      padding: 6px 12px; border-radius: 8px;
-      border: 1px solid var(--tm-line); background: var(--tm-surface);
-      color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer;
-    }
-    .pg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .pg-page { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
-
-    .toggle--inline { gap: 6px; cursor: pointer; }
-
+    .cell-actions { display: inline-flex; gap: 6px; }
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 7px;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer; border: 0;
     }
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
@@ -436,7 +381,9 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
 
   // Filter / search / pagination state — kept in sync with the backend index params.
   searchQuery = '';
-  showInactive = false;
+  status: 'active' | 'inactive' = 'active';
+  statusOptions = [{ label: 'Inactive', value: 'inactive' }];
+  loading = false;
   currentPage = 1;
   lastPage = 1;
   perPage = 10;
@@ -458,13 +405,6 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
   private autocompleteListener: google.maps.MapsEventListener | null = null;
 
   private sub?: Subscription;
-
-  get rangeStart(): number {
-    return this.total === 0 ? 0 : (this.currentPage - 1) * this.perPage + 1;
-  }
-  get rangeEnd(): number {
-    return Math.min(this.currentPage * this.perPage, this.total);
-  }
 
   constructor(
     private api: ApiService,
@@ -505,15 +445,35 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
     this.searchQuery = val;
     this.search$.next(val);
   }
-
-  onFilterChange(): void {
+  clearSearch(): void {
+    this.searchQuery = '';
     this.currentPage = 1;
     this.fetch();
   }
 
-  goToPage(page: number): void {
-    if (page < 1 || page > this.lastPage || page === this.currentPage) return;
+  statusLabel(): string {
+    return this.status === 'inactive' ? 'Inactive' : 'Active';
+  }
+  onStatusChange(value: string): void {
+    this.status = value as 'active' | 'inactive';
+    this.currentPage = 1;
+    this.fetch();
+  }
+  clearStatus(): void {
+    if (this.status === 'active') return;
+    this.status = 'active';
+    this.currentPage = 1;
+    this.fetch();
+  }
+
+  onPage(page: number): void {
+    if (page === this.currentPage) return;
     this.currentPage = page;
+    this.fetch();
+  }
+  onPageSize(size: number): void {
+    this.perPage = size;
+    this.currentPage = 1;
     this.fetch();
   }
 
@@ -531,10 +491,11 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
   fetch(): void {
     if (this.cityId == null) return;
     const params = new URLSearchParams();
-    params.set('is_active', this.showInactive ? '0' : '1');
+    params.set('is_active', this.status === 'inactive' ? '0' : '1');
     if (this.searchQuery.trim()) params.set('q', this.searchQuery.trim());
     params.set('page', String(this.currentPage));
     params.set('per_page', String(this.perPage));
+    this.loading = true;
     this.api
       .get<{
         data: PromotionRow[];
@@ -550,8 +511,12 @@ export class CityWidePromotionsComponent implements OnInit, OnDestroy {
             this.perPage = meta.per_page;
             this.total = meta.total;
           }
+          this.loading = false;
         },
-        error: () => this.toast.error('Failed to load promotions'),
+        error: () => {
+          this.loading = false;
+          this.toast.error('Failed to load promotions');
+        },
       });
   }
 

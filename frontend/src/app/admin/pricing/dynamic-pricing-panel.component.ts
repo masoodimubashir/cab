@@ -6,7 +6,15 @@ import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
 import { ToastService } from '../../core/toast.service';
-import { ButtonComponent, DrawerComponent, IconComponent, ModalComponent } from '../../ui';
+import {
+  ButtonComponent,
+  DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
+  IconComponent,
+  InputComponent,
+  ModalComponent,
+} from '../../ui';
 
 interface LatLng {
   lat: number;
@@ -60,7 +68,11 @@ type PolygonSource = 'city' | 'custom';
 @Component({
   selector: 'app-dynamic-pricing-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent, ModalComponent],
+  imports: [
+    CommonModule, FormsModule,
+    ButtonComponent, DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent,
+  ],
   template: `
     <!-- No city -->
     <div class="cue" *ngIf="cityId == null">
@@ -70,18 +82,35 @@ type PolygonSource = 'city' | 'custom';
     </div>
 
     <ng-container *ngIf="cityId != null">
-      <div class="dp__bar">
-        <p class="dp__hint">
-          Surge regions raise the customer fare inside a drawn area for chosen days and times.
-        </p>
-        <div class="dp__bar-right">
-          <select class="dp__filter" [(ngModel)]="filterVehicleTypeId" (ngModelChange)="onFilterChange()">
-            <option [ngValue]="null">All vehicles</option>
-            <option *ngFor="let vt of vehicleTypes" [ngValue]="vt.id">{{ vt.name }}</option>
-          </select>
+      <div class="dp__toolbar">
+        <tm-input
+          class="dp__search"
+          icon="search"
+          placeholder="Search surge regions"
+          [(ngModel)]="search"
+          (ngModelChange)="onSearchChange()"
+        />
+        <div class="dp__toolbar-right">
+          <tm-filter-select
+            icon="car"
+            ariaLabel="Vehicle filter"
+            allLabel="All vehicles"
+            [options]="vehicleFilterOptions"
+            [value]="vehicleFilterValue"
+            (valueChange)="onVehicleFilterChange($event)"
+          />
           <tm-button variant="green" icon="plus" (clicked)="openCreate()">Add surge region</tm-button>
         </div>
       </div>
+
+      <div class="dp__pills">
+        <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+        <tm-filter-pill *ngIf="filterVehicleTypeId != null" icon="car" label="Vehicle" [value]="vehicleName(filterVehicleTypeId)" (clear)="clearVehicleFilter()" />
+      </div>
+
+      <p class="dp__hint">
+        Surge regions raise the customer fare inside a drawn area for chosen days and times.
+      </p>
 
       <!-- Stats -->
       <div class="dp__stats" *ngIf="rules.length">
@@ -355,16 +384,19 @@ type PolygonSource = 'city' | 'custom';
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0 0 6px; font-size: 13px; max-width: 380px; }
 
-    .dp__bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-    .dp__hint { margin: 0; font-size: 13px; color: var(--tm-text-muted); max-width: 480px; }
-    .dp__bar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .dp__filter {
-      height: 38px; padding: 0 11px;
-      border: 1px solid var(--tm-line); border-radius: 9px;
-      background: var(--tm-canvas); color: var(--tm-text);
-      font-size: 13px; font-weight: 600; outline: none;
+    .dp__toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-lg);
     }
-    .dp__filter:focus { border-color: var(--tm-green); }
+    .dp__search { flex: 1 1 280px; min-width: 240px; max-width: 380px; }
+    .dp__toolbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .dp__pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .dp__pills:empty { display: none; }
+    .dp__hint { margin: 0; font-size: 13px; color: var(--tm-text-muted); max-width: 480px; }
 
     .vtchips { display: flex; flex-wrap: wrap; gap: 7px; }
     .vtchips--cat { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed var(--tm-line); }
@@ -548,6 +580,7 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
   vehicleTypes: { id: number; name: string; vehicle_type_id: number | null; vehicle_type_name: string | null }[] = [];
   filterVehicleTypeId: number | null = null;
   vehicleCategoryId: number | null = null;
+  search = '';
   loading = false;
 
   cityId: number | null = null;
@@ -713,17 +746,44 @@ export class DynamicPricingPanelComponent implements OnInit, OnDestroy {
     return this.vehicleTypes.filter((v) => v.vehicle_type_id === this.vehicleCategoryId);
   }
 
-  /** Rules visible under the current vehicle-type filter. */
+  /** Rules visible under the current vehicle-type filter and search. */
   filteredRules(): DynamicRule[] {
     const id = this.filterVehicleTypeId;
-    if (id == null) return this.rules;
+    const q = this.search.trim().toLowerCase();
     return this.rules.filter((r) => {
-      const ids = r.city_vehicle_type_ids;
-      return !ids || ids.length === 0 || ids.includes(id);
+      if (id != null) {
+        const ids = r.city_vehicle_type_ids;
+        const match = !ids || ids.length === 0 || ids.includes(id);
+        if (!match) return false;
+      }
+      if (q && !r.name.toLowerCase().includes(q)) return false;
+      return true;
     });
   }
 
-  onFilterChange(): void {
+  // ── Toolbar filters ─────────────────────────────────────────────
+  get vehicleFilterValue(): string {
+    return this.filterVehicleTypeId == null ? 'all' : String(this.filterVehicleTypeId);
+  }
+  get vehicleFilterOptions(): { label: string; value: string }[] {
+    return this.vehicleTypes.map((v) => ({ label: v.name, value: String(v.id) }));
+  }
+  vehicleName(id: number): string {
+    return this.vehicleTypes.find((v) => v.id === id)?.name ?? `#${id}`;
+  }
+  onSearchChange(): void {
+    this.drawOverview();
+  }
+  clearSearch(): void {
+    this.search = '';
+    this.drawOverview();
+  }
+  onVehicleFilterChange(value: string): void {
+    this.filterVehicleTypeId = value === 'all' ? null : Number(value);
+    this.drawOverview();
+  }
+  clearVehicleFilter(): void {
+    this.filterVehicleTypeId = null;
     this.drawOverview();
   }
 

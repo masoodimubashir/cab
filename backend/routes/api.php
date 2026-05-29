@@ -54,6 +54,9 @@ use App\Http\Controllers\Admin\AdminManagerRolesController;
 use App\Http\Controllers\Admin\AdminManagersController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\AdminCustomersController;
+use App\Http\Controllers\Admin\AdminSubscriptionsController;
+use App\Http\Controllers\DriverSubscriptionsController;
+use App\Http\Controllers\DriverWalletController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
@@ -168,6 +171,16 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/drivers/location', [DriversController::class, 'pingLocation'])->middleware('throttle:location');
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
     Route::get('/drivers/me/earnings', [DriversController::class, 'earnings']);
+
+    // Driver subscriptions: browse plans, see the active plan, buy one.
+    Route::get('/drivers/me/subscriptions/plans', [DriverSubscriptionsController::class, 'plans']);
+    Route::get('/drivers/me/subscription', [DriverSubscriptionsController::class, 'current']);
+    Route::post('/drivers/me/subscriptions', [DriverSubscriptionsController::class, 'purchase']);
+
+    // Driver wallet: balance + Razorpay top-up.
+    Route::get('/drivers/me/wallet', [DriverWalletController::class, 'show']);
+    Route::post('/drivers/me/wallet/topup/razorpay', [DriverWalletController::class, 'topupRazorpay'])->middleware('idempotent');
+    Route::post('/drivers/me/wallet/topup/razorpay/verify', [DriverWalletController::class, 'verifyTopupRazorpay'])->middleware('idempotent');
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -190,6 +203,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/drivers/{driver}/documents', [AdminDriversController::class, 'uploadDocument']);
     Route::get('/admin/drivers/{driver}/documents/{document}/file', [AdminDriversController::class, 'documentFile'])
         ->name('admin.drivers.documents.file');
+    // Driver detail page (admin) — profile + rides/wallet/referrals dashboard.
+    Route::get('/admin/drivers/{driver}/profile', [AdminDriversController::class, 'profile']);
+    Route::get('/admin/drivers/{driver}/rides', [AdminDriversController::class, 'rides']);
+    Route::get('/admin/drivers/{driver}/cancelled-rides', [AdminDriversController::class, 'cancelledRides']);
+    Route::get('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'walletTransactions']);
+    Route::post('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'creditDebit']);
+    Route::get('/admin/drivers/{driver}/referrals', [AdminDriversController::class, 'referrals']);
     Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience']);
     Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv']);
     Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send']);
@@ -339,6 +359,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy']);
         Route::get('/admin/cities/{city}/coupons/{coupon}/assignments', [AdminCouponsController::class, 'assignments']);
         Route::post('/admin/cities/{city}/coupons/{coupon}/give', [AdminCouponsController::class, 'give']);
+
+        // ── Driver subscription plans ───────────────────────────────────
+        Route::get('/admin/cities/{city}/subscription-plans', [AdminSubscriptionsController::class, 'index']);
+        Route::post('/admin/cities/{city}/subscription-plans', [AdminSubscriptionsController::class, 'store']);
+        Route::get('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'show']);
+        Route::patch('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'update']);
+        Route::delete('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'destroy']);
     });
 
     // ── RBAC: permissions catalog (read-only) ───────────────────────

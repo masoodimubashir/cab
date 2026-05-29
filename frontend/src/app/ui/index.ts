@@ -23,3 +23,5 @@ export * from './drawer/drawer.component';
 export * from './chart/chart.component';
 export * from './file-drop/file-drop.component';
 export * from './select/select.component';
+export * from './filter-select/filter-select.component';
+export * from './filter-pill/filter-pill.component';

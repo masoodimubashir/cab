@@ -6,7 +6,17 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
-import { ButtonComponent, DrawerComponent, IconComponent } from '../../ui';
+import {
+  ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
+  DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
+  IconComponent,
+  InputComponent,
+  StatusPillComponent,
+} from '../../ui';
 
 interface VehicleType {
   id: number;
@@ -21,72 +31,128 @@ interface VehicleType {
 interface RideTypeRef { id: number; name: string; }
 interface VehicleTypeRef { id: number; name: string; }
 
+type StatusFilter = 'all' | 'enabled' | 'disabled';
+
+const STATUS_OPTIONS = [
+  { label: 'Enabled', value: 'enabled' },
+  { label: 'Disabled', value: 'disabled' },
+];
+
 /**
- * Vehicle Fares — the city's vehicle catalogue (one card per vehicle class),
- * scoped to the city chosen in the topbar switcher. "Details" opens the deep
- * per-kind editor; "Add vehicle type" uses the shared drawer.
+ * Vehicle Fares — the city's vehicle catalogue, scoped to the city chosen in
+ * the topbar switcher. Standard data-table layout: search + filter dropdowns +
+ * dismissable pills, "Details" opens the deep per-kind editor, "Add vehicle
+ * type" uses the shared drawer.
  */
 @Component({
   selector: 'app-vehicle-types',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, DrawerComponent, IconComponent],
+  imports: [
+    CommonModule, FormsModule,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, StatusPillComponent,
+  ],
   template: `
-    <p class="intro">
-      One card per vehicle. Open <strong>Details</strong> to tune its identity, fare,
-      images and dispatcher settings.
-    </p>
-
-    <div class="cue" *ngIf="!cityId">
-      <tm-icon name="map-marker" [size]="24" />
-      <p class="cue__title">No city selected</p>
-      <p class="cue__text">Pick a city from the switcher in the top bar.</p>
-    </div>
-
-    <ng-container *ngIf="cityId">
-      <div class="toolbar">
-        <div class="seg">
-          <button class="seg__btn" [class.is-on]="filter === 'enabled'" (click)="filter = 'enabled'">
-            Enabled <span class="seg__count">{{ countEnabled() }}</span>
-          </button>
-          <button class="seg__btn" [class.is-on]="filter === 'disabled'" (click)="filter = 'disabled'">
-            Disabled <span class="seg__count">{{ countDisabled() }}</span>
-          </button>
+    <div class="page">
+      <header class="page__hero">
+        <div>
+          <h1 class="page__title">Vehicle Fares</h1>
+          <p class="page__sub">The city's vehicle catalogue — open Details to tune identity, fare, images and dispatcher settings.</p>
         </div>
-        <tm-button variant="green" size="sm" icon="plus" (clicked)="openCreate()">
+        <tm-button *ngIf="cityId != null" variant="green" icon="plus" (clicked)="openCreate()">
           Add vehicle type
         </tm-button>
+      </header>
+
+      <!-- No city -->
+      <div class="cue" *ngIf="cityId == null">
+        <tm-icon name="map-marker" [size]="24" />
+        <p class="cue__title">No city selected</p>
+        <p class="cue__text">Pick a city from the switcher in the top bar to manage vehicle fares.</p>
       </div>
 
-      <div class="grid" *ngIf="visibleRows().length; else empty">
-        <article class="vcard" *ngFor="let v of visibleRows()">
-          <div class="vcard__head">
-            <span class="vcard__icon"><tm-icon name="car" [size]="16" /></span>
-            <div class="vcard__id">
-              <span class="vcard__name">{{ v.display_name }}</span>
-              <span class="vcard__rt">{{ v.ride_type_name }}</span>
+      <tm-data-table
+        *ngIf="cityId != null"
+        [rows]="pageRows"
+        [total]="total"
+        [page]="page"
+        [pageSize]="pageSize"
+        [loading]="loading"
+        emptyTitle="No vehicle types"
+        emptyHint="Try a different search, or clear the filters."
+        (pageChange)="onPage($event)"
+        (pageSizeChange)="onPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search by vehicle or ride type"
+          [(ngModel)]="search"
+          (ngModelChange)="onSearchChange()"
+        />
+
+        <ng-container slot="filters">
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Status filter"
+            allLabel="All statuses"
+            [options]="statusOptions"
+            [value]="status"
+            (valueChange)="onStatusChange($event)"
+          />
+          <tm-filter-select
+            icon="car"
+            ariaLabel="Ride type filter"
+            allLabel="All ride types"
+            [options]="rideTypeOptions"
+            [value]="rideType"
+            (valueChange)="onRideTypeChange($event)"
+          />
+        </ng-container>
+
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+          <tm-filter-pill *ngIf="status !== 'all'" icon="bolt" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+          <tm-filter-pill *ngIf="rideType !== 'all'" icon="car" label="Ride type" [value]="rideType" (clear)="clearRideType()" />
+        </ng-container>
+
+        <tm-column key="display_name" label="Vehicle">
+          <ng-template let-row>
+            <div class="cell-veh">
+              <span class="cell-icon"><tm-icon name="car" [size]="16" /></span>
+              <div class="cell-id">
+                <span class="cell-name">{{ row.display_name }}</span>
+                <span class="cell-sub">{{ row.max_people }} {{ row.max_people === 1 ? 'seat' : 'seats' }}</span>
+              </div>
             </div>
-            <span class="vcard__seats"><tm-icon name="users" [size]="13" /> {{ v.max_people }}</span>
-          </div>
-          <div class="vcard__kinds">
-            <span class="kpill" [class.on]="v.is_active" [class.missing]="!v.is_active">
-              {{ v.is_active ? 'Enabled' : 'Disabled' }}
-            </span>
-          </div>
-          <div class="vcard__foot">
-            <tm-button variant="outline" size="sm" icon="arrow-right" (clicked)="openDetails(v)">
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="ride_type_name" label="Ride type" width="180">
+          <ng-template let-row>
+            <span *ngIf="row.ride_type_name">{{ row.ride_type_name }}</span>
+            <span *ngIf="!row.ride_type_name" class="muted">—</span>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="status" label="Status" width="130">
+          <ng-template let-row>
+            <tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">
+              {{ row.is_active ? 'Enabled' : 'Disabled' }}
+            </tm-status-pill>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="actions" label="" width="130" align="right">
+          <ng-template let-row>
+            <tm-button variant="outline" size="sm" icon="arrow-right" (clicked)="openDetails(row)">
               Details
             </tm-button>
-          </div>
-        </article>
-      </div>
-      <ng-template #empty>
-        <div class="cue">
-          <tm-icon name="car" [size]="24" />
-          <p class="cue__title">No {{ filter }} vehicle types</p>
-          <p class="cue__text" *ngIf="filter === 'enabled'">Add a vehicle type to start offering rides.</p>
-        </div>
-      </ng-template>
-    </ng-container>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
+    </div>
 
     <!-- Create drawer -->
     <tm-drawer [open]="createOpen" title="Add Vehicle Type" [width]="520" (closed)="createOpen = false">
@@ -170,7 +236,10 @@ interface VehicleTypeRef { id: number; name: string; }
     </tm-drawer>
   `,
   styles: [`
-    .intro { margin: 0 0 14px; font-size: 13px; color: var(--tm-text-muted); }
+    .page { display: flex; flex-direction: column; gap: 16px; }
+    .page__hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .page__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
+    .page__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); max-width: 70ch; }
 
     .cue {
       display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -181,60 +250,19 @@ interface VehicleTypeRef { id: number; name: string; }
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-    .seg {
-      display: inline-flex; gap: 4px; padding: 4px;
-      background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
-    }
-    .seg__btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 14px; border-radius: 8px;
-      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      background: transparent; cursor: pointer;
-    }
-    .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
-    .seg__count {
-      font-size: 11px; font-weight: 800;
-      padding: 1px 7px; border-radius: 999px;
-      background: var(--tm-canvas); color: var(--tm-text-muted);
-    }
-    .seg__btn.is-on .seg__count { background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green); }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
-      gap: 12px;
-    }
-    .vcard {
-      background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px); padding: 14px;
-    }
-    .vcard__head { display: flex; align-items: center; gap: 10px; }
-    .vcard__icon {
-      width: 32px; height: 32px; border-radius: 8px; flex: none;
+    /* cell renderers */
+    .cell-veh { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+    .cell-icon {
+      width: 36px; height: 36px; border-radius: 9px; flex: none;
       display: inline-flex; align-items: center; justify-content: center;
       background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green);
     }
-    .vcard__id { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .vcard__name { font-size: 14px; font-weight: 800; color: var(--tm-text); }
-    .vcard__rt { font-size: 11px; color: var(--tm-text-muted); }
-    .vcard__seats {
-      display: inline-flex; align-items: center; gap: 4px; flex: none;
-      font-size: 12px; font-weight: 700; color: var(--tm-text-muted);
-    }
-    .vcard__kinds {
-      display: flex; gap: 6px; flex-wrap: wrap;
-      border-top: 1px solid var(--tm-line); margin-top: 12px; padding-top: 12px;
-    }
-    .kpill {
-      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px;
-      padding: 3px 8px; border-radius: 6px;
-    }
-    .kpill.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .kpill.has { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
-    .kpill.missing { background: var(--tm-canvas-2); color: var(--tm-text-muted); opacity: 0.6; }
-    .vcard__foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .cell-id { display: flex; flex-direction: column; min-width: 0; }
+    .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .cell-sub { font-size: 11px; color: var(--tm-text-muted); }
+    .muted { color: var(--tm-text-muted); font-size: 12px; }
 
+    /* drawer form */
     .form { display: flex; flex-direction: column; gap: 13px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .field { display: flex; flex-direction: column; gap: 5px; }
@@ -247,22 +275,16 @@ interface VehicleTypeRef { id: number; name: string; }
       font-size: 13px; outline: none; font-family: inherit;
     }
     .field input:focus, .field select:focus { border-color: var(--tm-green); }
-    .field__hint { font-size: 11px; color: var(--tm-text-muted); }
-    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-    .chip {
-      padding: 8px 14px; border-radius: 999px;
-      border: 1px solid var(--tm-line); background: var(--tm-canvas);
-      color: var(--tm-text-muted); font-size: 13px; font-weight: 700; cursor: pointer;
-    }
-    .chip.is-on { background: var(--tm-green-tint, #e0f7fa); border-color: var(--tm-green); color: var(--tm-green); }
-    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
-    .toggle input { width: 16px; height: 16px; }
     .radio-row { display: flex; gap: 22px; padding-top: 2px; }
     .radio-row label {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 13px; font-weight: 600; color: var(--tm-text); cursor: pointer;
     }
     .radio-row input { width: 15px; height: 15px; accent-color: var(--tm-green); }
+
+    @media (max-width: 720px) {
+      .page__hero { flex-direction: column; }
+    }
   `],
 })
 export class VehicleTypesComponent implements OnInit, OnDestroy {
@@ -270,8 +292,21 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
   rows: VehicleType[] = [];
   rideTypes: RideTypeRef[] = [];
   vehicleTypeOptions: VehicleTypeRef[] = [];
+  loading = false;
 
-  filter: 'enabled' | 'disabled' = 'enabled';
+  // ── Filter / pagination state ───────────────────────────────────
+  search = '';
+  status: StatusFilter = 'all';
+  rideType = 'all';
+  page = 1;
+  pageSize = 25;
+
+  statusOptions = STATUS_OPTIONS;
+
+  // Derived view
+  filteredRows: VehicleType[] = [];
+  pageRows: VehicleType[] = [];
+  total = 0;
 
   cities: CityOption[] = [];
   createOpen = false;
@@ -279,6 +314,7 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
   createForm = this.blankCreate();
 
   private subs: Subscription[] = [];
+  private searchDebounce: any = null;
 
   constructor(
     private api: ApiService,
@@ -294,17 +330,22 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       this.cityCtx.cityId$.subscribe((id) => {
         this.cityId = id;
         if (id != null) this.fetch();
-        else this.rows = [];
+        else {
+          this.rows = [];
+          this.applyView();
+        }
       }),
     );
   }
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
   }
 
   fetch(): void {
     if (this.cityId == null) return;
+    this.loading = true;
     this.api
       .get<{
         data: VehicleType[];
@@ -316,23 +357,101 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
           this.rows = res.data ?? [];
           this.rideTypes = res.available_ride_types ?? [];
           this.vehicleTypeOptions = res.available_vehicle_types ?? [];
+          this.loading = false;
+          this.applyView();
         },
-        error: () => this.toast.error('Failed to load vehicle types'),
+        error: () => {
+          this.loading = false;
+          this.toast.error('Failed to load vehicle types');
+        },
       });
   }
 
-  /** One card per vehicle row. */
-  visibleRows(): VehicleType[] {
-    return this.filter === 'enabled'
-      ? this.rows.filter((r) => r.is_active)
-      : this.rows.filter((r) => !r.is_active);
+  // ── Filtering + client-side pagination ──────────────────────────
+  private applyView(): void {
+    const q = this.search.trim().toLowerCase();
+    let list = this.rows;
+
+    if (this.status !== 'all') {
+      const active = this.status === 'enabled';
+      list = list.filter((r) => r.is_active === active);
+    }
+    if (this.rideType !== 'all') {
+      list = list.filter((r) => r.ride_type_name === this.rideType);
+    }
+    if (q) {
+      list = list.filter(
+        (r) =>
+          r.display_name.toLowerCase().includes(q) ||
+          (r.ride_type_name ?? '').toLowerCase().includes(q),
+      );
+    }
+
+    this.filteredRows = list;
+    this.total = list.length;
+    const maxPage = Math.max(1, Math.ceil(this.total / this.pageSize));
+    if (this.page > maxPage) this.page = maxPage;
+    const start = (this.page - 1) * this.pageSize;
+    this.pageRows = list.slice(start, start + this.pageSize);
   }
 
-  countEnabled(): number {
-    return this.rows.filter((r) => r.is_active).length;
+  get rideTypeOptions(): { label: string; value: string }[] {
+    const seen = new Set<string>();
+    for (const r of this.rows) {
+      if (r.ride_type_name) seen.add(r.ride_type_name);
+    }
+    return [...seen].sort().map((n) => ({ label: n, value: n }));
   }
-  countDisabled(): number {
-    return this.rows.filter((r) => !r.is_active).length;
+
+  onSearchChange(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => {
+      this.page = 1;
+      this.applyView();
+    }, 250);
+  }
+  clearSearch(): void {
+    if (!this.search) return;
+    this.search = '';
+    this.page = 1;
+    this.applyView();
+  }
+
+  statusLabel(): string {
+    return this.statusOptions.find((o) => o.value === this.status)?.label ?? 'All statuses';
+  }
+  onStatusChange(value: string): void {
+    this.status = value as StatusFilter;
+    this.page = 1;
+    this.applyView();
+  }
+  clearStatus(): void {
+    if (this.status === 'all') return;
+    this.status = 'all';
+    this.page = 1;
+    this.applyView();
+  }
+
+  onRideTypeChange(value: string): void {
+    this.rideType = value;
+    this.page = 1;
+    this.applyView();
+  }
+  clearRideType(): void {
+    if (this.rideType === 'all') return;
+    this.rideType = 'all';
+    this.page = 1;
+    this.applyView();
+  }
+
+  onPage(p: number): void {
+    this.page = p;
+    this.applyView();
+  }
+  onPageSize(s: number): void {
+    this.pageSize = s;
+    this.page = 1;
+    this.applyView();
   }
 
   openDetails(v: VehicleType): void {
