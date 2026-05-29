@@ -81,6 +81,11 @@ class Driver extends Model
         return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
     }
 
+    public function city(): BelongsTo
+    {
+        return $this->belongsTo(City::class, 'city_id');
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(DriverDocument::class, 'driver_id');

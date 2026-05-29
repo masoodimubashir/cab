@@ -2179,12 +2179,9 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
   openProfile(id: number, event: MouseEvent): void {
     event.stopPropagation();
     this.openPopoverId = null;
-    // Drawer is mounted in the /drivers shell; open it by setting ?driverId.
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { driverId: id },
-      queryParamsHandling: 'merge',
-    });
+    // All Drivers opens the full detail page. The Approvals tab still uses the
+    // slide-in drawer (?driverId=) for document review and approval.
+    this.router.navigate(['/drivers', id]);
   }
 
   @HostListener('document:click')
