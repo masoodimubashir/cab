@@ -1,0 +1,75 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/more"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Subscriptions</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <div class="wallet-row">
+    <span>Wallet balance</span>
+    <strong>₹{{ wallet | number: '1.0-2' }}</strong>
+  </div>
+
+  <ion-text color="danger" *ngIf="error">
+    <p>{{ error }}</p>
+  </ion-text>
+
+  <div *ngIf="loading && !plans.length" class="hint">Loading…</div>
+
+  <!-- Active plan -->
+  <ng-container *ngIf="current as s">
+    <h2 class="section-title">Your plan</h2>
+    <div class="active-card">
+      <div class="active-card__head">
+        <div>
+          <h3>{{ s.title }}</h3>
+          <p *ngIf="s.subtitle">{{ s.subtitle }}</p>
+        </div>
+        <span class="badge" [class.badge--free]="s.commission_percent <= 0">
+          {{ s.commission_percent > 0 ? s.commission_percent + '% commission' : 'Commission-free' }}
+        </span>
+      </div>
+      <p class="active-card__remaining">{{ remainingSummary(s) }}</p>
+      <p class="active-card__meta" *ngIf="s.vehicle_type_name">Vehicle: {{ s.vehicle_type_name }}</p>
+    </div>
+  </ng-container>
+
+  <!-- Available plans -->
+  <h2 class="section-title">{{ current ? 'Other plans' : 'Available plans' }}</h2>
+
+  <div *ngIf="!loading && !plans.length" class="hint">
+    No subscription plans are available for you right now.
+  </div>
+
+  <div class="plan-card" *ngFor="let p of plans">
+    <div class="plan-card__head">
+      <div>
+        <h3>{{ p.title }}</h3>
+        <p *ngIf="p.subtitle">{{ p.subtitle }}</p>
+      </div>
+      <div class="plan-card__price">₹{{ p.amount | number: '1.0-2' }}</div>
+    </div>
+
+    <div class="plan-card__tags">
+      <span class="tag">{{ meterSummary(p) }}</span>
+      <span class="tag" [class.tag--free]="p.commission_percent <= 0">
+        {{ p.commission_percent > 0 ? p.commission_percent + '% commission' : 'Commission-free' }}
+      </span>
+      <span class="tag" *ngIf="p.vehicle_type_name">{{ p.vehicle_type_name }}</span>
+    </div>
+
+    <p class="plan-card__terms" *ngIf="p.terms">{{ p.terms }}</p>
+
+    <ion-button
+      expand="block"
+      size="small"
+      [disabled]="buyingId === p.id"
+      (click)="confirmBuy(p)"
+    >
+      {{ buyingId === p.id ? 'Subscribing…' : 'Subscribe' }}
+    </ion-button>
+  </div>
+</ion-content>

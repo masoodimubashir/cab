@@ -1,17 +1,19 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ButtonModule } from 'primeng/button';
-import { TableModule } from 'primeng/table';
-import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
-import { PasswordModule } from 'primeng/password';
-import { TagModule } from 'primeng/tag';
-import { ToastModule } from 'primeng/toast';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { ConfirmationService, MessageService } from 'primeng/api';
 import { ApiService } from '../../core/api.service';
+import { ToastService } from '../../core/toast.service';
+import {
+  ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
+  IconComponent,
+  InputComponent,
+  ModalComponent,
+  StatusPillComponent,
+} from '../../ui';
 
 interface City { id: number; name: string; }
 interface FleetOption { id: number; name: string; city_id: number; }
@@ -33,6 +35,7 @@ interface ManagerRow {
   manager_role_id: number;
   role: { id: number; slug: string; name: string; is_suspendable: boolean; requires_fleet: boolean; is_system: boolean } | null;
   manager_city_id: number | null;
+  manager_all_cities: boolean;
   city_name: string | null;
   manager_fleet_id: number | null;
   fleet_name: string | null;
@@ -41,237 +44,297 @@ interface ManagerRow {
   created_at: string;
 }
 
+/**
+ * Manager Settings — admin-panel users, each with a role, a city and (for
+ * franchise roles) a fleet. Standard data-table layout: search + status/role
+ * filters + dismissable pills; create/edit and confirmations use modals.
+ */
 @Component({
   selector: 'app-managers',
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonModule, TableModule, DialogModule,
-    InputTextModule, DropdownModule, PasswordModule,
-    TagModule, ToastModule, ConfirmDialogModule,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    FilterPillComponent, FilterSelectComponent, IconComponent,
+    InputComponent, ModalComponent, StatusPillComponent,
   ],
-  providers: [MessageService, ConfirmationService],
   template: `
-    <p-toast />
-    <p-confirmDialog />
-
-    <div class="page-head">
-      <div>
-        <h2 class="page-title">Manager Settings</h2>
-        <p class="muted small">Admin-panel users. Each manager has a role, a city and (for franchise roles) a fleet.</p>
-      </div>
-      <button pButton type="button" icon="pi pi-plus" label="Add Manager"
-              class="p-button-sm" (click)="openCreate()"></button>
-    </div>
-
-    <div class="toolbar">
-      <div class="tabs">
-        <button class="tab" [class.active]="tab === 'active'" (click)="setTab('active')">Active</button>
-        <button class="tab" [class.active]="tab === 'inactive'" (click)="setTab('inactive')">Inactive</button>
-      </div>
-      <input
-        pInputText
-        type="text"
-        placeholder="Search by name, email or phone…"
-        [(ngModel)]="searchText"
-        (ngModelChange)="onSearch()"
-        class="search"
-        name="managers_search"
-        autocomplete="off"
-        spellcheck="false"
-      />
-    </div>
-
-    <p-table [value]="managers" styleClass="p-datatable-sm" [rowHover]="true" [paginator]="managers.length > 20" [rows]="20">
-      <ng-template pTemplate="header">
-        <tr>
-          <th style="width: 70px;">ID</th>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>City</th>
-          <th>Franchise</th>
-          <th>Status</th>
-          <th style="width: 220px;">Action</th>
-        </tr>
-      </ng-template>
-      <ng-template pTemplate="body" let-m>
-        <tr>
-          <td>{{ m.id }}</td>
-          <td><strong>{{ m.name }}</strong></td>
-          <td class="email">{{ m.email }}</td>
-          <td>
-            <p-tag [value]="m.role?.name || '—'" severity="info"></p-tag>
-          </td>
-          <td>{{ m.city_name || '—' }}</td>
-          <td>{{ m.fleet_name || '—' }}</td>
-          <td>
-            <p-tag
-              [value]="m.is_suspended ? 'Suspended' : 'Active'"
-              [severity]="m.is_suspended ? 'danger' : 'success'"
-            ></p-tag>
-          </td>
-          <td class="actions">
-            <button pButton type="button" label="Edit" class="p-button-sm"
-                    (click)="openEdit(m)"></button>
-            <button pButton type="button"
-                    *ngIf="m.role?.is_suspendable && !m.is_suspended"
-                    label="Suspend"
-                    class="p-button-sm p-button-warning"
-                    (click)="suspend(m)"></button>
-            <button pButton type="button"
-                    *ngIf="m.is_suspended"
-                    label="Unsuspend"
-                    class="p-button-sm p-button-success"
-                    (click)="unsuspend(m)"></button>
-            <button pButton type="button"
-                    *ngIf="!m.role?.is_system"
-                    icon="pi pi-trash"
-                    class="p-button-sm p-button-text p-button-danger"
-                    (click)="remove(m)"></button>
-          </td>
-        </tr>
-      </ng-template>
-      <ng-template pTemplate="emptymessage">
-        <tr><td colspan="8" class="empty">No managers match the current filters.</td></tr>
-      </ng-template>
-    </p-table>
-
-    <!-- Add / Edit dialog -->
-    <p-dialog
-      [header]="editingId ? 'Edit Manager' : 'Add Manager'"
-      [(visible)]="dialogOpen"
-      [modal]="true"
-      [style]="{ width: '680px' }"
-      [draggable]="false"
-    >
-      <div class="form-grid">
-        <div class="col">
-          <label class="lbl">Name *</label>
-          <input pInputText [(ngModel)]="form.name" name="manager_name" autocomplete="off" />
-
-          <label class="lbl">Email *</label>
-          <input pInputText [(ngModel)]="form.email" type="email" name="manager_email" autocomplete="off" />
-
-          <label class="lbl">Phone</label>
-          <input pInputText [(ngModel)]="form.phone" name="manager_phone" autocomplete="off" />
-
-          <label class="lbl">
-            {{ editingId ? 'New Password (leave blank to keep)' : 'Password *' }}
-          </label>
-          <p-password [(ngModel)]="form.password" [toggleMask]="true" [feedback]="false"
-                      styleClass="full-pw" inputStyleClass="full-pw__inp"
-                      autocomplete="new-password"></p-password>
+    <div class="page">
+      <header class="page__hero">
+        <div>
+          <h1 class="page__title">Manager Settings</h1>
+          <p class="page__sub">Admin-panel users. Each manager has a role, a city and (for franchise roles) a fleet.</p>
         </div>
+        <tm-button variant="green" icon="plus" (clicked)="openCreate()">Add manager</tm-button>
+      </header>
 
-        <div class="col">
-          <label class="lbl">Role *</label>
-          <p-dropdown
-            [options]="roleOptions"
-            [(ngModel)]="form.manager_role_id"
-            (onChange)="onRoleChange()"
-            optionLabel="name"
-            optionValue="id"
-            placeholder="Select a role"
-            appendTo="body"
-          ></p-dropdown>
+      <tm-data-table
+        [rows]="pageRows"
+        [total]="total"
+        [page]="page"
+        [pageSize]="pageSize"
+        [loading]="loading"
+        emptyTitle="No managers"
+        emptyHint="Try a different search, or clear the filters."
+        (pageChange)="onPage($event)"
+        (pageSizeChange)="onPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search by name, email or phone"
+          [(ngModel)]="searchText"
+          (ngModelChange)="onSearch()"
+        />
 
-          <ng-container *ngIf="!isSuperAdminRole()">
-            <label class="lbl">City *</label>
-            <p-dropdown
-              [options]="cityOptions"
-              [(ngModel)]="form.manager_city_id"
-              (onChange)="onCityChange()"
-              optionLabel="name"
-              optionValue="id"
-              placeholder="Select a city"
-              appendTo="body"
-            ></p-dropdown>
-          </ng-container>
+        <ng-container slot="filters">
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Status filter"
+            allLabel="Active"
+            allValue="active"
+            [options]="statusOptions"
+            [value]="status"
+            (valueChange)="onStatusChange($event)"
+          />
+          <tm-filter-select
+            icon="shield"
+            ariaLabel="Role filter"
+            allLabel="All roles"
+            [options]="roleFilterOptions"
+            [value]="roleFilter"
+            (valueChange)="onRoleFilterChange($event)"
+          />
+        </ng-container>
 
-          <ng-container *ngIf="selectedRoleRequiresFleet()">
-            <label class="lbl">Franchise (Fleet) *</label>
-            <p-dropdown
-              [options]="filteredFleets"
-              [(ngModel)]="form.manager_fleet_id"
-              optionLabel="name"
-              optionValue="id"
-              placeholder="Select a franchise"
-              appendTo="body"
-              [disabled]="!form.manager_city_id"
-            ></p-dropdown>
-            <div *ngIf="form.manager_city_id && filteredFleets.length === 0" class="hint">
-              No fleets in this city yet. Create one in Settings → Fleets first.
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="searchText.trim()" icon="search" label="Search" [value]="searchText" (clear)="clearSearch()" />
+          <tm-filter-pill *ngIf="status !== 'active'" icon="bolt" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+          <tm-filter-pill *ngIf="roleFilter !== 'all'" icon="shield" label="Role" [value]="roleName(roleFilter)" (clear)="clearRoleFilter()" />
+        </ng-container>
+
+        <tm-column key="name" label="Manager">
+          <ng-template let-row>
+            <div class="cell-id">
+              <span class="cell-name">{{ row.name }}</span>
+              <span class="cell-sub">{{ row.email }}</span>
             </div>
-          </ng-container>
+          </ng-template>
+        </tm-column>
+        <tm-column key="role" label="Role" width="170">
+          <ng-template let-row>
+            <tm-status-pill *ngIf="row.role" tone="info">{{ row.role.name }}</tm-status-pill>
+            <span *ngIf="!row.role" class="muted">—</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="city_name" label="City" width="150">
+          <ng-template let-row>
+            <span *ngIf="row.manager_all_cities" class="all-cities"><tm-icon name="map" [size]="12" /> All cities</span>
+            <span *ngIf="!row.manager_all_cities && row.city_name">{{ row.city_name }}</span>
+            <span *ngIf="!row.manager_all_cities && !row.city_name" class="muted">—</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="fleet_name" label="Franchise" width="160">
+          <ng-template let-row>
+            <span *ngIf="row.fleet_name">{{ row.fleet_name }}</span>
+            <span *ngIf="!row.fleet_name" class="muted">—</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="status" label="Status" width="120">
+          <ng-template let-row>
+            <tm-status-pill [tone]="row.is_suspended ? 'danger' : 'success'">
+              {{ row.is_suspended ? 'Suspended' : 'Active' }}
+            </tm-status-pill>
+          </ng-template>
+        </tm-column>
+        <tm-column key="actions" label="" width="240" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <tm-button
+                *ngIf="row.role?.is_suspendable && !row.is_suspended"
+                variant="outline" size="sm"
+                (clicked)="suspendTarget = row"
+              >Suspend</tm-button>
+              <tm-button
+                *ngIf="row.is_suspended"
+                variant="green" size="sm"
+                (clicked)="unsuspend(row)"
+              >Unsuspend</tm-button>
+              <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit manager"><tm-icon name="edit" [size]="14" /></button>
+              <button
+                *ngIf="!row.role?.is_system"
+                class="icon-btn icon-btn--danger"
+                (click)="deleteTarget = row"
+                aria-label="Delete manager"
+              ><tm-icon name="trash" [size]="14" /></button>
+            </div>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
+    </div>
 
-          <div class="role-note" *ngIf="selectedRole()">
-            <strong>{{ selectedRole()?.name }}</strong> — this role grants the permissions shown on the Roles & Permissions page.
-          </div>
+    <!-- Add / Edit modal -->
+    <tm-modal
+      [open]="dialogOpen"
+      [title]="editingId ? 'Edit manager' : 'Add manager'"
+      [dismissible]="false"
+      (closed)="dialogOpen = false"
+    >
+      <div slot="body" class="form">
+        <label class="field">
+          <span class="field__lbl">Name <i>*</i></span>
+          <input type="text" [(ngModel)]="form.name" name="manager_name" autocomplete="off" placeholder="Full name" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Email <i>*</i></span>
+          <input type="email" [(ngModel)]="form.email" name="manager_email" autocomplete="off" placeholder="name@example.com" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Phone</span>
+          <input type="text" [(ngModel)]="form.phone" name="manager_phone" autocomplete="off" placeholder="+91 90000 00000" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">{{ editingId ? 'New password (leave blank to keep)' : 'Password' }} <i *ngIf="!editingId">*</i></span>
+          <input type="password" [(ngModel)]="form.password" name="manager_password" autocomplete="new-password" />
+        </label>
+
+        <label class="field">
+          <span class="field__lbl">Role <i>*</i></span>
+          <select [(ngModel)]="form.manager_role_id" (ngModelChange)="onRoleChange()">
+            <option [ngValue]="null" disabled>Select a role</option>
+            <option *ngFor="let r of roleOptions" [ngValue]="r.id">{{ r.name }}</option>
+          </select>
+        </label>
+
+        <label class="field" *ngIf="!isSuperAdminRole()">
+          <span class="field__lbl">City <i>*</i></span>
+          <select [ngModel]="citySelect" (ngModelChange)="onCitySelectChange($event)" name="manager_city">
+            <option value="" disabled>Select a city</option>
+            <option *ngIf="!selectedRoleRequiresFleet()" value="all">All cities</option>
+            <option *ngFor="let c of cityOptions" [value]="c.id">{{ c.name }}</option>
+          </select>
+          <span class="hint hint--info" *ngIf="form.manager_all_cities">
+            This manager will have access to every city.
+          </span>
+        </label>
+
+        <label class="field" *ngIf="selectedRoleRequiresFleet()">
+          <span class="field__lbl">Franchise (Fleet) <i>*</i></span>
+          <select [(ngModel)]="form.manager_fleet_id" [disabled]="!form.manager_city_id">
+            <option [ngValue]="null" disabled>Select a franchise</option>
+            <option *ngFor="let f of filteredFleets" [ngValue]="f.id">{{ f.name }}</option>
+          </select>
+          <span class="hint" *ngIf="form.manager_city_id && filteredFleets.length === 0">
+            No fleets in this city yet. Create one in Settings → Fleets first.
+          </span>
+        </label>
+
+        <div class="role-note" *ngIf="selectedRole()">
+          <strong>{{ selectedRole()?.name }}</strong> grants the permissions shown on the Roles &amp; Permissions page.
         </div>
       </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="dialogOpen = false">Cancel</tm-button>
+        <tm-button variant="green" [disabled]="saving" (clicked)="submit()">
+          {{ saving ? 'Saving…' : editingId ? 'Save changes' : 'Create' }}
+        </tm-button>
+      </div>
+    </tm-modal>
 
-      <ng-template pTemplate="footer">
-        <button pButton type="button" label="Cancel" class="p-button-secondary" (click)="dialogOpen = false"></button>
-        <button pButton type="button"
-                [label]="editingId ? 'Save' : 'Create'"
-                (click)="submit()" [loading]="saving"></button>
-      </ng-template>
-    </p-dialog>
+    <!-- Suspend confirm -->
+    <tm-modal [open]="!!suspendTarget" title="Suspend manager" (closed)="suspendTarget = null">
+      <div slot="body">
+        <p>Suspend <strong>{{ suspendTarget?.name }}</strong>? They'll be logged out immediately and unable to sign in.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="suspendTarget = null">Cancel</tm-button>
+        <tm-button variant="danger" [disabled]="busy" (clicked)="confirmSuspend()">
+          {{ busy ? 'Suspending…' : 'Suspend' }}
+        </tm-button>
+      </div>
+    </tm-modal>
+
+    <!-- Delete confirm -->
+    <tm-modal [open]="!!deleteTarget" title="Delete manager" (closed)="deleteTarget = null">
+      <div slot="body">
+        <p>Delete manager <strong>{{ deleteTarget?.name }}</strong>? This cannot be undone.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="deleteTarget = null">Cancel</tm-button>
+        <tm-button variant="danger" [disabled]="busy" (clicked)="confirmDelete()">
+          {{ busy ? 'Deleting…' : 'Delete' }}
+        </tm-button>
+      </div>
+    </tm-modal>
   `,
   styles: [`
-    .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-    .page-title { margin: 0 0 4px; font-size: 22px; font-weight: 800; color: #0f172a; }
-    .muted { color: #64748b; }
-    .small { font-size: 12px; }
+    .page { display: flex; flex-direction: column; gap: 16px; }
+    .page__hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .page__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
+    .page__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); max-width: 70ch; }
 
-    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-    .tabs {
-      display: flex; gap: 0; background: #f1f5f9; border-radius: 10px;
-      padding: 4px; max-width: 280px;
+    /* cell renderers */
+    .cell-id { display: flex; flex-direction: column; min-width: 0; }
+    .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .cell-sub { font-size: 11px; color: var(--tm-text-muted); }
+    .muted { color: var(--tm-text-muted); font-size: 12px; }
+    .all-cities {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: 700; color: var(--tm-green-deep);
     }
-    .tab {
-      flex: 1; padding: 8px 16px; background: transparent; border: 0;
-      border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12.5px; color: #475569;
+    .cell-actions { display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer; border: 0;
     }
-    .tab.active { background: #06b6d4; color: #fff; }
-    .search { width: 320px; max-width: 50vw; }
+    .icon-btn:hover { background: var(--tm-ink); color: #fff; }
+    .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
 
-    .empty { padding: 28px; text-align: center; color: #64748b; }
-    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .email { color: #475569; font-size: 13px; }
-
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .col { display: flex; flex-direction: column; gap: 6px; }
-    .lbl { font-size: 12px; font-weight: 700; color: #475569; margin-top: 6px; }
-    .col input[pInputText] { width: 100%; }
-    :host ::ng-deep .col .p-dropdown { width: 100%; }
-    :host ::ng-deep .full-pw,
-    :host ::ng-deep .full-pw .full-pw__inp { width: 100%; }
+    /* modal form */
+    .form { display: flex; flex-direction: column; gap: 13px; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .field__lbl i { color: var(--tm-danger, #ef4444); font-style: normal; }
+    .field input, .field select {
+      width: 100%; padding: 9px 11px;
+      border: 1px solid var(--tm-line); border-radius: 9px;
+      background: var(--tm-canvas); color: var(--tm-text);
+      font-size: 13px; outline: none; font-family: inherit;
+    }
+    .field input:focus, .field select:focus { border-color: var(--tm-green); }
+    .field select:disabled { opacity: 0.6; cursor: not-allowed; }
     .hint {
-      margin-top: 6px;
-      padding: 6px 10px;
-      background: rgba(245, 158, 11, 0.1);
-      color: #92400e;
-      border-left: 3px solid #f59e0b;
-      border-radius: 4px;
-      font-size: 12px;
+      font-size: 11px; color: var(--tm-warning-fg);
+      background: var(--tm-warning-bg); border-radius: 6px;
+      padding: 6px 8px;
     }
+    .hint--info { color: var(--tm-info-fg); background: var(--tm-info-bg); }
     .role-note {
-      margin-top: 14px;
       padding: 10px 12px;
-      background: #ecfeff;
-      border-left: 3px solid #06b6d4;
-      border-radius: 6px;
+      background: var(--tm-info-bg); color: var(--tm-info-fg);
+      border-left: 3px solid var(--tm-info); border-radius: 6px;
       font-size: 12.5px;
-      color: #0e7490;
+    }
+
+    @media (max-width: 720px) {
+      .page__hero { flex-direction: column; }
     }
   `],
 })
 export class ManagersComponent implements OnInit, OnDestroy {
   managers: ManagerRow[] = [];
-  tab: 'active' | 'inactive' = 'active';
+
+  // ── Filter / search / pagination ────────────────────────────────
+  status: 'active' | 'inactive' = 'active';
+  statusOptions = [{ label: 'Inactive', value: 'inactive' }];
+  roleFilter = 'all';
   searchText = '';
+  page = 1;
+  pageSize = 25;
+  loading = false;
+  pageRows: ManagerRow[] = [];
+  total = 0;
 
   roleOptions: RoleOption[] = [];
   cityOptions: City[] = [];
@@ -280,14 +343,17 @@ export class ManagersComponent implements OnInit, OnDestroy {
   dialogOpen = false;
   editingId: number | null = null;
   saving = false;
+  busy = false;
   form = this.blankForm();
+
+  suspendTarget: ManagerRow | null = null;
+  deleteTarget: ManagerRow | null = null;
 
   private searchTimer: number | null = null;
 
   constructor(
     private api: ApiService,
-    private msg: MessageService,
-    private confirm: ConfirmationService,
+    private toast: ToastService,
   ) {}
 
   ngOnInit(): void {
@@ -309,33 +375,22 @@ export class ManagersComponent implements OnInit, OnDestroy {
       password: '',
       manager_role_id: null as number | null,
       manager_city_id: null as number | null,
+      manager_all_cities: false,
       manager_fleet_id: null as number | null,
     };
   }
 
-  setTab(t: 'active' | 'inactive'): void {
-    if (this.tab === t) return;
-    this.tab = t;
-    this.loadManagers();
-  }
-
-  onSearch(): void {
-    if (this.searchTimer) window.clearTimeout(this.searchTimer);
-    this.searchTimer = window.setTimeout(() => this.loadManagers(), 280);
-  }
-
+  // ── Loading ─────────────────────────────────────────────────────
   loadRoles(): void {
     this.api.get<{ data: RoleOption[] }>('/admin/manager-roles').subscribe({
       next: (r) => (this.roleOptions = r.data || []),
     });
   }
-
   loadCities(): void {
     this.api.get<{ data: City[] }>('/admin/cities').subscribe({
       next: (r) => (this.cityOptions = r.data || []),
     });
   }
-
   loadFleets(): void {
     this.api.get<{ data: FleetOption[] }>('/admin/fleets').subscribe({
       next: (r) => (this.fleetOptions = r.data || []),
@@ -344,16 +399,95 @@ export class ManagersComponent implements OnInit, OnDestroy {
 
   loadManagers(): void {
     const params = new URLSearchParams();
-    params.set('status', this.tab);
+    params.set('status', this.status);
     const q = this.searchText.trim();
     if (q) params.set('q', q);
+    this.loading = true;
     this.api.get<{ data: ManagerRow[] }>(`/admin/managers?${params.toString()}`).subscribe({
-      next: (r) => (this.managers = r.data || []),
-      error: (e) => this.msg.add({ severity: 'error', summary: e?.error?.message || 'Failed to load managers' }),
+      next: (r) => {
+        this.managers = r.data || [];
+        this.loading = false;
+        this.applyView();
+      },
+      error: (e) => {
+        this.loading = false;
+        this.toast.error(e?.error?.message || 'Failed to load managers');
+      },
     });
   }
 
-  // ── role/city change handlers ─────────────────────────────────────
+  // ── Filtering (role is client-side) + client pagination ─────────
+  private applyView(): void {
+    let list = this.managers;
+    if (this.roleFilter !== 'all') {
+      const rid = Number(this.roleFilter);
+      list = list.filter((m) => m.manager_role_id === rid);
+    }
+    this.total = list.length;
+    const maxPage = Math.max(1, Math.ceil(this.total / this.pageSize));
+    if (this.page > maxPage) this.page = maxPage;
+    const start = (this.page - 1) * this.pageSize;
+    this.pageRows = list.slice(start, start + this.pageSize);
+  }
+
+  get roleFilterOptions(): { label: string; value: string }[] {
+    return this.roleOptions.map((r) => ({ label: r.name, value: String(r.id) }));
+  }
+  roleName(id: string): string {
+    return this.roleOptions.find((r) => String(r.id) === id)?.name ?? 'Role';
+  }
+
+  onSearch(): void {
+    if (this.searchTimer) window.clearTimeout(this.searchTimer);
+    this.searchTimer = window.setTimeout(() => {
+      this.page = 1;
+      this.loadManagers();
+    }, 280);
+  }
+  clearSearch(): void {
+    this.searchText = '';
+    this.page = 1;
+    this.loadManagers();
+  }
+
+  statusLabel(): string {
+    return this.status === 'inactive' ? 'Inactive' : 'Active';
+  }
+  onStatusChange(value: string): void {
+    this.status = value as 'active' | 'inactive';
+    this.page = 1;
+    this.loadManagers();
+  }
+  clearStatus(): void {
+    if (this.status === 'active') return;
+    this.status = 'active';
+    this.page = 1;
+    this.loadManagers();
+  }
+
+  onRoleFilterChange(value: string): void {
+    this.roleFilter = value;
+    this.page = 1;
+    this.applyView();
+  }
+  clearRoleFilter(): void {
+    if (this.roleFilter === 'all') return;
+    this.roleFilter = 'all';
+    this.page = 1;
+    this.applyView();
+  }
+
+  onPage(p: number): void {
+    this.page = p;
+    this.applyView();
+  }
+  onPageSize(s: number): void {
+    this.pageSize = s;
+    this.page = 1;
+    this.applyView();
+  }
+
+  // ── Role/city change handlers ───────────────────────────────────
   selectedRole(): RoleOption | null {
     return this.roleOptions.find((r) => r.id === this.form.manager_role_id) || null;
   }
@@ -363,15 +497,35 @@ export class ManagersComponent implements OnInit, OnDestroy {
   onRoleChange(): void {
     if (this.isSuperAdminRole()) {
       this.form.manager_city_id = null;
+      this.form.manager_all_cities = false;
       this.form.manager_fleet_id = null;
+    }
+    // A franchise role is tied to a single city — "all cities" doesn't apply.
+    if (this.selectedRoleRequiresFleet() && this.form.manager_all_cities) {
+      this.form.manager_all_cities = false;
     }
     if (!this.selectedRoleRequiresFleet()) {
       this.form.manager_fleet_id = null;
     }
   }
 
+  // City dropdown is driven by a string: '' (none), 'all' (every city) or a city id.
+  get citySelect(): string {
+    if (this.form.manager_all_cities) return 'all';
+    return this.form.manager_city_id != null ? String(this.form.manager_city_id) : '';
+  }
+  onCitySelectChange(value: string): void {
+    if (value === 'all') {
+      this.form.manager_all_cities = true;
+      this.form.manager_city_id = null;
+    } else {
+      this.form.manager_all_cities = false;
+      this.form.manager_city_id = value === '' ? null : Number(value);
+    }
+    this.onCityChange();
+  }
+
   onCityChange(): void {
-    // If the previously-picked fleet doesn't belong to the new city, clear it.
     if (this.form.manager_fleet_id) {
       const fleet = this.fleetOptions.find((f) => f.id === this.form.manager_fleet_id);
       if (fleet && fleet.city_id !== this.form.manager_city_id) {
@@ -385,7 +539,7 @@ export class ManagersComponent implements OnInit, OnDestroy {
     return this.fleetOptions.filter((f) => f.city_id === this.form.manager_city_id);
   }
 
-  // ── dialog ────────────────────────────────────────────────────────
+  // ── Create / edit ───────────────────────────────────────────────
   openCreate(): void {
     this.editingId = null;
     this.form = this.blankForm();
@@ -401,28 +555,23 @@ export class ManagersComponent implements OnInit, OnDestroy {
       password: '',
       manager_role_id: m.manager_role_id,
       manager_city_id: m.manager_city_id,
+      manager_all_cities: m.manager_all_cities,
       manager_fleet_id: m.manager_fleet_id,
     };
     this.dialogOpen = true;
   }
 
   submit(): void {
-    if (!this.form.name.trim()) { this.msg.add({ severity: 'warn', summary: 'Name is required' }); return; }
-    if (!this.form.email.trim()) { this.msg.add({ severity: 'warn', summary: 'Email is required' }); return; }
-    if (!this.editingId && !this.form.password) {
-      this.msg.add({ severity: 'warn', summary: 'Password is required' });
-      return;
-    }
-    if (!this.form.manager_role_id) {
-      this.msg.add({ severity: 'warn', summary: 'Role is required' });
-      return;
-    }
-    if (!this.isSuperAdminRole() && !this.form.manager_city_id) {
-      this.msg.add({ severity: 'warn', summary: 'City is required for this role' });
+    if (!this.form.name.trim()) { this.toast.warning('Name is required'); return; }
+    if (!this.form.email.trim()) { this.toast.warning('Email is required'); return; }
+    if (!this.editingId && !this.form.password) { this.toast.warning('Password is required'); return; }
+    if (!this.form.manager_role_id) { this.toast.warning('Role is required'); return; }
+    if (!this.isSuperAdminRole() && !this.form.manager_all_cities && !this.form.manager_city_id) {
+      this.toast.warning('Select a city (or "All cities") for this role');
       return;
     }
     if (this.selectedRoleRequiresFleet() && !this.form.manager_fleet_id) {
-      this.msg.add({ severity: 'warn', summary: 'Franchise is required for this role' });
+      this.toast.warning('Franchise is required for this role');
       return;
     }
 
@@ -431,7 +580,8 @@ export class ManagersComponent implements OnInit, OnDestroy {
       email: this.form.email.trim(),
       phone: this.form.phone || null,
       manager_role_id: this.form.manager_role_id,
-      manager_city_id: this.form.manager_city_id,
+      manager_city_id: this.form.manager_all_cities ? null : this.form.manager_city_id,
+      manager_all_cities: this.form.manager_all_cities,
       manager_fleet_id: this.selectedRoleRequiresFleet() ? this.form.manager_fleet_id : null,
     };
     if (this.form.password) body.password = this.form.password;
@@ -445,43 +595,56 @@ export class ManagersComponent implements OnInit, OnDestroy {
       next: () => {
         this.saving = false;
         this.dialogOpen = false;
-        this.msg.add({ severity: 'success', summary: this.editingId ? 'Manager updated' : 'Manager created' });
+        this.toast.success(this.editingId ? 'Manager updated' : 'Manager created');
         this.loadManagers();
       },
       error: (e) => {
         this.saving = false;
-        this.msg.add({ severity: 'error', summary: e?.error?.message || 'Save failed' });
+        this.toast.error(e?.error?.message || 'Save failed');
       },
     });
   }
 
-  suspend(m: ManagerRow): void {
-    this.confirm.confirm({
-      message: `Suspend "${m.name}"? They will be logged out immediately and unable to sign in.`,
-      accept: () => {
-        this.api.post(`/admin/managers/${m.id}/suspend`, {}).subscribe({
-          next: () => { this.msg.add({ severity: 'success', summary: 'Suspended' }); this.loadManagers(); },
-          error: (e) => this.msg.add({ severity: 'error', summary: e?.error?.message || 'Suspend failed' }),
-        });
+  // ── Suspend / unsuspend / delete ────────────────────────────────
+  confirmSuspend(): void {
+    const m = this.suspendTarget;
+    if (!m || this.busy) return;
+    this.busy = true;
+    this.api.post(`/admin/managers/${m.id}/suspend`, {}).subscribe({
+      next: () => {
+        this.busy = false;
+        this.suspendTarget = null;
+        this.toast.success('Manager suspended');
+        this.loadManagers();
+      },
+      error: (e) => {
+        this.busy = false;
+        this.toast.error(e?.error?.message || 'Suspend failed');
       },
     });
   }
 
   unsuspend(m: ManagerRow): void {
     this.api.post(`/admin/managers/${m.id}/unsuspend`, {}).subscribe({
-      next: () => { this.msg.add({ severity: 'success', summary: 'Unsuspended' }); this.loadManagers(); },
-      error: (e) => this.msg.add({ severity: 'error', summary: e?.error?.message || 'Unsuspend failed' }),
+      next: () => { this.toast.success('Manager unsuspended'); this.loadManagers(); },
+      error: (e) => this.toast.error(e?.error?.message || 'Unsuspend failed'),
     });
   }
 
-  remove(m: ManagerRow): void {
-    this.confirm.confirm({
-      message: `Delete manager "${m.name}"? This cannot be undone.`,
-      accept: () => {
-        this.api.delete(`/admin/managers/${m.id}`).subscribe({
-          next: () => { this.msg.add({ severity: 'success', summary: 'Deleted' }); this.loadManagers(); },
-          error: (e) => this.msg.add({ severity: 'error', summary: e?.error?.message || 'Delete failed' }),
-        });
+  confirmDelete(): void {
+    const m = this.deleteTarget;
+    if (!m || this.busy) return;
+    this.busy = true;
+    this.api.delete(`/admin/managers/${m.id}`).subscribe({
+      next: () => {
+        this.busy = false;
+        this.deleteTarget = null;
+        this.toast.success('Manager deleted');
+        this.loadManagers();
+      },
+      error: (e) => {
+        this.busy = false;
+        this.toast.error(e?.error?.message || 'Delete failed');
       },
     });
   }

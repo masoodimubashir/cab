@@ -1,0 +1,47 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="primary">
+    <ion-title>My Wallet</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-refresher slot="fixed" (ionRefresh)="load(); $event.target.complete()">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <!-- Balance card -->
+  <div class="balance-card">
+    <span class="balance-card__label">Wallet balance</span>
+    <span class="balance-card__amount">₹{{ balance | number: '1.0-2' }}</span>
+    <ion-button expand="block" color="light" [disabled]="toppingUp" (click)="promptTopUp()">
+      <ion-icon name="add-circle-outline" slot="start"></ion-icon>
+      {{ toppingUp ? 'Opening…' : 'Top up wallet' }}
+    </ion-button>
+  </div>
+
+  <ion-text color="danger" *ngIf="error">
+    <p>{{ error }}</p>
+  </ion-text>
+
+  <h2 class="section-title">Recent activity</h2>
+
+  <div *ngIf="loading && !transactions.length" class="hint">Loading…</div>
+  <div *ngIf="!loading && !transactions.length" class="hint">No transactions yet.</div>
+
+  <ion-list lines="full">
+    <ion-item *ngFor="let t of transactions">
+      <ion-icon
+        slot="start"
+        [name]="isCredit(t) ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'"
+        [color]="isCredit(t) ? 'success' : 'danger'"
+      ></ion-icon>
+      <ion-label>
+        <h3>{{ txnLabel(t) }}</h3>
+        <p>{{ txnDate(t) }}</p>
+      </ion-label>
+      <span slot="end" class="amt" [class.amt--credit]="isCredit(t)" [class.amt--debit]="!isCredit(t)">
+        {{ isCredit(t) ? '+' : '−' }}₹{{ t.amount | number: '1.0-2' }}
+      </span>
+    </ion-item>
+  </ion-list>
+</ion-content>

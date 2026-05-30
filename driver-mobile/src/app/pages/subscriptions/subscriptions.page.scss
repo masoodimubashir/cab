@@ -1,0 +1,101 @@
+.wallet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ion-color-light-shade, #eee);
+  margin-bottom: 16px;
+
+  strong { font-size: 1.1rem; }
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 18px 0 8px;
+}
+
+.hint {
+  color: var(--ion-color-medium, #666);
+  font-size: 0.9rem;
+  padding: 8px 0;
+}
+
+.active-card {
+  background: var(--ion-color-primary);
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+
+    h3 { margin: 0; font-size: 1.05rem; }
+    p { margin: 2px 0 0; font-size: 0.82rem; opacity: 0.9; }
+  }
+
+  &__remaining { margin: 12px 0 0; font-weight: 600; }
+  &__meta { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.85; }
+}
+
+.badge {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+
+  &--free { background: var(--ion-color-success, #2dd36f); }
+}
+
+.plan-card {
+  border: 1px solid var(--ion-color-light-shade, #e3e3e3);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+
+    h3 { margin: 0; font-size: 1rem; }
+    p { margin: 2px 0 0; font-size: 0.82rem; color: var(--ion-color-medium, #666); }
+  }
+
+  &__price { font-size: 1.1rem; font-weight: 800; flex: none; }
+
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0;
+  }
+
+  &__terms {
+    font-size: 0.78rem;
+    color: var(--ion-color-medium, #666);
+    margin: 0 0 10px;
+  }
+}
+
+.tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ion-color-light-shade, #eee);
+  color: var(--ion-color-dark, #222);
+
+  &--free {
+    background: rgba(45, 211, 111, 0.16);
+    color: var(--ion-color-success-shade, #28ba62);
+  }
+}

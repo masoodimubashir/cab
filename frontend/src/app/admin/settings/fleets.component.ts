@@ -7,8 +7,13 @@ import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
+  InputComponent,
   ModalComponent,
 } from '../../ui';
 
@@ -28,7 +33,10 @@ interface Fleet {
   is_active: boolean;
 }
 
-const STATUS_OPTIONS = [
+type StatusFilter = 'all' | 'active' | 'inactive' | 'suspended' | 'pending';
+type VatFilter = 'all' | 'enabled' | 'disabled';
+
+const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] = [
   { label: 'Active', value: 'active' },
   { label: 'Inactive', value: 'inactive' },
   { label: 'Suspended', value: 'suspended' },
@@ -37,6 +45,8 @@ const STATUS_OPTIONS = [
 
 /**
  * Fleets — fleet operators within the city chosen in the topbar switcher.
+ * Layout mirrors the Drivers list: tm-data-table with search on the left,
+ * filter dropdowns on the right, and a row of dismissable filter pills below.
  * Create/edit uses the shared right-side drawer; delete uses a confirm modal.
  */
 @Component({
@@ -44,14 +54,16 @@ const STATUS_OPTIONS = [
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent,
   ],
   template: `
-    <div class="fl">
-      <header class="fl__head">
+    <div class="page">
+      <header class="page__hero">
         <div>
-          <h1 class="fl__title">Fleets</h1>
-          <p class="fl__sub">Fleet operators that own vehicles in this city.</p>
+          <h1 class="page__title">Fleets</h1>
+          <p class="page__sub">Fleet operators that own vehicles in this city.</p>
         </div>
         <tm-button
           *ngIf="cityId != null"
@@ -68,56 +80,108 @@ const STATUS_OPTIONS = [
       </div>
 
       <ng-container *ngIf="cityId != null">
-        <div class="seg">
-          <button class="seg__btn" [class.is-on]="filterStatus === null" (click)="setStatus(null)">All</button>
-          <button
-            *ngFor="let s of statusOptions"
-            class="seg__btn"
-            [class.is-on]="filterStatus === s.value"
-            (click)="setStatus(s.value)"
-          >{{ s.label }}</button>
-        </div>
+        <tm-data-table
+          [rows]="fleets"
+          [total]="fleets.length"
+          [loading]="loading"
+          emptyTitle="No fleets"
+          emptyHint="Try a different search, or clear the filters."
+        >
+          <!-- Toolbar: search on the LEFT -->
+          <tm-input
+            slot="search"
+            icon="search"
+            placeholder="Search by name, phone, bank or VAT no."
+            [(ngModel)]="search"
+            (ngModelChange)="onSearchChange()"
+          />
 
-        <div class="grid" *ngIf="fleets.length; else empty">
-          <article class="fcard" *ngFor="let f of fleets">
-            <div class="fcard__head">
-              <span class="fcard__logo">
-                <img *ngIf="f.logo_url" [src]="f.logo_url" alt="" />
-                <tm-icon *ngIf="!f.logo_url" name="car" [size]="20" />
+          <!-- Toolbar: filters on the RIGHT -->
+          <ng-container slot="filters">
+            <tm-filter-select
+              icon="shield"
+              ariaLabel="Status filter"
+              allLabel="All statuses"
+              [options]="statusOptions"
+              [value]="status"
+              (valueChange)="onStatusChange($event)"
+            />
+            <tm-filter-select
+              icon="tag"
+              ariaLabel="VAT filter"
+              allLabel="Any VAT"
+              [options]="vatFilterOptions"
+              [value]="vat"
+              (valueChange)="onVatChange($event)"
+            />
+          </ng-container>
+
+          <!-- Active filter pills below the toolbar -->
+          <ng-container slot="banner">
+            <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+            <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+            <tm-filter-pill *ngIf="vat !== 'all'" icon="tag" label="VAT" [value]="vatLabel()" (clear)="clearVat()" />
+          </ng-container>
+
+          <!-- ============ Columns ============ -->
+          <tm-column key="name" label="Fleet">
+            <ng-template let-row>
+              <div class="cell-fleet">
+                <span class="cell-logo">
+                  <img *ngIf="row.logo_url" [src]="row.logo_url" alt="" />
+                  <tm-icon *ngIf="!row.logo_url" name="car" [size]="16" />
+                </span>
+                <div class="cell-id">
+                  <span class="cell-name">{{ row.name }}</span>
+                  <span class="cell-sub">{{ row.phone_number || 'No phone' }}</span>
+                </div>
+              </div>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="status" label="Status" width="120">
+            <ng-template let-row>
+              <span class="status-pill" [attr.data-s]="row.status">{{ row.status }}</span>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="vat" label="VAT" width="160">
+            <ng-template let-row>
+              <span *ngIf="row.vat_enabled" class="cell-vat">
+                <tm-icon name="check" [size]="12" />
+                <span class="cell-vat__num">{{ row.vat_number || 'Enabled' }}</span>
               </span>
-              <div class="fcard__id">
-                <span class="fcard__name">{{ f.name }}</span>
-                <span class="fcard__phone">{{ f.phone_number || 'No phone' }}</span>
+              <span *ngIf="!row.vat_enabled" class="muted">Not enabled</span>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="bank" label="Bank">
+            <ng-template let-row>
+              <span *ngIf="row.bank">{{ row.bank }}</span>
+              <span *ngIf="!row.bank" class="muted">—</span>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="address" label="Address" [wrap]="true">
+            <ng-template let-row>
+              <span *ngIf="row.address" class="cell-addr">{{ row.address }}</span>
+              <span *ngIf="!row.address" class="muted">—</span>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="actions" label="" width="100" align="right">
+            <ng-template let-row>
+              <div class="cell-actions">
+                <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit fleet">
+                  <tm-icon name="edit" [size]="14" />
+                </button>
+                <button class="icon-btn icon-btn--danger" (click)="deleteTarget = row" aria-label="Delete fleet">
+                  <tm-icon name="trash" [size]="14" />
+                </button>
               </div>
-              <span class="fcard__status" [attr.data-s]="f.status">{{ f.status }}</span>
-            </div>
-            <div class="fcard__rows">
-              <div class="fcard__row">
-                <span class="fcard__k">VAT</span>
-                <span class="fcard__v">{{ f.vat_enabled ? (f.vat_number || 'Enabled') : 'Not enabled' }}</span>
-              </div>
-              <div class="fcard__row" *ngIf="f.bank">
-                <span class="fcard__k">Bank</span>
-                <span class="fcard__v">{{ f.bank }}</span>
-              </div>
-              <div class="fcard__row" *ngIf="f.address">
-                <span class="fcard__k">Address</span>
-                <span class="fcard__v">{{ f.address }}</span>
-              </div>
-            </div>
-            <div class="fcard__foot">
-              <button class="icon-btn" (click)="openEdit(f)" aria-label="Edit fleet"><tm-icon name="edit" [size]="14" /></button>
-              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = f" aria-label="Delete fleet"><tm-icon name="trash" [size]="14" /></button>
-            </div>
-          </article>
-        </div>
-        <ng-template #empty>
-          <div class="cue">
-            <tm-icon name="car" [size]="24" />
-            <p class="cue__title">No fleets yet</p>
-            <p class="cue__text">Add a fleet operator for this city.</p>
-          </div>
-        </ng-template>
+            </ng-template>
+          </tm-column>
+        </tm-data-table>
       </ng-container>
     </div>
 
@@ -202,10 +266,10 @@ const STATUS_OPTIONS = [
     </tm-modal>
   `,
   styles: [`
-    .fl { display: flex; flex-direction: column; gap: 16px; }
-    .fl__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-    .fl__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
-    .fl__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
+    .page { display: flex; flex-direction: column; gap: 16px; }
+    .page__hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .page__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
+    .page__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
 
     .cue {
       display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -216,65 +280,63 @@ const STATUS_OPTIONS = [
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .seg {
-      display: inline-flex; gap: 4px; padding: 4px;
-      background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
-      flex-wrap: wrap;
-    }
-    .seg__btn {
-      padding: 7px 15px; border-radius: 8px;
-      font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      background: transparent; cursor: pointer;
-    }
-    .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
+    /* Filter dropdowns + active-filter pills now use the shared
+       tm-filter-select / tm-filter-pill primitives. */
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 12px;
-    }
-    .fcard {
-      background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px); padding: 14px;
-    }
-    .fcard__head { display: flex; align-items: center; gap: 11px; }
-    .fcard__logo {
-      width: 44px; height: 44px; border-radius: 10px; flex: none; overflow: hidden;
+    /* ---------- Cell renderers ---------- */
+    .cell-fleet { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+    .cell-logo {
+      width: 36px; height: 36px; border-radius: 9px; flex: none; overflow: hidden;
       display: inline-flex; align-items: center; justify-content: center;
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
       border: 1px solid var(--tm-line);
     }
-    .fcard__logo img { width: 100%; height: 100%; object-fit: cover; }
-    .fcard__id { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .fcard__name { font-size: 14px; font-weight: 800; color: var(--tm-text); }
-    .fcard__phone { font-size: 12px; color: var(--tm-text-muted); }
-    .fcard__status {
-      flex: none; text-transform: capitalize;
+    .cell-logo img { width: 100%; height: 100%; object-fit: cover; }
+    .cell-id { display: flex; flex-direction: column; min-width: 0; }
+    .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .cell-sub { font-size: 11px; color: var(--tm-text-muted); }
+
+    .status-pill {
+      display: inline-flex; align-items: center;
+      text-transform: capitalize;
       font-size: 10px; font-weight: 800; letter-spacing: 0.3px;
-      padding: 3px 8px; border-radius: 999px;
+      padding: 3px 10px; border-radius: var(--tm-radius-pill);
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
     }
-    .fcard__status[data-s="active"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .fcard__status[data-s="suspended"] { background: var(--tm-danger-bg, #fee2e2); color: var(--tm-danger-fg, #b91c1c); }
-    .fcard__status[data-s="pending"] { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
+    .status-pill[data-s="active"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .status-pill[data-s="suspended"] { background: var(--tm-danger-bg, #fee2e2); color: var(--tm-danger-fg, #b91c1c); }
+    .status-pill[data-s="pending"] { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
 
-    .fcard__rows {
-      display: flex; flex-direction: column; gap: 6px;
-      border-top: 1px solid var(--tm-line); margin-top: 12px; padding-top: 10px;
+    .cell-vat {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--tm-green-deep);
+      font-family: var(--tm-font-mono);
+      font-size: 12px; font-weight: 700;
     }
-    .fcard__row { display: flex; gap: 10px; font-size: 12px; }
-    .fcard__k { width: 64px; flex: none; font-weight: 700; color: var(--tm-text-muted); }
-    .fcard__v { color: var(--tm-text); min-width: 0; }
-    .fcard__foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+    .cell-vat__num { color: var(--tm-text); }
 
+    .cell-addr {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 12px;
+      color: var(--tm-text);
+    }
+
+    .muted { color: var(--tm-text-muted); font-size: 12px; }
+
+    .cell-actions { display: inline-flex; gap: 6px; }
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 7px;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      cursor: pointer; border: 0;
     }
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
 
+    /* ---------- Drawer form ---------- */
     .form { display: flex; flex-direction: column; gap: 14px; }
     .field { display: flex; flex-direction: column; gap: 5px; }
     .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
@@ -302,12 +364,28 @@ const STATUS_OPTIONS = [
 })
 export class FleetsSettingsComponent implements OnInit, OnDestroy {
   fleets: Fleet[] = [];
+  loading = false;
   cityId: number | null = null;
   cityName = '';
 
-  filterStatus: string | null = null;
-  statusOptions = STATUS_OPTIONS;
+  // ── Filter state ────────────────────────────────────────────────
+  search = '';
+  status: StatusFilter = 'all';
+  vat: VatFilter = 'all';
 
+  statusOptions = STATUS_OPTIONS;
+  vatOptions: { label: string; value: VatFilter }[] = [
+    { label: 'Any VAT', value: 'all' },
+    { label: 'VAT enabled', value: 'enabled' },
+    { label: 'VAT disabled', value: 'disabled' },
+  ];
+
+  // Filter-select options exclude the "all" entry — the component renders it.
+  get vatFilterOptions(): { label: string; value: string }[] {
+    return this.vatOptions.filter((o) => o.value !== 'all');
+  }
+
+  // ── Drawer / delete state ───────────────────────────────────────
   open = false;
   editingId: number | null = null;
   saving = false;
@@ -319,6 +397,7 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
   logoPreview: string | null = null;
 
   private subs: Subscription[] = [];
+  private searchDebounce: any = null;
 
   constructor(
     private api: ApiService,
@@ -341,14 +420,75 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
   }
 
-  setStatus(s: string | null): void {
-    if (this.filterStatus === s) return;
-    this.filterStatus = s;
+  // ── Fetch ───────────────────────────────────────────────────────
+  fetchFleets(): void {
+    if (this.cityId == null) {
+      this.fleets = [];
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('city_id', String(this.cityId));
+    if (this.status !== 'all') params.set('status', this.status);
+    if (this.vat !== 'all') params.set('vat', this.vat);
+    const q = this.search.trim();
+    if (q) params.set('q', q);
+
+    this.loading = true;
+    this.api.get<{ data: Fleet[] }>(`/admin/fleets?${params.toString()}`).subscribe({
+      next: (res) => {
+        this.fleets = res?.data || [];
+        this.loading = false;
+      },
+      error: (err) => {
+        this.loading = false;
+        this.toast.error(err?.error?.message || 'Failed to load fleets');
+      },
+    });
+  }
+
+  // ── Filter handlers ─────────────────────────────────────────────
+  onSearchChange(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => this.fetchFleets(), 300);
+  }
+
+  clearSearch(): void {
+    if (!this.search) return;
+    this.search = '';
     this.fetchFleets();
   }
 
+  statusLabel(): string {
+    if (this.status === 'all') return 'All statuses';
+    return this.statusOptions.find((o) => o.value === this.status)?.label ?? 'All statuses';
+  }
+  onStatusChange(value: string): void {
+    this.status = value as StatusFilter;
+    this.fetchFleets();
+  }
+  clearStatus(): void {
+    if (this.status === 'all') return;
+    this.status = 'all';
+    this.fetchFleets();
+  }
+
+  vatLabel(): string {
+    return this.vatOptions.find((o) => o.value === this.vat)?.label ?? 'Any VAT';
+  }
+  onVatChange(value: string): void {
+    this.vat = value as VatFilter;
+    this.fetchFleets();
+  }
+  clearVat(): void {
+    if (this.vat === 'all') return;
+    this.vat = 'all';
+    this.fetchFleets();
+  }
+
+  // ── Drawer / form ───────────────────────────────────────────────
   blankForm() {
     return {
       name: '',
@@ -360,20 +500,6 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
       status: 'active',
       is_active: true,
     };
-  }
-
-  fetchFleets(): void {
-    if (this.cityId == null) {
-      this.fleets = [];
-      return;
-    }
-    const params = new URLSearchParams();
-    params.set('city_id', String(this.cityId));
-    if (this.filterStatus) params.set('status', this.filterStatus);
-    this.api.get<{ data: Fleet[] }>(`/admin/fleets?${params.toString()}`).subscribe({
-      next: (res) => (this.fleets = res?.data || []),
-      error: (err) => this.toast.error(err?.error?.message || 'Failed to load fleets'),
-    });
   }
 
   openCreate(): void {

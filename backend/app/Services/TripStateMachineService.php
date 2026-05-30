@@ -12,6 +12,7 @@ class TripStateMachineService
     public function __construct(
         private NotificationService $notificationService,
         private FareEstimationService $fareEstimationService,
+        private CommissionSettlementService $commissionSettlementService,
     ) {
     }
 
@@ -92,6 +93,12 @@ class TripStateMachineService
         }
 
         $trip->save();
+
+        // On completion, settle the operator's commission (honouring any
+        // active subscription) and draw down the driver's subscription usage.
+        if ($to === 'COMPLETED') {
+            $this->commissionSettlementService->settle($trip);
+        }
 
         $tripId = $trip->id;
         $customerId = $trip->customer_id;

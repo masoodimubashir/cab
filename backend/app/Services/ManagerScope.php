@@ -39,6 +39,10 @@ class ManagerScope
         if ($u->isSuperAdmin()) {
             return null;
         }
+        // An all-cities manager is unrestricted, regardless of role.
+        if ($u->manager_all_cities) {
+            return null;
+        }
         if ($u->manager_city_id) {
             return [(int) $u->manager_city_id];
         }
