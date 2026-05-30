@@ -23,6 +23,11 @@ const routes: Routes = [
           import('../pages/earnings/earnings.module').then((m) => m.EarningsPageModule),
       },
       {
+        path: 'wallet',
+        loadChildren: () =>
+          import('../pages/wallet/wallet.module').then((m) => m.WalletPageModule),
+      },
+      {
         path: 'history',
         loadChildren: () =>
           import('../pages/trip-history/trip-history.module').then((m) => m.TripHistoryPageModule),

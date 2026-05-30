@@ -9,6 +9,7 @@ use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\DriverLocation;
 use App\Models\FareNegotiation;
+use App\Models\OperatorSetting;
 use App\Models\PricingRule;
 use App\Models\Trip;
 use App\Models\User;
@@ -847,8 +848,15 @@ class TripsController extends Controller
      */
     public function tip(Request $request, Trip $trip)
     {
+        // When the operator runs tips as a percentage of fare, `amount` is a
+        // percentage (0–100]; otherwise it's an absolute rupee value. This
+        // mirrors the `in_percentage` flag served by GET /operator/tipping.
+        $inPercentage = (bool) OperatorSetting::instance()->tip_in_percentage;
+
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'min:1', 'max:10000'],
+            'amount' => $inPercentage
+                ? ['required', 'numeric', 'min:0.1', 'max:100']
+                : ['required', 'numeric', 'min:1', 'max:10000'],
         ]);
 
         $user = $request->user();
@@ -865,7 +873,24 @@ class TripsController extends Controller
             return response()->json(['message' => 'A tip has already been added to this ride.'], 409);
         }
 
-        $amount = round((float) $data['amount'], 2);
+        // Resolve the rupee tip the driver actually receives. In percentage
+        // mode it's a share of the ride's final fare; tip_amount always stores
+        // the resulting rupees (never the percentage).
+        if ($inPercentage) {
+            $fare = (float) ($trip->final_fare ?? 0);
+            if ($fare <= 0) {
+                return response()->json([
+                    'message' => 'Cannot compute a percentage tip — this ride has no final fare.',
+                ], 422);
+            }
+            $amount = round($fare * (float) $data['amount'] / 100, 2);
+        } else {
+            $amount = round((float) $data['amount'], 2);
+        }
+
+        if ($amount <= 0) {
+            return response()->json(['message' => 'Tip amount must be greater than zero.'], 422);
+        }
 
         \DB::transaction(function () use ($trip, $amount, $user) {
             $trip->tip_amount = $amount;

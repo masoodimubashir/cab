@@ -35,8 +35,8 @@ interface ProductForm {
   imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   template: `
     <p class="intro">
-      Configure the ride products offered in this city. Each can have its own banner —
-      save them independently.
+      Ride products offered in this city — Local, Rental and Outstation. Set a banner and
+      display name for each, then save the row.
     </p>
 
     <div class="cue" *ngIf="!cityId">
@@ -49,57 +49,47 @@ interface ProductForm {
       <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading ride products…</p>
     </div>
 
-    <div class="gs" *ngIf="cityId && !loading">
-      <article class="pcard" *ngFor="let p of products">
-        <header class="pcard__head">
-          <span class="pcard__icon"><tm-icon [name]="kindIcon(p.kind)" [size]="16" /></span>
-          <div class="pcard__id">
-            <span class="pcard__kind">{{ kindLabel(p.kind) }}</span>
-            <span class="pcard__name">{{ forms[p.id].name || p.name }}</span>
-          </div>
-          <label class="tgl" [title]="forms[p.id].is_active ? 'Enabled' : 'Disabled'">
-            <input type="checkbox" [(ngModel)]="forms[p.id].is_active" />
-            <span class="tgl__track"></span>
-            <span class="tgl__text">{{ forms[p.id].is_active ? 'Enabled' : 'Disabled' }}</span>
-          </label>
-        </header>
+    <div class="rows" *ngIf="cityId && !loading && products.length">
+      <article class="row" *ngFor="let p of products">
+        <label class="thumb" [class.has-img]="forms[p.id].preview || p.image_url"
+               [title]="(forms[p.id].preview || p.image_url) ? 'Change banner' : 'Upload banner'">
+          <img *ngIf="forms[p.id].preview || p.image_url" [src]="forms[p.id].preview || p.image_url" alt="" />
+          <span *ngIf="!(forms[p.id].preview || p.image_url)" class="thumb__ph">
+            <tm-icon name="upload" [size]="18" />
+          </span>
+          <span class="thumb__edit"><tm-icon name="upload" [size]="16" /></span>
+          <input type="file" accept="image/*" (change)="onFileSelected($event, p.id)" hidden />
+        </label>
 
-        <div class="pcard__body">
-          <div class="pcard__media">
-            <div class="media__box" [class.has-img]="forms[p.id].preview || p.image_url">
-              <img *ngIf="forms[p.id].preview || p.image_url" [src]="forms[p.id].preview || p.image_url" alt="" />
-              <span *ngIf="!(forms[p.id].preview || p.image_url)" class="media__ph">
-                <tm-icon name="upload" [size]="22" />
-              </span>
-            </div>
-            <label class="media__btn">
-              <tm-icon name="upload" [size]="13" /> Banner image
-              <input type="file" accept="image/*" (change)="onFileSelected($event, p.id)" hidden />
-            </label>
-            <span class="media__hint">Recommended 420×240 px</span>
-          </div>
-
-          <div class="pcard__fields">
-            <label class="field">
-              <span class="field__lbl">Product name</span>
-              <input type="text" [(ngModel)]="forms[p.id].name" />
-            </label>
-          </div>
+        <div class="row__kind">
+          <tm-icon [name]="kindIcon(p.kind)" [size]="15" />
+          <span>{{ kindLabel(p.kind) }}</span>
         </div>
 
-        <footer class="pcard__foot">
+        <label class="row__field">
+          <span class="row__lbl">Display name</span>
+          <input type="text" [(ngModel)]="forms[p.id].name" placeholder="Product name" />
+        </label>
+
+        <label class="tgl" [title]="forms[p.id].is_active ? 'Enabled' : 'Disabled'">
+          <input type="checkbox" [(ngModel)]="forms[p.id].is_active" />
+          <span class="tgl__track"></span>
+          <span class="tgl__text">{{ forms[p.id].is_active ? 'Enabled' : 'Disabled' }}</span>
+        </label>
+
+        <div class="row__save">
           <tm-button variant="green" size="sm" icon="check"
                      [disabled]="saving[p.id] === true" (clicked)="save(p)">
-            {{ saving[p.id] ? 'Saving…' : 'Save ' + kindLabel(p.kind) }}
+            {{ saving[p.id] ? 'Saving…' : 'Save' }}
           </tm-button>
-        </footer>
+        </div>
       </article>
+    </div>
 
-      <div class="cue" *ngIf="!products.length">
-        <tm-icon name="car" [size]="24" />
-        <p class="cue__title">No ride products</p>
-        <p class="cue__text">Ride products are seeded per city — none found for this one.</p>
-      </div>
+    <div class="cue" *ngIf="cityId && !loading && !products.length">
+      <tm-icon name="car" [size]="24" />
+      <p class="cue__title">No ride products</p>
+      <p class="cue__text">Ride products are seeded per city — none found for this one.</p>
     </div>
   `,
   styles: [`
@@ -114,75 +104,73 @@ interface ProductForm {
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .gs { display: flex; flex-direction: column; gap: 14px; }
-
-    .pcard {
+    /* compact list */
+    .rows {
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);
       border-radius: var(--tm-radius-lg, 14px);
       overflow: hidden;
     }
-    .pcard__head {
-      display: flex; align-items: center; gap: 11px;
-      padding: 13px 16px; border-bottom: 1px solid var(--tm-line);
+    .row {
+      display: grid;
+      grid-template-columns: 56px 150px minmax(0, 1fr) auto auto;
+      grid-template-areas: "thumb kind field tgl save";
+      align-items: center;
+      gap: 16px;
+      padding: 14px 16px;
     }
-    .pcard__icon {
-      width: 34px; height: 34px; border-radius: 9px; flex: none;
-      display: inline-flex; align-items: center; justify-content: center;
-      background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green);
+    .row + .row { border-top: 1px solid var(--tm-line); }
+
+    /* thumbnail / upload */
+    .thumb {
+      grid-area: thumb;
+      position: relative; flex: none;
+      width: 56px; height: 56px; border-radius: 10px;
+      border: 1px dashed var(--tm-line-2); background: var(--tm-canvas-2);
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; cursor: pointer;
     }
-    .pcard__id { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .pcard__kind {
+    .thumb.has-img { border-style: solid; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb__ph { color: var(--tm-text-soft); display: inline-flex; }
+    .thumb__edit {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(15, 20, 25, 0.55); color: #fff;
+      opacity: 0; transition: opacity var(--tm-duration-fast) var(--tm-ease);
+    }
+    .thumb:hover .thumb__edit { opacity: 1; }
+
+    /* kind identity */
+    .row__kind {
+      grid-area: kind;
+      display: flex; align-items: center; gap: 8px; min-width: 0;
+      font-size: 14px; font-weight: 800; color: var(--tm-text);
+    }
+    .row__kind tm-icon { color: var(--tm-green); flex: none; }
+
+    /* name field */
+    .row__field { grid-area: field; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .row__lbl {
       font-size: 10px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
       color: var(--tm-text-muted);
     }
-    .pcard__name { font-size: 15px; font-weight: 800; color: var(--tm-text); }
-
-    .pcard__body {
-      display: grid; grid-template-columns: 220px 1fr; gap: 18px;
-      padding: 16px;
-    }
-    .pcard__media { display: flex; flex-direction: column; gap: 7px; }
-    .media__box {
-      height: 124px; border-radius: 10px;
-      border: 1px dashed var(--tm-line); background: var(--tm-canvas-2);
-      display: flex; align-items: center; justify-content: center; overflow: hidden;
-    }
-    .media__box.has-img { border-style: solid; }
-    .media__box img { width: 100%; height: 100%; object-fit: cover; }
-    .media__ph { color: var(--tm-text-muted); }
-    .media__btn {
-      display: inline-flex; align-items: center; gap: 6px; justify-content: center;
-      padding: 8px 10px; border-radius: 8px;
-      background: var(--tm-canvas-2); color: var(--tm-text);
-      font-size: 12px; font-weight: 700; cursor: pointer;
-    }
-    .media__btn:hover { background: var(--tm-line); }
-    .media__hint { font-size: 11px; color: var(--tm-text-muted); text-align: center; }
-
-    .pcard__fields { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-    .field { display: flex; flex-direction: column; gap: 5px; }
-    .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
-    .field input, .field textarea {
-      width: 100%; padding: 9px 11px;
+    .row__field input {
+      width: 100%; padding: 8px 11px;
       border: 1px solid var(--tm-line); border-radius: 9px;
       background: var(--tm-canvas); color: var(--tm-text);
       font-size: 13px; outline: none; font-family: inherit;
     }
-    .field input:focus, .field textarea:focus { border-color: var(--tm-green); }
-    .field textarea { resize: vertical; }
+    .row__field input:focus { border-color: var(--tm-green); }
 
-    .pcard__foot {
-      display: flex; justify-content: flex-end;
-      padding: 12px 16px; border-top: 1px solid var(--tm-line);
-    }
+    .row__save { grid-area: save; }
 
     /* toggle */
-    .tgl { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: none; }
+    .tgl { grid-area: tgl; display: flex; align-items: center; gap: 8px; cursor: pointer; }
     .tgl input { display: none; }
     .tgl__track {
-      width: 38px; height: 22px; border-radius: 999px;
-      background: var(--tm-line); position: relative;
+      width: 38px; height: 22px; border-radius: 999px; flex: none;
+      background: var(--tm-line-2); position: relative;
       transition: background var(--tm-duration-fast) var(--tm-ease);
     }
     .tgl__track::after {
@@ -193,10 +181,21 @@ interface ProductForm {
     }
     .tgl input:checked + .tgl__track { background: var(--tm-green); }
     .tgl input:checked + .tgl__track::after { transform: translateX(16px); }
-    .tgl__text { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+    .tgl__text { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); min-width: 56px; }
 
-    @media (max-width: 720px) {
-      .pcard__body { grid-template-columns: 1fr; }
+    @media (max-width: 760px) {
+      .row {
+        grid-template-columns: 56px minmax(0, 1fr);
+        grid-template-areas:
+          "thumb kind"
+          "field field"
+          "tgl   save";
+        align-items: start;
+        row-gap: 12px;
+      }
+      .row__kind { align-self: center; }
+      .tgl { align-self: center; }
+      .row__save { justify-self: end; align-self: center; }
     }
   `],
 })

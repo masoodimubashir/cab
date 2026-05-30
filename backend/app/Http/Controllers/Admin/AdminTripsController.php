@@ -48,6 +48,10 @@ class AdminTripsController
             $query->where('ride_type_id', (int) $rideTypeId);
         }
 
+        if ($cvtId = $request->query('city_vehicle_type_id')) {
+            $query->where('city_vehicle_type_id', (int) $cvtId);
+        }
+
         if ($phone = trim((string) $request->query('phone'))) {
             // Strip non-digits so "+91 90000-12345" matches "9000012345" in DB.
             $needle = preg_replace('/\D+/', '', $phone);
@@ -59,7 +63,9 @@ class AdminTripsController
             }
         }
 
-        $trips = $query->orderByDesc('created_at')->paginate(50);
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = max(1, min(100, $perPage));
+        $trips = $query->orderByDesc('created_at')->paginate($perPage);
 
         return response()->json(['data' => $trips]);
     }
@@ -112,6 +118,55 @@ class AdminTripsController
                 // Legacy default (kept for the existing /trips screen): hide terminals.
                 $query->whereNotIn('status', ['COMPLETED', 'CANCELLED']);
         }
+    }
+
+    /**
+     * Full trip detail for the admin ride-details screen — eager-loads every
+     * relation the page renders (parties, pricing axes, payment with coupon
+     * snapshot, applied promotion) plus the latest 100 driver-location pings
+     * for the map path. One round trip serves the entire page.
+     */
+    public function show(Trip $trip)
+    {
+        ManagerScope::assertCityAllowed((int) $trip->city_id);
+
+        $trip->load([
+            'customer:id,name,phone,email,avatar_path',
+            'driver:id,name,phone,email,avatar_path',
+            'rideType:id,name',
+            'cityVehicleType:id,city_id,ride_type_id,vehicle_type_id,display_name,max_people,luggage_capacity',
+            'cityVehicleType.vehicleType:id,name',
+            'cityVehicleType.rideType:id,name',
+            'pricingRule',
+            'appliedPromotion:id,title,discount_type,discount_value,promo_type',
+            'payment:id,trip_id,method,provider,status,amount,discount_amount,paid_at,coupon_assignment_id,razorpay_payment_id,razorpay_order_id',
+            'payment.couponAssignment.coupon:id,title,discount_type,discount_value',
+        ]);
+
+        // Driver profile fields (vehicle reg, brand etc) aren't on users —
+        // they're on the `drivers` row keyed by user_id. Pull that separately.
+        $driverProfile = $trip->driver_id
+            ? \App\Models\Driver::query()
+                ->where('user_id', $trip->driver_id)
+                ->first([
+                    'user_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model',
+                    'vehicle_color', 'vehicle_reg_no', 'rating_avg', 'rating_count',
+                ])
+            : null;
+
+        // Driver path on the trip — cap to avoid sending megabytes for very
+        // long rides. 100 points is enough to render a smooth polyline.
+        $path = DriverLocation::query()
+            ->where('trip_id', $trip->id)
+            ->orderBy('recorded_at')
+            ->limit(100)
+            ->get(['lat', 'lng', 'recorded_at', 'bearing_deg']);
+
+        return response()->json([
+            'trip' => $trip,
+            'driver_profile' => $driverProfile,
+            'path' => $path,
+        ]);
     }
 
     /**

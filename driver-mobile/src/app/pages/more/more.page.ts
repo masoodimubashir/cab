@@ -40,6 +40,10 @@ export class MorePage {
     this.router.navigateByUrl('/payment-methods');
   }
 
+  goSubscriptions(): void {
+    this.router.navigateByUrl('/subscriptions');
+  }
+
   async signOut(): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: 'Sign out?',
