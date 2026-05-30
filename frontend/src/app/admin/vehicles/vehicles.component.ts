@@ -5,9 +5,15 @@ import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
+  InputComponent,
   ModalComponent,
+  StatusPillComponent,
 } from '../../ui';
 
 interface RideTypeRow {
@@ -27,28 +33,42 @@ interface VehicleTypeRow {
   is_active: boolean;
 }
 
+type VehicleStatus = 'all' | 'active' | 'inactive';
+
+const VEHICLE_STATUS_OPTIONS = [
+  { label: 'Active', value: 'active' },
+  { label: 'Inactive', value: 'inactive' },
+];
+
 /**
  * Vehicles — manages the two global catalogues used across the platform:
  *   • Vehicle Types — Auto, Bike, Mini, Tuk-Tuk … (with image)
  *   • Ride Types    — Airport, Delivery, Pool, Rental …
- * Both are global (not city-scoped). Create/edit uses the shared drawer.
+ * Both are global (not city-scoped). Standard data-table layout per tab;
+ * create/edit uses the shared drawer, delete a confirm modal.
  */
 @Component({
   selector: 'app-vehicles',
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent, StatusPillComponent,
   ],
   template: `
-    <div class="veh">
-      <header class="veh__head">
+    <div class="page">
+      <header class="page__hero">
         <div>
-          <h1 class="veh__title">Vehicles</h1>
-          <p class="veh__sub">
-            Global catalogues of vehicle categories and ride service types.
-          </p>
+          <h1 class="page__title">Vehicles</h1>
+          <p class="page__sub">Global catalogues of vehicle categories and ride service types.</p>
         </div>
+        <tm-button
+          variant="green" icon="plus"
+          (clicked)="tab === 'vehicle' ? openVehicleCreate() : openRideCreate()"
+        >
+          {{ tab === 'vehicle' ? 'Add vehicle type' : 'Add ride type' }}
+        </tm-button>
       </header>
 
       <!-- Tab switcher -->
@@ -64,93 +84,121 @@ interface VehicleTypeRow {
       </div>
 
       <!-- ===================== VEHICLE TYPES ===================== -->
-      <section *ngIf="tab === 'vehicle'">
-        <div class="toolbar">
-          <div class="search">
-            <tm-icon name="search" [size]="15" />
-            <input type="text" [(ngModel)]="vehicleSearch" placeholder="Search vehicle types…" />
-            <button *ngIf="vehicleSearch" class="search__clear" (click)="vehicleSearch = ''" aria-label="Clear">
-              <tm-icon name="x" [size]="13" />
-            </button>
-          </div>
-          <select class="select" [(ngModel)]="vehicleStatus">
-            <option value="all">All statuses</option>
-            <option value="active">Active only</option>
-            <option value="inactive">Inactive only</option>
-          </select>
-          <tm-button variant="green" size="sm" icon="plus" (clicked)="openVehicleCreate()">
-            Add vehicle type
-          </tm-button>
-        </div>
+      <tm-data-table
+        *ngIf="tab === 'vehicle'"
+        [rows]="vPageRows"
+        [total]="vTotal"
+        [page]="vPage"
+        [pageSize]="vPageSize"
+        [loading]="vLoading"
+        emptyTitle="No vehicle types"
+        emptyHint="Try a different search, or clear the filters."
+        (pageChange)="onVPage($event)"
+        (pageSizeChange)="onVPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search vehicle types…"
+          [(ngModel)]="vehicleSearch"
+          (ngModelChange)="onVehicleSearchChange()"
+        />
+        <ng-container slot="filters">
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Status filter"
+            allLabel="All statuses"
+            [options]="vehicleStatusOptions"
+            [value]="vehicleStatus"
+            (valueChange)="onVehicleStatusChange($event)"
+          />
+        </ng-container>
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="vehicleSearch.trim()" icon="search" label="Search" [value]="vehicleSearch" (clear)="clearVehicleSearch()" />
+          <tm-filter-pill *ngIf="vehicleStatus !== 'all'" icon="bolt" label="Status" [value]="vehicleStatusLabel()" (clear)="clearVehicleStatus()" />
+        </ng-container>
 
-        <div class="grid" *ngIf="filteredVehicles().length; else vEmpty">
-          <article class="vcard" *ngFor="let v of filteredVehicles()">
-            <div class="vcard__media">
-              <img *ngIf="v.image_url" [src]="v.image_url" [alt]="v.name" />
-              <span *ngIf="!v.image_url" class="vcard__ph"><tm-icon name="car" [size]="26" /></span>
-              <span class="vcard__pill" [class.on]="v.is_active" [class.off]="!v.is_active">
-                {{ v.is_active ? 'Active' : 'Inactive' }}
+        <tm-column key="name" label="Vehicle type">
+          <ng-template let-row>
+            <div class="cell-veh">
+              <span class="cell-thumb">
+                <img *ngIf="row.image_url" [src]="row.image_url" [alt]="row.name" />
+                <tm-icon *ngIf="!row.image_url" name="car" [size]="16" />
               </span>
-            </div>
-            <div class="vcard__body">
-              <div class="vcard__top">
-                <span class="vcard__name">{{ v.name }}</span>
-                <span class="vcard__sort">#{{ v.sort_order }}</span>
+              <div class="cell-id">
+                <span class="cell-name">{{ row.name }}</span>
+                <span class="cell-sub">{{ row.description || 'No description' }}</span>
               </div>
-              <p class="vcard__desc">{{ v.description || 'No description' }}</p>
             </div>
-            <div class="vcard__foot">
-              <button class="icon-btn" (click)="openVehicleEdit(v)" aria-label="Edit"><tm-icon name="edit" [size]="15" /></button>
-              <button class="icon-btn icon-btn--danger" (click)="deleteVehicle = v" aria-label="Delete"><tm-icon name="trash" [size]="15" /></button>
+          </ng-template>
+        </tm-column>
+        <tm-column key="sort_order" label="Order" width="90">
+          <ng-template let-row><span class="mono">#{{ row.sort_order }}</span></ng-template>
+        </tm-column>
+        <tm-column key="is_active" label="Status" width="130">
+          <ng-template let-row>
+            <tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">
+              {{ row.is_active ? 'Active' : 'Inactive' }}
+            </tm-status-pill>
+          </ng-template>
+        </tm-column>
+        <tm-column key="actions" label="" width="100" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <button class="icon-btn" (click)="openVehicleEdit(row)" aria-label="Edit vehicle type"><tm-icon name="edit" [size]="14" /></button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteVehicle = row" aria-label="Delete vehicle type"><tm-icon name="trash" [size]="14" /></button>
             </div>
-          </article>
-        </div>
-        <ng-template #vEmpty>
-          <div class="empty">
-            <tm-icon name="car" [size]="24" />
-            <p>{{ vehicleSearch || vehicleStatus !== 'all' ? 'No vehicle types match your filters.' : 'No vehicle types yet.' }}</p>
-          </div>
-        </ng-template>
-      </section>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
 
       <!-- ===================== RIDE TYPES ===================== -->
-      <section *ngIf="tab === 'ride'">
-        <div class="toolbar">
-          <div class="search">
-            <tm-icon name="search" [size]="15" />
-            <input type="text" [(ngModel)]="rideSearch" placeholder="Search ride types…" />
-            <button *ngIf="rideSearch" class="search__clear" (click)="rideSearch = ''" aria-label="Clear">
-              <tm-icon name="x" [size]="13" />
-            </button>
-          </div>
-          <tm-button variant="green" size="sm" icon="plus" (clicked)="openRideCreate()">
-            Add ride type
-          </tm-button>
-        </div>
+      <tm-data-table
+        *ngIf="tab === 'ride'"
+        [rows]="rPageRows"
+        [total]="rTotal"
+        [page]="rPage"
+        [pageSize]="rPageSize"
+        [loading]="rLoading"
+        emptyTitle="No ride types"
+        emptyHint="Try a different search."
+        (pageChange)="onRPage($event)"
+        (pageSizeChange)="onRPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search ride types…"
+          [(ngModel)]="rideSearch"
+          (ngModelChange)="onRideSearchChange()"
+        />
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="rideSearch.trim()" icon="search" label="Search" [value]="rideSearch" (clear)="clearRideSearch()" />
+        </ng-container>
 
-        <div class="grid" *ngIf="filteredRides().length; else rEmpty">
-          <article class="vcard vcard--ride" *ngFor="let r of filteredRides()">
-            <div class="vcard__body">
-              <div class="vcard__top">
-                <span class="vcard__icon"><tm-icon name="road" [size]="18" /></span>
-                <span class="vcard__name">{{ r.name }}</span>
-                <span class="vcard__sort">#{{ r.sort_order }}</span>
+        <tm-column key="name" label="Ride type">
+          <ng-template let-row>
+            <div class="cell-veh">
+              <span class="cell-thumb cell-thumb--icon"><tm-icon name="road" [size]="16" /></span>
+              <div class="cell-id">
+                <span class="cell-name">{{ row.name }}</span>
+                <span class="cell-sub">{{ row.description || 'No description' }}</span>
               </div>
-              <p class="vcard__desc">{{ r.description || 'No description' }}</p>
             </div>
-            <div class="vcard__foot">
-              <button class="icon-btn" (click)="openRideEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="15" /></button>
-              <button class="icon-btn icon-btn--danger" (click)="deleteRide = r" aria-label="Delete"><tm-icon name="trash" [size]="15" /></button>
+          </ng-template>
+        </tm-column>
+        <tm-column key="sort_order" label="Order" width="90">
+          <ng-template let-row><span class="mono">#{{ row.sort_order }}</span></ng-template>
+        </tm-column>
+        <tm-column key="actions" label="" width="100" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <button class="icon-btn" (click)="openRideEdit(row)" aria-label="Edit ride type"><tm-icon name="edit" [size]="14" /></button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteRide = row" aria-label="Delete ride type"><tm-icon name="trash" [size]="14" /></button>
             </div>
-          </article>
-        </div>
-        <ng-template #rEmpty>
-          <div class="empty">
-            <tm-icon name="road" [size]="24" />
-            <p>{{ rideSearch ? 'No ride types match your search.' : 'No ride types yet.' }}</p>
-          </div>
-        </ng-template>
-      </section>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
     </div>
 
     <!-- ===================== Vehicle type drawer ===================== -->
@@ -241,20 +289,22 @@ interface VehicleTypeRow {
     </tm-modal>
   `,
   styles: [`
-    .veh { display: flex; flex-direction: column; gap: 16px; }
-    .veh__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
-    .veh__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
+    .page { display: flex; flex-direction: column; gap: 16px; }
+    .page__hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .page__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
+    .page__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
 
     /* segmented tabs */
     .seg {
       display: inline-flex; gap: 4px; padding: 4px;
       background: var(--tm-canvas-2); border-radius: var(--tm-radius-md, 10px);
+      align-self: flex-start;
     }
     .seg__btn {
       display: inline-flex; align-items: center; gap: 7px;
       padding: 8px 14px; border-radius: 8px;
       font-size: 13px; font-weight: 700; color: var(--tm-text-muted);
-      background: transparent; cursor: pointer;
+      background: transparent; cursor: pointer; border: 0;
       transition: background var(--tm-duration-fast) var(--tm-ease), color var(--tm-duration-fast) var(--tm-ease);
     }
     .seg__btn.is-on { background: var(--tm-surface); color: var(--tm-text); box-shadow: var(--tm-shadow-sm); }
@@ -265,100 +315,33 @@ interface VehicleTypeRow {
     }
     .seg__btn.is-on .seg__count { background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green); }
 
-    /* toolbar */
-    .toolbar {
-      display: flex; gap: 10px; align-items: center; margin-bottom: 14px;
-      flex-wrap: wrap; justify-content: flex-end;
-    }
-    .search {
-      display: flex; align-items: center; gap: 7px;
-      min-width: 200px; max-width: 360px;
-      height: 38px; padding: 0 11px;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line); border-radius: 9px;
-      color: var(--tm-text-muted);
-    }
-    .search input { flex: 1; border: none; outline: none; background: transparent; font-size: 13px; color: var(--tm-text); }
-    .search__clear {
-      display: inline-flex; cursor: pointer; color: var(--tm-text-muted);
-      width: 18px; height: 18px; align-items: center; justify-content: center;
-      border-radius: 50%; background: var(--tm-canvas-2);
-    }
-    .select {
-      height: 38px; padding: 0 11px;
-      border: 1px solid var(--tm-line); border-radius: 9px;
-      background: var(--tm-surface); color: var(--tm-text);
-      font-size: 13px; outline: none;
-    }
-
-    /* card grid */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
-      gap: 12px;
-    }
-    .vcard {
-      display: flex; flex-direction: column;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px);
-      overflow: hidden;
-      transition: border-color var(--tm-duration-fast) var(--tm-ease), box-shadow var(--tm-duration-fast) var(--tm-ease);
-    }
-    .vcard:hover { border-color: var(--tm-text-muted); box-shadow: var(--tm-shadow-card); }
-
-    .vcard__media {
-      position: relative;
-      height: 132px;
-      background: var(--tm-canvas-2);
-      display: flex; align-items: center; justify-content: center;
-    }
-    .vcard__media img { width: 100%; height: 100%; object-fit: cover; }
-    .vcard__ph { color: var(--tm-text-muted); }
-    .vcard__pill {
-      position: absolute; top: 8px; right: 8px;
-      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-      padding: 3px 8px; border-radius: 999px;
-    }
-    .vcard__pill.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .vcard__pill.off { background: var(--tm-canvas); color: var(--tm-text-muted); }
-
-    .vcard__body { padding: 12px 13px; flex: 1; }
-    .vcard__top { display: flex; align-items: center; gap: 8px; }
-    .vcard__icon {
-      width: 30px; height: 30px; border-radius: 8px; flex: none;
+    /* cell renderers */
+    .cell-veh { display: inline-flex; align-items: center; gap: 11px; min-width: 0; }
+    .cell-thumb {
+      width: 40px; height: 40px; border-radius: 9px; flex: none; overflow: hidden;
       display: inline-flex; align-items: center; justify-content: center;
-      background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green);
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      border: 1px solid var(--tm-line);
     }
-    .vcard__name { font-size: 14px; font-weight: 800; color: var(--tm-text); flex: 1; }
-    .vcard__sort { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
-    .vcard__desc {
-      margin: 6px 0 0; font-size: 12px; color: var(--tm-text-muted);
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    .cell-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .cell-thumb--icon { background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green); border-color: transparent; }
+    .cell-id { display: flex; flex-direction: column; min-width: 0; }
+    .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .cell-sub {
+      font-size: 11px; color: var(--tm-text-muted);
+      max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .vcard__foot {
-      display: flex; justify-content: flex-end; gap: 6px;
-      padding: 9px 13px; border-top: 1px solid var(--tm-line);
-    }
+    .mono { font-family: var(--tm-font-mono); font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
 
+    .cell-actions { display: inline-flex; gap: 6px; }
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 30px; height: 30px; border-radius: 8px;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease), color var(--tm-duration-fast) var(--tm-ease);
+      width: 28px; height: 28px; border-radius: 7px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      cursor: pointer; border: 0;
     }
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
-
-    .empty {
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
-      padding: 48px 20px; text-align: center;
-      color: var(--tm-text-muted);
-      background: var(--tm-surface);
-      border: 1px dashed var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px);
-    }
-    .empty p { margin: 0; font-size: 13px; }
 
     /* drawer form */
     .form { display: flex; flex-direction: column; gap: 14px; }
@@ -377,6 +360,10 @@ interface VehicleTypeRow {
     .preview { width: 96px; height: 96px; object-fit: cover; border-radius: 9px; border: 1px solid var(--tm-line); margin-top: 4px; }
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
+
+    @media (max-width: 720px) {
+      .page__hero { flex-direction: column; }
+    }
   `],
 })
 export class VehiclesComponent implements OnInit {
@@ -386,9 +373,23 @@ export class VehiclesComponent implements OnInit {
   vehicleTypes: VehicleTypeRow[] = [];
   rideTypes: RideTypeRow[] = [];
 
+  // ── Vehicle list: filters + pagination ──────────────────────────
   vehicleSearch = '';
-  vehicleStatus: 'all' | 'active' | 'inactive' = 'all';
+  vehicleStatus: VehicleStatus = 'all';
+  vehicleStatusOptions = VEHICLE_STATUS_OPTIONS;
+  vPage = 1;
+  vPageSize = 25;
+  vLoading = false;
+  vPageRows: VehicleTypeRow[] = [];
+  vTotal = 0;
+
+  // ── Ride list: search + pagination ──────────────────────────────
   rideSearch = '';
+  rPage = 1;
+  rPageSize = 25;
+  rLoading = false;
+  rPageRows: RideTypeRow[] = [];
+  rTotal = 0;
 
   // Vehicle Type form state
   vehicleOpen = false;
@@ -413,6 +414,9 @@ export class VehiclesComponent implements OnInit {
   rideForm: { name: string; description: string; sort_order: number } = this.blankRideForm();
   deleteRide: RideTypeRow | null = null;
 
+  private vSearchDebounce: any = null;
+  private rSearchDebounce: any = null;
+
   constructor(private api: ApiService, private toast: ToastService) {}
 
   ngOnInit(): void {
@@ -420,33 +424,109 @@ export class VehiclesComponent implements OnInit {
     this.loadRideTypes();
   }
 
-  // ---- filters ----
-  filteredVehicles(): VehicleTypeRow[] {
+  // ---- Vehicle view (filter + paginate) ----
+  private applyVehicleView(): void {
     const q = this.vehicleSearch.trim().toLowerCase();
-    return this.vehicleTypes.filter((v) => {
-      if (this.vehicleStatus === 'active' && !v.is_active) return false;
-      if (this.vehicleStatus === 'inactive' && v.is_active) return false;
-      if (!q) return true;
-      return (
-        v.name.toLowerCase().includes(q) ||
-        (v.description ?? '').toLowerCase().includes(q)
+    let list = this.vehicleTypes;
+    if (this.vehicleStatus === 'active') list = list.filter((v) => v.is_active);
+    else if (this.vehicleStatus === 'inactive') list = list.filter((v) => !v.is_active);
+    if (q) {
+      list = list.filter(
+        (v) => v.name.toLowerCase().includes(q) || (v.description ?? '').toLowerCase().includes(q),
       );
-    });
+    }
+    this.vTotal = list.length;
+    const maxPage = Math.max(1, Math.ceil(this.vTotal / this.vPageSize));
+    if (this.vPage > maxPage) this.vPage = maxPage;
+    const start = (this.vPage - 1) * this.vPageSize;
+    this.vPageRows = list.slice(start, start + this.vPageSize);
   }
 
-  filteredRides(): RideTypeRow[] {
+  vehicleStatusLabel(): string {
+    return this.vehicleStatusOptions.find((o) => o.value === this.vehicleStatus)?.label ?? 'All statuses';
+  }
+  onVehicleSearchChange(): void {
+    if (this.vSearchDebounce) clearTimeout(this.vSearchDebounce);
+    this.vSearchDebounce = setTimeout(() => {
+      this.vPage = 1;
+      this.applyVehicleView();
+    }, 250);
+  }
+  clearVehicleSearch(): void {
+    this.vehicleSearch = '';
+    this.vPage = 1;
+    this.applyVehicleView();
+  }
+  onVehicleStatusChange(value: string): void {
+    this.vehicleStatus = value as VehicleStatus;
+    this.vPage = 1;
+    this.applyVehicleView();
+  }
+  clearVehicleStatus(): void {
+    this.vehicleStatus = 'all';
+    this.vPage = 1;
+    this.applyVehicleView();
+  }
+  onVPage(p: number): void {
+    this.vPage = p;
+    this.applyVehicleView();
+  }
+  onVPageSize(s: number): void {
+    this.vPageSize = s;
+    this.vPage = 1;
+    this.applyVehicleView();
+  }
+
+  // ---- Ride view (search + paginate) ----
+  private applyRideView(): void {
     const q = this.rideSearch.trim().toLowerCase();
-    if (!q) return this.rideTypes;
-    return this.rideTypes.filter(
-      (r) => r.name.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q),
-    );
+    let list = this.rideTypes;
+    if (q) {
+      list = list.filter(
+        (r) => r.name.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q),
+      );
+    }
+    this.rTotal = list.length;
+    const maxPage = Math.max(1, Math.ceil(this.rTotal / this.rPageSize));
+    if (this.rPage > maxPage) this.rPage = maxPage;
+    const start = (this.rPage - 1) * this.rPageSize;
+    this.rPageRows = list.slice(start, start + this.rPageSize);
+  }
+  onRideSearchChange(): void {
+    if (this.rSearchDebounce) clearTimeout(this.rSearchDebounce);
+    this.rSearchDebounce = setTimeout(() => {
+      this.rPage = 1;
+      this.applyRideView();
+    }, 250);
+  }
+  clearRideSearch(): void {
+    this.rideSearch = '';
+    this.rPage = 1;
+    this.applyRideView();
+  }
+  onRPage(p: number): void {
+    this.rPage = p;
+    this.applyRideView();
+  }
+  onRPageSize(s: number): void {
+    this.rPageSize = s;
+    this.rPage = 1;
+    this.applyRideView();
   }
 
   // ---- Vehicle types ----
   loadVehicleTypes(): void {
+    this.vLoading = true;
     this.api.get<{ data: VehicleTypeRow[] }>('/admin/vehicle-types-global').subscribe({
-      next: (res) => (this.vehicleTypes = res.data ?? []),
-      error: () => this.toast.error('Failed to load vehicle types'),
+      next: (res) => {
+        this.vehicleTypes = res.data ?? [];
+        this.vLoading = false;
+        this.applyVehicleView();
+      },
+      error: () => {
+        this.vLoading = false;
+        this.toast.error('Failed to load vehicle types');
+      },
     });
   }
 
@@ -572,6 +652,7 @@ export class VehiclesComponent implements OnInit {
         const idx = this.vehicleTypes.findIndex((v) => v.id === res.vehicle_type.id);
         if (idx >= 0) this.vehicleTypes[idx] = res.vehicle_type;
         else this.vehicleTypes = [...this.vehicleTypes, res.vehicle_type];
+        this.applyVehicleView();
         this.toast.success(this.vehicleEditingId ? 'Vehicle type updated' : 'Vehicle type created');
       },
       error: (err) => {
@@ -590,6 +671,7 @@ export class VehiclesComponent implements OnInit {
         this.busy = false;
         this.deleteVehicle = null;
         this.vehicleTypes = this.vehicleTypes.filter((x) => x.id !== v.id);
+        this.applyVehicleView();
         this.toast.success('Vehicle type deleted');
       },
       error: (err) => {
@@ -601,9 +683,17 @@ export class VehiclesComponent implements OnInit {
 
   // ---- Ride types ----
   loadRideTypes(): void {
+    this.rLoading = true;
     this.api.get<{ data: RideTypeRow[] }>('/admin/ride-types-crud').subscribe({
-      next: (res) => (this.rideTypes = res.data ?? []),
-      error: () => this.toast.error('Failed to load ride types'),
+      next: (res) => {
+        this.rideTypes = res.data ?? [];
+        this.rLoading = false;
+        this.applyRideView();
+      },
+      error: () => {
+        this.rLoading = false;
+        this.toast.error('Failed to load ride types');
+      },
     });
   }
 
@@ -645,6 +735,7 @@ export class VehiclesComponent implements OnInit {
         const idx = this.rideTypes.findIndex((r) => r.id === res.ride_type.id);
         if (idx >= 0) this.rideTypes[idx] = res.ride_type;
         else this.rideTypes = [...this.rideTypes, res.ride_type];
+        this.applyRideView();
         this.toast.success(this.rideEditingId ? 'Ride type updated' : 'Ride type created');
       },
       error: (err) => {
@@ -663,6 +754,7 @@ export class VehiclesComponent implements OnInit {
         this.busy = false;
         this.deleteRide = null;
         this.rideTypes = this.rideTypes.filter((x) => x.id !== r.id);
+        this.applyRideView();
         this.toast.success('Ride type deleted');
       },
       error: (err) => {

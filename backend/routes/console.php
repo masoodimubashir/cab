@@ -27,3 +27,8 @@ Schedule::command('drivers:reap-stale')
     ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('subscriptions:expire')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();

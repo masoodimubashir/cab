@@ -23,7 +23,7 @@ use App\Models\WalletTransaction;
 #[Fillable([
     'name', 'email', 'password', 'phone', 'google_sub', 'avatar_path',
     'accepted_payment_methods', 'last_login_at',
-    'manager_role_id', 'manager_city_id', 'manager_fleet_id', 'is_suspended',
+    'manager_role_id', 'manager_city_id', 'manager_all_cities', 'manager_fleet_id', 'is_suspended',
     // Customer profile fields (admin Customer module)
     'dob', 'address', 'app_version', 'os_version', 'device_type',
     'referral_code', 'referred_by_user_id',
@@ -52,6 +52,7 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'accepted_payment_methods' => 'array',
             'is_suspended' => 'boolean',
+            'manager_all_cities' => 'boolean',
             'dob' => 'date',
             'email_unsubscribed' => 'boolean',
             'sms_unsubscribed' => 'boolean',

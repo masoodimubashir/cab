@@ -59,6 +59,12 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    path: 'subscriptions',
+    loadChildren: () =>
+      import('./pages/subscriptions/subscriptions.module').then((m) => m.SubscriptionsPageModule),
+    canActivate: [AuthGuard],
+  },
+  {
     path: 'delete-account',
     loadChildren: () =>
       import('./pages/delete-account/delete-account.module').then((m) => m.DeleteAccountPageModule),

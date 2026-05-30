@@ -444,7 +444,7 @@ const BLOCK_REASONS = [
 
         <!-- ============= RIDES feed ============= -->
         <div *ngIf="!loadingTab && activeTab === 'rides'" class="feed__list">
-          <article *ngFor="let r of currentActivity" class="post">
+          <article *ngFor="let r of currentActivity" class="post post--ride">
             <div class="post__leading">
               <span class="post__icon post__icon--ride">
                 <tm-icon name="car" [size]="14" />
@@ -452,8 +452,11 @@ const BLOCK_REASONS = [
             </div>
             <div class="post__body">
               <header class="post__head">
-                <strong class="post__title">{{ r.driver?.name || 'Unknown driver' }}</strong>
-                <span class="post__time">{{ r.created_at | date:'MMM d, HH:mm' }}</span>
+                <span class="post__who">
+                  <span class="post__role">Driver</span>
+                  <strong class="post__title">{{ r.driver?.name || 'Unassigned' }}</strong>
+                </span>
+                <span class="ride-status" [attr.data-s]="statusBucket(r.status)">{{ statusDisplay(r.status) }}</span>
               </header>
               <div class="route-mini">
                 <div class="route-mini__line"><span class="pin pin--from"></span>
@@ -463,17 +466,27 @@ const BLOCK_REASONS = [
                   <span class="route-mini__addr">{{ r.drop_address || pretty(r.drop_lat, r.drop_lng) }}</span>
                 </div>
               </div>
+              <div class="ride-meta">
+                <span class="ride-meta__item" *ngIf="r.ride_type?.name"><tm-icon name="road" [size]="11" /> {{ r.ride_type.name }}</span>
+                <span class="ride-meta__item" *ngIf="r.distance_km"><tm-icon name="pin" [size]="11" /> {{ r.distance_km }} km</span>
+                <span class="ride-meta__item" *ngIf="r.duration_min"><tm-icon name="calendar" [size]="11" /> {{ r.duration_min }} min</span>
+                <span class="ride-meta__item mono" *ngIf="r.payment_method">{{ r.payment_method | uppercase }}</span>
+              </div>
               <footer class="post__foot">
                 <span class="post__meta mono">#{{ r.id }}</span>
-                <span class="post__meta" *ngIf="r.distance_km"><tm-icon name="road" [size]="11" /> {{ r.distance_km }} km</span>
-                <span class="post__meta" *ngIf="r.duration_min"><tm-icon name="calendar" [size]="11" /> {{ r.duration_min }} min</span>
-                <span class="post__meta mono" *ngIf="r.payment_method">{{ r.payment_method | uppercase }}</span>
+                <span class="post__meta">
+                  {{ r.created_at | date:'MMM d, HH:mm' }}<ng-container *ngIf="r.completed_at"> → {{ r.completed_at | date:'HH:mm' }}</ng-container>
+                </span>
               </footer>
             </div>
             <div class="post__trailing">
-              <span class="post__amount post__amount--credit">
-                ₹ {{ r.final_fare ?? r.estimated_fare ?? 0 }}
-              </span>
+              <div class="ride-fare">
+                <span class="post__amount post__amount--credit">₹ {{ r.final_fare ?? r.estimated_fare ?? 0 }}</span>
+                <span class="ride-fare__est"
+                      *ngIf="r.final_fare != null && r.estimated_fare != null && r.final_fare !== r.estimated_fare">
+                  est ₹{{ r.estimated_fare }}
+                </span>
+              </div>
             </div>
           </article>
         </div>
@@ -1449,6 +1462,39 @@ const BLOCK_REASONS = [
       color: var(--tm-danger-fg);
     }
 
+    /* Rich ride card */
+    .post--ride .post__head { align-items: flex-start; }
+    .post__who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .post__role {
+      font-size: 9px; font-weight: 800; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--tm-text-soft);
+    }
+    .ride-status {
+      display: inline-flex; align-items: center;
+      padding: 3px 9px;
+      border-radius: var(--tm-radius-pill);
+      font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+      text-transform: capitalize; white-space: nowrap;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+    }
+    .ride-status[data-s="completed"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .ride-status[data-s="cancelled"] { background: var(--tm-danger-bg);  color: var(--tm-danger-fg); }
+    .ride-status[data-s="ongoing"]   { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
+    .ride-status[data-s="pending"]   { background: var(--tm-info-bg);    color: var(--tm-info-fg); }
+    .ride-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+    .ride-meta__item {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: var(--tm-radius-pill);
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+      font-size: 11px; font-weight: 700;
+    }
+    .ride-meta__item.mono { font-family: var(--tm-font-mono); }
+    .ride-fare { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .ride-fare__est {
+      font-size: 10px; font-weight: 700;
+      color: var(--tm-text-soft); font-family: var(--tm-font-mono);
+    }
+
     /* Mini route in ride posts */
     .route-mini {
       position: relative;
@@ -1910,6 +1956,21 @@ export class CustomerDetailComponent implements OnInit {
   pretty(lat: number | null | undefined, lng: number | null | undefined): string {
     if (lat == null || lng == null) return 'Unknown location';
     return `${(+lat).toFixed(3)}, ${(+lng).toFixed(3)}`;
+  }
+
+  statusBucket(s: string | null | undefined): string {
+    switch (s) {
+      case 'COMPLETED': return 'completed';
+      case 'CANCELLED': return 'cancelled';
+      case 'NEGOTIATION':
+      case 'REQUESTED':
+      case 'CONFIRMED':  return 'pending';
+      default:           return 'ongoing';
+    }
+  }
+
+  statusDisplay(s: string | null | undefined): string {
+    return (s || '').replace(/_/g, ' ').toLowerCase() || '—';
   }
 
   /** Considered "stale" when the last location ping is older than 30 minutes. */

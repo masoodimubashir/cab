@@ -9,9 +9,15 @@ import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
+  ColumnComponent,
+  DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
+  InputComponent,
   ModalComponent,
+  StatusPillComponent,
 } from '../../ui';
 
 interface VehicleTypeOption {
@@ -58,7 +64,9 @@ const PROMO_TYPES = [
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonComponent, DrawerComponent, ModalComponent, IconComponent,
+    ButtonComponent, ColumnComponent, DataTableComponent,
+    DrawerComponent, FilterPillComponent, FilterSelectComponent,
+    IconComponent, InputComponent, ModalComponent, StatusPillComponent,
   ],
   template: `
     <div class="cp">
@@ -78,108 +86,109 @@ const PROMO_TYPES = [
         <p class="cue__text">Pick a city from the switcher in the top bar to manage coupons.</p>
       </div>
 
-      <ng-container *ngIf="cityId != null">
-        <div class="toolbar">
-          <label class="search">
-            <tm-icon name="search" [size]="14" />
-            <input
-              type="search"
-              placeholder="Search by title or subtitle"
-              [ngModel]="searchQuery"
-              (ngModelChange)="onSearchChange($event)"
-            />
-          </label>
-          <div class="toolbar__right">
-            <label class="toggle toggle--inline">
-              <input type="checkbox" [(ngModel)]="showInactive" (ngModelChange)="onFilterChange()" />
-              <span>Show inactive</span>
-            </label>
-            <select class="vfilter" [(ngModel)]="vehicleFilter" (ngModelChange)="onFilterChange()">
-              <option [ngValue]="null">All vehicles</option>
-              <option *ngFor="let v of vehicleOptions" [ngValue]="v.id">{{ v.display_name }}</option>
-            </select>
-          </div>
-        </div>
+      <tm-data-table
+        *ngIf="cityId != null"
+        [rows]="rows"
+        [total]="total"
+        [page]="currentPage"
+        [pageSize]="perPage"
+        [loading]="loading"
+        emptyTitle="No coupons found"
+        emptyHint="Try a different search, or clear the filters."
+        (pageChange)="onPage($event)"
+        (pageSizeChange)="onPageSize($event)"
+      >
+        <tm-input
+          slot="search"
+          icon="search"
+          placeholder="Search by title or subtitle"
+          [ngModel]="searchQuery"
+          (ngModelChange)="onSearchChange($event)"
+        />
 
-        <div class="table-wrap" *ngIf="rows.length; else empty">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Discount</th>
-                <th>Vehicles</th>
-                <th>Per-user</th>
-                <th>Location</th>
-                <th>Status</th>
-                <th class="num">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let r of rows">
-                <td>
-                  <div class="strong">{{ r.title }}</div>
-                  <div class="muted small" *ngIf="r.subtitle">{{ r.subtitle }}</div>
-                </td>
-                <td>
-                  {{ humanPromoType(r.promo_type) }}
-                  <span class="muted small" *ngIf="r.promo_type === 'location_sensitive' && r.location_type">
-                    · {{ r.location_type === 'pickup' ? 'Pickup' : 'Drop' }}
-                  </span>
-                </td>
-                <td class="strong">
-                  {{ r.discount_value }}{{ r.discount_type === 'percentage' ? '%' : '' }} off
-                  <span class="muted small" *ngIf="r.discount_maximum"> · max {{ r.discount_maximum }}</span>
-                </td>
-                <td>
-                  <span class="muted" *ngIf="!r.allowed_vehicle_type_ids?.length">All</span>
-                  <span class="tagx" *ngFor="let id of r.allowed_vehicle_type_ids">{{ vehicleName(id) }}</span>
-                </td>
-                <td>
-                  <span *ngIf="r.per_user_limit != null">{{ r.per_user_limit }}</span>
-                  <span class="muted" *ngIf="r.per_user_limit == null">∞</span>
-                </td>
-                <td>
-                  <span *ngIf="r.location_name; else noLoc"><tm-icon name="pin" [size]="11" /> {{ r.location_name }}</span>
-                  <ng-template #noLoc><span class="muted">—</span></ng-template>
-                </td>
-                <td>
-                  <span class="status" [class.on]="r.is_active" [class.off]="!r.is_active">
-                    {{ r.is_active ? 'Active' : 'Inactive' }}
-                  </span>
-                </td>
-                <td class="num actions">
-                  <button class="icon-btn" (click)="openGive(r)" aria-label="Give to users" title="Give to users">
-                    <tm-icon name="eye" [size]="14" />
-                  </button>
-                  <button class="icon-btn" (click)="openEdit(r)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>
-                  <button class="icon-btn icon-btn--danger" (click)="deleteTarget = r" aria-label="Delete"><tm-icon name="trash" [size]="14" /></button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ng-container slot="filters">
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Status filter"
+            allLabel="Active"
+            allValue="active"
+            [options]="statusOptions"
+            [value]="status"
+            (valueChange)="onStatusChange($event)"
+          />
+          <tm-filter-select
+            icon="car"
+            ariaLabel="Vehicle filter"
+            allLabel="All vehicles"
+            [options]="vehicleFilterOptions"
+            [value]="vehicleFilterValue"
+            (valueChange)="onVehicleFilterChange($event)"
+          />
+        </ng-container>
 
-        <div class="paginator" *ngIf="rows.length">
-          <span class="paginator__count">
-            Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }}
-          </span>
-          <div class="paginator__nav">
-            <button class="pg-btn" [disabled]="currentPage <= 1" (click)="goToPage(currentPage - 1)">Prev</button>
-            <span class="pg-page">Page {{ currentPage }} of {{ lastPage }}</span>
-            <button class="pg-btn" [disabled]="currentPage >= lastPage" (click)="goToPage(currentPage + 1)">Next</button>
-          </div>
-        </div>
+        <ng-container slot="banner">
+          <tm-filter-pill *ngIf="searchQuery.trim()" icon="search" label="Search" [value]="searchQuery" (clear)="clearSearch()" />
+          <tm-filter-pill *ngIf="status !== 'active'" icon="bolt" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+          <tm-filter-pill *ngIf="vehicleFilter != null" icon="car" label="Vehicle" [value]="vehicleName(vehicleFilter)" (clear)="clearVehicleFilter()" />
+        </ng-container>
 
-        <ng-template #empty>
-          <div class="cue">
-            <tm-icon name="tag" [size]="24" />
-            <p class="cue__title">No coupons found</p>
-            <p class="cue__text" *ngIf="searchQuery || showInactive || vehicleFilter">Try a different search or filter.</p>
-            <p class="cue__text" *ngIf="!searchQuery && !showInactive && !vehicleFilter">Create a coupon to offer riders a discount.</p>
-          </div>
-        </ng-template>
-      </ng-container>
+        <tm-column key="title" label="Title">
+          <ng-template let-row>
+            <div class="cell-id">
+              <span class="strong">{{ row.title }}</span>
+              <span class="muted small" *ngIf="row.subtitle">{{ row.subtitle }}</span>
+            </div>
+          </ng-template>
+        </tm-column>
+        <tm-column key="promo_type" label="Type" width="170">
+          <ng-template let-row>
+            {{ humanPromoType(row.promo_type) }}
+            <span class="muted small" *ngIf="row.promo_type === 'location_sensitive' && row.location_type">
+              · {{ row.location_type === 'pickup' ? 'Pickup' : 'Drop' }}
+            </span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="discount" label="Discount" width="160">
+          <ng-template let-row>
+            <span class="strong">{{ row.discount_value }}{{ row.discount_type === 'percentage' ? '%' : '' }} off</span>
+            <span class="muted small" *ngIf="row.discount_maximum"> · max {{ row.discount_maximum }}</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="vehicles" label="Vehicles" [wrap]="true">
+          <ng-template let-row>
+            <span class="muted" *ngIf="!row.allowed_vehicle_type_ids?.length">All</span>
+            <span class="tagx" *ngFor="let id of row.allowed_vehicle_type_ids">{{ vehicleName(id) }}</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="per_user_limit" label="Per-user" width="100">
+          <ng-template let-row>
+            <span *ngIf="row.per_user_limit != null">{{ row.per_user_limit }}</span>
+            <span class="muted" *ngIf="row.per_user_limit == null">∞</span>
+          </ng-template>
+        </tm-column>
+        <tm-column key="location" label="Location">
+          <ng-template let-row>
+            <span *ngIf="row.location_name; else noLoc" class="cell-loc"><tm-icon name="pin" [size]="12" /> {{ row.location_name }}</span>
+            <ng-template #noLoc><span class="muted">—</span></ng-template>
+          </ng-template>
+        </tm-column>
+        <tm-column key="status" label="Status" width="120">
+          <ng-template let-row>
+            <tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">
+              {{ row.is_active ? 'Active' : 'Inactive' }}
+            </tm-status-pill>
+          </ng-template>
+        </tm-column>
+        <tm-column key="actions" label="" width="130" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <button class="icon-btn" (click)="openGive(row)" aria-label="Give to users" title="Give to users"><tm-icon name="eye" [size]="14" /></button>
+              <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit coupon"><tm-icon name="edit" [size]="14" /></button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = row" aria-label="Delete coupon"><tm-icon name="trash" [size]="14" /></button>
+            </div>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
     </div>
 
     <!-- Drawer: create / edit coupon -->
@@ -399,12 +408,7 @@ const PROMO_TYPES = [
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
 
-    .toolbar {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 8px 10px; background: var(--tm-surface);
-      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md, 10px);
-    }
-    .toolbar__right { display: inline-flex; align-items: center; gap: 12px; }
+    /* search field — shared with the give-to-users modal */
     .search {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 7px 10px; min-width: 280px;
@@ -416,39 +420,14 @@ const PROMO_TYPES = [
       border: none; outline: none; background: transparent;
       color: var(--tm-text); font-size: 13px; flex: 1; min-width: 0;
     }
-    .vfilter {
-      padding: 7px 12px; border: 1px solid var(--tm-line); border-radius: 8px;
-      background: var(--tm-canvas); color: var(--tm-text); font-size: 13px;
-      font-family: inherit;
-    }
 
-    .table-wrap {
-      background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px); overflow: auto;
-    }
-    .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .table th, .table td {
-      padding: 10px 14px; text-align: left; vertical-align: middle;
-      border-bottom: 1px solid var(--tm-line);
-    }
-    .table thead th {
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-      font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-      border-bottom: 1px solid var(--tm-line);
-    }
-    .table tbody tr:last-child td { border-bottom: 0; }
-    .table tbody tr:hover { background: var(--tm-canvas-2); }
-    .table td.num { text-align: right; }
-    .table td.actions { white-space: nowrap; }
+    /* cell renderers */
+    .cell-id { display: flex; flex-direction: column; min-width: 0; }
+    .cell-loc { display: inline-flex; align-items: center; gap: 4px; }
+    .cell-actions { display: inline-flex; gap: 6px; }
     .strong { color: var(--tm-text); font-weight: 700; }
     .muted { color: var(--tm-text-muted); }
     .small { font-size: 11px; }
-    .status {
-      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-      padding: 3px 8px; border-radius: 999px;
-    }
-    .status.on { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .status.off { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .tagx {
       display: inline-flex; align-items: center; gap: 3px;
       font-size: 10px; font-weight: 700;
@@ -457,6 +436,7 @@ const PROMO_TYPES = [
       margin-right: 4px;
     }
 
+    /* paginator — used by the give-to-users modal's customer list */
     .paginator {
       display: flex; align-items: center; justify-content: space-between;
       gap: 12px; padding: 4px 2px;
@@ -469,13 +449,11 @@ const PROMO_TYPES = [
       color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer;
     }
     .pg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .pg-page { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
 
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 7px;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
-      margin-left: 4px;
+      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer; border: 0;
     }
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
@@ -559,14 +537,23 @@ export class CouponsComponent implements OnInit, OnDestroy {
 
   // Listing filters / pagination
   searchQuery = '';
-  showInactive = false;
+  status: 'active' | 'inactive' = 'active';
+  statusOptions = [{ label: 'Inactive', value: 'inactive' }];
   vehicleFilter: number | null = null;
+  loading = false;
   currentPage = 1;
   lastPage = 1;
   perPage = 10;
   total = 0;
   private search$ = new Subject<string>();
   private searchSub?: Subscription;
+
+  get vehicleFilterValue(): string {
+    return this.vehicleFilter == null ? 'all' : String(this.vehicleFilter);
+  }
+  get vehicleFilterOptions(): { label: string; value: string }[] {
+    return this.vehicleOptions.map((v) => ({ label: v.display_name ?? `#${v.id}`, value: String(v.id) }));
+  }
 
   open = false;
   editingId: number | null = null;
@@ -601,13 +588,6 @@ export class CouponsComponent implements OnInit, OnDestroy {
   private autocompleteListener: google.maps.MapsEventListener | null = null;
 
   private sub?: Subscription;
-
-  get rangeStart(): number {
-    return this.total === 0 ? 0 : (this.currentPage - 1) * this.perPage + 1;
-  }
-  get rangeEnd(): number {
-    return Math.min(this.currentPage * this.perPage, this.total);
-  }
 
   constructor(
     private api: ApiService,
@@ -656,15 +636,47 @@ export class CouponsComponent implements OnInit, OnDestroy {
     this.searchQuery = val;
     this.search$.next(val);
   }
-
-  onFilterChange(): void {
+  clearSearch(): void {
+    this.searchQuery = '';
     this.currentPage = 1;
     this.fetch();
   }
 
-  goToPage(page: number): void {
-    if (page < 1 || page > this.lastPage || page === this.currentPage) return;
+  statusLabel(): string {
+    return this.status === 'inactive' ? 'Inactive' : 'Active';
+  }
+  onStatusChange(value: string): void {
+    this.status = value as 'active' | 'inactive';
+    this.currentPage = 1;
+    this.fetch();
+  }
+  clearStatus(): void {
+    if (this.status === 'active') return;
+    this.status = 'active';
+    this.currentPage = 1;
+    this.fetch();
+  }
+
+  onVehicleFilterChange(value: string): void {
+    this.vehicleFilter = value === 'all' ? null : Number(value);
+    this.currentPage = 1;
+    this.fetch();
+  }
+  clearVehicleFilter(): void {
+    if (this.vehicleFilter == null) return;
+    this.vehicleFilter = null;
+    this.currentPage = 1;
+    this.fetch();
+  }
+
+  onPage(page: number): void {
+    if (page === this.currentPage) return;
     this.currentPage = page;
+    this.fetch();
+  }
+  onPageSize(size: number): void {
+    this.perPage = size;
+    this.currentPage = 1;
     this.fetch();
   }
 
@@ -686,11 +698,12 @@ export class CouponsComponent implements OnInit, OnDestroy {
   fetch(): void {
     if (this.cityId == null) return;
     const params = new URLSearchParams();
-    params.set('is_active', this.showInactive ? '0' : '1');
+    params.set('is_active', this.status === 'inactive' ? '0' : '1');
     if (this.searchQuery.trim()) params.set('q', this.searchQuery.trim());
     if (this.vehicleFilter != null) params.set('city_vehicle_type_id', String(this.vehicleFilter));
     params.set('page', String(this.currentPage));
     params.set('per_page', String(this.perPage));
+    this.loading = true;
     this.api
       .get<{
         data: CouponRow[];
@@ -706,8 +719,12 @@ export class CouponsComponent implements OnInit, OnDestroy {
             this.perPage = meta.per_page;
             this.total = meta.total;
           }
+          this.loading = false;
         },
-        error: () => this.toast.error('Failed to load coupons'),
+        error: () => {
+          this.loading = false;
+          this.toast.error('Failed to load coupons');
+        },
       });
   }
 
