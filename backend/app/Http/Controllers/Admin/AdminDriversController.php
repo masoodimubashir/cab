@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Models\Driver;
 use App\Models\DriverDocument;
 use App\Models\Trip;
+use App\Models\User;
+use App\Models\WalletTransaction;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +16,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminDriversController
 {
+    public function __construct(
+        private readonly WalletService $walletService,
+    ) {
+    }
+
     /**
      * Lists drivers for the admin panel.
      *
@@ -253,6 +261,149 @@ class AdminDriversController
             ],
             'documents' => $docs,
         ]);
+    }
+
+    /**
+     * Driver dashboard profile for the admin detail page. Mirrors the customer
+     * `show()` shape but with driver-specific fields (vehicle, rating, online,
+     * approval). Wallet, referrals and rides all hang off the driver's user
+     * account (trips.driver_id points to users.id).
+     */
+    public function profile(Driver $driver)
+    {
+        $driver->load([
+            'user.referrer:id,name,referral_code',
+            'rideType:id,name',
+            'vehicleTypeRef:id,name',
+            'city:id,name',
+        ]);
+
+        $user = $driver->user;
+
+        $totalRides = Trip::query()
+            ->where('driver_id', $driver->user_id)
+            ->where('status', 'COMPLETED')
+            ->count();
+
+        return response()->json([
+            'driver' => [
+                'id' => $driver->id,
+                'user_id' => $driver->user_id,
+                'name' => $user?->name,
+                'phone' => $user?->phone,
+                'email' => $user?->email,
+                'avatar_path' => $user?->avatar_path,
+                'avatar_url' => $this->avatarUrl($user?->avatar_path),
+                'dob' => $user?->dob,
+                'address' => $user?->address,
+                'date_registered' => optional($driver->created_at)->toIso8601String(),
+                'last_login_at' => optional($user?->last_login_at)->toIso8601String(),
+                'app_version' => $user?->app_version,
+                'os_version' => $user?->os_version,
+                'device_type' => $user?->device_type,
+                'ride_type_name' => $driver->rideType?->name,
+                'vehicle_type_name' => $driver->vehicleTypeRef?->name,
+                'vehicle_type' => $driver->vehicle_type,
+                'vehicle_brand' => $driver->vehicle_brand,
+                'vehicle_model' => $driver->vehicle_model,
+                'vehicle_color' => $driver->vehicle_color,
+                'vehicle_reg_no' => $driver->vehicle_reg_no,
+                'city_name' => $driver->city?->name,
+                'approval_status' => $driver->approval_status,
+                'is_online' => $driver->isOnlineFresh(),
+                'is_active' => $driver->deactivated_at === null,
+                'deactivated_at' => optional($driver->deactivated_at)->toIso8601String(),
+                'deactivated_reason' => $driver->deactivated_reason,
+                'rating_avg' => $driver->rating_avg,
+                'rating_count' => $driver->rating_count,
+                'referral_code' => $user?->referral_code,
+                'referrer' => $user?->referrer ? [
+                    'id' => $user->referrer->id,
+                    'name' => $user->referrer->name,
+                    'referral_code' => $user->referrer->referral_code,
+                ] : null,
+                'wallet_balance' => $user ? $this->walletService->balance($user) : 0,
+                'total_rides' => $totalRides,
+                'current_lat' => $user?->current_lat,
+                'current_lng' => $user?->current_lng,
+                'current_location_updated_at' => $user?->current_location_updated_at,
+            ],
+        ]);
+    }
+
+    public function rides(Driver $driver)
+    {
+        $rows = Trip::query()
+            ->where('driver_id', $driver->user_id)
+            ->where('status', '!=', 'CANCELLED')
+            ->with(['customer:id,name', 'rideType:id,name'])
+            ->orderByDesc('created_at')
+            ->paginate(50);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function cancelledRides(Driver $driver)
+    {
+        $rows = Trip::query()
+            ->where('driver_id', $driver->user_id)
+            ->where('status', 'CANCELLED')
+            ->with(['customer:id,name', 'rideType:id,name'])
+            ->orderByDesc('created_at')
+            ->paginate(50);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function walletTransactions(Driver $driver)
+    {
+        $rows = WalletTransaction::query()
+            ->where('user_id', $driver->user_id)
+            ->with(['createdBy:id,name'])
+            ->orderByDesc('created_at')
+            ->paginate(50);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function creditDebit(Request $request, Driver $driver)
+    {
+        $user = $driver->user;
+        if (!$user) {
+            return response()->json(['message' => 'Driver has no user account.'], 422);
+        }
+
+        $data = $request->validate([
+            'type' => ['required', 'in:credit,debit,cashback,driver_added_cash'],
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'engagement_id' => ['nullable', 'integer', 'exists:trips,id'],
+        ]);
+
+        $txn = $this->walletService->recordTransaction(
+            user: $user,
+            type: $data['type'],
+            amount: (float) $data['amount'],
+            reason: $data['reason'] ?? null,
+            tripId: $data['engagement_id'] ?? null,
+            by: $request->user(),
+        );
+
+        return response()->json([
+            'transaction' => $txn,
+            'wallet_balance' => $this->walletService->balance($user),
+        ], 201);
+    }
+
+    public function referrals(Driver $driver)
+    {
+        $rows = User::query()
+            ->where('referred_by_user_id', $driver->user_id)
+            ->select(['id', 'name', 'phone', 'email', 'created_at'])
+            ->orderByDesc('created_at')
+            ->paginate(50);
+
+        return response()->json(['data' => $rows]);
     }
 
     /**

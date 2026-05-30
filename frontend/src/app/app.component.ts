@@ -41,6 +41,7 @@ export class AppComponent implements OnInit {
     [/^\/promotions\/city-wide/,    'City Wide Promotions'],
     [/^\/promotions\/promo-codes/,  'Promo Codes'],
     [/^\/promotions\/coupons/,      'Coupons'],
+    [/^\/subscriptions/,            'Subscriptions'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -70,6 +71,7 @@ export class AppComponent implements OnInit {
     /^\/pricing\b/,
     /^\/vehicle-fares\b/,
     /^\/promotions\/(city-wide|promo-codes|coupons)\b/,
+    /^\/subscriptions\b/,
     /^\/settings\/(city|fleets|vehicle-types)\b/,
   ];
 
@@ -119,14 +121,19 @@ export class AppComponent implements OnInit {
       xs.filter((x): x is NavItem => !!x);
 
     // Sidebar groups follow the city onboarding workflow:
+    //   Home        → Dashboard, pinned above everything else
     //   City Setup  → configure a city (dependency-ordered)
     //   Operations  → run the city day-to-day
     //   Insights    → analytics & reports
     //   Platform    → global, not city-scoped
+    const home: NavItem[] = [];
     const citySetup: NavItem[] = [];
     const operations: NavItem[] = [];
     const insights: NavItem[] = [];
     const platform: NavItem[] = [];
+
+    // --- Home (top of nav, no section header) ---
+    if (can('dashboard.view')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
     // --- City Setup (dependency order) ---
     citySetup.push({ label: 'City Workspace', icon: 'map-marker', route: '/city' });
@@ -147,20 +154,13 @@ export class AppComponent implements OnInit {
       });
     }
 
+    if (canAny(['subscriptions.manage', 'settings.manage']))
+                                       citySetup.push({ label: 'Subscriptions', icon: 'star', route: '/subscriptions' });
+
     if (can('fleets.manage')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
 
     // --- Operations ---
-    if (can('dashboard.view')) operations.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
-
-    if (canAny(['trips.view','rides.map','rides.dispatch'])) {
-      operations.push({
-        label: 'Rides', icon: 'road',
-        children: filterTruthy([
-          can('trips.view') && { label: 'All Rides', icon: 'car', route: '/rides/all' },
-          can('rides.map')  && { label: 'Map View',  icon: 'map', route: '/rides/map' },
-        ]),
-      });
-    }
+    if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
 
     if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 
@@ -199,6 +199,7 @@ export class AppComponent implements OnInit {
     if (can('roles.manage'))    platform.push({ label: 'Roles & Permissions', icon: 'shield', route: '/roles-permissions' });
 
     return [
+      { items: home },                            // unlabeled — sits at the very top
       { label: 'City Setup', items: citySetup },
       { label: 'Operations', items: operations },
       { label: 'Insights',   items: insights },
