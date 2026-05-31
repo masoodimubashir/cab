@@ -253,22 +253,60 @@
         </div>
       </div>
 
-      <!-- Fare Summary (moved from the eliminated Vehicle step) -->
-      <div class="fare-summary" *ngIf="estimate?.estimated_fare != null">
-        <div class="fare-brand-info">
-          <small>Estimated fare · any available vehicle</small>
-          <h2>₹{{ estimate?.estimated_fare }}</h2>
-        </div>
-        <div *ngIf="estimate?.distance_km != null" class="fare-route-details">
-          <div class="route-detail-item">
-            <ion-icon name="map-outline" aria-hidden="true"></ion-icon>
-            <span>{{ estimate?.distance_km }} km</span>
+      <!-- Payment Method Selection Grid -->
+      <div class="payment-grid">
+        <button type="button" 
+          class="payment-card" 
+          [class.active]="selectedPaymentMode === 'cash'"
+          (click)="selectPaymentMode('cash')">
+          <div class="pay-icon-circle">
+            <ion-icon name="cash-outline"></ion-icon>
           </div>
-          <div class="route-detail-item">
-            <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
-            <span>{{ estimate?.time_min }} min</span>
+          <div class="pay-info">
+            <span class="pay-title">Cash</span>
+            <span class="pay-desc">Pay directly to driver</span>
           </div>
+          <div class="pay-select-dot"></div>
+        </button>
+
+        <button type="button" 
+          class="payment-card" 
+          [class.active]="selectedPaymentMode === 'razorpay'"
+          (click)="selectPaymentMode('razorpay')">
+          <div class="pay-icon-circle">
+            <ion-icon name="card-outline"></ion-icon>
+          </div>
+          <div class="pay-info">
+            <span class="pay-title">Online Payment</span>
+            <span class="pay-desc">Pay securely using UPI or Card</span>
+          </div>
+          <div class="pay-select-dot"></div>
+        </button>
+      </div>
+
+      <!-- Coupon Application Section -->
+      <div class="promo-section">
+        <div class="promo-input-wrapper">
+          <ion-icon name="pricetag-outline" class="promo-icon"></ion-icon>
+          <input 
+            type="text" 
+            placeholder="Enter Coupon Code" 
+            class="promo-input" 
+            [(ngModel)]="couponInput"
+            [disabled]="couponApplying || !!couponPreview"
+            (keyup.enter)="applyCoupon()"
+          />
+          <button type="button" 
+            class="promo-apply-btn" 
+            [disabled]="couponApplying || (!couponPreview && !couponInput?.trim())"
+            (click)="applyCoupon()">
+            {{ couponApplying ? '...' : (couponPreview ? 'Remove' : 'Apply') }}
+          </button>
         </div>
+        <small *ngIf="couponPreview" class="input-error-msg show" style="color: var(--ion-color-primary, #12B35B); max-height: unset; opacity: 1;">
+          ✓ {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
+        </small>
+        <small *ngIf="couponError" class="input-error-msg show" style="max-height: unset; opacity: 1;">{{ couponError }}</small>
       </div>
 
       <div class="outside-banner" *ngIf="outsideServiceAreaNotice">
@@ -289,7 +327,7 @@
       </div>
 
       <!-- Reusable, read-only location card for seamless visual flow -->
-      <div class="route-editor-card read-only">
+      <div class="route-editor-card read-only premium-elevation">
         <div class="route-line-connector">
           <div class="dot-pickup dark"></div>
           <div class="line-solid"></div>
@@ -311,73 +349,87 @@
         </div>
       </div>
 
-      <!-- Fare Summary Display -->
-      <div class="fare-summary" *ngIf="estimate?.estimated_fare != null">
-        <div class="fare-brand-info">
-          <small>Estimated fare</small>
-          <h2>₹{{ estimate?.estimated_fare }}</h2>
-        </div>
-        <div *ngIf="estimate?.distance_km != null" class="fare-route-details">
-          <div class="route-detail-item">
-            <ion-icon name="map-outline" aria-hidden="true"></ion-icon>
-            <span>{{ estimate?.distance_km }} km</span>
+      <div class="drivers-section-header">
+        <h3 class="drivers-heading">
+          Drivers found
+          <span *ngIf="dispatchRing" class="drivers-ring-meta">
+            · hop {{ dispatchRing.hop }}/{{ dispatchRing.max_hops }} · {{ dispatchRing.radius_m }} m
+          </span>
+        </h3>
+        <p class="drivers-subhint" *ngIf="!dispatchRing && !drivers.length">
+          Tap <strong>Search drivers</strong> to look for available drivers around you.
+        </p>
+        <p class="drivers-subhint" *ngIf="dispatchRing && searching">
+          Searching… ring expanding every {{ dispatchRing.hop_interval_sec || 5 }} s.
+        </p>
+        <p class="drivers-subhint" *ngIf="!searching && drivers.length">
+          Pick a driver to send your request.
+        </p>
+      </div>
+
+      <!-- Premium radar-like searching container -->
+      <div *ngIf="searching && !drivers.length" class="radar-search-container">
+        <div class="radar-scanner">
+          <div class="radar-sweep"></div>
+          <div class="radar-dot dot-a"></div>
+          <div class="radar-dot dot-b"></div>
+          <div class="radar-circle circle-1"></div>
+          <div class="radar-circle circle-2"></div>
+          <div class="radar-circle circle-3"></div>
+          <div class="radar-icon-center">
+            <ion-icon name="navigate"></ion-icon>
           </div>
-          <div class="route-detail-item">
-            <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
-            <span>{{ estimate?.time_min }} min</span>
-          </div>
         </div>
+        <p class="radar-status-text">Scanning for matching drivers nearby…</p>
       </div>
 
-      <h3 class="drivers-heading">
-        Drivers found
-        <span *ngIf="dispatchRing" class="drivers-ring-meta">
-          · hop {{ dispatchRing.hop }}/{{ dispatchRing.max_hops }} · {{ dispatchRing.radius_m }} m
-        </span>
-      </h3>
-      <p class="drivers-subhint" *ngIf="!dispatchRing && !drivers.length">
-        Tap <strong>Search drivers</strong> to look for available drivers around you.
-      </p>
-      <p class="drivers-subhint" *ngIf="dispatchRing && searching">
-        Searching… ring expanding every {{ dispatchRing.hop_interval_sec || 5 }} s.
-      </p>
-      <p class="drivers-subhint" *ngIf="!searching && drivers.length">
-        Pick a driver to send your request.
-      </p>
-
-      <div *ngIf="searching && !drivers.length" class="drivers-empty">
-        Searching for drivers…
-      </div>
-      <div *ngIf="!searching && !drivers.length && dispatchRing" class="drivers-empty">
-        No drivers found within {{ dispatchRing.radius_m }} m. Try again later.
+      <div *ngIf="!searching && !drivers.length && dispatchRing" class="drivers-empty premium-box">
+        <ion-icon name="alert-circle-outline"></ion-icon>
+        <p>No drivers found within {{ dispatchRing.radius_m }} m. Try again later.</p>
       </div>
 
-      <ion-list lines="full" class="drivers-list" *ngIf="drivers.length">
-        <ion-item *ngFor="let d of drivers">
-          <ion-icon name="person-circle-outline" slot="start" aria-hidden="true"></ion-icon>
-          <ion-label class="ion-text-wrap">
-            <h3>{{ d.name || 'Driver' }}</h3>
-            <p>
+      <div class="drivers-list" *ngIf="drivers.length">
+        <div *ngFor="let d of drivers" class="driver-card premium-card">
+          <div class="driver-icon-circle-wrapper">
+            <div class="driver-icon-circle">
+              <ion-icon name="person" aria-hidden="true"></ion-icon>
+            </div>
+            <span *ngIf="d.rating_avg" class="rating-badge-pill">
+              <ion-icon name="star"></ion-icon>
+              <span>{{ d.rating_avg }}</span>
+            </span>
+          </div>
+          <div class="driver-info">
+            <div class="driver-header-row">
+              <span class="driver-name">{{ d.name || 'Driver' }}</span>
+            </div>
+            <span class="driver-vehicle">
+              <ion-icon name="car-outline" class="meta-icon" aria-hidden="true"></ion-icon>
               {{ d.vehicle?.brand || d.vehicle || '' }} {{ d.vehicle?.model }}
               <span *ngIf="d.vehicle?.color"> · {{ d.vehicle?.color }}</span>
-            </p>
-            <small>
-              {{ d.distance_km }} km
-              <span *ngIf="d.eta_min != null"> · {{ d.eta_min }} min</span>
-              away
-              <span *ngIf="d.rating_avg"> · ★ {{ d.rating_avg }}</span>
-            </small>
-          </ion-label>
-          <ion-button slot="end" size="small" (click)="confirmRequest(d)" [disabled]="loading">
-            Request
-          </ion-button>
-        </ion-item>
-      </ion-list>
+            </span>
+            <div class="driver-meta">
+              <span class="meta-badge distance">
+                <ion-icon name="navigate-outline" aria-hidden="true"></ion-icon>
+                <span>{{ d.distance_km }} km</span>
+              </span>
+              <span *ngIf="d.eta_min != null" class="meta-badge eta">
+                <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
+                <span>{{ d.eta_min }} min</span>
+              </span>
+            </div>
+          </div>
+          <button type="button" class="request-btn-premium" (click)="confirmRequest(d)" [disabled]="loading">
+            <span>Request</span>
+            <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
+          </button>
+        </div>
+      </div>
 
       <div class="action-footer">
         <button class="action-btn-back" (click)="state = 'payment'">Back</button>
         <button
-          class="action-btn-continue"
+          class="action-btn-continue search-pulse-cta"
           (click)="searchDrivers()"
           [disabled]="!estimate?.estimated_fare || searching"
         >
@@ -402,19 +454,24 @@
     </div>
 
     <!-- WAITING: chosen driver hasn't responded yet -->
-    <div *ngSwitchCase="'waiting'" class="sheet-searching">
+    <div *ngSwitchCase="'waiting'" class="sheet-searching premium-searching-sheet">
       <div class="searching-head">
-        <span *ngIf="!dispatchRing">Waiting for the driver to accept…</span>
-        <span *ngIf="dispatchRing">
-          <span class="search-pulse" aria-hidden="true"></span>
+        <span *ngIf="!dispatchRing" class="searching-text">
+          <span class="search-pulse-dot"></span>
+          Waiting for the driver to accept…
+        </span>
+        <span *ngIf="dispatchRing" class="searching-text">
+          <span class="search-pulse-dot"></span>
           Searching nearby drivers…
         </span>
         <span class="timer">0:{{ searchSecondsLeft.toString().padStart(2, '0') }}</span>
       </div>
-      <ion-progress-bar [value]="searchSecondsLeft / 60"></ion-progress-bar>
+      <div class="progress-bar-wrapper">
+        <ion-progress-bar [value]="searchSecondsLeft / 60" class="premium-progress-line"></ion-progress-bar>
+      </div>
 
       <!-- Live expanding-ring readout -->
-      <div *ngIf="dispatchRing" class="dispatch-ring">
+      <div *ngIf="dispatchRing" class="dispatch-ring-premium">
         <div class="ring-row">
           <span class="ring-label">Radius</span>
           <span class="ring-value">{{ dispatchRing.radius_m }} m</span>
@@ -429,21 +486,19 @@
         </div>
       </div>
 
-      <p class="searching-hint">
+      <p class="searching-hint-premium">
         Your request was sent. They’ll either accept the fare or send you a counter-offer.
       </p>
 
-      <ion-button
+      <button
         *ngIf="showFindAnother"
-        expand="block"
-        fill="outline"
-        color="primary"
+        class="btn-find-another"
         (click)="findAnotherDriver()"
       >
         Find another driver
-      </ion-button>
+      </button>
 
-      <ion-button expand="block" fill="clear" color="medium" (click)="cancelRequest()">Cancel request</ion-button>
+      <button type="button" class="btn-cancel-request" (click)="cancelRequest()">Cancel request</button>
     </div>
 
     <!-- BIDS: driver countered the fare -->

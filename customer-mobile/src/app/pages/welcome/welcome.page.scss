@@ -74,6 +74,8 @@ ion-content {
     max-width: 100%;
     max-height: 350px;
     object-fit: contain;
+    border-radius: var(--radius-lg, 16px);
+    box-shadow: 0 8px 24px rgba(13, 27, 42, 0.12);
   }
   
   // Fallback styling if image is missing
