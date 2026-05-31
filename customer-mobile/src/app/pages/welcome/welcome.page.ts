@@ -30,16 +30,6 @@ export class WelcomePage implements OnInit {
     this.router.navigate(['/auth/login']);
   }
 
-  loginGoogle() {
-    // Implement Google login
-    console.log('Google login clicked');
-  }
-
-  loginFacebook() {
-    // Implement Facebook login
-    console.log('Facebook login clicked');
-  }
-
   goToTerms() {
     console.log('Navigate to Terms');
   }
