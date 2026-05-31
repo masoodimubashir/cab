@@ -45,24 +45,75 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   otp = '';
   otpLength = 6; // Dynamic OTP length matching backend/Firebase configuration
   otpInputFocused = false;
+  phoneInputFocused = false;
 
-  // Country prefix (default India). The picker on the phone-entry step writes
-  // here; sendOtp passes country.code to normalizePhoneToE164 as the default.
   countries: Array<{ name: string; code: string; flag: string; iso: string }> = [
-    { name: 'India',         code: '91',  flag: '🇮🇳', iso: 'IN' },
-    { name: 'United States', code: '1',   flag: '🇺🇸', iso: 'US' },
-    { name: 'United Kingdom',code: '44',  flag: '🇬🇧', iso: 'GB' },
-    { name: 'UAE',           code: '971', flag: '🇦🇪', iso: 'AE' },
-    { name: 'Saudi Arabia',  code: '966', flag: '🇸🇦', iso: 'SA' },
-    { name: 'Singapore',     code: '65',  flag: '🇸🇬', iso: 'SG' },
-    { name: 'Australia',     code: '61',  flag: '🇦🇺', iso: 'AU' },
-    { name: 'Canada',        code: '1',   flag: '🇨🇦', iso: 'CA' },
-    { name: 'Bangladesh',    code: '880', flag: '🇧🇩', iso: 'BD' },
-    { name: 'Pakistan',      code: '92',  flag: '🇵🇰', iso: 'PK' },
-    { name: 'Sri Lanka',     code: '94',  flag: '🇱🇰', iso: 'LK' },
-    { name: 'Nepal',         code: '977', flag: '🇳🇵', iso: 'NP' },
+    { name: 'Algeria',        code: '213', flag: '🇩🇿', iso: 'DZ' },
+    { name: 'Argentina',      code: '54',  flag: '🇦🇷', iso: 'AR' },
+    { name: 'Australia',      code: '61',  flag: '🇦🇺', iso: 'AU' },
+    { name: 'Austria',        code: '43',  flag: '🇦🇹', iso: 'AT' },
+    { name: 'Bahrain',        code: '973', flag: '🇧🇭', iso: 'BH' },
+    { name: 'Bangladesh',     code: '880', flag: '🇧🇩', iso: 'BD' },
+    { name: 'Belgium',        code: '32',  flag: '🇧🇪', iso: 'BE' },
+    { name: 'Brazil',         code: '55',  flag: '🇧🇷', iso: 'BR' },
+    { name: 'Canada',         code: '1',   flag: '🇨🇦', iso: 'CA' },
+    { name: 'Chile',          code: '56',  flag: '🇨🇱', iso: 'CL' },
+    { name: 'China',          code: '86',  flag: '🇨🇳', iso: 'CN' },
+    { name: 'Colombia',       code: '57',  flag: '🇨🇴', iso: 'CO' },
+    { name: 'Denmark',        code: '45',  flag: '🇩🇰', iso: 'DK' },
+    { name: 'Egypt',          code: '20',  flag: '🇪🇬', iso: 'EG' },
+    { name: 'Finland',        code: '358', flag: '🇫🇮', iso: 'FI' },
+    { name: 'France',         code: '33',  flag: '🇫🇷', iso: 'FR' },
+    { name: 'Germany',        code: '49',  flag: '🇩🇪', iso: 'DE' },
+    { name: 'Greece',         code: '30',  flag: '🇬🇷', iso: 'GR' },
+    { name: 'Hong Kong',      code: '852', flag: '🇭🇰', iso: 'HK' },
+    { name: 'Hungary',        code: '36',  flag: '🇭🇺', iso: 'HU' },
+    { name: 'India',          code: '91',  flag: '🇮🇳', iso: 'IN' },
+    { name: 'Indonesia',      code: '62',  flag: '🇮🇩', iso: 'ID' },
+    { name: 'Iran',           code: '98',  flag: '🇮🇷', iso: 'IR' },
+    { name: 'Iraq',           code: '964', flag: '🇮🇶', iso: 'IQ' },
+    { name: 'Ireland',        code: '353', flag: '🇮🇪', iso: 'IE' },
+    { name: 'Israel',         code: '972', flag: '🇮🇱', iso: 'IL' },
+    { name: 'Italy',          code: '39',  flag: '🇮🇹', iso: 'IT' },
+    { name: 'Japan',          code: '81',  flag: '🇯🇵', iso: 'JP' },
+    { name: 'Jordan',         code: '962', flag: '🇯🇴', iso: 'JO' },
+    { name: 'Kenya',          code: '254', flag: '🇰🇪', iso: 'KE' },
+    { name: 'Kuwait',         code: '965', flag: '🇰🇼', iso: 'KW' },
+    { name: 'Malaysia',       code: '60',  flag: '🇲🇾', iso: 'MY' },
+    { name: 'Mexico',         code: '52',  flag: '🇲🇽', iso: 'MX' },
+    { name: 'Morocco',        code: '212', flag: '🇲🇦', iso: 'MA' },
+    { name: 'Nepal',          code: '977', flag: '🇳🇵', iso: 'NP' },
+    { name: 'Netherlands',    code: '31',  flag: '🇳🇱', iso: 'NL' },
+    { name: 'New Zealand',    code: '64',  flag: '🇳🇿', iso: 'NZ' },
+    { name: 'Nigeria',        code: '234', flag: '🇳🇬', iso: 'NG' },
+    { name: 'Norway',         code: '47',  flag: '🇳🇴', iso: 'NO' },
+    { name: 'Oman',           code: '968', flag: '🇴🇲', iso: 'OM' },
+    { name: 'Pakistan',       code: '92',  flag: '🇵🇰', iso: 'PK' },
+    { name: 'Peru',           code: '51',  flag: '🇵🇪', iso: 'PE' },
+    { name: 'Philippines',    code: '63',  flag: '🇵🇭', iso: 'PH' },
+    { name: 'Poland',         code: '48',  flag: '🇵🇱', iso: 'PL' },
+    { name: 'Portugal',       code: '351', flag: '🇵🇹', iso: 'PT' },
+    { name: 'Qatar',          code: '974', flag: '🇶🇦', iso: 'QA' },
+    { name: 'Romania',        code: '40',  flag: '🇷🇴', iso: 'RO' },
+    { name: 'Russia',         code: '7',   flag: '🇷🇺', iso: 'RU' },
+    { name: 'Saudi Arabia',   code: '966', flag: '🇸🇦', iso: 'SA' },
+    { name: 'Singapore',      code: '65',  flag: '🇸🇬', iso: 'SG' },
+    { name: 'South Africa',   code: '27',  flag: '🇿🇦', iso: 'ZA' },
+    { name: 'South Korea',    code: '82',  flag: '🇰🇷', iso: 'KR' },
+    { name: 'Spain',          code: '34',  flag: '🇪🇸', iso: 'ES' },
+    { name: 'Sri Lanka',      code: '94',  flag: '🇱🇰', iso: 'LK' },
+    { name: 'Sweden',         code: '46',  flag: '🇸🇪', iso: 'SE' },
+    { name: 'Switzerland',    code: '41',  flag: '🇨🇭', iso: 'CH' },
+    { name: 'Taiwan',         code: '886', flag: '🇹🇼', iso: 'TW' },
+    { name: 'Thailand',       code: '66',  flag: '🇹🇭', iso: 'TH' },
+    { name: 'Turkey',         code: '90',  flag: '🇹🇷', iso: 'TR' },
+    { name: 'UAE',            code: '971', flag: '🇦🇪', iso: 'AE' },
+    { name: 'Ukraine',        code: '380', flag: '🇺🇦', iso: 'UA' },
+    { name: 'United Kingdom', code: '44',  flag: '🇬🇧', iso: 'GB' },
+    { name: 'United States',  code: '1',   flag: '🇺🇸', iso: 'US' },
+    { name: 'Vietnam',        code: '84',  flag: '🇻🇳', iso: 'VN' },
   ];
-  country = this.countries[0]; // India by default
+  country = this.countries.find(c => c.iso === 'IN') || this.countries[0]; // Default to India
   showCountryPicker = false;
 
   infoName = '';
@@ -240,7 +291,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
 
   isButtonDisabled(): boolean {
     if (this.step === 'phone') {
-      return !this.firebaseReady || !this.phone || this.phone.trim().length < 8;
+      return !this.firebaseReady || !this.phone || this.phone.trim().length !== 10;
     }
     if (this.step === 'perms') {
       return false;
@@ -305,8 +356,12 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   // Step 1 → 2: validate phone, then show permissions disclosure.
   proceedToPerms(): void {
     this.error = null;
+    if (!this.phone || this.phone.trim().length !== 10) {
+      this.error = 'Enter a valid 10-digit mobile number.';
+      return;
+    }
     const normalized = normalizePhoneToE164(this.phone, this.country.code);
-    if (!normalized || normalized.length < 8) {
+    if (!normalized) {
       this.error = 'Enter a valid mobile number for the selected country.';
       return;
     }

@@ -57,29 +57,36 @@
       
       <!-- STEP 1: PHONE ENTRY -->
       <div class="step-slide" *ngIf="step === 'phone'">
-        <div class="phone-form-row">
-          <!-- Country Select -->
-          <div class="input-container country-container" (click)="showCountryPicker = true" [class.disabled]="loading">
-            <label>Country</label>
-            <div class="country-value">
-              <span class="flag">{{ country.flag }}</span>
-              <span class="code">+{{ country.code }}</span>
-              <ion-icon name="chevron-down-outline"></ion-icon>
-            </div>
+        <label class="phone-entry-label">Verify Your Mobile Number</label>
+        
+        <!-- Single Unified Premium Card Input -->
+        <div class="phone-unified-card">
+          
+          <!-- Left Side: Country Picker trigger -->
+          <div class="country-inline" (click)="showCountryPicker = true" [class.disabled]="loading">
+            <span class="flag">{{ country.flag }}</span>
+            <span class="code">+{{ country.code }}</span>
+            <ion-icon name="chevron-down-outline"></ion-icon>
           </div>
-
-          <!-- Phone Input -->
-          <div class="input-container phone-container">
-            <label>Phone Number</label>
-            <ion-input
+          
+          <!-- Thin vertical divider between Country and Number -->
+          <div class="card-vertical-divider"></div>
+          
+          <!-- Right Side: Standard Input with Custom Caret and Letter Spacing -->
+          <div class="phone-input-wrap">
+            <input
               type="tel"
-              inputmode="tel"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="10"
               [(ngModel)]="phone"
               [disabled]="loading"
+              class="premium-phone-input"
+              placeholder="0000000000"
               autocomplete="tel"
-              class="custom-phone-input"
-            ></ion-input>
+            />
           </div>
+          
         </div>
       </div>
 
@@ -301,38 +308,36 @@
   <ion-modal 
     [isOpen]="showCountryPicker" 
     (didDismiss)="showCountryPicker = false"
-    [initialBreakpoint]="0.75" 
-    [breakpoints]="[0, 0.75, 0.95]"
-    class="modern-bottom-sheet"
+    class="fixed-bottom-sheet"
   >
     <ng-template>
       <div class="sheet-header">
-        <div class="drag-handle"></div>
         <h2>Select Country</h2>
       </div>
-      <ion-content class="no-scrollbar">
+      <ion-content class="scrollable-country-list">
         <div class="country-list">
-          <ng-container *ngFor="let c of countries">
-            <!-- Selected Item -->
-            <div 
-              *ngIf="c.iso === country.iso"
-              class="selected-country"
-              (click)="pickCountry(c)"
-            >
-              <div class="country-left">
-                <span class="iso-badge selected">{{ c.iso }}</span>
-                <span class="country-name">{{ c.name }}</span>
-              </div>
-              <div class="country-right">
-                <span class="country-code">+{{ c.code }}</span>
-                <!-- Checkmark Icon -->
-                <svg class="check-icon" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                </svg>
-              </div>
+          <!-- Section 1: Selected Country -->
+          <div class="country-section-header">Currently Selected</div>
+          <div 
+            class="selected-country"
+            (click)="pickCountry(country)"
+          >
+            <div class="country-left">
+              <span class="iso-badge selected">{{ country.iso }}</span>
+              <span class="country-name">{{ country.name }}</span>
             </div>
-            
-            <!-- Other Countries -->
+            <div class="country-right">
+              <span class="country-code">+{{ country.code }}</span>
+              <!-- Checkmark Icon -->
+              <svg class="check-icon" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+              </svg>
+            </div>
+          </div>
+          
+          <!-- Section 2: All Other Countries -->
+          <div class="country-section-header margin-top-sm">All Countries</div>
+          <ng-container *ngFor="let c of countries">
             <div 
               *ngIf="c.iso !== country.iso"
               class="country-item"
