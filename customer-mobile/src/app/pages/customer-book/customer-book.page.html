@@ -2,7 +2,7 @@
   <div id="ride-map" class="ride-map"></div>
 
   <!-- Reverted Top Overlay: Restored original menu and location bar exactly as before -->
-  <div class="top-overlay" *ngIf="state === 'idle' || state === 'preview'">
+  <div class="top-overlay" *ngIf="state === 'idle'">
     <div class="nav-pill menu-btn">
       <ion-menu-button menu="customer-menu"></ion-menu-button>
     </div>
@@ -18,6 +18,11 @@
     </div>
   </div>
 
+  <!-- Recenter the map on my live location (just pans the map; pickup unchanged) -->
+  <button class="recenter-fab" *ngIf="state === 'idle'" (click)="recenterOnMe()" aria-label="Center map on my location">
+    <ion-icon name="locate"></ion-icon>
+  </button>
+
   <!-- Floating context bar during map selection mode -->
   <div class="floating-context-bar" *ngIf="state === 'map-select'">
     <div class="context-icon-circle" [class.pickup]="activeSearchField === 'pickup'">
@@ -30,23 +35,23 @@
   </div>
 
   <!-- Floating Premium Step Progress Header (Route → Payment → Match) -->
-  <div class="floating-step-progress" *ngIf="state === 'route' || state === 'payment' || state === 'preview'">
+  <div class="floating-step-progress" *ngIf="state === 'pickup' || state === 'drop' || state === 'find-driver' || state === 'offer'">
     <div class="step-progress-header">
-      <div class="step-item" [class.active]="state === 'route'" [class.completed]="state !== 'route'">
+      <div class="step-item" [class.active]="state === 'pickup'" [class.completed]="state !== 'pickup'">
         <span class="step-number">1</span>
-        <span class="step-label">Route</span>
+        <span class="step-label">Pickup</span>
       </div>
-      <div class="step-line" [class.completed]="state !== 'route'"></div>
+      <div class="step-line" [class.completed]="state !== 'pickup'"></div>
 
-      <div class="step-item" [class.active]="state === 'payment'" [class.completed]="state === 'preview'">
+      <div class="step-item" [class.active]="state === 'drop'" [class.completed]="state === 'find-driver' || state === 'offer'">
         <span class="step-number">2</span>
-        <span class="step-label">Payment</span>
+        <span class="step-label">Drop</span>
       </div>
-      <div class="step-line" [class.completed]="state === 'preview'"></div>
+      <div class="step-line" [class.completed]="state === 'find-driver' || state === 'offer'"></div>
 
-      <div class="step-item" [class.active]="state === 'preview'">
+      <div class="step-item" [class.active]="state === 'find-driver' || state === 'offer'">
         <span class="step-number">3</span>
-        <span class="step-label">Match</span>
+        <span class="step-label">Driver</span>
       </div>
     </div>
   </div>
@@ -109,7 +114,7 @@
       </div>
 
       <!-- Premium New Trip CTA -->
-      <button class="new-trip-cta-btn" (click)="goRoute()">
+      <button class="new-trip-cta-btn" (click)="goPickup()">
         <div class="cta-left">
           <div class="cta-icon-circle">
             <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
@@ -122,323 +127,146 @@
       </button>
     </div>
 
-    <!-- ROUTE entry -->
-    <div *ngSwitchCase="'route'" class="sheet-route">
-      <div class="sheet-header route-edit-header">
-        <h2>Trip</h2>
-      </div>
-
-      <div class="route-editor-card">
-        <!-- Connecting Line -->
-        <div class="route-line-connector">
+    <!-- STEP 1: PICKUP -->
+    <div *ngSwitchCase="'pickup'" class="sheet-route sheet-step">
+      <div class="step-input-card">
+        <div class="step-input-row">
           <div class="dot-pickup dark"></div>
-          <div class="line-solid"></div>
-          <div class="dot-drop green"></div>
+          <input
+            type="text"
+            placeholder="Search pickup location"
+            [value]="pickupQuery"
+            (focus)="activeSearchField = 'pickup'"
+            (input)="onSearchInput($event, 'pickup')"
+          />
         </div>
-
-        <div class="route-inputs">
-          <div class="input-row">
-            <small>Pickup</small>
-            <input 
-              type="text" 
-              placeholder="Search Pickup" 
-              [value]="pickupQuery" 
-              (focus)="activeSearchField = 'pickup'"
-              (input)="onSearchInput($event, 'pickup')"
-            />
-            <div class="input-error-msg" [class.show]="pickupError">
-              {{ pickupError }}
-            </div>
-          </div>
-          
-          <div class="input-divider"></div>
-
-          <div class="input-row">
-            <small>Drop Off</small>
-            <input 
-              type="text" 
-              placeholder="Search Destination" 
-              [value]="toQuery" 
-              (focus)="activeSearchField = 'drop'"
-              (input)="onSearchInput($event, 'drop')" 
-              autofocus
-            />
-            <div class="input-error-msg" [class.show]="dropError">
-              {{ dropError }}
-            </div>
-          </div>
-        </div>
-
-        <button class="swap-locations-btn" (click)="swapLocations()">
-          <ion-icon name="swap-vertical-outline"></ion-icon>
-        </button>
+        <div class="input-error-msg" [class.show]="pickupError">{{ pickupError }}</div>
       </div>
 
       <ion-list lines="full" class="suggestion-list" *ngIf="suggestions.length">
-        <ion-item
-          *ngFor="let s of suggestions"
-          button
-          (click)="pickSuggestion(s)"
-        >
+        <ion-item *ngFor="let s of suggestions" button (click)="pickSuggestion(s)">
           <ion-icon name="location-outline" slot="start" aria-hidden="true"></ion-icon>
-          <ion-label>
-            <h3>{{ s.main_text }}</h3>
-            <p>{{ s.secondary_text }}</p>
-          </ion-label>
+          <ion-label><h3>{{ s.main_text }}</h3><p>{{ s.secondary_text }}</p></ion-label>
         </ion-item>
       </ion-list>
 
       <div class="quick-locations" *ngIf="!suggestions.length">
         <ion-list lines="full" class="quick-modes">
-          <ion-item button *ngIf="activeSearchField === 'pickup'" (click)="setPickupCurrentLocation(); $event.preventDefault()">
+          <ion-item button (click)="setPickupCurrentLocation(); $event.preventDefault()">
             <ion-icon name="locate-outline" slot="start" class="loc-icon"></ion-icon>
-            <ion-label>
-              <h3>Pickup from current location</h3>
-            </ion-label>
+            <ion-label><h3>Use current location</h3></ion-label>
           </ion-item>
-          
+          <ion-item button *ngIf="savedPlaces.length" (click)="openSavedPicker('pickup'); $event.preventDefault()">
+            <ion-icon name="bookmark-outline" slot="start" class="loc-icon"></ion-icon>
+            <ion-label><h3>Choose from saved locations</h3></ion-label>
+          </ion-item>
           <ion-item button (click)="setLocationOnMap(); $event.preventDefault()">
             <ion-icon name="map-outline" slot="start" class="loc-icon"></ion-icon>
-            <ion-label>
-              <h3>Set location on map</h3>
-            </ion-label>
+            <ion-label><h3>Set pickup on map</h3></ion-label>
           </ion-item>
         </ion-list>
-
-        <div class="saved-places">
-          <button class="saved-place-btn" (click)="addHome()">
-            <div class="icon-circle"><ion-icon name="home-outline"></ion-icon></div>
-            <span>Add Home</span>
-          </button>
-          <button class="saved-place-btn" (click)="addWork()">
-            <div class="icon-circle"><ion-icon name="briefcase-outline"></ion-icon></div>
-            <span>Add Work</span>
-          </button>
-          <button class="saved-place-btn" (click)="addFavorite()">
-            <div class="icon-circle"><ion-icon name="star-outline"></ion-icon></div>
-            <span>Saved Places</span>
-          </button>
-        </div>
       </div>
 
       <div class="action-footer">
         <button class="action-btn-back" (click)="closeSheet()">Back</button>
-        <button class="action-btn-continue" (click)="goToPayment()">Continue</button>
+        <button class="action-btn-continue" (click)="goDrop()">Next</button>
       </div>
     </div>
 
-    <!-- PAYMENT SELECTION -->
-    <div *ngSwitchCase="'payment'" class="sheet-payment">
-      <div class="sheet-header">
-        <h2>Select Payment</h2>
-      </div>
-
-      <!-- Reusable, read-only location card -->
-      <div class="route-editor-card read-only">
-        <div class="route-line-connector">
+    <!-- STEP 2: DROP -->
+    <div *ngSwitchCase="'drop'" class="sheet-route sheet-step">
+      <div class="step-input-card">
+        <div class="step-input-row read">
           <div class="dot-pickup dark"></div>
-          <div class="line-solid"></div>
+          <span class="step-readonly-addr">{{ pickup?.address }}</span>
+        </div>
+        <div class="input-divider"></div>
+        <div class="step-input-row">
           <div class="dot-drop green"></div>
-        </div>
-        <div class="route-inputs">
-          <div class="input-row">
-            <small>Pickup</small>
-            <p class="readonly-address">{{ pickup?.address }}</p>
-          </div>
-          <div class="input-divider"></div>
-          <div class="input-row">
-            <small>Drop Off</small>
-            <p class="readonly-address">{{ drop?.address }}</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Payment Method Selection Grid -->
-      <div class="payment-grid">
-        <button type="button" 
-          class="payment-card" 
-          [class.active]="selectedPaymentMode === 'cash'"
-          (click)="selectPaymentMode('cash')">
-          <div class="pay-icon-circle">
-            <ion-icon name="cash-outline"></ion-icon>
-          </div>
-          <div class="pay-info">
-            <span class="pay-title">Cash</span>
-            <span class="pay-desc">Pay directly to driver</span>
-          </div>
-          <div class="pay-select-dot"></div>
-        </button>
-
-        <button type="button" 
-          class="payment-card" 
-          [class.active]="selectedPaymentMode === 'razorpay'"
-          (click)="selectPaymentMode('razorpay')">
-          <div class="pay-icon-circle">
-            <ion-icon name="card-outline"></ion-icon>
-          </div>
-          <div class="pay-info">
-            <span class="pay-title">Online Payment</span>
-            <span class="pay-desc">Pay securely using UPI or Card</span>
-          </div>
-          <div class="pay-select-dot"></div>
-        </button>
-      </div>
-
-      <!-- Coupon Application Section -->
-      <div class="promo-section">
-        <div class="promo-input-wrapper">
-          <ion-icon name="pricetag-outline" class="promo-icon"></ion-icon>
-          <input 
-            type="text" 
-            placeholder="Enter Coupon Code" 
-            class="promo-input" 
-            [(ngModel)]="couponInput"
-            [disabled]="couponApplying || !!couponPreview"
-            (keyup.enter)="applyCoupon()"
+          <input
+            type="text"
+            placeholder="Search destination"
+            [value]="toQuery"
+            (focus)="activeSearchField = 'drop'"
+            (input)="onSearchInput($event, 'drop')"
           />
-          <button type="button" 
-            class="promo-apply-btn" 
-            [disabled]="couponApplying || (!couponPreview && !couponInput?.trim())"
-            (click)="applyCoupon()">
-            {{ couponApplying ? '...' : (couponPreview ? 'Remove' : 'Apply') }}
-          </button>
         </div>
-        <small *ngIf="couponPreview" class="input-error-msg show" style="color: var(--ion-color-primary, #12B35B); max-height: unset; opacity: 1;">
-          ✓ {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
-        </small>
-        <small *ngIf="couponError" class="input-error-msg show" style="max-height: unset; opacity: 1;">{{ couponError }}</small>
+        <div class="input-error-msg" [class.show]="dropError">{{ dropError }}</div>
       </div>
 
-      <div class="outside-banner" *ngIf="outsideServiceAreaNotice">
-        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
-        <span>{{ outsideServiceAreaNotice }}</span>
+      <ion-list lines="full" class="suggestion-list" *ngIf="suggestions.length">
+        <ion-item *ngFor="let s of suggestions" button (click)="pickSuggestion(s)">
+          <ion-icon name="location-outline" slot="start" aria-hidden="true"></ion-icon>
+          <ion-label><h3>{{ s.main_text }}</h3><p>{{ s.secondary_text }}</p></ion-label>
+        </ion-item>
+      </ion-list>
+
+      <div class="quick-locations" *ngIf="!suggestions.length">
+        <ion-list lines="full" class="quick-modes">
+          <ion-item button *ngIf="savedPlaces.length" (click)="openSavedPicker('drop'); $event.preventDefault()">
+            <ion-icon name="bookmark-outline" slot="start" class="loc-icon"></ion-icon>
+            <ion-label><h3>Choose from saved locations</h3></ion-label>
+          </ion-item>
+          <ion-item button (click)="setLocationOnMap(); $event.preventDefault()">
+            <ion-icon name="map-outline" slot="start" class="loc-icon"></ion-icon>
+            <ion-label><h3>Set destination on map</h3></ion-label>
+          </ion-item>
+        </ion-list>
       </div>
 
       <div class="action-footer">
-        <button class="action-btn-back" (click)="goRoute()">Back</button>
-        <button class="action-btn-continue" (click)="goToDrivers()">Continue</button>
+        <button class="action-btn-back" (click)="goPickup()">Back</button>
+        <button class="action-btn-continue" (click)="goFindDriver()">Next</button>
       </div>
     </div>
 
-    <!-- PREVIEW / DRIVER SELECTION SCREEN -->
-    <div *ngSwitchCase="'preview'" class="sheet-preview">
-      <div class="sheet-header">
-        <h2>Confirm Trip</h2>
-      </div>
-
-      <!-- Reusable, read-only location card for seamless visual flow -->
-      <div class="route-editor-card read-only premium-elevation">
-        <div class="route-line-connector">
-          <div class="dot-pickup dark"></div>
-          <div class="line-solid"></div>
-          <div class="dot-drop green"></div>
-        </div>
-
-        <div class="route-inputs">
-          <div class="input-row">
-            <small>Pickup</small>
-            <p class="readonly-address">{{ pickup?.address }}</p>
-          </div>
-          
-          <div class="input-divider"></div>
-
-          <div class="input-row">
-            <small>Drop Off</small>
-            <p class="readonly-address">{{ drop?.address }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="drivers-section-header">
-        <h3 class="drivers-heading">
-          Drivers found
-          <span *ngIf="dispatchRing" class="drivers-ring-meta">
-            · hop {{ dispatchRing.hop }}/{{ dispatchRing.max_hops }} · {{ dispatchRing.radius_m }} m
-          </span>
-        </h3>
-        <p class="drivers-subhint" *ngIf="!dispatchRing && !drivers.length">
-          Tap <strong>Search drivers</strong> to look for available drivers around you.
-        </p>
-        <p class="drivers-subhint" *ngIf="dispatchRing && searching">
-          Searching… ring expanding every {{ dispatchRing.hop_interval_sec || 5 }} s.
-        </p>
-        <p class="drivers-subhint" *ngIf="!searching && drivers.length">
-          Pick a driver to send your request.
-        </p>
-      </div>
-
-      <!-- Premium radar-like searching container -->
-      <div *ngIf="searching && !drivers.length" class="radar-search-container">
-        <div class="radar-scanner">
+    <!-- STEP 3: FIND DRIVER (radar + drivers shown on the map; no list, no estimate) -->
+    <div *ngSwitchCase="'find-driver'" class="sheet-find-driver sheet-step">
+      <div class="finddriver-row">
+        <div class="radar-scanner mini">
           <div class="radar-sweep"></div>
-          <div class="radar-dot dot-a"></div>
-          <div class="radar-dot dot-b"></div>
           <div class="radar-circle circle-1"></div>
           <div class="radar-circle circle-2"></div>
           <div class="radar-circle circle-3"></div>
-          <div class="radar-icon-center">
-            <ion-icon name="navigate"></ion-icon>
-          </div>
+          <div class="radar-icon-center"><ion-icon name="car"></ion-icon></div>
         </div>
-        <p class="radar-status-text">Scanning for matching drivers nearby…</p>
-      </div>
-
-      <div *ngIf="!searching && !drivers.length && dispatchRing" class="drivers-empty premium-box">
-        <ion-icon name="alert-circle-outline"></ion-icon>
-        <p>No drivers found within {{ dispatchRing.radius_m }} m. Try again later.</p>
-      </div>
-
-      <div class="drivers-list" *ngIf="drivers.length">
-        <div *ngFor="let d of drivers" class="driver-card premium-card">
-          <div class="driver-icon-circle-wrapper">
-            <div class="driver-icon-circle">
-              <ion-icon name="person" aria-hidden="true"></ion-icon>
-            </div>
-            <span *ngIf="d.rating_avg" class="rating-badge-pill">
-              <ion-icon name="star"></ion-icon>
-              <span>{{ d.rating_avg }}</span>
-            </span>
-          </div>
-          <div class="driver-info">
-            <div class="driver-header-row">
-              <span class="driver-name">{{ d.name || 'Driver' }}</span>
-            </div>
-            <span class="driver-vehicle">
-              <ion-icon name="car-outline" class="meta-icon" aria-hidden="true"></ion-icon>
-              {{ d.vehicle?.brand || d.vehicle || '' }} {{ d.vehicle?.model }}
-              <span *ngIf="d.vehicle?.color"> · {{ d.vehicle?.color }}</span>
-            </span>
-            <div class="driver-meta">
-              <span class="meta-badge distance">
-                <ion-icon name="navigate-outline" aria-hidden="true"></ion-icon>
-                <span>{{ d.distance_km }} km</span>
-              </span>
-              <span *ngIf="d.eta_min != null" class="meta-badge eta">
-                <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
-                <span>{{ d.eta_min }} min</span>
-              </span>
-            </div>
-          </div>
-          <button type="button" class="request-btn-premium" (click)="confirmRequest(d)" [disabled]="loading">
-            <span>Request</span>
-            <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon>
-          </button>
+        <div class="finddriver-text">
+          <span class="fd-title">Looking around you</span>
+          <span class="fd-sub">Nearby drivers are shown on the map. Set your fare to send a request.</span>
         </div>
       </div>
 
       <div class="action-footer">
-        <button class="action-btn-back" (click)="state = 'payment'">Back</button>
-        <button
-          class="action-btn-continue search-pulse-cta"
-          (click)="searchDrivers()"
-          [disabled]="!estimate?.estimated_fare || searching"
-        >
-          <ion-icon name="search-outline" aria-hidden="true" style="margin-right: 6px; font-size: 18px; vertical-align: middle;"></ion-icon>
-          {{ searching ? 'Searching…' : 'Search drivers' }}
-        </button>
+        <button class="action-btn-back" (click)="goDrop()">Back</button>
+        <button class="action-btn-continue" (click)="goOffer()">Request Ride</button>
+      </div>
+    </div>
+
+    <!-- NAME YOUR PRICE -->
+    <div *ngSwitchCase="'offer'" class="sheet-offer sheet-step">
+      <div class="offer-head">
+        <h3>Name your fare</h3>
+        <p>Offer a price — drivers can accept it or send you a counter-offer.</p>
       </div>
 
+      <div class="offer-amount-card">
+        <button type="button" class="offer-step-btn" (click)="bumpOffer(-10)" [disabled]="(offerAmount || 0) <= minFare">&minus;</button>
+        <div class="offer-amount-mid">
+          <span class="offer-currency">&#8377;</span>
+          <input type="tel" inputmode="numeric" pattern="[0-9]*" class="offer-input" [(ngModel)]="offerAmount" placeholder="0" />
+        </div>
+        <button type="button" class="offer-step-btn" (click)="bumpOffer(10)">+</button>
+      </div>
+      <p class="offer-min-hint" *ngIf="minFare > 0">Base fare ₹{{ minFare }} — you can offer more, not less.</p>
+
       <small *ngIf="error" class="fare-error">{{ error }}</small>
+
+      <div class="action-footer">
+        <button class="action-btn-back" (click)="state = 'find-driver'; error = null">Back</button>
+        <button class="action-btn-continue" (click)="sendOffer()" [disabled]="loading || !offerAmount">
+          {{ loading ? 'Sending…' : 'Send to drivers' }}
+        </button>
+      </div>
     </div>
 
     <!-- MAP SELECT: user is panning the map to drop a pin -->
@@ -453,50 +281,41 @@
       </div>
     </div>
 
+    <!-- SAVED LOCATIONS PICKER: pick a saved place, then return to the step it was opened from -->
+    <div *ngSwitchCase="'saved-select'" class="sheet-route sheet-step">
+      <div class="saved-picker-header">
+        <h3>Saved locations</h3>
+        <p>Choose a place for your {{ activeSearchField === 'pickup' ? 'pickup' : 'destination' }}</p>
+      </div>
+
+      <ion-list lines="full" class="suggestion-list" *ngIf="savedPlaces.length">
+        <ion-item *ngFor="let p of savedPlaces" button (click)="pickSavedPlaceAndReturn(p)">
+          <ion-icon [name]="savedIcon(p)" slot="start" aria-hidden="true"></ion-icon>
+          <ion-label><h3>{{ p.label }}</h3><p>{{ p.address }}</p></ion-label>
+        </ion-item>
+      </ion-list>
+
+      <div class="saved-empty" *ngIf="!savedPlaces.length">
+        <p>You haven't saved any locations yet.</p>
+      </div>
+
+      <div class="action-footer">
+        <button class="action-btn-back" (click)="state = activeSearchField">Back</button>
+      </div>
+    </div>
+
     <!-- WAITING: chosen driver hasn't responded yet -->
     <div *ngSwitchCase="'waiting'" class="sheet-searching premium-searching-sheet">
       <div class="searching-head">
-        <span *ngIf="!dispatchRing" class="searching-text">
+        <span class="searching-text">
           <span class="search-pulse-dot"></span>
-          Waiting for the driver to accept…
-        </span>
-        <span *ngIf="dispatchRing" class="searching-text">
-          <span class="search-pulse-dot"></span>
-          Searching nearby drivers…
+          Waiting for a driver…
         </span>
         <span class="timer">0:{{ searchSecondsLeft.toString().padStart(2, '0') }}</span>
       </div>
       <div class="progress-bar-wrapper">
         <ion-progress-bar [value]="searchSecondsLeft / 60" class="premium-progress-line"></ion-progress-bar>
       </div>
-
-      <!-- Live expanding-ring readout -->
-      <div *ngIf="dispatchRing" class="dispatch-ring-premium">
-        <div class="ring-row">
-          <span class="ring-label">Radius</span>
-          <span class="ring-value">{{ dispatchRing.radius_m }} m</span>
-        </div>
-        <div class="ring-row">
-          <span class="ring-label">Hop</span>
-          <span class="ring-value">{{ dispatchRing.hop }} / {{ dispatchRing.max_hops }}</span>
-        </div>
-        <div class="ring-row">
-          <span class="ring-label">Drivers in ring</span>
-          <span class="ring-value">{{ dispatchRing.eligible }}</span>
-        </div>
-      </div>
-
-      <p class="searching-hint-premium">
-        Your request was sent. They’ll either accept the fare or send you a counter-offer.
-      </p>
-
-      <button
-        *ngIf="showFindAnother"
-        class="btn-find-another"
-        (click)="findAnotherDriver()"
-      >
-        Find another driver
-      </button>
 
       <button type="button" class="btn-cancel-request" (click)="cancelRequest()">Cancel request</button>
     </div>

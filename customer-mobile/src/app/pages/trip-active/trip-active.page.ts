@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Location } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ActionSheetController, AlertController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
@@ -102,6 +103,8 @@ export class TripActivePage implements OnInit, OnDestroy {
   private driverMarker: any | null = null;
   private pickupMarker: any | null = null;
   private dropMarker: any | null = null;
+  // Pickup → drop road route, drawn once (coords don't change mid-trip).
+  private routePolylines: any[] = [];
   private etaDebounceHandle: any = null;
   private etaInflight = false;
   private readonly etaDebounceMs = 10_000;
@@ -117,6 +120,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   constructor(
     private route: ActivatedRoute,
     private router: Router,
+    private location: Location,
     private api: ApiService,
     private auth: AuthService,
     private alertCtrl: AlertController,
@@ -126,6 +130,19 @@ export class TripActivePage implements OnInit, OnDestroy {
     private realtime: RealtimeService,
     private geo: GeolocationService,
   ) {}
+
+  /**
+   * Floating back button on the map — return to wherever we came from (the
+   * ride-detail page, the booking screen, …). Falls back to the Rides list
+   * when there's no history to pop (e.g. a deep link).
+   */
+  back(): void {
+    if (window.history.length > 1) {
+      this.location.back();
+    } else {
+      this.router.navigateByUrl('/customer-tabs/my-trips');
+    }
+  }
 
   /**
    * Per-state title + subtitle copy. Replaces the generic enum value with
@@ -187,6 +204,8 @@ export class TripActivePage implements OnInit, OnDestroy {
     if (this.poll) clearInterval(this.poll);
     if (this.unsubscribeRealtime) this.unsubscribeRealtime();
     if (this.etaDebounceHandle) clearTimeout(this.etaDebounceHandle);
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
     this.stopCustomerLocationStream();
   }
 
@@ -202,8 +221,16 @@ export class TripActivePage implements OnInit, OnDestroy {
   private async initMap(): Promise<void> {
     try {
       await this.places.ensureLoaded();
-      const div = document.getElementById('trip-map');
-      if (!div) return;
+
+      // The map container lives behind *ngIf="!loading", so on a fast script
+      // load it may not be in the DOM yet. Wait for it to render (up to ~2s).
+      let div = document.getElementById('trip-map');
+      for (let i = 0; !div && i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        div = document.getElementById('trip-map');
+      }
+      if (!div || this.map) return;
+
       this.map = new google.maps.Map(div, {
         center: { lat: 28.6139, lng: 77.209 },
         zoom: 14,
@@ -213,7 +240,10 @@ export class TripActivePage implements OnInit, OnDestroy {
         // production.
         mapId: 'DEMO_MAP_ID',
       });
-      this.fitMap();
+
+      // Draw whatever we already have (markers + route); otherwise just frame.
+      if (this.trip) this.updateRouteMarkers();
+      else this.fitMap();
     } catch {
       /* maps not available — page still works without it */
     }
@@ -338,6 +368,78 @@ export class TripActivePage implements OnInit, OnDestroy {
         this.dropMarker.position = pos;
       }
     }
+
+    // Draw the pickup → drop path once both ends are known.
+    if (
+      !this.routePolylines.length &&
+      t.pickup_lat != null && t.pickup_lng != null &&
+      t.drop_lat != null && t.drop_lng != null
+    ) {
+      void this.drawRoute(
+        { lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) },
+        { lat: Number(t.drop_lat), lng: Number(t.drop_lng) },
+      );
+    }
+
+    this.fitMap();
+  }
+
+  /**
+   * Draw the road route between pickup and drop. Routes API (New) first, then
+   * the legacy DirectionsService, then a straight line as a last resort.
+   */
+  private async drawRoute(
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+  ): Promise<void> {
+    if (!this.map) return;
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
+
+    try {
+      const { Route } = await (google.maps as any).importLibrary('routes');
+      const { routes } = await Route.computeRoutes({
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+        fields: ['path'],
+      });
+      const polylines: any[] = routes?.[0]?.createPolylines?.() ?? [];
+      let drew = false;
+      for (const pl of polylines) {
+        if (pl?.setMap) {
+          pl.setOptions?.({ strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95 });
+          pl.setMap(this.map);
+          drew = true;
+        }
+      }
+      if (drew) { this.routePolylines = polylines; this.fitMap(); return; }
+    } catch {
+      // fall through
+    }
+
+    try {
+      const svc = new google.maps.DirectionsService();
+      const res: any = await svc.route({
+        origin, destination, travelMode: google.maps.TravelMode.DRIVING,
+      });
+      const r = res?.routes?.[0];
+      if (r?.overview_path?.length) {
+        const pl = new google.maps.Polyline({
+          path: r.overview_path, strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
+        });
+        this.routePolylines = [pl];
+        this.fitMap();
+        return;
+      }
+    } catch {
+      // fall through
+    }
+
+    const straight = new google.maps.Polyline({
+      path: [origin, destination], strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
+    });
+    this.routePolylines = [straight];
     this.fitMap();
   }
 

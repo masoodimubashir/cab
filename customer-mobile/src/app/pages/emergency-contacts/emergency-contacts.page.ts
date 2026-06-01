@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
+import { Contacts } from '@capacitor-community/contacts';
 import { ApiService } from '../../core/api.service';
 
 interface EmergencyContact {
@@ -46,9 +47,36 @@ export class CustomerEmergencyContactsPage implements OnInit {
 
   dialogOpen = false;
   saving = false;
-  form: { id: number | null; name: string; phone: string; relationship: string; is_primary: boolean } = {
-    id: null, name: '', phone: '', relationship: '', is_primary: false,
-  };
+  form: {
+    id: number | null;
+    name: string;
+    countryCode: string;
+    phone: string;
+    relationship: string;
+    is_primary: boolean;
+  } = { id: null, name: '', countryCode: '91', phone: '', relationship: '', is_primary: false };
+
+  // Country-code picker (India default). Codes are checked longest-first when
+  // parsing a number picked from the device.
+  showCountryPicker = false;
+  countries: { name: string; code: string; flag: string }[] = [
+    { name: 'India', code: '91', flag: '🇮🇳' },
+    { name: 'United States', code: '1', flag: '🇺🇸' },
+    { name: 'United Kingdom', code: '44', flag: '🇬🇧' },
+    { name: 'United Arab Emirates', code: '971', flag: '🇦🇪' },
+    { name: 'Saudi Arabia', code: '966', flag: '🇸🇦' },
+    { name: 'Pakistan', code: '92', flag: '🇵🇰' },
+    { name: 'Bangladesh', code: '880', flag: '🇧🇩' },
+    { name: 'Nepal', code: '977', flag: '🇳🇵' },
+    { name: 'Sri Lanka', code: '94', flag: '🇱🇰' },
+    { name: 'Australia', code: '61', flag: '🇦🇺' },
+    { name: 'Canada', code: '1', flag: '🇨🇦' },
+    { name: 'Singapore', code: '65', flag: '🇸🇬' },
+    { name: 'Malaysia', code: '60', flag: '🇲🇾' },
+    { name: 'Qatar', code: '974', flag: '🇶🇦' },
+    { name: 'Kuwait', code: '965', flag: '🇰🇼' },
+    { name: 'Oman', code: '968', flag: '🇴🇲' },
+  ];
 
   pickerSupported = false;
 
@@ -60,10 +88,16 @@ export class CustomerEmergencyContactsPage implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    const nav = navigator as any;
-    this.pickerSupported = !!nav.contacts && typeof nav.contacts.select === 'function';
-    this.refresh();
-    this.loadSupport();
+    // The native contacts plugin handles picking — always offer the button.
+    this.pickerSupported = true;
+    // The same component serves two side-menu entries: "Contact" and "Support".
+    // The route decides which view to show (no in-page tab switcher anymore).
+    this.segment = this.router.url.includes('/support') ? 'support' : 'contacts';
+    if (this.segment === 'support') {
+      this.loadSupport();
+    } else {
+      this.refresh();
+    }
   }
 
   loadSupport(): void {
@@ -95,48 +129,89 @@ export class CustomerEmergencyContactsPage implements OnInit {
   }
 
   openAdd(): void {
-    this.form = { id: null, name: '', phone: '', relationship: '', is_primary: false };
+    this.form = { id: null, name: '', countryCode: '91', phone: '', relationship: '', is_primary: false };
     this.dialogOpen = true;
   }
 
   openEdit(c: EmergencyContact): void {
+    const { countryCode, local } = this.splitPhone(c.phone);
     this.form = {
-      id: c.id, name: c.name, phone: c.phone,
+      id: c.id, name: c.name, countryCode, phone: local,
       relationship: c.relationship || '', is_primary: c.is_primary,
     };
     this.dialogOpen = true;
   }
 
+  // ── Country code + phone helpers ─────────────────────────────────
+  get selectedCountry(): { name: string; code: string; flag: string } {
+    return this.countries.find((c) => c.code === this.form.countryCode) ?? this.countries[0];
+  }
+
+  selectCountry(c: { code: string }): void {
+    this.form.countryCode = c.code;
+    this.showCountryPicker = false;
+  }
+
+  /** Keep the phone box digits-only and capped at 10. */
+  onPhoneInput(): void {
+    this.form.phone = (this.form.phone || '').replace(/\D/g, '').slice(0, 10);
+  }
+
+  /**
+   * Split a raw/full phone string into a dial code + local number. Used when
+   * editing or when a contact is picked from the device — whatever country
+   * code the number carries lands in the country selector.
+   */
+  private splitPhone(raw: string | null | undefined): { countryCode: string; local: string } {
+    let p = (raw || '').replace(/[\s\-()]/g, '');
+    if (p.startsWith('+')) {
+      const digits = p.slice(1);
+      // Longest dial-code prefix wins (e.g. 971 before 9).
+      const codes = [...new Set(this.countries.map((c) => c.code))].sort((a, b) => b.length - a.length);
+      const match = codes.find((code) => digits.startsWith(code) && digits.length - code.length >= 6);
+      if (match) return { countryCode: match, local: digits.slice(match.length).slice(-10) };
+      return { countryCode: '91', local: digits.slice(-10) };
+    }
+    if (p.startsWith('0')) p = p.slice(1);
+    // 12 digits starting with 91 → India without the +.
+    if (p.length > 10 && p.startsWith('91')) return { countryCode: '91', local: p.slice(2).slice(-10) };
+    return { countryCode: this.form?.countryCode || '91', local: p.slice(-10) };
+  }
+
+  /**
+   * Open the phone's native contact picker (Capacitor contacts plugin). The
+   * user taps a contact in the system UI; we pre-fill the add form with the
+   * chosen name + number. No READ_CONTACTS dialog — the picker returns only
+   * the one contact the user selected.
+   */
   async pickFromPhone(): Promise<void> {
-    const nav = navigator as any;
-    if (!nav.contacts?.select) {
+    try {
+      const res = await Contacts.pickContact({ projection: { name: true, phones: true } });
+      const c = res?.contact;
+      if (!c) return; // cancelled
+      const name = c.name?.display ?? '';
+      const rawPhone = (c.phones?.find((p) => p.number)?.number) ?? '';
+      const { countryCode, local } = this.splitPhone(rawPhone);
+      this.form = { id: null, name, countryCode, phone: local, relationship: '', is_primary: false };
+      this.dialogOpen = true;
+    } catch {
       const t = await this.toastCtrl.create({
-        message: 'Picking from contacts is not supported on this device.',
+        message: 'Could not open the contacts picker on this device.',
         duration: 2500, color: 'warning',
       });
       await t.present();
-      return;
-    }
-    try {
-      const picked = await nav.contacts.select(['name', 'tel'], { multiple: false });
-      if (!Array.isArray(picked) || picked.length === 0) return;
-      const c = picked[0];
-      const name = Array.isArray(c.name) && c.name.length ? c.name[0] : '';
-      const phone = Array.isArray(c.tel) && c.tel.length ? c.tel[0] : '';
-      this.form = { id: null, name, phone, relationship: '', is_primary: false };
-      this.dialogOpen = true;
-    } catch {
-      /* user dismissed picker */
     }
   }
 
   submit(): void {
     this.error = null;
+    const local = (this.form.phone || '').replace(/\D/g, '');
     if (!this.form.name.trim()) { this.error = 'Name is required.'; return; }
-    if (!this.form.phone.trim()) { this.error = 'Phone is required.'; return; }
+    if (!local) { this.error = 'Phone is required.'; return; }
+    if (local.length > 10) { this.error = 'Phone number cannot be more than 10 digits.'; return; }
     const body = {
       name: this.form.name.trim(),
-      phone: this.form.phone.trim(),
+      phone: `+${this.form.countryCode}${local}`,
       relationship: this.form.relationship.trim() || null,
       is_primary: this.form.is_primary,
     };
@@ -175,5 +250,5 @@ export class CustomerEmergencyContactsPage implements OnInit {
     });
   }
 
-  back(): void { this.router.navigateByUrl('/customer-tabs/more'); }
+  back(): void { this.router.navigateByUrl('/customer-tabs/book'); }
 }

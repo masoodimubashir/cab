@@ -1,11 +1,6 @@
 <ion-content>
   <!-- ============ PERSISTENT MASTER AUTH SHELL ============ -->
-  <div class="auth-header">
-    <!-- Centered Back Button (Visible on sub-steps) -->
-    <div class="back-button-wrap" (click)="goBack()" *ngIf="step !== 'phone' && step !== 'success' && !loading" aria-label="Go Back">
-      <ion-icon name="arrow-back-outline"></ion-icon>
-    </div>
-
+  <div class="auth-header" [class.auth-header--compact]="step === 'perms'">
     <!-- Persistent Branding Elements -->
     <div class="logo-mark">
       <div class="logo-dots"></div>
@@ -94,63 +89,63 @@
       <div class="step-slide" *ngIf="step === 'perms'">
         <div class="bento-perm-grid">
           <div class="bento-card" style="animation-delay: 0.05s">
-            <div class="bento-icon-circle">
-              <ion-icon name="location-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="location-outline"></ion-icon>
+              </div>
               <span class="bento-title">Location</span>
-              <span class="bento-desc">Find rides near you</span>
             </div>
+            <span class="bento-desc">Find rides near you</span>
           </div>
 
           <div class="bento-card" style="animation-delay: 0.1s">
-            <div class="bento-icon-circle">
-              <ion-icon name="call-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="call-outline"></ion-icon>
+              </div>
               <span class="bento-title">Phone</span>
-              <span class="bento-desc">Verify secure profile</span>
             </div>
+            <span class="bento-desc">Verify secure profile</span>
           </div>
 
           <div class="bento-card" style="animation-delay: 0.15s">
-            <div class="bento-icon-circle">
-              <ion-icon name="chatbox-ellipses-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="chatbox-ellipses-outline"></ion-icon>
+              </div>
               <span class="bento-title">SMS</span>
-              <span class="bento-desc">Autofill secure OTPs</span>
             </div>
+            <span class="bento-desc">Autofill secure OTPs</span>
           </div>
 
           <div class="bento-card" style="animation-delay: 0.2s">
-            <div class="bento-icon-circle">
-              <ion-icon name="people-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="people-outline"></ion-icon>
+              </div>
               <span class="bento-title">Contacts</span>
-              <span class="bento-desc">Share trusted SOS</span>
             </div>
+            <span class="bento-desc">Share trusted SOS</span>
           </div>
 
           <div class="bento-card" style="animation-delay: 0.25s">
-            <div class="bento-icon-circle">
-              <ion-icon name="phone-portrait-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="phone-portrait-outline"></ion-icon>
+              </div>
               <span class="bento-title">Device</span>
-              <span class="bento-desc">Keep account safe</span>
             </div>
+            <span class="bento-desc">Keep account safe</span>
           </div>
 
           <div class="bento-card" style="animation-delay: 0.3s">
-            <div class="bento-icon-circle">
-              <ion-icon name="folder-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="folder-outline"></ion-icon>
+              </div>
               <span class="bento-title">Storage</span>
-              <span class="bento-desc">Upload profile photo</span>
             </div>
+            <span class="bento-desc">Upload profile photo</span>
           </div>
         </div>
       </div>

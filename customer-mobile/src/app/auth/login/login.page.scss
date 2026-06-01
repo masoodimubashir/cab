@@ -21,6 +21,12 @@ ion-content {
   height: 55vh;
   min-height: 55vh;
   padding: 60px 20px 40px;
+
+  &.auth-header--compact {
+    height: 42vh;
+    min-height: 42vh;
+    padding: 44px 20px 28px;
+  }
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -249,24 +255,26 @@ ion-content {
 .bento-perm-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   max-width: 340px;
-  margin-bottom: 30px;
+  margin-bottom: 16px;
   box-sizing: border-box;
 }
 
 .bento-card {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md, 12px);
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 18px;
   background: #F9FAFB;
   border: 1px solid #E5E7EB;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
-  min-height: 52px;
+  min-height: 64px;
   animation: stepSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 
   &:active {
@@ -275,9 +283,17 @@ ion-content {
     transform: scale(0.96);
   }
 
-  .bento-icon-circle {
-    width: 32px;
-    height: 32px;
+  .bento-pill-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .bento-icon-chip {
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     background: rgba(18, 179, 91, 0.08);
     display: flex;
@@ -286,31 +302,29 @@ ion-content {
     flex-shrink: 0;
 
     ion-icon {
-      font-size: 16px;
+      font-size: 15px;
       color: var(--ion-color-primary, #12B35B);
     }
   }
 
-  .bento-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
+  .bento-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main, #0D1B2A);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
-    .bento-title {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--text-main, #0D1B2A);
-      line-height: 1.2;
-    }
-
-    .bento-desc {
-      font-size: 9.5px;
-      color: var(--text-muted, #6C757D);
-      line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+  .bento-desc {
+    font-size: 9.5px;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 }
 
@@ -539,7 +553,7 @@ ion-content {
   align-items: center;
   gap: 12px;
   width: 100%;
-  margin-bottom: 30px;
+  margin-bottom: 18px;
 }
 
 .fab-btn {

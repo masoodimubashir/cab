@@ -3,6 +3,10 @@ import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { Capacitor } from '@capacitor/core';
+import { Device } from '@capacitor/device';
+import { Camera } from '@capacitor/camera';
+import { Contacts } from '@capacitor-community/contacts';
+import { Geolocation } from '@capacitor/geolocation';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
@@ -135,7 +139,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   // Captured once after permissions/OTP so they're ready before submitInfo runs.
   // Sent silently with the profile payload so the admin Customer module shows
   // device + app metadata without asking the user.
-  private deviceInfo: { app_version?: string; os_version?: string; device_type?: string } = {};
+  private deviceInfo: { app_version?: string; os_version?: string; device_type?: string; device_id?: string } = {};
 
   // Yesterday in YYYY-MM-DD — feeds `[max]` on the DOB input. Server validator
   // is `before:today` (strict), so picking today would 422. Yesterday is the
@@ -377,17 +381,48 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   // Permissions step: Allow grants what we can request, then sends the OTP.
+  // Each request is isolated so one denial/failure never blocks the rest or the OTP.
   async allowPermsAndSendOtp(): Promise<void> {
     this.error = null;
     this.loading = true;
     try {
-      await this.geo.requestPermissions();
-      try { await FirebaseMessaging.requestPermissions(); } catch { /* ignore */ }
+      await this.requestAllPermissions();
       localStorage.setItem('dreamcabs_permissions_granted', '1');
       await this.sendOtp();
     } finally {
       this.loading = false;
     }
+  }
+
+  // Sequentially prompts for every permission surfaced on the disclosure cards.
+  // Native-only plugins are wrapped so they silently no-op on the web build, and
+  // each request is isolated so one denial never blocks the next or the OTP.
+  private async requestAllPermissions(): Promise<void> {
+    // Location — "Find rides near you".
+    // We hit the Geolocation plugin DIRECTLY (not GeolocationService) on purpose:
+    // that service returns a mocked "granted" in non-production builds, which
+    // would suppress the real OS prompt during onboarding. requestPermissions()
+    // throws when the device's location toggle is OFF (it can't prompt then), so
+    // we surface that as a warning rather than swallowing it silently.
+    try {
+      await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
+    } catch (e) {
+      console.warn('[perms] location request skipped (is the device location/GPS toggle on?)', e);
+    }
+
+    // Phone / Notifications — "Verify secure profile" (Android 13+ shows a prompt;
+    // older Android auto-grants POST_NOTIFICATIONS with no dialog).
+    try { await FirebaseMessaging.requestPermissions(); } catch (e) { console.warn('[perms] notifications', e); }
+
+    // Contacts — "Share trusted SOS".
+    try { await Contacts.requestPermissions(); } catch (e) { console.warn('[perms] contacts', e); }
+
+    // Device — "Keep account safe" (no OS prompt; capture identifier for security).
+    try { this.deviceInfo.device_id = (await Device.getId()).identifier?.slice(0, 128); } catch (e) { console.warn('[perms] device', e); }
+
+    // Storage / Camera — "Upload profile photo" (photo picking itself uses the
+    // permission-less Android Photo Picker; this grants the camera capture path).
+    try { await Camera.requestPermissions({ permissions: ['camera', 'photos'] }); } catch (e) { console.warn('[perms] camera', e); }
   }
 
   private async sendOtp(): Promise<void> {
