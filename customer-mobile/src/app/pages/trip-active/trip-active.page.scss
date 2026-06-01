@@ -1,72 +1,140 @@
-.trip-page { --background: #F4F6F8; }
+.trip-page { --background: #E9EDF1; }
 
 .trip-loading {
-  display: flex; align-items: center; justify-content: center; height: 70vh;
+  display: flex; align-items: center; justify-content: center; height: 100%;
   ion-spinner { --color: var(--ion-color-primary, #12B35B); width: 42px; height: 42px; }
 }
 
-/* ============ Map ============ */
+/* ============ Full-screen map ============ */
 .trip-map-wrap {
-  position: relative;
-  height: 46vh;
-  min-height: 300px;
+  position: absolute;
+  inset: 0;
   background: #E9EDF1;
+  z-index: 0;
 
-  .trip-map { position: absolute; inset: 0; width: 100%; height: 100%; }
-
-  .map-fab {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 14px) + 10px);
-    left: 16px;
-    width: 42px; height: 42px; border-radius: 50%;
-    background: #fff; border: none; color: #0D1B2A;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 3px 12px rgba(13, 27, 42, 0.18); cursor: pointer; z-index: 5;
-    ion-icon { font-size: 21px; }
-    &:active { background: #F3F4F6; }
+  .trip-map {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    /* Fade in on mount — no JS flag to get stuck on, so the map can't stay hidden. */
+    animation: map-fade-in 0.45s ease both;
   }
 
-  .map-trip-chip {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 14px) + 10px);
-    right: 16px;
-    background: rgba(13, 27, 42, 0.85); color: #fff;
-    font-size: 12px; font-weight: 700;
-    padding: 8px 14px; border-radius: 999px; z-index: 5;
+  /* Soft scrim under the floating top controls for legibility on bright maps. */
+  .map-scrim {
+    position: absolute; top: 0; left: 0; right: 0; height: 140px;
+    background: linear-gradient(to bottom, rgba(13, 27, 42, 0.18), rgba(13, 27, 42, 0));
+    pointer-events: none; z-index: 1;
   }
 }
 
-/* ============ Sheet (overlaps the map) ============ */
+/* ============ Floating top controls ============ */
+.trip-top {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top, 14px));
+  left: 16px; right: 16px;
+  z-index: 10;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  animation: fade-down 0.4s ease both;
+
+  .nav-fab {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: #fff; border: none; color: #0D1B2A;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 16px rgba(13, 27, 42, 0.18); cursor: pointer;
+    ion-icon { font-size: 22px; }
+    &:active { transform: scale(0.92); }
+  }
+
+  .trip-top__right { display: flex; align-items: center; gap: 8px; }
+
+  .live-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #fff; color: #109E50;
+    font-size: 12px; font-weight: 800; padding: 8px 12px; border-radius: 999px;
+    box-shadow: 0 4px 16px rgba(13, 27, 42, 0.12);
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #12B35B; animation: live-pulse 1.4s infinite; }
+  }
+
+  .trip-chip {
+    background: rgba(13, 27, 42, 0.9); color: #fff;
+    font-size: 12px; font-weight: 700;
+    padding: 8px 14px; border-radius: 999px;
+    box-shadow: 0 4px 16px rgba(13, 27, 42, 0.18);
+  }
+}
+
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes map-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-down { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+
+/* ============ Floating sheet ============ */
 .trip-sheet {
-  position: relative;
-  margin-top: -22px;
-  background: #F4F6F8;
-  border-top-left-radius: 24px;
-  border-top-right-radius: 24px;
-  padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
   z-index: 2;
+  background: #F4F6F8;
+  border-top-left-radius: 30px;
+  border-top-right-radius: 30px;
+  box-shadow: 0 -12px 36px rgba(13, 27, 42, 0.12);
+  padding: 6px 16px calc(18px + env(safe-area-inset-bottom));
+  max-height: 60vh;
+  overflow-y: auto;
   display: flex; flex-direction: column; gap: 14px;
+  animation: sheet-up 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Completed trip needs room for payment + rating + tipping. */
+  &.is-expanded { max-height: 82vh; }
 }
 
 .sheet-grab {
-  width: 40px; height: 5px; border-radius: 999px;
-  background: #D7DCE2; margin: 4px auto 6px;
+  align-self: center;
+  background: none; border: none; cursor: pointer;
+  padding: 8px 24px 2px; margin: 0 auto;
+  .sheet-grab__bar {
+    display: block; width: 42px; height: 5px; border-radius: 999px; background: #D7DCE2;
+    transition: background 0.2s ease;
+  }
+  &:active .sheet-grab__bar { background: #B6BDC6; }
+}
+
+/* Always-visible head (status + details button) */
+.sheet-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  .status-block { flex: 1; min-width: 0; }
+}
+
+.details-fab {
+  flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #F0F2F5; border: none; color: #0D1B2A;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  ion-icon { font-size: 23px; }
+  &:active { transform: scale(0.92); background: #E7EAEE; }
+}
+
+/* Collapsible body — hidden when the sheet is minimised. */
+.sheet-body {
+  display: flex; flex-direction: column; gap: 14px;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, margin 0.3s ease;
+  max-height: 1600px; opacity: 1;
+}
+.trip-sheet.is-collapsed .sheet-body {
+  max-height: 0; opacity: 0; margin-top: -14px;
 }
 
 /* Status */
 .status-block {
-  .status-top { display: flex; align-items: center; gap: 10px; }
   .status-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.6px; color: #9AA3AE; }
-  .live-pill {
-    display: inline-flex; align-items: center; gap: 5px;
-    background: rgba(18, 179, 91, 0.12); color: #109E50;
-    font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px;
-    .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #12B35B; animation: live-pulse 1.4s infinite; }
-  }
   .status-title { margin: 6px 0 0; font-size: 24px; font-weight: 800; color: #0D1B2A; letter-spacing: -0.5px; }
   .status-sub { margin: 5px 0 0; font-size: 14px; font-weight: 500; color: #6C757D; }
+  .locating-hint {
+    display: inline-flex; align-items: center; gap: 7px;
+    margin-top: 9px; font-size: 12.5px; font-weight: 700; color: #109E50;
+    .locating-dot { width: 7px; height: 7px; border-radius: 50%; background: #12B35B; animation: live-pulse 1.2s infinite; }
+  }
 }
-@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 /* Generic info card */
 .info-card {
@@ -81,6 +149,8 @@
 /* Driver */
 .driver-card {
   display: flex; align-items: center; gap: 12px;
+  background: #fff; border: 1px solid #EEF0F2; border-radius: 18px;
+  padding: 14px 16px; box-shadow: 0 2px 10px rgba(13, 27, 42, 0.04);
   .driver-avatar {
     width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
     background: rgba(18, 179, 91, 0.1);
@@ -111,21 +181,21 @@
   }
 }
 
-/* Action buttons */
-.trip-actions { display: flex; flex-direction: column; gap: 10px; }
-.t-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; height: 50px; border-radius: 14px; border: 1.5px solid transparent;
-  font-size: 15px; font-weight: 700; cursor: pointer;
-  ion-icon { font-size: 18px; }
-  &:active { transform: scale(0.98); }
+/* Action buttons — compact icon-on-top chips in a single row */
+.trip-actions { display: flex; gap: 10px; }
+.act {
+  flex: 1;
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  height: 66px; border-radius: 16px; border: 1.5px solid transparent;
+  font-size: 12.5px; font-weight: 700; cursor: pointer;
+  ion-icon { font-size: 21px; }
+  &:active { transform: scale(0.97); }
   &:disabled { opacity: 0.5; }
 
-  &--danger-outline { background: #fff; border-color: #F3C9CD; color: #DC3545; }
-  &--danger { background: #DC3545; color: #fff; }
-  &--ghost { background: #fff; border-color: #EEF0F2; color: #0D1B2A; }
+  &--cancel { background: #fff; border-color: #F3C9CD; color: #DC3545; }
+  &--sos { background: #DC3545; color: #fff; box-shadow: 0 6px 18px rgba(220, 53, 69, 0.28); }
+  &--ghost { background: #fff; border-color: #E7EAEE; color: #0D1B2A; }
 }
-.safety-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 /* Coupon */
 .coupon-card {
@@ -217,32 +287,89 @@
   ion-icon { font-size: 18px; }
 }
 
-/* ============ Fixed bottom pay bar ============ */
-.pay-footer {
+/* ============ Sticky pay bar (completed) ============ */
+.pay-bar {
+  position: sticky; bottom: 0;
+  display: flex; align-items: center; gap: 14px;
+  margin: 4px -16px calc(-18px - env(safe-area-inset-bottom));
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
   background: #fff;
   border-top: 1px solid #EEF0F2;
   box-shadow: 0 -8px 24px rgba(13, 27, 42, 0.08);
-  &::before { content: none; }   /* kill ion-footer's default md shadow line */
 
-  .pay-bar {
+  .pay-bar-info { display: flex; flex-direction: column; }
+  .pay-bar-label { font-size: 12px; font-weight: 600; color: #9AA3AE; }
+  .pay-bar-amount { font-size: 22px; font-weight: 800; color: #0D1B2A; letter-spacing: -0.5px; }
+
+  .pay-bar-btn {
+    margin-left: auto;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 52px; padding: 0 28px; border-radius: 16px; border: none;
+    background: var(--ion-color-primary, #12B35B); color: #fff;
+    font-size: 16px; font-weight: 800; cursor: pointer;
+    box-shadow: 0 8px 22px rgba(18, 179, 91, 0.3);
+    ion-icon { font-size: 20px; }
+    &:active { transform: scale(0.98); }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Ride-details modal (map driver marker / info button → fare/eta/phone/vehicle)
+   ───────────────────────────────────────────────────────────────── */
+.driver-details-modal {
+  --background: transparent;
+  --box-shadow: 0 -12px 40px rgba(13, 27, 42, 0.18);
+
+  .dd-sheet {
+    background: #fff;
+    height: 100%;
+    padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 16px;
+    overflow-y: auto;
+  }
+
+  .dd-title {
+    margin: 4px 0 2px; font-size: 20px; font-weight: 800; color: #0D1B2A; letter-spacing: -0.4px;
+  }
+
+  .dd-card {
     display: flex; align-items: center; gap: 14px;
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #F6F8FA; border: 1px solid #EEF0F2; border-radius: 18px; padding: 16px;
 
-    .pay-bar-info { display: flex; flex-direction: column; }
-    .pay-bar-label { font-size: 12px; font-weight: 600; color: #9AA3AE; }
-    .pay-bar-amount { font-size: 22px; font-weight: 800; color: #0D1B2A; letter-spacing: -0.5px; }
+    .dd-icon {
+      width: 50px; height: 50px; border-radius: 14px; flex-shrink: 0;
+      background: rgba(18, 179, 91, 0.12);
+      display: flex; align-items: center; justify-content: center;
+      ion-icon { font-size: 28px; color: #12B35B; }
+    }
+    .dd-lines { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .dd-strong { font-size: 18px; font-weight: 800; color: #0D1B2A; letter-spacing: 0.5px; }
+    .dd-sub { font-size: 13.5px; font-weight: 600; color: #6C757D; }
+  }
 
-    .pay-bar-btn {
-      margin-left: auto;
-      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      height: 52px; padding: 0 28px; border-radius: 16px; border: none;
-      background: var(--ion-color-primary, #12B35B); color: #fff;
-      font-size: 16px; font-weight: 800; cursor: pointer;
-      box-shadow: 0 8px 22px rgba(18, 179, 91, 0.3);
-      ion-icon { font-size: 20px; }
-      &:active { transform: scale(0.98); }
+  .dd-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+
+    .dd-stat {
+      background: #F6F8FA; border: 1px solid #EEF0F2; border-radius: 16px;
+      padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+
+      &__label { font-size: 12px; font-weight: 700; color: #9AA3AE; text-transform: uppercase; letter-spacing: 0.5px; }
+      &__value { font-size: 20px; font-weight: 800; color: #0D1B2A; }
     }
   }
+
+  .dd-call {
+    margin-top: 4px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; height: 54px; border-radius: 16px; border: none;
+    background: #12B35B; color: #fff; font-size: 16px; font-weight: 800; cursor: pointer;
+    box-shadow: 0 8px 22px rgba(18, 179, 91, 0.3);
+    ion-icon { font-size: 21px; }
+    &:active { transform: scale(0.98); }
+  }
+
+  .dd-nophone { text-align: center; font-size: 13px; color: #9AA3AE; font-weight: 600; margin: 6px 0 0; }
 }
 
 /* ─────────────────────────────────────────────────────────────────

@@ -12,21 +12,13 @@
         </provider>
     </application>
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
-    <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- Camera + Storage (profile photo) -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-
-    <!-- Contacts (trusted SOS) -->
+    <uses-permission android:maxSdkVersion="32" android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-
-    <!-- SMS OTP autofill uses the SMS Retriever API (no SMS permission required). -->
+    <!-- Required by @capacitor-community/contacts pickContact() (native picker). -->
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
 </manifest>
