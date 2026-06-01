@@ -1,4 +1,4 @@
-<ion-content class="trip-page" [fullscreen]="true">
+<ion-content class="trip-page" [scrollY]="false">
 
   <!-- Loading -->
   <div class="trip-loading" *ngIf="loading">
@@ -7,168 +7,189 @@
 
   <ng-container *ngIf="!loading">
 
-    <!-- ============ Map ============ -->
+    <!-- ============ Full-screen map ============ -->
     <div class="trip-map-wrap">
       <div id="trip-map" class="trip-map"></div>
-      <button class="map-fab map-back" (click)="back()" aria-label="Back">
-        <ion-icon name="arrow-back-outline"></ion-icon>
-      </button>
-      <div class="map-trip-chip">Trip #{{ tripId }}</div>
+      <div class="map-scrim" aria-hidden="true"></div>
     </div>
 
-    <!-- ============ Sheet ============ -->
-    <div class="trip-sheet" *ngIf="trip as t">
-      <div class="sheet-grab"></div>
+    <!-- Floating top controls (over the map) -->
+    <div class="trip-top">
+      <button class="nav-fab" (click)="back()" aria-label="Back">
+        <ion-icon name="arrow-back-outline"></ion-icon>
+      </button>
+      <div class="trip-top__right">
+        <span class="live-pill" *ngIf="liveConnected"><span class="live-dot"></span> Live</span>
+        <span class="trip-chip">Trip #{{ tripId }}</span>
+      </div>
+    </div>
 
-      <!-- Status -->
-      <div class="status-block">
-        <div class="status-top">
+    <!-- ============ Floating sheet ============ -->
+    <div
+      class="trip-sheet"
+      *ngIf="trip as t"
+      [class.is-expanded]="isCompleted()"
+      [class.is-collapsed]="sheetCollapsed && !isCompleted()"
+    >
+      <button class="sheet-grab" (click)="toggleSheet()" aria-label="Toggle trip details">
+        <span class="sheet-grab__bar"></span>
+      </button>
+
+      <!-- Always-visible head: status + details button -->
+      <div class="sheet-head">
+        <div class="status-block">
           <span class="status-eyebrow">{{ t.status === 'SEARCHING' || t.status === 'MATCHED' ? 'CONNECTING' : 'LIVE STATUS' }}</span>
-          <span class="live-pill" *ngIf="liveConnected"><span class="live-dot"></span> Live</span>
+          <h1 class="status-title">{{ statusCopy().title }}</h1>
+          <p class="status-sub" *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
+          <span class="locating-hint" *ngIf="awaitingDriverLocation">
+            <span class="locating-dot"></span> Locating driver…
+          </span>
         </div>
-        <h1 class="status-title">{{ statusCopy().title }}</h1>
-        <p class="status-sub" *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
-      </div>
 
-      <!-- Driver -->
-      <div class="info-card driver-card" *ngIf="t.driver">
-        <div class="driver-avatar"><ion-icon name="person"></ion-icon></div>
-        <div class="driver-info">
-          <span class="driver-name">{{ t.driver.name || 'Driver assigned' }}</span>
-          <span
-            class="driver-eta"
-            *ngIf="etaMinutes != null && (t.status === 'ASSIGNED' || t.status === 'EN_ROUTE_PICKUP')"
-          >Arriving in {{ etaMinutes }} min</span>
-          <span
-            class="driver-eta muted"
-            *ngIf="driverPosition && !(etaMinutes != null && (t.status === 'ASSIGNED' || t.status === 'EN_ROUTE_PICKUP'))"
-          >Live location tracking</span>
-        </div>
-        <span
-          class="eta-chip"
-          *ngIf="etaMinutes != null && (t.status === 'ASSIGNED' || t.status === 'EN_ROUTE_PICKUP')"
-        >{{ etaMinutes }} min</span>
-      </div>
-
-      <!-- Fare summary -->
-      <div class="info-card fare-card" *ngIf="t.final_fare != null || couponPreview">
-        <div class="fare-row" *ngIf="t.final_fare != null">
-          <span>Fare</span><span>₹{{ t.final_fare }}</span>
-        </div>
-        <div class="fare-row discount" *ngIf="couponPreview">
-          <span>Coupon · {{ couponPreview.coupon.title }}</span>
-          <span>-₹{{ couponPreview.discount }}</span>
-        </div>
-        <div class="fare-row total" *ngIf="payableAmount != null">
-          <span>You pay</span><span>₹{{ payableAmount }}</span>
-        </div>
-      </div>
-
-      <!-- Active-trip actions -->
-      <div class="trip-actions" *ngIf="canCancel() || canSOS()">
-        <button *ngIf="canCancel()" class="t-btn t-btn--danger-outline" (click)="cancel()">
-          <ion-icon name="close-circle-outline"></ion-icon><span>Cancel trip</span>
+        <!-- Ride-details trigger (driver name is on the map; fare/eta/phone in the modal) -->
+        <button
+          class="details-fab"
+          *ngIf="t.driver && !isCompleted()"
+          (click)="openDriverDetails()"
+          aria-label="Ride details"
+        >
+          <ion-icon name="information-circle-outline"></ion-icon>
         </button>
-        <div class="safety-row" *ngIf="canSOS()">
-          <button class="t-btn t-btn--danger" [disabled]="sosBusy" (click)="triggerSOS()">
+      </div>
+
+      <!-- Collapsible body -->
+      <div class="sheet-body">
+
+        <!-- Fare summary (completed only — during the ride the fare lives in the details modal) -->
+        <div class="info-card fare-card" *ngIf="isCompleted() && (t.final_fare != null || couponPreview)">
+          <div class="fare-row" *ngIf="t.final_fare != null">
+            <span>Fare</span><span>₹{{ t.final_fare }}</span>
+          </div>
+          <div class="fare-row discount" *ngIf="couponPreview">
+            <span>Coupon · {{ couponPreview.coupon.title }}</span>
+            <span>-₹{{ couponPreview.discount }}</span>
+          </div>
+          <div class="fare-row total" *ngIf="couponPreview && payableAmount != null">
+            <span>You pay</span><span>₹{{ payableAmount }}</span>
+          </div>
+        </div>
+
+        <!-- Active-trip actions (compact icon row) -->
+        <div class="trip-actions" *ngIf="canCancel() || canSOS()">
+          <button *ngIf="canCancel()" class="act act--cancel" (click)="cancel()">
+            <ion-icon name="close-circle-outline"></ion-icon><span>Cancel</span>
+          </button>
+          <button *ngIf="canSOS()" class="act act--sos" [disabled]="sosBusy" (click)="triggerSOS()">
             <ion-icon name="warning"></ion-icon><span>SOS</span>
           </button>
-          <button class="t-btn t-btn--ghost" [disabled]="shareBusy" (click)="shareTrip()">
-            <ion-icon name="share-social-outline"></ion-icon><span>Share trip</span>
+          <button *ngIf="canShare()" class="act act--ghost" [disabled]="shareBusy" (click)="shareTrip()">
+            <ion-icon name="share-social-outline"></ion-icon><span>Share</span>
           </button>
         </div>
-      </div>
 
-      <!-- Completed: coupon -->
-      <div class="info-card coupon-card" *ngIf="isCompleted()">
-        <span class="card-label">Have a coupon?</span>
-        <div class="coupon-row">
-          <ion-icon name="gift-outline" class="coupon-icon" aria-hidden="true"></ion-icon>
-          <input
-            type="text"
-            placeholder="Coupon title"
-            [(ngModel)]="couponInput"
-            [disabled]="couponApplying || !!couponPreview"
-            (keyup.enter)="applyCoupon()"
-          />
+        <!-- Completed: coupon -->
+        <div class="info-card coupon-card" *ngIf="isCompleted()">
+          <span class="card-label">Have a coupon?</span>
+          <div class="coupon-row">
+            <ion-icon name="gift-outline" class="coupon-icon" aria-hidden="true"></ion-icon>
+            <input
+              type="text"
+              placeholder="Coupon title"
+              [(ngModel)]="couponInput"
+              [disabled]="couponApplying || !!couponPreview"
+              (keyup.enter)="applyCoupon()"
+            />
+            <button
+              type="button"
+              class="coupon-apply"
+              [disabled]="couponApplying || (!couponPreview && !couponInput.trim())"
+              (click)="applyCoupon()"
+            >
+              {{ couponApplying ? '…' : (couponPreview ? 'Remove' : 'Apply') }}
+            </button>
+          </div>
+          <small *ngIf="couponPreview" class="coupon-msg ok">
+            ✓ {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
+          </small>
+          <small *ngIf="couponError" class="coupon-msg err">{{ couponError }}</small>
+        </div>
+
+        <!-- Completed: rating -->
+        <div class="info-card rating-card" *ngIf="isCompleted()">
+          <div class="card-head">
+            <h3>Rate your driver</h3>
+            <p *ngIf="!ratingSubmitted">Tap a star to leave feedback</p>
+            <p *ngIf="ratingSubmitted" class="ok">Thanks for your feedback!</p>
+          </div>
+          <div class="stars" [class.locked]="ratingSubmitted">
+            <button
+              type="button"
+              *ngFor="let i of [1,2,3,4,5]"
+              class="star"
+              [class.filled]="i <= ratingScore"
+              [disabled]="ratingSubmitted || ratingBusy"
+              (click)="setRating(i)"
+              [attr.aria-label]="i + ' star'"
+            >★</button>
+          </div>
+          <textarea
+            *ngIf="!ratingSubmitted"
+            class="rating-comment"
+            [(ngModel)]="ratingComment"
+            placeholder="Optional feedback (max 2000 chars)"
+            maxlength="2000"
+            [disabled]="ratingBusy"
+            rows="3"
+          ></textarea>
           <button
-            type="button"
-            class="coupon-apply"
-            [disabled]="couponApplying || (!couponPreview && !couponInput.trim())"
-            (click)="applyCoupon()"
+            *ngIf="!ratingSubmitted"
+            class="card-cta"
+            [disabled]="ratingBusy || ratingScore < 1"
+            (click)="submitRating()"
           >
-            {{ couponApplying ? '…' : (couponPreview ? 'Remove' : 'Apply') }}
+            {{ ratingBusy ? 'Submitting…' : 'Submit rating' }}
           </button>
         </div>
-        <small *ngIf="couponPreview" class="coupon-msg ok">
-          ✓ {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
-        </small>
-        <small *ngIf="couponError" class="coupon-msg err">{{ couponError }}</small>
-      </div>
 
-      <!-- Completed: rating -->
-      <div class="info-card rating-card" *ngIf="isCompleted()">
-        <div class="card-head">
-          <h3>Rate your driver</h3>
-          <p *ngIf="!ratingSubmitted">Tap a star to leave feedback</p>
-          <p *ngIf="ratingSubmitted" class="ok">Thanks for your feedback!</p>
+        <!-- Completed: tipping -->
+        <div class="info-card tip-card" *ngIf="showTipCard">
+          <div class="card-head">
+            <h3>Add a tip for your driver?</h3>
+            <p *ngIf="tipping?.in_percentage">Percentages of your fare</p>
+          </div>
+          <div class="tip-presets">
+            <button
+              *ngFor="let v of tipping?.values"
+              class="tip-preset"
+              (click)="pickTipPreset(v)"
+              [disabled]="tipBusy"
+            >
+              {{ tipLabel(v) }}
+            </button>
+          </div>
+          <div class="tip-actions">
+            <button class="link-btn" (click)="openCustomTip()" [disabled]="tipBusy">Custom amount</button>
+            <button class="link-btn muted" (click)="skipTip()" [disabled]="tipBusy">Skip</button>
+          </div>
         </div>
-        <div class="stars" [class.locked]="ratingSubmitted">
-          <button
-            type="button"
-            *ngFor="let i of [1,2,3,4,5]"
-            class="star"
-            [class.filled]="i <= ratingScore"
-            [disabled]="ratingSubmitted || ratingBusy"
-            (click)="setRating(i)"
-            [attr.aria-label]="i + ' star'"
-          >★</button>
-        </div>
-        <textarea
-          *ngIf="!ratingSubmitted"
-          class="rating-comment"
-          [(ngModel)]="ratingComment"
-          placeholder="Optional feedback (max 2000 chars)"
-          maxlength="2000"
-          [disabled]="ratingBusy"
-          rows="3"
-        ></textarea>
-        <button
-          *ngIf="!ratingSubmitted"
-          class="card-cta"
-          [disabled]="ratingBusy || ratingScore < 1"
-          (click)="submitRating()"
-        >
-          {{ ratingBusy ? 'Submitting…' : 'Submit rating' }}
-        </button>
-      </div>
 
-      <!-- Completed: tipping -->
-      <div class="info-card tip-card" *ngIf="showTipCard">
-        <div class="card-head">
-          <h3>Add a tip for your driver?</h3>
-          <p *ngIf="tipping?.in_percentage">Percentages of your fare</p>
+        <!-- Already-tipped acknowledgement -->
+        <div class="tip-done" *ngIf="isCompleted() && (trip?.tip_amount ?? 0) > 0">
+          <ion-icon name="heart"></ion-icon>
+          <span>You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!</span>
         </div>
-        <div class="tip-presets">
-          <button
-            *ngFor="let v of tipping?.values"
-            class="tip-preset"
-            (click)="pickTipPreset(v)"
-            [disabled]="tipBusy"
-          >
-            {{ tipLabel(v) }}
+
+        <!-- Completed: sticky pay bar -->
+        <div class="pay-bar" *ngIf="isCompleted()">
+          <div class="pay-bar-info">
+            <span class="pay-bar-label">Total payable</span>
+            <span class="pay-bar-amount">₹{{ payableAmount }}</span>
+          </div>
+          <button class="pay-bar-btn" (click)="pay()">
+            <ion-icon name="card-outline"></ion-icon>
+            <span>Pay now</span>
           </button>
         </div>
-        <div class="tip-actions">
-          <button class="link-btn" (click)="openCustomTip()" [disabled]="tipBusy">Custom amount</button>
-          <button class="link-btn muted" (click)="skipTip()" [disabled]="tipBusy">Skip</button>
-        </div>
-      </div>
-
-      <!-- Already-tipped acknowledgement -->
-      <div class="tip-done" *ngIf="isCompleted() && (trip?.tip_amount ?? 0) > 0">
-        <ion-icon name="heart"></ion-icon>
-        <span>You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!</span>
       </div>
     </div>
   </ng-container>
@@ -293,18 +314,49 @@
       </ion-content>
     </ng-template>
   </ion-modal>
-</ion-content>
 
-<!-- ============ Fixed bottom Pay bar ============ -->
-<ion-footer class="pay-footer" *ngIf="!loading && isCompleted()">
-  <div class="pay-bar">
-    <div class="pay-bar-info">
-      <span class="pay-bar-label">Total payable</span>
-      <span class="pay-bar-amount">₹{{ payableAmount }}</span>
-    </div>
-    <button class="pay-bar-btn" (click)="pay()">
-      <ion-icon name="card-outline"></ion-icon>
-      <span>Pay now</span>
-    </button>
-  </div>
-</ion-footer>
+  <!-- Ride-details modal (opened from the map driver marker / info button) -->
+  <ion-modal
+    [isOpen]="showDriverModal"
+    (didDismiss)="showDriverModal = false"
+    class="driver-details-modal"
+    [initialBreakpoint]="0.55"
+    [breakpoints]="[0, 0.55, 0.9]"
+    [handle]="true"
+  >
+    <ng-template>
+      <div class="dd-sheet" *ngIf="trip as t">
+        <h2 class="dd-title">Ride details</h2>
+
+        <!-- Vehicle -->
+        <div class="dd-card" *ngIf="vehicleReg || vehicleSummary">
+          <div class="dd-icon"><ion-icon name="car-sport"></ion-icon></div>
+          <div class="dd-lines">
+            <span class="dd-strong" *ngIf="vehicleReg">{{ vehicleReg }}</span>
+            <span class="dd-sub" *ngIf="vehicleSummary">{{ vehicleSummary }}</span>
+            <span class="dd-sub" *ngIf="!vehicleSummary && !vehicleReg">Vehicle details unavailable</span>
+          </div>
+        </div>
+
+        <!-- ETA + Fare -->
+        <div class="dd-stats">
+          <div class="dd-stat">
+            <span class="dd-stat__label">{{ etaLabel }}</span>
+            <span class="dd-stat__value">{{ etaMinutes != null ? etaMinutes + ' min' : '—' }}</span>
+          </div>
+          <div class="dd-stat">
+            <span class="dd-stat__label">Fare</span>
+            <span class="dd-stat__value">{{ t.final_fare != null ? '₹' + t.final_fare : '—' }}</span>
+          </div>
+        </div>
+
+        <!-- Call -->
+        <button class="dd-call" *ngIf="driverPhone" (click)="callDriver()">
+          <ion-icon name="call"></ion-icon>
+          <span>Call driver</span>
+        </button>
+        <p class="dd-nophone" *ngIf="!driverPhone">Phone number not available</p>
+      </div>
+    </ng-template>
+  </ion-modal>
+</ion-content>
