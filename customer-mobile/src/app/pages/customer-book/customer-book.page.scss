@@ -8,6 +8,36 @@
   z-index: 0;
 }
 
+// Floating "recenter on my live location" button — sits just above the
+// bottom sheet on the idle home map.
+.recenter-fab {
+  position: absolute;
+  right: 16px;
+  bottom: calc(38vh + 12px);
+  z-index: 9;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(13, 27, 42, 0.18);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  ion-icon {
+    font-size: 22px;
+    color: var(--ion-color-primary, #12B35B);
+  }
+
+  &:active {
+    transform: scale(0.92);
+    box-shadow: 0 2px 8px rgba(13, 27, 42, 0.14);
+  }
+}
+
 .top-overlay {
   position: absolute;
   top: max(16px, env(safe-area-inset-top, 16px));
@@ -197,6 +227,38 @@
         background: var(--ion-color-secondary-shade, #0b1825);
       }
     }
+  }
+}
+
+// Saved-locations picker (opened from the pickup / drop steps).
+.saved-picker-header {
+  margin-bottom: 12px;
+
+  h3 {
+    margin: 0 0 4px 0;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--ion-color-secondary, #0D1B2A);
+    letter-spacing: -0.3px;
+  }
+
+  p {
+    margin: 0;
+    font-size: 14px;
+    color: #9CA3AF;
+    font-weight: 600;
+  }
+}
+
+.saved-empty {
+  padding: 24px 4px;
+  text-align: center;
+
+  p {
+    margin: 0;
+    font-size: 14px;
+    color: #9CA3AF;
+    font-weight: 600;
   }
 }
 
@@ -2101,3 +2163,236 @@
     }
   }
 }
+
+/* ============================================================
+   Redesigned booking steps — slim sheets so the map stays big
+   ============================================================ */
+.sheet-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Pickup / Drop step input card */
+.step-input-card {
+  background: #ffffff;
+  border: 1px solid #EEF0F2;
+  border-radius: 16px;
+  padding: 6px 14px;
+  box-shadow: 0 2px 10px rgba(13, 27, 42, 0.05);
+
+  .step-input-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 46px;
+
+    .dot-pickup,
+    .dot-drop {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-pickup { background: #0D1B2A; }
+    .dot-drop { background: var(--ion-color-primary, #12B35B); }
+
+    input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 15px;
+      font-weight: 600;
+      color: #0D1B2A;
+      padding: 0;
+      &::placeholder { color: #9AA3AE; font-weight: 500; }
+    }
+
+    .step-readonly-addr {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 600;
+      color: #6C757D;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  .input-divider {
+    height: 1px;
+    background: #EEF0F2;
+    margin: 2px 0 2px 23px;
+  }
+}
+
+/* Step 3 — find driver (radar + hint, slim) */
+.sheet-find-driver {
+  .finddriver-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 4px 2px;
+  }
+
+  .radar-scanner.mini {
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+  }
+
+  .finddriver-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    .fd-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0D1B2A;
+    }
+    .fd-sub {
+      font-size: 12.5px;
+      color: #6C757D;
+      line-height: 1.35;
+    }
+  }
+}
+
+/* Name your price */
+.sheet-offer {
+  .offer-head {
+    h3 { margin: 0 0 4px; font-size: 18px; font-weight: 800; color: #0D1B2A; }
+    p { margin: 0; font-size: 12.5px; color: #6C757D; line-height: 1.35; }
+  }
+
+  .offer-amount-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: #F7F8FA;
+    border: 1px solid #EEF0F2;
+    border-radius: 18px;
+    padding: 10px 12px;
+
+    .offer-step-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: #ffffff;
+      box-shadow: 0 2px 8px rgba(13, 27, 42, 0.10);
+      font-size: 24px;
+      font-weight: 700;
+      color: #0D1B2A;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      &:disabled { opacity: 0.4; }
+      &:active { transform: scale(0.92); }
+    }
+
+    .offer-amount-mid {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+
+      .offer-currency {
+        font-size: 26px;
+        font-weight: 800;
+        color: #0D1B2A;
+      }
+      .offer-input {
+        width: 100%;
+        max-width: 140px;
+        border: none;
+        outline: none;
+        background: transparent;
+        text-align: center;
+        font-size: 34px;
+        font-weight: 800;
+        color: #0D1B2A;
+        &::placeholder { color: #C4CAD2; }
+      }
+    }
+  }
+}
+
+
+/* ---- Refinements: slimmer step modals + name-your-fare floor ---- */
+.offer-min-hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: #6C757D;
+  text-align: center;
+}
+
+/* Tighten the bottom sheet so the map keeps most of the screen */
+.bottom-sheet {
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom));
+}
+
+/* The per-step sheets are made as compact as possible */
+.sheet-step {
+  gap: 10px;
+
+  .action-footer {
+    margin-top: 10px;
+
+    .action-btn-back,
+    .action-btn-continue {
+      padding: 12px;
+      font-size: 14.5px;
+      border-radius: 12px;
+    }
+  }
+
+  .step-input-card { padding: 4px 14px; }
+  .step-input-card .step-input-row { min-height: 42px; }
+
+  /* shorter quick-action rows */
+  .quick-locations ion-item {
+    --min-height: 44px;
+    --padding-top: 0;
+    --padding-bottom: 0;
+    font-size: 14px;
+  }
+  .quick-locations ion-item h3 { font-size: 14px; }
+
+  /* suggestion list capped so it scrolls instead of pushing the map away */
+  .suggestion-list {
+    max-height: 34vh;
+    overflow-y: auto;
+  }
+}
+
+/* find-driver + offer are intrinsically short — trim their inner spacing */
+.sheet-find-driver .finddriver-row { padding: 2px 2px; }
+.sheet-offer .offer-head h3 { font-size: 16px; }
+.sheet-offer .offer-amount-card { padding: 8px 10px; }
+
+
+/* ---- Compact the HOME (idle) sheet so the map gets most of the screen ---- */
+.sheet-idle {
+  .sheet-drag-handle { margin-bottom: 8px; }
+
+  .greeting-header { margin-bottom: 10px; }
+  .greeting-header .greeting-title { font-size: 21px; }
+  .greeting-header .greeting-subtitle { font-size: 13px; }
+
+  .ride-chips { margin-bottom: 12px; gap: 10px; }
+  .ride-chips .chip .chip-icon-circle { width: 46px; height: 46px; }
+  .ride-chips .chip .chip-icon-circle ion-icon { font-size: 19px; }
+  .ride-chips .chip .chip-label { margin-top: 5px; font-size: 12.5px; }
+  .ride-chips .chip .chip-desc { font-size: 10px; }
+
+  .new-trip-cta-btn { padding: 12px 14px; }
+}
+
+/* A touch tighter overall sheet */
+.bottom-sheet { padding-top: 10px; }

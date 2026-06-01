@@ -1,54 +1,89 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-buttons slot="start">
-      <ion-button (click)="back()" aria-label="Back">
-        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-    <ion-title>Profile</ion-title>
-  </ion-toolbar>
-</ion-header>
+<ion-content class="profile-page" [fullscreen]="true" scroll-y="true">
 
-<ion-content class="ion-padding">
-  <div class="avatar-wrap">
+  <!-- ============ Premium header band ============ -->
+  <div class="profile-header">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <h1 class="header-title">Edit Account</h1>
+
     <label class="avatar-edit">
       <div
         class="avatar"
         [style.backgroundImage]="photoPreview ? 'url(' + photoPreview + ')' : null"
-      ></div>
-      <span class="plus-badge">+</span>
+      >
+        <ion-icon *ngIf="!photoPreview" name="person"></ion-icon>
+      </div>
+      <span class="plus-badge"><ion-icon name="camera"></ion-icon></span>
       <input type="file" accept="image/*" hidden (change)="onPhotoChange($event)" [disabled]="busy" />
     </label>
+
+    <h2 class="profile-name">{{ name || 'Your name' }}</h2>
+    <span class="profile-phone" *ngIf="phone">{{ phone }}</span>
   </div>
 
-  <ion-item lines="full">
-    <ion-label position="stacked">Name *</ion-label>
-    <ion-input [(ngModel)]="name" [disabled]="busy" autocomplete="name" required></ion-input>
-  </ion-item>
+  <!-- ============ Form body ============ -->
+  <div class="profile-body">
 
-  <ion-item lines="full">
-    <ion-label position="stacked">Email (optional)</ion-label>
-    <ion-input type="email" [(ngModel)]="email" [disabled]="busy" autocomplete="email"></ion-input>
-  </ion-item>
+    <div class="section-label">Personal info</div>
 
-  <ion-item lines="full">
-    <ion-label position="stacked">Date of birth</ion-label>
-    <ion-input [value]="dobDisplay || '—'" disabled></ion-input>
-  </ion-item>
+    <!-- Name (editable) -->
+    <div class="field-card">
+      <label class="field-label">Full Name</label>
+      <div class="field-input-row">
+        <ion-icon name="person-outline" class="field-icon"></ion-icon>
+        <input type="text" [(ngModel)]="name" [disabled]="busy" autocomplete="name" placeholder="Enter your name" />
+      </div>
+    </div>
 
-  <ion-item lines="full">
-    <ion-label position="stacked">Address</ion-label>
-    <ion-input [value]="address || '—'" disabled></ion-input>
-  </ion-item>
+    <div class="section-label">Account details</div>
 
-  <ion-item lines="full" *ngIf="phone">
-    <ion-label position="stacked">Phone</ion-label>
-    <ion-input [value]="phone" disabled></ion-input>
-  </ion-item>
+    <!-- Email (read-only) -->
+    <div class="field-card readonly">
+      <label class="field-label">Email</label>
+      <div class="field-input-row">
+        <ion-icon name="mail-outline" class="field-icon"></ion-icon>
+        <span class="field-value">{{ email || '—' }}</span>
+        <ion-icon name="lock-closed" class="lock-icon"></ion-icon>
+      </div>
+    </div>
 
-  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+    <!-- Phone (read-only) -->
+    <div class="field-card readonly" *ngIf="phone">
+      <label class="field-label">Phone number</label>
+      <div class="field-input-row">
+        <ion-icon name="call-outline" class="field-icon"></ion-icon>
+        <span class="field-value">{{ phone }}</span>
+        <ion-icon name="lock-closed" class="lock-icon"></ion-icon>
+      </div>
+    </div>
 
-  <ion-button expand="block" class="ion-margin-top" (click)="submit()" [disabled]="busy">
-    {{ busy ? 'Saving…' : 'Save' }}
-  </ion-button>
+    <!-- Date of birth (read-only) -->
+    <div class="field-card readonly">
+      <label class="field-label">Date of birth</label>
+      <div class="field-input-row">
+        <ion-icon name="calendar-outline" class="field-icon"></ion-icon>
+        <span class="field-value">{{ dobDisplay || '—' }}</span>
+        <ion-icon name="lock-closed" class="lock-icon"></ion-icon>
+      </div>
+    </div>
+
+    <!-- Address (read-only) -->
+    <div class="field-card readonly">
+      <label class="field-label">Address</label>
+      <div class="field-input-row">
+        <ion-icon name="location-outline" class="field-icon"></ion-icon>
+        <span class="field-value">{{ address || '—' }}</span>
+        <ion-icon name="lock-closed" class="lock-icon"></ion-icon>
+      </div>
+    </div>
+
+    <p class="field-error" *ngIf="error">
+      <ion-icon name="alert-circle-outline"></ion-icon> {{ error }}
+    </p>
+
+    <button class="save-btn" (click)="submit()" [disabled]="busy">
+      {{ busy ? 'Saving…' : 'Save Changes' }}
+    </button>
+  </div>
 </ion-content>

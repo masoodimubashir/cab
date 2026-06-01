@@ -1,10 +1,6 @@
 ion-tab-bar {
-  --background: #ffffff;
-  --border: none;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow: 0 -8px 24px rgba(13, 27, 42, 0.04);
-  height: 64px;
-  padding-bottom: env(safe-area-inset-bottom);
+  /* Bottom navigation removed — navigation now lives in the side menu. */
+  display: none;
 }
 
 ion-tab-button {

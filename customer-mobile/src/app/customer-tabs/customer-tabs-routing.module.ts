@@ -18,11 +18,6 @@ const routes: Routes = [
           import('../pages/customer-trips/customer-trips.module').then((m) => m.CustomerTripsPageModule),
       },
       {
-        path: 'more',
-        loadChildren: () =>
-          import('../pages/more/more.module').then((m) => m.CustomerMorePageModule),
-      },
-      {
         path: 'profile',
         loadChildren: () =>
           import('../pages/profile/profile.module').then((m) => m.CustomerProfilePageModule),
@@ -34,6 +29,13 @@ const routes: Routes = [
       },
       {
         path: 'emergency-contacts',
+        loadChildren: () =>
+          import('../pages/emergency-contacts/emergency-contacts.module').then((m) => m.CustomerEmergencyContactsPageModule),
+      },
+      {
+        // Same page/component as emergency-contacts; the URL switches it to the
+        // Support view (official help numbers).
+        path: 'support',
         loadChildren: () =>
           import('../pages/emergency-contacts/emergency-contacts.module').then((m) => m.CustomerEmergencyContactsPageModule),
       },

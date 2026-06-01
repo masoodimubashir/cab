@@ -1,96 +1,111 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-buttons slot="start">
-      <ion-button (click)="back()" aria-label="Back">
-        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-    <ion-title>Saved Locations</ion-title>
-  </ion-toolbar>
-</ion-header>
+<ion-content class="saved-page" [fullscreen]="true">
 
-<ion-content>
-  <div class="page-pad">
-    <p class="muted small">
-      Save places you ride to often — Home, Work, Mom's house — for one-tap booking.
-    </p>
-
-    <ion-button expand="block" (click)="openAdd()">
-      <ion-icon name="add-outline" slot="start"></ion-icon>
-      Add saved location
-    </ion-button>
-
-    <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal">{{ error }}</p></ion-text>
-
-    <ion-list inset="true" *ngIf="!loading && rows.length; else emptyState">
-      <ion-item-sliding *ngFor="let r of rows">
-        <ion-item button (click)="openEdit(r)">
-          <ion-icon [name]="r.icon || 'bookmark-outline'" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h2>{{ r.label }}</h2>
-            <p>{{ r.address }}</p>
-          </ion-label>
-          <ion-button slot="end" fill="clear" (click)="$event.stopPropagation(); confirmDelete(r)" aria-label="Delete">
-            <ion-icon name="trash-outline" color="danger" slot="icon-only"></ion-icon>
-          </ion-button>
-        </ion-item>
-        <ion-item-options side="end">
-          <ion-item-option color="danger" (click)="confirmDelete(r)">
-            <ion-icon name="trash-outline" slot="icon-only"></ion-icon>
-          </ion-item-option>
-        </ion-item-options>
-      </ion-item-sliding>
-    </ion-list>
-
-    <ng-template #emptyState>
-      <div *ngIf="!loading" class="empty">
-        <ion-icon name="bookmark-outline"></ion-icon>
-        <p>No saved locations yet.</p>
-      </div>
-      <div *ngIf="loading" class="empty">
-        <ion-spinner name="crescent"></ion-spinner>
-      </div>
-    </ng-template>
+  <!-- ============ Header ============ -->
+  <div class="page-header">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <h1 class="header-title">Location</h1>
+    <p class="header-sub">Save places you ride to often for one-tap booking.</p>
   </div>
 
-  <ion-modal [isOpen]="dialogOpen" (didDismiss)="dialogOpen = false">
-    <ng-template>
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-title>{{ form.id ? 'Edit saved location' : 'New saved location' }}</ion-title>
-          <ion-buttons slot="end">
-            <ion-button (click)="dialogOpen = false">Close</ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-      <ion-content class="ion-padding">
-        <ion-item lines="full">
-          <ion-label position="stacked">Label *</ion-label>
-          <ion-input [(ngModel)]="form.label" placeholder="Home, Office, Mom's place" [disabled]="saving"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label position="stacked">Address *</ion-label>
-          <ion-input [(ngModel)]="form.address" [disabled]="saving"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label position="stacked">Latitude *</ion-label>
-          <ion-input type="number" [(ngModel)]="form.lat" [disabled]="saving"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label position="stacked">Longitude *</ion-label>
-          <ion-input type="number" [(ngModel)]="form.lng" [disabled]="saving"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label position="stacked">Icon (ion-icon name)</ion-label>
-          <ion-input [(ngModel)]="form.icon" placeholder="home-outline" [disabled]="saving"></ion-input>
-        </ion-item>
+  <!-- ============ Body ============ -->
+  <div class="page-body">
 
-        <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+    <button class="add-btn" (click)="openAdd()">
+      <ion-icon name="add"></ion-icon>
+      <span>Add Location</span>
+    </button>
 
-        <ion-button expand="block" class="ion-margin-top" (click)="submit()" [disabled]="saving">
-          {{ saving ? 'Saving…' : 'Save' }}
-        </ion-button>
-      </ion-content>
-    </ng-template>
-  </ion-modal>
+    <p class="page-error" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+
+    <div class="saved-list" *ngIf="!loading && rows.length">
+      <div class="saved-card" *ngFor="let r of rows" (click)="openEdit(r)">
+        <div class="saved-icon">
+          <ion-icon [name]="r.icon || 'bookmark'"></ion-icon>
+        </div>
+        <div class="saved-info">
+          <span class="saved-label">{{ r.label }}</span>
+          <span class="saved-address">{{ r.address }}</span>
+        </div>
+        <button class="saved-del" (click)="$event.stopPropagation(); confirmDelete(r)" aria-label="Delete">
+          <ion-icon name="trash-outline"></ion-icon>
+        </button>
+      </div>
+    </div>
+
+    <div class="state-box" *ngIf="loading">
+      <ion-spinner name="crescent"></ion-spinner>
+    </div>
+    <div class="state-box" *ngIf="!loading && !rows.length">
+      <div class="state-icon"><ion-icon name="location-outline"></ion-icon></div>
+      <p class="state-title">No locations yet</p>
+      <p class="state-sub">Add Home, Work or any place you visit often.</p>
+    </div>
+  </div>
+
+  <!-- ============ Map picker (search + tap to pick) ============ -->
+  <div class="map-picker" *ngIf="pickerOpen">
+    <div class="picker-map-wrap">
+      <div id="picker-map" class="picker-map"></div>
+
+      <!-- centred pin -->
+      <div class="picker-pin"><ion-icon name="location"></ion-icon></div>
+
+      <!-- top bar: back + search -->
+      <div class="picker-top">
+        <button class="picker-back" (click)="closePicker()" aria-label="Back">
+          <ion-icon name="arrow-back-outline"></ion-icon>
+        </button>
+        <div class="picker-search">
+          <ion-icon name="search-outline"></ion-icon>
+          <input type="text" [value]="searchQuery" (input)="onPickerSearch($event)" placeholder="Search a place" />
+        </div>
+      </div>
+
+      <div class="picker-suggestions" *ngIf="searchResults.length">
+        <div class="picker-sugg" *ngFor="let s of searchResults" (click)="pickSearchResult(s)">
+          <ion-icon name="location-outline"></ion-icon>
+          <div class="ps-text">
+            <span class="ps-main">{{ s.main_text }}</span>
+            <span class="ps-sub">{{ s.secondary_text }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="picker-hint">Move the map or tap to drop the pin</div>
+    </div>
+
+    <!-- bottom sheet: address + category + save -->
+    <div class="picker-sheet">
+      <div class="picker-addr">
+        <ion-icon name="location"></ion-icon>
+        <span>{{ pickerAddress || 'Choose a location' }}</span>
+      </div>
+
+      <span class="picker-cat-label">Save as</span>
+      <div class="picker-chips">
+        <button
+          *ngFor="let p of presets"
+          class="picker-chip"
+          [class.active]="selectedPreset === p.key"
+          (click)="selectPreset(p.key)"
+        >
+          <ion-icon [name]="p.icon"></ion-icon>
+          <span>{{ p.label }}</span>
+        </button>
+      </div>
+
+      <div class="field-card" *ngIf="selectedPreset === 'other'">
+        <label class="field-label">Place name</label>
+        <input type="text" [(ngModel)]="customLabel" placeholder="e.g. Gym, Mom's place" [disabled]="saving" />
+      </div>
+
+      <p class="page-error" *ngIf="pickerError"><ion-icon name="alert-circle-outline"></ion-icon> {{ pickerError }}</p>
+
+      <button class="btn-primary full" (click)="savePicker()" [disabled]="saving">
+        {{ saving ? 'Saving…' : 'Save Location' }}
+      </button>
+    </div>
+  </div>
 </ion-content>

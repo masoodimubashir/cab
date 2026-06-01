@@ -13,7 +13,7 @@
 //
 // REVERB_APP_KEY must match REVERB_APP_KEY in the backend's production .env.
 // ===========================================================================
-const SERVER_HOST = 'REPLACE_WITH_SERVER_IP';
+const SERVER_HOST = '192.168.29.13:8000';
 const USE_HTTPS = false;
 
 const httpScheme = USE_HTTPS ? 'https' : 'http';

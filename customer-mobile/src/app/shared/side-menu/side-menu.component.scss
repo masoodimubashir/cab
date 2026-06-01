@@ -1,4 +1,4 @@
-// ============ PREMIUM SIDE MENU STYLE SYSTEM ============
+// ============ PREMIUM SIDE MENU ============
 
 ion-menu {
   --background: #ffffff;
@@ -6,44 +6,41 @@ ion-menu {
 
   .menu-content {
     --background: #ffffff;
-    --padding-top: calc(20px + env(safe-area-inset-top));
-    --padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    --padding-top: 0;
+    --padding-bottom: 0;
+
+    // Lay the menu out as a column so Sign out can pin to the bottom.
+    &::part(scroll) {
+      display: flex;
+      flex-direction: column;
+    }
   }
 
-  // Premium Header Profile Card (Bento Rounded)
-  .menu-profile-card {
+  // ============ Dark profile header ============
+  .menu-header {
     display: flex;
     align-items: center;
-    gap: 16px;
-    background: linear-gradient(135deg, #F8F9FA 0%, #FFFFFF 100%);
-    border: 1px solid #E5E7EB;
-    border-radius: 20px;
-    margin: 20px 16px 16px;
-    padding: 16px;
-    box-shadow: 0 6px 20px rgba(13, 27, 42, 0.02);
+    gap: 14px;
+    background: var(--dreamcab-dark-blue, #0D1B2A);
+    border-bottom-right-radius: 28px;
+    padding: calc(env(safe-area-inset-top, 20px) + 18px) 20px 22px;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background 0.2s ease;
 
-    &:active {
-      transform: scale(0.98);
-      background: #F3F4F6;
-    }
+    &:active { background: #15263a; }
 
-    .profile-avatar-wrap {
-      flex-shrink: 0;
-    }
-
-    .avatar-circle {
+    .menu-avatar {
       width: 56px;
       height: 56px;
       border-radius: 50%;
-      border: 2.5px solid var(--ion-color-primary, #12B35B);
-      box-shadow: 0 4px 12px rgba(18, 179, 91, 0.15);
+      flex-shrink: 0;
+      border: 2.5px solid rgba(255, 255, 255, 0.9);
+      overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #E5E7EB;
-      overflow: hidden;
+      background: linear-gradient(135deg, var(--ion-color-primary, #12B35B) 0%, #0e8f49 100%);
+      box-shadow: 0 4px 14px rgba(18, 179, 91, 0.3);
 
       img {
         width: 100%;
@@ -51,127 +48,145 @@ ion-menu {
         object-fit: cover;
       }
 
-      ion-icon {
-        font-size: 26px;
-        color: var(--text-muted, #6C757D);
+      .avatar-initials {
+        font-size: 24px;
+        font-weight: 800;
+        color: #ffffff;
+        line-height: 1;
       }
     }
 
-    .profile-details {
+    .menu-header-info {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
       gap: 2px;
       overflow: hidden;
 
-      .hello-text {
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--text-muted, #888888);
-        text-transform: uppercase;
-        letter-spacing: 0.8px;
-        line-height: 1;
-      }
-
-      .name-text {
+      .menu-name {
         font-size: 1.15rem;
         font-weight: 800;
-        color: var(--text-main, #0D1B2A);
+        color: #ffffff;
         letter-spacing: -0.3px;
         margin: 0;
         line-height: 1.2;
-        width: 100%;
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
       }
 
-      .edit-link {
+      .menu-phone {
+        font-size: 12.5px;
+        font-weight: 500;
+        color: #9CA3AF;
+        line-height: 1.2;
+      }
+
+      .menu-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 1px;
         font-size: 12px;
         font-weight: 700;
         color: var(--ion-color-primary, #12B35B);
-        text-decoration: underline;
-        margin-top: 2px;
+        margin-top: 4px;
         line-height: 1;
+
+        ion-icon { font-size: 12px; }
       }
     }
   }
 
-  // Navigation Items List
+  // ============ Navigation items ============
   .menu-items-list {
     background: transparent;
-    padding: 12px 8px;
+    padding: 14px 8px 8px;
     margin: 0;
 
     .menu-item {
       --background: transparent;
       --border-style: none;
       --inner-border-width: 0;
-      --padding-start: 16px;
-      --padding-end: 16px;
-      --min-height: 54px;
+      --padding-start: 14px;
+      --padding-end: 12px;
+      --min-height: 56px;
       border-radius: 14px;
-      margin: 6px 12px;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      margin: 4px 10px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 
-      &:hover,
       &:active {
-        --background: rgba(18, 179, 91, 0.04);
+        --background: rgba(18, 179, 91, 0.06);
         transform: translateX(2px);
-
-        .icon-box {
-          transform: scale(1.04);
-          box-shadow: 0 4px 12px rgba(13, 27, 42, 0.15);
-        }
       }
 
-      // Compact Dark Solid Rectangle for Every Icon
       .icon-box {
-        width: 34px;
-        height: 34px;
-        border-radius: 8px;
-        background: var(--ion-color-secondary, #0D1B2A); // Dark navy solid rectangle box
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: var(--ion-color-secondary, #0D1B2A);
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-right: 12px;
+        margin-right: 14px;
         flex-shrink: 0;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
         .menu-icon {
-          font-size: 17px;
-          color: #ffffff; // Solid white/light color inside the dark rectangle
+          font-size: 18px;
+          color: #ffffff;
           margin: 0;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
       }
 
-      // Sizing of the font same as that image (Compact, crisp 14px)
       .menu-label {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
         color: var(--text-main, #0D1B2A);
         letter-spacing: -0.15px;
       }
 
-      // Danger options (Red Rectangle with white icon)
-      &.danger-item {
-        &:hover,
-        &:active {
-          --background: rgba(220, 53, 69, 0.04);
+      .row-chev {
+        font-size: 16px;
+        color: #C4CAD2;
+      }
+    }
+  }
 
-          .icon-box {
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.15);
-          }
-        }
+  // ============ Sign out, pinned to the bottom ============
+  .menu-footer {
+    margin-top: auto;
+    padding: 8px 8px calc(16px + env(safe-area-inset-bottom));
+    border-top: 1px solid #F1F2F4;
 
-        .icon-box {
-          background: #DC3545; // Dark red solid rectangle for danger item
-        }
+    .menu-item {
+      --background: transparent;
+      --border-style: none;
+      --inner-border-width: 0;
+      --padding-start: 14px;
+      --padding-end: 12px;
+      --min-height: 54px;
+      border-radius: 14px;
+      margin: 4px 10px;
 
-        .menu-label {
-          color: #DC3545;
-        }
+      &:active { --background: rgba(220, 53, 69, 0.06); }
+
+      .icon-box {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: #FEE2E2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 14px;
+        flex-shrink: 0;
+
+        .menu-icon { font-size: 18px; color: #DC3545; }
+      }
+
+      .menu-label {
+        font-size: 15px;
+        font-weight: 700;
+        color: #DC3545;
+        letter-spacing: -0.15px;
       }
     }
   }
