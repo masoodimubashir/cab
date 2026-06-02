@@ -1,8 +1,8 @@
 <ion-content class="ec-page" [fullscreen]="true">
 
-  <!-- ============ Header ============ -->
-  <div class="page-header">
-    <button class="header-back" (click)="back()" aria-label="Back">
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back dc-press" (click)="back()" aria-label="Back">
       <ion-icon name="arrow-back-outline"></ion-icon>
     </button>
     <h1 class="header-title">{{ segment === 'support' ? 'Support' : 'Contact' }}</h1>
@@ -14,19 +14,21 @@
   <!-- ============ My Contacts ============ -->
   <div class="page-body" *ngIf="segment === 'contacts'">
 
-    <div class="cta-row">
-      <button class="add-btn" (click)="openAdd()">
+    <div class="cta-row dc-anim-in">
+      <button class="add-btn dc-press" (click)="openAdd()">
         <ion-icon name="create-outline"></ion-icon><span>Add manually</span>
       </button>
-      <button class="add-btn outline" (click)="pickFromPhone()">
+      <button class="add-btn outline dc-press" (click)="pickFromPhone()">
         <ion-icon name="person-add-outline"></ion-icon><span>Choose from device</span>
       </button>
     </div>
 
-    <p class="page-error" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
 
-    <div class="ec-list" *ngIf="!loading && contacts.length">
-      <div class="ec-card" *ngFor="let c of contacts" (click)="openEdit(c)">
+    <p class="section-label" *ngIf="!loading && contacts.length">Saved contacts</p>
+
+    <div class="ec-list dc-stagger" *ngIf="!loading && contacts.length">
+      <div class="ec-card dc-press" *ngFor="let c of contacts" (click)="openEdit(c)">
         <div class="ec-icon" [class.primary]="c.is_primary">
           <ion-icon [name]="c.is_primary ? 'star' : 'person'"></ion-icon>
         </div>
@@ -34,17 +36,22 @@
           <span class="ec-name">{{ c.name }} <span class="ec-pill" *ngIf="c.is_primary">Primary</span></span>
           <span class="ec-meta">{{ c.phone }}<span *ngIf="c.relationship"> · {{ c.relationship }}</span></span>
         </div>
-        <button class="ec-call" (click)="$event.stopPropagation(); callNumber(c.phone)" aria-label="Call">
+        <button class="ec-call dc-press" (click)="$event.stopPropagation(); callNumber(c.phone)" aria-label="Call">
           <ion-icon name="call"></ion-icon>
         </button>
-        <button class="ec-del" (click)="$event.stopPropagation(); confirmDelete(c)" aria-label="Delete">
+        <button class="ec-del dc-press" (click)="$event.stopPropagation(); confirmDelete(c)" aria-label="Delete">
           <ion-icon name="trash-outline"></ion-icon>
         </button>
       </div>
     </div>
 
-    <div class="state-box" *ngIf="loading"><ion-spinner name="crescent"></ion-spinner></div>
-    <div class="state-box" *ngIf="!loading && !contacts.length">
+    <div class="state-box" *ngIf="loading">
+      <div class="dc-skeleton sk-row"></div>
+      <div class="dc-skeleton sk-row"></div>
+      <div class="dc-skeleton sk-row"></div>
+    </div>
+
+    <div class="state-box dc-anim-in" *ngIf="!loading && !contacts.length">
       <div class="state-icon"><ion-icon name="people-outline"></ion-icon></div>
       <p class="state-title">No emergency contacts yet</p>
       <p class="state-sub">Add trusted people we can show in an SOS.</p>
@@ -53,35 +60,49 @@
 
   <!-- ============ Support ============ -->
   <div class="page-body" *ngIf="segment === 'support'">
-    <p class="page-error" *ngIf="supportError"><ion-icon name="alert-circle-outline"></ion-icon> {{ supportError }}</p>
-    <div class="state-box" *ngIf="supportLoading"><ion-spinner name="crescent"></ion-spinner></div>
 
-    <div class="ec-list" *ngIf="!supportLoading && support">
-      <div class="ec-card" [class.disabled]="!support.emergency_police_no" (click)="callNumber(support.emergency_police_no)">
+    <p class="page-error dc-anim-in" *ngIf="supportError"><ion-icon name="alert-circle-outline"></ion-icon> {{ supportError }}</p>
+
+    <div class="state-box" *ngIf="supportLoading">
+      <div class="dc-skeleton sk-row"></div>
+      <div class="dc-skeleton sk-row"></div>
+      <div class="dc-skeleton sk-row"></div>
+    </div>
+
+    <p class="section-label" *ngIf="!supportLoading && support">Get help</p>
+
+    <div class="ec-list dc-stagger" *ngIf="!supportLoading && support">
+      <div class="ec-card support-card dc-press" [class.disabled]="!support.emergency_police_no" (click)="callNumber(support.emergency_police_no)">
         <div class="ec-icon danger"><ion-icon name="shield-outline"></ion-icon></div>
         <div class="ec-info">
           <span class="ec-name">Police</span>
           <span class="ec-meta">{{ support.emergency_police_no || 'Not configured' }}</span>
         </div>
-        <ion-icon class="ec-action" name="call" *ngIf="support.emergency_police_no"></ion-icon>
+        <span class="ec-action-pill call" *ngIf="support.emergency_police_no">
+          <ion-icon name="call"></ion-icon>
+        </span>
       </div>
 
-      <div class="ec-card" [class.disabled]="!support.customer_support_no" (click)="callNumber(support.customer_support_no)">
+      <div class="ec-card support-card dc-press" [class.disabled]="!support.customer_support_no" (click)="callNumber(support.customer_support_no)">
         <div class="ec-icon"><ion-icon name="headset-outline"></ion-icon></div>
         <div class="ec-info">
           <span class="ec-name">Customer support</span>
           <span class="ec-meta">{{ support.customer_support_no || 'Not configured' }}</span>
         </div>
-        <ion-icon class="ec-action" name="call" *ngIf="support.customer_support_no"></ion-icon>
+        <span class="ec-action-pill call" *ngIf="support.customer_support_no">
+          <ion-icon name="call"></ion-icon>
+        </span>
       </div>
 
-      <div class="ec-card" [class.disabled]="!support.support_email" (click)="emailSupport(support.support_email)">
+      <div class="ec-card support-card dc-press" [class.disabled]="!support.support_email" (click)="emailSupport(support.support_email)">
         <div class="ec-icon"><ion-icon name="mail-outline"></ion-icon></div>
         <div class="ec-info">
           <span class="ec-name">Support email</span>
           <span class="ec-meta">{{ support.support_email || 'Not configured' }}</span>
         </div>
-        <ion-icon class="ec-action" name="arrow-forward" *ngIf="support.support_email"></ion-icon>
+        <span class="ec-action-pill" *ngIf="support.support_email">
+          <ion-icon name="arrow-forward"></ion-icon>
+        </span>
       </div>
     </div>
   </div>
@@ -100,7 +121,7 @@
       <div class="field-card">
         <label class="field-label">Phone</label>
         <div class="phone-row">
-          <button type="button" class="cc-btn" (click)="showCountryPicker = true" [disabled]="saving">
+          <button type="button" class="cc-btn dc-press" (click)="showCountryPicker = true" [disabled]="saving">
             <span class="cc-flag">{{ selectedCountry.flag }}</span>
             <span class="cc-code">+{{ form.countryCode }}</span>
             <ion-icon name="chevron-down"></ion-icon>
@@ -128,8 +149,8 @@
       <p class="page-error" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
 
       <div class="modal-actions">
-        <button class="btn-ghost" (click)="dialogOpen = false" [disabled]="saving">Cancel</button>
-        <button class="btn-primary" (click)="submit()" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
+        <button class="btn-ghost dc-press" (click)="dialogOpen = false" [disabled]="saving">Cancel</button>
+        <button class="btn-primary dc-press" (click)="submit()" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
       </div>
     </div>
   </div>

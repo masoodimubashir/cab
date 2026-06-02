@@ -33,6 +33,11 @@ const routes: Routes = [
           import('../pages/emergency-contacts/emergency-contacts.module').then((m) => m.CustomerEmergencyContactsPageModule),
       },
       {
+        path: 'coupons',
+        loadChildren: () =>
+          import('../pages/coupons/coupons.module').then((m) => m.CouponsPageModule),
+      },
+      {
         // Same page/component as emergency-contacts; the URL switches it to the
         // Support view (official help numbers).
         path: 'support',

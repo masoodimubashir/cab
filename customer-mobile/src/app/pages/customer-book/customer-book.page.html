@@ -70,13 +70,13 @@
       <div class="sheet-drag-handle"></div>
 
       <!-- Welcome Greeting Header -->
-      <div class="greeting-header">
+      <div class="greeting-header dc-anim-up">
         <span class="greeting-subtitle">Hey {{ currentUser?.name || 'Lisa' }}</span>
         <h1 class="greeting-title">Where are you going?</h1>
       </div>
 
       <!-- Premium Modern Ride Options (Circle Style) -->
-      <div class="ride-chips">
+      <div class="ride-chips dc-stagger">
         <button
           *ngFor="let p of productKinds"
           class="chip"
@@ -114,7 +114,7 @@
       </div>
 
       <!-- Premium New Trip CTA -->
-      <button class="new-trip-cta-btn" (click)="goPickup()">
+      <button class="new-trip-cta-btn dc-anim-up" (click)="goPickup()">
         <div class="cta-left">
           <div class="cta-icon-circle">
             <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
@@ -128,7 +128,7 @@
     </div>
 
     <!-- STEP 1: PICKUP -->
-    <div *ngSwitchCase="'pickup'" class="sheet-route sheet-step">
+    <div *ngSwitchCase="'pickup'" class="sheet-route sheet-step dc-anim-up">
       <div class="step-input-card">
         <div class="step-input-row">
           <div class="dot-pickup dark"></div>
@@ -174,7 +174,7 @@
     </div>
 
     <!-- STEP 2: DROP -->
-    <div *ngSwitchCase="'drop'" class="sheet-route sheet-step">
+    <div *ngSwitchCase="'drop'" class="sheet-route sheet-step dc-anim-up">
       <div class="step-input-card">
         <div class="step-input-row read">
           <div class="dot-pickup dark"></div>
@@ -221,7 +221,7 @@
     </div>
 
     <!-- STEP 3: FIND DRIVER (radar + drivers shown on the map; no list, no estimate) -->
-    <div *ngSwitchCase="'find-driver'" class="sheet-find-driver sheet-step">
+    <div *ngSwitchCase="'find-driver'" class="sheet-find-driver sheet-step dc-anim-up">
       <div class="finddriver-row">
         <div class="radar-scanner mini">
           <div class="radar-sweep"></div>
@@ -243,7 +243,7 @@
     </div>
 
     <!-- NAME YOUR PRICE -->
-    <div *ngSwitchCase="'offer'" class="sheet-offer sheet-step">
+    <div *ngSwitchCase="'offer'" class="sheet-offer sheet-step dc-anim-up">
       <div class="offer-head">
         <h3>Name your fare</h3>
         <p>Offer a price — drivers can accept it or send you a counter-offer.</p>
@@ -270,7 +270,7 @@
     </div>
 
     <!-- MAP SELECT: user is panning the map to drop a pin -->
-    <div *ngSwitchCase="'map-select'" class="sheet-map-select">
+    <div *ngSwitchCase="'map-select'" class="sheet-map-select dc-anim-up">
       <div class="map-select-header">
         <h3>Set {{ activeSearchField === 'pickup' ? 'Pickup' : 'Drop Off' }}</h3>
         <p>Drag map to move the pin</p>
@@ -282,7 +282,7 @@
     </div>
 
     <!-- SAVED LOCATIONS PICKER: pick a saved place, then return to the step it was opened from -->
-    <div *ngSwitchCase="'saved-select'" class="sheet-route sheet-step">
+    <div *ngSwitchCase="'saved-select'" class="sheet-route sheet-step dc-anim-up">
       <div class="saved-picker-header">
         <h3>Saved locations</h3>
         <p>Choose a place for your {{ activeSearchField === 'pickup' ? 'pickup' : 'destination' }}</p>
@@ -305,7 +305,7 @@
     </div>
 
     <!-- WAITING: chosen driver hasn't responded yet -->
-    <div *ngSwitchCase="'waiting'" class="sheet-searching premium-searching-sheet">
+    <div *ngSwitchCase="'waiting'" class="sheet-searching premium-searching-sheet dc-anim-up">
       <div class="searching-head">
         <span class="searching-text">
           <span class="search-pulse-dot"></span>
@@ -321,7 +321,7 @@
     </div>
 
     <!-- BIDS: driver countered the fare -->
-    <div *ngSwitchCase="'bids'" class="sheet-bids">
+    <div *ngSwitchCase="'bids'" class="sheet-bids dc-anim-up">
       <h3>Driver responded</h3>
 
       <ion-list lines="full">

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { SubscriptionPlan } from '../plan-card/plan-card.component';
@@ -23,12 +23,21 @@ interface CurrentSub {
   standalone: false,
 })
 export class SubscriptionsModalComponent implements OnInit {
+  /** Seeded by the dashboard so the modal never re-fetches (and never flashes an
+   *  empty state) on first open. Falls back to fetching if opened without it. */
+  @Input() plans: SubscriptionPlan[] = [];
+
   loading = false;
   error: string | null = null;
-  plans: SubscriptionPlan[] = [];
   current: CurrentSub | null = null;
   wallet = 0;
   buyingId: number | null = null;
+
+  // Popup copy from Operator Settings → Subscription (with built-in fallbacks).
+  title = 'Go commission-free';
+  desc = 'Subscribe to a plan and keep more of every fare.';
+  seeAllLabel = 'See all plan details';
+  laterLabel = 'Maybe later';
 
   constructor(
     private api: ApiService,
@@ -38,29 +47,58 @@ export class SubscriptionsModalComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.load();
+    this.loadAccount();
+    this.loadPopupCopy();
+    // Only fetch plans if the opener didn't seed them — avoids a race where the
+    // modal could briefly show "no plans" after the dashboard already verified
+    // plans exist.
+    if (!this.plans.length) this.loadPlans();
   }
 
-  load(): void {
-    this.loading = true;
-    this.error = null;
+  /** Pull the operator-configured popup copy; keep defaults for blank fields. */
+  private loadPopupCopy(): void {
+    this.api
+      .get<{ title: string | null; desc: string | null; button1: string | null; button2: string | null }>(
+        '/operator/subscription-popup',
+      )
+      .subscribe({
+        next: (res) => {
+          if (res?.title) this.title = res.title;
+          if (res?.desc) this.desc = res.desc;
+          if (res?.button1) this.seeAllLabel = res.button1;
+          if (res?.button2) this.laterLabel = res.button2;
+        },
+        error: () => { /* keep built-in defaults */ },
+      });
+  }
 
+  /** Re-fetch everything (used after a successful purchase). */
+  private load(): void {
+    this.loadAccount();
+    this.loadPlans();
+  }
+
+  private loadAccount(): void {
     this.api.get<{ subscription: CurrentSub | null; wallet_balance: number }>('/drivers/me/subscription').subscribe({
       next: (res) => {
         this.current = res.subscription;
-        this.wallet = res.wallet_balance ?? 0;
+        if (res.wallet_balance != null) this.wallet = res.wallet_balance;
       },
       error: () => { /* non-fatal for the prompt */ },
     });
+  }
 
+  private loadPlans(): void {
+    this.loading = true;
+    this.error = null;
     this.api.get<{ data: SubscriptionPlan[] }>('/drivers/me/subscriptions/plans').subscribe({
       next: (res) => {
-        this.plans = res.data ?? [];
+        if (Array.isArray(res?.data)) this.plans = res.data; // keep seeded plans on a bad payload
         this.loading = false;
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not load plans.';
-        this.loading = false;
+        this.loading = false; // leaves any seeded plans intact
       },
     });
   }

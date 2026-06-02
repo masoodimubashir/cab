@@ -110,6 +110,23 @@ class TripsController extends Controller
             }
         }
 
+        // Reject destinations outside the city's geofence — only when the
+        // operator enabled the destination check (Operator Settings → Geofence)
+        // and a boundary is actually drawn for the city.
+        if (
+            !empty($city->boundary_polygon)
+            && OperatorSetting::instance()->check_destination_outside_geofence
+            && !$dynamicPricingService->pointInPolygon(
+                (float) $data['drop_lat'],
+                (float) $data['drop_lng'],
+                $city->boundary_polygon,
+            )
+        ) {
+            return response()->json([
+                'message' => 'Destination is outside the service area for ' . $city->name . '.',
+            ], 422);
+        }
+
         $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
         if (!$pricingRule) {
             return response()->json(['message' => 'Pricing rule not set for this vehicle.'], 404);
@@ -848,15 +865,14 @@ class TripsController extends Controller
      */
     public function tip(Request $request, Trip $trip)
     {
-        // When the operator runs tips as a percentage of fare, `amount` is a
-        // percentage (0–100]; otherwise it's an absolute rupee value. This
-        // mirrors the `in_percentage` flag served by GET /operator/tipping.
-        $inPercentage = (bool) OperatorSetting::instance()->tip_in_percentage;
-
+        // `amount` is ALWAYS an absolute rupee value. When the operator runs
+        // tips as a percentage of fare, the client converts the chosen percent
+        // into rupees before posting (the in_percentage flag only changes the
+        // preset *labels*), so the server must never re-interpret it — doing so
+        // double-converted and overcharged (e.g. a 20% tip on a ₹200 fare was
+        // billed as ₹80 instead of ₹40).
         $data = $request->validate([
-            'amount' => $inPercentage
-                ? ['required', 'numeric', 'min:0.1', 'max:100']
-                : ['required', 'numeric', 'min:1', 'max:10000'],
+            'amount' => ['required', 'numeric', 'min:1', 'max:10000'],
         ]);
 
         $user = $request->user();
@@ -873,20 +889,9 @@ class TripsController extends Controller
             return response()->json(['message' => 'A tip has already been added to this ride.'], 409);
         }
 
-        // Resolve the rupee tip the driver actually receives. In percentage
-        // mode it's a share of the ride's final fare; tip_amount always stores
-        // the resulting rupees (never the percentage).
-        if ($inPercentage) {
-            $fare = (float) ($trip->final_fare ?? 0);
-            if ($fare <= 0) {
-                return response()->json([
-                    'message' => 'Cannot compute a percentage tip — this ride has no final fare.',
-                ], 422);
-            }
-            $amount = round($fare * (float) $data['amount'] / 100, 2);
-        } else {
-            $amount = round((float) $data['amount'], 2);
-        }
+        // tip_amount always stores absolute rupees (the client already resolved
+        // any percentage against the fare before posting).
+        $amount = round((float) $data['amount'], 2);
 
         if ($amount <= 0) {
             return response()->json(['message' => 'Tip amount must be greater than zero.'], 422);

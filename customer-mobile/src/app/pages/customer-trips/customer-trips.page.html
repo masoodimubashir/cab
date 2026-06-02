@@ -1,7 +1,7 @@
 <ion-content class="rides-page" [fullscreen]="true">
 
-  <!-- ============ Header ============ -->
-  <div class="page-header">
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
     <button class="header-back" (click)="back()" aria-label="Back">
       <ion-icon name="arrow-back-outline"></ion-icon>
     </button>
@@ -17,8 +17,8 @@
   <div class="page-body">
 
     <!-- Filters bar -->
-    <div class="filter-bar">
-      <button class="filters-btn" (click)="openFilters()">
+    <div class="filter-bar dc-anim-in">
+      <button class="filters-btn dc-press" (click)="openFilters()">
         <ion-icon name="options-outline"></ion-icon>
         <span>Filters</span>
         <span class="filter-count" *ngIf="activeFilterCount">{{ activeFilterCount }}</span>
@@ -26,16 +26,30 @@
       <button class="filter-clear" *ngIf="activeFilterCount" (click)="clearFilters()">Clear</button>
     </div>
 
-    <p class="page-error" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
 
     <!-- Loading -->
-    <div class="state-box" *ngIf="loading">
-      <ion-spinner name="crescent"></ion-spinner>
+    <div class="rides-list" *ngIf="loading" aria-hidden="true">
+      <div class="skel-card" *ngFor="let s of [1,2,3,4]">
+        <div class="skel-row">
+          <span class="dc-skeleton skel-tile"></span>
+          <span class="skel-stack">
+            <span class="dc-skeleton skel-line skel-line--lg"></span>
+            <span class="dc-skeleton skel-line skel-line--sm"></span>
+          </span>
+          <span class="dc-skeleton skel-pill"></span>
+        </div>
+        <span class="dc-skeleton skel-line skel-line--full"></span>
+        <span class="dc-skeleton skel-line skel-line--mid"></span>
+        <div class="skel-foot">
+          <span class="dc-skeleton skel-line skel-line--fare"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Ride cards -->
-    <div class="rides-list" *ngIf="!loading && trips.length">
-      <div class="ride-card ride-card--{{ accentColor(t) }}" *ngFor="let t of trips" (click)="openTripDetails(t, $event)">
+    <div class="rides-list dc-stagger" *ngIf="!loading && trips.length">
+      <div class="ride-card dc-press ride-card--{{ accentColor(t) }}" *ngFor="let t of trips" (click)="openTripDetails(t, $event)">
         <span class="ride-accent"></span>
         <div class="ride-body">
 
@@ -81,7 +95,7 @@
           <!-- Actions -->
           <div class="ride-actions">
             <button
-              class="ride-btn ride-btn--accent"
+              class="ride-btn ride-btn--accent dc-press"
               *ngIf="t.status === 'NEGOTIATION'"
               (click)="navigateToNegotiation(t); $event.stopPropagation()"
             >
@@ -89,14 +103,14 @@
               <span>Negotiate</span>
             </button>
             <button
-              class="ride-btn ride-btn--dark"
+              class="ride-btn ride-btn--dark dc-press"
               (click)="openTripDetails(t); $event.stopPropagation()"
             >
               <ion-icon name="document-text-outline"></ion-icon>
               <span>Details</span>
             </button>
             <button
-              class="ride-btn"
+              class="ride-btn dc-press"
               (click)="navigatePickupToDrop(t); $event.stopPropagation()"
               [disabled]="!t.pickup_lat || !t.drop_lat"
             >
@@ -109,7 +123,7 @@
     </div>
 
     <!-- Empty -->
-    <div class="state-box" *ngIf="!loading && !trips.length && !error">
+    <div class="state-box dc-anim-in" *ngIf="!loading && !trips.length && !error">
       <div class="state-icon"><ion-icon name="car-outline"></ion-icon></div>
       <p class="state-title">No rides yet</p>
       <p class="state-sub">No rides match these filters.</p>
@@ -180,8 +194,8 @@
       </div>
 
       <div class="sheet-actions">
-        <button class="sheet-clear" (click)="clearFilters()" [disabled]="!activeFilterCount">Clear all</button>
-        <button class="sheet-apply" (click)="closeFilters()">Show results</button>
+        <button class="sheet-clear dc-press" (click)="clearFilters()" [disabled]="!activeFilterCount">Clear all</button>
+        <button class="sheet-apply dc-press" (click)="closeFilters()">Show results</button>
       </div>
     </div>
   </div>

@@ -22,6 +22,8 @@ const ALL_METHODS: PaymentMethod[] = ['cash', 'razorpay'];
 export class PaymentMethodsPage implements OnInit, OnDestroy {
   acceptCash = true;
   acceptRazorpay = true;
+  /** Whether the operator lets drivers change their own payment methods. */
+  canUpdate = true;
 
   private save$ = new Subject<void>();
   private saveSub?: { unsubscribe: () => void };
@@ -38,6 +40,12 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
     this.acceptCash = methods.includes('cash');
     this.acceptRazorpay = methods.includes('razorpay');
 
+    // Is the driver allowed to change these, or does the operator control them?
+    this.api.get<{ can_update: boolean }>('/operator/driver-payment-modes').subscribe({
+      next: (res) => { this.canUpdate = !!res?.can_update; },
+      error: () => { /* keep optimistic default; the backend still enforces */ },
+    });
+
     this.saveSub = this.save$.pipe(debounceTime(500)).subscribe(() => this.save());
   }
 
@@ -46,6 +54,7 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
   }
 
   toggleChanged(): void {
+    if (!this.canUpdate) return;
     this.save$.next();
   }
 

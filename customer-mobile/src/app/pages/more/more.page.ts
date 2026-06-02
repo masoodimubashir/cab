@@ -33,6 +33,7 @@ export class CustomerMorePage {
   goProfile(): void { this.router.navigateByUrl('/customer-tabs/profile'); }
   goSavedLocations(): void { this.router.navigateByUrl('/customer-tabs/saved-locations'); }
   goEmergencyContacts(): void { this.router.navigateByUrl('/customer-tabs/emergency-contacts'); }
+  goCoupons(): void { this.router.navigateByUrl('/customer-tabs/coupons'); }
 
   async signOut(): Promise<void> {
     const alert = await this.alertCtrl.create({

@@ -1015,7 +1015,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     const amt = Number(this.tipCustomAmount);
     if (!Number.isFinite(amt) || amt <= 0) return;
     this.tipCustomOpen = false;
-    this.submitTip(Math.round(amt));
+    // In percentage mode the entry is a % of fare; convert to rupees so the
+    // server always receives absolute rupees (same as the presets).
+    this.submitTip(this.tipAmountFor(amt));
   }
 
   skipTip(): void {
