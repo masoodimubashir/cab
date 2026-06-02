@@ -345,7 +345,10 @@ ion-toolbar.pg-toolbar {
   ion-back-button,
   ion-button { --color: #ffffff; --icon-font-size: 22px; }
 }
+/* The DreamCabs wordmark is hidden in inner-page headings (the brand already
+   shows on the splash/welcome entry; repeating it on every page is noise). */
 .pg-brandtitle {
+  display: none;
   text-align: center;
   font-size: 16px;
   font-weight: 800;
@@ -355,8 +358,11 @@ ion-toolbar.pg-toolbar {
   .b-green { color: var(--ion-color-primary, #12B35B); }
 }
 
-/* Header body — title + subtitle (+ optional amount), rounded bottom. */
+/* Header body — title + subtitle (+ optional amount), rounded bottom. Plain
+   navy (the green-glow + DRIVER badge driver markers live only on the
+   dashboard + its drawer now, not on every inner page). */
 .pg-hero {
+  position: relative;
   background: var(--dreamcab-dark-blue, #0D1B2A);
   color: #ffffff;
   padding: 2px 22px 26px;
@@ -526,11 +532,79 @@ ion-modal.pg-filter-modal {
 }
 .pg-pop { animation: pgPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
+/* =============================================================================
+   DRIVER IDENTITY helpers  (prefix: drv-)
+   -----------------------------------------------------------------------------
+   Pieces that say "this is the driver app", reusable on pages with custom
+   headers (dashboard, more, delete-account, registration, pending-review).
+   Same brand palette + motion as everything else.
+   ========================================================================== */
+
+/* Navy hero for custom-header pages (mirrors .pg-hero). The green-glow driver
+   marker is applied only on the dashboard drawer (see dashboard.page.scss). */
+.drv-hero {
+  position: relative;
+  background: var(--dreamcab-dark-blue, #0D1B2A);
+  color: #ffffff;
+  border-radius: 0 0 28px 28px;
+  padding: calc(env(safe-area-inset-top, 18px) + 16px) 22px 24px;
+}
+
+/* "DRIVER" badge pill (use where the global .pg-hero::after badge isn't present). */
+.drv-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ion-color-primary, #12B35B);
+  color: #0D1B2A;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  box-shadow: 0 4px 12px rgba(18, 179, 91, 0.4);
+}
+
+/* Online / offline status chip (driver-specific). */
+.drv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  background: rgba(18, 179, 91, 0.14);
+  color: #0E8F47;
+
+  &__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ion-color-primary, #12B35B);
+    box-shadow: 0 0 0 3px rgba(18, 179, 91, 0.25);
+    animation: drvLivePulse 2s ease-out infinite;
+  }
+
+  &.is-offline {
+    background: rgba(108, 117, 125, 0.14);
+    color: #6C757D;
+    .drv-status__dot { background: #9AA3AE; box-shadow: 0 0 0 3px rgba(154, 163, 174, 0.25); animation: none; }
+  }
+}
+
+@keyframes drvLivePulse {
+  0%   { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(18, 179, 91, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dc-anim,
   .dc-stagger > *,
   .pg-anim-body > *,
   .pg-hero,
   .pg-hero__amount,
-  .pg-pop { animation: none; }
+  .pg-pop,
+  .drv-status__dot { animation: none; }
 }

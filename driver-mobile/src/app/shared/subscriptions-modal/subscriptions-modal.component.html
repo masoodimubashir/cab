@@ -1,8 +1,8 @@
 <ion-header class="ion-no-border">
   <ion-toolbar class="pg-toolbar">
-    <ion-title>Plans</ion-title>
+    <ion-title class="pg-brandtitle"><span class="b-white">Dream</span><span class="b-green">Cabs</span></ion-title>
     <ion-buttons slot="end">
-      <ion-button (click)="close()" aria-label="Close">
+      <ion-button class="dc-press" (click)="close()" aria-label="Close">
         <ion-icon name="close" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
@@ -10,21 +10,23 @@
 </ion-header>
 
 <ion-content class="pg-content">
+  <!-- Gradient hero: green→navy + automatic DRIVER badge -->
   <div class="pg-hero">
+    <span class="subm-tag"><ion-icon name="trending-up-outline"></ion-icon> Earn more</span>
     <h1 class="pg-title">{{ title }}</h1>
     <p class="pg-subtitle">{{ desc }}</p>
   </div>
 
-  <div class="pg-body">
+  <div class="pg-body pg-anim-body">
     <!-- Wallet -->
-    <div class="subm-wallet">
-      <ion-icon name="wallet-outline"></ion-icon>
+    <div class="subm-wallet dc-anim">
+      <div class="subm-wallet__icon"><ion-icon name="wallet-outline"></ion-icon></div>
       <span class="subm-wallet__label">Wallet balance</span>
       <strong class="subm-wallet__amt">₹{{ wallet | number: '1.0-2' }}</strong>
     </div>
 
     <!-- Error -->
-    <div class="pg-card subm-error" *ngIf="error">
+    <div class="subm-error" *ngIf="error">
       <ion-icon name="alert-circle-outline"></ion-icon><span>{{ error }}</span>
     </div>
 
@@ -45,7 +47,7 @@
     ></app-plan-card>
 
     <!-- Empty -->
-    <div class="pg-card" *ngIf="!loading && !plans.length && !error">
+    <div class="dc-card" *ngIf="!loading && !plans.length && !error">
       <div class="dc-empty">
         <div class="dc-empty__icon"><ion-icon name="pricetags-outline"></ion-icon></div>
         <strong>No plans available</strong>
@@ -54,7 +56,11 @@
     </div>
 
     <!-- Footer actions -->
-    <button class="subm-link" (click)="seeAll()" *ngIf="plans.length">{{ seeAllLabel }}</button>
-    <button class="subm-later" (click)="close()">{{ laterLabel }}</button>
+    <div class="subm-actions">
+      <button class="dc-cta dc-press" (click)="seeAll()" *ngIf="plans.length">
+        <ion-icon name="list-outline"></ion-icon>{{ seeAllLabel }}
+      </button>
+      <button class="dc-cta dc-cta--ghost dc-press subm-later" (click)="close()">{{ laterLabel }}</button>
+    </div>
   </div>
 </ion-content>

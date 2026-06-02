@@ -1,5 +1,5 @@
-<ion-header [translucent]="true">
-  <ion-toolbar>
+<ion-header class="more-header" [translucent]="true">
+  <ion-toolbar class="more-toolbar">
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
@@ -7,84 +7,124 @@
   </ion-toolbar>
 </ion-header>
 
-<ion-content>
-  <ion-list inset="true">
-    <ion-list-header>
-      <ion-label>Account</ion-label>
-    </ion-list-header>
-    <ion-item *ngIf="auth.getUser() as u">
+<ion-content class="dc-content">
+  <!-- Driver identity hero -->
+  <section class="drv-hero">
+    <div class="drv-hero__top">
+      <span class="drv-status">
+        <span class="drv-status__dot"></span>
+        Online
+      </span>
+    </div>
+
+    <div class="drv-hero__id" *ngIf="auth.getUser() as u">
       <div
-        slot="start"
-        class="account-avatar"
+        class="drv-hero__avatar"
         [class.has-photo]="auth.resolveAvatarUrl(u)"
         [style.backgroundImage]="auth.resolveAvatarUrl(u) ? 'url(' + auth.resolveAvatarUrl(u) + ')' : null"
       >
-        <ion-icon *ngIf="!auth.resolveAvatarUrl(u)" name="person-circle-outline"></ion-icon>
+        <ion-icon *ngIf="!auth.resolveAvatarUrl(u)" name="person-circle-outline" aria-hidden="true"></ion-icon>
       </div>
-      <ion-label>
-        <p>{{ u.name }}</p>
-        <small>{{ (u.roles && u.roles.join(', ')) || u.role }}</small>
-      </ion-label>
-    </ion-item>
+      <div class="drv-hero__meta">
+        <p class="drv-hero__name">{{ u.name }}</p>
+        <small class="drv-hero__role">{{ (u.roles && u.roles.join(', ')) || u.role }}</small>
+      </div>
+    </div>
+  </section>
 
-    <ion-list-header>
-      <ion-label>Driver</ion-label>
-    </ion-list-header>
-    <ion-item button detail="true" (click)="goProfile()">
-      <ion-icon name="person-outline" slot="start" aria-hidden="true"></ion-icon>
-      <ion-label>
-        <h2>Profile</h2>
-        <p>Name, email and photo</p>
-      </ion-label>
-    </ion-item>
-    <ion-item button detail="true" (click)="goEmergencyContacts()">
-      <ion-icon name="people-outline" slot="start" aria-hidden="true"></ion-icon>
-      <ion-label>
-        <h2>Emergency numbers</h2>
-        <p>Friends and family to reach in an SOS</p>
-      </ion-label>
-    </ion-item>
-    <ion-item button detail="true" (click)="goDocuments()">
-      <ion-icon name="document-text-outline" slot="start" aria-hidden="true"></ion-icon>
-      <ion-label>
-        <h2>Documents</h2>
-        <p>Vehicle details and DL / RC / Insurance / ID uploads</p>
-      </ion-label>
-    </ion-item>
-    <ion-item button detail="true" (click)="goPerformance()">
-      <ion-icon name="stats-chart-outline" slot="start" aria-hidden="true"></ion-icon>
-      <ion-label>
-        <h2>Performance</h2>
-        <p>Rating and trip metrics</p>
-      </ion-label>
-    </ion-item>
-    <ion-item button detail="true" (click)="goPaymentMethods()">
-      <ion-icon name="card-outline" slot="start" aria-hidden="true"></ion-icon>
-      <ion-label>
-        <h2>Payment methods</h2>
-        <p>Cash and Razorpay — choose what you accept</p>
-      </ion-label>
-    </ion-item>
-    <ion-item button detail="true" (click)="goSubscriptions()">
-      <ion-icon name="ribbon-outline" slot="start" aria-hidden="true"></ion-icon>
-      <ion-label>
-        <h2>Subscriptions</h2>
-        <p>Buy a plan for commission-free rides</p>
-      </ion-label>
-    </ion-item>
+  <div class="dc-body dc-stagger">
+    <!-- Driver menu -->
+    <p class="more-section">Driver</p>
+    <div class="dc-list">
+      <button type="button" class="dc-row dc-press" (click)="goProfile()">
+        <span class="dc-row__icon">
+          <ion-icon name="person-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong>Profile</strong>
+          <small>Name, email and photo</small>
+        </span>
+        <ion-icon class="dc-row__chev" name="chevron-forward" aria-hidden="true"></ion-icon>
+      </button>
 
-    <ion-list-header>
-      <ion-label>Settings</ion-label>
-    </ion-list-header>
+      <button type="button" class="dc-row dc-press" (click)="goEmergencyContacts()">
+        <span class="dc-row__icon">
+          <ion-icon name="people-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong>Emergency numbers</strong>
+          <small>Friends and family to reach in an SOS</small>
+        </span>
+        <ion-icon class="dc-row__chev" name="chevron-forward" aria-hidden="true"></ion-icon>
+      </button>
 
-    <ion-item button detail="false" (click)="signOut()">
-      <ion-icon name="log-out-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
-      <ion-label color="danger">Sign out</ion-label>
-    </ion-item>
+      <button type="button" class="dc-row dc-press" (click)="goDocuments()">
+        <span class="dc-row__icon">
+          <ion-icon name="document-text-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong>Documents</strong>
+          <small>Vehicle details and DL / RC / Insurance / ID uploads</small>
+        </span>
+        <ion-icon class="dc-row__chev" name="chevron-forward" aria-hidden="true"></ion-icon>
+      </button>
 
-    <ion-item button detail="false" (click)="confirmDeleteAccount()" lines="full">
-      <ion-icon name="trash-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
-      <ion-label color="danger">Delete account</ion-label>
-    </ion-item>
-  </ion-list>
+      <button type="button" class="dc-row dc-press" (click)="goPerformance()">
+        <span class="dc-row__icon">
+          <ion-icon name="stats-chart-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong>Performance</strong>
+          <small>Rating and trip metrics</small>
+        </span>
+        <ion-icon class="dc-row__chev" name="chevron-forward" aria-hidden="true"></ion-icon>
+      </button>
+
+      <button type="button" class="dc-row dc-press" (click)="goPaymentMethods()">
+        <span class="dc-row__icon">
+          <ion-icon name="card-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong>Payment methods</strong>
+          <small>Cash and Razorpay — choose what you accept</small>
+        </span>
+        <ion-icon class="dc-row__chev" name="chevron-forward" aria-hidden="true"></ion-icon>
+      </button>
+
+      <button type="button" class="dc-row dc-press" (click)="goSubscriptions()">
+        <span class="dc-row__icon">
+          <ion-icon name="ribbon-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong>Subscriptions</strong>
+          <small>Buy a plan for commission-free rides</small>
+        </span>
+        <ion-icon class="dc-row__chev" name="chevron-forward" aria-hidden="true"></ion-icon>
+      </button>
+    </div>
+
+    <!-- Account / settings -->
+    <p class="more-section">Settings</p>
+    <div class="dc-list">
+      <button type="button" class="dc-row dc-press" (click)="signOut()">
+        <span class="dc-row__icon dc-row__icon--danger">
+          <ion-icon name="log-out-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong class="is-danger">Sign out</strong>
+          <small>You will need to sign in again to go online</small>
+        </span>
+      </button>
+
+      <button type="button" class="dc-row dc-press" (click)="confirmDeleteAccount()">
+        <span class="dc-row__icon dc-row__icon--danger">
+          <ion-icon name="trash-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <span class="dc-row__text">
+          <strong class="is-danger">Delete account</strong>
+          <small>Permanently remove your account and data</small>
+        </span>
+      </button>
+    </div>
+  </div>
 </ion-content>

@@ -1,29 +1,83 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-title>DreamCabs</ion-title>
-  </ion-toolbar>
-</ion-header>
-
-<ion-content class="ion-padding">
-  <div class="hero">
-    <div class="logo-circle">
-      <ion-icon name="car-sport-outline"></ion-icon>
+<ion-content class="intro-content">
+  <!-- Branded full-bleed hero -->
+  <div class="intro-hero">
+    <div class="hero-sheen" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="logo-circle dc-anim-pop">
+        <span class="logo-ring" aria-hidden="true"></span>
+        <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
+      </div>
+      <span class="brand-chip dc-anim-in">DreamCabs</span>
     </div>
-
-    <h1>Welcome</h1>
-    <p class="lead">
-      This app uses <strong>location</strong> and a few other permissions to help you
-      book rides, get accurate fares, and receive trip updates.
-    </p>
   </div>
 
-  <div class="grant-wrap">
-    <ion-button expand="block" size="large" (click)="grant()" [disabled]="loading">
+  <!-- Body -->
+  <div class="intro-body dc-stagger">
+    <div class="copy">
+      <h1>Welcome aboard</h1>
+      <p class="lead">
+        DreamCabs uses <strong>location</strong> and a few other permissions to help you
+        book rides, get accurate fares, and receive trip updates.
+      </p>
+    </div>
+
+    <!-- Permission explainer card -->
+    <div class="perk-card">
+      <div class="perk-row">
+        <div class="perk-icon green">
+          <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
+        </div>
+        <div class="perk-text">
+          <span class="perk-title">Location</span>
+          <span class="perk-sub">Pinpoint your pickup and estimate fares</span>
+        </div>
+      </div>
+      <div class="perk-divider" aria-hidden="true"></div>
+      <div class="perk-row">
+        <div class="perk-icon green">
+          <ion-icon name="notifications-outline" aria-hidden="true"></ion-icon>
+        </div>
+        <div class="perk-text">
+          <span class="perk-title">Notifications</span>
+          <span class="perk-sub">Live trip updates and driver alerts</span>
+        </div>
+      </div>
+      <div class="perk-divider" aria-hidden="true"></div>
+      <div class="perk-row">
+        <div class="perk-icon green">
+          <ion-icon name="shield-checkmark-outline" aria-hidden="true"></ion-icon>
+        </div>
+        <div class="perk-text">
+          <span class="perk-title">Private &amp; secure</span>
+          <span class="perk-sub">Change or revoke anytime in phone settings</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <ion-text color="danger" *ngIf="error">
+      <div class="error-box">
+        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+        <p>{{ error }}</p>
+      </div>
+    </ion-text>
+  </div>
+
+  <!-- Sticky CTA -->
+  <div class="cta-dock">
+    <ion-button
+      class="cta-btn dc-press"
+      expand="block"
+      size="large"
+      (click)="grant()"
+      [disabled]="loading"
+    >
+      <ion-spinner *ngIf="loading" name="crescent" slot="start"></ion-spinner>
+      <ion-icon *ngIf="!loading" name="lock-open-outline" slot="start" aria-hidden="true"></ion-icon>
       {{ loading ? 'Requesting…' : 'Grant Permissions' }}
     </ion-button>
     <p class="muted small">
       You can change or revoke permissions later from your phone settings.
     </p>
-    <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
   </div>
 </ion-content>

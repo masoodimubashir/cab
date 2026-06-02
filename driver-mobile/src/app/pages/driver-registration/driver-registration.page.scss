@@ -1,28 +1,26 @@
 .reg-content {
-  --background: var(--ion-background-color, #ffffff);
+  --background: #F5F7FA;
 }
 
-/* ============ PREMIUM DARK HEADER ============ */
-.reg-header {
-  background: var(--dreamcab-dark-blue, #0D1B2A);
-  color: #ffffff;
-  padding: calc(env(safe-area-inset-top, 16px) + 18px) 20px 26px;
-  border-bottom-left-radius: 28px;
-  border-bottom-right-radius: 28px;
+/* ============ DRIVER GRADIENT HERO HEADER ============ */
+/* .drv-hero (green→navy gradient + rounded bottom) comes from theme/pages.scss.
+   Only the inner layout + typography is defined locally here. */
+.reg-hero {
+  padding-bottom: 26px;
 }
 
-.reg-header__bar {
+.reg-hero__bar {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 18px;
 }
 
-.back-btn {
+.reg-back {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   border: none;
   color: #ffffff;
   display: flex;
@@ -31,38 +29,14 @@
   cursor: pointer;
   flex-shrink: 0;
   ion-icon { font-size: 20px; }
-  &:active { background: rgba(255, 255, 255, 0.2); }
+  &:active { background: rgba(255, 255, 255, 0.22); }
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 8px;
-
-  .logo-mark {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    &::before {
-      content: '';
-      width: 4px;
-      height: 4px;
-      background: var(--dreamcab-dark-blue, #0D1B2A);
-      margin-left: -3px;
-    }
-    .logo-dots { width: 4px; height: 4px; background: var(--dreamcab-dark-blue, #0D1B2A); }
-    .logo-arrow {
-      width: 0; height: 0;
-      border-top: 4px solid transparent;
-      border-bottom: 4px solid transparent;
-      border-left: 6px solid var(--ion-color-primary, #12B35B);
-    }
-  }
+  margin-right: auto;
 
   &__text {
     font-size: 17px;
@@ -75,14 +49,14 @@
 
 .reg-title {
   font-size: 26px;
-  font-weight: 700;
+  font-weight: 800;
   margin: 0 0 6px;
   letter-spacing: -0.4px;
 }
 
 .reg-subtitle {
   font-size: 13.5px;
-  color: #9CA3AF;
+  color: rgba(255, 255, 255, 0.72);
   line-height: 1.5;
   margin: 0 0 22px;
   max-width: 320px;
@@ -107,13 +81,13 @@
     height: 34px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
-    border: 1.5px solid rgba(255, 255, 255, 0.25);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 14px;
     font-weight: 700;
-    color: #9CA3AF;
+    color: rgba(255, 255, 255, 0.7);
     transition: all 0.25s ease;
     ion-icon { font-size: 18px; }
   }
@@ -121,19 +95,19 @@
   &__label {
     font-size: 12px;
     font-weight: 600;
-    color: #9CA3AF;
+    color: rgba(255, 255, 255, 0.7);
   }
 
   &.is-active &__dot {
     background: var(--ion-color-primary, #12B35B);
     border-color: var(--ion-color-primary, #12B35B);
     color: #ffffff;
-    box-shadow: 0 0 0 4px rgba(18, 179, 91, 0.2);
+    box-shadow: 0 0 0 4px rgba(18, 179, 91, 0.25);
   }
   &.is-active &__label { color: #ffffff; }
 
   &.is-done &__dot {
-    background: rgba(18, 179, 91, 0.15);
+    background: rgba(18, 179, 91, 0.18);
     border-color: var(--ion-color-primary, #12B35B);
     color: var(--ion-color-primary, #12B35B);
   }
@@ -144,7 +118,7 @@
   flex: 1;
   height: 2px;
   margin: 16px 8px 0;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 2px;
   transition: background 0.25s ease;
   &.is-done { background: var(--ion-color-primary, #12B35B); }
@@ -152,7 +126,7 @@
 
 /* ============ BODY ============ */
 .reg-body {
-  padding: 20px 16px 36px;
+  padding: 18px 16px calc(env(safe-area-inset-bottom, 0px) + 36px);
 }
 
 .reg-loading {
@@ -181,44 +155,15 @@
   &--success { background: rgba(18, 179, 91, 0.12); color: #0F8A47; }
 }
 
-/* Cards */
-.card {
-  background: #ffffff;
-  border: 1px solid #EEF0F2;
-  border-radius: 18px;
-  padding: 16px;
-  margin-bottom: 14px;
-  box-shadow: 0 2px 10px rgba(13, 27, 42, 0.04);
-}
-
-.card__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.card__icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: rgba(18, 179, 91, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  ion-icon { font-size: 18px; color: var(--ion-color-primary, #12B35B); }
-}
-
-.card__title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-main, #0D1B2A);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  .req { color: var(--ion-color-primary, #12B35B); }
+/* Cards — .pg-card supplies surface/head/icon/title; reg-card adds spacing only. */
+.reg-card {
+  & + .reg-card { margin-top: 14px; }
+  .pg-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    .req { color: var(--ion-color-primary, #12B35B); }
+  }
 }
 
 .card__optional {
@@ -382,36 +327,14 @@
   &:active:not(.is-disabled):not(.is-selected) { transform: scale(0.97); }
 }
 
-/* Primary / secondary buttons */
-.cta-btn {
-  width: 100%;
-  height: 54px;
-  border: none;
+/* CTA — .dc-cta supplies the button base; reg-cta tweaks radius + spacing so it
+   matches this onboarding flow's squarer aesthetic. */
+.reg-cta {
   border-radius: 14px;
-  background: var(--dreamcab-dark-blue, #0D1B2A);
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  box-shadow: 0 8px 20px rgba(13, 27, 42, 0.18);
-  transition: all 0.2s ease;
+  height: 54px;
   margin-top: 6px;
 
-  ion-icon { font-size: 20px; }
-  ion-spinner { --color: #ffffff; width: 22px; height: 22px; }
-
-  &:active:not(:disabled) { transform: scale(0.98); }
-  &:disabled { opacity: 0.45; box-shadow: none; cursor: not-allowed; }
-
   &--success {
-    background: var(--ion-color-primary, #12B35B);
-    box-shadow: 0 8px 20px rgba(18, 179, 91, 0.25);
-    font-size: 15px;
     &:disabled { background: #9CA3AF; opacity: 0.55; }
   }
 }
@@ -442,12 +365,9 @@
   margin-bottom: 18px;
 }
 
+/* .pg-card supplies the surface; doc-card overrides padding for a denser list. */
 .doc-card {
-  background: #ffffff;
-  border: 1px solid #EEF0F2;
-  border-radius: 16px;
   padding: 14px;
-  box-shadow: 0 2px 10px rgba(13, 27, 42, 0.04);
 }
 
 .doc-card__head {

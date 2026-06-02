@@ -1,7 +1,10 @@
-<div class="plan-card" [class.is-free]="commissionFree" [class.is-current]="isCurrent">
+<div class="plan-card dc-anim" [class.is-free]="commissionFree" [class.is-current]="isCurrent">
+
+  <!-- Recommended / Active highlight strip -->
+  <span class="plan-card__strip"></span>
 
   <!-- Active ribbon (only when this is the driver's current plan) -->
-  <span class="plan-card__ribbon" *ngIf="isCurrent">
+  <span class="plan-card__ribbon dc-badge dc-badge--ok pg-pop" *ngIf="isCurrent">
     <ion-icon name="checkmark-circle"></ion-icon> Active
   </span>
 
@@ -40,7 +43,7 @@
 
   <!-- Terms (collapsible) -->
   <div class="plan-card__terms" *ngIf="plan.terms">
-    <button type="button" (click)="showTerms = !showTerms">
+    <button type="button" class="dc-press" (click)="showTerms = !showTerms">
       <ion-icon [name]="showTerms ? 'chevron-up-outline' : 'chevron-down-outline'"></ion-icon>
       {{ showTerms ? 'Hide terms' : 'View terms' }}
     </button>
@@ -49,7 +52,7 @@
 
   <!-- CTA -->
   <button
-    class="dc-cta plan-card__cta"
+    class="dc-cta dc-press plan-card__cta"
     [class.dc-cta--ghost]="isCurrent"
     [disabled]="buying || isCurrent"
     (click)="onSubscribe()"

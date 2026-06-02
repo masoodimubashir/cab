@@ -1,3 +1,10 @@
+/* =============================================================================
+   Shared subscription plan card (DRIVER app).
+   Built on the global pg-card surface; green highlight for the
+   recommended (commission-free) / active plan. All motion + CTA classes
+   come from theme/pages.scss — only plan-specific structure lives here.
+   ========================================================================== */
+
 :host {
   display: block;
 }
@@ -14,48 +21,43 @@
   box-shadow: 0 2px 12px rgba(13, 27, 42, 0.05);
   overflow: hidden;
 
-  /* Commission-free plans get a green accent. */
+  /* Left highlight strip — neutral by default, green when recommended/active. */
+  &__strip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 4px;
+    background: #E6EAEF;
+  }
+
+  /* Commission-free (recommended) plans get the brand-green highlight. */
   &.is-free {
     border-color: rgba(var(--ion-color-primary-rgb), 0.45);
     box-shadow: 0 8px 24px rgba(var(--ion-color-primary-rgb), 0.12);
   }
-  &.is-free::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--ion-color-primary, #12B35B), #0E8F47);
+  &.is-free .plan-card__strip,
+  &.is-current .plan-card__strip {
+    background: linear-gradient(180deg, var(--ion-color-primary, #12B35B), #0E8F47);
   }
 
+  /* Active plan — slightly stronger green frame. */
   &.is-current {
     border-color: rgba(var(--ion-color-primary-rgb), 0.6);
     box-shadow: 0 8px 24px rgba(var(--ion-color-primary-rgb), 0.16);
   }
 
-  /* Ribbon */
+  /* Active ribbon (dc-badge handles colours; we just position it). */
   &__ribbon {
     position: absolute;
     top: 14px;
     right: 14px;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: rgba(var(--ion-color-primary-rgb), 0.12);
-    color: #0E8F47;
-    font-size: 0.68rem;
-    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     ion-icon { font-size: 13px; }
-
-    &--current {
-      background: var(--ion-color-primary, #12B35B);
-      color: #ffffff;
-    }
   }
 
+  /* Head: title block + "you keep %" value hero */
   &__head {
     display: flex;
     align-items: flex-start;
@@ -63,6 +65,7 @@
     gap: 12px;
   }
   &.is-current &__head { padding-right: 76px; } /* clear the Active ribbon */
+
   &__titles { min-width: 0; }
   &__title {
     margin: 0;
@@ -78,7 +81,6 @@
     line-height: 1.4;
   }
 
-  /* "you keep X%" value hero */
   &__keep {
     flex-shrink: 0;
     text-align: right;
@@ -129,14 +131,15 @@
     color: var(--ion-color-primary, #12B35B);
   }
 
-  /* Features */
+  /* Features checklist */
   &__features {
     list-style: none;
     margin: 16px 0 0;
-    padding: 0;
+    padding: 14px 0 0;
+    border-top: 1px solid #F0F2F5;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 11px;
 
     li {
       display: flex;
@@ -179,7 +182,7 @@
     }
   }
 
-  /* Terms */
+  /* Terms (collapsible) */
   &__terms {
     margin-top: 12px;
     button {
@@ -205,6 +208,6 @@
 
   /* CTA */
   &__cta {
-    margin-top: 16px;
+    margin-top: 18px;
   }
 }

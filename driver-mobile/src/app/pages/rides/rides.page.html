@@ -3,16 +3,20 @@
     <ion-buttons slot="start" *ngIf="!hasActiveTrip">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
+    <div class="pg-brandtitle" *ngIf="!hasActiveTrip">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+    </div>
     <ion-title *ngIf="hasActiveTrip">On a ride</ion-title>
     <ion-buttons slot="end" *ngIf="!hasActiveTrip">
-      <ion-button (click)="refreshAvailable()" aria-label="Reload">
-        <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
-      </ion-button>
+      <button class="pg-action" type="button" (click)="refreshAvailable()" aria-label="Reload">
+        <ion-icon name="refresh-outline" aria-hidden="true"></ion-icon>
+        Refresh
+      </button>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content [class.in-trip]="hasActiveTrip">
+<ion-content [class.in-trip]="hasActiveTrip" class="dc-content">
 
   <!-- ════════════════════════════════════════════════════════════════
        ACTIVE TRIP — full-bleed driver workspace
@@ -20,120 +24,133 @@
   <ng-container *ngIf="hasActiveTrip">
 
     <!-- Live map fills the top half. -->
-    <div id="driver-trip-map" class="trip-map-hero"></div>
-
-    <!-- Status hero -->
-    <div class="status-hero" [attr.data-tone]="statusCopy().tone">
-      <div class="status-pill">{{ lastTrip?.['status'] }}</div>
-      <h2>{{ statusCopy().title }}</h2>
-      <p *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
+    <div class="trip-map-wrap">
+      <div id="driver-trip-map" class="trip-map-hero"></div>
     </div>
 
-    <!-- Customer + fare summary -->
-    <div class="info-card">
-      <div class="row">
-        <ion-icon name="person-circle-outline" aria-hidden="true"></ion-icon>
-        <div class="grow">
-          <small>Customer</small>
-          <p class="strong">{{ customerName }}</p>
-        </div>
-      </div>
-      <div class="row">
-        <ion-icon
-          [name]="tripPaymentMethod === 'cash' ? 'cash-outline' : 'phone-portrait-outline'"
-          aria-hidden="true"
-        ></ion-icon>
-        <div class="grow">
-          <small>Payment</small>
-          <p class="strong">
-            ₹{{ lastTrip?.['final_fare'] ?? lastTrip?.['estimated_fare'] ?? '—' }}
-            · {{ (tripPaymentMethod || '—') | uppercase }}
-          </p>
-        </div>
-      </div>
-      <div class="row" *ngIf="customerPosition">
-        <ion-icon name="locate-outline" aria-hidden="true"></ion-icon>
-        <div class="grow">
-          <small>Customer location</small>
-          <p class="muted">
-            {{ customerPosition.lat | number:'1.5-5' }}, {{ customerPosition.lng | number:'1.5-5' }}
-          </p>
-        </div>
-      </div>
-    </div>
+    <div class="trip-body dc-stagger">
 
-    <!-- Pickup / Drop addresses -->
-    <div class="info-card legs">
-      <div class="leg">
-        <span class="dot pickup" aria-hidden="true"></span>
-        <div class="grow">
-          <small>Pickup</small>
-          <p>{{ lastTrip?.['pickup_address'] || '—' }}</p>
+      <!-- Status hero -->
+      <div class="status-hero" [attr.data-tone]="statusCopy().tone">
+        <div class="status-pill">{{ lastTrip?.['status'] }}</div>
+        <h2>{{ statusCopy().title }}</h2>
+        <p *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
+      </div>
+
+      <!-- Inline errors / messages -->
+      <div class="banner danger" *ngIf="error">
+        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+        <span>{{ error }}</span>
+      </div>
+      <div class="banner success" *ngIf="message">
+        <ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon>
+        <span>{{ message }}</span>
+      </div>
+
+      <!-- Customer + fare summary -->
+      <div class="pg-card trip-card">
+        <div class="dc-list">
+          <div class="dc-row" style="cursor: default;">
+            <div class="dc-row__icon">
+              <ion-icon name="person-circle-outline" aria-hidden="true"></ion-icon>
+            </div>
+            <div class="dc-row__text">
+              <small>Customer</small>
+              <strong>{{ customerName }}</strong>
+            </div>
+          </div>
+          <div class="dc-row" style="cursor: default;">
+            <div class="dc-row__icon">
+              <ion-icon
+                [name]="tripPaymentMethod === 'cash' ? 'cash-outline' : 'phone-portrait-outline'"
+                aria-hidden="true"
+              ></ion-icon>
+            </div>
+            <div class="dc-row__text">
+              <small>Payment</small>
+              <strong>{{ (tripPaymentMethod || '—') | uppercase }}</strong>
+            </div>
+            <div class="dc-row__value fare-value">
+              ₹{{ lastTrip?.['final_fare'] ?? lastTrip?.['estimated_fare'] ?? '—' }}
+            </div>
+          </div>
+          <div class="dc-row" *ngIf="customerPosition" style="cursor: default;">
+            <div class="dc-row__icon dc-row__icon--muted">
+              <ion-icon name="locate-outline" aria-hidden="true"></ion-icon>
+            </div>
+            <div class="dc-row__text">
+              <small>Customer location</small>
+              <strong class="coords">
+                {{ customerPosition.lat | number:'1.5-5' }}, {{ customerPosition.lng | number:'1.5-5' }}
+              </strong>
+            </div>
+          </div>
         </div>
-        <ion-button
-          fill="clear"
-          size="small"
-          (click)="navigateToPickup()"
-          [disabled]="!canNavigatePickup"
-          aria-label="Navigate to pickup"
+      </div>
+
+      <!-- Pickup / Drop addresses -->
+      <div class="pg-card trip-card legs-card">
+        <div class="leg">
+          <span class="dot pickup" aria-hidden="true"></span>
+          <div class="grow">
+            <small>Pickup</small>
+            <p>{{ lastTrip?.['pickup_address'] || '—' }}</p>
+          </div>
+          <ion-button
+            class="dc-press"
+            fill="clear"
+            size="small"
+            (click)="navigateToPickup()"
+            [disabled]="!canNavigatePickup"
+            aria-label="Navigate to pickup"
+          >
+            <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
+          </ion-button>
+        </div>
+        <div class="leg-divider"></div>
+        <div class="leg">
+          <span class="dot drop" aria-hidden="true"></span>
+          <div class="grow">
+            <small>Drop</small>
+            <p>{{ lastTrip?.['drop_address'] || '—' }}</p>
+          </div>
+          <ion-button
+            class="dc-press"
+            fill="clear"
+            size="small"
+            (click)="navigateToDrop()"
+            [disabled]="!canNavigateDrop"
+            aria-label="Navigate to drop"
+          >
+            <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
+          </ion-button>
+        </div>
+      </div>
+
+      <!-- Secondary actions -->
+      <div class="secondary-actions">
+        <button
+          *ngIf="lastTrip?.['status'] === 'ARRIVED_PICKUP'"
+          class="dc-cta dc-cta--ghost is-danger dc-press"
+          type="button"
+          [disabled]="busy"
+          (click)="markCustomerNoShow()"
         >
-          <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
-        </ion-button>
-      </div>
-      <div class="leg-divider"></div>
-      <div class="leg">
-        <span class="dot drop" aria-hidden="true"></span>
-        <div class="grow">
-          <small>Drop</small>
-          <p>{{ lastTrip?.['drop_address'] || '—' }}</p>
-        </div>
-        <ion-button
-          fill="clear"
-          size="small"
-          (click)="navigateToDrop()"
-          [disabled]="!canNavigateDrop"
-          aria-label="Navigate to drop"
+          <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+          Customer no-show
+        </button>
+
+        <button
+          *ngIf="canSOS()"
+          class="dc-cta dc-cta--ghost is-danger dc-press"
+          type="button"
+          [disabled]="sosBusy"
+          (click)="triggerSOS()"
         >
-          <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
-        </ion-button>
+          <ion-icon name="warning-outline" aria-hidden="true"></ion-icon>
+          {{ sosBusy ? 'Sending…' : 'SOS' }}
+        </button>
       </div>
-    </div>
-
-    <!-- Inline errors / messages -->
-    <div class="banner danger" *ngIf="error">
-      <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
-      <span>{{ error }}</span>
-    </div>
-    <div class="banner success" *ngIf="message">
-      <ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon>
-      <span>{{ message }}</span>
-    </div>
-
-    <!-- Secondary actions -->
-    <div class="secondary-actions">
-      <ion-button
-        *ngIf="lastTrip?.['status'] === 'ARRIVED_PICKUP'"
-        expand="block"
-        color="danger"
-        fill="outline"
-        [disabled]="busy"
-        (click)="markCustomerNoShow()"
-      >
-        <ion-icon slot="start" name="alert-circle-outline"></ion-icon>
-        Customer no-show
-      </ion-button>
-
-      <ion-button
-        *ngIf="canSOS()"
-        expand="block"
-        color="danger"
-        fill="outline"
-        [disabled]="sosBusy"
-        (click)="triggerSOS()"
-      >
-        <ion-icon slot="start" name="warning-outline"></ion-icon>
-        {{ sosBusy ? 'Sending…' : 'SOS' }}
-      </ion-button>
     </div>
 
     <!-- Spacer so the sticky bottom CTA doesn't cover content. -->
@@ -141,16 +158,15 @@
 
     <!-- Sticky bottom progression button. -->
     <div class="sticky-cta" *ngIf="nextAction()">
-      <ion-button
-        expand="block"
-        size="large"
-        color="primary"
+      <button
+        class="dc-cta dc-press"
+        type="button"
         [disabled]="progressBusy"
         (click)="advance()"
       >
-        <ion-icon slot="start" name="arrow-forward-circle"></ion-icon>
+        <ion-icon name="arrow-forward-circle" aria-hidden="true"></ion-icon>
         <span>{{ progressBusy ? 'Working…' : nextAction()?.label }}</span>
-      </ion-button>
+      </button>
     </div>
   </ng-container>
 
@@ -159,127 +175,144 @@
        ════════════════════════════════════════════════════════════════ -->
   <ng-container *ngIf="!hasActiveTrip">
 
-    <!-- Documents-style dark header -->
+    <!-- Driver gradient hero -->
     <div class="pg-hero">
       <h1 class="pg-title">Rides</h1>
       <p class="pg-subtitle">Incoming ride requests near you.</p>
     </div>
 
-    <!-- Inline errors / messages -->
-    <div class="banner danger" *ngIf="error">
-      <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
-      <span>{{ error }}</span>
-    </div>
-    <div class="banner success" *ngIf="message">
-      <ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon>
-      <span>{{ message }}</span>
-    </div>
+    <div class="pg-body">
 
-    <!-- Available rides list -->
-    <div class="section-head">
-      <h3>Available rides</h3>
-      <small *ngIf="loadingAvailable" class="muted">refreshing…</small>
-    </div>
-
-    <div *ngIf="!loadingAvailable && !available.length" class="empty-state">
-      <ion-icon name="car-outline" aria-hidden="true"></ion-icon>
-      <p>No incoming requests right now.</p>
-      <small>You'll see new ride offers here. Make sure you're online.</small>
-    </div>
-
-    <div class="rides-list dc-stagger">
-    <div class="ride-card" *ngFor="let t of available">
-      <div class="ride-card__head">
-        <span class="badge selected" *ngIf="t.is_selected_for_me">Requested for you</span>
-        <h2 class="fare">
-          ₹{{ t.customer_offer || t.estimated_fare || '-' }}
-          <small *ngIf="t.payment_method">· {{ t.payment_method | uppercase }}</small>
-        </h2>
-        <small class="trip-id">Trip #{{ t.id }}</small>
+      <!-- Inline errors / messages -->
+      <div class="banner danger" *ngIf="error">
+        <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+        <span>{{ error }}</span>
       </div>
-      <div class="ride-card__addr">
-        <div class="leg">
-          <span class="dot pickup"></span>
-          <span>{{ t.pickup_address || (t.pickup_lat + ', ' + t.pickup_lng) }}</span>
+      <div class="banner success" *ngIf="message">
+        <ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon>
+        <span>{{ message }}</span>
+      </div>
+
+      <!-- Available rides list -->
+      <div class="dc-section section-head">
+        <span>Available rides</span>
+        <small *ngIf="loadingAvailable" class="refreshing">
+          <ion-spinner name="dots"></ion-spinner>
+          refreshing…
+        </small>
+      </div>
+
+      <div *ngIf="!loadingAvailable && !available.length" class="dc-empty">
+        <div class="dc-empty__icon">
+          <ion-icon name="car-outline" aria-hidden="true"></ion-icon>
         </div>
-        <div class="leg">
-          <span class="dot drop"></span>
-          <span>{{ t.drop_address || (t.drop_lat + ', ' + t.drop_lng) }}</span>
-        </div>
-      </div>
-      <div class="ride-card__cta">
-        <ion-button
-          expand="block"
-          color="success"
-          [disabled]="busy"
-          (click)="pickAvailable(t, 'accept')"
-        >
-          Accept ₹{{ t.customer_offer || t.estimated_fare || 0 }}
-        </ion-button>
-        <ion-button
-          expand="block"
-          fill="outline"
-          [disabled]="busy"
-          (click)="pickAvailable(t, 'counter')"
-        >
-          Counter
-        </ion-button>
-      </div>
-    </div>
-    </div>
-
-    <!-- Counter / negotiation panel — only when we have something to negotiate. -->
-    <div class="negotiation-card" *ngIf="counterAmount != null || negotiation">
-      <div class="section-head">
-        <h3>Negotiate</h3>
+        <strong>No incoming requests</strong>
+        <span>You'll see new ride offers here. Make sure you're online.</span>
       </div>
 
-      <ion-item lines="full" class="counter-input">
-        <ion-label position="stacked">Your counter (₹)</ion-label>
-        <ion-input
-          type="number"
-          inputmode="decimal"
-          step="1"
-          [(ngModel)]="counterAmount"
-        ></ion-input>
-      </ion-item>
-
-      <div class="counter-actions">
-        <ion-button
-          expand="block"
-          color="success"
-          [disabled]="negBusy"
-          (click)="acceptCustomerOffer()"
-        >
-          Accept customer offer
-        </ion-button>
-        <ion-button
-          expand="block"
-          color="primary"
-          [disabled]="negBusy"
-          (click)="counterCustomerOffer()"
-        >
-          Send counter
-        </ion-button>
-      </div>
-
-      <div class="offers-history" *ngIf="negotiation && offers.length">
-        <small class="muted">Offer history</small>
-        <div
-          class="offer"
-          *ngFor="let o of offers"
-          [class.from-driver]="o['from_role'] === 'driver'"
-          [class.from-customer]="o['from_role'] === 'customer'"
-        >
-          <div class="who">{{ o['from_role'] }}</div>
-          <div class="amount">₹{{ o['amount'] }}</div>
-          <div class="status">{{ o['status'] }}</div>
+      <div class="rides-list dc-stagger">
+        <div class="pg-card ride-card" *ngFor="let t of available">
+          <div class="ride-card__head">
+            <span class="dc-badge dc-badge--warn badge selected" *ngIf="t.is_selected_for_me">
+              <ion-icon name="star" aria-hidden="true"></ion-icon>
+              Requested for you
+            </span>
+            <div class="ride-card__headrow">
+              <h2 class="fare">
+                ₹{{ t.customer_offer || t.estimated_fare || '-' }}
+                <small *ngIf="t.payment_method">· {{ t.payment_method | uppercase }}</small>
+              </h2>
+              <small class="trip-id">Trip #{{ t.id }}</small>
+            </div>
+          </div>
+          <div class="ride-card__addr">
+            <div class="leg">
+              <span class="dot pickup"></span>
+              <span>{{ t.pickup_address || (t.pickup_lat + ', ' + t.pickup_lng) }}</span>
+            </div>
+            <div class="addr-connector" aria-hidden="true"></div>
+            <div class="leg">
+              <span class="dot drop"></span>
+              <span>{{ t.drop_address || (t.drop_lat + ', ' + t.drop_lng) }}</span>
+            </div>
+          </div>
+          <div class="ride-card__cta">
+            <button
+              class="dc-cta dc-press"
+              type="button"
+              [disabled]="busy"
+              (click)="pickAvailable(t, 'accept')"
+            >
+              Accept ₹{{ t.customer_offer || t.estimated_fare || 0 }}
+            </button>
+            <button
+              class="dc-cta dc-cta--ghost dc-press"
+              type="button"
+              [disabled]="busy"
+              (click)="pickAvailable(t, 'counter')"
+            >
+              Counter
+            </button>
+          </div>
         </div>
       </div>
 
-      <div class="locked" *ngIf="finalAmount != null">
-        <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
-        Locked at ₹{{ finalAmount }}
+      <!-- Counter / negotiation panel — only when we have something to negotiate. -->
+      <div class="pg-card negotiation-card" *ngIf="counterAmount != null || negotiation">
+        <div class="pg-card__head">
+          <div class="pg-card__icon">
+            <ion-icon name="swap-horizontal-outline" aria-hidden="true"></ion-icon>
+          </div>
+          <h2 class="pg-card__title">Negotiate</h2>
+        </div>
+
+        <ion-item lines="full" class="counter-input">
+          <ion-label position="stacked">Your counter (₹)</ion-label>
+          <ion-input
+            type="number"
+            inputmode="decimal"
+            step="1"
+            [(ngModel)]="counterAmount"
+          ></ion-input>
+        </ion-item>
+
+        <div class="counter-actions">
+          <button
+            class="dc-cta dc-press"
+            type="button"
+            [disabled]="negBusy"
+            (click)="acceptCustomerOffer()"
+          >
+            Accept customer offer
+          </button>
+          <button
+            class="dc-cta dc-cta--dark dc-press"
+            type="button"
+            [disabled]="negBusy"
+            (click)="counterCustomerOffer()"
+          >
+            Send counter
+          </button>
+        </div>
+
+        <div class="offers-history" *ngIf="negotiation && offers.length">
+          <small class="muted">Offer history</small>
+          <div
+            class="offer"
+            *ngFor="let o of offers"
+            [class.from-driver]="o['from_role'] === 'driver'"
+            [class.from-customer]="o['from_role'] === 'customer'"
+          >
+            <div class="who">{{ o['from_role'] }}</div>
+            <div class="amount">₹{{ o['amount'] }}</div>
+            <div class="status">{{ o['status'] }}</div>
+          </div>
+        </div>
+
+        <div class="locked" *ngIf="finalAmount != null">
+          <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
+          Locked at ₹{{ finalAmount }}
+        </div>
       </div>
     </div>
   </ng-container>
