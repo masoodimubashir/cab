@@ -1,15 +1,128 @@
-.page-pad { padding: 8px; }
-.muted { color: var(--ion-color-medium, #666); }
-.small { font-size: 0.85rem; padding: 8px 12px; }
-.action-row {
+/* Emergency contacts — page-specific styles layered on the pg-/dc- system. */
+
+.dc-section {
+  margin-top: 22px;
+}
+
+.dc-error {
+  margin: 14px 4px 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ion-color-danger, #eb445a);
+}
+
+/* ── Add actions ── */
+.ec-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 8px 8px;
+  gap: 10px;
 }
-.empty {
-  text-align: center;
-  padding: 40px 16px;
-  color: var(--ion-color-medium, #666);
-  ion-icon { font-size: 48px; opacity: 0.5; }
+
+/* ── Contact row ── */
+.ec-row {
+  /* override dc-row default padding to fit the action buttons */
+  padding-right: 8px;
+  gap: 8px;
+}
+
+.ec-row__main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Avatar circle reuses dc-row__icon sizing but shows an initial. */
+.ec-avatar {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ion-color-primary, #12B35B);
+
+  &--primary {
+    background: var(--ion-color-primary, #12B35B);
+    color: #ffffff;
+  }
+}
+
+.dc-row__text strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Row action buttons (call / delete) ── */
+.ec-action {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  ion-icon { font-size: 19px; }
+
+  &--call {
+    background: rgba(var(--ion-color-primary-rgb), 0.1);
+    ion-icon { color: var(--ion-color-primary, #12B35B); }
+  }
+  &--delete {
+    background: rgba(235, 68, 90, 0.1);
+    ion-icon { color: var(--ion-color-danger, #eb445a); }
+  }
+}
+
+/* ── Add / edit dialog form (sits inside a pg-card) ── */
+.ec-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* pg-card already supplies the surface + 16px padding; trim vertical pad
+     so the first/last fields sit snug inside the bordered card. */
+  padding: 0 0 2px;
+  margin-bottom: 16px;
+}
+
+.ec-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 0;
+
+  &:first-child { padding-top: 2px; }
+  & + .ec-field { border-top: 1px solid #F0F2F5; }
+
+  &--row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted, #6C757D);
+    em { color: var(--ion-color-danger, #eb445a); font-style: normal; }
+  }
+
+  &__input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: none;
+    font-size: 1rem;
+    color: var(--text-main, #0D1B2A);
+    padding: 0;
+    &::placeholder { color: #B7C0CA; }
+    &:disabled { opacity: 0.6; }
+  }
 }

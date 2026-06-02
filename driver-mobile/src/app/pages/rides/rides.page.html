@@ -1,8 +1,11 @@
-<ion-header [translucent]="true">
-  <ion-toolbar>
-    <ion-title>{{ hasActiveTrip ? 'On a ride' : 'Rides' }}</ion-title>
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start" *ngIf="!hasActiveTrip">
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+    </ion-buttons>
+    <ion-title *ngIf="hasActiveTrip">On a ride</ion-title>
     <ion-buttons slot="end" *ngIf="!hasActiveTrip">
-      <ion-button (click)="refreshAvailable()" [disabled]="loadingAvailable" aria-label="Refresh">
+      <ion-button (click)="refreshAvailable()" aria-label="Reload">
         <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
       </ion-button>
     </ion-buttons>
@@ -156,6 +159,12 @@
        ════════════════════════════════════════════════════════════════ -->
   <ng-container *ngIf="!hasActiveTrip">
 
+    <!-- Documents-style dark header -->
+    <div class="pg-hero">
+      <h1 class="pg-title">Rides</h1>
+      <p class="pg-subtitle">Incoming ride requests near you.</p>
+    </div>
+
     <!-- Inline errors / messages -->
     <div class="banner danger" *ngIf="error">
       <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
@@ -178,6 +187,7 @@
       <small>You'll see new ride offers here. Make sure you're online.</small>
     </div>
 
+    <div class="rides-list dc-stagger">
     <div class="ride-card" *ngFor="let t of available">
       <div class="ride-card__head">
         <span class="badge selected" *ngIf="t.is_selected_for_me">Requested for you</span>
@@ -215,6 +225,7 @@
           Counter
         </ion-button>
       </div>
+    </div>
     </div>
 
     <!-- Counter / negotiation panel — only when we have something to negotiate. -->

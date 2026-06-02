@@ -1,14 +1,5 @@
-import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
-import { ApiService } from './core/api.service';
-import { AuthService } from './core/auth.service';
-import { BackgroundLocationService } from './core/background-location.service';
+import { Component } from '@angular/core';
 import { DevLocationService } from './core/dev-location.service';
-
-interface ActiveTrip {
-  id: number;
-  status: string;
-}
 
 @Component({
   selector: 'app-root',
@@ -16,34 +7,12 @@ interface ActiveTrip {
   styleUrls: ['app.component.scss'],
   standalone: false,
 })
-export class AppComponent implements OnInit {
+export class AppComponent {
   showDevBadge = false;
 
-  constructor(
-    private auth: AuthService,
-    private api: ApiService,
-    private router: Router,
-    private bgLocation: BackgroundLocationService,
-    private devLocation: DevLocationService,
-  ) {
+  // Startup routing (session check + active-trip resume) lives in the splash
+  // page, which is the app's root route — see pages/splash/splash.page.ts.
+  constructor(private devLocation: DevLocationService) {
     this.showDevBadge = this.devLocation.isEnabled();
-  }
-
-  ngOnInit(): void {
-    if (!this.auth.isLoggedIn()) return;
-    const roles = this.auth.getUser()?.roles ?? [];
-    if (!roles.includes('driver')) return;
-
-    this.api.get<{ trip: ActiveTrip | null }>('/drivers/me/active-trip').subscribe({
-      next: (res) => {
-        const trip = res?.trip;
-        if (!trip) return;
-        void this.bgLocation.start(trip.id);
-        this.router.navigateByUrl(`/tabs/rides`);
-      },
-      error: () => {
-        // Silent: endpoint may be unreachable on cold start; user can navigate manually.
-      },
-    });
   }
 }

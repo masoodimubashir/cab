@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 
 @Component({
@@ -17,10 +16,7 @@ export class PerformancePage {
   completedTrips = 0;
   onlineStreak = '—';
 
-  constructor(
-    private api: ApiService,
-    private router: Router
-  ) {}
+  constructor(private api: ApiService) {}
 
   ionViewWillEnter(): void {
     this.load();
@@ -59,7 +55,15 @@ export class PerformancePage {
     });
   }
 
-  back(): void {
-    this.router.navigateByUrl('/tabs/more');
+  /** Star glyph for a given slot (1-5) based on the average rating. */
+  starName(slot: number): string {
+    const avg = this.ratingAvg ? +this.ratingAvg : 0;
+    if (avg >= slot) {
+      return 'star';
+    }
+    if (avg >= slot - 0.5) {
+      return 'star-half';
+    }
+    return 'star-outline';
   }
 }

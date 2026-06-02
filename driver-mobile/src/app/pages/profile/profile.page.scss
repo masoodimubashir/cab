@@ -1,91 +1,230 @@
-.muted { color: var(--ion-color-medium, #666); }
-.small { font-size: 0.9rem; }
-.avatar-wrap {
-  display: flex;
-  justify-content: center;
-  margin: 16px 0 24px;
-}
-.avatar {
-  width: 110px;
-  height: 110px;
-  border-radius: 50%;
-  background-color: var(--ion-color-light-shade, #ddd);
-  background-size: cover;
-  background-position: center;
-}
-.avatar-edit {
-  position: relative;
-  display: inline-block;
-  cursor: pointer;
-}
-.plus-badge {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--ion-color-primary);
-  color: white;
-  font-size: 1.25rem;
-  font-weight: 700;
+/* ---------------------------------------------------------- profile header */
+.pf-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 2px solid var(--ion-background-color, white);
+  gap: 16px;
 }
 
-/* Places autocomplete — suggestions list under the address item. */
-.address-item { position: relative; }
+.pf-avatar {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-block;
+  cursor: pointer;
 
-.address-suggestions {
-  margin: 4px 0 0;
-  padding: 4px;
+  &__img {
+    display: block;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    object-fit: cover;
+    background-color: #EAF7EF;
+    box-shadow: inset 0 0 0 2px rgba(18, 179, 91, 0.18);
+  }
+
+  &__edit {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--ion-color-primary, #12B35B);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(18, 179, 91, 0.4);
+
+    ion-icon { font-size: 15px; }
+  }
+}
+
+.pf-head__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pf-head__name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main, #0D1B2A);
+  letter-spacing: -0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-head__sub {
+  font-size: 0.85rem;
+  color: var(--text-muted, #6C757D);
+}
+
+/* ------------------------------------------------------------------- fields */
+.pf-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+
+  &__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-muted, #6C757D);
+    letter-spacing: 0.01em;
+
+    em { color: var(--ion-color-primary, #12B35B); font-style: normal; }
+    small { font-weight: 500; opacity: 0.8; }
+  }
+}
+
+.pf-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--text-main, #0D1B2A);
+  background: #F5F7FA;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md, 12px);
+  padding: 13px 14px;
+  outline: none;
+  transition: border-color 0.16s ease, background 0.16s ease;
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+
+  &::placeholder { color: #AEB6BF; font-weight: 500; }
+
+  &:focus {
+    background: #fff;
+    border-color: var(--ion-color-primary, #12B35B);
+  }
+
+  &:disabled { opacity: 0.65; }
+}
+
+/* Locked (read-only) value display in edit mode. */
+.pf-input--locked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #F0F2F5;
+  color: var(--text-muted, #6C757D);
+  font-weight: 600;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // Read-only email: a real disabled <input> nested in the locked shell so the
+  // value is selectable/copyable but never editable. Strip its native chrome.
+  input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    text-overflow: ellipsis;
+
+    &::placeholder { color: #AEB6BF; font-weight: 500; }
+    &:disabled { opacity: 1; -webkit-text-fill-color: var(--text-muted, #6C757D); }
+  }
+
+  ion-icon {
+    flex-shrink: 0;
+    font-size: 15px;
+    color: #AEB6BF;
+  }
+}
+
+/* --------------------------------------------------------- address suggest */
+.pf-field--address { position: relative; }
+
+.pf-suggestions {
+  margin: 8px 0 0;
+  padding: 5px;
   list-style: none;
-  background: var(--ion-background-color, #fff);
-  border: 1px solid var(--ion-color-light-shade, #e5e7eb);
-  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #ECEFF3;
+  border-radius: var(--radius-md, 12px);
+  box-shadow: 0 8px 24px rgba(13, 27, 42, 0.1);
   max-height: 260px;
   overflow-y: auto;
 }
 
-.address-suggestion {
+.pf-suggestion {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 11px;
+  padding: 11px 12px;
+  border-radius: 9px;
   cursor: pointer;
+  transition: background 0.14s ease;
 
-  &:hover { background: var(--ion-color-light, #f4f5f8); }
+  &:hover, &:active { background: #F5F7FA; }
 
-  ion-icon {
+  > ion-icon {
     flex-shrink: 0;
-    color: var(--ion-color-primary);
-    font-size: 18px;
+    color: var(--ion-color-primary, #12B35B);
+    font-size: 19px;
   }
 
   &__text { display: flex; flex-direction: column; min-width: 0; }
   &__main {
     font-weight: 600;
-    font-size: 14px;
-    color: var(--ion-text-color, #1c1f24);
+    font-size: 0.9rem;
+    color: var(--text-main, #0D1B2A);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   &__sub {
-    font-size: 12px;
-    color: var(--ion-color-medium, #92949c);
+    font-size: 0.78rem;
+    color: var(--text-muted, #6C757D);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 }
 
-.address-empty {
-  margin: 4px 12px 0;
-  font-size: 13px;
-  color: var(--ion-color-medium, #92949c);
+.pf-searching {
+  margin: 8px 4px 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #6C757D);
   font-style: italic;
+}
+
+/* -------------------------------------------------------------- error + cta */
+.pf-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 16px 2px 0;
+  padding: 11px 14px;
+  border-radius: var(--radius-md, 12px);
+  background: rgba(235, 68, 90, 0.08);
+  color: #D43A4E;
+  font-size: 0.88rem;
+  font-weight: 600;
+
+  ion-icon { font-size: 18px; flex-shrink: 0; }
+}
+
+.pf-save {
+  margin-top: 22px;
 }

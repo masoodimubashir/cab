@@ -288,13 +288,20 @@ ion-content.in-trip {
   }
 }
 
+/* Wrapper for the available-rides list — enables dc-stagger entrance motion
+   on its direct .ride-card children. Layout-neutral (cards keep their own
+   margins), so the trip flow is untouched. */
+.rides-list {
+  display: block;
+}
+
 .ride-card {
   background: #fff;
-  border-radius: 0.8rem;
-  margin: 0 0.8rem 0.8rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid #eee;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  margin: 0 0.8rem 0.85rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid #eef0f2;
+  box-shadow: 0 4px 16px rgba(13, 27, 42, 0.06);
 
   &__head {
     display: flex;
@@ -374,10 +381,11 @@ ion-content.in-trip {
 
 .negotiation-card {
   background: #fff;
-  border-radius: 0.8rem;
+  border-radius: 16px;
   margin: 0 0.8rem 1.5rem;
   padding: 0.5rem 1rem 1rem;
-  border: 1px solid #eee;
+  border: 1px solid #eef0f2;
+  box-shadow: 0 4px 16px rgba(13, 27, 42, 0.06);
 
   .counter-input {
     --background: transparent;

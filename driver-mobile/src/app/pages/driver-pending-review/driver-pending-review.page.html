@@ -1,61 +1,126 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-title>Account Status</ion-title>
-  </ion-toolbar>
-</ion-header>
+<ion-content [fullscreen]="true" class="status-content">
+  <div class="status-page">
 
-<ion-content class="ion-padding">
-  <div class="locked-wrap">
-    <div class="locked-icon">
-      <ion-icon [name]="status === 'rejected' ? 'alert-circle-outline' : 'time-outline'"></ion-icon>
+    <!-- Brand -->
+    <div class="status-brand">
+      <div class="logo-mark">
+        <div class="logo-dots"></div>
+        <div class="logo-arrow"></div>
+      </div>
+      <span class="brand-text"><span class="d">Dream</span><span class="c">Cabs</span></span>
     </div>
 
-    <ng-container *ngIf="loading; else loaded">
-      <h2>Checking status…</h2>
-    </ng-container>
+    <!-- Hero -->
+    <div class="status-hero">
 
-    <ng-template #loaded>
-      <ng-container *ngIf="status !== 'rejected'">
-        <h2>Your documents are under review</h2>
-        <p class="muted">
-          Our team is verifying the documents you uploaded. You'll be able to start
-          accepting rides as soon as you're approved.
-        </p>
-        <p class="muted small">
-          This usually takes a few hours. We'll let you know — this screen will
-          automatically take you to the dashboard once you're approved.
-        </p>
+      <ng-container *ngIf="loading; else loaded">
+        <div class="status-badge status-badge--loading">
+          <ion-spinner name="crescent"></ion-spinner>
+        </div>
+        <h1 class="status-title">Checking status…</h1>
+        <p class="status-sub">Hang tight while we fetch your latest account status.</p>
       </ng-container>
 
-      <ng-container *ngIf="status === 'rejected'">
-        <h2>One or more documents were rejected</h2>
-        <p class="muted">
-          Tap below to view the rejection reason and re-upload. You can't start
-          driving until every required document is approved.
-        </p>
-      </ng-container>
-    </ng-template>
+      <ng-template #loaded>
 
-    <div class="actions">
-      <ion-button expand="block" fill="outline" (click)="refresh()" [disabled]="loading">
-        <ion-icon name="refresh-outline" slot="start"></ion-icon>
-        Check again
-      </ion-button>
+        <!-- ===== UNDER REVIEW ===== -->
+        <ng-container *ngIf="status !== 'rejected'">
+          <div class="status-badge status-badge--review">
+            <span class="glow-ring"></span>
+            <div class="badge-circle"><ion-icon name="hourglass-outline"></ion-icon></div>
+          </div>
 
-      <ion-button
-        expand="block"
-        *ngIf="status === 'rejected'"
-        color="warning"
-        (click)="fixDocuments()"
-        class="ion-margin-top"
-      >
-        Re-upload rejected documents
-      </ion-button>
+          <h1 class="status-title">Your documents are<br>under review</h1>
+          <p class="status-sub">
+            Our team is verifying the documents you uploaded. You'll be able to start
+            accepting rides as soon as you're approved.
+          </p>
 
-      <ion-button expand="block" color="medium" fill="clear" (click)="logout()" class="ion-margin-top">
-        <ion-icon name="log-out-outline" slot="start"></ion-icon>
-        Log out
-      </ion-button>
+          <div class="timeline">
+            <div class="tl-step is-done">
+              <div class="tl-dot"><ion-icon name="checkmark-outline"></ion-icon></div>
+              <div class="tl-text">
+                <strong>Documents submitted</strong>
+                <span>We've received all your files</span>
+              </div>
+            </div>
+            <div class="tl-line is-done"></div>
+            <div class="tl-step is-current">
+              <div class="tl-dot"><span class="pulse-dot"></span></div>
+              <div class="tl-text">
+                <strong>Under review</strong>
+                <span>Usually approved within a few hours</span>
+              </div>
+            </div>
+            <div class="tl-line"></div>
+            <div class="tl-step">
+              <div class="tl-dot"></div>
+              <div class="tl-text">
+                <strong>Approved</strong>
+                <span>We'll take you to your dashboard automatically</span>
+              </div>
+            </div>
+          </div>
+        </ng-container>
+
+        <!-- ===== REJECTED ===== -->
+        <ng-container *ngIf="status === 'rejected'">
+          <div class="status-badge status-badge--rejected">
+            <span class="glow-ring"></span>
+            <div class="badge-circle"><ion-icon name="alert-outline"></ion-icon></div>
+          </div>
+
+          <h1 class="status-title">Action needed on<br>your documents</h1>
+          <p class="status-sub">
+            One or more documents were rejected. Tap below to see the reason and
+            re-upload — you can't start driving until every required document is approved.
+          </p>
+
+          <div class="timeline">
+            <div class="tl-step is-done">
+              <div class="tl-dot"><ion-icon name="checkmark-outline"></ion-icon></div>
+              <div class="tl-text">
+                <strong>Documents submitted</strong>
+                <span>We've received your files</span>
+              </div>
+            </div>
+            <div class="tl-line is-bad"></div>
+            <div class="tl-step is-bad">
+              <div class="tl-dot"><ion-icon name="close-outline"></ion-icon></div>
+              <div class="tl-text">
+                <strong>Changes requested</strong>
+                <span>Some documents need to be re-uploaded</span>
+              </div>
+            </div>
+            <div class="tl-line"></div>
+            <div class="tl-step">
+              <div class="tl-dot"></div>
+              <div class="tl-text">
+                <strong>Approved</strong>
+                <span>After your re-uploaded documents pass review</span>
+              </div>
+            </div>
+          </div>
+        </ng-container>
+      </ng-template>
+    </div>
+
+    <!-- Actions -->
+    <div class="status-actions">
+      <button class="cta-btn cta-btn--warning" *ngIf="status === 'rejected'" (click)="fixDocuments()">
+        <ion-icon name="cloud-upload-outline"></ion-icon>
+        Re-upload documents
+      </button>
+
+      <button class="cta-btn cta-btn--ghost" (click)="refresh()" [disabled]="loading">
+        <ion-spinner name="crescent" *ngIf="loading"></ion-spinner>
+        <ion-icon name="refresh-outline" *ngIf="!loading"></ion-icon>
+        {{ loading ? 'Checking…' : 'Check again' }}
+      </button>
+
+      <button class="link-btn" (click)="logout()">
+        <ion-icon name="log-out-outline"></ion-icon> Log out
+      </button>
     </div>
   </div>
 </ion-content>

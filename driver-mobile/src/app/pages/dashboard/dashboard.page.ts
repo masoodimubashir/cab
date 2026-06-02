@@ -1,20 +1,43 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertController, ModalController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
-import { AuthService } from '../../core/auth.service';
+import { AuthService, AuthUser } from '../../core/auth.service';
 import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.service';
 import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
+import { PushService } from '../../core/push.service';
+import { SubscriptionsModalComponent } from '../../shared/subscriptions-modal/subscriptions-modal.component';
 
 declare const google: any;
 
+interface NavItem {
+  label: string;
+  sub: string;
+  icon: string;
+  path: string;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
 /**
- * Driver Dashboard
- * ----------------
- * - Full-screen Google Map fills the page.
- * - A sticky "Go Online" / "Go Offline" button sits at the bottom.
- * - Clicking Go Online triggers the OS location permission prompt, fetches the
- *   driver's current position, plots them on the map, and starts the presence
- *   stream (POST /drivers/go-online + a running POST /drivers/location feed).
+ * Driver Dashboard — full-map home
+ * --------------------------------
+ * The bottom tab bar is gone; this screen is now the app's home. It is an
+ * edge-to-edge Google Map that:
+ *   - shows the device's current location with a live "driver puck" marker,
+ *   - tracks the driver walking/driving in real time (continuous watchPosition),
+ *   - hosts a floating top bar (menu + status), a recenter FAB, a Go Online /
+ *     Go Offline bottom sheet, and a slide-in navigation drawer that replaces
+ *     every destination the old tab bar used to reach.
+ *
+ * GPS ownership rule (so we never run two watchers at once):
+ *   - OFFLINE  → this page owns a "visual" watch purely to move the marker.
+ *   - ONLINE   → DriverPresenceService owns the watch (it also streams to the
+ *                dispatcher); its onLocated() feeds the same marker.
  */
 @Component({
   selector: 'app-dashboard',
@@ -30,8 +53,51 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   error: string | null = null;
   driver: Record<string, unknown> | null = null;
 
+  /** Left navigation drawer (replaces the removed bottom tab bar). */
+  drawerOpen = false;
+  /** Recenter FAB busy spinner while we fetch a one-shot fix. */
+  locating = false;
+  /** True once we've plotted at least one real GPS fix. */
+  hasFix = false;
+  /** Keep the camera glued to the driver until they pan the map themselves. */
+  private followMe = true;
+
+  /** "Online for" session timer shown in the online sheet. */
+  onlineElapsed = '00:00';
+  private onlineSince: number | null = null;
+  private onlineTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Destinations the drawer exposes — everything the tab bar used to reach. */
+  readonly navGroups: NavGroup[] = [
+    {
+      title: 'Drive',
+      items: [
+        { label: 'Rides', sub: 'Available & active trips', icon: 'car-outline', path: '/tabs/rides' },
+        { label: 'Earnings', sub: "Today & this week's income", icon: 'cash-outline', path: '/tabs/earnings' },
+        { label: 'Wallet', sub: 'Balance & payouts', icon: 'wallet-outline', path: '/tabs/wallet' },
+        { label: 'Trip history', sub: 'Your past rides', icon: 'time-outline', path: '/tabs/history' },
+      ],
+    },
+    {
+      title: 'Account',
+      items: [
+        { label: 'Performance', sub: 'Rating & trip metrics', icon: 'stats-chart-outline', path: '/performance' },
+        { label: 'Profile', sub: 'Name, email & photo', icon: 'person-outline', path: '/profile' },
+        { label: 'Documents', sub: 'Vehicle details & uploads', icon: 'document-text-outline', path: '/driver-registration' },
+        { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
+        { label: 'Payment methods', sub: 'Cash & Razorpay', icon: 'card-outline', path: '/payment-methods' },
+        { label: 'Emergency numbers', sub: 'SOS contacts', icon: 'people-outline', path: '/emergency-contacts' },
+        { label: 'Help & Support', sub: 'Contact us, FAQ & report', icon: 'help-buoy-outline', path: '/support' },
+      ],
+    },
+  ];
+
   private map: any | null = null;
   private selfMarker: any | null = null;
+  private accuracyCircle: any | null = null;
+  private markerHeading: HTMLElement | null = null;
+  private visualWatchId: string | null = null;
+  private lastPos: { lat: number; lng: number } | null = null;
   // Default map centre (Mumbai) until we have a real fix.
   private readonly defaultCentre = { lat: 19.0760, lng: 72.8777 };
 
@@ -41,14 +107,18 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     private presence: DriverPresenceService,
     private mapsLoader: MapsLoaderService,
     private geo: GeolocationService,
+    private router: Router,
+    private alertCtrl: AlertController,
+    private push: PushService,
+    private modalCtrl: ModalController,
   ) {
     this.presence.onError((err) => {
       this.error = err.message;
     });
-    this.presence.onLocated((fix) => {
-      // Every GPS fix from the watcher lands here — push it straight onto the
-      // map so the driver sees themselves move in real time. No re-fetching.
-      this.applyFixToMap(fix);
+    this.presence.onLocated((fix: PresenceFix) => {
+      // Every GPS fix from the online presence watcher lands here — drive the
+      // same marker so the driver sees themselves move in real time.
+      this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing);
       if (this.error && this.error.toLowerCase().includes('gps')) {
         this.error = null;
       }
@@ -59,51 +129,247 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.refresh();
   }
 
+  ionViewDidEnter(): void {
+    // Once per app session, greet the driver with the subscription plans.
+    void this.maybeShowSubscriptionPrompt();
+  }
+
+  private subPromptChecked = false;
+
+  /**
+   * Show the subscription plans modal when the driver opens the app — but only
+   * once per app session, and only if there are plans available to them.
+   */
+  private maybeShowSubscriptionPrompt(): void {
+    if (this.subPromptChecked) return;
+    this.subPromptChecked = true;
+    try {
+      if (sessionStorage.getItem('dc_sub_prompt_shown') === '1') return;
+    } catch { /* sessionStorage unavailable — fall through */ }
+
+    this.api.get<{ data: unknown[] }>('/drivers/me/subscriptions/plans').subscribe({
+      next: (res) => {
+        try { sessionStorage.setItem('dc_sub_prompt_shown', '1'); } catch { /* ignore */ }
+        if (Array.isArray(res?.data) && res.data.length > 0) {
+          void this.presentSubscriptionModal();
+        }
+      },
+      error: () => { /* silent — never block the dashboard on this */ },
+    });
+  }
+
+  private async presentSubscriptionModal(): Promise<void> {
+    const modal = await this.modalCtrl.create({
+      component: SubscriptionsModalComponent,
+      cssClass: 'subscriptions-modal',
+    });
+    await modal.present();
+    const { data } = await modal.onWillDismiss<{ navigate?: string }>();
+    if (data?.navigate) {
+      void this.router.navigateByUrl(data.navigate);
+    }
+  }
+
   async ngAfterViewInit(): Promise<void> {
     try {
       await this.mapsLoader.ensureLoaded();
       this.initMap();
+      await this.startLiveTracking();
     } catch (e) {
       this.error = (e as Error).message;
     }
   }
 
-  ngOnDestroy(): void {
-    // Leave the presence watcher alive across page transitions — only stop it
-    // explicitly on Go Offline / logout.
+  ionViewWillLeave(): void {
+    // Drop the visual-only watch when navigating away. If the driver is online,
+    // DriverPresenceService keeps its own watch alive so dispatch still sees us.
+    void this.stopVisualWatch();
   }
+
+  ngOnDestroy(): void {
+    void this.stopVisualWatch();
+    this.stopOnlineTimer();
+  }
+
+  // ---------------------------------------------------------------- display --
+
+  get user(): AuthUser | null {
+    return this.auth.getUser();
+  }
+  get firstName(): string {
+    const n = this.user?.name?.trim() || 'Driver';
+    return n.split(/\s+/)[0];
+  }
+  get avatarUrl(): string | null {
+    return this.auth.resolveAvatarUrl(this.user);
+  }
+  readonly defaultAvatar = 'assets/default-avatar.svg';
+  /** Swap a broken/unreachable avatar for the bundled default image. */
+  onAvatarError(ev: Event): void {
+    const img = ev.target as HTMLImageElement | null;
+    if (img && img.src.indexOf('default-avatar') === -1) {
+      img.src = this.defaultAvatar;
+    }
+  }
+  get isApproved(): boolean {
+    return this.driver?.['approval_status'] === 'approved';
+  }
+  get isOnline(): boolean {
+    return !!this.driver?.['is_online'];
+  }
+
+  // ------------------------------------------------------------------ drawer --
+
+  openDrawer(): void {
+    this.drawerOpen = true;
+  }
+  closeDrawer(): void {
+    this.drawerOpen = false;
+    // Pick up any status change made on another screen.
+    this.refresh();
+  }
+  navTo(path: string): void {
+    this.drawerOpen = false;
+    this.router.navigateByUrl(path);
+  }
+
+  async confirmGoOffline(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Go offline?',
+      message: 'You will stop receiving new ride requests until you go back online.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Go offline', role: 'destructive', handler: () => { void this.goOffline(); } },
+      ],
+    });
+    await alert.present();
+  }
+
+  async confirmDeleteAccount(): Promise<void> {
+    this.drawerOpen = false;
+    const alert = await this.alertCtrl.create({
+      header: 'Delete account',
+      message: 'You are about to delete your account. Some data will be lost forever.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Continue', role: 'destructive', handler: () => this.router.navigateByUrl('/delete-account') },
+      ],
+    });
+    await alert.present();
+  }
+
+  async confirmSignOut(): Promise<void> {
+    this.drawerOpen = false;
+    const alert = await this.alertCtrl.create({
+      header: 'Sign out?',
+      message: 'You will need to sign in again to go online and accept rides.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Sign out', role: 'destructive', handler: () => this.performSignOut() },
+      ],
+    });
+    await alert.present();
+  }
+
+  private async performSignOut(): Promise<void> {
+    try {
+      await this.push.unregister();
+    } catch {
+      /* best-effort */
+    }
+    this.api.post('/me/logout', {}).subscribe({
+      next: () => this.finishSignOut(),
+      error: () => this.finishSignOut(),
+    });
+  }
+
+  private finishSignOut(): void {
+    this.auth.logout();
+    this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+  }
+
+  // ----------------------------------------------------------------- profile --
+
+  refresh(): void {
+    this.loading = true;
+    this.error = null;
+    this.api.get<{
+      driver: Record<string, unknown> | null;
+      user: { name?: string; roles?: string[]; avatar_path?: string | null; avatar_url?: string | null };
+    }>('/drivers/me').subscribe({
+      next: (res) => {
+        this.driver = res.driver;
+        if (res.user) {
+          // Keep the locally-stored user in sync with the server — crucially the
+          // avatar, so a photo uploaded anywhere (app or admin) shows up here,
+          // in the drawer and on the profile screen.
+          this.auth.updateUser({
+            name: res.user.name,
+            roles: res.user.roles,
+            avatar_path: res.user.avatar_path,
+            avatar_url: res.user.avatar_url,
+          });
+        }
+        // App may have been reloaded while online — resume the presence stream
+        // so dispatch keeps seeing us as Free, and hand GPS ownership to it.
+        if (this.driver?.['is_online']) {
+          // Hand GPS ownership to the presence service, THEN drop our visual
+          // watch — ordered so the two watchers never overlap (otherwise both
+          // could emit fixes during the hand-off).
+          if (!this.presence.isStreaming()) {
+            void this.presence.start().then(() => this.stopVisualWatch());
+          } else {
+            void this.stopVisualWatch();
+          }
+          this.startOnlineTimer();
+        } else {
+          this.stopOnlineTimer();
+        }
+      },
+      error: (err) => {
+        this.error = err?.error?.message || 'Could not load driver profile';
+        this.driver = null;
+      },
+      complete: () => {
+        this.loading = false;
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------- map ---
 
   private initMap(): void {
     if (!this.mapDiv?.nativeElement || this.map) return;
     this.map = new google.maps.Map(this.mapDiv.nativeElement, {
       center: this.defaultCentre,
       zoom: 13,
-      // mapId is required for AdvancedMarkerElement to render. DEMO_MAP_ID is
-      // Google's public test id; replace with a styled mapId from the Cloud
-      // Console for production map theming.
+      // mapId is required for AdvancedMarkerElement. DEMO_MAP_ID is Google's
+      // public test id; swap for a styled Cloud-console mapId in production.
       mapId: 'DEMO_MAP_ID',
       disableDefaultUI: true,
       gestureHandling: 'greedy',
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: false,
+      clickableIcons: false,
     });
 
-    // Ionic's view transitions can render the map container at 0×0 the first
-    // tick. Once the page is fully laid out, Google Maps needs an explicit
-    // resize trigger or tiles stay blank.
+    // The moment the driver drags the map, stop auto-following so we don't yank
+    // the camera back on the next GPS tick.
+    this.map.addListener('dragstart', () => {
+      this.followMe = false;
+    });
+
+    // Ionic view transitions can render the container 0×0 on the first tick;
+    // nudge a resize once the page is laid out or tiles stay blank.
     setTimeout(() => {
       if (this.map) {
         google.maps.event.trigger(this.map, 'resize');
-        this.map.setCenter(this.defaultCentre);
+        this.map.setCenter(this.lastPos || this.defaultCentre);
       }
     }, 300);
   }
 
-  /**
-   * Wait until the map exists. ngAfterViewInit fires later than ionViewWillEnter,
-   * so a click on "Go Online" can land before the map is ready.
-   */
   private waitForMap(timeoutMs = 5000): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.map) return resolve(true);
@@ -117,55 +383,175 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     });
   }
 
-  refresh(): void {
-    this.loading = true;
-    this.error = null;
-    this.api.get<{ driver: Record<string, unknown> | null; user: { role?: string } }>('/drivers/me').subscribe({
-      next: (res) => {
-        this.driver = res.driver;
-        if (res.user?.role) {
-          this.auth.updateUser({ role: res.user.role });
-        }
-        // App might have been reloaded while online — resume the presence
-        // stream so the dispatcher continues to see us as Free, and place
-        // ourselves on the map.
-        if (this.driver?.['is_online']) {
-          if (!this.presence.isStreaming()) {
-            void this.presence.start();
-          }
-          void this.refreshMarkerFromCurrentPosition();
-        }
+  // -------------------------------------------------------- live tracking ---
+
+  /**
+   * Show the driver where they are the instant the map is ready, then keep the
+   * marker moving as they do. Runs on every page entry; safe to call repeatedly.
+   */
+  private async startLiveTracking(): Promise<void> {
+    try {
+      await this.geo.requestPermissions();
+    } catch {
+      /* web prompts lazily on first read */
+    }
+
+    // One immediate fix so the marker appears without waiting for a watch tick.
+    try {
+      const fix = await this.geo.getCurrentPosition({
+        enableHighAccuracy: true,
+        maximumAge: 4000,
+        timeout: 15000,
+      });
+      this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing, true);
+    } catch (e) {
+      this.error = `Could not read GPS: ${(e as Error)?.message || 'permission denied'}`;
+    }
+
+    // Offline → we own the watch (purely to animate the marker). Online → the
+    // presence service already streams + feeds onLocated, so we stay out of it.
+    if (!this.isOnline) {
+      await this.startVisualWatch();
+    }
+  }
+
+  private async startVisualWatch(): Promise<void> {
+    if (this.visualWatchId) return;
+    this.visualWatchId = await this.geo.watchPosition(
+      { enableHighAccuracy: true, maximumAge: 4000, timeout: 30000 },
+      (fix, err) => {
+        if (err || !fix) return;
+        this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing);
       },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load driver profile';
-        this.driver = null;
-      },
-      complete: () => {
-        this.loading = false;
-      },
-    });
+    );
+  }
+
+  private async stopVisualWatch(): Promise<void> {
+    const id = this.visualWatchId;
+    if (!id) return;
+    this.visualWatchId = null;
+    await this.geo.clearWatch(id);
+  }
+
+  /** Recenter FAB — re-arm follow mode and snap back to the driver. */
+  async recenter(): Promise<void> {
+    this.followMe = true;
+    if (this.lastPos && this.map) {
+      this.map.panTo(this.lastPos);
+      if (this.map.getZoom() < 15) this.map.setZoom(16);
+      return;
+    }
+    this.locating = true;
+    try {
+      const fix = await this.geo.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
+      this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing, true);
+    } catch (e) {
+      this.error = `Could not read GPS: ${(e as Error)?.message || 'permission denied'}`;
+    } finally {
+      this.locating = false;
+    }
   }
 
   /**
-   * Go Online flow:
-   *  1. Request OS location permission (Capacitor Geolocation).
-   *  2. Tell the backend the driver is online (/drivers/go-online).
-   *  3. Start the presence stream — getCurrentPosition + watchPosition under the hood.
-   *  4. Drop a marker on the map at the current fix and recentre.
-   *
-   * The first three steps are existing infrastructure; the map marker is new.
+   * Single source of truth for "put the driver on the map". Builds the puck +
+   * accuracy ring once, then only moves them on subsequent fixes.
    */
+  private applyFix(
+    lat: number,
+    lng: number,
+    accuracy: number | null,
+    bearing: number | null,
+    recenter = false,
+  ): void {
+    if (!this.map) return;
+    this.hasFix = true;
+    this.lastPos = { lat, lng };
+    const pos = { lat, lng };
+
+    if (!this.selfMarker) {
+      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+        map: this.map,
+        position: pos,
+        title: 'You',
+        content: this.buildSelfMarkerContent(),
+      });
+    } else {
+      this.selfMarker.position = pos;
+      if (this.selfMarker.map !== this.map) {
+        this.selfMarker.map = this.map;
+      }
+    }
+
+    // Rotate the heading wedge if we have a bearing.
+    if (this.markerHeading) {
+      if (bearing != null && Number.isFinite(bearing)) {
+        this.markerHeading.style.opacity = '1';
+        this.markerHeading.style.transform = `rotate(${bearing}deg)`;
+      } else {
+        this.markerHeading.style.opacity = '0';
+      }
+    }
+
+    // GPS accuracy halo.
+    if (accuracy != null && Number.isFinite(accuracy)) {
+      if (!this.accuracyCircle) {
+        this.accuracyCircle = new google.maps.Circle({
+          map: this.map,
+          center: pos,
+          radius: accuracy,
+          strokeColor: '#12B35B',
+          strokeOpacity: 0.35,
+          strokeWeight: 1,
+          fillColor: '#12B35B',
+          fillOpacity: 0.1,
+          clickable: false,
+        });
+      } else {
+        this.accuracyCircle.setCenter(pos);
+        this.accuracyCircle.setRadius(accuracy);
+      }
+    }
+
+    if (recenter || this.followMe) {
+      this.map.panTo(pos);
+      if (this.map.getZoom() < 15) this.map.setZoom(16);
+    }
+  }
+
+  private buildSelfMarkerContent(): HTMLElement {
+    // Styles for these classes live in global.scss — AdvancedMarkerElement
+    // content is rendered outside this component's view encapsulation, so
+    // component-scoped SCSS (and @keyframes) would not reach it.
+    const wrap = document.createElement('div');
+    wrap.className = 'driver-puck';
+
+    const pulse = document.createElement('div');
+    pulse.className = 'driver-puck__pulse';
+
+    const heading = document.createElement('div');
+    heading.className = 'driver-puck__heading';
+    heading.style.opacity = '0';
+    this.markerHeading = heading;
+
+    const dot = document.createElement('div');
+    dot.className = 'driver-puck__dot';
+
+    wrap.appendChild(pulse);
+    wrap.appendChild(heading);
+    wrap.appendChild(dot);
+    return wrap;
+  }
+
+  // ------------------------------------------------------------ online flip ---
+
   async goOnline(): Promise<void> {
     if (this.toggling) return;
     this.toggling = true;
     this.error = null;
 
     try {
-      // 1. Permission. On native this opens the OS dialog; on web the prompt
-      //    is shown by getCurrentPosition shortly after.
       await this.geo.requestPermissions();
 
-      // 2. Backend "I'm online" flip.
       await new Promise<void>((resolve, reject) => {
         this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-online', {}).subscribe({
           next: (res) => { this.driver = res.driver; resolve(); },
@@ -173,16 +559,16 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         });
       });
 
-      // 3. Start streaming location to the dispatcher.
+      // Hand GPS ownership to the presence service (it streams + feeds onLocated).
+      await this.stopVisualWatch();
       await this.presence.start();
+      this.startOnlineTimer();
 
-      // 4. Wait for the map container to exist, then resize + centre on the
-      //    current fix. This is the "refresh" the driver expects.
       await this.waitForMap();
       if (this.map) {
         google.maps.event.trigger(this.map, 'resize');
       }
-      await this.refreshMarkerFromCurrentPosition();
+      this.followMe = true;
     } catch (e) {
       this.error = (e as Error).message;
     } finally {
@@ -203,10 +589,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         });
       });
       await this.presence.stop();
-      if (this.selfMarker) {
-        this.selfMarker.map = null;
-        this.selfMarker = null;
-      }
+      this.stopOnlineTimer();
+      // Keep showing the driver where they are — take the watch back ourselves.
+      await this.startVisualWatch();
     } catch (e) {
       this.error = (e as Error).message;
     } finally {
@@ -214,78 +599,31 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     }
   }
 
-  /**
-   * One-shot fetch used by Go Online — we want the marker to appear immediately
-   * rather than waiting for the watcher's first tick. Subsequent updates flow
-   * through applyFixToMap() driven by presence.onLocated.
-   */
-  private async refreshMarkerFromCurrentPosition(): Promise<void> {
-    if (!this.map) return;
-    try {
-      const fix = await this.geo.getCurrentPosition({
-        enableHighAccuracy: true,
-        maximumAge: 4000,
-        timeout: 15000,
-      });
-      this.applyFixToMap({
-        lat: fix.lat,
-        lng: fix.lng,
-        accuracy: fix.accuracy,
-        speedKmh: null,
-        bearing: null,
-      });
-    } catch (e) {
-      this.error = `Could not read GPS: ${(e as Error)?.message || 'permission denied'}`;
+  // ----------------------------------------------------------- online timer ---
+
+  private startOnlineTimer(): void {
+    if (this.onlineTimer) return;
+    if (!this.onlineSince) this.onlineSince = Date.now();
+    this.tickElapsed();
+    this.onlineTimer = setInterval(() => this.tickElapsed(), 1000);
+  }
+
+  private stopOnlineTimer(): void {
+    if (this.onlineTimer) {
+      clearInterval(this.onlineTimer);
+      this.onlineTimer = null;
     }
+    this.onlineSince = null;
+    this.onlineElapsed = '00:00';
   }
 
-  /**
-   * Single source of truth for "put the driver on the map" — used by the
-   * initial Go-Online fix and by every continuous watcher tick.
-   *
-   * Uses AdvancedMarkerElement (the supported replacement for the deprecated
-   * google.maps.Marker). The marker content is a small DOM dot we build once
-   * and re-use — only the `position` property changes on each tick.
-   */
-  private applyFixToMap(fix: PresenceFix): void {
-    if (!this.map) return;
-    const latLng = { lat: fix.lat, lng: fix.lng };
-    if (!this.selfMarker) {
-      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
-        map: this.map,
-        position: latLng,
-        title: 'You',
-        content: this.buildSelfMarkerContent(),
-      });
-    } else {
-      this.selfMarker.position = latLng;
-      // Re-attach if Go-Offline previously detached it from the map.
-      if (this.selfMarker.map !== this.map) {
-        this.selfMarker.map = this.map;
-      }
-    }
-    this.map.panTo(latLng);
-    if (this.map.getZoom() < 14) this.map.setZoom(16);
-  }
-
-  private buildSelfMarkerContent(): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'driver-self-marker';
-    el.style.cssText = [
-      'width:18px',
-      'height:18px',
-      'border-radius:50%',
-      'background:#2e7d32',
-      'border:3px solid #ffffff',
-      'box-shadow:0 1px 4px rgba(0,0,0,0.4)',
-    ].join(';');
-    return el;
-  }
-
-  get isApproved(): boolean {
-    return this.driver?.['approval_status'] === 'approved';
-  }
-  get isOnline(): boolean {
-    return !!this.driver?.['is_online'];
+  private tickElapsed(): void {
+    if (!this.onlineSince) return;
+    const secs = Math.max(0, Math.floor((Date.now() - this.onlineSince) / 1000));
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    this.onlineElapsed = h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
   }
 }

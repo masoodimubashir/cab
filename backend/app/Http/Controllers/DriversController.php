@@ -144,6 +144,12 @@ class DriversController extends Controller
                 ->all();
         }
 
+        $avatarUrl = $user->avatar_path
+            ? (str_starts_with($user->avatar_path, 'http')
+                ? $user->avatar_path
+                : url('/storage/'.ltrim($user->avatar_path, '/')))
+            : null;
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -151,6 +157,8 @@ class DriversController extends Controller
                 'phone' => $user->phone,
                 'email' => $user->email,
                 'roles' => $user->roleNames(),
+                'avatar_path' => $user->avatar_path,
+                'avatar_url' => $avatarUrl,
             ],
             'driver' => $driver,
             'documents' => $documents,

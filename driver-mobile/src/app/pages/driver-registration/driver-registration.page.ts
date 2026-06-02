@@ -165,6 +165,12 @@ export class DriverRegistrationPage implements OnInit {
     return this.fleets.filter((f) => !f.city_id || f.city_id === this.city_id);
   }
 
+  /** Selects a vehicle-type card (no-op once the driver is approved/locked). */
+  pickVehicleType(v: VehicleTypeOpt): void {
+    if (this.busy || this.driverApproved) return;
+    this.vehicle_type_id = v.id;
+  }
+
   // ── Step 1: vehicle + city + fleet ───────────────────────────────
 
   submitStep1(): void {
