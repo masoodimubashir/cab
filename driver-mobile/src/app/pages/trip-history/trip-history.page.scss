@@ -11,14 +11,32 @@
 }
 
 /* ------------------------------------------------------------- skeletons */
-.th-skeletons { margin-top: 18px; }
+.th-skeletons {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 
 /* ------------------------------------------------------------ trip cards */
-.th-list { margin-top: 18px; }
+.th-list {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 
 .th-trip {
   display: flex;
   flex-direction: column;
+}
+
+/* --- badges (top) --- */
+.th-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
 }
 
 /* --- route (pickup -> drop) --- */
@@ -35,8 +53,16 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  &--pickup { top: 4px; background: var(--ion-color-primary, #12B35B); }
-  &--drop { bottom: 4px; background: #D33651; }
+  &--pickup {
+    top: 4px;
+    background: var(--ion-color-primary, #12B35B);
+    box-shadow: 0 0 0 3px rgba(18, 179, 91, 0.16);
+  }
+  &--drop {
+    bottom: 4px;
+    background: #D33651;
+    box-shadow: 0 0 0 3px rgba(211, 54, 81, 0.14);
+  }
 }
 .th-route__line {
   position: absolute;
@@ -61,14 +87,6 @@
   &--drop { color: var(--text-muted, #6C757D); font-weight: 500; }
 }
 
-/* --- badges --- */
-.th-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 14px;
-}
-
 /* --- footer (date + fare) --- */
 .th-foot {
   display: flex;
@@ -88,14 +106,18 @@
   ion-icon { font-size: 1rem; }
 }
 .th-fare {
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 800;
   color: var(--text-main, #0D1B2A);
+  letter-spacing: -0.01em;
 }
 
 /* --- cancellation reason --- */
 .th-reason {
   margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(108, 117, 125, 0.07);
   font-size: 0.82rem;
   font-style: italic;
   color: var(--text-muted, #6C757D);

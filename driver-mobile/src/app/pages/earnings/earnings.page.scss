@@ -1,6 +1,7 @@
 /* =============================================================================
    Earnings page — header + body shell use the shared pg- system (theme/pages.scss).
-   Local `ec-` classes only style the bespoke bar chart + a few value states.
+   Local `ec-` classes only style the money-hero stat strip, the bespoke bar
+   chart, and a few value states. No global pg-/dc- class or keyframe is redefined.
    ========================================================================== */
 
 .dc-error {
@@ -8,15 +9,74 @@
   font-size: 0.86rem;
 }
 
+/* ── Money hero stat strip (sits under the headline number in the green→navy hero) ── */
+.ec-hero {
+  /* keep the hero comfortably tall so the stat strip breathes */
+  padding-bottom: 30px;
+}
+
+.ec-hero__stats {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ec-hstat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(2px);
+
+  ion-icon {
+    flex-shrink: 0;
+    font-size: 20px;
+    color: var(--ion-color-primary, #12B35B);
+  }
+
+  &__body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  &__label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+  }
+  &__value {
+    font-size: 0.96rem;
+    font-weight: 800;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* ── Chart card ── */
 .ec-chart-card {
   overflow: hidden;
 }
 
+.ec-pills {
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
 .ec-skeletons { padding: 4px 0; }
 
 .ec-chart {
-  padding: 12px 2px 2px;
+  padding: 14px 2px 2px;
 }
 
 .ec-chart__bars {
@@ -78,6 +138,16 @@
 }
 
 /* ── Weekly list states ── */
+.ec-week-card {
+  padding-bottom: 8px;
+}
+
+.ec-list {
+  /* list sits inside a pg-card, so drop its own elevation to avoid double shadow */
+  box-shadow: none;
+  border: 1px solid #EEF1F4;
+}
+
 .ec-week {
   display: flex;
   flex-direction: column;

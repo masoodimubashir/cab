@@ -1,6 +1,14 @@
-/* Wallet page — money page. The header/hero + body shell come from the shared
-   pg- system (theme/pages.scss); these are small page-specific touches only. */
+/* Wallet page — driver money page. The header/hero + body shell come from the
+   shared pg- system (theme/pages.scss); these are small page-specific touches
+   only and never redefine a global class or its keyframes. */
 
+/* Top-up CTA lives inside the gradient hero, so give it a touch of breathing
+   room from the subtitle and a glassy treatment that reads well on the navy. */
+.wallet-topup {
+  margin-top: 18px;
+}
+
+/* Error banner inside its card. */
 .wallet-error {
   display: flex;
   align-items: center;

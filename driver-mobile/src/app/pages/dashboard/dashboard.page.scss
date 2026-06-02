@@ -1,13 +1,16 @@
 /* =============================================================================
-   Driver Dashboard — full-map home
-   z-ladder: map 0 · top-controls 30 · sheet 40 · FAB 45 · error 50 · scrim 55 · drawer 60
+   Driver Dashboard — full-map home (driver identity overlays)
+   z-ladder: map 0 · topbar 30 · sheet 40 · FAB 45 · error 50 · scrim 55 · drawer 60
+   Brand-only: green #12B35B, navy #0D1B2A, canvas #F5F7FA, text #0D1B2A, muted #6C757D.
+   Global drv- and dc- classes are NOT redefined here — only positioning/layout.
    ========================================================================== */
 
 .dash-content {
-  /* Map tile fallback so the canvas never flashes white/dark while tiles load. */
-  --background: #e5e3df;
+  /* Map tile fallback so the canvas never flashes while tiles load. */
+  --background: #E5E3DF;
 }
 
+/* The Google Map host — full-bleed background layer (ViewChild #mapDiv). */
 .map-canvas {
   position: absolute;
   inset: 0;
@@ -16,46 +19,71 @@
   z-index: 0;
 }
 
-/* Frosted-glass island recipe (avatar, pill, FAB). */
-%glass {
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 0.5px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 6px 20px rgba(var(--dreamcab-dark-blue-rgb), 0.14);
-}
-
-/* ----------------------------------------------------------- top controls -- */
-.top-controls {
+/* ------------------------------------------------------------- top bar ------ */
+.drv-topbar {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 12px);
-  left: 0;
-  right: 0;
+  left: 14px;
+  right: 14px;
   height: 48px;
   z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   pointer-events: none;
+  animation: dashDrop 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+
+  &__badge {
+    pointer-events: auto;
+    flex-shrink: 0;
+    height: 30px;
+    align-self: center;
+  }
+
+  &__status {
+    pointer-events: auto;
+    margin-left: auto;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 0.5px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 6px 20px rgba(13, 27, 42, 0.14);
+
+    /* "Under review" amber accent (reuses .drv-status base). */
+    &.is-review {
+      background: rgba(232, 163, 23, 0.16);
+      color: #B7791F;
+      .drv-status__dot { background: #E8A317; box-shadow: 0 0 0 3px rgba(232, 163, 23, 0.25); animation: none; }
+    }
+
+    &--skeleton {
+      width: 108px;
+      padding: 0;
+      border: none;
+    }
+  }
 }
 
-.avatar-btn {
-  @extend %glass;
+/* Menu button (driver avatar) — frosted glass island. */
+.drv-menu {
   pointer-events: auto;
-  position: absolute;
-  left: 14px;
-  top: 0;
+  position: relative;
+  flex-shrink: 0;
   width: 48px;
   height: 48px;
   border-radius: 50%;
   padding: 0;
+  border: 0.5px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 6px 20px rgba(13, 27, 42, 0.16);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   overflow: visible;
-  transition: transform 0.12s ease;
-
-  &:active { transform: scale(0.94); }
-
-  ion-icon { font-size: 26px; color: var(--text-muted, #6C757D); }
 
   &__img {
     width: 44px;
@@ -74,63 +102,15 @@
     border-radius: 50%;
     background: var(--ion-color-primary, #12B35B);
     border: 2px solid #ffffff;
-  }
-}
-
-.status-pill {
-  @extend %glass;
-  pointer-events: auto;
-  position: absolute;
-  top: 7px;
-  left: 50%;
-  transform: translateX(-50%);
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  border-radius: var(--radius-pill, 9999px);
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--text-main, #0D1B2A);
-  white-space: nowrap;
-
-  &__dot {
-    position: relative;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #6C757D;
-  }
-
-  &.is-offline &__dot { background: #6C757D; }
-  &.is-review &__dot { background: #E8A317; }
-  &.is-online &__dot {
-    background: var(--ion-color-primary, #12B35B);
-    &::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: rgba(var(--ion-color-primary-rgb), 0.5);
-      animation: ringPulse 2s infinite ease-out;
-    }
-  }
-
-  &--skeleton {
-    width: 116px;
-    height: 34px;
-    border: none;
-    background: linear-gradient(90deg, #EEF1EF 25%, #F7F9F8 50%, #EEF1EF 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s linear infinite;
+    box-shadow: 0 0 0 0 rgba(18, 179, 91, 0.5);
+    animation: dashPresence 2s ease-out infinite;
   }
 }
 
 /* ------------------------------------------------------------ error banner -- */
 .error-banner {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 56px);
+  top: calc(env(safe-area-inset-top, 0px) + 68px);
   left: 14px;
   right: 14px;
   z-index: 50;
@@ -138,12 +118,12 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: var(--radius-md, 12px);
+  border-radius: 12px;
   background: #C62828;
   color: #ffffff;
   font-size: 0.85rem;
   box-shadow: 0 8px 24px rgba(198, 40, 40, 0.3);
-  animation: dropIn 0.25s ease;
+  animation: dashDrop 0.25s ease;
 
   ion-icon { font-size: 18px; flex-shrink: 0; }
   &__text { flex: 1; line-height: 1.35; }
@@ -160,24 +140,27 @@
 
 /* ------------------------------------------------------------- recenter FAB -- */
 .recenter-fab {
-  @extend %glass;
   position: absolute;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 156px);
   z-index: 45;
   width: 48px;
   height: 48px;
   border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 6px 20px rgba(13, 27, 42, 0.16);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: bottom 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease;
+  transition: bottom 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s ease;
 
-  &.is-raised { bottom: calc(env(safe-area-inset-bottom, 0px) + 232px); }
-  &:active { transform: scale(1.08); }
+  &.is-raised { bottom: calc(env(safe-area-inset-bottom, 0px) + 244px); }
 
-  ion-icon { font-size: 22px; color: var(--ion-color-secondary, #0D1B2A); }
+  ion-icon { font-size: 22px; color: var(--dreamcab-dark-blue, #0D1B2A); }
   ion-spinner { width: 22px; height: 22px; --color: var(--ion-color-primary, #12B35B); }
 }
 
@@ -191,24 +174,39 @@
   margin: 0 auto;
   z-index: 40;
   background: #ffffff;
-  border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 12px 40px rgba(var(--dreamcab-dark-blue-rgb), 0.18);
+  border-radius: 22px;
+  box-shadow: 0 12px 40px rgba(13, 27, 42, 0.18);
   padding: 16px;
   transition: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: dashSheetIn 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+
+  /* Online → green top edge says "you're live". */
+  &.is-online { box-shadow: 0 -2px 0 var(--ion-color-primary, #12B35B), 0 12px 40px rgba(13, 27, 42, 0.2); }
 
   &__handle {
     width: 36px;
     height: 4px;
     border-radius: 2px;
     background: #D6DCE2;
-    margin: -4px auto 12px;
+    margin: -4px auto 14px;
   }
 
-  &__hint {
-    margin: 2px 0 12px;
+  &__lead {
     text-align: center;
-    font-size: 0.8rem;
+    margin-bottom: 14px;
+  }
+  &__title {
+    display: block;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-main, #0D1B2A);
+    letter-spacing: -0.2px;
+  }
+  &__hint {
+    margin: 4px 0 0;
+    font-size: 0.82rem;
     color: var(--text-muted, #6C757D);
+    line-height: 1.4;
   }
 
   &__header {
@@ -230,6 +228,10 @@
     color: var(--text-muted, #6C757D);
     font-variant-numeric: tabular-nums;
   }
+
+  /* The big online button gets a confident size + green glow. */
+  &__go { height: 56px; font-size: 1.05rem; }
+  &__stop { height: 52px; }
 }
 
 .live-dot {
@@ -244,16 +246,16 @@
     inset: 0;
     border-radius: 50%;
     background: rgba(var(--ion-color-primary-rgb), 0.5);
-    animation: ringPulse 2s infinite ease-out;
+    animation: dashRing 2s infinite ease-out;
   }
 }
 
-/* Stat strip (online) */
+/* Stat strip (online) — driver-centric today stats. */
 .stat-strip {
   display: flex;
   margin-bottom: 14px;
   border: 1px solid #ECEFF2;
-  border-radius: var(--radius-md, 12px);
+  border-radius: 14px;
   overflow: hidden;
 
   .stat {
@@ -281,52 +283,15 @@
   }
 }
 
-/* Primary / secondary actions */
-.go-online-btn,
-.go-offline-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: var(--radius-pill, 9999px);
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.12s ease, opacity 0.15s ease;
-  &:active:not(:disabled) { transform: scale(0.98); }
-  &:disabled { opacity: 0.7; cursor: default; }
-  ion-icon { font-size: 20px; }
-  ion-spinner { width: 18px; height: 18px; }
-}
-
-.go-online-btn {
-  height: 56px;
-  border: none;
-  background: var(--ion-color-primary, #12B35B);
-  color: #ffffff;
-  font-size: 1.05rem;
-  box-shadow: 0 6px 18px rgba(var(--ion-color-primary-rgb), 0.32);
-  ion-spinner { --color: #fff; }
-}
-
-.go-offline-btn {
-  height: 52px;
-  background: #ffffff;
-  border: 1.5px solid var(--ion-color-secondary, #0D1B2A);
-  color: var(--ion-color-secondary, #0D1B2A);
-  font-size: 1rem;
-  ion-spinner { --color: var(--ion-color-secondary, #0D1B2A); }
-}
-
 /* Not-approved review card */
 .review-card {
   display: flex;
   align-items: center;
   gap: 12px;
   background: #FFF8E6;
-  border-radius: var(--radius-md, 12px);
+  border-radius: 14px;
   padding: 14px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 
   &__icon {
     flex-shrink: 0;
@@ -348,42 +313,19 @@
   }
 }
 
-.ghost-link {
-  width: 100%;
-  background: none;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--ion-color-secondary, #0D1B2A);
-  cursor: pointer;
-  ion-icon { font-size: 16px; }
-}
-
-/* Loading skeletons */
-.sk-line,
-.sk-block {
-  background: linear-gradient(90deg, #EEF1EF 25%, #F7F9F8 50%, #EEF1EF 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: var(--radius-pill, 9999px);
-}
-.sk-line { height: 12px; width: 60%; margin: 4px auto 16px; }
-.sk-block { height: 56px; width: 100%; }
+/* Loading skeletons (within the sheet) */
+.sk-line { height: 14px; width: 60%; margin: 4px auto 16px; border-radius: 9999px; }
+.sk-block { height: 56px; width: 100%; border-radius: 9999px; }
 
 /* ----------------------------------------------------------------- scrim ---- */
 .scrim {
   position: absolute;
   inset: 0;
   z-index: 55;
-  background: rgba(var(--dreamcab-dark-blue-rgb), 0.45);
+  background: rgba(13, 27, 42, 0.45);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
-  animation: fadeIn 0.24s ease;
+  animation: dashFade 0.24s ease;
 }
 
 /* ---------------------------------------------------------------- drawer ---- */
@@ -396,7 +338,7 @@
   z-index: 60;
   background: #ffffff;
   border-radius: 0 20px 20px 0;
-  box-shadow: 0 0 40px rgba(var(--dreamcab-dark-blue-rgb), 0.28);
+  box-shadow: 0 0 40px rgba(13, 27, 42, 0.28);
   display: flex;
   flex-direction: column;
   transform: translateX(-100%);
@@ -404,18 +346,24 @@
 
   &.is-open { transform: translateX(0); }
 
+  /* The sidebar keeps the driver green→navy identity (global .drv-hero is now
+     plain navy for the other inner pages). */
   &__header {
-    background: linear-gradient(135deg, var(--dreamcab-dark-blue, #0D1B2A), #15263A);
-    color: #fff;
-    padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px 18px;
     border-radius: 0 20px 0 0;
+    padding-bottom: 18px;
+    background:
+      radial-gradient(125% 95% at 90% -12%, rgba(18, 179, 91, 0.92) 0%, rgba(18, 179, 91, 0) 58%),
+      var(--dreamcab-dark-blue, #0D1B2A);
+  }
+  &__badge {
+    height: 22px;
+    margin-bottom: 14px;
   }
 
   &__id {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 4px;
   }
   &__avatar {
     width: 56px;
@@ -423,7 +371,8 @@
     border-radius: 50%;
     flex-shrink: 0;
     overflow: hidden;
-    background-color: rgba(var(--ion-color-primary-rgb), 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    background-color: rgba(18, 179, 91, 0.2);
     img { width: 100%; height: 100%; object-fit: cover; display: block; }
   }
   &__who {
@@ -445,7 +394,7 @@
     align-items: center;
     gap: 5px;
     padding: 3px 9px;
-    border-radius: var(--radius-pill, 9999px);
+    border-radius: 9999px;
     background: rgba(255, 255, 255, 0.14);
     font-size: 0.72rem;
     font-weight: 600;
@@ -464,7 +413,7 @@
     padding: 8px 0;
   }
   &__group {
-    margin: 14px 20px 4px;
+    margin: 14px 18px 4px;
     font-size: 0.72rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -474,101 +423,47 @@
 
   &__footer {
     border-top: 1px solid #EEF1F4;
-    padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 10px);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  &__version {
-    margin: 8px 0 0;
-    font-size: 0.72rem;
-    color: var(--text-muted, #6C757D);
+    padding: 6px 0 calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
 }
 
+/* Drawer rows reuse the global .dc-row look; only spacing tweaks here. */
 .nav-row {
-  width: 100%;
-  background: none;
-  border: none;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 20px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s ease;
-  &:active { background: #F4F6F8; }
-
-  &__icon { font-size: 22px; color: var(--text-muted, #6C757D); flex-shrink: 0; }
-  &__text {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    strong { font-size: 0.95rem; font-weight: 600; color: var(--text-main, #0D1B2A); }
-    small { font-size: 0.75rem; color: var(--text-muted, #6C757D); }
-  }
-  &__chev { font-size: 16px; color: #C4CDD5; }
+  padding-left: 18px;
+  padding-right: 18px;
 
   &--danger {
-    .nav-row__icon, strong { color: var(--ion-color-danger, #eb445a); }
+    .dc-row__text strong { color: var(--ion-color-danger, #eb445a); }
   }
-}
-
-.text-danger {
-  background: none;
-  border: none;
-  color: var(--ion-color-danger, #eb445a);
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 6px;
-  cursor: pointer;
-}
-
-/* Brand mark (drawer header) */
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  .logo-mark {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.12);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    .logo-dots { width: 4px; height: 4px; background: #fff; border-radius: 50%; }
-    .logo-arrow {
-      width: 0; height: 0;
-      border-top: 4px solid transparent;
-      border-bottom: 4px solid transparent;
-      border-left: 6px solid var(--ion-color-primary, #12B35B);
-    }
-  }
-  &__text { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
-  &__white { color: #ffffff; }
-  &__green { color: var(--ion-color-primary, #12B35B); }
 }
 
 /* --------------------------------------------------------------- keyframes -- */
-@keyframes ringPulse {
+/* Page-local helpers only (global keyframes like dcFadeUp are NOT redefined). */
+@keyframes dashRing {
   0%   { transform: scale(1);   opacity: 0.6; }
   70%  { transform: scale(2.4); opacity: 0; }
   100% { transform: scale(2.4); opacity: 0; }
 }
-@keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes dropIn {
+@keyframes dashFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dashDrop {
   from { opacity: 0; transform: translateY(-10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+@keyframes dashSheetIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes dashPresence {
+  0%   { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(18, 179, 91, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0); }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .status-pill.is-online .status-pill__dot::after,
-  .live-dot::after { animation: none; }
+  .drv-topbar,
+  .sheet,
+  .error-banner,
+  .scrim { animation: none; }
+  .live-dot::after,
+  .drv-menu__presence { animation: none; }
 }

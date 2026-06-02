@@ -1,17 +1,37 @@
 <ion-content class="splash-content" [fullscreen]="true">
+  <!-- Soft ambient gradient glows behind the brand block -->
+  <div class="splash-aura" aria-hidden="true">
+    <span class="aura aura-green"></span>
+    <span class="aura aura-navy"></span>
+    <span class="splash-sheen"></span>
+  </div>
+
   <div class="splash-wrapper">
     <!-- Centered Visual Logo Block -->
     <div class="splash-logo-container">
-      <div class="splash-logo-circle">
+      <div class="splash-logo-circle" role="img" aria-label="TaxiMode logo">
         <div class="logo-square-dot"></div>
         <div class="logo-square-dot"></div>
         <div class="logo-green-chevron"></div>
       </div>
-      
+
       <!-- Brand Typography -->
       <h1 class="splash-logo-text">
         <span class="text-white">Taxi</span><span class="text-primary">Mode</span>
       </h1>
+
+      <!-- Tagline -->
+      <p class="splash-tagline">Your ride, your way</p>
     </div>
+  </div>
+
+  <!-- Subtle loading shimmer pinned near the bottom -->
+  <div class="splash-loader" aria-label="Loading" role="status">
+    <span class="splash-loader-track">
+      <span class="splash-loader-bar"></span>
+    </span>
+    <span class="splash-dots" aria-hidden="true">
+      <i></i><i></i><i></i>
+    </span>
   </div>
 </ion-content>

@@ -15,6 +15,17 @@
   <div class="pg-hero">
     <h1 class="pg-title">Payment methods</h1>
     <p class="pg-subtitle">Choose what you accept</p>
+
+    <div class="pm-hero-pills">
+      <span class="drv-status" [class.is-offline]="!acceptCash">
+        <span class="drv-status__dot"></span>
+        Cash {{ acceptCash ? 'on' : 'off' }}
+      </span>
+      <span class="drv-status" [class.is-offline]="!acceptRazorpay">
+        <span class="drv-status__dot"></span>
+        Online {{ acceptRazorpay ? 'on' : 'off' }}
+      </span>
+    </div>
   </div>
 
   <div class="pg-body pg-anim-body">
@@ -24,6 +35,13 @@
     </div>
 
     <div class="pg-card">
+      <div class="pg-card__head">
+        <span class="pg-card__icon">
+          <ion-icon name="wallet-outline" aria-hidden="true"></ion-icon>
+        </span>
+        <h2 class="pg-card__title">Accepted at drop-off</h2>
+      </div>
+
       <div class="pm-row">
         <span class="pm-card__icon">
           <ion-icon name="cash-outline" aria-hidden="true"></ion-icon>

@@ -1,27 +1,57 @@
+/* =============================================================================
+   Driver "Pending review" status screen.
+   Uses the global driver design system (theme/pages.scss): .drv-hero, .drv-badge,
+   .pg-card, .dc-cta, .dc-content/.dc-body, .pg-pop, .pg-anim-body, .drv-status.
+   Only page-specific pieces (hero copy, status icon, timeline, actions) live here.
+   ========================================================================== */
+
 .status-content {
-  --background: var(--ion-background-color, #ffffff);
+  --background: #F5F7FA;
 }
 
-.status-page {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: calc(env(safe-area-inset-top, 16px) + 22px) 24px calc(env(safe-area-inset-bottom, 16px) + 20px);
-  box-sizing: border-box;
+/* --------------------------------------------------------------- custom hero */
+.status-hero {
+  /* .drv-hero supplies the green→navy gradient + rounded bottom + padding. */
+  &__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  &__copy {
+    padding-bottom: 2px;
+  }
+
+  &__title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+    margin: 0;
+    color: #ffffff;
+  }
+
+  &__sub {
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin: 6px 0 0;
+    color: rgba(255, 255, 255, 0.82);
+    max-width: 320px;
+  }
 }
 
-/* Brand */
+/* Brand lockup inside the hero */
 .status-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
 
   .logo-mark {
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
-    background: var(--ion-color-secondary, #0D1B2A);
+    background: rgba(255, 255, 255, 0.16);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -37,113 +67,100 @@
   }
 
   .brand-text {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+    color: #ffffff;
+  }
+}
+
+/* ----------------------------------------------------------------- body */
+.status-body {
+  /* pulls the first card up to overlap the rounded hero edge slightly */
+  margin-top: -14px;
+}
+
+/* ------------------------------------------------------------- status card */
+.status-card {
+  &--center {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 26px 20px 22px;
+  }
+
+  &__title {
     font-size: 18px;
     font-weight: 800;
+    color: var(--text-main, #0D1B2A);
+    margin: 18px 0 0;
     letter-spacing: -0.3px;
-    .d { color: var(--text-main, #0D1B2A); }
-    .c { color: var(--ion-color-primary, #12B35B); }
+    line-height: 1.3;
+  }
+
+  &__text {
+    font-size: 13.5px;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.55;
+    margin: 8px 0 0;
+    max-width: 320px;
+  }
+
+  &__chip {
+    margin-top: 16px;
   }
 }
 
-/* Hero */
-.status-hero {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 16px 0;
-}
-
-.status-title {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--text-main, #0D1B2A);
-  margin: 0 0 10px;
-  letter-spacing: -0.4px;
-  line-height: 1.25;
-}
-
-.status-sub {
-  font-size: 14px;
-  color: var(--text-muted, #6C757D);
-  line-height: 1.55;
-  margin: 0;
-  max-width: 340px;
-}
-
-/* Animated status badge */
-.status-badge {
+/* ---------------------------------------------------------- big status icon */
+.status-icon {
   position: relative;
-  width: 130px;
-  height: 130px;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 22px;
+
+  ion-icon { position: relative; z-index: 2; font-size: 44px; color: #ffffff; }
+
+  &__ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    z-index: 1;
+    animation: statusGlow 2.1s infinite ease-in-out;
+  }
 
   &--loading {
-    width: 92px;
-    height: 92px;
-    border-radius: 50%;
-    background: #F3F4F6;
-    ion-spinner { --color: var(--ion-color-primary, #12B35B); width: 40px; height: 40px; }
+    background: #EDF1F5;
+    ion-spinner { --color: var(--ion-color-primary, #12B35B); width: 42px; height: 42px; }
   }
-}
 
-.glow-ring {
-  position: absolute;
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  z-index: 1;
-  animation: glowPulse 2.1s infinite ease-in-out;
-}
-
-.badge-circle {
-  position: relative;
-  z-index: 2;
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: badgePop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  ion-icon { font-size: 44px; color: #ffffff; }
-}
-
-.status-badge--review {
-  .glow-ring { background: rgba(245, 158, 11, 0.18); }
-  .badge-circle {
+  &--review {
     background: linear-gradient(135deg, #FBBF24, #F59E0B);
-    box-shadow: 0 12px 30px rgba(245, 158, 11, 0.32);
+    box-shadow: 0 12px 30px rgba(245, 158, 11, 0.30);
+    .status-icon__ring { background: rgba(245, 158, 11, 0.18); }
   }
-}
 
-.status-badge--rejected {
-  .glow-ring { background: rgba(239, 68, 68, 0.18); }
-  .badge-circle {
+  &--rejected {
     background: linear-gradient(135deg, #F87171, #EF4444);
-    box-shadow: 0 12px 30px rgba(239, 68, 68, 0.32);
+    box-shadow: 0 12px 30px rgba(239, 68, 68, 0.30);
+    .status-icon__ring { background: rgba(239, 68, 68, 0.18); }
   }
 }
 
-/* Verification timeline */
+/* -------------------------------------------------- verification timeline */
+.status-timeline-card .pg-card__icon ion-icon { color: var(--ion-color-primary, #12B35B); }
+
 .timeline {
   width: 100%;
-  max-width: 330px;
-  margin: 30px auto 0;
-  text-align: left;
 }
 
 .tl-step {
   display: flex;
   align-items: flex-start;
   gap: 14px;
-
-  &__spacer { flex: 1; }
 
   .tl-dot {
     width: 28px;
@@ -164,7 +181,7 @@
     span { display: block; font-size: 12px; color: var(--text-muted, #6C757D); margin-top: 1px; line-height: 1.35; }
   }
 
-  // Future (not-yet-reached) steps read muted.
+  /* Future (not-yet-reached) steps read muted. */
   &:not(.is-done):not(.is-current):not(.is-bad) {
     .tl-text strong { color: #9CA3AF; }
   }
@@ -174,7 +191,7 @@
   &.is-current .tl-dot {
     background: rgba(245, 158, 11, 0.15);
     border: 2px solid #F59E0B;
-    .pulse-dot { animation: pulseDot 1.4s infinite ease-in-out; }
+    .pulse-dot { animation: tlPulseDot 1.4s infinite ease-in-out; }
   }
 
   &.is-bad .tl-dot { background: #EF4444; }
@@ -190,52 +207,21 @@
   &.is-bad { background: #F59E0B; }
 }
 
-/* Actions */
+/* -------------------------------------------------------------------- actions */
 .status-actions {
   display: flex;
   flex-direction: column;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 22px;
 }
 
-.cta-btn {
-  width: 100%;
-  height: 54px;
-  border: none;
-  border-radius: 14px;
-  background: var(--dreamcab-dark-blue, #0D1B2A);
-  color: #ffffff;
-  font-size: 15.5px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  box-shadow: 0 8px 20px rgba(13, 27, 42, 0.18);
-  transition: all 0.2s ease;
-  margin-bottom: 10px;
-
-  ion-icon { font-size: 19px; }
-  ion-spinner { --color: currentColor; width: 20px; height: 20px; }
-
-  &:active:not(:disabled) { transform: scale(0.98); }
-  &:disabled { opacity: 0.55; box-shadow: none; cursor: not-allowed; }
-
-  &--warning {
-    background: #F59E0B;
-    box-shadow: 0 8px 20px rgba(245, 158, 11, 0.28);
-  }
-
-  &--ghost {
-    background: #ffffff;
-    color: var(--text-main, #0D1B2A);
-    border: 1.5px solid #E5E7EB;
-    box-shadow: none;
-  }
+/* Warning-flavoured re-upload CTA (extends global .dc-cta). */
+.status-cta--warning {
+  background: #F59E0B;
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.28);
 }
 
-.link-btn {
+.status-link {
   width: 100%;
   background: none;
   border: none;
@@ -246,27 +232,26 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 12px;
+  padding: 10px;
   margin-top: 2px;
   cursor: pointer;
   ion-icon { font-size: 16px; }
   &:active { color: var(--text-main, #0D1B2A); }
 }
 
-/* Animations */
-@keyframes glowPulse {
-  0% { transform: scale(0.9); opacity: 0.8; }
-  50% { transform: scale(1.55); opacity: 0; }
+/* --------------------------------------------------------------- animations */
+@keyframes statusGlow {
+  0%   { transform: scale(0.9); opacity: 0.8; }
+  50%  { transform: scale(1.5); opacity: 0; }
   100% { transform: scale(0.9); opacity: 0; }
 }
 
-@keyframes badgePop {
-  0% { opacity: 0; transform: scale(0.4); }
-  70% { transform: scale(1.08); }
-  100% { opacity: 1; transform: scale(1); }
+@keyframes tlPulseDot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.4); opacity: 0.55; }
 }
 
-@keyframes pulseDot {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.4); opacity: 0.55; }
+@media (prefers-reduced-motion: reduce) {
+  .status-icon__ring,
+  .tl-step.is-current .pulse-dot { animation: none; }
 }

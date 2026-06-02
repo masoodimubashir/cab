@@ -1,27 +1,101 @@
-.warning-icon {
+/* =============================================================================
+   Delete account (DRIVER) — custom gradient header + danger-framed card.
+   Brand classes (.drv-hero, .drv-badge, .pg-card, .dc-cta, motion helpers)
+   come from theme/pages.scss; only screen-specific tweaks live here.
+   ========================================================================== */
+
+/* Transparent toolbar so the .drv-hero gradient reads as one continuous header. */
+ion-toolbar.drv-toolbar {
+  --background: var(--dreamcab-dark-blue, #0D1B2A);
+  --color: #ffffff;
+  --border-width: 0;
+  --border-color: transparent;
+  --min-height: 52px;
+  ion-button { --color: #ffffff; --icon-font-size: 22px; }
+  ion-title { font-weight: 700; }
+}
+
+/* Hero text (sits inside the global .drv-hero gradient surface). */
+.da-hero {
+  .drv-badge { margin-bottom: 14px; }
+
+  &__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #ffffff;
+  }
+  &__sub {
+    margin: 8px 0 0;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.78);
+    max-width: 320px;
+  }
+}
+
+/* Pull the body up slightly so the card overlaps the rounded hero edge. */
+.da-body {
+  margin-top: -14px;
+}
+
+/* Danger-framed card: reuse .pg-card, recolour border/icon to the brand
+   "bad" red tone without inventing new hues (Ionic danger). */
+.da-danger {
+  border-color: rgba(var(--ion-color-danger-rgb), 0.28);
+  box-shadow: 0 8px 22px rgba(var(--ion-color-danger-rgb), 0.08);
+  border-top: 3px solid var(--ion-color-danger, #eb445a);
+
+  &__icon {
+    background: rgba(var(--ion-color-danger-rgb), 0.12);
+    ion-icon { color: var(--ion-color-danger, #eb445a); }
+  }
+}
+
+/* Bullet list of consequences. */
+.da-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    padding: 9px 0;
+
+    & + .da-list__row {
+      border-top: 1px solid #F1F3F5;
+    }
+  }
+
+  &__ic {
+    flex-shrink: 0;
+    font-size: 20px;
+    margin-top: 1px;
+    color: var(--ion-color-danger, #eb445a);
+  }
+
+  &__txt {
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: var(--text-main, #0D1B2A);
+  }
+}
+
+/* Action buttons. */
+.da-actions {
+  margin-top: 20px;
   display: flex;
-  justify-content: center;
-  margin: 1rem 0 1.5rem;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.warning-icon ion-icon {
-  font-size: 4rem;
-}
-
-.title {
-  text-align: center;
-  font-size: 1.4rem;
-  font-weight: 700;
-  margin: 0 0 0.75rem;
-}
-
-.lead {
-  text-align: center;
-  color: var(--ion-color-medium);
-  margin: 0 0 1.5rem;
-}
-
-.bullets ion-item {
-  --background: transparent;
-  --padding-start: 0;
+/* Destructive primary CTA — recolour the .dc-cta to danger. */
+.da-delete {
+  background: var(--ion-color-danger, #eb445a);
+  box-shadow: 0 6px 18px rgba(var(--ion-color-danger-rgb), 0.3);
+  &:disabled { box-shadow: none; }
+  ion-spinner { width: 20px; height: 20px; --color: #fff; }
 }

@@ -1,3 +1,18 @@
+/* Status pills sitting inside the gradient pg-hero. The .drv-status chips are
+   styled globally; here we just lay them out and lift them for the dark hero. */
+.pm-hero-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+
+  .drv-status {
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    backdrop-filter: blur(2px);
+  }
+}
+
 /* Each payment method is a row inside the single pg-card; rows are separated
    with a hairline. The card itself supplies the bordered Documents look. */
 .pm-row {
@@ -9,7 +24,6 @@
   & + .pm-row {
     border-top: 1px solid #f0f2f5;
   }
-  &:first-child { padding-top: 0; }
   &:last-child { padding-bottom: 0; }
 }
 
@@ -74,5 +88,16 @@
     margin-top: 1px;
     font-size: 20px;
     color: var(--ion-color-primary, #12b35b);
+  }
+
+  /* Operator-locked note: warmer amber accent so it reads as a constraint. */
+  &--locked {
+    background: rgba(245, 158, 11, 0.07);
+    border-color: rgba(245, 158, 11, 0.22);
+    color: var(--text-main, #0d1b2a);
+
+    ion-icon {
+      color: #b7791f;
+    }
   }
 }

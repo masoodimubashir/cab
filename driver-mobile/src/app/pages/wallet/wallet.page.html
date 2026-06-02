@@ -3,6 +3,9 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
+    <ion-title class="pg-brandtitle">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+    </ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
@@ -16,21 +19,21 @@
     <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <!-- Money hero: wallet balance lives in the dark header -->
+  <!-- Money hero: driver wallet balance in the green → navy gradient -->
   <div class="pg-hero">
     <p class="pg-hero__label">Wallet balance</p>
     <h1 class="pg-hero__amount">₹{{ balance | number: '1.0-2' }}</h1>
     <p class="pg-subtitle">Available to use for rides &amp; fees</p>
-  </div>
 
-  <div class="pg-body pg-anim-body">
-    <!-- Top up CTA -->
-    <button class="dc-cta wallet-topup" [disabled]="toppingUp" (click)="promptTopUp()">
+    <!-- Top up CTA sits inside the hero so money + action read as one unit -->
+    <button class="dc-cta wallet-topup dc-press" [disabled]="toppingUp" (click)="promptTopUp()">
       <ion-spinner *ngIf="toppingUp" name="crescent"></ion-spinner>
       <ion-icon *ngIf="!toppingUp" name="add-circle-outline"></ion-icon>
       {{ toppingUp ? 'Opening…' : 'Top up wallet' }}
     </button>
+  </div>
 
+  <div class="pg-body pg-anim-body">
     <div *ngIf="error" class="pg-card wallet-error">
       <ion-icon name="alert-circle-outline"></ion-icon>
       <span>{{ error }}</span>
@@ -58,7 +61,7 @@
       </div>
 
       <!-- Transactions -->
-      <div *ngIf="transactions.length" class="dc-list">
+      <div *ngIf="transactions.length" class="dc-list dc-stagger">
         <div class="dc-row" *ngFor="let t of transactions">
           <span
             class="dc-row__icon"

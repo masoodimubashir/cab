@@ -1,23 +1,27 @@
-/* Subscriptions — Documents-style (pg-) shell. The dark rounded header + white
-   bordered cards come from theme/pages.scss; only page-specific composition
-   that styles inner content lives here. */
+/* Subscriptions — DRIVER app. The green→navy gradient hero + "DRIVER" badge and
+   the white bordered cards come from theme/pages.scss; only page-specific
+   composition that styles inner content lives here. */
 
-/* Wallet balance card */
+/* Wallet balance card — leads the screen so the driver sees what funds a plan. */
 .sub-wallet {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 14px;
+  column-gap: 14px;
+  row-gap: 2px;
 
   &__icon {
+    grid-row: 1 / span 2;
     flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(var(--ion-color-primary-rgb), 0.1);
-    ion-icon { font-size: 23px; color: var(--ion-color-primary, #12B35B); }
+    background: rgba(var(--ion-color-primary-rgb), 0.12);
+    ion-icon { font-size: 24px; color: var(--ion-color-primary, #12B35B); }
   }
 
   &__text {
@@ -26,11 +30,18 @@
     gap: 1px;
     small { font-size: 0.78rem; color: var(--text-muted, #6C757D); }
     strong {
-      font-size: 1.25rem;
+      font-size: 1.45rem;
       font-weight: 800;
+      letter-spacing: -0.3px;
       color: var(--text-main, #0D1B2A);
       font-variant-numeric: tabular-nums;
     }
+  }
+
+  &__hint {
+    grid-column: 2;
+    font-size: 0.74rem;
+    color: var(--text-muted, #6C757D);
   }
 }
 
@@ -48,29 +59,68 @@
   ion-icon { font-size: 20px; flex-shrink: 0; }
 }
 
-/* Highlighted active plan (sits on white as a pg-card) */
+/* Highlighted active plan — a green-accented card that stands apart from the
+   buyable plan cards so the driver instantly spots what they already own. */
 .sub-active {
-  &__head {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(var(--ion-color-primary-rgb), 0.28);
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(18, 179, 91, 0.08) 0%, rgba(18, 179, 91, 0) 55%),
+    #ffffff;
+
+  &__top {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: center;
+    gap: 10px;
   }
 
-  &__title {
+  &__icon {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ion-color-primary, #12B35B);
+    ion-icon { font-size: 19px; color: #ffffff; }
+  }
+
+  &__tag {
+    flex: 1;
     min-width: 0;
-    h3 { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -0.2px; color: var(--text-main, #0D1B2A); }
-    p { margin: 3px 0 0; font-size: 0.82rem; color: var(--text-muted, #6C757D); }
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ion-color-primary, #12B35B);
   }
 
   .dc-badge { flex-shrink: 0; }
+
+  &__title {
+    margin-top: 12px;
+    min-width: 0;
+    h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: var(--text-main, #0D1B2A);
+    }
+    p { margin: 3px 0 0; font-size: 0.82rem; color: var(--text-muted, #6C757D); }
+  }
 
   &__remaining {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-top: 14px;
-    font-size: 0.95rem;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(var(--ion-color-primary-rgb), 0.08);
+    font-size: 0.92rem;
     font-weight: 700;
     color: var(--ion-color-primary, #12B35B);
     ion-icon { font-size: 19px; flex-shrink: 0; }
@@ -80,53 +130,40 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    margin-top: 8px;
+    margin-top: 10px;
     font-size: 0.82rem;
     color: var(--text-muted, #6C757D);
     ion-icon { font-size: 16px; flex-shrink: 0; color: var(--text-muted, #6C757D); }
   }
 }
 
-/* Available plan cards */
-.sub-plan {
-  &__head {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-  }
+/* Section heading above the buyable plan cards. */
+.sub-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 2px 2px;
 
   &__title {
-    min-width: 0;
-    h3 { margin: 0; font-size: 1.02rem; font-weight: 700; color: var(--text-main, #0D1B2A); }
-    p { margin: 3px 0 0; font-size: 0.82rem; color: var(--text-muted, #6C757D); }
-  }
-
-  &__price {
-    flex-shrink: 0;
-    font-size: 1.25rem;
+    margin: 0;
+    font-size: 1rem;
     font-weight: 800;
-    color: var(--ion-color-primary, #12B35B);
+    letter-spacing: -0.2px;
+    color: var(--text-main, #0D1B2A);
+  }
+
+  &__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--dreamcab-dark-blue, #0D1B2A);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
-    line-height: 1.2;
-  }
-
-  &__tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-    margin: 12px 0;
-  }
-
-  &__terms {
-    font-size: 0.8rem;
-    color: var(--text-muted, #6C757D);
-    line-height: 1.45;
-    margin: 0 0 14px;
-  }
-
-  &__cta {
-    height: 46px;
-    font-size: 0.95rem;
   }
 }

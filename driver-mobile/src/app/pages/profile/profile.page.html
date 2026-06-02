@@ -3,9 +3,13 @@
     <ion-buttons slot="start" *ngIf="!onboarding">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
+    <ion-title class="pg-brandtitle">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+    </ion-title>
     <ion-buttons slot="end" *ngIf="!onboarding">
-      <ion-button (click)="reload()" aria-label="Reload">
-        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+      <ion-button class="pg-action" (click)="reload()" aria-label="Reload">
+        <ion-icon name="refresh-outline" slot="start"></ion-icon>
+        Refresh
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
@@ -23,9 +27,9 @@
 
   <div class="pg-body pg-anim-body">
 
-    <!-- Profile header card: avatar (with edit) + name -->
+    <!-- Profile header card: avatar (with edit) + name + driver status -->
     <div class="pg-card pf-head">
-      <label class="pf-avatar">
+      <label class="pf-avatar dc-press">
         <img
           class="pf-avatar__img"
           [src]="photoPreview || defaultAvatar"
@@ -39,6 +43,9 @@
         <strong class="pf-head__name">{{ name || 'Your name' }}</strong>
         <small class="pf-head__sub" *ngIf="phone">{{ phone }}</small>
         <small class="pf-head__sub" *ngIf="onboarding && !phone">Add a photo &amp; your details</small>
+        <span class="drv-status" *ngIf="!onboarding">
+          <span class="drv-status__dot"></span>Driver account
+        </span>
       </div>
     </div>
 
@@ -118,33 +125,43 @@
           <div class="pf-searching" *ngIf="!addressSuggestions.length && addressLoading">Searching…</div>
         </div>
       </ng-container>
+    </div>
 
-      <!-- Edit mode (locked): captured once at signup, not editable later -->
-      <ng-container *ngIf="!onboarding">
-        <div class="pf-field">
-          <span class="pf-field__label">Date of birth</span>
-          <div class="pf-input pf-input--locked">
-            <span>{{ dobDisplay || '—' }}</span>
-            <ion-icon name="lock-closed-outline"></ion-icon>
-          </div>
+    <!-- Edit mode (locked): captured once at signup, not editable later -->
+    <div class="pg-card pf-locked" *ngIf="!onboarding">
+      <div class="pg-card__head">
+        <div class="pg-card__icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Verified information</h2>
+      </div>
+
+      <div class="dc-list">
+        <div class="dc-row pf-row">
+          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="calendar-outline"></ion-icon></span>
+          <span class="dc-row__text">
+            <strong>Date of birth</strong>
+            <small>{{ dobDisplay || '—' }}</small>
+          </span>
+          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
         </div>
 
-        <div class="pf-field">
-          <span class="pf-field__label">Address</span>
-          <div class="pf-input pf-input--locked">
-            <span>{{ address || '—' }}</span>
-            <ion-icon name="lock-closed-outline"></ion-icon>
-          </div>
+        <div class="dc-row pf-row">
+          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="location-outline"></ion-icon></span>
+          <span class="dc-row__text">
+            <strong>Address</strong>
+            <small>{{ address || '—' }}</small>
+          </span>
+          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
         </div>
 
-        <div class="pf-field" *ngIf="phone">
-          <span class="pf-field__label">Phone</span>
-          <div class="pf-input pf-input--locked">
-            <span>{{ phone }}</span>
-            <ion-icon name="lock-closed-outline"></ion-icon>
-          </div>
+        <div class="dc-row pf-row" *ngIf="phone">
+          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="call-outline"></ion-icon></span>
+          <span class="dc-row__text">
+            <strong>Phone</strong>
+            <small>{{ phone }}</small>
+          </span>
+          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
         </div>
-      </ng-container>
+      </div>
     </div>
 
     <div class="pf-error" *ngIf="error">
@@ -153,6 +170,7 @@
     </div>
 
     <button class="dc-cta pf-save" (click)="submit()" [disabled]="busy">
+      <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
       {{ busy ? 'Saving…' : (onboarding ? 'Continue' : 'Save changes') }}
     </button>
 

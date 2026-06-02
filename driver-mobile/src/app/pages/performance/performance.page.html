@@ -5,7 +5,10 @@
     </ion-buttons>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
-        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+        <span class="pg-action dc-press">
+          <ion-icon name="refresh-outline"></ion-icon>
+          Refresh
+        </span>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
@@ -21,7 +24,8 @@
 
     <!-- Loading skeletons -->
     <ng-container *ngIf="loading">
-      <div class="dc-skeleton perf-rating-skel" style="height:184px"></div>
+      <div class="dc-skeleton perf-rating-skel" style="height:198px"></div>
+      <div class="dc-skeleton" style="height:108px"></div>
       <div class="perf-grid">
         <div class="dc-skeleton" style="height:104px"></div>
         <div class="dc-skeleton" style="height:104px"></div>
@@ -37,14 +41,14 @@
       </div>
       <strong>Could not load metrics</strong>
       <span>{{ error }}</span>
-      <button class="dc-cta dc-cta--ghost perf-retry" (click)="load()">Try again</button>
+      <button class="dc-cta dc-cta--ghost dc-press perf-retry" (click)="load()">Try again</button>
     </div>
 
     <!-- Content -->
     <ng-container *ngIf="!loading && !error">
 
       <!-- Rating spotlight card -->
-      <div class="perf-rating">
+      <div class="perf-rating dc-anim">
         <div class="perf-rating__label">Your rating</div>
         <div class="perf-rating__value">
           <span class="perf-rating__number">{{ ratingAvg ?? '—' }}</span>
@@ -62,51 +66,68 @@
         </div>
       </div>
 
-      <!-- Overview metrics -->
+      <!-- Headline stat: completed trips -->
+      <div class="pg-card perf-headline">
+        <div class="perf-headline__icon">
+          <ion-icon name="car-sport-outline"></ion-icon>
+        </div>
+        <div class="perf-headline__body">
+          <div class="perf-headline__value">{{ completedTrips }}</div>
+          <div class="perf-headline__label">Completed trips</div>
+        </div>
+        <div class="drv-status"
+             [class.is-offline]="approvalStatus !== 'approved'">
+          <span class="drv-status__dot"></span>
+          {{ approvalStatus === 'approved' ? 'Active' : 'Pending' }}
+        </div>
+      </div>
+
+      <!-- Detail metrics -->
       <div class="pg-card">
         <div class="pg-card__head">
           <div class="pg-card__icon"><ion-icon name="stats-chart-outline"></ion-icon></div>
           <h2 class="pg-card__title">Overview</h2>
         </div>
 
-        <div class="perf-grid">
+        <div class="dc-list perf-list">
 
-          <div class="perf-metric">
-            <span class="perf-metric__icon perf-metric__icon--primary">
-              <ion-icon name="car-sport-outline"></ion-icon>
-            </span>
-            <span class="perf-metric__value">{{ completedTrips }}</span>
-            <span class="perf-metric__label">Completed trips</span>
+          <div class="dc-row">
+            <div class="dc-row__icon">
+              <ion-icon name="people-outline"></ion-icon>
+            </div>
+            <div class="dc-row__text">
+              <strong>Ratings received</strong>
+              <small>Total reviews from riders</small>
+            </div>
+            <div class="dc-row__value">{{ ratingCount ?? '—' }}</div>
           </div>
 
-          <div class="perf-metric">
-            <span class="perf-metric__icon"
-                  [ngClass]="approvalStatus === 'approved' ? 'perf-metric__icon--ok' : 'perf-metric__icon--warn'">
+          <div class="dc-row">
+            <div class="dc-row__icon"
+                 [ngClass]="approvalStatus === 'approved' ? '' : 'dc-row__icon--muted'">
               <ion-icon [name]="approvalStatus === 'approved' ? 'shield-checkmark-outline' : 'time-outline'"></ion-icon>
-            </span>
-            <span class="perf-metric__value perf-metric__value--text">
+            </div>
+            <div class="dc-row__text">
+              <strong>Approval status</strong>
+              <small>Account verification</small>
+            </div>
+            <div class="dc-row__value">
               <span class="dc-badge"
                     [ngClass]="approvalStatus === 'approved' ? 'dc-badge--ok' : 'dc-badge--warn'">
                 {{ approvalStatus || '—' }}
               </span>
-            </span>
-            <span class="perf-metric__label">Approval status</span>
+            </div>
           </div>
 
-          <div class="perf-metric">
-            <span class="perf-metric__icon perf-metric__icon--star">
-              <ion-icon name="people-outline"></ion-icon>
-            </span>
-            <span class="perf-metric__value">{{ ratingCount ?? '—' }}</span>
-            <span class="perf-metric__label">Ratings received</span>
-          </div>
-
-          <div class="perf-metric">
-            <span class="perf-metric__icon perf-metric__icon--muted">
+          <div class="dc-row">
+            <div class="dc-row__icon dc-row__icon--muted">
               <ion-icon name="pulse-outline"></ion-icon>
-            </span>
-            <span class="perf-metric__value perf-metric__value--sm">{{ onlineStreak }}</span>
-            <span class="perf-metric__label">Activity</span>
+            </div>
+            <div class="dc-row__text">
+              <strong>Online activity</strong>
+              <small>Recent session</small>
+            </div>
+            <div class="dc-row__value perf-list__activity">{{ onlineStreak }}</div>
           </div>
 
         </div>

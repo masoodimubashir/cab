@@ -44,7 +44,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  align-items: flex-start;
+  gap: 5px;
 }
 .pf-head__name {
   font-size: 1.15rem;
@@ -54,10 +55,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 .pf-head__sub {
   font-size: 0.85rem;
   color: var(--text-muted, #6C757D);
+}
+
+/* Driver status chip sits a touch tighter under the name. */
+.pf-head .drv-status {
+  margin-top: 2px;
 }
 
 /* ------------------------------------------------------------------- fields */
@@ -149,6 +156,27 @@
     flex-shrink: 0;
     font-size: 15px;
     color: #AEB6BF;
+  }
+}
+
+/* ----------------------------------------------- locked / verified info card */
+/* dc-list rows are read-only here — neutralise the tap affordance. */
+.pf-locked .dc-list { box-shadow: none; }
+
+.pf-row {
+  cursor: default;
+  &:active { background: none; }
+
+  &__lock {
+    flex-shrink: 0;
+    font-size: 15px;
+    color: #AEB6BF;
+  }
+
+  .dc-row__text small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

@@ -1,23 +1,27 @@
 /* ════════════════════════════════════════════════════════════════
-   Shared
+   Rides — driver requests / active trip
+   Uses the global driver design system (pg-/dc-/drv-). Page-local rules
+   below only cover bits the system doesn't already provide (map, legs,
+   status hero, negotiation grid).
    ════════════════════════════════════════════════════════════════ */
 
 ion-content {
-  --background: #f4f6f8;
+  --background: #f5f7fa;
 }
 
 .muted {
-  color: #777;
+  color: #6c757d;
   font-size: 0.78rem;
 }
 
+/* Inline banners (error / success). */
 .banner {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 0.85rem;
-  margin: 0.8rem 0.8rem 0;
-  border-radius: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.85rem;
+  border-radius: 0.7rem;
   font-size: 0.88rem;
 
   ion-icon {
@@ -26,42 +30,49 @@ ion-content {
   }
 
   &.danger {
-    background: #fdecea;
-    color: #b71c1c;
+    background: rgba(235, 68, 90, 0.12);
+    color: #d33651;
   }
 
   &.success {
-    background: #e8f6ee;
-    color: #1b5e20;
+    background: rgba(18, 179, 91, 0.12);
+    color: #0e8f47;
   }
 }
 
+/* Section label row (extends .dc-section with a trailing refresh hint). */
 .section-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  margin: 1rem 0.9rem 0.5rem;
 
-  h3 {
-    margin: 0;
-    font-size: 0.95rem;
+  .refreshing {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: none;
+    letter-spacing: 0;
     font-weight: 600;
-    color: #333;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    color: #6c757d;
+
+    ion-spinner {
+      width: 14px;
+      height: 14px;
+      --color: var(--ion-color-primary, #12b35b);
+    }
   }
 }
 
 /* Pickup / drop bullets reused across cards. */
 .dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
 
   &.pickup {
-    background: #1f8b4c;
+    background: var(--ion-color-primary, #12b35b);
   }
 
   &.drop {
@@ -74,168 +85,171 @@ ion-content {
    ════════════════════════════════════════════════════════════════ */
 
 ion-content.in-trip {
-  --background: #ffffff;
+  --background: #f5f7fa;
   --padding-bottom: 5.5rem; /* sticky CTA clearance */
 }
 
+.trip-map-wrap {
+  position: relative;
+}
+
+.trip-map-badge {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 14px;
+  z-index: 2;
+}
+
+#driver-trip-map,
 .trip-map-hero {
   width: 100%;
-  height: 40vh;
+  height: 38vh;
   min-height: 240px;
   background: #eef0f2;
 }
 
+.trip-body {
+  padding: 14px 14px 0;
+  margin-top: -18px;
+  position: relative;
+  z-index: 1;
+}
+
 .status-hero {
-  padding: 1rem 1rem 0.4rem;
-  border-bottom: 1px solid #eee;
+  background: #ffffff;
+  border: 1px solid #eef0f2;
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  box-shadow: 0 2px 10px rgba(13, 27, 42, 0.04);
 
   .status-pill {
     display: inline-block;
-    padding: 0.15rem 0.55rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 999px;
-    background: #eef4ff;
-    color: #1e6cf0;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    margin-bottom: 0.3rem;
+    background: rgba(18, 179, 91, 0.12);
+    color: #0e8f47;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
   }
 
   h2 {
     margin: 0 0 0.15rem;
-    font-size: 1.25rem;
+    font-size: 1.3rem;
     font-weight: 700;
-    color: #111;
+    color: #0d1b2a;
   }
 
   p {
     margin: 0;
-    color: #666;
+    color: #6c757d;
     font-size: 0.9rem;
   }
 
   &[data-tone='success'] .status-pill {
-    background: #e8f6ee;
-    color: #1b5e20;
+    background: rgba(18, 179, 91, 0.14);
+    color: #0e8f47;
   }
 
   &[data-tone='warning'] .status-pill {
-    background: #fff7e6;
-    color: #7a4a00;
+    background: rgba(245, 158, 11, 0.14);
+    color: #b7791f;
   }
 
   &[data-tone='medium'] .status-pill {
-    background: #eceff1;
-    color: #455a64;
+    background: #eef1f4;
+    color: #6c757d;
   }
 }
 
-.info-card {
-  margin: 0.8rem 0.8rem 0;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 0.7rem;
-  padding: 0.7rem 0.85rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+/* Trip info cards (customer / payment / legs) sit on the pg-card surface. */
+.trip-card {
+  margin-top: 12px;
+  padding: 6px 0;
 
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.4rem 0;
+  .dc-list {
+    box-shadow: none;
+    border-radius: 0;
+  }
 
-    + .row {
-      border-top: 1px solid #f3f3f3;
-    }
+  .dc-row {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 
-    ion-icon {
-      font-size: 1.4rem;
-      color: #555;
-      flex-shrink: 0;
-    }
+  .fare-value {
+    color: var(--ion-color-primary, #12b35b);
+    font-size: 1.05rem;
+  }
 
-    .grow {
-      flex: 1;
-      min-width: 0;
-    }
-
-    small {
-      color: #888;
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      display: block;
-    }
-
-    p {
-      margin: 0.1rem 0 0;
-      font-size: 0.95rem;
-      color: #222;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-
-      &.strong {
-        font-weight: 600;
-      }
-
-      &.muted {
-        color: #888;
-        font-size: 0.85rem;
-        white-space: normal;
-      }
-    }
+  .coords {
+    font-weight: 500;
+    color: #6c757d;
+    font-size: 0.82rem;
   }
 }
 
-.info-card.legs {
-  padding: 0.5rem 0.85rem;
+.legs-card {
+  padding: 0.5rem 0.95rem;
 
   .leg {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.55rem 0;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
 
     .grow {
       flex: 1;
       min-width: 0;
 
       small {
-        color: #888;
+        color: #6c757d;
         font-size: 0.72rem;
         text-transform: uppercase;
+        letter-spacing: 0.04em;
+        display: block;
       }
 
       p {
-        margin: 0.1rem 0 0;
-        font-size: 0.92rem;
-        color: #222;
+        margin: 0.12rem 0 0;
+        font-size: 0.93rem;
+        color: #0d1b2a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
 
     ion-button {
-      --color: #1e6cf0;
+      --color: var(--ion-color-primary, #12b35b);
       margin: 0;
     }
   }
 
   .leg-divider {
     height: 1px;
-    background: #f0f0f0;
-    margin-left: 1.5rem;
+    background: #f0f2f5;
+    margin-left: 1.6rem;
   }
 }
 
 .secondary-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.8rem 0.8rem 0;
+  gap: 0.5rem;
+  margin-top: 12px;
 
-  ion-button {
-    margin: 0;
-    --border-radius: 0.6rem;
+  /* Danger variant of the ghost CTA for no-show / SOS. */
+  .dc-cta.is-danger {
+    color: #d33651;
+    border-color: rgba(235, 68, 90, 0.4);
+    height: 48px;
+
+    ion-icon {
+      color: #d33651;
+    }
   }
 }
 
@@ -248,114 +262,80 @@ ion-content.in-trip {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #fff;
-  border-top: 1px solid #eee;
-  padding: 0.7rem 0.8rem env(safe-area-inset-bottom);
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
+  background: #ffffff;
+  border-top: 1px solid #eef0f2;
+  padding: 0.7rem 0.9rem calc(env(safe-area-inset-bottom, 0px) + 0.7rem);
+  box-shadow: 0 -2px 14px rgba(13, 27, 42, 0.08);
   z-index: 5;
-
-  ion-button {
-    margin: 0;
-    --border-radius: 0.7rem;
-    font-weight: 600;
-  }
 }
 
 /* ════════════════════════════════════════════════════════════════
    IDLE — available rides + negotiation
    ════════════════════════════════════════════════════════════════ */
 
-.empty-state {
-  text-align: center;
-  padding: 2rem 1.2rem;
-  color: #777;
-
-  ion-icon {
-    font-size: 3rem;
-    color: #ccc;
-    margin-bottom: 0.6rem;
-  }
-
-  p {
-    margin: 0 0 0.2rem;
-    font-size: 1rem;
-    color: #555;
-  }
-
-  small {
-    font-size: 0.82rem;
-    color: #999;
-  }
-}
-
-/* Wrapper for the available-rides list — enables dc-stagger entrance motion
-   on its direct .ride-card children. Layout-neutral (cards keep their own
-   margins), so the trip flow is untouched. */
 .rides-list {
   display: block;
 }
 
 .ride-card {
-  background: #fff;
-  border-radius: 16px;
-  margin: 0 0.8rem 0.85rem;
+  margin-bottom: 0.85rem;
   padding: 1rem 1.05rem;
-  border: 1px solid #eef0f2;
-  box-shadow: 0 4px 16px rgba(13, 27, 42, 0.06);
 
   &__head {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.4rem;
+    flex-direction: column;
+    gap: 0.5rem;
 
     .badge.selected {
-      flex-basis: 100%;
-      display: inline-block;
-      padding: 0.18rem 0.55rem;
-      background: #fff3cd;
-      color: #856404;
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      border-radius: 999px;
-      margin-bottom: 0.25rem;
       width: fit-content;
-    }
 
-    .fare {
-      margin: 0;
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: #111;
-
-      small {
-        font-size: 0.8rem;
-        font-weight: 400;
-        color: #666;
-        margin-left: 0.3rem;
+      ion-icon {
+        font-size: 0.78rem;
       }
-    }
-
-    .trip-id {
-      color: #888;
-      font-size: 0.75rem;
     }
   }
 
+  &__headrow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .fare {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #0d1b2a;
+    font-variant-numeric: tabular-nums;
+
+    small {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #6c757d;
+      margin-left: 0.3rem;
+    }
+  }
+
+  .trip-id {
+    color: #6c757d;
+    font-size: 0.75rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
   &__addr {
-    margin-top: 0.6rem;
+    margin-top: 0.7rem;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.1rem;
 
     .leg {
       display: flex;
       align-items: center;
-      gap: 0.55rem;
+      gap: 0.6rem;
       font-size: 0.9rem;
-      color: #333;
+      color: #0d1b2a;
 
       span:last-child {
         flex: 1;
@@ -364,43 +344,47 @@ ion-content.in-trip {
         white-space: nowrap;
       }
     }
+
+    .addr-connector {
+      width: 1px;
+      height: 12px;
+      margin-left: 4px;
+      background: #d6dce2;
+    }
   }
 
   &__cta {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 0.8rem;
+    gap: 0.55rem;
+    margin-top: 0.95rem;
 
-    ion-button {
+    .dc-cta {
       flex: 1;
-      margin: 0;
-      --border-radius: 0.6rem;
+      height: 46px;
+      font-size: 0.92rem;
     }
   }
 }
 
 .negotiation-card {
-  background: #fff;
-  border-radius: 16px;
-  margin: 0 0.8rem 1.5rem;
-  padding: 0.5rem 1rem 1rem;
-  border: 1px solid #eef0f2;
-  box-shadow: 0 4px 16px rgba(13, 27, 42, 0.06);
+  margin-bottom: 1.5rem;
 
   .counter-input {
     --background: transparent;
     --padding-start: 0;
+    --inner-padding-end: 0;
+    --border-color: #eef0f2;
   }
 
   .counter-actions {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 0.4rem;
+    gap: 0.55rem;
+    margin-top: 0.8rem;
 
-    ion-button {
+    .dc-cta {
       flex: 1;
-      margin: 0;
-      --border-radius: 0.6rem;
+      height: 46px;
+      font-size: 0.9rem;
     }
   }
 
@@ -417,50 +401,51 @@ ion-content.in-trip {
       grid-template-columns: 5.5rem 1fr auto;
       align-items: center;
       gap: 0.6rem;
-      padding: 0.45rem 0.6rem;
-      border-radius: 0.5rem;
-      margin-bottom: 0.3rem;
+      padding: 0.5rem 0.65rem;
+      border-radius: 0.6rem;
+      margin-bottom: 0.35rem;
       font-size: 0.88rem;
 
       .who {
-        color: #555;
+        color: #6c757d;
         text-transform: uppercase;
         font-size: 0.7rem;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.05em;
       }
 
       .amount {
-        font-weight: 600;
-        color: #111;
+        font-weight: 700;
+        color: #0d1b2a;
       }
 
       .status {
         font-size: 0.7rem;
-        color: #888;
+        color: #6c757d;
         text-transform: uppercase;
       }
 
       &.from-driver {
-        background: #eef4ff;
+        background: rgba(18, 179, 91, 0.1);
       }
 
       &.from-customer {
-        background: #f4f6f8;
+        background: #f5f7fa;
       }
     }
   }
 
   .locked {
-    margin-top: 0.6rem;
+    margin-top: 0.7rem;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.5rem 0.75rem;
-    background: #e8f6ee;
-    border-radius: 0.5rem;
-    color: #1b5e20;
+    gap: 0.45rem;
+    padding: 0.55rem 0.8rem;
+    background: rgba(18, 179, 91, 0.12);
+    border-radius: 0.6rem;
+    color: #0e8f47;
     font-size: 0.9rem;
+    font-weight: 600;
 
     ion-icon {
       font-size: 1.1rem;

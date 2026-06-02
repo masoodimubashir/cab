@@ -3,24 +3,26 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
+    <ion-title class="pg-brandtitle"><span class="b-white">Dream</span><span class="b-green">Cabs</span></ion-title>
     <ion-buttons slot="end">
-      <ion-button (click)="load()" aria-label="Reload">
+      <ion-button class="dc-press" (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
+
+  <div class="pg-hero">
+    <h1 class="pg-title">Help &amp; Support</h1>
+    <p class="pg-subtitle">Reach the driver support team, browse common questions, or report an issue.</p>
+  </div>
 </ion-header>
 
 <ion-content class="pg-content">
-  <div class="pg-hero">
-    <h1 class="pg-title">Help &amp; Support</h1>
-    <p class="pg-subtitle">Contact us, FAQ &amp; report an issue.</p>
-  </div>
-
   <div class="pg-body pg-anim-body">
 
     <!-- Loading -->
     <div class="pg-card" *ngIf="loading">
+      <div class="dc-skeleton" style="height:46px;margin-bottom:10px"></div>
       <div class="dc-skeleton" style="height:46px;margin-bottom:10px"></div>
       <div class="dc-skeleton" style="height:46px"></div>
     </div>
@@ -31,12 +33,12 @@
       <ng-container *ngIf="hasChannels">
         <p class="dc-section">Contact us</p>
         <div class="dc-list">
-          <button class="dc-row" *ngIf="support?.driver_support_no" (click)="call(support?.driver_support_no)">
+          <button class="dc-row dc-press" *ngIf="support?.driver_support_no" (click)="call(support?.driver_support_no)">
             <span class="dc-row__icon"><ion-icon name="headset-outline"></ion-icon></span>
             <span class="dc-row__text"><strong>Driver support</strong><small>{{ support?.driver_support_no }}</small></span>
             <ion-icon class="dc-row__chev" name="call-outline"></ion-icon>
           </button>
-          <button class="dc-row" *ngIf="support?.support_email" (click)="email(support?.support_email)">
+          <button class="dc-row dc-press" *ngIf="support?.support_email" (click)="email(support?.support_email)">
             <span class="dc-row__icon"><ion-icon name="mail-outline"></ion-icon></span>
             <span class="dc-row__text"><strong>Email us</strong><small>{{ support?.support_email }}</small></span>
             <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
@@ -48,7 +50,7 @@
       <ng-container *ngIf="support?.emergency_police_no">
         <p class="dc-section">Emergency</p>
         <div class="dc-list">
-          <button class="dc-row" (click)="call(support?.emergency_police_no)">
+          <button class="dc-row dc-press" (click)="call(support?.emergency_police_no)">
             <span class="dc-row__icon dc-row__icon--danger"><ion-icon name="shield-half-outline"></ion-icon></span>
             <span class="dc-row__text"><strong>Police / Emergency</strong><small>{{ support?.emergency_police_no }}</small></span>
             <ion-icon class="dc-row__chev" name="call-outline"></ion-icon>
@@ -60,23 +62,21 @@
       <div class="pg-card" *ngIf="error">
         <div class="dc-empty" style="padding:24px 8px">
           <div class="dc-empty__icon"><ion-icon name="cloud-offline-outline"></ion-icon></div>
-          <strong>Couldn’t load support info</strong>
+          <strong>Couldn&rsquo;t load support info</strong>
           <span>{{ error }}</span>
-          <button class="dc-cta dc-cta--ghost" style="margin-top:14px;width:auto;padding:0 20px;height:44px" (click)="load()">
+          <button class="dc-cta dc-cta--ghost dc-press" style="margin-top:14px;width:auto;padding:0 20px;height:44px" (click)="load()">
             <ion-icon name="refresh-outline"></ion-icon> Try again
           </button>
         </div>
       </div>
 
       <!-- FAQ -->
-      <div class="pg-card">
-        <div class="pg-card__head">
-          <div class="pg-card__icon"><ion-icon name="help-circle-outline"></ion-icon></div>
-          <h2 class="pg-card__title">Frequently asked</h2>
-        </div>
+      <p class="dc-section">Frequently asked</p>
+      <div class="pg-card sup-faqcard">
         <ion-accordion-group class="sup-faq">
           <ion-accordion *ngFor="let f of faqs" [value]="f.q">
             <ion-item slot="header" lines="none" class="sup-faq__head">
+              <span class="sup-faq__qicon"><ion-icon name="help-circle-outline"></ion-icon></span>
               <ion-label>{{ f.q }}</ion-label>
             </ion-item>
             <div slot="content" class="sup-faq__body">{{ f.a }}</div>
@@ -88,8 +88,8 @@
       <div class="pg-card sup-report">
         <div class="sup-report__icon"><ion-icon name="flag-outline"></ion-icon></div>
         <strong>Report a problem</strong>
-        <span>Tell us what went wrong and we’ll get back to you over email.</span>
-        <button class="dc-cta dc-cta--dark" (click)="report()">
+        <span>Tell us what went wrong and we&rsquo;ll get back to you over email.</span>
+        <button class="dc-cta dc-cta--dark dc-press" (click)="report()">
           <ion-icon name="create-outline"></ion-icon> Report a problem
         </button>
       </div>

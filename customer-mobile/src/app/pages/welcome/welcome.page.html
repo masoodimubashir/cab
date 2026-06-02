@@ -1,37 +1,62 @@
-<ion-content class="ion-padding" [fullscreen]="true">
-  <!-- Header / Logo Area -->
-  <div class="logo-header">
-    <div class="logo-mark">
-      <div class="logo-dots"></div>
-      <div class="logo-arrow"></div>
-    </div>
-    <div class="logo-text">
-      <span class="text-dark">Dream</span><span class="text-primary">Cabs</span>
-    </div>
-  </div>
+<ion-content [fullscreen]="true">
+  <div class="welcome-shell">
 
-  <!-- Illustration Area (Placeholder for the vector graphic) -->
-  <div class="illustration-container">
-    <img src="assets/taxi-app-concept-illustration.jpg" alt="Welcome to DreamCabs" (error)="useFallbackImage($event)" />
-  </div>
+    <!-- Branded hero -->
+    <section class="hero dc-anim-in">
+      <div class="hero-bg" aria-hidden="true">
+        <span class="hero-sheen"></span>
+        <span class="hero-blob hero-blob--a"></span>
+        <span class="hero-blob hero-blob--b"></span>
+      </div>
 
-  <!-- Main Content -->
-  <div class="content-wrapper">
-    <h1 class="welcome-title">Welcome to Dream<span class="text-primary">Cabs</span></h1>
+      <!-- Brand lockup -->
+      <div class="brand dc-anim-pop">
+        <div class="logo-mark">
+          <div class="logo-dots"></div>
+          <div class="logo-arrow"></div>
+        </div>
+        <div class="logo-text">
+          <span class="text-dark">Dream</span><span class="text-primary">Cabs</span>
+        </div>
+      </div>
 
-    <div class="actions">
-      <!-- Main Phone Login Button -->
-      <ion-button expand="block" color="secondary" class="action-btn main-btn" (click)="goToLogin()">
-        <ion-icon slot="start" name="call"></ion-icon>
-        Continue with Mobile Number
-        <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
-      </ion-button>
-    </div>
+      <!-- Illustration (img parent kept for useFallbackImage append) -->
+      <div class="illustration-container dc-anim-pop">
+        <div class="illustration-glow" aria-hidden="true"></div>
+        <img src="assets/taxi-app-concept-illustration.jpg" alt="Welcome to DreamCabs" (error)="useFallbackImage($event)" />
+      </div>
+    </section>
 
-    <!-- Terms and Privacy -->
-    <p class="terms-text">
-      By continuing you agree that you have read and accept our <br>
-      <a (click)="goToTerms()">Term & Conditions</a> and <a (click)="goToPrivacy()">Privacy Policy</a>
-    </p>
+    <!-- Main content -->
+    <section class="content-wrapper dc-stagger">
+      <div class="eyebrow">
+        <span class="eyebrow-dot" aria-hidden="true"></span>
+        Your ride, on demand
+      </div>
+
+      <h1 class="welcome-title">Welcome to Dream<span class="text-primary">Cabs</span></h1>
+
+      <p class="welcome-sub">
+        Book a cab in seconds, track it in real time and ride with drivers you can trust.
+      </p>
+
+      <div class="actions">
+        <!-- Main Phone Login Button -->
+        <ion-button expand="block" color="secondary" class="action-btn main-btn dc-press" (click)="goToLogin()">
+          <ion-icon slot="start" name="call"></ion-icon>
+          Continue with Mobile Number
+          <ion-icon slot="end" name="arrow-forward-outline"></ion-icon>
+        </ion-button>
+      </div>
+
+      <!-- Terms and Privacy -->
+      <p class="terms-text">
+        By continuing you agree that you have read and accept our
+        <a class="dc-press" (click)="goToTerms()">Terms &amp; Conditions</a>
+        and
+        <a class="dc-press" (click)="goToPrivacy()">Privacy Policy</a>
+      </p>
+    </section>
+
   </div>
 </ion-content>

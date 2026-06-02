@@ -4,10 +4,10 @@
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
     <ion-buttons slot="end">
-      <ion-button (click)="refresh()" aria-label="Reload">
+      <ion-button class="dc-press" (click)="refresh()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
       </ion-button>
-      <button class="pg-action" (click)="openFilters()">
+      <button class="pg-action dc-press" (click)="openFilters()">
         <ion-icon name="options-outline"></ion-icon>
         Filter
         <span class="pg-action__count" *ngIf="activeFilterCount">{{ activeFilterCount }}</span>
@@ -31,14 +31,20 @@
 
     <!-- Loading skeletons. -->
     <div *ngIf="loading" class="th-skeletons">
-      <div class="dc-skeleton" style="height:118px"></div>
-      <div class="dc-skeleton" style="height:118px"></div>
-      <div class="dc-skeleton" style="height:118px"></div>
+      <div class="dc-skeleton" style="height:140px"></div>
+      <div class="dc-skeleton" style="height:140px"></div>
+      <div class="dc-skeleton" style="height:140px"></div>
     </div>
 
     <!-- Trips list. -->
-    <div *ngIf="!loading && filteredTrips.length" class="th-list">
-      <div *ngFor="let t of filteredTrips" class="dc-card th-trip">
+    <div *ngIf="!loading && filteredTrips.length" class="th-list dc-stagger">
+      <div *ngFor="let t of filteredTrips" class="dc-card dc-card--tap th-trip dc-press">
+        <!-- Top: badges. -->
+        <div class="th-badges">
+          <span class="dc-badge" [ngClass]="statusBadgeClass(t)">{{ statusLabel(t) }}</span>
+          <span *ngIf="paymentBadge(t) as pb" class="dc-badge" [ngClass]="paymentBadgeClass(pb.color)">{{ pb.label }}</span>
+        </div>
+
         <!-- Addresses. -->
         <div class="th-route">
           <span class="th-route__dot th-route__dot--pickup"></span>
@@ -49,12 +55,6 @@
             <p class="th-addr">{{ t.pickup_address || 'Pickup' }}</p>
             <p class="th-addr th-addr--drop">{{ t.drop_address || 'Drop-off' }}</p>
           </div>
-        </div>
-
-        <!-- Badges. -->
-        <div class="th-badges">
-          <span class="dc-badge" [ngClass]="statusBadgeClass(t)">{{ statusLabel(t) }}</span>
-          <span *ngIf="paymentBadge(t) as pb" class="dc-badge" [ngClass]="paymentBadgeClass(pb.color)">{{ pb.label }}</span>
         </div>
 
         <!-- Footer: date + fare. -->
@@ -75,7 +75,7 @@
     </div>
 
     <!-- Empty state. -->
-    <div *ngIf="!loading && !filteredTrips.length && !error" class="dc-empty">
+    <div *ngIf="!loading && !filteredTrips.length && !error" class="dc-empty dc-anim">
       <div class="dc-empty__icon"><ion-icon name="car-outline"></ion-icon></div>
       <strong>No trips found</strong>
       <span>No trips match these filters. Try a different date range or status.</span>
@@ -89,17 +89,17 @@
         <div class="filter-sheet__grab"></div>
         <div class="filter-sheet__head">
           <h2>Filters</h2>
-          <button (click)="resetFilters()">Reset</button>
+          <button class="dc-press" (click)="resetFilters()">Reset</button>
         </div>
 
         <!-- Date range filter (client-side). -->
         <div class="filter-sheet__group">
           <p class="dc-section">WHEN</p>
           <div class="dc-pills">
-            <button class="dc-pill" [class.is-active]="range === 'all'" (click)="setRange('all')">All</button>
-            <button class="dc-pill" [class.is-active]="range === 'today'" (click)="setRange('today')">Today</button>
-            <button class="dc-pill" [class.is-active]="range === 'week'" (click)="setRange('week')">This week</button>
-            <button class="dc-pill" [class.is-active]="range === 'month'" (click)="setRange('month')">This month</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'all'" (click)="setRange('all')">All</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'today'" (click)="setRange('today')">Today</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'week'" (click)="setRange('week')">This week</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'month'" (click)="setRange('month')">This month</button>
           </div>
         </div>
 
@@ -107,10 +107,10 @@
         <div class="filter-sheet__group">
           <p class="dc-section">STATUS</p>
           <div class="dc-pills">
-            <button class="dc-pill" [class.is-active]="status === 'all'" (click)="setStatus('all')">All</button>
-            <button class="dc-pill" [class.is-active]="status === 'completed'" (click)="setStatus('completed')">Completed</button>
-            <button class="dc-pill" [class.is-active]="status === 'cancelled'" (click)="setStatus('cancelled')">Cancelled</button>
-            <button class="dc-pill" [class.is-active]="status === 'missed'" (click)="setStatus('missed')">Missed</button>
+            <button class="dc-pill dc-press" [class.is-active]="status === 'all'" (click)="setStatus('all')">All</button>
+            <button class="dc-pill dc-press" [class.is-active]="status === 'completed'" (click)="setStatus('completed')">Completed</button>
+            <button class="dc-pill dc-press" [class.is-active]="status === 'cancelled'" (click)="setStatus('cancelled')">Cancelled</button>
+            <button class="dc-pill dc-press" [class.is-active]="status === 'missed'" (click)="setStatus('missed')">Missed</button>
           </div>
         </div>
 
@@ -118,14 +118,14 @@
         <div class="filter-sheet__group">
           <p class="dc-section">PAYMENT</p>
           <div class="dc-pills">
-            <button class="dc-pill" [class.is-active]="payment === 'all'" (click)="setPayment('all')">Any payment</button>
-            <button class="dc-pill" [class.is-active]="payment === 'paid'" (click)="setPayment('paid')">Paid</button>
-            <button class="dc-pill" [class.is-active]="payment === 'unpaid'" (click)="setPayment('unpaid')">Unpaid</button>
+            <button class="dc-pill dc-press" [class.is-active]="payment === 'all'" (click)="setPayment('all')">Any payment</button>
+            <button class="dc-pill dc-press" [class.is-active]="payment === 'paid'" (click)="setPayment('paid')">Paid</button>
+            <button class="dc-pill dc-press" [class.is-active]="payment === 'unpaid'" (click)="setPayment('unpaid')">Unpaid</button>
           </div>
         </div>
 
         <div class="filter-sheet__footer">
-          <button class="dc-cta" (click)="closeFilters()">Show results</button>
+          <button class="dc-cta dc-press" (click)="closeFilters()">Show results</button>
         </div>
       </div>
     </ng-template>
