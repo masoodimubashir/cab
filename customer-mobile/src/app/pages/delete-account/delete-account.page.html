@@ -1,7 +1,7 @@
-<ion-header [translucent]="true">
-  <ion-toolbar>
+<ion-header [translucent]="true" class="dc-header">
+  <ion-toolbar class="dc-toolbar">
     <ion-buttons slot="start">
-      <ion-button (click)="goBack()" [disabled]="loading" aria-label="Back">
+      <ion-button class="dc-press dc-back-btn" (click)="goBack()" [disabled]="loading" aria-label="Back">
         <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
@@ -9,41 +9,83 @@
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="ion-padding">
-  <div class="warning-icon">
-    <ion-icon name="warning-outline" color="danger"></ion-icon>
+<ion-content class="dc-content">
+  <div class="dc-wrap dc-stagger">
+    <!-- Danger hero -->
+    <div class="danger-hero dc-anim-up">
+      <span class="danger-ring" aria-hidden="true">
+        <span class="danger-pulse"></span>
+        <ion-icon name="warning-outline" color="danger" class="danger-glyph"></ion-icon>
+      </span>
+      <h1 class="title">Delete your account?</h1>
+      <p class="lead">
+        This will permanently remove your DreamCabs customer account.
+      </p>
+    </div>
+
+    <!-- Danger warning card -->
+    <section class="card danger-card dc-anim-up" role="alert" aria-label="What happens when you delete your account">
+      <div class="card-head">
+        <ion-icon name="alert-circle-outline" class="card-head-ic" aria-hidden="true"></ion-icon>
+        <span class="card-head-txt">Here's what happens</span>
+      </div>
+
+      <ul class="bullets" role="list">
+        <li class="bullet">
+          <span class="bullet-ic" aria-hidden="true">
+            <ion-icon name="close-circle-outline"></ion-icon>
+          </span>
+          <span class="bullet-txt">Your profile, name and photo will be removed.</span>
+        </li>
+        <li class="bullet">
+          <span class="bullet-ic" aria-hidden="true">
+            <ion-icon name="close-circle-outline"></ion-icon>
+          </span>
+          <span class="bullet-txt">Your trip history and ratings will no longer be accessible.</span>
+        </li>
+        <li class="bullet">
+          <span class="bullet-ic" aria-hidden="true">
+            <ion-icon name="close-circle-outline"></ion-icon>
+          </span>
+          <span class="bullet-txt">You will be signed out from this device.</span>
+        </li>
+        <li class="bullet bullet--strong">
+          <span class="bullet-ic" aria-hidden="true">
+            <ion-icon name="close-circle-outline"></ion-icon>
+          </span>
+          <span class="bullet-txt">This cannot be undone.</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Actions -->
+    <div class="actions dc-anim-up">
+      <ion-button
+        expand="block"
+        color="danger"
+        class="dc-press btn-danger"
+        (click)="confirmDelete()"
+        [disabled]="loading"
+      >
+        <ion-spinner *ngIf="loading" name="crescent" class="btn-spin" slot="start"></ion-spinner>
+        <ion-icon *ngIf="!loading" name="trash-outline" slot="start" aria-hidden="true"></ion-icon>
+        {{ loading ? 'Deleting…' : 'Delete account' }}
+      </ion-button>
+
+      <ion-button
+        expand="block"
+        fill="clear"
+        class="dc-press btn-cancel"
+        (click)="goBack()"
+        [disabled]="loading"
+      >
+        Cancel
+      </ion-button>
+
+      <p class="safe-note">
+        <ion-icon name="shield-checkmark-outline" aria-hidden="true"></ion-icon>
+        You'll be asked to confirm before anything is deleted.
+      </p>
+    </div>
   </div>
-
-  <h1 class="title">Delete your account?</h1>
-
-  <p class="lead">
-    This will permanently remove your DreamCabs customer account.
-  </p>
-
-  <ion-list lines="none" class="bullets">
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">Your profile, name and photo will be removed.</ion-label>
-    </ion-item>
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">Your trip history and ratings will no longer be accessible.</ion-label>
-    </ion-item>
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">You will be signed out from this device.</ion-label>
-    </ion-item>
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">This cannot be undone.</ion-label>
-    </ion-item>
-  </ion-list>
-
-  <ion-button expand="block" color="danger" class="ion-margin-top" (click)="confirmDelete()" [disabled]="loading">
-    {{ loading ? 'Deleting…' : 'Delete account' }}
-  </ion-button>
-
-  <ion-button expand="block" fill="clear" (click)="goBack()" [disabled]="loading">
-    Cancel
-  </ion-button>
 </ion-content>

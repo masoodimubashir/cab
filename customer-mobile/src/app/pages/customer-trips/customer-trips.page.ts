@@ -7,9 +7,16 @@ import {
   openExternalUrl,
 } from '../../core/maps-navigation';
 
-type ProductKind = 'all' | 'local' | 'rental' | 'outstation';
 type StatusFilter = 'all' | 'completed' | 'cancelled' | 'missed';
 type PaymentFilter = 'all' | 'paid' | 'unpaid';
+type PaymentMethodFilter = 'all' | 'cash' | 'razorpay';
+type DateRangeFilter = 'all' | '7d' | '30d' | '90d';
+
+/** Ride types are loaded live from /pricing/ride-types — the real, admin-managed rows. */
+interface RideType {
+  id: number;
+  name: string;
+}
 
 interface TripPayment {
   id: number;
@@ -23,7 +30,10 @@ interface TripPayment {
 interface TripRow {
   id: number;
   status: string;
-  product_kind: 'local' | 'rental' | 'outstation' | null;
+  ride_type_id?: number | null;
+  // Eager-loaded by the history endpoint: { id, name }. Null for plain local rides
+  // (those don't carry a ride_type_id).
+  ride_type?: RideType | null;
   pickup_address?: string | null;
   drop_address?: string | null;
   pickup_lat?: number | null;
@@ -42,13 +52,13 @@ interface TripRow {
 }
 
 /**
- * Customer ride history with product-kind and status filters.
+ * Customer ride history. All refinements live in a bottom sheet:
  *
- *   Product kind: All · Local · Rental · Outstation   (trips.product_kind enum)
- *   Status:       All · Completed · Cancelled · Missed
- *     - completed: status = COMPLETED
- *     - cancelled: status = CANCELLED with no_show_by = null
- *     - missed:    status = CANCELLED with no_show_by != null
+ *   Ride type:      All · <real ride_types rows>     (trips.ride_type_id)
+ *   Status:         All · Completed · Cancelled · Missed
+ *   Payment status: Any · Paid · Unpaid              (payments.status SUCCESS?)
+ *   Payment method: Any · Cash · Razorpay            (payments.method enum)
+ *   Date:           All time · 7d · 30d · 90d         (created_at >= from)
  *
  * Filters are sent as query params to /customer/trips/history.
  */
@@ -63,9 +73,17 @@ export class CustomerTripsPage {
   error: string | null = null;
   trips: TripRow[] = [];
 
-  productKind: ProductKind = 'all';
+  // Real ride types from the DB (drives the Ride type filter chips).
+  rideTypes: RideType[] = [];
+
+  // Filter state — all of it lives in the bottom sheet now.
+  rideTypeId: number | 'all' = 'all';
   status: StatusFilter = 'all';
   payment: PaymentFilter = 'all';
+  paymentMethod: PaymentMethodFilter = 'all';
+  dateRange: DateRangeFilter = 'all';
+
+  filtersOpen = false;
 
   constructor(
     private api: ApiService,
@@ -73,18 +91,30 @@ export class CustomerTripsPage {
   ) {}
 
   ionViewWillEnter(): void {
+    this.loadRideTypes();
     this.refresh();
+  }
+
+  private loadRideTypes(): void {
+    this.api.get<{ data: RideType[] }>('/pricing/ride-types').subscribe({
+      next: (res) => (this.rideTypes = res.data || []),
+      error: () => (this.rideTypes = []),
+    });
   }
 
   refresh(): void {
     this.loading = true;
     this.error = null;
-    const params = new URLSearchParams({
-      product_kind: this.productKind,
-      status: this.status,
-      payment: this.payment,
-    }).toString();
-    this.api.get<{ data: { data?: TripRow[] } }>(`/customer/trips/history?${params}`).subscribe({
+
+    const params = new URLSearchParams();
+    params.set('status', this.status);
+    params.set('payment', this.payment);
+    if (this.rideTypeId !== 'all') params.set('ride_type_id', String(this.rideTypeId));
+    if (this.paymentMethod !== 'all') params.set('payment_method', this.paymentMethod);
+    const from = this.dateRangeFrom();
+    if (from) params.set('from', from);
+
+    this.api.get<{ data: { data?: TripRow[] } }>(`/customer/trips/history?${params.toString()}`).subscribe({
       next: (res) => {
         const page = res.data;
         this.trips = page?.data ?? [];
@@ -97,9 +127,20 @@ export class CustomerTripsPage {
     });
   }
 
-  setProductKind(p: ProductKind): void {
-    if (this.productKind === p) return;
-    this.productKind = p;
+  /** Maps the chosen date range to an ISO `from` date (YYYY-MM-DD), or null for "all time". */
+  private dateRangeFrom(): string | null {
+    const days = this.dateRange === '7d' ? 7 : this.dateRange === '30d' ? 30 : this.dateRange === '90d' ? 90 : 0;
+    if (!days) return null;
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // ── Filter setters (each reloads) ────────────────────────────────
+
+  setRideType(id: number | 'all'): void {
+    if (this.rideTypeId === id) return;
+    this.rideTypeId = id;
     this.refresh();
   }
 
@@ -113,6 +154,48 @@ export class CustomerTripsPage {
     if (this.payment === p) return;
     this.payment = p;
     this.refresh();
+  }
+
+  setPaymentMethod(m: PaymentMethodFilter): void {
+    if (this.paymentMethod === m) return;
+    this.paymentMethod = m;
+    this.refresh();
+  }
+
+  setDateRange(r: DateRangeFilter): void {
+    if (this.dateRange === r) return;
+    this.dateRange = r;
+    this.refresh();
+  }
+
+  // ── Filter sheet ─────────────────────────────────────────────────
+
+  openFilters(): void { this.filtersOpen = true; }
+  closeFilters(): void { this.filtersOpen = false; }
+
+  /** Active (non-default) refinements — drives the count on the Filters button. */
+  get activeFilterCount(): number {
+    return (this.rideTypeId !== 'all' ? 1 : 0)
+      + (this.status !== 'all' ? 1 : 0)
+      + (this.payment !== 'all' ? 1 : 0)
+      + (this.paymentMethod !== 'all' ? 1 : 0)
+      + (this.dateRange !== 'all' ? 1 : 0);
+  }
+
+  /** Reset every refinement and reload (no-op refresh if already clear). */
+  clearFilters(): void {
+    const changed = this.activeFilterCount > 0;
+    this.rideTypeId = 'all';
+    this.status = 'all';
+    this.payment = 'all';
+    this.paymentMethod = 'all';
+    this.dateRange = 'all';
+    if (changed) this.refresh();
+  }
+
+  /** Header back button — returns to the Ride/home tab (mirrors the other pages). */
+  back(): void {
+    this.router.navigateByUrl('/customer-tabs/book');
   }
 
   /**
@@ -132,11 +215,24 @@ export class CustomerTripsPage {
 
   // ── Display helpers ──────────────────────────────────────────────
 
-  productLabel(kind: TripRow['product_kind']): string {
-    if (kind === 'local') return 'Local';
-    if (kind === 'rental') return 'Rental';
-    if (kind === 'outstation') return 'Outstation';
-    return 'Ride';
+  /** Card title — the real ride type name, falling back to "Local" for plain rides. */
+  rideTypeLabel(t: TripRow): string {
+    return t.ride_type?.name || 'Local';
+  }
+
+  /** Ionicon for the ride-type tile — inferred from the type name. */
+  kindIcon(t: TripRow): string {
+    const name = (t.ride_type?.name || '').toLowerCase();
+    if (name.includes('out')) return 'airplane';
+    if (name.includes('rent') || name.includes('shuttle') || name.includes('hour')) return 'time';
+    return 'car-sport';
+  }
+
+  /** Human-friendly payment method (CASH → Cash, RAZORPAY → Razorpay). */
+  methodLabel(method?: string | null): string | null {
+    if (!method) return null;
+    const m = method.toLowerCase();
+    return m.charAt(0).toUpperCase() + m.slice(1);
   }
 
   statusLabel(t: TripRow): string {
@@ -151,6 +247,17 @@ export class CustomerTripsPage {
     if (t.status === 'COMPLETED') return 'success';
     if (t.status === 'CANCELLED') return t.no_show_by ? 'warning' : 'medium';
     return 'primary';
+  }
+
+  /**
+   * Left accent-strip color. Money still owed wins (red) so unpaid rides stand
+   * out; otherwise completed = green, cancelled/missed = grey, anything else = navy.
+   */
+  accentColor(t: TripRow): string {
+    if (this.paymentBadge(t)?.label === 'Unpaid') return 'unpaid';
+    if (t.status === 'COMPLETED') return 'completed';
+    if (t.status === 'CANCELLED') return 'cancelled';
+    return 'other';
   }
 
   fareDisplay(t: TripRow): string | null {

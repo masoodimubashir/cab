@@ -44,13 +44,17 @@ export type DispatchRingExpandedPayload = {
 
 export type TripLocationPayload = {
   type: 'location_updated';
-  trip_id: number;
-  lat: number;
-  lng: number;
-  accuracy_m?: number;
-  speed_kmh?: number;
-  bearing_deg?: number;
-  recorded_at?: string;
+  // The driver location is nested under `location` (matches the backend
+  // TripLocationUpdated event, which broadcasts the DriverLocation row).
+  location: {
+    trip_id: number;
+    lat: number;
+    lng: number;
+    accuracy_m?: number | null;
+    speed_kmh?: number | null;
+    bearing_deg?: number | null;
+    recorded_at?: string;
+  };
 };
 
 export type TripStatusPayload = {

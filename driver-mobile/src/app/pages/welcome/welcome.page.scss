@@ -1,0 +1,159 @@
+ion-content {
+  --background: var(--ion-background-color);
+
+  &::part(scroll) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+}
+
+.logo-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 8px;
+  gap: 12px;
+  margin-top: env(safe-area-inset-top, 20px);
+
+  .logo-mark {
+    width: 40px;
+    height: 40px;
+    background-color: var(--ion-color-secondary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    position: relative;
+
+    // Quick CSS shape for the logo mark in the image
+    &::before {
+      content: '';
+      width: 4px;
+      height: 4px;
+      background: #fff;
+      margin-left: -4px;
+    }
+    .logo-dots {
+      width: 4px;
+      height: 4px;
+      background: #fff;
+    }
+    .logo-arrow {
+      width: 0;
+      height: 0;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      border-left: 6px solid var(--ion-color-primary);
+    }
+  }
+
+  .logo-text {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+
+    .text-dark {
+      color: var(--text-main);
+    }
+    .text-primary {
+      color: var(--ion-color-primary);
+    }
+  }
+}
+
+.illustration-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  min-height: 250px;
+
+  img {
+    max-width: 100%;
+    max-height: 350px;
+    object-fit: contain;
+    border-radius: var(--radius-lg, 16px);
+    box-shadow: 0 8px 24px rgba(13, 27, 42, 0.12);
+  }
+
+  // Fallback styling if image is missing
+  .fallback-img {
+    width: 100%;
+    height: 250px;
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+}
+
+.content-wrapper {
+  padding: 24px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  .welcome-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 32px;
+    text-align: center;
+    letter-spacing: -0.5px;
+
+    .text-primary {
+      color: var(--ion-color-primary);
+    }
+  }
+
+  .actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 32px;
+
+    .action-btn {
+      margin: 0;
+      --border-radius: var(--radius-md);
+      --box-shadow: none;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-transform: none;
+
+      ion-icon {
+        margin-right: 8px;
+      }
+    }
+
+    .main-btn {
+      --padding-top: 18px;
+      --padding-bottom: 18px;
+      font-size: 16px;
+    }
+  }
+
+  .terms-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-align: center;
+    margin: 0;
+    max-width: 320px;
+
+    a {
+      color: var(--ion-color-primary);
+      text-decoration: none;
+      font-weight: 600;
+
+      &:active {
+        opacity: 0.7;
+      }
+    }
+  }
+}

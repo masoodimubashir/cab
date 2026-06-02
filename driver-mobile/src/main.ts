@@ -22,6 +22,22 @@ if (typeof window !== 'undefined') {
 import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
 
 import { AppModule } from './app/app.module';
+import { environment } from './environments/environment';
+
+// --- Dev only: auto-target the machine that served this app ----------------
+// With `ionic cap run android -l --external` (live reload) the webview is
+// served from the laptop's LAN IP, so `window.location.hostname` IS that IP.
+// We rewrite the API + Reverb hosts to match, so the phone reaches the
+// laptop's Laravel (:8000) and Reverb (:8080) with zero manual IP editing.
+// Skipped for production builds (real server) and for plain localhost browser
+// dev (already correct).
+if (!environment.production && typeof window !== 'undefined') {
+  const host = window.location.hostname;
+  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    environment.apiUrl = `http://${host}:8000/api`;
+    environment.reverbHost = host;
+  }
+}
 
 platformBrowserDynamic().bootstrapModule(AppModule)
   .catch(err => console.log(err));

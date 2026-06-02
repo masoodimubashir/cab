@@ -5,6 +5,14 @@ import { ApprovedDriverGuard } from './core/approved-driver.guard';
 
 const routes: Routes = [
   {
+    path: 'splash',
+    loadChildren: () => import('./pages/splash/splash.module').then((m) => m.SplashPageModule),
+  },
+  {
+    path: 'welcome',
+    loadChildren: () => import('./pages/welcome/welcome.module').then((m) => m.WelcomePageModule),
+  },
+  {
     path: 'intro',
     loadChildren: () => import('./pages/intro/intro.module').then((m) => m.IntroPageModule),
   },
@@ -65,6 +73,12 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    path: 'support',
+    loadChildren: () =>
+      import('./pages/support/support.module').then((m) => m.SupportPageModule),
+    canActivate: [AuthGuard],
+  },
+  {
     path: 'delete-account',
     loadChildren: () =>
       import('./pages/delete-account/delete-account.module').then((m) => m.DeleteAccountPageModule),
@@ -72,12 +86,12 @@ const routes: Routes = [
   },
   {
     path: '',
-    redirectTo: 'intro',
+    redirectTo: 'splash',
     pathMatch: 'full',
   },
   {
     path: '**',
-    redirectTo: 'intro',
+    redirectTo: 'splash',
   },
 ];
 

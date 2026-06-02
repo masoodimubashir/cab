@@ -1,49 +1,68 @@
-// ============ PREMIUM SIDE MENU STYLE SYSTEM ============
+// ============ PREMIUM SIDE MENU ============
 
 ion-menu {
-  --background: #ffffff;
-  box-shadow: 12px 0 40px rgba(13, 27, 42, 0.06);
+  --background: var(--dc-surface, #ffffff);
+  box-shadow: 12px 0 40px rgba(13, 27, 42, 0.08);
 
   .menu-content {
-    --background: #ffffff;
-    --padding-top: calc(20px + env(safe-area-inset-top));
-    --padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    --background: var(--dc-canvas, #F4F6F8);
+    --padding-top: 0;
+    --padding-bottom: 0;
+
+    // Lay the menu out as a column so Sign out can pin to the bottom.
+    &::part(scroll) {
+      display: flex;
+      flex-direction: column;
+    }
   }
 
-  // Premium Header Profile Card (Bento Rounded)
-  .menu-profile-card {
+  // ============ Navy profile header ============
+  .menu-header {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 16px;
-    background: linear-gradient(135deg, #F8F9FA 0%, #FFFFFF 100%);
-    border: 1px solid #E5E7EB;
-    border-radius: 20px;
-    margin: 20px 16px 16px;
-    padding: 16px;
-    box-shadow: 0 6px 20px rgba(13, 27, 42, 0.02);
+    gap: 14px;
+    background:
+      radial-gradient(120% 140% at 100% 0%, #16304c 0%, var(--dc-ink, #0D1B2A) 58%);
+    border-bottom-right-radius: var(--dc-r-xl, 24px);
+    border-bottom-left-radius: var(--dc-r-xl, 24px);
+    padding: calc(env(safe-area-inset-top, 20px) + 20px) 20px 24px;
+    overflow: hidden;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: var(--dc-shadow-md, 0 8px 24px rgba(13, 27, 42, 0.08));
 
-    &:active {
-      transform: scale(0.98);
-      background: #F3F4F6;
+    // soft green sheen sweeping across the navy header
+    .menu-header-sheen {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(
+        115deg,
+        transparent 30%,
+        rgba(18, 179, 91, 0.16) 48%,
+        rgba(18, 179, 91, 0.02) 60%,
+        transparent 72%
+      );
+      transform: translateX(-30%);
+      animation: menuSheen 7s ease-in-out 0.6s infinite;
     }
 
-    .profile-avatar-wrap {
-      flex-shrink: 0;
-    }
+    &:active { background: #15263a; }
 
-    .avatar-circle {
-      width: 56px;
-      height: 56px;
+    .menu-avatar {
+      position: relative;
+      z-index: 1;
+      width: 58px;
+      height: 58px;
       border-radius: 50%;
-      border: 2.5px solid var(--ion-color-primary, #12B35B);
-      box-shadow: 0 4px 12px rgba(18, 179, 91, 0.15);
+      flex-shrink: 0;
+      border: 2.5px solid rgba(255, 255, 255, 0.92);
+      overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #E5E7EB;
-      overflow: hidden;
+      background: linear-gradient(135deg, var(--dc-green, #12B35B) 0%, #0e8f49 100%);
+      box-shadow: 0 6px 18px rgba(18, 179, 91, 0.34);
 
       img {
         width: 100%;
@@ -51,128 +70,172 @@ ion-menu {
         object-fit: cover;
       }
 
-      ion-icon {
-        font-size: 26px;
-        color: var(--text-muted, #6C757D);
+      .avatar-initials {
+        font-size: 25px;
+        font-weight: 800;
+        color: #ffffff;
+        line-height: 1;
       }
     }
 
-    .profile-details {
+    .menu-header-info {
+      position: relative;
+      z-index: 1;
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
       gap: 2px;
       overflow: hidden;
 
-      .hello-text {
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--text-muted, #888888);
-        text-transform: uppercase;
-        letter-spacing: 0.8px;
-        line-height: 1;
-      }
-
-      .name-text {
-        font-size: 1.15rem;
+      .menu-name {
+        font-size: 1.18rem;
         font-weight: 800;
-        color: var(--text-main, #0D1B2A);
+        color: #ffffff;
         letter-spacing: -0.3px;
         margin: 0;
         line-height: 1.2;
-        width: 100%;
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
       }
 
-      .edit-link {
+      .menu-phone {
+        font-size: 12.5px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.62);
+        line-height: 1.2;
+      }
+
+      .menu-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
         font-size: 12px;
         font-weight: 700;
-        color: var(--ion-color-primary, #12B35B);
-        text-decoration: underline;
-        margin-top: 2px;
+        color: var(--dc-green, #12B35B);
+        margin-top: 5px;
         line-height: 1;
+
+        ion-icon { font-size: 12px; }
       }
     }
   }
 
-  // Navigation Items List
+  // ============ Navigation items ============
   .menu-items-list {
     background: transparent;
-    padding: 12px 8px;
+    padding: 16px 10px 8px;
     margin: 0;
 
     .menu-item {
-      --background: transparent;
+      --background: var(--dc-surface, #ffffff);
       --border-style: none;
       --inner-border-width: 0;
-      --padding-start: 16px;
-      --padding-end: 16px;
-      --min-height: 54px;
-      border-radius: 14px;
-      margin: 6px 12px;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      --padding-start: 12px;
+      --padding-end: 12px;
+      --min-height: 58px;
+      --ripple-color: transparent;
+      border-radius: var(--dc-r-md, 14px);
+      margin: 6px 6px;
+      border: 1px solid var(--dc-hairline, #EEF0F2);
+      box-shadow: var(--dc-shadow-sm, 0 2px 10px rgba(13, 27, 42, 0.04));
 
-      &:hover,
       &:active {
-        --background: rgba(18, 179, 91, 0.04);
-        transform: translateX(2px);
-
-        .icon-box {
-          transform: scale(1.04);
-          box-shadow: 0 4px 12px rgba(13, 27, 42, 0.15);
-        }
+        --background: var(--dc-green-tint, rgba(18, 179, 91, 0.10));
       }
 
-      // Compact Dark Solid Rectangle for Every Icon
       .icon-box {
-        width: 34px;
-        height: 34px;
-        border-radius: 8px;
-        background: var(--ion-color-secondary, #0D1B2A); // Dark navy solid rectangle box
+        width: 38px;
+        height: 38px;
+        border-radius: var(--dc-r-sm, 10px);
+        background: var(--dc-green-tint, rgba(18, 179, 91, 0.10));
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-right: 12px;
+        margin-right: 14px;
         flex-shrink: 0;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
         .menu-icon {
-          font-size: 17px;
-          color: #ffffff; // Solid white/light color inside the dark rectangle
+          font-size: 19px;
+          color: var(--dc-green, #12B35B);
           margin: 0;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
       }
 
-      // Sizing of the font same as that image (Compact, crisp 14px)
       .menu-label {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
-        color: var(--text-main, #0D1B2A);
+        color: var(--dc-ink, #0D1B2A);
         letter-spacing: -0.15px;
       }
 
-      // Danger options (Red Rectangle with white icon)
-      &.danger-item {
-        &:hover,
-        &:active {
-          --background: rgba(220, 53, 69, 0.04);
-
-          .icon-box {
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.15);
-          }
-        }
-
-        .icon-box {
-          background: #DC3545; // Dark red solid rectangle for danger item
-        }
-
-        .menu-label {
-          color: #DC3545;
-        }
+      .row-chev {
+        font-size: 17px;
+        color: var(--dc-ink-faint, #9AA3AE);
       }
     }
+  }
+
+  // ============ Sign out, pinned to the bottom ============
+  .menu-footer {
+    margin-top: auto;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--dc-hairline, #EEF0F2);
+    background: var(--dc-surface, #ffffff);
+
+    .menu-item {
+      --background: var(--dc-danger-tint, rgba(220, 53, 69, 0.08));
+      --border-style: none;
+      --inner-border-width: 0;
+      --padding-start: 12px;
+      --padding-end: 12px;
+      --min-height: 56px;
+      --ripple-color: transparent;
+      border-radius: var(--dc-r-md, 14px);
+      margin: 8px 0 2px;
+      border: 1px solid rgba(220, 53, 69, 0.18);
+
+      &:active { --background: rgba(220, 53, 69, 0.16); }
+
+      .icon-box {
+        width: 38px;
+        height: 38px;
+        border-radius: var(--dc-r-sm, 10px);
+        background: rgba(220, 53, 69, 0.14);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 14px;
+        flex-shrink: 0;
+
+        .menu-icon { font-size: 19px; color: var(--dc-danger, #DC3545); }
+      }
+
+      .menu-label {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--dc-danger, #DC3545);
+        letter-spacing: -0.15px;
+      }
+
+      .row-chev {
+        font-size: 17px;
+        color: rgba(220, 53, 69, 0.4);
+      }
+    }
+  }
+}
+
+// ============ Page-local motion (CSS only) ============
+@keyframes menuSheen {
+  0%, 100% { transform: translateX(-35%); opacity: 0; }
+  18%      { opacity: 1; }
+  50%      { transform: translateX(45%); opacity: 0.65; }
+  82%      { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ion-menu .menu-header .menu-header-sheen {
+    animation: none !important;
+    opacity: 0;
   }
 }

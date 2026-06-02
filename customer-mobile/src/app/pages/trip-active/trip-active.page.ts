@@ -1,4 +1,5 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
+import { Location } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ActionSheetController, AlertController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
@@ -31,7 +32,24 @@ type TripDetail = {
   drop_lng?: number | null;
   pickup_address?: string | null;
   drop_address?: string | null;
-  driver?: { id: number; name?: string | null; accepted_payment_methods?: PaymentMethod[] | null };
+  driver?: {
+    id: number;
+    name?: string | null;
+    phone?: string | null;
+    // Driver's last-known location — used to render the marker immediately,
+    // before any live websocket update arrives. (decimal → string from Laravel)
+    current_lat?: number | string | null;
+    current_lng?: number | string | null;
+    accepted_payment_methods?: PaymentMethod[] | null;
+    // Nested driver profile (vehicle info). The relation is User.driver, so on
+    // the trip it reads as trip.driver.driver — confusing but correct.
+    driver?: {
+      vehicle_brand?: string | null;
+      vehicle_model?: string | null;
+      vehicle_color?: string | null;
+      vehicle_reg_no?: string | null;
+    } | null;
+  };
 };
 
 type TippingConfig = {
@@ -83,6 +101,17 @@ export class TripActivePage implements OnInit, OnDestroy {
   sosBusy = false;
   shareBusy = false;
 
+  // Map-dominant layout: let the user collapse the sheet to see more map.
+  sheetCollapsed = false;
+
+  // True once a live driver GPS fix has arrived over the websocket. Until then
+  // we keep seeding the marker from the driver's last-known location.
+  private liveDriverFix = false;
+
+  // Driver-details modal (fare, ETA, phone, vehicle) — opened by tapping the
+  // driver marker on the map or the info button on the sheet.
+  showDriverModal = false;
+
   // Cancel overlay state
   showCancelModal = false;
   cancelReasons = {
@@ -102,6 +131,10 @@ export class TripActivePage implements OnInit, OnDestroy {
   private driverMarker: any | null = null;
   private pickupMarker: any | null = null;
   private dropMarker: any | null = null;
+  // Pickup → drop road route. Only shown once the ride is in progress
+  // (EN_ROUTE_DROP / ARRIVED_DROP); faded in via routeFadeHandle.
+  private routePolylines: any[] = [];
+  private routeFadeHandle: any = null;
   private etaDebounceHandle: any = null;
   private etaInflight = false;
   private readonly etaDebounceMs = 10_000;
@@ -117,6 +150,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   constructor(
     private route: ActivatedRoute,
     private router: Router,
+    private location: Location,
     private api: ApiService,
     private auth: AuthService,
     private alertCtrl: AlertController,
@@ -125,7 +159,66 @@ export class TripActivePage implements OnInit, OnDestroy {
     private places: PlacesService,
     private realtime: RealtimeService,
     private geo: GeolocationService,
+    private zone: NgZone,
   ) {}
+
+  // ── Driver details (shown in the map modal) ──────────────────────
+  get driverName(): string {
+    return this.trip?.driver?.name || 'Driver assigned';
+  }
+  get driverPhone(): string | null {
+    return this.trip?.driver?.phone || null;
+  }
+  /** "White Maruti Swift" — whatever vehicle fields are populated. */
+  get vehicleSummary(): string | null {
+    const v = this.trip?.driver?.driver;
+    if (!v) return null;
+    const parts = [v.vehicle_color, v.vehicle_brand, v.vehicle_model].filter(Boolean);
+    return parts.length ? parts.join(' ') : null;
+  }
+  get vehicleReg(): string | null {
+    return this.trip?.driver?.driver?.vehicle_reg_no || null;
+  }
+
+  /** Label for the ETA stat — makes clear whether it counts down to pickup or
+   *  to the destination, depending on the trip phase. */
+  get etaLabel(): string {
+    return this.trip?.status === 'EN_ROUTE_DROP' ? 'ETA to drop' : 'ETA to pickup';
+  }
+
+  /** A driver is assigned but we have no position to plot yet (no live fix and
+   *  no last-known location). Show a "locating…" hint while the trip is active. */
+  get awaitingDriverLocation(): boolean {
+    if (!this.trip?.driver || this.driverPosition) return false;
+    const s = this.trip.status;
+    return s !== 'COMPLETED' && s !== 'CANCELLED';
+  }
+
+  /** Open the details modal. Safe to call from a Google Maps event (which
+   *  fires outside Angular) — re-enters the zone so the binding updates. */
+  openDriverDetails(): void {
+    this.zone.run(() => { this.showDriverModal = true; });
+  }
+
+  /** Dial the driver via the OS dialer. */
+  callDriver(): void {
+    const phone = this.driverPhone;
+    if (!phone) return;
+    window.open(`tel:${phone}`, '_system');
+  }
+
+  /**
+   * Floating back button on the map — return to wherever we came from (the
+   * ride-detail page, the booking screen, …). Falls back to the Rides list
+   * when there's no history to pop (e.g. a deep link).
+   */
+  back(): void {
+    if (window.history.length > 1) {
+      this.location.back();
+    } else {
+      this.router.navigateByUrl('/customer-tabs/my-trips');
+    }
+  }
 
   /**
    * Per-state title + subtitle copy. Replaces the generic enum value with
@@ -146,7 +239,10 @@ export class TripActivePage implements OnInit, OnDestroy {
       case 'ARRIVED_PICKUP':
         return { title: 'Driver has arrived', sub: 'Please come to the curb' };
       case 'EN_ROUTE_DROP':
-        return { title: 'Ride in progress', sub: "Sit back — you're on your way" };
+        return {
+          title: 'Ride in progress',
+          sub: this.etaMinutes != null ? `Arriving in ${this.etaMinutes} min` : "Sit back — you're on your way",
+        };
       case 'ARRIVED_DROP':
         return { title: "You've arrived", sub: 'Please complete payment' };
       case 'COMPLETED':
@@ -187,6 +283,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     if (this.poll) clearInterval(this.poll);
     if (this.unsubscribeRealtime) this.unsubscribeRealtime();
     if (this.etaDebounceHandle) clearTimeout(this.etaDebounceHandle);
+    if (this.routeFadeHandle) clearInterval(this.routeFadeHandle);
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
     this.stopCustomerLocationStream();
   }
 
@@ -202,8 +301,16 @@ export class TripActivePage implements OnInit, OnDestroy {
   private async initMap(): Promise<void> {
     try {
       await this.places.ensureLoaded();
-      const div = document.getElementById('trip-map');
-      if (!div) return;
+
+      // The map container lives behind *ngIf="!loading", so on a fast script
+      // load it may not be in the DOM yet. Wait for it to render (up to ~2s).
+      let div = document.getElementById('trip-map');
+      for (let i = 0; !div && i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        div = document.getElementById('trip-map');
+      }
+      if (!div || this.map) return;
+
       this.map = new google.maps.Map(div, {
         center: { lat: 28.6139, lng: 77.209 },
         zoom: 14,
@@ -213,7 +320,12 @@ export class TripActivePage implements OnInit, OnDestroy {
         // production.
         mapId: 'DEMO_MAP_ID',
       });
-      this.fitMap();
+
+      // Draw whatever we already have (markers + route); otherwise just frame.
+      if (this.trip) this.updateRouteMarkers();
+      else this.fitMap();
+      // A live fix / seed may have landed before the map was ready.
+      this.ensureDriverMarker();
     } catch {
       /* maps not available — page still works without it */
     }
@@ -226,6 +338,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         trip?: TripDetail;
         negotiation?: { final_amount: number };
         city_payment_modes?: string[];
+        driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
       }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
         next: (res) => {
@@ -242,8 +355,17 @@ export class TripActivePage implements OnInit, OnDestroy {
             if (this.selectedPaymentMethod == null && this.trip.payment_method) {
               this.selectedPaymentMethod = this.trip.payment_method;
             }
+            this.seedDriver(
+              res.driver_location ??
+                (this.trip.driver?.current_lat != null && this.trip.driver?.current_lng != null
+                  ? { lat: Number(this.trip.driver.current_lat), lng: Number(this.trip.driver.current_lng) }
+                  : null)
+            );
             this.updateRouteMarkers();
             this.syncCustomerLocationStream();
+            // If the first init bailed (slow API → map div wasn't in the DOM
+            // yet), retry now that the page has rendered.
+            if (!this.map) void this.initMap();
           }
         },
         error: () => {
@@ -338,7 +460,126 @@ export class TripActivePage implements OnInit, OnDestroy {
         this.dropMarker.position = pos;
       }
     }
+
+    // The trip path is only drawn once the customer is in the car.
+    this.syncRoute();
+
     this.fitMap();
+  }
+
+  /**
+   * The pickup → drop line is only meaningful once the customer has been
+   * picked up. Show it from EN_ROUTE_DROP until the trip completes; hide it in
+   * every other state (heading to pickup, arrived at pickup, completed,
+   * cancelled). Idempotent — safe to call on every status update / poll.
+   */
+  private shouldShowRoute(): boolean {
+    const s = this.trip?.status;
+    return s === 'EN_ROUTE_DROP' || s === 'ARRIVED_DROP';
+  }
+
+  private syncRoute(): void {
+    if (!this.map || !this.trip) return;
+    const t = this.trip;
+    const haveEnds =
+      t.pickup_lat != null && t.pickup_lng != null &&
+      t.drop_lat != null && t.drop_lng != null;
+
+    if (this.shouldShowRoute() && haveEnds) {
+      if (!this.routePolylines.length) {
+        void this.drawRoute(
+          { lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) },
+          { lat: Number(t.drop_lat), lng: Number(t.drop_lng) },
+        );
+      }
+    } else {
+      this.clearRoute();
+    }
+  }
+
+  private clearRoute(): void {
+    if (this.routeFadeHandle) { clearInterval(this.routeFadeHandle); this.routeFadeHandle = null; }
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
+  }
+
+  /** Ramp the freshly-drawn route from invisible to full opacity so it eases
+   *  in when the ride starts instead of popping onto the map. */
+  private fadeInRoute(): void {
+    if (this.routeFadeHandle) { clearInterval(this.routeFadeHandle); this.routeFadeHandle = null; }
+    const lines = this.routePolylines;
+    if (!lines.length) return;
+    const target = 0.95;
+    const steps = 14;
+    let i = 0;
+    for (const pl of lines) pl.setOptions?.({ strokeOpacity: 0 });
+    this.routeFadeHandle = setInterval(() => {
+      i++;
+      const op = Math.min(target, (i / steps) * target);
+      for (const pl of lines) pl.setOptions?.({ strokeOpacity: op });
+      if (i >= steps) { clearInterval(this.routeFadeHandle); this.routeFadeHandle = null; }
+    }, 22);
+  }
+
+  /**
+   * Draw the road route between pickup and drop. Routes API (New) first, then
+   * the legacy DirectionsService, then a straight line as a last resort.
+   */
+  private async drawRoute(
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+  ): Promise<void> {
+    if (!this.map) return;
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
+
+    try {
+      const { Route } = await (google.maps as any).importLibrary('routes');
+      const { routes } = await Route.computeRoutes({
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+        fields: ['path'],
+      });
+      const polylines: any[] = routes?.[0]?.createPolylines?.() ?? [];
+      let drew = false;
+      for (const pl of polylines) {
+        if (pl?.setMap) {
+          pl.setOptions?.({ strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95 });
+          pl.setMap(this.map);
+          drew = true;
+        }
+      }
+      if (drew) { this.routePolylines = polylines; this.fitMap(); this.fadeInRoute(); return; }
+    } catch {
+      // fall through
+    }
+
+    try {
+      const svc = new google.maps.DirectionsService();
+      const res: any = await svc.route({
+        origin, destination, travelMode: google.maps.TravelMode.DRIVING,
+      });
+      const r = res?.routes?.[0];
+      if (r?.overview_path?.length) {
+        const pl = new google.maps.Polyline({
+          path: r.overview_path, strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
+        });
+        this.routePolylines = [pl];
+        this.fitMap();
+        this.fadeInRoute();
+        return;
+      }
+    } catch {
+      // fall through
+    }
+
+    const straight = new google.maps.Polyline({
+      path: [origin, destination], strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
+    });
+    this.routePolylines = [straight];
+    this.fitMap();
+    this.fadeInRoute();
   }
 
   private fitMap(): void {
@@ -353,24 +594,104 @@ export class TripActivePage implements OnInit, OnDestroy {
         any = true;
       }
     }
-    if (any) this.map.fitBounds(bounds, 80);
+    if (any) {
+      // The sheet floats over the bottom of the map, so pad the framing to
+      // keep pins in the visible band above it.
+      const bottomPad = this.isCompleted()
+        ? Math.round(window.innerHeight * 0.5)
+        : this.sheetCollapsed
+          ? 130
+          : Math.round(window.innerHeight * 0.4);
+      this.map.fitBounds(bounds, { top: 96, right: 56, bottom: bottomPad, left: 56 });
+    }
   }
 
   private onLocation(p: TripLocationPayload): void {
-    this.driverPosition = { lat: p.lat, lng: p.lng };
+    const loc = p?.location;
+    if (!loc || loc.lat == null || loc.lng == null) return;
+    // A real live fix arrived — from now on it owns the marker; stop seeding.
+    this.liveDriverFix = true;
+    this.driverPosition = { lat: Number(loc.lat), lng: Number(loc.lng) };
     this.scheduleEtaUpdate();
-    if (!this.map) return;
+    this.ensureDriverMarker();
+  }
+
+  /**
+   * Create the driver marker (or move it) from the current driverPosition.
+   * Safe to call before the map exists or before a position is known — it
+   * no-ops until both are available, so it can be driven by live updates, the
+   * initial seed, or the map finishing init.
+   */
+  private ensureDriverMarker(): void {
+    if (!this.map || !this.driverPosition) return;
     if (!this.driverMarker) {
       this.driverMarker = new google.maps.marker.AdvancedMarkerElement({
         position: this.driverPosition,
         map: this.map,
-        title: 'Driver',
-        content: this.buildDot('#1f8b4c'),
+        title: this.driverName,
+        content: this.buildDriverMarker(this.driverName),
+        gmpClickable: true,
       });
+      // Tapping the driver (marker or its label) opens the details modal.
+      this.driverMarker.addListener('click', () => this.openDriverDetails());
       this.fitMap();
     } else {
       this.driverMarker.position = this.driverPosition;
     }
+  }
+
+  /**
+   * Seed the driver marker from the last-known location returned by the API
+   * (freshest driver_locations ping). Used to show the driver from the
+   * confirmation screen onward, before live trip streaming begins. Keeps
+   * updating on each poll until a real live fix takes over (liveDriverFix).
+   */
+  private seedDriver(loc: { lat: number; lng: number } | null | undefined): void {
+    if (this.liveDriverFix) return; // a live fix now owns the marker
+    if (!loc) return;
+    const lat = Number(loc.lat);
+    const lng = Number(loc.lng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+    this.driverPosition = { lat, lng };
+    this.ensureDriverMarker();
+    this.scheduleEtaUpdate();
+  }
+
+  /**
+   * Driver map marker: the driver's name on a pill above a circular car icon.
+   * Returns a plain DOM node for AdvancedMarkerElement's `content`.
+   */
+  private buildDriverMarker(name: string): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:pointer;';
+
+    const label = document.createElement('div');
+    label.textContent = name;
+    label.style.cssText = [
+      'max-width:150px', 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
+      'background:#0D1B2A', 'color:#fff', 'font-size:11px', 'font-weight:700',
+      'padding:4px 10px', 'border-radius:999px', 'margin-bottom:5px',
+      'box-shadow:0 2px 8px rgba(0,0,0,0.3)',
+    ].join(';');
+
+    const pin = document.createElement('div');
+    pin.style.cssText = [
+      'width:36px', 'height:36px', 'border-radius:50%', 'background:#12B35B',
+      'border:3px solid #fff', 'box-shadow:0 3px 10px rgba(0,0,0,0.35)',
+      'display:flex', 'align-items:center', 'justify-content:center',
+    ].join(';');
+    pin.innerHTML =
+      '<svg width="19" height="19" viewBox="0 0 24 24" fill="#fff">' +
+      '<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01' +
+      'L3 12v8a1 1 0 001 1h1a1 1 0 001-1v-1h12v1a1 1 0 001 1h1a1 1 0 001-1v-8l-2.08-5.99zM6.5 16' +
+      'a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm11 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM5 11l1.5-4.5h11L19 11H5z"/>' +
+      '</svg>';
+
+    wrap.appendChild(label);
+    wrap.appendChild(pin);
+    // Fallback for environments where gmpClickable doesn't forward the tap.
+    wrap.addEventListener('click', () => this.openDriverDetails());
+    return wrap;
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -416,12 +737,22 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   /**
-   * Debounced ETA refresh. Only runs while the driver is en-route to pickup
+   * Throttled ETA refresh. Only runs while the driver is en-route to pickup
    * (ASSIGNED / EN_ROUTE_PICKUP). After ARRIVED_PICKUP we stop estimating.
+   *
+   * Leading edge: compute immediately when we don't have an ETA yet so it
+   * appears right away. Afterwards, throttle to once per interval — crucially
+   * WITHOUT resetting a pending timer, so a steady stream of live fixes (every
+   * few seconds) can't keep deferring the computation forever.
    */
   private scheduleEtaUpdate(): void {
     if (!this.shouldComputeEta()) return;
-    if (this.etaDebounceHandle) clearTimeout(this.etaDebounceHandle);
+    if (!this.driverPosition) return;
+    if (this.etaMinutes == null && !this.etaInflight) {
+      void this.refreshEta();
+      return;
+    }
+    if (this.etaDebounceHandle) return; // already scheduled — let it fire
     this.etaDebounceHandle = setTimeout(() => {
       this.etaDebounceHandle = null;
       void this.refreshEta();
@@ -430,58 +761,113 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   private shouldComputeEta(): boolean {
     const s = this.trip?.status;
-    return s === 'ASSIGNED' || s === 'EN_ROUTE_PICKUP';
+    return s === 'ASSIGNED' || s === 'EN_ROUTE_PICKUP' || s === 'EN_ROUTE_DROP';
+  }
+
+  /** Where the ETA counts down to in the current phase: the pickup while the
+   *  driver heads to the customer, the drop-off once the ride is underway. */
+  private etaTarget(): { lat: number; lng: number } | null {
+    const t = this.trip;
+    if (!t) return null;
+    if (t.status === 'EN_ROUTE_DROP') {
+      if (t.drop_lat == null || t.drop_lng == null) return null;
+      return { lat: Number(t.drop_lat), lng: Number(t.drop_lng) };
+    }
+    if (t.pickup_lat == null || t.pickup_lng == null) return null;
+    return { lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) };
   }
 
   private async refreshEta(): Promise<void> {
     if (this.etaInflight) return;
     if (!this.shouldComputeEta()) return;
     if (!this.driverPosition) return;
-    const t = this.trip;
-    if (!t || t.pickup_lat == null || t.pickup_lng == null) return;
+    const destination = this.etaTarget();
+    if (!destination) return;
+
+    const origin = { lat: this.driverPosition.lat, lng: this.driverPosition.lng };
+
+    // Always have a straight-line estimate ready so the ETA is never blank —
+    // the Distance Matrix API may not be enabled on the Maps key.
+    const fallback = this.straightLineEtaMin(origin, destination);
 
     try {
       await this.places.ensureLoaded();
-      if (!this.distanceMatrix && typeof google !== 'undefined') {
+      if (!this.distanceMatrix && typeof google !== 'undefined' && google.maps?.DistanceMatrixService) {
         this.distanceMatrix = new google.maps.DistanceMatrixService();
       }
-      if (!this.distanceMatrix) return;
+      if (!this.distanceMatrix) {
+        this.applyEta(fallback);
+        return;
+      }
 
       this.etaInflight = true;
-      const origin = { lat: this.driverPosition.lat, lng: this.driverPosition.lng };
-      const destination = { lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) };
-
       this.distanceMatrix.getDistanceMatrix(
-        {
-          origins: [origin],
-          destinations: [destination],
-          travelMode: 'DRIVING',
-        },
+        { origins: [origin], destinations: [destination], travelMode: 'DRIVING' },
         (response: any, status: string) => {
           this.etaInflight = false;
-          if (status !== 'OK' || !response?.rows?.[0]?.elements?.[0]) return;
-          const el = response.rows[0].elements[0];
-          if (el.status !== 'OK' || !el.duration?.value) return;
-          this.etaMinutes = Math.max(1, Math.round(el.duration.value / 60));
-          this.etaUpdatedAt = Date.now();
+          const el = status === 'OK' ? response?.rows?.[0]?.elements?.[0] : null;
+          if (el && el.status === 'OK' && el.duration?.value) {
+            this.applyEta(Math.max(1, Math.round(el.duration.value / 60)));
+          } else {
+            // Distance Matrix denied/failed — fall back to the straight-line estimate.
+            this.applyEta(fallback);
+          }
         }
       );
     } catch {
       this.etaInflight = false;
+      this.applyEta(fallback);
     }
+  }
+
+  /** Rough ETA in minutes from a straight-line (haversine) distance at an
+   *  assumed urban driving speed. Fallback when Distance Matrix is unavailable. */
+  private straightLineEtaMin(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+  ): number {
+    const R = 6371; // km
+    const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+    const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((from.lat * Math.PI) / 180) * Math.cos((to.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const avgKmh = 22; // conservative city average
+    return Math.max(1, Math.round((km / avgKmh) * 60));
+  }
+
+  /** Set the ETA inside Angular's zone — these callbacks fire from Google Maps
+   *  / websocket handlers outside the zone, so a bare assignment wouldn't
+   *  refresh the view. */
+  private applyEta(min: number): void {
+    this.zone.run(() => {
+      this.etaMinutes = min;
+      this.etaUpdatedAt = Date.now();
+    });
   }
 
   private onStatus(p: TripStatusPayload): void {
     if (!this.trip) return;
+    const changed = this.trip.status !== p.status;
     this.trip = { ...this.trip, status: p.status };
-    if (!this.shouldComputeEta()) {
+
+    if (changed) {
+      // The ETA target flips between pickup and drop across phases — drop any
+      // stale value, then recompute for the new phase (or leave it cleared if
+      // ETA no longer applies, e.g. ARRIVED_PICKUP / ARRIVED_DROP).
       this.etaMinutes = null;
       if (this.etaDebounceHandle) {
         clearTimeout(this.etaDebounceHandle);
         this.etaDebounceHandle = null;
       }
+      if (this.shouldComputeEta()) this.scheduleEtaUpdate();
     }
+
     this.syncCustomerLocationStream();
+    // Show the trip path the instant the driver starts the ride, hide it on
+    // completion/cancel — without waiting for the next status poll.
+    this.syncRoute();
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -578,6 +964,18 @@ export class TripActivePage implements OnInit, OnDestroy {
     return this.trip?.status === 'COMPLETED';
   }
 
+  /**
+   * Minimise the floating sheet to just the status + driver header so the
+   * customer can see almost the entire map. No-op once the trip is complete
+   * (that view needs the payment / rating content visible).
+   */
+  toggleSheet(): void {
+    if (this.isCompleted()) return;
+    this.sheetCollapsed = !this.sheetCollapsed;
+    // Re-frame the map after the sheet finishes resizing so pins stay visible.
+    setTimeout(() => this.fitMap(), 280);
+  }
+
   // ── Tipping ──────────────────────────────────────────────────────
 
   /** Show the tip card only on completed trips, with config loaded, where
@@ -617,7 +1015,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     const amt = Number(this.tipCustomAmount);
     if (!Number.isFinite(amt) || amt <= 0) return;
     this.tipCustomOpen = false;
-    this.submitTip(Math.round(amt));
+    // In percentage mode the entry is a % of fare; convert to rupees so the
+    // server always receives absolute rupees (same as the presets).
+    this.submitTip(this.tipAmountFor(amt));
   }
 
   skipTip(): void {

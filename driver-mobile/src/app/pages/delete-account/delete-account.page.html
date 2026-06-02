@@ -1,5 +1,5 @@
-<ion-header [translucent]="true">
-  <ion-toolbar>
+<ion-header [translucent]="true" class="ion-no-border">
+  <ion-toolbar class="drv-toolbar">
     <ion-buttons slot="start">
       <ion-button (click)="goBack()" [disabled]="loading" aria-label="Back">
         <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
@@ -9,41 +9,64 @@
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="ion-padding">
-  <div class="warning-icon">
-    <ion-icon name="warning-outline" color="danger"></ion-icon>
+<ion-content class="dc-content">
+  <!-- Custom green→navy gradient hero -->
+  <header class="drv-hero da-hero">
+    <h1 class="da-hero__title">Delete your account?</h1>
+    <p class="da-hero__sub">
+      This will permanently remove your DreamCabs driver account.
+    </p>
+  </header>
+
+  <div class="dc-body pg-anim-body da-body">
+    <!-- Danger-framed explanation card -->
+    <section class="pg-card da-danger">
+      <div class="pg-card__head">
+        <div class="pg-card__icon da-danger__icon">
+          <ion-icon name="warning-outline"></ion-icon>
+        </div>
+        <h2 class="pg-card__title">This cannot be undone</h2>
+      </div>
+
+      <ul class="da-list">
+        <li class="da-list__row">
+          <ion-icon name="close-circle-outline" class="da-list__ic"></ion-icon>
+          <span class="da-list__txt">Your driver profile, vehicle and uploaded documents will be removed.</span>
+        </li>
+        <li class="da-list__row">
+          <ion-icon name="close-circle-outline" class="da-list__ic"></ion-icon>
+          <span class="da-list__txt">Your trip history, ratings and earnings will no longer be accessible.</span>
+        </li>
+        <li class="da-list__row">
+          <ion-icon name="close-circle-outline" class="da-list__ic"></ion-icon>
+          <span class="da-list__txt">You will be signed out from this device.</span>
+        </li>
+        <li class="da-list__row">
+          <ion-icon name="close-circle-outline" class="da-list__ic"></ion-icon>
+          <span class="da-list__txt">This cannot be undone.</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Actions -->
+    <div class="da-actions">
+      <button
+        type="button"
+        class="dc-cta da-delete dc-press"
+        (click)="confirmDelete()"
+        [disabled]="loading">
+        <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
+        <ion-icon *ngIf="!loading" name="trash-outline"></ion-icon>
+        {{ loading ? 'Deleting…' : 'Delete account' }}
+      </button>
+
+      <button
+        type="button"
+        class="dc-cta dc-cta--ghost dc-press"
+        (click)="goBack()"
+        [disabled]="loading">
+        Cancel
+      </button>
+    </div>
   </div>
-
-  <h1 class="title">Delete your account?</h1>
-
-  <p class="lead">
-    This will permanently remove your DreamCabs driver account.
-  </p>
-
-  <ion-list lines="none" class="bullets">
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">Your driver profile, vehicle and uploaded documents will be removed.</ion-label>
-    </ion-item>
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">Your trip history, ratings and earnings will no longer be accessible.</ion-label>
-    </ion-item>
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">You will be signed out from this device.</ion-label>
-    </ion-item>
-    <ion-item>
-      <ion-icon name="close-circle-outline" slot="start" color="danger"></ion-icon>
-      <ion-label class="ion-text-wrap">This cannot be undone.</ion-label>
-    </ion-item>
-  </ion-list>
-
-  <ion-button expand="block" color="danger" class="ion-margin-top" (click)="confirmDelete()" [disabled]="loading">
-    {{ loading ? 'Deleting…' : 'Delete account' }}
-  </ion-button>
-
-  <ion-button expand="block" fill="clear" (click)="goBack()" [disabled]="loading">
-    Cancel
-  </ion-button>
 </ion-content>
