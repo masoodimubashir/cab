@@ -355,6 +355,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         .subscribe({
           next: (res) => {
             this.auth.setSession(res.token, res.user);
+            void this.push.reportDeviceInfo();
             void this.push.registerForUser();
             resolve(res.user);
           },

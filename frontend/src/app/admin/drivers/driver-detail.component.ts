@@ -327,6 +327,21 @@ const WALLET_TYPES = [
               <span class="tag-pill__k">Last login</span>
               <span class="tag-pill__v">{{ profile.last_login_at ? timeAgo(profile.last_login_at) : '—' }}</span>
             </span>
+            <span class="tag-pill">
+              <tm-icon name="phone" [size]="11" />
+              <span class="tag-pill__k">Device</span>
+              <span class="tag-pill__v">{{ profile.device_type || '—' }}</span>
+            </span>
+            <span class="tag-pill">
+              <tm-icon name="phone" [size]="11" />
+              <span class="tag-pill__k">OS</span>
+              <span class="tag-pill__v mono">{{ profile.os_version || '—' }}</span>
+            </span>
+            <span class="tag-pill">
+              <tm-icon name="phone" [size]="11" />
+              <span class="tag-pill__k">App ver</span>
+              <span class="tag-pill__v mono">{{ profile.app_version || '—' }}</span>
+            </span>
           </div>
         </article>
 

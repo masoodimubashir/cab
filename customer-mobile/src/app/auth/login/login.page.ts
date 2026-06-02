@@ -186,11 +186,31 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
    * case the fields are absent on the request (backend treats them nullable).
    */
   private async captureDeviceInfo(): Promise<void> {
+    // Prefer the real device name (manufacturer + model) and OS version from
+    // the Device plugin; fall back to the platform / user-agent on web.
     try {
-      this.deviceInfo.device_type = Capacitor.getPlatform();
+      const d = await Device.getInfo();
+      const name = [d.manufacturer, d.model]
+        .map((s) => (s || '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      if (name) this.deviceInfo.device_type = name.slice(0, 64);
+
+      const osName =
+        d.operatingSystem === 'ios'
+          ? 'iOS'
+          : d.operatingSystem
+            ? d.operatingSystem.charAt(0).toUpperCase() + d.operatingSystem.slice(1)
+            : '';
+      const os = [osName, d.osVersion].filter(Boolean).join(' ').trim();
+      if (os) this.deviceInfo.os_version = os.slice(0, 32);
+    } catch { /* ignore — fall back below */ }
+    try {
+      if (!this.deviceInfo.device_type) this.deviceInfo.device_type = Capacitor.getPlatform();
     } catch { /* ignore */ }
     try {
-      if (typeof navigator !== 'undefined') {
+      if (!this.deviceInfo.os_version && typeof navigator !== 'undefined') {
         this.deviceInfo.os_version = parseOsVersion(navigator.userAgent);
       }
     } catch { /* ignore */ }
@@ -560,6 +580,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         .subscribe({
           next: (res) => {
             this.auth.setSession(res.token, res.user);
+            void this.push.reportDeviceInfo();
             void this.push.registerForUser();
             resolve(res.user);
           },
