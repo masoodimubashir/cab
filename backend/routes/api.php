@@ -103,6 +103,8 @@ Route::middleware('auth:sanctum')->post('/me/location', [LocationController::cla
 Route::middleware('auth:sanctum')->post('/me/device-tokens', [DeviceTokensController::class, 'store']);
 Route::middleware('auth:sanctum')->delete('/me/device-tokens/{token}', [DeviceTokensController::class, 'destroy'])
     ->where('token', '.*');
+// Device name / OS / app version captured on login (no notifications needed).
+Route::middleware('auth:sanctum')->post('/me/device-info', [DeviceTokensController::class, 'saveDeviceInfo']);
 
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
 
