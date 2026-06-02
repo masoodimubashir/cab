@@ -1,101 +1,132 @@
-.wallet-row {
+/* Subscriptions — Documents-style (pg-) shell. The dark rounded header + white
+   bordered cards come from theme/pages.scss; only page-specific composition
+   that styles inner content lives here. */
+
+/* Wallet balance card */
+.sub-wallet {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--ion-color-light-shade, #eee);
-  margin-bottom: 16px;
+  gap: 14px;
 
-  strong { font-size: 1.1rem; }
+  &__icon {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--ion-color-primary-rgb), 0.1);
+    ion-icon { font-size: 23px; color: var(--ion-color-primary, #12B35B); }
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    small { font-size: 0.78rem; color: var(--text-muted, #6C757D); }
+    strong {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text-main, #0D1B2A);
+      font-variant-numeric: tabular-nums;
+    }
+  }
 }
 
-.section-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  margin: 18px 0 8px;
+/* Inline error card */
+.sub-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(235, 68, 90, 0.07);
+  border-color: rgba(235, 68, 90, 0.18);
+  box-shadow: none;
+  color: #D33651;
+  font-size: 0.86rem;
+  font-weight: 600;
+  ion-icon { font-size: 20px; flex-shrink: 0; }
 }
 
-.hint {
-  color: var(--ion-color-medium, #666);
-  font-size: 0.9rem;
-  padding: 8px 0;
-}
-
-.active-card {
-  background: var(--ion-color-primary);
-  color: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-
+/* Highlighted active plan (sits on white as a pg-card) */
+.sub-active {
   &__head {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 10px;
-
-    h3 { margin: 0; font-size: 1.05rem; }
-    p { margin: 2px 0 0; font-size: 0.82rem; opacity: 0.9; }
+    gap: 12px;
   }
 
-  &__remaining { margin: 12px 0 0; font-weight: 600; }
-  &__meta { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.85; }
+  &__title {
+    min-width: 0;
+    h3 { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -0.2px; color: var(--text-main, #0D1B2A); }
+    p { margin: 3px 0 0; font-size: 0.82rem; color: var(--text-muted, #6C757D); }
+  }
+
+  .dc-badge { flex-shrink: 0; }
+
+  &__remaining {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--ion-color-primary, #12B35B);
+    ion-icon { font-size: 19px; flex-shrink: 0; }
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted, #6C757D);
+    ion-icon { font-size: 16px; flex-shrink: 0; color: var(--text-muted, #6C757D); }
+  }
 }
 
-.badge {
-  flex: none;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
-
-  &--free { background: var(--ion-color-success, #2dd36f); }
-}
-
-.plan-card {
-  border: 1px solid var(--ion-color-light-shade, #e3e3e3);
-  border-radius: 12px;
-  padding: 14px;
-  margin-bottom: 12px;
-
+/* Available plan cards */
+.sub-plan {
   &__head {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 10px;
-
-    h3 { margin: 0; font-size: 1rem; }
-    p { margin: 2px 0 0; font-size: 0.82rem; color: var(--ion-color-medium, #666); }
+    gap: 12px;
   }
 
-  &__price { font-size: 1.1rem; font-weight: 800; flex: none; }
+  &__title {
+    min-width: 0;
+    h3 { margin: 0; font-size: 1.02rem; font-weight: 700; color: var(--text-main, #0D1B2A); }
+    p { margin: 3px 0 0; font-size: 0.82rem; color: var(--text-muted, #6C757D); }
+  }
+
+  &__price {
+    flex-shrink: 0;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--ion-color-primary, #12B35B);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
 
   &__tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin: 10px 0;
+    gap: 7px;
+    margin: 12px 0;
   }
 
   &__terms {
-    font-size: 0.78rem;
-    color: var(--ion-color-medium, #666);
-    margin: 0 0 10px;
+    font-size: 0.8rem;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.45;
+    margin: 0 0 14px;
   }
-}
 
-.tag {
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--ion-color-light-shade, #eee);
-  color: var(--ion-color-dark, #222);
-
-  &--free {
-    background: rgba(45, 211, 111, 0.16);
-    color: var(--ion-color-success-shade, #28ba62);
+  &__cta {
+    height: 46px;
+    font-size: 0.95rem;
   }
 }

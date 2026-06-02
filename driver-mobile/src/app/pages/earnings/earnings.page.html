@@ -1,80 +1,105 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-title>Earnings</ion-title>
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+    </ion-buttons>
     <ion-buttons slot="end">
-      <ion-button (click)="load()" [disabled]="loading" aria-label="Refresh">
+      <ion-button (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content>
-  <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal">{{ error }}</p></ion-text>
+<ion-content class="pg-content">
 
-  <!-- ─── Stats row ─── -->
-  <div class="stats-row">
-    <div class="stat-card">
-      <p class="stat-label">Total earnings</p>
-      <p class="stat-value">₹{{ total | number:'1.0-2' }}</p>
-    </div>
-    <div class="stat-card stat-card--alt">
-      <p class="stat-label">Wallet balance</p>
-      <p class="stat-value">₹{{ wallet | number:'1.0-2' }}</p>
-    </div>
+  <!-- ─── Money hero (headline number lives in the dark header) ─── -->
+  <div class="pg-hero">
+    <p class="pg-hero__label">Total earnings</p>
+    <h1 class="pg-hero__amount">₹{{ total | number:'1.0-2' }}</h1>
+    <p class="pg-subtitle">Wallet balance · ₹{{ wallet | number:'1.0-2' }}</p>
   </div>
 
-  <!-- ─── Bar chart with period filter ─── -->
-  <div class="section-card">
-    <div class="section-head">
-      <h2>Earnings overview</h2>
-      <ion-segment [value]="period" (ionChange)="setPeriod($any($event.detail.value))">
-        <ion-segment-button value="week">
-          <ion-label>Week</ion-label>
-        </ion-segment-button>
-        <ion-segment-button value="month">
-          <ion-label>Month</ion-label>
-        </ion-segment-button>
-      </ion-segment>
-    </div>
+  <div class="pg-body pg-anim-body">
 
-    <div *ngIf="loading; else chart" class="muted small ion-padding">Loading…</div>
+    <ion-text color="danger" *ngIf="error">
+      <p class="dc-error">{{ error }}</p>
+    </ion-text>
 
-    <ng-template #chart>
-      <div *ngIf="buckets.length; else noData" class="chart">
-        <div class="chart-bars">
-          <div *ngFor="let b of buckets; let i = index" class="bar-wrap" [title]="b.date + ': ₹' + b.amount">
-            <div class="bar" [style.height.%]="barHeight(b.amount)">
-              <span class="bar-value" *ngIf="b.amount > 0">{{ b.amount | number:'1.0-0' }}</span>
+    <!-- ─── Overview / bar chart ─── -->
+    <div class="pg-card ec-chart-card">
+      <div class="pg-card__head">
+        <div class="pg-card__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Overview</h2>
+      </div>
+
+      <div class="dc-pills">
+        <button class="dc-pill" [class.is-active]="period === 'week'" (click)="setPeriod('week')">Week</button>
+        <button class="dc-pill" [class.is-active]="period === 'month'" (click)="setPeriod('month')">Month</button>
+      </div>
+
+      <div *ngIf="loading" class="ec-skeletons">
+        <div class="dc-skeleton" style="height:160px"></div>
+      </div>
+
+      <ng-container *ngIf="!loading">
+        <div *ngIf="buckets.length; else noData" class="ec-chart">
+          <div class="ec-chart__bars">
+            <div *ngFor="let b of buckets; let i = index" class="ec-bar-wrap" [title]="b.date + ': ₹' + b.amount">
+              <div class="ec-bar" [class.ec-bar--zero]="b.amount <= 0" [style.height.%]="barHeight(b.amount)">
+                <span class="ec-bar__value" *ngIf="b.amount > 0">{{ b.amount | number:'1.0-0' }}</span>
+              </div>
+              <span class="ec-bar__label" *ngIf="showLabel(i)">{{ period === 'week' ? b.weekday : shortLabel(b) }}</span>
             </div>
-            <span class="bar-label" *ngIf="showLabel(i)">{{ period === 'week' ? b.weekday : shortLabel(b) }}</span>
           </div>
         </div>
-      </div>
-    </ng-template>
 
-    <ng-template #noData>
-      <p class="muted small ion-padding">No completed trips in this period yet.</p>
-    </ng-template>
-  </div>
-
-  <!-- ─── Weekly earnings list ─── -->
-  <div class="section-card">
-    <div class="section-head">
-      <h2>Weekly earnings</h2>
-      <span class="muted small">last 7 days</span>
+        <ng-template #noData>
+          <div class="dc-empty">
+            <div class="dc-empty__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
+            <strong>No earnings yet</strong>
+            <span>No completed trips in this period. Your earnings will appear here once you finish a trip.</span>
+          </div>
+        </ng-template>
+      </ng-container>
     </div>
 
-    <ion-list lines="full" *ngIf="!loading && weekly.length">
-      <ion-item *ngFor="let d of weekly">
-        <ion-label>
-          <h3>{{ d.weekday }}</h3>
-          <p>{{ d.date }}</p>
-        </ion-label>
-        <ion-text slot="end" [color]="d.amount > 0 ? 'success' : 'medium'">
-          <strong>₹{{ d.amount | number:'1.0-2' }}</strong>
-        </ion-text>
-      </ion-item>
-    </ion-list>
+    <!-- ─── Weekly breakdown ─── -->
+    <div class="pg-card">
+      <div class="pg-card__head">
+        <div class="pg-card__icon"><ion-icon name="calendar-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Last 7 days</h2>
+      </div>
+
+      <div class="ec-week" *ngIf="loading">
+        <div class="dc-skeleton" style="height:56px"></div>
+        <div class="dc-skeleton" style="height:56px"></div>
+        <div class="dc-skeleton" style="height:56px"></div>
+      </div>
+
+      <ng-container *ngIf="!loading">
+        <div class="dc-list" *ngIf="weekly.length; else noWeek">
+          <div class="dc-row" *ngFor="let d of weekly">
+            <span class="dc-row__icon" [class.dc-row__icon--muted]="d.amount <= 0">
+              <ion-icon name="calendar-outline"></ion-icon>
+            </span>
+            <span class="dc-row__text">
+              <strong>{{ d.weekday }}</strong>
+              <small>{{ d.date }}</small>
+            </span>
+            <span class="dc-row__value" [class.ec-value--zero]="d.amount <= 0">₹{{ d.amount | number:'1.0-2' }}</span>
+          </div>
+        </div>
+
+        <ng-template #noWeek>
+          <div class="dc-empty">
+            <div class="dc-empty__icon"><ion-icon name="calendar-outline"></ion-icon></div>
+            <strong>Nothing this week</strong>
+            <span>You have no recorded earnings in the last 7 days.</span>
+          </div>
+        </ng-template>
+      </ng-container>
+    </div>
+
   </div>
 </ion-content>

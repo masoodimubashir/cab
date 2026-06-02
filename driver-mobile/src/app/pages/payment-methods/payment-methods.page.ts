@@ -1,5 +1,4 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
 import { Subject, debounceTime } from 'rxjs';
 import { ApiService } from '../../core/api.service';
@@ -30,7 +29,6 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
   constructor(
     private api: ApiService,
     private auth: AuthService,
-    private router: Router,
     private toastCtrl: ToastController,
   ) {}
 
@@ -49,6 +47,14 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
 
   toggleChanged(): void {
     this.save$.next();
+  }
+
+  /** Re-sync the toggles from the latest stored user (header reload button). */
+  reload(): void {
+    const u = this.auth.getUser();
+    const methods = u?.accepted_payment_methods ?? ALL_METHODS;
+    this.acceptCash = methods.includes('cash');
+    this.acceptRazorpay = methods.includes('razorpay');
   }
 
   private currentMethods(): PaymentMethod[] {
@@ -80,9 +86,5 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
         await t.present();
       },
     });
-  }
-
-  back(): void {
-    this.router.navigateByUrl('/tabs/more');
   }
 }

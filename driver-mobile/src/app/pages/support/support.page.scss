@@ -1,0 +1,67 @@
+/* FAQ accordion — sits inside a .pg-card, so it stays flat (no own shadow).
+   It breaks out of the card's 16px padding to span the full card width, with a
+   hairline above the first row separating it from the card title. */
+.sup-faq {
+  background: #ffffff;
+  overflow: hidden;
+  margin: 0 -16px -16px;
+  border-top: 1px solid #F0F2F5;
+
+  ion-accordion {
+    background: transparent;
+    &::part(content) { background: #fff; }
+  }
+
+  &__head {
+    --background: #ffffff;
+    --min-height: 54px;
+    --padding-start: 16px;
+    --inner-padding-end: 12px;
+    ion-label {
+      font-size: 0.92rem !important;
+      font-weight: 600;
+      color: var(--text-main, #0D1B2A);
+      white-space: normal;
+      line-height: 1.35;
+    }
+  }
+
+  &__body {
+    padding: 0 16px 16px;
+    font-size: 0.86rem;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.6;
+  }
+
+  ion-accordion + ion-accordion .sup-faq__head { border-top: 1px solid #F0F2F5; }
+}
+
+/* Report card */
+.sup-report {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 22px 18px;
+
+  &__icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    background: rgba(13, 27, 42, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    ion-icon { font-size: 26px; color: var(--dreamcab-dark-blue, #0D1B2A); }
+  }
+  strong { font-size: 1rem; font-weight: 700; color: var(--text-main, #0D1B2A); }
+  span {
+    font-size: 0.85rem;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.5;
+    max-width: 280px;
+    margin-bottom: 14px;
+  }
+}

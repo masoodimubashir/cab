@@ -1,0 +1,60 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-title>Plans</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="close()" aria-label="Close">
+        <ion-icon name="close" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <h1 class="pg-title">Go commission-free</h1>
+    <p class="pg-subtitle">Subscribe to a plan and keep more of every fare.</p>
+  </div>
+
+  <div class="pg-body">
+    <!-- Wallet -->
+    <div class="subm-wallet">
+      <ion-icon name="wallet-outline"></ion-icon>
+      <span class="subm-wallet__label">Wallet balance</span>
+      <strong class="subm-wallet__amt">₹{{ wallet | number: '1.0-2' }}</strong>
+    </div>
+
+    <!-- Error -->
+    <div class="pg-card subm-error" *ngIf="error">
+      <ion-icon name="alert-circle-outline"></ion-icon><span>{{ error }}</span>
+    </div>
+
+    <!-- Loading -->
+    <ng-container *ngIf="loading && !plans.length">
+      <div class="dc-skeleton subm-skel"></div>
+      <div class="dc-skeleton subm-skel"></div>
+    </ng-container>
+
+    <!-- Plans -->
+    <app-plan-card
+      *ngFor="let p of plans"
+      [plan]="p"
+      [walletBalance]="wallet"
+      [buying]="buyingId === p.id"
+      [isCurrent]="isCurrent(p)"
+      (subscribe)="onSubscribe($event)"
+    ></app-plan-card>
+
+    <!-- Empty -->
+    <div class="pg-card" *ngIf="!loading && !plans.length && !error">
+      <div class="dc-empty">
+        <div class="dc-empty__icon"><ion-icon name="pricetags-outline"></ion-icon></div>
+        <strong>No plans available</strong>
+        <span>There are no subscription plans for you right now. Check back soon.</span>
+      </div>
+    </div>
+
+    <!-- Footer actions -->
+    <button class="subm-link" (click)="seeAll()" *ngIf="plans.length">See all plan details</button>
+    <button class="subm-later" (click)="close()">Maybe later</button>
+  </div>
+</ion-content>
