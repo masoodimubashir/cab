@@ -1,0 +1,64 @@
+<div class="plan-card dc-anim" [class.is-free]="commissionFree" [class.is-current]="isCurrent">
+
+  <!-- Recommended / Active highlight strip -->
+  <span class="plan-card__strip"></span>
+
+  <!-- Active ribbon (only when this is the driver's current plan) -->
+  <span class="plan-card__ribbon dc-badge dc-badge--ok pg-pop" *ngIf="isCurrent">
+    <ion-icon name="checkmark-circle"></ion-icon> Active
+  </span>
+
+  <!-- Title + "you keep %" value hero -->
+  <div class="plan-card__head">
+    <div class="plan-card__titles">
+      <h3 class="plan-card__title">{{ plan.title }}</h3>
+      <p class="plan-card__subtitle">{{ displaySubtitle }}</p>
+    </div>
+    <div class="plan-card__keep" *ngIf="!isCurrent" [class.is-free]="commissionFree">
+      <b>{{ keepPercent }}%</b>
+      <small>you keep</small>
+    </div>
+  </div>
+
+  <!-- Price -->
+  <div class="plan-card__price">
+    <span class="plan-card__amount">₹{{ plan.amount | number: '1.0-0' }}</span>
+    <span class="plan-card__period">{{ periodLabel }}</span>
+  </div>
+  <p class="plan-card__effective" *ngIf="effectiveCost">{{ effectiveCost }}</p>
+
+  <!-- Benefits checklist -->
+  <ul class="plan-card__features">
+    <li *ngFor="let f of features">
+      <span class="plan-card__check"><ion-icon name="checkmark"></ion-icon></span>
+      <span class="plan-card__ftext">{{ f.text }}</span>
+    </li>
+  </ul>
+
+  <!-- Wallet coverage (buy mode only) -->
+  <div class="plan-card__wallet" [class.is-ok]="walletCovers" *ngIf="!isCurrent">
+    <ion-icon [name]="walletCovers ? 'wallet-outline' : 'alert-circle-outline'"></ion-icon>
+    <span>{{ walletLine }}</span>
+  </div>
+
+  <!-- Terms (collapsible) -->
+  <div class="plan-card__terms" *ngIf="plan.terms">
+    <button type="button" class="dc-press" (click)="showTerms = !showTerms">
+      <ion-icon [name]="showTerms ? 'chevron-up-outline' : 'chevron-down-outline'"></ion-icon>
+      {{ showTerms ? 'Hide terms' : 'View terms' }}
+    </button>
+    <p *ngIf="showTerms">{{ plan.terms }}</p>
+  </div>
+
+  <!-- CTA -->
+  <button
+    class="dc-cta dc-press plan-card__cta"
+    [class.dc-cta--ghost]="isCurrent"
+    [disabled]="buying || isCurrent"
+    (click)="onSubscribe()"
+  >
+    <ion-spinner *ngIf="buying" name="crescent"></ion-spinner>
+    <span *ngIf="!buying && isCurrent">Current plan</span>
+    <span *ngIf="!buying && !isCurrent">Subscribe · ₹{{ plan.amount | number: '1.0-0' }}</span>
+  </button>
+</div>

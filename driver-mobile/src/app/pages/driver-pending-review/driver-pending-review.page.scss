@@ -1,33 +1,257 @@
-.locked-wrap {
-  text-align: center;
-  padding: 24px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* =============================================================================
+   Driver "Pending review" status screen.
+   Uses the global driver design system (theme/pages.scss): .drv-hero, .drv-badge,
+   .pg-card, .dc-cta, .dc-content/.dc-body, .pg-pop, .pg-anim-body, .drv-status.
+   Only page-specific pieces (hero copy, status icon, timeline, actions) live here.
+   ========================================================================== */
+
+.status-content {
+  --background: #F5F7FA;
 }
-.locked-icon {
-  width: 96px;
-  height: 96px;
+
+/* --------------------------------------------------------------- custom hero */
+.status-hero {
+  /* .drv-hero supplies the green→navy gradient + rounded bottom + padding. */
+  &__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  &__copy {
+    padding-bottom: 2px;
+  }
+
+  &__title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+    margin: 0;
+    color: #ffffff;
+  }
+
+  &__sub {
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin: 6px 0 0;
+    color: rgba(255, 255, 255, 0.82);
+    max-width: 320px;
+  }
+}
+
+/* Brand lockup inside the hero */
+.status-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .logo-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    &::before { content: ''; width: 4px; height: 4px; background: #fff; margin-left: -3px; }
+    .logo-dots { width: 4px; height: 4px; background: #fff; }
+    .logo-arrow {
+      width: 0; height: 0;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      border-left: 6px solid var(--ion-color-primary, #12B35B);
+    }
+  }
+
+  .brand-text {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+    color: #ffffff;
+  }
+}
+
+/* ----------------------------------------------------------------- body */
+.status-body {
+  /* pulls the first card up to overlap the rounded hero edge slightly */
+  margin-top: -14px;
+}
+
+/* ------------------------------------------------------------- status card */
+.status-card {
+  &--center {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 26px 20px 22px;
+  }
+
+  &__title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-main, #0D1B2A);
+    margin: 18px 0 0;
+    letter-spacing: -0.3px;
+    line-height: 1.3;
+  }
+
+  &__text {
+    font-size: 13.5px;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.55;
+    margin: 8px 0 0;
+    max-width: 320px;
+  }
+
+  &__chip {
+    margin-top: 16px;
+  }
+}
+
+/* ---------------------------------------------------------- big status icon */
+.status-icon {
+  position: relative;
+  width: 92px;
+  height: 92px;
   border-radius: 50%;
-  background: var(--ion-color-warning-tint, #ffe082);
-  color: var(--ion-color-warning-shade, #8b6b00);
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20px;
-  ion-icon { font-size: 56px; }
+
+  ion-icon { position: relative; z-index: 2; font-size: 44px; color: #ffffff; }
+
+  &__ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    z-index: 1;
+    animation: statusGlow 2.1s infinite ease-in-out;
+  }
+
+  &--loading {
+    background: #EDF1F5;
+    ion-spinner { --color: var(--ion-color-primary, #12B35B); width: 42px; height: 42px; }
+  }
+
+  &--review {
+    background: linear-gradient(135deg, #FBBF24, #F59E0B);
+    box-shadow: 0 12px 30px rgba(245, 158, 11, 0.30);
+    .status-icon__ring { background: rgba(245, 158, 11, 0.18); }
+  }
+
+  &--rejected {
+    background: linear-gradient(135deg, #F87171, #EF4444);
+    box-shadow: 0 12px 30px rgba(239, 68, 68, 0.30);
+    .status-icon__ring { background: rgba(239, 68, 68, 0.18); }
+  }
 }
-h2 {
-  margin: 4px 0 12px;
-  font-size: 1.35rem;
-}
-.muted {
-  color: var(--ion-color-medium, #666);
-  max-width: 460px;
-}
-.small { font-size: 0.85rem; margin-top: 8px; }
-.actions {
+
+/* -------------------------------------------------- verification timeline */
+.status-timeline-card .pg-card__icon ion-icon { color: var(--ion-color-primary, #12B35B); }
+
+.timeline {
   width: 100%;
-  max-width: 360px;
-  margin-top: 24px;
+}
+
+.tl-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+
+  .tl-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #E5E7EB;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    ion-icon { font-size: 16px; color: #ffffff; }
+    .pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #F59E0B; }
+  }
+
+  .tl-text {
+    padding-top: 3px;
+    strong { display: block; font-size: 14px; font-weight: 700; color: var(--text-main, #0D1B2A); }
+    span { display: block; font-size: 12px; color: var(--text-muted, #6C757D); margin-top: 1px; line-height: 1.35; }
+  }
+
+  /* Future (not-yet-reached) steps read muted. */
+  &:not(.is-done):not(.is-current):not(.is-bad) {
+    .tl-text strong { color: #9CA3AF; }
+  }
+
+  &.is-done .tl-dot { background: var(--ion-color-primary, #12B35B); }
+
+  &.is-current .tl-dot {
+    background: rgba(245, 158, 11, 0.15);
+    border: 2px solid #F59E0B;
+    .pulse-dot { animation: tlPulseDot 1.4s infinite ease-in-out; }
+  }
+
+  &.is-bad .tl-dot { background: #EF4444; }
+}
+
+.tl-line {
+  width: 2px;
+  height: 22px;
+  margin: 2px 0 2px 13px;
+  background: #E5E7EB;
+  border-radius: 2px;
+  &.is-done { background: var(--ion-color-primary, #12B35B); }
+  &.is-bad { background: #F59E0B; }
+}
+
+/* -------------------------------------------------------------------- actions */
+.status-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+/* Warning-flavoured re-upload CTA (extends global .dc-cta). */
+.status-cta--warning {
+  background: #F59E0B;
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.28);
+}
+
+.status-link {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-muted, #6C757D);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  margin-top: 2px;
+  cursor: pointer;
+  ion-icon { font-size: 16px; }
+  &:active { color: var(--text-main, #0D1B2A); }
+}
+
+/* --------------------------------------------------------------- animations */
+@keyframes statusGlow {
+  0%   { transform: scale(0.9); opacity: 0.8; }
+  50%  { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(0.9); opacity: 0; }
+}
+
+@keyframes tlPulseDot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.4); opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-icon__ring,
+  .tl-step.is-current .pulse-dot { animation: none; }
 }

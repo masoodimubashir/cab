@@ -1,0 +1,144 @@
+
+> mobile@0.0.1 dev:device
+> bash ../scripts/dev-device.sh 8200
+
+✅ Deploying live-reload to: 192.168.29.90:5555   (port 8200)
+   Leave this terminal open — every save hot-reloads on the phone.
+   Press Ctrl+C to stop.
+> capacitor sync android
+[capacitor] ✔ Copying web assets from www to android/app/src/main/assets/public in 167.96ms
+[capacitor] ✔ Creating capacitor.config.json in android/app/src/main/assets in 975.78μs
+[capacitor] ✔ copy android in 209.16ms
+[capacitor] ✔ Updating Android plugins in 7.20ms
+[capacitor] [info] Found 9 Capacitor plugins for android:
+[capacitor]        @capacitor-community/background-geolocation@1.2.26
+[capacitor]        @capacitor-firebase/authentication@8.2.0
+[capacitor]        @capacitor-firebase/messaging@8.2.0
+[capacitor]        @capacitor/app@8.1.0
+[capacitor]        @capacitor/geolocation@8.2.0
+[capacitor]        @capacitor/haptics@8.0.2
+[capacitor]        @capacitor/keyboard@8.0.3
+[capacitor]        @capacitor/push-notifications@8.0.4
+[capacitor]        @capacitor/status-bar@8.0.2
+[capacitor] ✔ update android in 66.80ms
+[capacitor] [info] Sync finished in 0.334s
+> ng run app:serve --host=0.0.0.0 --port=8200
+[ng] Warning: This is a simple server for use in testing or debugging Angular applications
+[ng] locally. It hasn't been reviewed for security issues.
+[ng] Binding this server to an open connection can result in compromising your application or
+[ng] computer. Using a different host than the one passed to the "--host" flag might result in
+[ng] websocket connection issues. You might need to use "--disable-host-check" if that's the
+[ng] case.
+[ng]     
+[ng] - Generating browser application bundles (phase: setup)...
+[ng] ✔ Browser application bundle generation complete.
+[ng] Initial chunk files                                                                                     | Names                                                    |  Raw size
+[ng] vendor.js                                                                                               | vendor                                                   |   4.41 MB | 
+[ng] polyfills.js                                                                                            | polyfills                                                | 242.15 kB | 
+[ng] styles.css, styles.js                                                                                   | styles                                                   | 181.87 kB | 
+[ng] main.js                                                                                                 | main                                                     |  85.29 kB | 
+[ng] runtime.js                                                                                              | runtime                                                  |  13.12 kB | 
+[ng]                                                                                                         | Initial total                                            |   4.93 MB
+[ng] Lazy chunk files                                                                                        | Names                                                    |  Raw size
+[ng] src_app_auth_login_login_module_ts.js                                                                   | auth-login-login-module                                  | 601.50 kB | 
+[ng] src_app_pages_rides_rides_module_ts.js                                                                  | pages-rides-rides-module                                 | 287.98 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-datetime_3_entry_js.js                                             | -                                                        | 159.53 kB | 
+[ng] default-node_modules_firebase_app_dist_esm_index_esm_js.js                                              | auth-login-login-module                                  | 157.59 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-modal_entry_js.js                                                  | -                                                        | 139.06 kB | 
+[ng] node_modules_capacitor-firebase_messaging_dist_esm_web_js.js                                            | web                                                      | 117.18 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-app_8_entry_js.js                                                  | -                                                        |  88.61 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-select_3_entry_js.js                                               | -                                                        |  82.52 kB | 
+[ng] common.js                                                                                               | common                                                   |  81.75 kB | 
+[ng] src_app_pages_driver-registration_driver-registration_module_ts.js                                      | pages-driver-registration-driver-registration-module     |  79.12 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-popover_entry_js.js                                                | -                                                        |  71.97 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-item_8_entry_js.js                                                 | -                                                        |  70.98 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-textarea_entry_js.js                                               | -                                                        |  64.16 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-refresher_2_entry_js.js                                            | -                                                        |  61.24 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-input_entry_js.js                                                  | -                                                        |  60.70 kB | 
+[ng] default-node_modules_ionic_core_dist_esm_data-B9iGR5YO_js.js                                            | -                                                        |  60.12 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-range_entry_js.js                                                  | -                                                        |  56.28 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-alert_entry_js.js                                                  | -                                                        |  56.06 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-menu_3_entry_js.js                                                 | -                                                        |  50.03 kB | 
+[ng] src_app_pages_emergency-contacts_emergency-contacts_module_ts.js                                        | pages-emergency-contacts-emergency-contacts-module       |  49.61 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-segment_2_entry_js.js                                              | -                                                        |  49.37 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-toast_entry_js.js                                                  | -                                                        |  49.23 kB | 
+[ng] src_app_pages_profile_profile_module_ts.js                                                              | pages-profile-profile-module                             |  47.95 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-button_2_entry_js.js                                               | -                                                        |  45.02 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-action-sheet_entry_js.js                                           | -                                                        |  42.86 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-input-otp_entry_js.js                                              | -                                                        |  42.18 kB | 
+[ng] src_app_pages_dashboard_dashboard_module_ts.js                                                          | pages-dashboard-dashboard-module                         |  41.03 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-searchbar_entry_js.js                                              | -                                                        |  39.17 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-nav_2_entry_js.js                                                  | -                                                        |  38.76 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-item-option_3_entry_js.js                                          | -                                                        |  36.16 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-toggle_entry_js.js                                                 | -                                                        |  35.18 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-route_4_entry_js.js                                                | -                                                        |  34.88 kB | 
+[ng] src_app_pages_subscriptions_subscriptions_module_ts.js                                                  | pages-subscriptions-subscriptions-module                 |  34.58 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-radio_2_entry_js.js                                                | -                                                        |  34.00 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-accordion_2_entry_js.js                                            | -                                                        |  32.77 kB | 
+[ng] src_app_pages_trip-history_trip-history_module_ts.js                                                    | pages-trip-history-trip-history-module                   |  32.01 kB | 
+[ng] src_app_pages_earnings_earnings_module_ts.js                                                            | pages-earnings-earnings-module                           |  30.64 kB | 
+[ng] node_modules_ionic_core_dist_esm_input-shims-AaDhOpKN_js.js                                             | input-shims-AaDhOpKN-js                                  |  30.28 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-picker-column_entry_js.js                                          | -                                                        |  29.28 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-fab_3_entry_js.js                                                  | -                                                        |  28.73 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-checkbox_entry_js.js                                               | -                                                        |  26.86 kB | 
+[ng] src_app_pages_payment-methods_payment-methods_module_ts.js                                              | pages-payment-methods-payment-methods-module             |  25.68 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-tab-bar_2_entry_js.js                                              | -                                                        |  25.51 kB | 
+[ng] src_app_pages_wallet_wallet_module_ts.js                                                                | pages-wallet-wallet-module                               |  24.95 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-picker_entry_js.js                                                 | -                                                        |  24.72 kB | 
+[ng] src_app_pages_more_more_module_ts.js                                                                    | pages-more-more-module                                   |  23.53 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-breadcrumb_2_entry_js.js                                           | -                                                        |  23.02 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-progress-bar_entry_js.js                                           | -                                                        |  22.89 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-datetime-button_entry_js.js                                        | -                                                        |  20.96 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-loading_entry_js.js                                                | -                                                        |  20.35 kB | 
+[ng] src_app_pages_driver-pending-review_driver-pending-review_module_ts.js                                  | pages-driver-pending-review-driver-pending-review-module |  19.66 kB | 
+[ng] src_app_pages_delete-account_delete-account_module_ts.js                                                | pages-delete-account-delete-account-module               |  18.36 kB | 
+[ng] src_app_pages_performance_performance_module_ts.js                                                      | pages-performance-performance-module                     |  17.02 kB | 
+[ng] node_modules_ionic_core_components_p-CBzELu-H_js.js                                                     | p-CBzELu-H-js                                            |  16.86 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-card_5_entry_js.js                                                 | -                                                        |  16.34 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-back-button_entry_js.js                                            | -                                                        |  16.09 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-infinite-scroll_2_entry_js.js                                      | -                                                        |  15.24 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-reorder_2_entry_js.js                                              | -                                                        |  15.06 kB | 
+[ng] default-node_modules_ionic_core_dist_esm_input_utils-Bxa_DQ7-_js-node_modules_ionic_core_dist-66891c.js | -                                                        |  13.33 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-col_3_entry_js.js                                                  | -                                                        |  13.31 kB | 
+[ng] src_app_pages_intro_intro_module_ts.js                                                                  | pages-intro-intro-module                                 |  13.13 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-tab_2_entry_js.js                                                  | -                                                        |  11.85 kB | 
+[ng] src_app_tabs_tabs_module_ts.js                                                                          | tabs-tabs-module                                         |  11.27 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-select-modal_entry_js.js                                           | -                                                        |   9.97 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-spinner_entry_js.js                                                | -                                                        |   8.72 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-chip_entry_js.js                                                   | -                                                        |   8.34 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-split-pane_entry_js.js                                             | -                                                        |   7.76 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-segment-view_entry_js.js                                           | -                                                        |   6.97 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-ripple-effect_entry_js.js                                          | -                                                        |   6.87 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-picker-column-option_entry_js.js                                   | -                                                        |   6.42 kB | 
+[ng] node_modules_capacitor_geolocation_dist_esm_web_js.js                                                   | web                                                      |   6.38 kB | 
+[ng] node_modules_ionic_core_dist_esm_index-BtUdxPjv_js.js                                                   | index-BtUdxPjv-js                                        |   6.10 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-avatar_3_entry_js.js                                               | -                                                        |   5.96 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-input-password-toggle_entry_js.js                                  | -                                                        |   5.34 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-img_entry_js.js                                                    | -                                                        |   4.98 kB | 
+[ng] node_modules_capacitor_app_dist_esm_web_js.js                                                           | web                                                      |   3.36 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-backdrop_entry_js.js                                               | -                                                        |   3.16 kB | 
+[ng] node_modules_ionic_core_dist_esm_status-tap-BfJqFSLF_js.js                                              | status-tap-BfJqFSLF-js                                   |   2.84 kB | 
+[ng] node_modules_ionic_core_components_p-CU1SSH8__js.js                                                     | p-CU1SSH8_-js                                            |   2.32 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-text_entry_js.js                                                   | -                                                        |   1.91 kB | 
+[ng] node_modules_ionic_core_dist_esm_ion-segment-content_entry_js.js                                        | -                                                        |   1.73 kB | 
+[ng] Build at: 2026-05-31T08:16:18.678Z - Hash: 61b19c1f0227891c - Time: 13505ms
+[ng] ✔ Compiled successfully.
+[ng] Warning: /home/mubashir/Desktop/Projects/cab/driver-mobile/src/app/core/realtime.service.ts depends on 'pusher-js'. CommonJS or AMD dependencies can cause optimization bailouts.
+[ng] For more info see: https://angular.dev/tools/cli/build#configuring-commonjs-dependencies
+
+[[40mINFO[49m] Development server running!
+       
+       Local: http://localhost:8200
+       External: http://192.168.29.13:8200
+       
+       Use Ctrl+C to quit this process
+
+> capacitor run android --no-sync --target 192.168.29.90:5555
+[capacitor] ✔ Running Gradle build in 5.66s
+[capacitor] ✔ Deploying app-debug.apk to 192.168.29.90:5555 in 23.67s
+
+[[40mINFO[49m] App deployed to device!
+       
+       Development server will continue running until manually stopped.
+       
+       Use Ctrl+C to quit this process

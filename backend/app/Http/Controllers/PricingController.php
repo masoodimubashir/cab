@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\City;
 use App\Models\CityRideProduct;
 use App\Models\CityVehicleType;
+use App\Models\OperatorSetting;
 use App\Models\OutstationPackage;
 use App\Models\RideType;
 use App\Models\PricingRule;
@@ -153,6 +154,25 @@ class PricingController extends Controller
         $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
         if (!$pricingRule) {
             return response()->json(['message' => 'Pricing rule not set for this vehicle.'], 404);
+        }
+
+        // Surface the destination geofence early — when the operator enabled the
+        // check, refuse to quote a fare to a drop-off outside the city boundary.
+        if (OperatorSetting::instance()->check_destination_outside_geofence) {
+            $city = City::query()->find($pricingRule->city_id);
+            if (
+                $city
+                && !empty($city->boundary_polygon)
+                && !$dynamicPricingService->pointInPolygon(
+                    (float) $data['drop_lat'],
+                    (float) $data['drop_lng'],
+                    $city->boundary_polygon,
+                )
+            ) {
+                return response()->json([
+                    'message' => 'Destination is outside the service area for ' . $city->name . '.',
+                ], 422);
+            }
         }
 
         $dynamicRule = $dynamicPricingService->findApplicable(

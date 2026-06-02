@@ -1,102 +1,178 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start" *ngIf="!onboarding">
-      <ion-button (click)="back()" aria-label="Back">
-        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+    </ion-buttons>
+    <ion-title class="pg-brandtitle">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+    </ion-title>
+    <ion-buttons slot="end" *ngIf="!onboarding">
+      <ion-button class="pg-action" (click)="reload()" aria-label="Reload">
+        <ion-icon name="refresh-outline" slot="start"></ion-icon>
+        Refresh
       </ion-button>
     </ion-buttons>
-    <ion-title>{{ onboarding ? 'Set up your profile' : 'Profile' }}</ion-title>
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="ion-padding">
-  <p class="muted small" *ngIf="onboarding">
-    Tell us who you are. You can update this later from the More tab.
-  </p>
-
-  <div class="avatar-wrap">
-    <label class="avatar-edit">
-      <div
-        class="avatar"
-        [style.backgroundImage]="photoPreview ? 'url(' + photoPreview + ')' : null"
-      ></div>
-      <span class="plus-badge">+</span>
-      <input type="file" accept="image/*" hidden (change)="onPhotoChange($event)" [disabled]="busy" />
-    </label>
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <h1 class="pg-title">{{ onboarding ? 'Set up your profile' : 'Profile' }}</h1>
+    <p class="pg-subtitle">
+      {{ onboarding
+          ? 'Tell us who you are. You can update this later from the More tab.'
+          : 'Manage your photo and personal details.' }}
+    </p>
   </div>
 
-  <ion-item lines="full">
-    <ion-label position="stacked">Name *</ion-label>
-    <ion-input [(ngModel)]="name" [disabled]="busy" autocomplete="name" required></ion-input>
-  </ion-item>
+  <div class="pg-body pg-anim-body">
 
-  <ion-item lines="full">
-    <ion-label position="stacked">Email (optional)</ion-label>
-    <ion-input type="email" [(ngModel)]="email" [disabled]="busy" autocomplete="email"></ion-input>
-  </ion-item>
+    <!-- Profile header card: avatar (with edit) + name + driver status -->
+    <div class="pg-card pf-head">
+      <label class="pf-avatar dc-press">
+        <img
+          class="pf-avatar__img"
+          [src]="photoPreview || defaultAvatar"
+          (error)="onPhotoError($event)"
+          alt=""
+        />
+        <span class="pf-avatar__edit"><ion-icon name="camera-outline"></ion-icon></span>
+        <input type="file" accept="image/*" hidden (change)="onPhotoChange($event)" [disabled]="busy" />
+      </label>
+      <div class="pf-head__meta">
+        <strong class="pf-head__name">{{ name || 'Your name' }}</strong>
+        <small class="pf-head__sub" *ngIf="phone">{{ phone }}</small>
+        <small class="pf-head__sub" *ngIf="onboarding && !phone">Add a photo &amp; your details</small>
+        <span class="drv-status" *ngIf="!onboarding">
+          <span class="drv-status__dot"></span>Driver account
+        </span>
+      </div>
+    </div>
 
-  <!-- Onboarding (editable): native date picker + Places autocomplete -->
-  <ng-container *ngIf="onboarding">
-    <ion-item lines="full">
-      <ion-label position="stacked">Date of birth *</ion-label>
-      <ion-input
-        type="date"
-        [(ngModel)]="dob"
-        [max]="maxDob"
-        [disabled]="busy"
-        required
-      ></ion-input>
-    </ion-item>
+    <!-- Personal details -->
+    <div class="pg-card pf-form">
+      <div class="pg-card__head">
+        <div class="pg-card__icon"><ion-icon name="person-circle-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Your details</h2>
+      </div>
 
-    <ion-item lines="full" class="address-item">
-      <ion-label position="stacked">Address *</ion-label>
-      <ion-input
-        type="text"
-        [(ngModel)]="addressQuery"
-        (ionInput)="onAddressQueryChange($event.detail.value)"
-        [disabled]="busy"
-        placeholder="Search your address"
-        autocomplete="street-address"
-        required
-      ></ion-input>
-    </ion-item>
-    <ul class="address-suggestions" *ngIf="addressSuggestions.length && !address">
-      <li
-        *ngFor="let s of addressSuggestions"
-        class="address-suggestion"
-        (click)="pickAddress(s)"
-      >
-        <ion-icon name="location-outline"></ion-icon>
-        <div class="address-suggestion__text">
-          <span class="address-suggestion__main">{{ s.main_text }}</span>
-          <span class="address-suggestion__sub" *ngIf="s.secondary_text">{{ s.secondary_text }}</span>
+      <label class="pf-field">
+        <span class="pf-field__label">Name <em>*</em></span>
+        <input
+          class="pf-input"
+          [(ngModel)]="name"
+          [disabled]="busy"
+          autocomplete="name"
+          placeholder="Full name"
+          required
+        />
+      </label>
+
+      <label class="pf-field">
+        <span class="pf-field__label">Email <small>(optional)</small></span>
+        <div class="pf-input pf-input--locked">
+          <input
+            type="email"
+            [(ngModel)]="email"
+            [disabled]="true"
+            readonly
+            autocomplete="email"
+            placeholder="you@example.com"
+          />
+          <ion-icon name="lock-closed-outline"></ion-icon>
         </div>
-      </li>
-    </ul>
-    <div class="address-empty" *ngIf="!addressSuggestions.length && addressLoading">Searching…</div>
-  </ng-container>
+      </label>
 
-  <!-- Edit mode (locked): captured once at signup, not editable later -->
-  <ng-container *ngIf="!onboarding">
-    <ion-item lines="full">
-      <ion-label position="stacked">Date of birth</ion-label>
-      <ion-input [value]="dobDisplay || '—'" disabled></ion-input>
-    </ion-item>
+      <!-- Onboarding (editable): native date picker + Places autocomplete -->
+      <ng-container *ngIf="onboarding">
+        <label class="pf-field">
+          <span class="pf-field__label">Date of birth <em>*</em></span>
+          <input
+            class="pf-input"
+            type="date"
+            [(ngModel)]="dob"
+            [max]="maxDob"
+            [disabled]="busy"
+            required
+          />
+        </label>
 
-    <ion-item lines="full">
-      <ion-label position="stacked">Address</ion-label>
-      <ion-input [value]="address || '—'" disabled></ion-input>
-    </ion-item>
-  </ng-container>
+        <div class="pf-field pf-field--address">
+          <span class="pf-field__label">Address <em>*</em></span>
+          <input
+            class="pf-input"
+            type="text"
+            [(ngModel)]="addressQuery"
+            (input)="onAddressQueryChange($any($event.target).value)"
+            [disabled]="busy"
+            placeholder="Search your address"
+            autocomplete="street-address"
+            required
+          />
+          <ul class="pf-suggestions" *ngIf="addressSuggestions.length && !address">
+            <li
+              *ngFor="let s of addressSuggestions"
+              class="pf-suggestion dc-press"
+              (click)="pickAddress(s)"
+            >
+              <ion-icon name="location-outline"></ion-icon>
+              <div class="pf-suggestion__text">
+                <span class="pf-suggestion__main">{{ s.main_text }}</span>
+                <span class="pf-suggestion__sub" *ngIf="s.secondary_text">{{ s.secondary_text }}</span>
+              </div>
+            </li>
+          </ul>
+          <div class="pf-searching" *ngIf="!addressSuggestions.length && addressLoading">Searching…</div>
+        </div>
+      </ng-container>
+    </div>
 
-  <ion-item lines="full" *ngIf="phone">
-    <ion-label position="stacked">Phone</ion-label>
-    <ion-input [value]="phone" disabled></ion-input>
-  </ion-item>
+    <!-- Edit mode (locked): captured once at signup, not editable later -->
+    <div class="pg-card pf-locked" *ngIf="!onboarding">
+      <div class="pg-card__head">
+        <div class="pg-card__icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Verified information</h2>
+      </div>
 
-  <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+      <div class="dc-list">
+        <div class="dc-row pf-row">
+          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="calendar-outline"></ion-icon></span>
+          <span class="dc-row__text">
+            <strong>Date of birth</strong>
+            <small>{{ dobDisplay || '—' }}</small>
+          </span>
+          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+        </div>
 
-  <ion-button expand="block" class="ion-margin-top" (click)="submit()" [disabled]="busy">
-    {{ busy ? 'Saving…' : (onboarding ? 'Continue' : 'Save') }}
-  </ion-button>
+        <div class="dc-row pf-row">
+          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="location-outline"></ion-icon></span>
+          <span class="dc-row__text">
+            <strong>Address</strong>
+            <small>{{ address || '—' }}</small>
+          </span>
+          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+        </div>
+
+        <div class="dc-row pf-row" *ngIf="phone">
+          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="call-outline"></ion-icon></span>
+          <span class="dc-row__text">
+            <strong>Phone</strong>
+            <small>{{ phone }}</small>
+          </span>
+          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-error" *ngIf="error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>{{ error }}</span>
+    </div>
+
+    <button class="dc-cta pf-save" (click)="submit()" [disabled]="busy">
+      <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
+      {{ busy ? 'Saving…' : (onboarding ? 'Continue' : 'Save changes') }}
+    </button>
+
+  </div>
 </ion-content>

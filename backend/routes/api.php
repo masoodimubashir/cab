@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\AdminRideTypesController;
 use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
 use App\Http\Controllers\Admin\AdminOperatorSettingsController;
+use App\Http\Controllers\Admin\AdminDataSubjectRequestsController;
 use App\Http\Controllers\Admin\AdminContactDriversController;
 use App\Http\Controllers\Admin\AdminDispatcherSettingsController;
 use App\Http\Controllers\Admin\AdminDispatchController;
@@ -36,6 +37,7 @@ use App\Http\Controllers\Admin\AdminReportsController;
 use App\Http\Controllers\TripTrackingController;
 use App\Http\Controllers\RideAssignmentController;
 use App\Http\Controllers\PaymentsController;
+use App\Http\Controllers\CustomerCouponsController;
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InvoicesController;
 use App\Http\Controllers\RatingsController;
@@ -256,6 +258,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
         Route::post('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
 
+        // Data Subject Access Requests (DSAR / data rights) — append-only queue.
+        Route::get('/admin/data-subject-requests', [AdminDataSubjectRequestsController::class, 'index']);
+        Route::post('/admin/data-subject-requests', [AdminDataSubjectRequestsController::class, 'store']);
+        Route::patch('/admin/data-subject-requests/{dataSubjectRequest}', [AdminDataSubjectRequestsController::class, 'update']);
+
         Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
         Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
         Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
@@ -418,10 +425,13 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/tip', [TripsController::class, 'tip']);
     Route::get('/customer/trips/history', [RatingsController::class, 'historyCustomer']);
     Route::get('/customer/trips/{trip}', [RatingsController::class, 'customerTripDetail']);
+    Route::get('/me/coupons', [CustomerCouponsController::class, 'index']);
 });
 
 // Public operator config slices used by the customer/driver apps.
 Route::middleware('auth:sanctum')->get('/operator/tipping', [OperatorPublicController::class, 'tipping']);
+Route::middleware('auth:sanctum')->get('/operator/subscription-popup', [OperatorPublicController::class, 'subscriptionPopup']);
+Route::middleware('auth:sanctum')->get('/operator/driver-payment-modes', [OperatorPublicController::class, 'driverPaymentModes']);
 
 Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayWebhook'])->middleware('throttle:webhooks');
 

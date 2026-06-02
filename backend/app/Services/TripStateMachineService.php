@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\OperatorSetting;
 use App\Models\Trip;
 use App\Models\User;
 use App\Events\TripStatusUpdated;
@@ -13,6 +14,7 @@ class TripStateMachineService
         private NotificationService $notificationService,
         private FareEstimationService $fareEstimationService,
         private CommissionSettlementService $commissionSettlementService,
+        private MessageTemplateService $messageTemplates,
     ) {
     }
 
@@ -121,6 +123,25 @@ class TripStateMachineService
                 $customer = User::query()->find($customerId);
                 if ($customer) {
                     [$title, $body] = $customerMessages[$to];
+
+                    // Operator-customisable bodies (Operator Settings → Templates).
+                    // Only the ride-accept (ASSIGNED) and cancellation messages are
+                    // editable; everything else keeps its built-in copy.
+                    $settings = OperatorSetting::instance();
+                    $template = $to === 'ASSIGNED'
+                        ? $settings->customer_ride_accept_msg
+                        : ($to === 'CANCELLED' ? $settings->ride_cancellation_msg : null);
+
+                    if (filled($template)) {
+                        $rendered = $this->messageTemplates->render(
+                            $template,
+                            $this->templateVars($tripId, $customer, $meta),
+                        );
+                        if ($rendered !== '') {
+                            $body = $rendered;
+                        }
+                    }
+
                     $this->notificationService->sendToUser($customer, $title, $body, [
                         'type' => 'trip_status',
                         'trip_id' => $tripId,
@@ -131,6 +152,23 @@ class TripStateMachineService
         });
 
         return $trip->fresh();
+    }
+
+    /**
+     * Token values for the operator's notification templates. Tokens with no
+     * data source today (vehicle_no, eta, link) are intentionally absent so the
+     * renderer strips them rather than leaking the raw placeholder.
+     */
+    private function templateVars(int $tripId, User $customer, array $meta): array
+    {
+        $trip = Trip::query()->with('driver:id,name')->find($tripId);
+
+        return [
+            'customer_name' => (string) ($customer->name ?? ''),
+            'driver_name' => (string) ($trip?->driver?->name ?? ''),
+            'operator_name' => (string) config('app.name', ''),
+            'engagement_id' => (string) $tripId,
+        ];
     }
 }
 

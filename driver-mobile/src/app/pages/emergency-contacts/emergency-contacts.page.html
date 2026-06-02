@@ -1,154 +1,162 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
-      <ion-button (click)="back()" aria-label="Back">
-        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
-      </ion-button>
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
-    <ion-title>Emergency &amp; Support</ion-title>
-  </ion-toolbar>
-  <ion-toolbar>
-    <ion-segment [(ngModel)]="segment" mode="md">
-      <ion-segment-button value="contacts">
-        <ion-label>My Contacts</ion-label>
-      </ion-segment-button>
-      <ion-segment-button value="support">
-        <ion-label>Support</ion-label>
-      </ion-segment-button>
-    </ion-segment>
+    <ion-buttons slot="end">
+      <button class="pg-action dc-press" (click)="refresh()" aria-label="Reload">
+        <ion-icon name="refresh-outline"></ion-icon>
+        Reload
+      </button>
+    </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content>
-  <!-- ─────────────  My Contacts  ───────────── -->
-  <div class="page-pad" *ngIf="segment === 'contacts'">
-    <p class="muted small">
-      Save trusted friends and family numbers here. You'll be able to quickly
-      reach them in an SOS situation.
-    </p>
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <h1 class="pg-title">Emergency contacts</h1>
+    <p class="pg-subtitle">Your trusted SOS list. We can reach these people instantly if something goes wrong on a trip.</p>
+    <div class="ec-herostat" *ngIf="!loading">
+      <span class="drv-status">
+        <span class="drv-status__dot"></span>
+        {{ contacts.length }} saved
+      </span>
+    </div>
+  </div>
 
-    <div class="action-row">
-      <ion-button expand="block" (click)="openAdd()">
-        <ion-icon name="add-outline" slot="start"></ion-icon>
+  <div class="pg-body pg-anim-body">
+    <!-- Add actions: always show both -->
+    <div class="ec-actions">
+      <button class="dc-cta dc-press" (click)="pickFromPhone()">
+        <ion-icon name="people-outline"></ion-icon>
+        Add from phone
+      </button>
+      <button class="dc-cta dc-cta--ghost dc-press" (click)="openAdd()">
+        <ion-icon name="add-outline"></ion-icon>
         Add manually
-      </ion-button>
-      <ion-button expand="block" fill="outline" *ngIf="pickerSupported" (click)="pickFromPhone()">
-        <ion-icon name="people-outline" slot="start"></ion-icon>
-        Pick from phone contacts
-      </ion-button>
+      </button>
     </div>
 
-    <ion-text color="danger" *ngIf="error"><p class="ion-padding-horizontal">{{ error }}</p></ion-text>
+    <p class="dc-error" *ngIf="error && !dialogOpen">{{ error }}</p>
 
-    <ion-list inset="true" *ngIf="!loading && contacts.length; else emptyState">
-      <ion-item-sliding *ngFor="let c of contacts">
-        <ion-item>
-          <ion-icon
-            [name]="c.is_primary ? 'star' : 'person-outline'"
-            [color]="c.is_primary ? 'warning' : undefined"
-            slot="start"
-          ></ion-icon>
-          <ion-label (click)="openEdit(c)" button>
-            <h2>{{ c.name }} <ion-text color="medium" *ngIf="c.is_primary"><small>(primary)</small></ion-text></h2>
-            <p>{{ c.phone }}<span *ngIf="c.relationship"> · {{ c.relationship }}</span></p>
-          </ion-label>
-          <ion-button slot="end" fill="clear" (click)="confirmDelete(c)" aria-label="Delete">
-            <ion-icon name="trash-outline" color="danger" slot="icon-only"></ion-icon>
-          </ion-button>
-        </ion-item>
-        <ion-item-options side="end">
-          <ion-item-option color="danger" (click)="confirmDelete(c)">
-            <ion-icon name="trash-outline" slot="icon-only"></ion-icon>
-          </ion-item-option>
-        </ion-item-options>
-      </ion-item-sliding>
-    </ion-list>
+    <!-- Loading skeletons -->
+    <div class="dc-list" *ngIf="loading">
+      <div class="ec-skelrow">
+        <div class="dc-skeleton ec-skelrow__avatar"></div>
+        <div class="ec-skelrow__lines">
+          <div class="dc-skeleton" style="height:13px; width:55%"></div>
+          <div class="dc-skeleton" style="height:11px; width:38%"></div>
+        </div>
+      </div>
+      <div class="ec-skelrow">
+        <div class="dc-skeleton ec-skelrow__avatar"></div>
+        <div class="ec-skelrow__lines">
+          <div class="dc-skeleton" style="height:13px; width:62%"></div>
+          <div class="dc-skeleton" style="height:11px; width:30%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contacts list -->
+    <ng-container *ngIf="!loading">
+      <p class="dc-section" *ngIf="contacts.length">MY EMERGENCY CONTACTS</p>
+
+      <div class="dc-list dc-stagger" *ngIf="contacts.length; else emptyState">
+        <div class="dc-row ec-row" *ngFor="let c of contacts">
+          <button class="ec-row__main" (click)="openEdit(c)">
+            <span class="dc-row__icon ec-avatar" [class.ec-avatar--primary]="c.is_primary">
+              {{ initial(c.name) }}
+            </span>
+            <span class="dc-row__text">
+              <strong>
+                {{ c.name }}
+                <span class="dc-badge dc-badge--ok" *ngIf="c.is_primary">Primary</span>
+              </strong>
+              <small>
+                {{ c.phone }}<span *ngIf="c.relationship"> · {{ c.relationship }}</span>
+              </small>
+            </span>
+          </button>
+
+          <button class="ec-action ec-action--call dc-press" (click)="callNumber(c.phone)" aria-label="Call">
+            <ion-icon name="call-outline"></ion-icon>
+          </button>
+          <button class="ec-action ec-action--delete dc-press" (click)="confirmDelete(c)" aria-label="Delete">
+            <ion-icon name="trash-outline"></ion-icon>
+          </button>
+        </div>
+      </div>
+    </ng-container>
 
     <ng-template #emptyState>
-      <div *ngIf="!loading" class="empty">
-        <ion-icon name="people-outline"></ion-icon>
-        <p>No emergency numbers yet.</p>
-      </div>
-      <div *ngIf="loading" class="empty">
-        <ion-spinner name="crescent"></ion-spinner>
+      <div class="dc-empty dc-anim">
+        <div class="dc-empty__icon">
+          <ion-icon name="people-outline"></ion-icon>
+        </div>
+        <strong>No emergency contacts yet</strong>
+        <span>Add a trusted contact from your phone or enter one manually above.</span>
       </div>
     </ng-template>
   </div>
 
-  <!-- ─────────────  Support  ───────────── -->
-  <div class="page-pad" *ngIf="segment === 'support'">
-    <p class="muted small">
-      Official numbers from your operator. Tap to call or email.
-    </p>
-
-    <ion-text color="danger" *ngIf="supportError"><p>{{ supportError }}</p></ion-text>
-
-    <div *ngIf="supportLoading" class="empty"><ion-spinner name="crescent"></ion-spinner></div>
-
-    <ion-list inset="true" *ngIf="!supportLoading && support">
-      <ion-item button (click)="callNumber(support.emergency_police_no)" [disabled]="!support.emergency_police_no">
-        <ion-icon name="shield-outline" color="danger" slot="start"></ion-icon>
-        <ion-label>
-          <h2>Police</h2>
-          <p>{{ support.emergency_police_no || 'Not configured' }}</p>
-        </ion-label>
-        <ion-icon name="call-outline" color="primary" slot="end" *ngIf="support.emergency_police_no"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="callNumber(support.driver_support_no)" [disabled]="!support.driver_support_no">
-        <ion-icon name="headset-outline" color="primary" slot="start"></ion-icon>
-        <ion-label>
-          <h2>Driver support</h2>
-          <p>{{ support.driver_support_no || 'Not configured' }}</p>
-        </ion-label>
-        <ion-icon name="call-outline" color="primary" slot="end" *ngIf="support.driver_support_no"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="emailSupport(support.support_email)" [disabled]="!support.support_email">
-        <ion-icon name="mail-outline" color="primary" slot="start"></ion-icon>
-        <ion-label>
-          <h2>Support email</h2>
-          <p>{{ support.support_email || 'Not configured' }}</p>
-        </ion-label>
-        <ion-icon name="arrow-forward-outline" color="medium" slot="end" *ngIf="support.support_email"></ion-icon>
-      </ion-item>
-    </ion-list>
-  </div>
-
   <!-- ── Add / edit dialog ── -->
-  <ion-modal [isOpen]="dialogOpen" (didDismiss)="dialogOpen = false">
+  <ion-modal class="ec-modal" [isOpen]="dialogOpen" (didDismiss)="dialogOpen = false">
     <ng-template>
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-title>{{ form.id ? 'Edit contact' : 'New contact' }}</ion-title>
+      <ion-header class="ion-no-border">
+        <ion-toolbar class="pg-toolbar">
+          <ion-title>{{ form.id ? 'Edit contact' : 'Add contact' }}</ion-title>
           <ion-buttons slot="end">
             <ion-button (click)="dialogOpen = false">Close</ion-button>
           </ion-buttons>
         </ion-toolbar>
       </ion-header>
-      <ion-content class="ion-padding">
-        <ion-item lines="full">
-          <ion-label position="stacked">Name *</ion-label>
-          <ion-input [(ngModel)]="form.name" [disabled]="saving"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label position="stacked">Phone *</ion-label>
-          <ion-input type="tel" [(ngModel)]="form.phone" [disabled]="saving" placeholder="+91 9876543210"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label position="stacked">Relationship</ion-label>
-          <ion-input [(ngModel)]="form.relationship" [disabled]="saving" placeholder="e.g. Spouse, Brother"></ion-input>
-        </ion-item>
-        <ion-item lines="full">
-          <ion-label>Primary contact</ion-label>
-          <ion-toggle slot="end" [(ngModel)]="form.is_primary" [disabled]="saving"></ion-toggle>
-        </ion-item>
 
-        <ion-text color="danger" *ngIf="error"><p>{{ error }}</p></ion-text>
+      <ion-content class="pg-content">
+        <div class="pg-hero">
+          <h1 class="pg-title">{{ form.id ? 'Edit contact' : 'New contact' }}</h1>
+          <p class="pg-subtitle">A trusted friend or family member we can call in an emergency.</p>
+        </div>
 
-        <ion-button expand="block" class="ion-margin-top" (click)="submit()" [disabled]="saving">
-          {{ saving ? 'Saving…' : 'Save' }}
-        </ion-button>
+        <div class="pg-body pg-anim-body">
+          <div class="pg-card ec-form">
+            <div class="pg-card__head">
+              <div class="pg-card__icon">
+                <ion-icon name="person-outline"></ion-icon>
+              </div>
+              <h2 class="pg-card__title">Contact details</h2>
+            </div>
+
+            <label class="ec-field">
+              <span class="ec-field__label">Name <em>*</em></span>
+              <input class="ec-field__input" [(ngModel)]="form.name" [disabled]="saving" placeholder="Full name" />
+            </label>
+
+            <label class="ec-field">
+              <span class="ec-field__label">Phone <em>*</em></span>
+              <input class="ec-field__input" type="tel" [(ngModel)]="form.phone" [disabled]="saving" placeholder="+91 9876543210" />
+            </label>
+
+            <label class="ec-field">
+              <span class="ec-field__label">Relationship</span>
+              <input class="ec-field__input" [(ngModel)]="form.relationship" [disabled]="saving" placeholder="e.g. Spouse, Brother" />
+            </label>
+
+            <div class="ec-field ec-field--row">
+              <span class="ec-field__text">
+                <span class="ec-field__label">Primary contact</span>
+                <small class="ec-field__hint">Called first in an SOS</small>
+              </span>
+              <ion-toggle [(ngModel)]="form.is_primary" [disabled]="saving"></ion-toggle>
+            </div>
+          </div>
+
+          <p class="dc-error" *ngIf="error">{{ error }}</p>
+
+          <button class="dc-cta dc-press" (click)="submit()" [disabled]="saving">
+            <ion-spinner *ngIf="saving" name="crescent"></ion-spinner>
+            <span *ngIf="!saving">Save contact</span>
+          </button>
+        </div>
       </ion-content>
     </ng-template>
   </ion-modal>

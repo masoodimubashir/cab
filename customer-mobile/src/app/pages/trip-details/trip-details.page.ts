@@ -1,11 +1,14 @@
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { PlacesService } from '../../core/places.service';
 import {
   coordsFromTrip,
   googleMapsDirectionsUrl,
   openExternalUrl,
 } from '../../core/maps-navigation';
+
+declare const google: any;
 
 interface TripPayment {
   id: number;
@@ -89,10 +92,18 @@ export class TripDetailsPage {
   error: string | null = null;
   trip: TripDetail | null = null;
 
+  // Embedded route map (pickup → drop with the road route drawn).
+  mapsError: string | null = null;
+  private map: any | null = null;
+  private pickupMarker: any | null = null;
+  private dropMarker: any | null = null;
+  private routePolylines: any[] = [];
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private api: ApiService,
+    private places: PlacesService,
   ) {}
 
   ionViewWillEnter(): void {
@@ -105,11 +116,19 @@ export class TripDetailsPage {
     this.refresh();
   }
 
+  ionViewWillLeave(): void {
+    this.clearMap();
+  }
+
   refresh(): void {
     this.loading = true;
     this.error = null;
     this.api.get<{ trip: TripDetail }>(`/customer/trips/${this.tripId}`).subscribe({
-      next: (res) => { this.trip = res?.trip ?? null; },
+      next: (res) => {
+        this.trip = res?.trip ?? null;
+        // Let the *ngIf map container render, then draw the route into it.
+        if (this.hasRouteCoords) setTimeout(() => this.renderMap(), 60);
+      },
       error: (err) => {
         this.error = err?.error?.message || 'Could not load trip';
         this.trip = null;
@@ -129,6 +148,19 @@ export class TripDetailsPage {
 
   get isPaid(): boolean {
     return this.trip?.payment?.status === 'SUCCESS';
+  }
+
+  /**
+   * The single source of truth for the amount due. Once paid, show what was
+   * actually charged (payment.amount); before that, show the final fare — which
+   * is exactly what the pay endpoints charge — so the button and the breakdown
+   * never disagree.
+   */
+  get payableAmount(): number | null {
+    const t = this.trip;
+    if (!t) return null;
+    if (this.isPaid) return t.payment?.amount ?? t.final_fare ?? null;
+    return t.final_fare ?? t.payment?.amount ?? null;
   }
 
   statusLabel(): string {
@@ -196,10 +228,11 @@ export class TripDetailsPage {
     if (t.cancellation_fee_amount && t.cancellation_fee_amount > 0) {
       rows.push({ label: 'Cancellation fee', value: `₹${t.cancellation_fee_amount}` });
     }
-    if (t.payment?.amount != null) {
+    const payable = this.payableAmount;
+    if (payable != null) {
       rows.push({
         label: this.isPaid ? 'Paid' : 'Payable',
-        value: `₹${t.payment.amount}`,
+        value: `₹${payable}`,
         emphasis: true,
       });
     }
@@ -232,6 +265,15 @@ export class TripDetailsPage {
 
   // ── Actions ─────────────────────────────────────────────────────
 
+  /** Header back button — returns to the Rides list. */
+  back(): void {
+    this.router.navigateByUrl('/customer-tabs/my-trips');
+  }
+
+  /**
+   * Pay → hand off to the active-trip page, which owns the full coupon +
+   * payment-method flow. We don't duplicate that logic here.
+   */
   payNow(): void {
     if (!this.trip) return;
     this.router.navigateByUrl(`/customer-tabs/trip/${this.trip.id}`);
@@ -245,5 +287,143 @@ export class TripDetailsPage {
     openExternalUrl(
       googleMapsDirectionsUrl({ origin: pickup, destination: drop, travelmode: 'driving' }),
     );
+  }
+
+  // ── Embedded route map ───────────────────────────────────────────
+
+  /** Both endpoints present — enough to draw a route on the map. */
+  get hasRouteCoords(): boolean {
+    const t = this.trip;
+    return !!(t && t.pickup_lat != null && t.pickup_lng != null && t.drop_lat != null && t.drop_lng != null);
+  }
+
+  /** Build the map, drop pickup/drop pins, draw the road route, then frame it. */
+  private async renderMap(): Promise<void> {
+    if (!this.hasRouteCoords || !this.trip) return;
+    try {
+      await this.places.ensureLoaded();
+      const div = document.getElementById('detail-map');
+      if (!div) return;
+
+      const pickup = { lat: Number(this.trip.pickup_lat), lng: Number(this.trip.pickup_lng) };
+      const drop = { lat: Number(this.trip.drop_lat), lng: Number(this.trip.drop_lng) };
+
+      this.map = new google.maps.Map(div, {
+        center: pickup,
+        zoom: 13,
+        disableDefaultUI: true,
+        clickableIcons: false,
+        // Two-finger pan so the page still scrolls with one finger.
+        gestureHandling: 'cooperative',
+        mapId: 'DEMO_MAP_ID',
+      });
+
+      this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: pickup, map: this.map, title: 'Pickup', content: this.buildPin('A', '#1f8b4c'),
+      });
+      this.dropMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: drop, map: this.map, title: 'Drop', content: this.buildPin('B', '#c0392b'),
+      });
+
+      await this.drawRoute(pickup, drop);
+      this.frame(pickup, drop);
+      this.mapsError = null;
+    } catch (e) {
+      this.mapsError = (e as Error)?.message || 'Could not load the map.';
+    }
+  }
+
+  /**
+   * Draw the road route between two points. Tries the new Routes API first,
+   * falls back to the legacy DirectionsService, then to a straight line.
+   */
+  private async drawRoute(
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+  ): Promise<void> {
+    if (!this.map) return;
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
+
+    // 1) Routes API (New) — exact road geometry.
+    try {
+      const { Route } = await (google.maps as any).importLibrary('routes');
+      const { routes } = await Route.computeRoutes({
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+        fields: ['path'],
+      });
+      const polylines: any[] = routes?.[0]?.createPolylines?.() ?? [];
+      let drew = false;
+      for (const pl of polylines) {
+        if (pl?.setMap) {
+          pl.setOptions?.({ strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95 });
+          pl.setMap(this.map);
+          drew = true;
+        }
+      }
+      if (drew) { this.routePolylines = polylines; return; }
+    } catch {
+      // fall through
+    }
+
+    // 2) Legacy DirectionsService.
+    try {
+      const svc = new google.maps.DirectionsService();
+      const res: any = await svc.route({
+        origin, destination, travelMode: google.maps.TravelMode.DRIVING,
+      });
+      const r = res?.routes?.[0];
+      if (r?.overview_path?.length) {
+        const pl = new google.maps.Polyline({
+          path: r.overview_path, strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
+        });
+        this.routePolylines = [pl];
+        return;
+      }
+    } catch {
+      // fall through
+    }
+
+    // 3) Straight line.
+    const straight = new google.maps.Polyline({
+      path: [origin, destination], strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
+    });
+    this.routePolylines = [straight];
+  }
+
+  /** Fit the map so the whole pickup → drop route is visible. */
+  private frame(a: { lat: number; lng: number }, b: { lat: number; lng: number }): void {
+    if (!this.map) return;
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(a);
+    bounds.extend(b);
+    this.map.fitBounds(bounds, 56);
+  }
+
+  /** Letter pin (A = pickup, B = drop) — matches the booking/active-trip maps. */
+  private buildPin(letter: string, color: string): HTMLElement {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:28px', 'height:36px', 'display:flex', 'align-items:flex-start',
+      'justify-content:center', 'padding-top:4px', 'font-weight:700', 'font-size:13px',
+      'color:#fff', `background:${color}`, 'border-radius:50% 50% 50% 0',
+      'transform:rotate(-45deg) translate(0,-14px)', 'border:2px solid #fff',
+      'box-shadow:0 1px 4px rgba(0,0,0,0.4)',
+    ].join(';');
+    const inner = document.createElement('span');
+    inner.textContent = letter;
+    inner.style.cssText = 'transform:rotate(45deg);';
+    el.appendChild(inner);
+    return el;
+  }
+
+  private clearMap(): void {
+    for (const pl of this.routePolylines) pl.setMap?.(null);
+    this.routePolylines = [];
+    if (this.pickupMarker) { this.pickupMarker.map = null; this.pickupMarker = null; }
+    if (this.dropMarker) { this.dropMarker.map = null; this.dropMarker = null; }
+    this.map = null;
   }
 }

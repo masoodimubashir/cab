@@ -1,18 +1,15 @@
 <ion-tabs>
-  <ion-tab-bar slot="bottom">
-    <ion-tab-button tab="book" href="/customer-tabs/book">
+  <ion-tab-bar slot="bottom" class="dc-tabbar">
+    <ion-tab-button tab="book" href="/customer-tabs/book" class="dc-tab dc-press">
+      <span class="dc-tab-glow" aria-hidden="true"></span>
       <ion-icon name="navigate-outline" aria-hidden="true"></ion-icon>
       <ion-label>Ride</ion-label>
     </ion-tab-button>
 
-    <ion-tab-button tab="my-trips" href="/customer-tabs/my-trips">
-      <ion-icon name="receipt-outline" aria-hidden="true"></ion-icon>
-      <ion-label>My orders</ion-label>
-    </ion-tab-button>
-
-    <ion-tab-button tab="more" href="/customer-tabs/more">
-      <ion-icon name="ellipsis-horizontal-outline" aria-hidden="true"></ion-icon>
-      <ion-label>More</ion-label>
+    <ion-tab-button tab="my-trips" href="/customer-tabs/my-trips" class="dc-tab dc-press">
+      <span class="dc-tab-glow" aria-hidden="true"></span>
+      <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
+      <ion-label>Rides</ion-label>
     </ion-tab-button>
   </ion-tab-bar>
 </ion-tabs>

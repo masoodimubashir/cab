@@ -1,0 +1,103 @@
+import { Component, OnInit } from '@angular/core';
+import { ApiService } from '../../core/api.service';
+
+interface SupportInfo {
+  emergency_police_no: string | null;
+  customer_support_no: string | null;
+  driver_support_no: string | null;
+  support_email: string | null;
+}
+
+interface Faq {
+  q: string;
+  a: string;
+}
+
+/**
+ * Help & Support — the official support channels (pulled out of the old
+ * emergency-contacts "Support" segment) plus an FAQ and a report-a-problem
+ * shortcut. Support numbers/email come from /support-info (city_settings).
+ */
+@Component({
+  selector: 'app-support',
+  templateUrl: './support.page.html',
+  styleUrls: ['./support.page.scss'],
+  standalone: false,
+})
+export class SupportPage implements OnInit {
+  loading = false;
+  error: string | null = null;
+  support: SupportInfo | null = null;
+
+  readonly faqs: Faq[] = [
+    {
+      q: 'How do I go online and start receiving rides?',
+      a: 'Open the dashboard and tap “Go Online”. Make sure location permission is granted so we can match you with nearby trips.',
+    },
+    {
+      q: 'When and how do I get paid?',
+      a: 'Cash fares are collected directly from the rider. Online (Razorpay) fares settle to your wallet — open the Wallet page to see your balance and payouts.',
+    },
+    {
+      q: 'My documents are still under review. What now?',
+      a: 'Verification usually completes within a few hours. You’ll be notified the moment you’re approved, and you can re-check the status from your account screen.',
+    },
+    {
+      q: 'How is commission calculated?',
+      a: 'Commission depends on your operator’s settings and any active subscription. A commission-free plan removes per-ride deductions — see Subscriptions.',
+    },
+    {
+      q: 'How do I add emergency contacts?',
+      a: 'Open “Emergency numbers” from the menu and add people manually or straight from your phone. They can be reached during an SOS.',
+    },
+  ];
+
+  constructor(private api: ApiService) {}
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading = true;
+    this.error = null;
+    this.api.get<SupportInfo>('/support-info').subscribe({
+      next: (res) => {
+        this.support = res;
+        this.loading = false;
+      },
+      error: (err) => {
+        this.error = err?.error?.message || 'Could not load support info.';
+        this.loading = false;
+      },
+    });
+  }
+
+  get hasChannels(): boolean {
+    // Customer support is intentionally NOT shown in the driver app.
+    return !!(
+      this.support?.driver_support_no ||
+      this.support?.support_email ||
+      this.support?.emergency_police_no
+    );
+  }
+
+  call(phone: string | null | undefined): void {
+    if (!phone) return;
+    window.location.href = `tel:${phone}`;
+  }
+
+  email(addr: string | null | undefined): void {
+    if (!addr) return;
+    window.location.href = `mailto:${addr}`;
+  }
+
+  report(): void {
+    const to = this.support?.support_email || '';
+    const subject = encodeURIComponent('Driver app — Report a problem');
+    const body = encodeURIComponent(
+      'Please describe the problem you are facing:\n\n\n— Sent from the DreamCabs driver app',
+    );
+    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+  }
+}

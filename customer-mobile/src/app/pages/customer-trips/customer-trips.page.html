@@ -1,98 +1,202 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-title>My Trips</ion-title>
-    <ion-buttons slot="end">
-      <ion-button (click)="refresh()" [disabled]="loading" aria-label="Refresh">
-        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-  </ion-toolbar>
+<ion-content class="rides-page" [fullscreen]="true">
 
-  <!-- Product-kind segment lives in the header so it stays visible on scroll. -->
-  <ion-toolbar>
-    <ion-segment
-      [value]="productKind"
-      (ionChange)="setProductKind($any($event.detail.value))"
-      scrollable="true"
-    >
-      <ion-segment-button value="all"><ion-label>All</ion-label></ion-segment-button>
-      <ion-segment-button value="local"><ion-label>Local</ion-label></ion-segment-button>
-      <ion-segment-button value="rental"><ion-label>Rental</ion-label></ion-segment-button>
-      <ion-segment-button value="outstation"><ion-label>Outstation</ion-label></ion-segment-button>
-    </ion-segment>
-  </ion-toolbar>
-</ion-header>
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
 
-<ion-content>
-  <!-- Status pills row. -->
-  <div class="status-pills">
-    <button class="pill" [class.pill--active]="status === 'all'" (click)="setStatus('all')">All</button>
-    <button class="pill" [class.pill--active]="status === 'completed'" (click)="setStatus('completed')">Completed</button>
-    <button class="pill" [class.pill--active]="status === 'cancelled'" (click)="setStatus('cancelled')">Cancelled</button>
-    <button class="pill" [class.pill--active]="status === 'missed'" (click)="setStatus('missed')">Missed</button>
+    <h1 class="header-title">Rides</h1>
+    <p class="header-sub">Your booking history across every ride type.</p>
   </div>
 
-  <!-- Payment pills row. -->
-  <div class="status-pills">
-    <button class="pill" [class.pill--active]="payment === 'all'" (click)="setPayment('all')">Any payment</button>
-    <button class="pill" [class.pill--active]="payment === 'paid'" (click)="setPayment('paid')">Paid</button>
-    <button class="pill" [class.pill--active]="payment === 'unpaid'" (click)="setPayment('unpaid')">Unpaid</button>
-  </div>
+  <!-- ============ Body ============ -->
+  <div class="page-body">
 
-  <ion-text color="danger" *ngIf="error" class="ion-padding"><p>{{ error }}</p></ion-text>
+    <!-- Filters bar -->
+    <div class="filter-bar dc-anim-in">
+      <button class="filters-btn dc-press" (click)="openFilters()">
+        <ion-icon name="options-outline"></ion-icon>
+        <span>Filters</span>
+        <span class="filter-count" *ngIf="activeFilterCount">{{ activeFilterCount }}</span>
+      </button>
+      <button class="filter-clear" *ngIf="activeFilterCount" (click)="clearFilters()">Clear</button>
+    </div>
 
-  <ion-spinner *ngIf="loading" class="ion-margin" name="crescent"></ion-spinner>
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
 
-  <ion-list *ngIf="!loading && trips.length" lines="none">
-    <ion-card *ngFor="let t of trips" class="trip-card tappable" button (click)="openTripDetails(t, $event)">
-      <ion-card-header>
-        <div class="row-head">
-          <ion-card-subtitle>{{ productLabel(t.product_kind) }} · #{{ t.id }}</ion-card-subtitle>
-          <div class="badges">
-            <ion-badge [color]="statusColor(t)">{{ statusLabel(t) }}</ion-badge>
-            <ion-badge *ngIf="paymentBadge(t) as pb" [color]="pb.color">{{ pb.label }}</ion-badge>
+    <!-- Loading -->
+    <div class="rides-list" *ngIf="loading" aria-hidden="true">
+      <div class="skel-card" *ngFor="let s of [1,2,3,4]">
+        <div class="skel-row">
+          <span class="dc-skeleton skel-tile"></span>
+          <span class="skel-stack">
+            <span class="dc-skeleton skel-line skel-line--lg"></span>
+            <span class="dc-skeleton skel-line skel-line--sm"></span>
+          </span>
+          <span class="dc-skeleton skel-pill"></span>
+        </div>
+        <span class="dc-skeleton skel-line skel-line--full"></span>
+        <span class="dc-skeleton skel-line skel-line--mid"></span>
+        <div class="skel-foot">
+          <span class="dc-skeleton skel-line skel-line--fare"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ride cards -->
+    <div class="rides-list dc-stagger" *ngIf="!loading && trips.length">
+      <div class="ride-card dc-press ride-card--{{ accentColor(t) }}" *ngFor="let t of trips" (click)="openTripDetails(t, $event)">
+        <span class="ride-accent"></span>
+        <div class="ride-body">
+
+          <div class="ride-head">
+            <div class="ride-kind">
+              <div class="ride-kind-icon"><ion-icon [name]="kindIcon(t)"></ion-icon></div>
+              <div class="ride-kind-text">
+                <span class="ride-kind-label">{{ rideTypeLabel(t) }}</span>
+                <span class="ride-id">#{{ t.id }}</span>
+              </div>
+            </div>
+            <span class="badge badge--{{ statusColor(t) }}">{{ statusLabel(t) }}</span>
+          </div>
+
+          <!-- Pickup → drop route -->
+          <div class="ride-route" *ngIf="t.pickup_address || t.drop_address">
+            <div class="route-track">
+              <span class="route-dot route-dot--start"></span>
+              <span class="route-bar"></span>
+              <span class="route-dot route-dot--end"></span>
+            </div>
+            <div class="route-text">
+              <p class="route-addr" *ngIf="t.pickup_address">{{ t.pickup_address }}</p>
+              <p class="route-addr route-addr--drop" *ngIf="t.drop_address">{{ t.drop_address }}</p>
+            </div>
+          </div>
+
+          <p class="ride-reason" *ngIf="t.cancelled_reason">{{ t.cancelled_reason }}</p>
+
+          <div class="ride-divider"></div>
+
+          <!-- Fare-forward footer -->
+          <div class="ride-footer">
+            <span class="ride-fare" *ngIf="fareDisplay(t) as f">{{ f }}</span>
+            <span class="ride-fare ride-fare--muted" *ngIf="!fareDisplay(t)">—</span>
+            <span class="ride-foot-meta">
+              <ng-container *ngIf="dateDisplay(t) as d">{{ d | date:'dd MMM' }}</ng-container>
+              <ng-container *ngIf="methodLabel(t.payment?.method) as m"> · {{ m }}</ng-container>
+              <span class="pay-flag pay-flag--{{ pb.color }}" *ngIf="paymentBadge(t) as pb"> · {{ pb.label }}</span>
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="ride-actions">
+            <button
+              class="ride-btn ride-btn--accent dc-press"
+              *ngIf="t.status === 'NEGOTIATION'"
+              (click)="navigateToNegotiation(t); $event.stopPropagation()"
+            >
+              <ion-icon name="pricetags-outline"></ion-icon>
+              <span>Negotiate</span>
+            </button>
+            <button
+              class="ride-btn ride-btn--dark dc-press"
+              (click)="openTripDetails(t); $event.stopPropagation()"
+            >
+              <ion-icon name="document-text-outline"></ion-icon>
+              <span>Details</span>
+            </button>
+            <button
+              class="ride-btn dc-press"
+              (click)="navigatePickupToDrop(t); $event.stopPropagation()"
+              [disabled]="!t.pickup_lat || !t.drop_lat"
+            >
+              <ion-icon name="navigate-outline"></ion-icon>
+              <span>Maps</span>
+            </button>
           </div>
         </div>
-      </ion-card-header>
-      <ion-card-content>
-        <p *ngIf="t.pickup_address" class="addr"><ion-icon name="ellipse-outline" color="primary"></ion-icon> {{ t.pickup_address }}</p>
-        <p *ngIf="t.drop_address" class="addr"><ion-icon name="location-outline" color="danger"></ion-icon> {{ t.drop_address }}</p>
+      </div>
+    </div>
 
-        <div class="meta">
-          <span *ngIf="fareDisplay(t) as f"><ion-icon name="cash-outline"></ion-icon> {{ f }}</span>
-          <span *ngIf="dateDisplay(t) as d"><ion-icon name="time-outline"></ion-icon> {{ d | date:'dd MMM yyyy, HH:mm' }}</span>
-          <span *ngIf="t.payment?.method"><ion-icon name="card-outline"></ion-icon> {{ t.payment?.method }}</span>
+    <!-- Empty -->
+    <div class="state-box dc-anim-in" *ngIf="!loading && !trips.length && !error">
+      <div class="state-icon"><ion-icon name="car-outline"></ion-icon></div>
+      <p class="state-title">No rides yet</p>
+      <p class="state-sub">No rides match these filters.</p>
+    </div>
+  </div>
+
+  <!-- ============ Filter bottom sheet ============ -->
+  <div class="filter-overlay" [class.open]="filtersOpen">
+    <div class="sheet-backdrop" (click)="closeFilters()"></div>
+
+    <div class="filter-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h3>Filters</h3>
+        <button class="sheet-close" (click)="closeFilters()" aria-label="Close">
+          <ion-icon name="close"></ion-icon>
+        </button>
+      </div>
+
+      <div class="sheet-scroll">
+        <!-- Ride type (real ride_types rows) -->
+        <span class="sheet-group-label">Ride type</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="rideTypeId === 'all'" (click)="setRideType('all')">All</button>
+          <button
+            class="sheet-chip"
+            *ngFor="let rt of rideTypes"
+            [class.active]="rideTypeId === rt.id"
+            (click)="setRideType(rt.id)"
+          >
+            {{ rt.name }}
+          </button>
         </div>
 
-        <p *ngIf="t.cancelled_reason" class="reason muted small">
-          {{ t.cancelled_reason }}
-        </p>
-
-        <div class="actions">
-          <ion-button
-            *ngIf="t.status === 'NEGOTIATION'"
-            fill="outline"
-            size="small"
-            (click)="navigateToNegotiation(t)"
-          >
-            Negotiate
-          </ion-button>
-          <ion-button
-            fill="outline"
-            size="small"
-            (click)="navigatePickupToDrop(t)"
-            [disabled]="!t.pickup_lat || !t.drop_lat"
-          >
-            <ion-icon name="navigate-outline" slot="start"></ion-icon>
-            Open in Maps
-          </ion-button>
+        <!-- Status -->
+        <span class="sheet-group-label">Status</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="status === 'all'" (click)="setStatus('all')">All</button>
+          <button class="sheet-chip" [class.active]="status === 'completed'" (click)="setStatus('completed')">Completed</button>
+          <button class="sheet-chip" [class.active]="status === 'cancelled'" (click)="setStatus('cancelled')">Cancelled</button>
+          <button class="sheet-chip" [class.active]="status === 'missed'" (click)="setStatus('missed')">Missed</button>
         </div>
-      </ion-card-content>
-    </ion-card>
-  </ion-list>
 
-  <div *ngIf="!loading && !trips.length && !error" class="empty">
-    <ion-icon name="car-outline"></ion-icon>
-    <p>No trips match these filters.</p>
+        <!-- Payment status -->
+        <span class="sheet-group-label">Payment status</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="payment === 'all'" (click)="setPayment('all')">Any</button>
+          <button class="sheet-chip" [class.active]="payment === 'paid'" (click)="setPayment('paid')">Paid</button>
+          <button class="sheet-chip" [class.active]="payment === 'unpaid'" (click)="setPayment('unpaid')">Unpaid</button>
+        </div>
+
+        <!-- Payment method (payments.method enum) -->
+        <span class="sheet-group-label">Payment method</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="paymentMethod === 'all'" (click)="setPaymentMethod('all')">Any</button>
+          <button class="sheet-chip" [class.active]="paymentMethod === 'cash'" (click)="setPaymentMethod('cash')">Cash</button>
+          <button class="sheet-chip" [class.active]="paymentMethod === 'razorpay'" (click)="setPaymentMethod('razorpay')">Razorpay</button>
+        </div>
+
+        <!-- Date range (created_at >= from) -->
+        <span class="sheet-group-label">Date</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="dateRange === 'all'" (click)="setDateRange('all')">All time</button>
+          <button class="sheet-chip" [class.active]="dateRange === '7d'" (click)="setDateRange('7d')">Last 7 days</button>
+          <button class="sheet-chip" [class.active]="dateRange === '30d'" (click)="setDateRange('30d')">Last 30 days</button>
+          <button class="sheet-chip" [class.active]="dateRange === '90d'" (click)="setDateRange('90d')">Last 90 days</button>
+        </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="sheet-clear dc-press" (click)="clearFilters()" [disabled]="!activeFilterCount">Clear all</button>
+        <button class="sheet-apply dc-press" (click)="closeFilters()">Show results</button>
+      </div>
+    </div>
   </div>
 </ion-content>

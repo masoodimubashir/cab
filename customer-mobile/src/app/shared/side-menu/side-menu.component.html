@@ -1,56 +1,88 @@
 <ion-menu side="start" menuId="customer-menu" contentId="main-content">
   <ion-content class="menu-content">
-    
-    <!-- ============ PREMIUM HEADER PROFILE BLOCK ============ -->
-    <div class="menu-profile-card" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
-      <div class="profile-avatar-wrap">
-        <div class="avatar-circle">
-          <img *ngIf="auth.resolveAvatarUrl(u)" [src]="auth.resolveAvatarUrl(u)" alt="avatar" />
-          <ion-icon *ngIf="!auth.resolveAvatarUrl(u)" name="person" aria-hidden="true"></ion-icon>
-        </div>
+
+    <!-- ============ Navy profile header ============ -->
+    <div class="menu-header dc-anim-in dc-press" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
+      <div class="menu-header-sheen" aria-hidden="true"></div>
+      <div class="menu-avatar dc-anim-pop">
+        <img
+          *ngIf="!avatarBroken && auth.resolveAvatarUrl(u) as url"
+          [src]="url"
+          alt=""
+          (error)="avatarBroken = true"
+        />
+        <span *ngIf="avatarBroken || !auth.resolveAvatarUrl(u)" class="avatar-initials">{{ (u.name || 'U') | slice:0:1 | uppercase }}</span>
       </div>
-      <div class="profile-details">
-        <span class="hello-text">Hello,</span>
-        <h2 class="name-text">{{ u.name || 'Guest' }}</h2>
-        <span class="edit-link">Edit account</span>
+      <div class="menu-header-info">
+        <h2 class="menu-name">{{ u.name || 'Guest' }}</h2>
+        <span class="menu-phone" *ngIf="u.phone">{{ u.phone }}</span>
+        <span class="menu-edit">Edit account <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon></span>
       </div>
     </div>
 
-    <!-- ============ NAVIGATION LINKS LIST ============ -->
-    <ion-list lines="none" class="menu-items-list">
-      
-      <!-- Home Option -->
-      <ion-item button (click)="go('/customer-tabs/book')" class="menu-item">
+    <!-- ============ Navigation ============ -->
+    <ion-list lines="none" class="menu-items-list dc-stagger">
+
+      <ion-item button (click)="go('/customer-tabs/book')" class="menu-item dc-press" detail="false">
         <div class="icon-box" slot="start">
           <ion-icon name="home" class="menu-icon" aria-hidden="true"></ion-icon>
         </div>
         <ion-label class="menu-label">Home</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
       </ion-item>
 
-      <!-- My orders Option -->
-      <ion-item button (click)="go('/customer-tabs/my-trips')" class="menu-item">
+      <ion-item button (click)="go('/customer-tabs/my-trips')" class="menu-item dc-press" detail="false">
         <div class="icon-box" slot="start">
-          <ion-icon name="receipt" class="menu-icon" aria-hidden="true"></ion-icon>
+          <ion-icon name="car-sport" class="menu-icon" aria-hidden="true"></ion-icon>
         </div>
-        <ion-label class="menu-label">My orders</ion-label>
+        <ion-label class="menu-label">Rides</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
       </ion-item>
 
-      <!-- Delete account Option -->
-      <ion-item button (click)="confirmDeleteAccount()" class="menu-item danger-item">
+      <ion-item button (click)="go('/customer-tabs/saved-locations')" class="menu-item dc-press" detail="false">
         <div class="icon-box" slot="start">
-          <ion-icon name="trash" class="menu-icon" aria-hidden="true"></ion-icon>
+          <ion-icon name="location" class="menu-icon" aria-hidden="true"></ion-icon>
         </div>
-        <ion-label class="menu-label">Delete account</ion-label>
+        <ion-label class="menu-label">Location</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
       </ion-item>
 
-      <!-- Sign out Option -->
-      <ion-item button (click)="signOut()" class="menu-item danger-item">
+      <ion-item button (click)="go('/customer-tabs/coupons')" class="menu-item dc-press" detail="false">
+        <div class="icon-box" slot="start">
+          <ion-icon name="pricetags" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Coupons</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
+      </ion-item>
+
+      <ion-item button (click)="go('/customer-tabs/emergency-contacts')" class="menu-item dc-press" detail="false">
+        <div class="icon-box" slot="start">
+          <ion-icon name="people" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Contact</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
+      </ion-item>
+
+      <ion-item button (click)="go('/customer-tabs/support')" class="menu-item dc-press" detail="false">
+        <div class="icon-box" slot="start">
+          <ion-icon name="headset" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Support</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
+      </ion-item>
+
+    </ion-list>
+
+    <!-- ============ Sign out (pinned to bottom) ============ -->
+    <div class="menu-footer">
+      <ion-item button (click)="signOut()" class="menu-item danger-item dc-press" lines="none" detail="false">
         <div class="icon-box" slot="start">
           <ion-icon name="log-out" class="menu-icon" aria-hidden="true"></ion-icon>
         </div>
         <ion-label class="menu-label">Sign out</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
       </ion-item>
+    </div>
 
-    </ion-list>
   </ion-content>
 </ion-menu>

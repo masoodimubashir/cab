@@ -1,27 +1,97 @@
-ion-list-header {
-  font-weight: 600;
+/* Transparent toolbar so the .drv-hero gradient owns the top of the screen. */
+.more-header ion-toolbar.more-toolbar {
+  --background: transparent;
+  --border-color: transparent;
+  --color: var(--text-main, #0D1B2A);
 }
 
-/* Account row avatar — plain div so it doesn't get squeezed by ion-avatar's
-   shadow-DOM intrinsics inside a slot. */
-.account-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background-color: var(--ion-color-light-shade, #e5e7eb);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  margin-right: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+/* ---------------------------------------------------------------- hero */
+.drv-hero {
+  margin-top: -1px; /* tuck under the translucent toolbar */
 
-  ion-icon {
-    font-size: 32px;
-    color: var(--ion-color-medium, #92949c);
+  &__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 18px;
   }
 
-  &.has-photo ion-icon { display: none; }
+  /* Override the chip's light palette so it reads on the dark hero. */
+  .drv-status {
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+
+    &.is-offline {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.78);
+    }
+  }
+
+  &__id {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  &__avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background-color: rgba(255, 255, 255, 0.16);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+
+    ion-icon {
+      font-size: 40px;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    &.has-photo ion-icon { display: none; }
+  }
+
+  &__meta {
+    min-width: 0;
+  }
+
+  &__name {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__role {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.72);
+    text-transform: capitalize;
+  }
+}
+
+/* ---------------------------------------------------------- section labels */
+.more-section {
+  margin: 22px 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6C757D);
+}
+
+/* Danger emphasis on sign-out / delete labels. */
+.dc-row__text strong.is-danger {
+  color: var(--ion-color-danger, #eb445a);
 }

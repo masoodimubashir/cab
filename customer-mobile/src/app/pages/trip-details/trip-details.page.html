@@ -1,139 +1,159 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-buttons slot="start">
-      <ion-back-button defaultHref="/customer-tabs/my-trips"></ion-back-button>
-    </ion-buttons>
-    <ion-title>Trip details</ion-title>
-    <ion-buttons slot="end">
-      <ion-button (click)="refresh()" [disabled]="loading" aria-label="Refresh">
-        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-  </ion-toolbar>
-</ion-header>
+<ion-content class="ride-detail-page" [fullscreen]="true">
 
-<ion-content>
-  <ion-spinner *ngIf="loading" class="ion-margin" name="crescent"></ion-spinner>
-  <ion-text color="danger" *ngIf="error && !loading" class="ion-padding"><p>{{ error }}</p></ion-text>
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back dc-press" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="header-refresh dc-press" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
 
-  <ng-container *ngIf="!loading && trip">
-    <!-- Header card: id + badges -->
-    <ion-card class="head-card">
-      <ion-card-header>
-        <div class="row-head">
-          <ion-card-subtitle>Trip · #{{ trip.id }}</ion-card-subtitle>
-          <div class="badges">
-            <ion-badge [color]="statusColor()">{{ statusLabel() }}</ion-badge>
-            <ion-badge *ngIf="paymentBadge() as pb" [color]="pb.color">{{ pb.label }}</ion-badge>
+    <h1 class="header-title">Ride detail</h1>
+    <p class="header-sub" *ngIf="trip">
+      #{{ trip.id }}
+      <ng-container *ngIf="trip.completed_at || trip.created_at">
+        · {{ (trip.completed_at || trip.created_at) | date:'dd MMM yyyy, HH:mm' }}
+      </ng-container>
+    </p>
+
+    <div class="header-badges" *ngIf="trip">
+      <span class="badge badge--{{ statusColor() }}">{{ statusLabel() }}</span>
+      <span class="badge badge--{{ pb.color }}" *ngIf="paymentBadge() as pb">{{ pb.label }}</span>
+    </div>
+  </div>
+
+  <!-- ============ Body ============ -->
+  <div class="page-body">
+
+    <!-- Loading -->
+    <div class="state-box dc-anim-in" *ngIf="loading">
+      <div class="state-icon"><ion-spinner name="crescent"></ion-spinner></div>
+      <h2 class="state-title">Loading ride</h2>
+      <p class="state-sub">Fetching your trip details…</p>
+    </div>
+
+    <!-- Error -->
+    <div class="state-box dc-anim-in" *ngIf="error && !loading">
+      <div class="state-icon state-icon--danger"><ion-icon name="alert-circle-outline"></ion-icon></div>
+      <h2 class="state-title">Something went wrong</h2>
+      <p class="page-error">{{ error }}</p>
+    </div>
+
+    <ng-container *ngIf="!loading && trip">
+
+      <div class="cards dc-stagger">
+
+        <!-- Pay CTA (completed but unpaid) -->
+        <button class="pay-cta dc-press" *ngIf="needsPayment" (click)="payNow()">
+          <ion-icon name="card-outline"></ion-icon>
+          <span>Pay ₹{{ payableAmount }}</span>
+        </button>
+
+        <!-- Route -->
+        <div class="detail-card" *ngIf="trip.pickup_address || trip.drop_address || hasRouteCoords">
+          <h2 class="card-title">Route</h2>
+
+          <!-- Map preview with the road route drawn (pickup → drop) -->
+          <div id="detail-map" class="detail-map" *ngIf="hasRouteCoords"></div>
+          <p class="map-error" *ngIf="mapsError"><ion-icon name="alert-circle-outline"></ion-icon> {{ mapsError }}</p>
+
+          <div class="ride-route">
+            <div class="route-track">
+              <span class="route-dot route-dot--start"></span>
+              <span class="route-bar"></span>
+              <span class="route-dot route-dot--end"></span>
+            </div>
+            <div class="route-text">
+              <div class="route-stop" *ngIf="trip.pickup_address">
+                <span class="route-stop-label">Pickup</span>
+                <p class="route-addr">{{ trip.pickup_address }}</p>
+              </div>
+              <div class="route-stop" *ngIf="trip.drop_address">
+                <span class="route-stop-label">Drop</span>
+                <p class="route-addr route-addr--drop">{{ trip.drop_address }}</p>
+              </div>
+            </div>
+          </div>
+          <button class="ghost-btn dc-press" *ngIf="trip.pickup_lat && trip.drop_lat" (click)="openMaps()">
+            <ion-icon name="navigate-outline"></ion-icon>
+            <span>Open in Maps</span>
+          </button>
+        </div>
+
+        <!-- Fare breakdown -->
+        <div class="detail-card" *ngIf="breakdownRows().length">
+          <h2 class="card-title">Fare breakdown</h2>
+          <div
+            class="break-row"
+            *ngFor="let row of breakdownRows()"
+            [class.negative]="row.negative"
+            [class.emphasis]="row.emphasis"
+          >
+            <span>{{ row.label }}</span>
+            <span>{{ row.value }}</span>
           </div>
         </div>
-      </ion-card-header>
-      <ion-card-content>
-        <p *ngIf="trip.pickup_address" class="addr">
-          <ion-icon name="ellipse-outline" color="primary"></ion-icon> {{ trip.pickup_address }}
-        </p>
-        <p *ngIf="trip.drop_address" class="addr">
-          <ion-icon name="location-outline" color="danger"></ion-icon> {{ trip.drop_address }}
-        </p>
-        <ion-button
-          *ngIf="trip.pickup_lat && trip.drop_lat"
-          fill="outline"
-          size="small"
-          (click)="openMaps()"
-          class="open-maps"
-        >
-          <ion-icon name="navigate-outline" slot="start"></ion-icon>
-          Open in Maps
-        </ion-button>
-      </ion-card-content>
-    </ion-card>
 
-    <!-- Pay button (only if needed) -->
-    <ion-button
-      *ngIf="needsPayment"
-      expand="block"
-      color="success"
-      class="pay-cta"
-      (click)="payNow()"
-    >
-      <ion-icon name="card-outline" slot="start"></ion-icon>
-      Pay ₹{{ trip.final_fare }}
-    </ion-button>
-
-    <!-- Fare breakdown -->
-    <ion-card *ngIf="breakdownRows().length">
-      <ion-card-header>
-        <ion-card-title>Fare breakdown</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <div
-          *ngFor="let row of breakdownRows()"
-          class="break-row"
-          [class.negative]="row.negative"
-          [class.emphasis]="row.emphasis"
-        >
-          <span>{{ row.label }}</span>
-          <span>{{ row.value }}</span>
-        </div>
-      </ion-card-content>
-    </ion-card>
-
-    <!-- Payment card -->
-    <ion-card *ngIf="trip.payment">
-      <ion-card-header>
-        <ion-card-title>Payment</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <div class="meta-line">
-          <span>Method</span>
-          <span>{{ trip.payment.method || trip.payment_method || '—' }}</span>
-        </div>
-        <div class="meta-line">
-          <span>Status</span>
-          <span>{{ trip.payment.status || 'Pending' }}</span>
-        </div>
-        <div *ngIf="trip.payment.paid_at" class="meta-line">
-          <span>Paid at</span>
-          <span>{{ trip.payment.paid_at | date:'dd MMM yyyy, HH:mm' }}</span>
-        </div>
-      </ion-card-content>
-    </ion-card>
-
-    <!-- Driver card -->
-    <ion-card *ngIf="trip.driver">
-      <ion-card-header>
-        <ion-card-title>Driver</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <p><strong>{{ trip.driver.name || 'Driver' }}</strong></p>
-        <p *ngIf="trip.driver.phone" class="muted">{{ trip.driver.phone }}</p>
-      </ion-card-content>
-    </ion-card>
-
-    <!-- Cancellation reason -->
-    <ion-card *ngIf="trip.cancelled_reason" color="light">
-      <ion-card-header>
-        <ion-card-title>Cancellation</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <p>{{ trip.cancelled_reason }}</p>
-      </ion-card-content>
-    </ion-card>
-
-    <!-- Timeline -->
-    <ion-card *ngIf="timeline().length">
-      <ion-card-header>
-        <ion-card-title>Timeline</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <div class="tl-row" *ngFor="let t of timeline()">
-          <ion-icon name="ellipse" color="primary"></ion-icon>
-          <div class="tl-text">
-            <span class="tl-label">{{ t.label }}</span>
-            <span class="tl-time">{{ t.at | date:'dd MMM yyyy, HH:mm' }}</span>
+        <!-- Payment -->
+        <div class="detail-card" *ngIf="trip.payment">
+          <h2 class="card-title">Payment</h2>
+          <div class="meta-line">
+            <span class="meta-key">Method</span>
+            <span class="meta-val">{{ (trip.payment.method || trip.payment_method) ? ((trip.payment.method || trip.payment_method) | titlecase) : '—' }}</span>
+          </div>
+          <div class="meta-line">
+            <span class="meta-key">Status</span>
+            <span class="meta-val pay-status pay-status--{{ (trip.payment.status || 'pending') | lowercase }}">
+              {{ (trip.payment.status || 'Pending') | titlecase }}
+            </span>
+          </div>
+          <div class="meta-line" *ngIf="trip.payment.paid_at">
+            <span class="meta-key">Paid at</span>
+            <span class="meta-val">{{ trip.payment.paid_at | date:'dd MMM yyyy, HH:mm' }}</span>
           </div>
         </div>
-      </ion-card-content>
-    </ion-card>
-  </ng-container>
+
+        <!-- Driver -->
+        <div class="detail-card" *ngIf="trip.driver">
+          <h2 class="card-title">Driver</h2>
+          <div class="driver-row">
+            <div class="driver-avatar"><ion-icon name="person"></ion-icon></div>
+            <div class="driver-info">
+              <span class="driver-name">{{ trip.driver.name || 'Driver' }}</span>
+              <span class="driver-phone" *ngIf="trip.driver.phone">{{ trip.driver.phone }}</span>
+            </div>
+            <a class="driver-call dc-press" *ngIf="trip.driver.phone" [href]="'tel:' + trip.driver.phone" aria-label="Call driver">
+              <ion-icon name="call"></ion-icon>
+            </a>
+          </div>
+        </div>
+
+        <!-- Cancellation -->
+        <div class="detail-card detail-card--warn" *ngIf="trip.cancelled_reason">
+          <h2 class="card-title">Cancellation</h2>
+          <p class="warn-text">{{ trip.cancelled_reason }}</p>
+        </div>
+
+        <!-- Timeline -->
+        <div class="detail-card" *ngIf="timeline().length">
+          <h2 class="card-title">Timeline</h2>
+          <div class="timeline">
+            <div class="tl-row" *ngFor="let ev of timeline(); let last = last">
+              <div class="tl-marker">
+                <span class="tl-dot"></span>
+                <span class="tl-line" *ngIf="!last"></span>
+              </div>
+              <div class="tl-text">
+                <span class="tl-label">{{ ev.label }}</span>
+                <span class="tl-time">{{ ev.at | date:'dd MMM yyyy, HH:mm' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </ng-container>
+  </div>
 </ion-content>

@@ -40,8 +40,29 @@ class FareNegotiationController extends Controller
             ->first();
 
         $tripWithDriver = $trip->fresh()->load([
-            'driver:id,name,avatar_path,accepted_payment_methods',
+            'driver:id,name,phone,avatar_path,accepted_payment_methods,current_lat,current_lng',
+            'driver.driver:id,user_id,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
         ]);
+
+        // Best-known driver position so the customer map can show the driver
+        // from the confirmation screen onward — before live trip streaming
+        // begins. Uses the freshest driver_locations ping (presence pings have
+        // trip_id=null; trip pings carry this trip id).
+        $driverLocation = null;
+        if ($trip->driver_id) {
+            $row = \App\Models\DriverLocation::query()
+                ->where('driver_id', $trip->driver_id)
+                ->orderByDesc('recorded_at')
+                ->orderByDesc('id')
+                ->first(['lat', 'lng', 'recorded_at']);
+            if ($row) {
+                $driverLocation = [
+                    'lat' => (float) $row->lat,
+                    'lng' => (float) $row->lng,
+                    'recorded_at' => optional($row->recorded_at)->toIso8601String(),
+                ];
+            }
+        }
 
         // City-level payment modes — the customer-mobile pay screen intersects
         // these with the driver's accepted methods to render the final picker.
@@ -57,6 +78,7 @@ class FareNegotiationController extends Controller
             'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
             'city_payment_modes' => $cityPaymentModes,
+            'driver_location' => $driverLocation,
         ]);
     }
 

@@ -35,3 +35,108 @@
 /* @import "@ionic/angular/css/palettes/dark.always.css"; */
 /* @import "@ionic/angular/css/palettes/dark.class.css"; */
 /* @import "@ionic/angular/css/palettes/dark.system.css"; */
+
+/* =====================================================================
+ * DreamCabs customer design system — shared tokens, surfaces & motion.
+ *
+ * "Polished house style": navy hero header, soft white cards, green
+ * accents — the look already shipped on Saved Locations & Coupons,
+ * formalised here so every screen is consistent. Same brand palette and
+ * system font as before; this only adds depth tokens + tasteful motion.
+ *
+ * These are GLOBAL (unscoped) so any page template can use the classes
+ * and any page SCSS can use the var(--dc-*) tokens.
+ * ===================================================================== */
+:root {
+  /* Surfaces */
+  --dc-canvas: #F4F6F8;
+  --dc-surface: #ffffff;
+  --dc-surface-2: #FAFBFC;
+  --dc-hairline: #EEF0F2;
+  --dc-hairline-strong: #E2E6EA;
+
+  /* Ink (text) */
+  --dc-ink: #0D1B2A;
+  --dc-ink-soft: #6C757D;
+  --dc-ink-faint: #9AA3AE;
+
+  /* Brand */
+  --dc-green: #12B35B;
+  --dc-green-tint: rgba(18, 179, 91, 0.10);
+  --dc-green-tint-2: rgba(18, 179, 91, 0.16);
+  --dc-danger: #DC3545;
+  --dc-danger-tint: #FEF2F2;
+  --dc-amber: #F59E0B;
+
+  /* Elevation */
+  --dc-shadow-sm: 0 2px 10px rgba(13, 27, 42, 0.04);
+  --dc-shadow-md: 0 8px 24px rgba(13, 27, 42, 0.08);
+  --dc-shadow-lg: 0 16px 40px rgba(13, 27, 42, 0.12);
+
+  /* Radii (mirror the Ionic vars already defined in variables.scss) */
+  --dc-r-sm: 10px;
+  --dc-r-md: 14px;
+  --dc-r-lg: 18px;
+  --dc-r-xl: 24px;
+}
+
+/* ---- Motion ---------------------------------------------------------
+ * Keep it tasteful: short fade + slide-up on enter, gentle stagger for
+ * lists, a small press-scale for tappable surfaces. CSS-only so no
+ * component logic/modules are touched. Honours reduced-motion. */
+@keyframes dcFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes dcFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes dcPopIn {
+  0%   { opacity: 0; transform: scale(0.94); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes dcShimmer {
+  0%   { background-position: -360px 0; }
+  100% { background-position: 360px 0; }
+}
+
+/* fill-mode is `backwards` (not `both`) on purpose: it shows the start
+ * frame during any delay but, once finished, hands `transform` back to
+ * normal CSS — so :active / :hover press-scale still works on animated &
+ * tappable elements. The end frame already equals the resting state, so
+ * there's no visual jump. */
+.dc-anim-up { animation: dcFadeUp 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) backwards; }
+.dc-anim-in { animation: dcFadeIn 0.4s ease backwards; }
+.dc-anim-pop { animation: dcPopIn 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) backwards; }
+
+/* Stagger: direct children fade-up in sequence. Put on a list wrapper. */
+.dc-stagger > * { animation: dcFadeUp 0.46s cubic-bezier(0.22, 0.61, 0.36, 1) backwards; }
+.dc-stagger > *:nth-child(1)  { animation-delay: 0.02s; }
+.dc-stagger > *:nth-child(2)  { animation-delay: 0.06s; }
+.dc-stagger > *:nth-child(3)  { animation-delay: 0.10s; }
+.dc-stagger > *:nth-child(4)  { animation-delay: 0.14s; }
+.dc-stagger > *:nth-child(5)  { animation-delay: 0.18s; }
+.dc-stagger > *:nth-child(6)  { animation-delay: 0.22s; }
+.dc-stagger > *:nth-child(7)  { animation-delay: 0.26s; }
+.dc-stagger > *:nth-child(8)  { animation-delay: 0.30s; }
+.dc-stagger > *:nth-child(9)  { animation-delay: 0.34s; }
+.dc-stagger > *:nth-child(n+10) { animation-delay: 0.38s; }
+
+/* Press feedback for tappable surfaces (add alongside click handlers). */
+.dc-press { transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease; }
+.dc-press:active { transform: scale(0.98); }
+
+/* Loading skeleton block. */
+.dc-skeleton {
+  background: linear-gradient(90deg, #EEF1F4 25%, #F6F8FA 37%, #EEF1F4 63%);
+  background-size: 720px 100%;
+  animation: dcShimmer 1.3s linear infinite;
+  border-radius: var(--dc-r-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-anim-up, .dc-anim-in, .dc-anim-pop,
+  .dc-stagger > *, .dc-skeleton { animation: none !important; }
+  .dc-press { transition: none !important; }
+}

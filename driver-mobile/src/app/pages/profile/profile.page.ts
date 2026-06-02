@@ -27,6 +27,7 @@ import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 export class ProfilePage implements OnInit {
   photoFile: File | null = null;
   photoPreview: string | null = null;
+  readonly defaultAvatar = 'assets/default-avatar.svg';
   name = '';
   email = '';
   phone = '';
@@ -88,6 +89,22 @@ export class ProfilePage implements OnInit {
       void this.places.ensureLoaded().catch(() => {});
     }
     void this.captureDeviceInfo();
+  }
+
+  /** Header reload button — re-sync the form from the latest stored user. */
+  reload(): void {
+    const me = this.auth.getUser();
+    if (me) {
+      this.name = me.name && me.name !== 'User' ? me.name : '';
+      this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
+      this.phone = me.phone ?? '';
+      this.photoPreview = this.auth.resolveAvatarUrl(me);
+      this.dob = me.dob ?? '';
+      this.address = me.address ?? '';
+      this.addressQuery = this.address;
+    }
+    this.photoFile = null;
+    this.error = null;
   }
 
   /** Pretty form for the locked edit screen (e.g. "12 Apr 1997"). */
@@ -158,6 +175,11 @@ export class ProfilePage implements OnInit {
     } catch { /* ignore */ }
   }
 
+  onPhotoError(ev: Event): void {
+    const i = ev.target as HTMLImageElement;
+    if (i && i.src.indexOf('default-avatar') === -1) i.src = this.defaultAvatar;
+  }
+
   onPhotoChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;
@@ -209,10 +231,6 @@ export class ProfilePage implements OnInit {
         this.busy = false;
       },
     });
-  }
-
-  back(): void {
-    this.router.navigateByUrl('/tabs/more');
   }
 }
 

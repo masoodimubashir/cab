@@ -44,6 +44,13 @@
         <p>Trusted numbers to reach in an SOS</p>
       </ion-label>
     </ion-item>
+    <ion-item button detail="true" (click)="goCoupons()">
+      <ion-icon name="pricetags-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>My Coupons</h2>
+        <p>Discount codes you can use on your rides</p>
+      </ion-label>
+    </ion-item>
 
     <ion-item button detail="false" (click)="signOut()" lines="full">
       <ion-icon name="log-out-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>

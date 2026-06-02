@@ -1,15 +1,78 @@
 // ============ PREMIUM IMMERSIVE SPLASH SCREEN STYLES ============
+// Branded launch screen on a green-to-navy backdrop with an elegant
+// centered logo/wordmark entrance (pop + gentle float) and a subtle
+// loading shimmer. CSS-only; respects prefers-reduced-motion.
+
+:host {
+  --splash-navy: #0B131E;
+  --splash-navy-2: #0D1B2A; // var(--dc-ink)
+  --splash-green: var(--dc-green, #12B35B);
+}
 
 .splash-content {
-  --background: #0B131E; // Elegant deep dark navy background matching the reference
+  // Subtle green-to-navy depth layered over the deep navy canvas
+  --background:
+    radial-gradient(120% 90% at 50% 18%, rgba(18, 179, 91, 0.16) 0%, rgba(18, 179, 91, 0) 55%),
+    linear-gradient(180deg, #0E1B2A 0%, #0B131E 60%, #080F18 100%);
   --overflow: hidden;
 
-  ion-content::part(scroll) {
+  &::part(scroll) {
     overflow: hidden;
   }
 }
 
+// ---- Ambient gradient glows -------------------------------------------------
+.splash-aura {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+
+  .aura {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.55;
+  }
+
+  .aura-green {
+    width: 320px;
+    height: 320px;
+    top: -90px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(18, 179, 91, 0.55) 0%, rgba(18, 179, 91, 0) 70%);
+    animation: auraPulse 6s ease-in-out infinite;
+  }
+
+  .aura-navy {
+    width: 360px;
+    height: 360px;
+    bottom: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(31, 64, 104, 0.5) 0%, rgba(13, 27, 42, 0) 70%);
+    animation: auraPulse 7s ease-in-out infinite reverse;
+  }
+}
+
+// Soft sheen that sweeps once across the brand area
+.splash-sheen {
+  position: absolute;
+  top: 30%;
+  left: -40%;
+  width: 60%;
+  height: 220px;
+  background: linear-gradient(105deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0) 100%);
+  transform: skewX(-18deg);
+  animation: sheenSweep 3.4s ease-in-out 0.6s infinite;
+}
+
+// ---- Brand block ------------------------------------------------------------
 .splash-wrapper {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -23,28 +86,45 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  animation: splashFadeIn 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  gap: 18px;
+  animation: splashFadeIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-// Centered White Circular Logo Circle
+// Centered white circular logo mark, with a gentle continuous float
 .splash-logo-circle {
-  width: 96px;
-  height: 96px;
+  position: relative;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
-  background: #ffffff; // Solid white circle
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  background: #ffffff;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.35),
+    0 0 0 10px rgba(255, 255, 255, 0.04),
+    0 0 0 20px rgba(255, 255, 255, 0.02);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  animation: logoScaleUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  // pop in, then settle into a soft infinite float
+  animation:
+    logoPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    logoFloat 4.5s ease-in-out 0.7s infinite;
 
-  // Small black square dots
+  // soft green halo ring that breathes around the mark
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(18, 179, 91, 0.35);
+    animation: haloBreathe 3.2s ease-in-out 0.7s infinite;
+  }
+
+  // Small navy square dots
   .logo-square-dot {
     width: 8px;
     height: 8px;
-    background: #0B131E; // Solid black/navy
+    background: var(--splash-navy, #0B131E);
     border-radius: 1px;
     flex-shrink: 0;
   }
@@ -55,59 +135,162 @@
     height: 0;
     border-top: 8px solid transparent;
     border-bottom: 8px solid transparent;
-    border-left: 12px solid var(--ion-color-primary, #12B35B); // Bright brand green
+    border-left: 12px solid var(--splash-green, #12B35B);
     margin-left: 2px;
     flex-shrink: 0;
   }
 }
 
-// Brand Typography
+// Brand wordmark
 .splash-logo-text {
   font-size: 2.2rem;
   font-weight: 800;
   letter-spacing: -0.8px;
   margin: 0;
   text-align: center;
-  animation: textFadeIn 0.8s 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: wordmarkIn 0.7s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 
   .text-white {
-    color: #ffffff; // White "Taxi"
+    color: #ffffff;
   }
 
   .text-primary {
-    color: var(--ion-color-primary, #12B35B); // Green "Mode"
+    color: var(--splash-green, #12B35B);
+  }
+}
+
+// Tagline beneath the wordmark
+.splash-tagline {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.55);
+  animation: wordmarkIn 0.7s 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+// ---- Loading shimmer --------------------------------------------------------
+.splash-loader {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  animation: splashFadeIn 0.6s 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.splash-loader-track {
+  position: relative;
+  display: block;
+  width: 140px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+
+  .splash-loader-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 45%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(18, 179, 91, 0) 0%, var(--splash-green, #12B35B) 50%, rgba(18, 179, 91, 0) 100%);
+    animation: loaderShimmer 1.4s ease-in-out infinite;
+  }
+}
+
+.splash-dots {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.35);
+    animation: dotPulse 1.2s ease-in-out infinite;
+
+    &:nth-child(2) { animation-delay: 0.2s; }
+    &:nth-child(3) { animation-delay: 0.4s; }
   }
 }
 
 // ============ KEYFRAME ANIMATIONS ============
 
 @keyframes splashFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
-@keyframes logoScaleUp {
-  0% {
-    transform: scale(0.6);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
+@keyframes logoPop {
+  0%   { transform: scale(0.55); opacity: 0; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
 }
 
-@keyframes textFadeIn {
-  0% {
-    transform: translateY(10px);
-    opacity: 0;
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+
+@keyframes haloBreathe {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50%      { opacity: 0.7;  transform: scale(1.06); }
+}
+
+@keyframes wordmarkIn {
+  0%   { transform: translateY(12px); opacity: 0; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes auraPulse {
+  0%, 100% { opacity: 0.4;  transform: translateX(-50%) scale(1); }
+  50%      { opacity: 0.65; transform: translateX(-50%) scale(1.12); }
+}
+
+@keyframes sheenSweep {
+  0%   { left: -60%; opacity: 0; }
+  35%  { opacity: 1; }
+  100% { left: 130%; opacity: 0; }
+}
+
+@keyframes loaderShimmer {
+  0%   { left: -45%; }
+  100% { left: 100%; }
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
+// ---- Respect reduced motion -------------------------------------------------
+@media (prefers-reduced-motion: reduce) {
+  .splash-logo-container,
+  .splash-logo-circle,
+  .splash-logo-circle::after,
+  .splash-logo-text,
+  .splash-tagline,
+  .splash-loader,
+  .splash-loader-bar,
+  .splash-dots i,
+  .splash-aura .aura,
+  .splash-sheen {
+    animation: none !important;
   }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
+
+  .splash-logo-circle,
+  .splash-logo-text,
+  .splash-tagline,
+  .splash-logo-container,
+  .splash-loader {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

@@ -1,47 +1,41 @@
-.balance-card {
+/* Wallet page — driver money page. The header/hero + body shell come from the
+   shared pg- system (theme/pages.scss); these are small page-specific touches
+   only and never redefine a global class or its keyframes. */
+
+/* Top-up CTA lives inside the gradient hero, so give it a touch of breathing
+   room from the subtitle and a glassy treatment that reads well on the navy. */
+.wallet-topup {
+  margin-top: 18px;
+}
+
+/* Error banner inside its card. */
+.wallet-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ion-color-danger, #eb445a);
+  font-size: 0.9rem;
+  font-weight: 600;
+  ion-icon { font-size: 20px; flex-shrink: 0; }
+}
+
+.wallet-skel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  background: var(--ion-color-primary);
-  color: #fff;
-  border-radius: 14px;
-  padding: 20px 18px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
-
-  &__label {
-    font-size: 0.85rem;
-    opacity: 0.9;
-  }
-
-  &__amount {
-    font-size: 2rem;
-    font-weight: 800;
-    margin-bottom: 8px;
-  }
-
-  ion-button {
-    --color: var(--ion-color-primary);
-    margin: 0;
-    font-weight: 700;
-  }
+  gap: 8px;
 }
 
-.section-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  margin: 22px 0 6px;
+/* Transactions list sits inside a pg-card, so drop its own card chrome and let
+   the card own the border/shadow. */
+.pg-card .dc-list {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+.pg-card .dc-row {
+  padding-inline: 0;
 }
 
-.hint {
-  color: var(--ion-color-medium, #666);
-  font-size: 0.9rem;
-  padding: 8px 0;
-}
-
-.amt {
-  font-weight: 700;
-  font-size: 0.95rem;
-
-  &--credit { color: var(--ion-color-success-shade, #28ba62); }
-  &--debit { color: var(--ion-color-danger-shade, #cf3c4f); }
-}
+/* Signed transaction amounts */
+.wallet-amt--credit { color: #0E8F47; }
+.wallet-amt--debit { color: var(--ion-color-danger, #eb445a); }

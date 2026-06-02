@@ -1,0 +1,85 @@
+/* ------------------------------------------------------------------ FAQ card
+   The accordion sits inside a .pg-card. We zero the card's padding so the
+   accordion spans the full card width; each header carries a green-tint icon
+   tile so the FAQ reads as part of the driver design system. */
+.sup-faqcard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sup-faq {
+  background: #ffffff;
+  overflow: hidden;
+
+  ion-accordion {
+    background: transparent;
+    &::part(content) { background: #fff; }
+  }
+
+  &__head {
+    --background: #ffffff;
+    --min-height: 58px;
+    --padding-start: 14px;
+    --inner-padding-end: 12px;
+    ion-label {
+      font-size: 0.92rem !important;
+      font-weight: 600;
+      color: var(--text-main, #0D1B2A);
+      white-space: normal;
+      line-height: 1.35;
+      margin-inline-start: 12px;
+    }
+  }
+
+  /* Green-tint question icon tile (driver design-system accent). */
+  &__qicon {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--ion-color-primary-rgb), 0.1);
+    ion-icon { font-size: 19px; color: var(--ion-color-primary, #12B35B); }
+  }
+
+  &__body {
+    padding: 0 16px 16px 60px;
+    font-size: 0.86rem;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.6;
+  }
+
+  ion-accordion + ion-accordion .sup-faq__head { border-top: 1px solid #F0F2F5; }
+}
+
+/* ---------------------------------------------------------------- Report card */
+.sup-report {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 24px 18px;
+
+  &__icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: rgba(var(--ion-color-primary-rgb), 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+    ion-icon { font-size: 27px; color: var(--ion-color-primary, #12B35B); }
+  }
+  strong { font-size: 1rem; font-weight: 700; color: var(--text-main, #0D1B2A); }
+  span {
+    font-size: 0.85rem;
+    color: var(--text-muted, #6C757D);
+    line-height: 1.5;
+    max-width: 280px;
+    margin-bottom: 16px;
+  }
+}

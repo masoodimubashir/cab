@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
+import { Contacts } from '@capacitor-community/contacts';
 import { ApiService } from '../../core/api.service';
 
 interface EmergencyContact {
@@ -11,26 +11,16 @@ interface EmergencyContact {
   is_primary: boolean;
 }
 
-interface SupportInfo {
-  emergency_police_no: string | null;
-  customer_support_no: string | null;
-  driver_support_no: string | null;
-  support_email: string | null;
-}
-
 /**
  * Per-user emergency contact list — used in SOS situations.
  *
- * Two segments:
- *   - "My Contacts": user-saved friends/family numbers.
- *   - "Support":     official numbers from city_settings (police, driver
- *                    support line, support email). Read-only, tap-to-call.
+ * A single "My emergency contacts" list of user-saved friends/family numbers.
+ * (Official operator support numbers now live on the dedicated /support page.)
  *
- * Two ways to add a contact in "My Contacts":
+ * Two ways to add a contact:
  *   1. Manual entry in the dialog (name + phone + relationship).
- *   2. "Pick from phone contacts" — uses the Web Contacts API
- *      (navigator.contacts.select). Works on Android Chrome; gracefully
- *      degrades to manual entry where unsupported.
+ *   2. "Add from phone" — native OS contact picker via the
+ *      @capacitor-community/contacts plugin.
  */
 @Component({
   selector: 'app-emergency-contacts',
@@ -39,15 +29,9 @@ interface SupportInfo {
   standalone: false,
 })
 export class EmergencyContactsPage implements OnInit {
-  segment: 'contacts' | 'support' = 'contacts';
-
   contacts: EmergencyContact[] = [];
   loading = false;
   error: string | null = null;
-
-  support: SupportInfo | null = null;
-  supportLoading = false;
-  supportError: string | null = null;
 
   // Dialog state
   dialogOpen = false;
@@ -56,42 +40,19 @@ export class EmergencyContactsPage implements OnInit {
     id: null, name: '', phone: '', relationship: '', is_primary: false,
   };
 
-  pickerSupported = false;
-
   constructor(
     private api: ApiService,
-    private router: Router,
     private alertCtrl: AlertController,
     private toastCtrl: ToastController,
   ) {}
 
   ngOnInit(): void {
-    // Web Contacts API: navigator.contacts.select. Available on Android Chrome
-    // / Edge, not on iOS Safari. We feature-detect and only show the picker
-    // button where it'll actually work.
-    const nav = navigator as any;
-    this.pickerSupported = !!nav.contacts && typeof nav.contacts.select === 'function';
     this.refresh();
-    this.loadSupport();
-  }
-
-  loadSupport(): void {
-    this.supportLoading = true;
-    this.supportError = null;
-    this.api.get<SupportInfo>('/support-info').subscribe({
-      next: (res) => { this.support = res; this.supportLoading = false; },
-      error: (err) => { this.supportError = err?.error?.message || 'Could not load support info.'; this.supportLoading = false; },
-    });
   }
 
   callNumber(phone: string | null | undefined): void {
     if (!phone) return;
     window.location.href = `tel:${phone}`;
-  }
-
-  emailSupport(email: string | null | undefined): void {
-    if (!email) return;
-    window.location.href = `mailto:${email}`;
   }
 
   refresh(): void {
@@ -122,29 +83,22 @@ export class EmergencyContactsPage implements OnInit {
   }
 
   /**
-   * Open the OS contacts picker, then prefill the dialog with the chosen
-   * contact's name + first phone number. The user still confirms before save.
+   * Open the native OS contacts picker, then prefill the dialog with the
+   * chosen contact's name + first phone number. The user still confirms
+   * before save.
    */
   async pickFromPhone(): Promise<void> {
-    const nav = navigator as any;
-    if (!nav.contacts?.select) {
-      const t = await this.toastCtrl.create({
-        message: 'Picking from contacts is not supported on this device.',
-        duration: 2500, color: 'warning',
-      });
-      await t.present();
-      return;
-    }
     try {
-      const picked = await nav.contacts.select(['name', 'tel'], { multiple: false });
-      if (!Array.isArray(picked) || picked.length === 0) return;
-      const c = picked[0];
-      const name = Array.isArray(c.name) && c.name.length ? c.name[0] : '';
-      const phone = Array.isArray(c.tel) && c.tel.length ? c.tel[0] : '';
+      await Contacts.requestPermissions();
+      const res = await Contacts.pickContact({ projection: { name: true, phones: true } });
+      const c: any = res.contact;
+      const name = c?.name?.display || [c?.name?.given, c?.name?.family].filter(Boolean).join(' ') || '';
+      const phone = (c?.phones && c.phones[0]?.number) || '';
       this.form = { id: null, name, phone, relationship: '', is_primary: false };
       this.dialogOpen = true;
     } catch (e) {
-      // User dismissed the picker or browser blocked it — silent.
+      const t = await this.toastCtrl.create({ message: 'Could not pick a contact.', duration: 2500, color: 'warning' });
+      await t.present();
     }
   }
 
@@ -198,7 +152,9 @@ export class EmergencyContactsPage implements OnInit {
     });
   }
 
-  back(): void {
-    this.router.navigateByUrl('/tabs/more');
+  /** First letter of the contact name for the avatar circle. */
+  initial(name: string | null | undefined): string {
+    const n = (name || '').trim();
+    return n ? n.charAt(0).toUpperCase() : '?';
   }
 }

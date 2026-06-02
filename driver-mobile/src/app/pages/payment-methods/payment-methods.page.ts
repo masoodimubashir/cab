@@ -1,5 +1,4 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
 import { Subject, debounceTime } from 'rxjs';
 import { ApiService } from '../../core/api.service';
@@ -23,6 +22,8 @@ const ALL_METHODS: PaymentMethod[] = ['cash', 'razorpay'];
 export class PaymentMethodsPage implements OnInit, OnDestroy {
   acceptCash = true;
   acceptRazorpay = true;
+  /** Whether the operator lets drivers change their own payment methods. */
+  canUpdate = true;
 
   private save$ = new Subject<void>();
   private saveSub?: { unsubscribe: () => void };
@@ -30,7 +31,6 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
   constructor(
     private api: ApiService,
     private auth: AuthService,
-    private router: Router,
     private toastCtrl: ToastController,
   ) {}
 
@@ -40,6 +40,12 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
     this.acceptCash = methods.includes('cash');
     this.acceptRazorpay = methods.includes('razorpay');
 
+    // Is the driver allowed to change these, or does the operator control them?
+    this.api.get<{ can_update: boolean }>('/operator/driver-payment-modes').subscribe({
+      next: (res) => { this.canUpdate = !!res?.can_update; },
+      error: () => { /* keep optimistic default; the backend still enforces */ },
+    });
+
     this.saveSub = this.save$.pipe(debounceTime(500)).subscribe(() => this.save());
   }
 
@@ -48,7 +54,16 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
   }
 
   toggleChanged(): void {
+    if (!this.canUpdate) return;
     this.save$.next();
+  }
+
+  /** Re-sync the toggles from the latest stored user (header reload button). */
+  reload(): void {
+    const u = this.auth.getUser();
+    const methods = u?.accepted_payment_methods ?? ALL_METHODS;
+    this.acceptCash = methods.includes('cash');
+    this.acceptRazorpay = methods.includes('razorpay');
   }
 
   private currentMethods(): PaymentMethod[] {
@@ -80,9 +95,5 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
         await t.present();
       },
     });
-  }
-
-  back(): void {
-    this.router.navigateByUrl('/tabs/more');
   }
 }

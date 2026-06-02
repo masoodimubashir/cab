@@ -126,8 +126,7 @@ class AdminCustomersController
                 'wallet_balance' => $this->walletService->balance($user),
                 'remaining_coupons' => 0, // placeholder until coupon redemption table exists
                 'used_subscribed' => false, // placeholder until subscription module exists
-                'cancellation_charge_policy' => optional(\App\Models\OperatorSetting::query()->first())
-                    ->commission_deduction ?? 'on_complaint',
+                'cancellation_charge_policy' => null, // placeholder until a per-customer cancellation-charge policy exists (previously leaked the driver commission_deduction enum)
                 'current_lat' => $user->current_lat,
                 'current_lng' => $user->current_lng,
                 'current_location_updated_at' => $user->current_location_updated_at,
