@@ -34,4 +34,33 @@ class OperatorPublicController extends Controller
             'in_percentage' => (bool) $s->tip_in_percentage,
         ]);
     }
+
+    /**
+     * Copy for the driver-app subscription popup (title / description / two
+     * button labels) set in Operator Settings → Subscription. Null fields mean
+     * "use the app's built-in default".
+     */
+    public function subscriptionPopup(Request $request)
+    {
+        $s = OperatorSetting::instance();
+
+        return response()->json([
+            'title' => $s->subscription_popup_title,
+            'desc' => $s->subscription_popup_desc,
+            'button1' => $s->subscription_popup_button1,
+            'button2' => $s->subscription_popup_button2,
+        ]);
+    }
+
+    /**
+     * Whether drivers may edit their own accepted payment methods (Operator
+     * Settings → Driver). When false, the driver app locks the toggles and the
+     * update endpoint rejects changes.
+     */
+    public function driverPaymentModes(Request $request)
+    {
+        return response()->json([
+            'can_update' => (bool) OperatorSetting::instance()->update_driver_payment_modes_enabled,
+        ]);
+    }
 }

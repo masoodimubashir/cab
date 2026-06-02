@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Driver;
 use App\Models\DriverDocument;
 use App\Models\DriverLocation;
+use App\Models\OperatorSetting;
 use App\Models\Trip;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -496,7 +498,7 @@ class DriversController extends Controller
         return response()->json(['document' => $doc->fresh()]);
     }
 
-    public function goOnline(Request $request)
+    public function goOnline(Request $request, WalletService $walletService)
     {
         $user = $request->user();
         $driver = Driver::query()->where('user_id', $user->id)->first();
@@ -550,6 +552,19 @@ class DriversController extends Controller
                 'message' => 'Not all required documents are approved.',
                 'missing' => array_values(array_unique($missing)),
             ], 422);
+        }
+
+        // Block going online while carrying an outstanding balance (negative
+        // wallet), when the operator enabled the driver-debt check.
+        if (OperatorSetting::instance()->check_driver_debt) {
+            $balance = $walletService->balance($user);
+            if ($balance < 0) {
+                return response()->json([
+                    'message' => 'Clear your outstanding balance of ₹' . number_format(abs($balance), 2) . ' before going online.',
+                    'error_code' => 'driver_debt',
+                    'balance' => $balance,
+                ], 422);
+            }
         }
 
         $driver->is_online = true;

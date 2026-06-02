@@ -14,8 +14,8 @@
     </div>
 
     <!-- Floating top controls (over the map) -->
-    <div class="trip-top">
-      <button class="nav-fab" (click)="back()" aria-label="Back">
+    <div class="trip-top dc-anim-in">
+      <button class="nav-fab dc-press" (click)="back()" aria-label="Back">
         <ion-icon name="arrow-back-outline"></ion-icon>
       </button>
       <div class="trip-top__right">
@@ -26,7 +26,7 @@
 
     <!-- ============ Floating sheet ============ -->
     <div
-      class="trip-sheet"
+      class="trip-sheet dc-anim-up"
       *ngIf="trip as t"
       [class.is-expanded]="isCompleted()"
       [class.is-collapsed]="sheetCollapsed && !isCompleted()"
@@ -48,7 +48,7 @@
 
         <!-- Ride-details trigger (driver name is on the map; fare/eta/phone in the modal) -->
         <button
-          class="details-fab"
+          class="details-fab dc-press"
           *ngIf="t.driver && !isCompleted()"
           (click)="openDriverDetails()"
           aria-label="Ride details"
@@ -58,10 +58,11 @@
       </div>
 
       <!-- Collapsible body -->
-      <div class="sheet-body">
+      <div class="sheet-body dc-stagger">
 
         <!-- Fare summary (completed only — during the ride the fare lives in the details modal) -->
         <div class="info-card fare-card" *ngIf="isCompleted() && (t.final_fare != null || couponPreview)">
+          <span class="card-label">Fare summary</span>
           <div class="fare-row" *ngIf="t.final_fare != null">
             <span>Fare</span><span>₹{{ t.final_fare }}</span>
           </div>
@@ -76,13 +77,13 @@
 
         <!-- Active-trip actions (compact icon row) -->
         <div class="trip-actions" *ngIf="canCancel() || canSOS()">
-          <button *ngIf="canCancel()" class="act act--cancel" (click)="cancel()">
+          <button *ngIf="canCancel()" class="act act--cancel dc-press" (click)="cancel()">
             <ion-icon name="close-circle-outline"></ion-icon><span>Cancel</span>
           </button>
-          <button *ngIf="canSOS()" class="act act--sos" [disabled]="sosBusy" (click)="triggerSOS()">
+          <button *ngIf="canSOS()" class="act act--sos dc-press" [disabled]="sosBusy" (click)="triggerSOS()">
             <ion-icon name="warning"></ion-icon><span>SOS</span>
           </button>
-          <button *ngIf="canShare()" class="act act--ghost" [disabled]="shareBusy" (click)="shareTrip()">
+          <button *ngIf="canShare()" class="act act--ghost dc-press" [disabled]="shareBusy" (click)="shareTrip()">
             <ion-icon name="share-social-outline"></ion-icon><span>Share</span>
           </button>
         </div>
@@ -101,15 +102,16 @@
             />
             <button
               type="button"
-              class="coupon-apply"
+              class="coupon-apply dc-press"
               [disabled]="couponApplying || (!couponPreview && !couponInput.trim())"
               (click)="applyCoupon()"
             >
               {{ couponApplying ? '…' : (couponPreview ? 'Remove' : 'Apply') }}
             </button>
           </div>
-          <small *ngIf="couponPreview" class="coupon-msg ok">
-            ✓ {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
+          <small *ngIf="couponPreview" class="coupon-msg ok dc-anim-pop">
+            <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+            {{ couponPreview.coupon.title }} applied — saved ₹{{ couponPreview.discount }}
           </small>
           <small *ngIf="couponError" class="coupon-msg err">{{ couponError }}</small>
         </div>
@@ -143,7 +145,7 @@
           ></textarea>
           <button
             *ngIf="!ratingSubmitted"
-            class="card-cta"
+            class="card-cta dc-press"
             [disabled]="ratingBusy || ratingScore < 1"
             (click)="submitRating()"
           >
@@ -160,7 +162,7 @@
           <div class="tip-presets">
             <button
               *ngFor="let v of tipping?.values"
-              class="tip-preset"
+              class="tip-preset dc-press"
               (click)="pickTipPreset(v)"
               [disabled]="tipBusy"
             >
@@ -168,13 +170,13 @@
             </button>
           </div>
           <div class="tip-actions">
-            <button class="link-btn" (click)="openCustomTip()" [disabled]="tipBusy">Custom amount</button>
-            <button class="link-btn muted" (click)="skipTip()" [disabled]="tipBusy">Skip</button>
+            <button class="link-btn dc-press" (click)="openCustomTip()" [disabled]="tipBusy">Custom amount</button>
+            <button class="link-btn muted dc-press" (click)="skipTip()" [disabled]="tipBusy">Skip</button>
           </div>
         </div>
 
         <!-- Already-tipped acknowledgement -->
-        <div class="tip-done" *ngIf="isCompleted() && (trip?.tip_amount ?? 0) > 0">
+        <div class="tip-done dc-anim-pop" *ngIf="isCompleted() && (trip?.tip_amount ?? 0) > 0">
           <ion-icon name="heart"></ion-icon>
           <span>You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!</span>
         </div>
@@ -185,7 +187,7 @@
             <span class="pay-bar-label">Total payable</span>
             <span class="pay-bar-amount">₹{{ payableAmount }}</span>
           </div>
-          <button class="pay-bar-btn" (click)="pay()">
+          <button class="pay-bar-btn dc-press" (click)="pay()">
             <ion-icon name="card-outline"></ion-icon>
             <span>Pay now</span>
           </button>
@@ -221,7 +223,7 @@
           />
 
           <button
-            class="modal-action-btn"
+            class="modal-action-btn dc-press"
             (click)="submitCustomTip()"
             [disabled]="tipBusy || !tipCustomAmount || tipCustomAmount <= 0"
           >
@@ -238,7 +240,7 @@
       <ion-header class="cancel-modal-header">
         <ion-toolbar class="cancel-toolbar">
           <ion-buttons slot="start">
-            <button class="back-arrow-btn" (click)="showCancelModal = false" aria-label="Back">
+            <button class="back-arrow-btn dc-press" (click)="showCancelModal = false" aria-label="Back">
               <ion-icon name="arrow-back"></ion-icon>
             </button>
           </ion-buttons>
@@ -306,7 +308,7 @@
           </div>
 
           <div class="submit-wrapper">
-            <button type="button" class="btn-submit-cancellation" (click)="submitCancellation()">
+            <button type="button" class="btn-submit-cancellation dc-press" (click)="submitCancellation()">
               Submit
             </button>
           </div>
@@ -325,7 +327,7 @@
     [handle]="true"
   >
     <ng-template>
-      <div class="dd-sheet" *ngIf="trip as t">
+      <div class="dd-sheet dc-stagger" *ngIf="trip as t">
         <h2 class="dd-title">Ride details</h2>
 
         <!-- Vehicle -->
@@ -351,7 +353,7 @@
         </div>
 
         <!-- Call -->
-        <button class="dd-call" *ngIf="driverPhone" (click)="callDriver()">
+        <button class="dd-call dc-press" *ngIf="driverPhone" (click)="callDriver()">
           <ion-icon name="call"></ion-icon>
           <span>Call driver</span>
         </button>

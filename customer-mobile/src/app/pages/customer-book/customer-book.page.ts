@@ -174,10 +174,6 @@ export class CustomerBookPage implements OnDestroy {
   savedPlaces: SavedPlace[] = [];
 
   selectedPaymentMode: 'cash' | 'razorpay' = 'cash';
-  couponInput = '';
-  couponApplying = false;
-  couponError: string | null = null;
-  couponPreview: { discount: number; final_amount: number; coupon: { assignment_id: number; title: string } } | null = null;
 
   estimate: EstimateResponse | null = null;
 
@@ -1029,60 +1025,6 @@ export class CustomerBookPage implements OnDestroy {
   selectPaymentMode(mode: 'cash' | 'razorpay'): void {
     this.selectedPaymentMode = mode;
     this.tripId = null;
-    this.couponPreview = null;
-    this.couponInput = '';
-    this.couponError = null;
-  }
-
-  async applyCoupon(): Promise<void> {
-    if (this.couponPreview) {
-      this.couponPreview = null;
-      this.couponInput = '';
-      this.couponError = null;
-      return;
-    }
-
-    const code = (this.couponInput || '').trim();
-    if (!code) return;
-
-    this.couponApplying = true;
-    this.couponError = null;
-
-    try {
-      if (!this.tripId) {
-        await this.createTrip();
-      }
-      if (!this.tripId) {
-        this.couponError = 'Please select your route first.';
-        this.couponApplying = false;
-        return;
-      }
-
-      const res = await this.api
-        .post<{
-          discount?: number;
-          final_amount?: number;
-          coupon?: { assignment_id: number; title: string };
-          error?: string;
-        }>(`/trips/${this.tripId}/coupon-preview`, { coupon_title: code })
-        .toPromise();
-
-      if (res?.error) {
-        this.couponError = res.error;
-      } else if (res?.discount != null && res?.final_amount != null && res?.coupon) {
-        this.couponPreview = {
-          discount: res.discount,
-          final_amount: res.final_amount,
-          coupon: res.coupon,
-        };
-      } else {
-        this.couponError = 'Could not apply coupon.';
-      }
-    } catch (e: any) {
-      this.couponError = e?.error?.message || 'Could not apply coupon.';
-    } finally {
-      this.couponApplying = false;
-    }
   }
 
   selectPackage(id: number): void {
@@ -1367,8 +1309,8 @@ export class CustomerBookPage implements OnDestroy {
         route_distance_km: this.routeDistanceKm,
         route_time_min: this.routeTimeMin,
         // Payment mode is chosen at the END of the trip now, not at booking.
+        // Coupons are redeemed on the post-trip payment screen, not here.
         payment_method: null,
-        coupon_title: this.couponPreview?.coupon.title ?? null,
       })
       .toPromise();
     this.tripId = tripRes?.trip?.id ?? null;

@@ -11,8 +11,8 @@
 
 <ion-content class="pg-content">
   <div class="pg-hero">
-    <h1 class="pg-title">Go commission-free</h1>
-    <p class="pg-subtitle">Subscribe to a plan and keep more of every fare.</p>
+    <h1 class="pg-title">{{ title }}</h1>
+    <p class="pg-subtitle">{{ desc }}</p>
   </div>
 
   <div class="pg-body">
@@ -54,7 +54,7 @@
     </div>
 
     <!-- Footer actions -->
-    <button class="subm-link" (click)="seeAll()" *ngIf="plans.length">See all plan details</button>
-    <button class="subm-later" (click)="close()">Maybe later</button>
+    <button class="subm-link" (click)="seeAll()" *ngIf="plans.length">{{ seeAllLabel }}</button>
+    <button class="subm-later" (click)="close()">{{ laterLabel }}</button>
   </div>
 </ion-content>

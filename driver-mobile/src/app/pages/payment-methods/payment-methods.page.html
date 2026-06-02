@@ -18,6 +18,11 @@
   </div>
 
   <div class="pg-body pg-anim-body">
+    <div class="pg-card pm-note pm-note--locked" *ngIf="!canUpdate">
+      <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
+      <span>Your operator manages which payment methods you accept. Contact support to change this.</span>
+    </div>
+
     <div class="pg-card">
       <div class="pm-row">
         <span class="pm-card__icon">
@@ -31,6 +36,7 @@
           class="pm-card__toggle"
           [(ngModel)]="acceptCash"
           (ionChange)="toggleChanged()"
+          [disabled]="!canUpdate"
           aria-label="Accept cash"
         ></ion-toggle>
       </div>
@@ -47,6 +53,7 @@
           class="pm-card__toggle"
           [(ngModel)]="acceptRazorpay"
           (ionChange)="toggleChanged()"
+          [disabled]="!canUpdate"
           aria-label="Accept Razorpay"
         ></ion-toggle>
       </div>

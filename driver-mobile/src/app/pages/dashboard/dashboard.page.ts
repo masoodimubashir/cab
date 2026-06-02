@@ -8,6 +8,7 @@ import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
 import { SubscriptionsModalComponent } from '../../shared/subscriptions-modal/subscriptions-modal.component';
+import { SubscriptionPlan } from '../../shared/plan-card/plan-card.component';
 
 declare const google: any;
 
@@ -134,34 +135,38 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     void this.maybeShowSubscriptionPrompt();
   }
 
-  private subPromptChecked = false;
+  private subPromptInFlight = false;
 
   /**
    * Show the subscription plans modal when the driver opens the app — but only
    * once per app session, and only if there are plans available to them.
    */
   private maybeShowSubscriptionPrompt(): void {
-    if (this.subPromptChecked) return;
-    this.subPromptChecked = true;
+    if (this.subPromptInFlight) return;
     try {
       if (sessionStorage.getItem('dc_sub_prompt_shown') === '1') return;
     } catch { /* sessionStorage unavailable — fall through */ }
+    this.subPromptInFlight = true;
 
-    this.api.get<{ data: unknown[] }>('/drivers/me/subscriptions/plans').subscribe({
+    this.api.get<{ data: SubscriptionPlan[] }>('/drivers/me/subscriptions/plans').subscribe({
       next: (res) => {
-        try { sessionStorage.setItem('dc_sub_prompt_shown', '1'); } catch { /* ignore */ }
+        this.subPromptInFlight = false;
         if (Array.isArray(res?.data) && res.data.length > 0) {
-          void this.presentSubscriptionModal();
+          // Mark "shown" ONLY once we actually present — an empty result must
+          // not permanently suppress the prompt for the rest of the session.
+          try { sessionStorage.setItem('dc_sub_prompt_shown', '1'); } catch { /* ignore */ }
+          void this.presentSubscriptionModal(res.data);
         }
       },
-      error: () => { /* silent — never block the dashboard on this */ },
+      error: () => { this.subPromptInFlight = false; },
     });
   }
 
-  private async presentSubscriptionModal(): Promise<void> {
+  private async presentSubscriptionModal(plans: SubscriptionPlan[]): Promise<void> {
     const modal = await this.modalCtrl.create({
       component: SubscriptionsModalComponent,
       cssClass: 'subscriptions-modal',
+      componentProps: { plans },
     });
     await modal.present();
     const { data } = await modal.onWillDismiss<{ navigate?: string }>();

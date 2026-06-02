@@ -46,6 +46,14 @@
         <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
       </ion-item>
 
+      <ion-item button (click)="go('/customer-tabs/coupons')" class="menu-item" detail="false">
+        <div class="icon-box" slot="start">
+          <ion-icon name="pricetags" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Coupons</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
+      </ion-item>
+
       <ion-item button (click)="go('/customer-tabs/emergency-contacts')" class="menu-item" detail="false">
         <div class="icon-box" slot="start">
           <ion-icon name="people" class="menu-icon" aria-hidden="true"></ion-icon>

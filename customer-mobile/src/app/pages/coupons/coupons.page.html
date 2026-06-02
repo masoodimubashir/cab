@@ -1,0 +1,80 @@
+<ion-content class="coupons-page" [fullscreen]="true">
+
+  <ion-refresher slot="fixed" (ionRefresh)="load($event)">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <!-- ============ Header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back dc-press" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <h1 class="header-title">My Coupons</h1>
+    <p class="header-sub">Enter a coupon code on the payment screen after your ride to get the discount.</p>
+  </div>
+
+  <!-- ============ Body ============ -->
+  <div class="page-body">
+
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+
+    <div class="coupon-list dc-stagger" *ngIf="!loading && rows.length">
+      <div
+        class="coupon-card dc-press"
+        *ngFor="let c of rows"
+        [class.is-used]="c.status === 'used'"
+        [class.is-expired]="c.status === 'expired'"
+      >
+        <div class="coupon-stub">
+          <ion-icon name="pricetag-outline"></ion-icon>
+        </div>
+
+        <div class="coupon-info">
+          <div class="coupon-top">
+            <span class="coupon-code">{{ c.title }}</span>
+            <span class="coupon-status" [ngClass]="'status-' + c.status">
+              {{ c.status === 'available' ? 'Available' : (c.status === 'used' ? 'Used' : 'Expired') }}
+            </span>
+          </div>
+
+          <span class="coupon-discount">{{ c.discount_label }}</span>
+
+          <span class="coupon-desc" *ngIf="c.subtitle || c.description">{{ c.subtitle || c.description }}</span>
+
+          <div class="coupon-meta">
+            <span *ngIf="c.city"><ion-icon name="location-outline"></ion-icon> {{ c.city }}</span>
+            <span *ngIf="c.status === 'available' && c.expires_at">
+              <ion-icon name="time-outline"></ion-icon> Expires {{ c.expires_at | date: 'd MMM y' }}
+            </span>
+            <span *ngIf="c.status === 'used' && c.used_at">
+              <ion-icon name="checkmark-circle-outline"></ion-icon> Used {{ c.used_at | date: 'd MMM y' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="coupon-list dc-stagger" *ngIf="loading">
+      <div class="coupon-card is-skeleton" *ngFor="let s of [1,2,3]">
+        <div class="coupon-stub"><span class="dc-skeleton sk-stub"></span></div>
+        <div class="coupon-info">
+          <div class="coupon-top">
+            <span class="dc-skeleton sk-line sk-code"></span>
+            <span class="dc-skeleton sk-pill"></span>
+          </div>
+          <span class="dc-skeleton sk-line sk-discount"></span>
+          <span class="dc-skeleton sk-line sk-desc"></span>
+          <span class="dc-skeleton sk-line sk-meta"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty -->
+    <div class="state-box dc-anim-in" *ngIf="!loading && !rows.length && !error">
+      <div class="state-icon"><ion-icon name="pricetags-outline"></ion-icon></div>
+      <p class="state-title">No coupons yet</p>
+      <p class="state-sub">When you're given a coupon, it'll show up here ready to use on your next ride.</p>
+    </div>
+  </div>
+</ion-content>

@@ -114,10 +114,10 @@ export class PlanCardComponent {
     });
 
     let validity = '';
-    if (p.meter_type === 'rides') validity = `Valid for ${p.rides_count} rides`;
-    else if (p.meter_type === 'days') validity = `Valid for ${p.days_count} days`;
+    if (p.meter_type === 'rides') validity = p.rides_count ? `Valid for ${p.rides_count} rides` : 'Valid for the included rides';
+    else if (p.meter_type === 'days') validity = p.days_count ? `Valid for ${p.days_count} days` : 'Time-limited plan';
     else if (p.meter_type === 'daily') validity = 'Valid for 1 day';
-    else if (p.meter_type === 'earnings') validity = `Active until you earn ₹${p.earnings_threshold}`;
+    else if (p.meter_type === 'earnings') validity = p.earnings_threshold != null ? `Active until you earn ₹${this.fmt(p.earnings_threshold)}` : 'Pay as you earn';
     if (validity) list.push({ icon: 'time-outline', text: validity });
 
     list.push({
