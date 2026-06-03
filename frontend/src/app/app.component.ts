@@ -45,6 +45,7 @@ export class AppComponent implements OnInit {
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
+    [/^\/notifications/,            'Notifications'],
     [/^\/settings\/operator/,       'Operator Settings'],
     [/^\/settings\/city/,           'City Settings'],
     [/^\/settings\/fleets/,         'Fleets'],
@@ -163,6 +164,8 @@ export class AppComponent implements OnInit {
     if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
 
     if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
+
+    operations.push({ label: 'Notifications', icon: 'bell', route: '/notifications' });
 
     if (canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])) {
       operations.push({

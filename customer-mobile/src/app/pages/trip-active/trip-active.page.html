@@ -331,12 +331,13 @@
         <h2 class="dd-title">Ride details</h2>
 
         <!-- Vehicle -->
-        <div class="dd-card" *ngIf="vehicleReg || vehicleSummary">
+        <div class="dd-card" *ngIf="vehicleReg || (vehicleSummary && showVehicleMakeModel)">
           <div class="dd-icon"><ion-icon name="car-sport"></ion-icon></div>
           <div class="dd-lines">
             <span class="dd-strong" *ngIf="vehicleReg">{{ vehicleReg }}</span>
-            <span class="dd-sub" *ngIf="vehicleSummary">{{ vehicleSummary }}</span>
-            <span class="dd-sub" *ngIf="!vehicleSummary && !vehicleReg">Vehicle details unavailable</span>
+            <!-- Make & model line — hidden when the city's toggle is off. -->
+            <span class="dd-sub" *ngIf="vehicleSummary && showVehicleMakeModel">{{ vehicleSummary }}</span>
+            <span class="dd-sub" *ngIf="(!vehicleSummary || !showVehicleMakeModel) && !vehicleReg">Vehicle details unavailable</span>
           </div>
         </div>
 

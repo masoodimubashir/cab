@@ -15,6 +15,7 @@ import {
   PhoneAuthService,
 } from '../../core/phone-auth.service';
 import { normalizePhoneToE164 } from '../../core/phone-normalize';
+import { environment } from '../../../environments/environment';
 
 type AuthExchangeResponse = {
   token: string;
@@ -141,9 +142,15 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   ionViewDidEnter(): void {
-    if (this.phoneAuth.isConfigured()) {
+    // Firebase reCAPTCHA is only needed for the Firebase OTP path.
+    if (!this.useServerOtp && this.phoneAuth.isConfigured()) {
       this.installRecaptchaSoon();
     }
+  }
+
+  /** When true, login uses the server-side MSG91 OTP instead of Firebase. */
+  get useServerOtp(): boolean {
+    return (environment as { useServerOtp?: boolean }).useServerOtp === true;
   }
 
   ionViewWillLeave(): void {
@@ -166,7 +173,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   get firebaseReady(): boolean {
-    return this.phoneAuth.isConfigured();
+    // Server OTP doesn't need Firebase, so the phone step is always "ready" then.
+    return this.useServerOtp || this.phoneAuth.isConfigured();
   }
 
   get firebaseSetup(): ReturnType<PhoneAuthService['firebaseSetupStatus']> {
@@ -302,6 +310,10 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   private async sendOtp(): Promise<void> {
     const normalized = normalizePhoneToE164(this.phone, this.country.code);
     if (!normalized) return;
+    if (this.useServerOtp) {
+      await this.sendServerOtp(normalized);
+      return;
+    }
     try {
       this.phoneAuth.setupInvisibleRecaptcha('recaptcha-container');
       await this.phoneAuth.sendOtp(normalized);
@@ -311,6 +323,26 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.error = mapFirebaseAuthError(e);
       this.step = 'phone';
       this.resetRecaptchaQuiet();
+    }
+  }
+
+  /** Server-side OTP request (MSG91). In mock mode the code comes back and is auto-filled. */
+  private async sendServerOtp(normalized: string): Promise<void> {
+    try {
+      const res = await this.api
+        .post<{ ok: boolean; resend_in?: number; dev_code?: string }>('/auth/otp/sms/start', {
+          phone: normalized,
+        })
+        .toPromise();
+      this.step = 'otp';
+      this.startResendTimer();
+      if (res?.dev_code) {
+        // Mock mode only — no real SMS was sent, so prefill the code for testing.
+        this.otp = res.dev_code;
+      }
+    } catch (e: unknown) {
+      this.error = (e as { error?: { message?: string } })?.error?.message || 'Could not send the code. Try again.';
+      this.step = 'phone';
     }
   }
 
@@ -332,8 +364,9 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
     this.loading = true;
     try {
-      const idToken = await this.phoneAuth.confirmOtp(this.otp.trim());
-      const user = await this.exchangeOtpToken(idToken);
+      const user = this.useServerOtp
+        ? await this.verifyServerOtp()
+        : await this.exchangeOtpToken(await this.phoneAuth.confirmOtp(this.otp.trim()));
       this.routeAfterAuth(user);
     } catch (e) {
       this.error = mapFirebaseAuthError(e) || 'Invalid code. Try again or request a new OTP.';
@@ -343,6 +376,28 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   // ── Backend exchange ─────────────────────────────────────────────
+
+  /** Verify the OTP server-side (MSG91 path) and start the driver session. */
+  private verifyServerOtp(): Promise<AuthUser> {
+    const normalized = normalizePhoneToE164(this.phone, this.country.code);
+    return new Promise((resolve, reject) => {
+      this.api
+        .post<AuthExchangeResponse>('/auth/otp/sms/verify', {
+          phone: normalized,
+          code: this.otp.trim(),
+          intent: 'driver',
+        })
+        .subscribe({
+          next: (res) => {
+            this.auth.setSession(res.token, res.user);
+            void this.push.reportDeviceInfo();
+            void this.push.registerForUser();
+            resolve(res.user);
+          },
+          error: (err) => reject(new Error(err?.error?.message || 'Sign-in failed')),
+        });
+    });
+  }
 
   private exchangeOtpToken(idToken: string): Promise<AuthUser> {
     const idTokenClean = normalizeFirebaseIdToken(idToken);
@@ -418,6 +473,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   private assertFirebaseReady(): boolean {
+    if (this.useServerOtp) return true; // server OTP path doesn't use Firebase
     if (this.phoneAuth.isConfigured()) return true;
     if (this.phoneAuth.firebaseSetupStatus() === 'not-web-app') {
       this.error = 'Your Firebase appId is not a Web app. Use Developer sign-in.';

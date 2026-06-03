@@ -33,6 +33,7 @@ class TripsController extends Controller
         DynamicPricingService $dynamicPricingService,
         SchedulingPolicyService $schedulingPolicy,
         PromotionApplicationService $promotionApplicationService,
+        \App\Services\NotificationCenter $notifier,
     ) {
         $data = $request->validate([
             // Primary axis: the exact per-city vehicle the customer picked.
@@ -143,6 +144,8 @@ class TripsController extends Controller
             'driver_factor' => (float) $dynamicRule->driver_fare_factor,
             'rule_id' => $dynamicRule->id,
             'fare_type' => $dynamicRule->fare_type,
+            'name' => $dynamicRule->name,
+            'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
         // Resolve the best applicable city-wide promotion using a quick
@@ -231,6 +234,27 @@ class TripsController extends Controller
 
         // Immediately start negotiation stage.
         $tripStateMachineService->transition($trip, 'NEGOTIATION');
+
+        // Scheduled ride → confirm the booking to the customer and flag it to admins.
+        // (ASAP rides go straight into the live search, so no booking notice there.)
+        if ($scheduledAt) {
+            $whenText = $scheduledAt->copy()->timezone(config('app.timezone'))->format('D, d M · g:i A');
+            $notifier->notifyUserId(
+                $trip->customer_id,
+                'scheduled_ride_booked',
+                'Ride scheduled',
+                "Your ride is booked for {$whenText}. We'll find you a driver near pickup time.",
+                ['trip_id' => $trip->id, 'scheduled_at' => $scheduledAt->toIso8601String()],
+                'calendar-outline',
+            );
+            $notifier->notifyAdmins(
+                'scheduled_ride_booked',
+                'New scheduled ride',
+                "Trip #{$trip->id} scheduled for {$whenText}.",
+                ['trip_id' => $trip->id, 'scheduled_at' => $scheduledAt->toIso8601String()],
+                'calendar-outline',
+            );
+        }
 
         // NOTE: fare_negotiations + negotiation offers are created in `fare-negotiation`.
         return response()->json([
@@ -349,6 +373,7 @@ class TripsController extends Controller
         Trip $trip,
         TripStateMachineService $tripStateMachineService,
         SchedulingPolicyService $schedulingPolicy,
+        \App\Services\NotificationCenter $notifier,
     ) {
         $request->validate([
             'reason' => ['nullable', 'string', 'max:1000'],
@@ -379,10 +404,107 @@ class TripsController extends Controller
             'cancelled_reason' => $request->input('reason'),
         ]);
 
+        // For a scheduled ride, let an already-assigned driver + the admins know
+        // the customer called it off (the customer initiated, so they don't need
+        // a notice).
+        if ($trip->scheduled_at) {
+            if ($trip->driver_id) {
+                $notifier->notifyUserId(
+                    $trip->driver_id,
+                    'scheduled_ride_cancelled',
+                    'Scheduled ride cancelled',
+                    "The customer cancelled scheduled trip #{$trip->id}.",
+                    ['trip_id' => $trip->id],
+                    'close-circle-outline',
+                );
+            }
+            $notifier->notifyAdmins(
+                'scheduled_ride_cancelled',
+                'Scheduled ride cancelled',
+                "Scheduled trip #{$trip->id} was cancelled by the customer.",
+                ['trip_id' => $trip->id],
+                'close-circle-outline',
+            );
+        }
+
         return response()->json([
             'trip' => $trip->fresh(),
             'late_cancellation' => $insideWindow,
         ]);
+    }
+
+    /**
+     * The signed-in customer's upcoming / active scheduled rides — next pickup
+     * first. Terminal trips (completed / cancelled) drop off; they live in the
+     * normal trip history + the notification inbox.
+     */
+    public function customerScheduled(Request $request)
+    {
+        $trips = Trip::query()
+            ->where('customer_id', $request->user()->id)
+            ->whereNotNull('scheduled_at')
+            ->whereNotIn('status', Trip::TERMINAL_STATUSES)
+            ->with(['driver:id,name,phone,avatar_path', 'rideType:id,name'])
+            ->orderBy('scheduled_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'data' => $trips->map(fn (Trip $t) => $this->scheduledRow($t, 'customer'))->all(),
+        ]);
+    }
+
+    /**
+     * The signed-in driver's upcoming scheduled rides (ones they've been
+     * assigned / accepted), next pickup first.
+     */
+    public function driverScheduled(Request $request)
+    {
+        $trips = Trip::query()
+            ->where('driver_id', $request->user()->id)
+            ->whereNotNull('scheduled_at')
+            ->whereNotIn('status', Trip::TERMINAL_STATUSES)
+            ->with(['customer:id,name,phone,avatar_path', 'rideType:id,name'])
+            ->orderBy('scheduled_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'data' => $trips->map(fn (Trip $t) => $this->scheduledRow($t, 'driver'))->all(),
+        ]);
+    }
+
+    /** Shared row shape for the scheduled-rides lists. */
+    private function scheduledRow(Trip $t, string $audience): array
+    {
+        $row = [
+            'id' => $t->id,
+            'status' => $t->status,
+            'scheduled_at' => optional($t->scheduled_at)->toIso8601String(),
+            'pickup_address' => $t->pickup_address,
+            'drop_address' => $t->drop_address,
+            'estimated_fare' => $t->estimated_fare,
+            'final_fare' => $t->final_fare,
+            'payment_method' => $t->payment_method,
+            'ride_type' => $t->rideType?->name,
+            'created_at' => optional($t->created_at)->toIso8601String(),
+        ];
+
+        if ($audience === 'customer') {
+            $row['driver'] = $t->driver
+                ? ['id' => $t->driver->id, 'name' => $t->driver->name, 'phone' => $t->driver->phone]
+                : null;
+        } else {
+            $row['customer'] = $t->customer
+                ? ['id' => $t->customer->id, 'name' => $t->customer->name, 'phone' => $t->customer->phone]
+                : null;
+            $row['pickup_lat'] = $t->pickup_lat;
+            $row['pickup_lng'] = $t->pickup_lng;
+            $row['drop_lat'] = $t->drop_lat;
+            $row['drop_lng'] = $t->drop_lng;
+        }
+
+        return $row;
     }
 
     /**
@@ -558,10 +680,9 @@ class TripsController extends Controller
             return response()->json(['message' => 'Trip already has a driver assigned.'], 409);
         }
 
-        DispatchHopJob::dispatch(
+        DispatchHopJob::startChain(
             $trip->id,
             (float) ($trip->estimated_fare ?? 0),
-            1,
             true,
         );
 

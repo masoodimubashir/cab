@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\FirebaseAuthController;
 use App\Http\Controllers\DeviceTokensController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
@@ -69,6 +70,10 @@ Route::post('/admin/login', [AdminAuthController::class, 'login']);
 Route::post('/auth/otp/start', [FirebaseAuthController::class, 'startOtp'])->middleware('throttle:otp');
 Route::post('/auth/otp/verify', [FirebaseAuthController::class, 'verifyOtp'])->middleware('throttle:otp');
 
+// Server-side SMS OTP via MSG91 (the non-Firebase login path).
+Route::post('/auth/otp/sms/start', [\App\Http\Controllers\Auth\OtpAuthController::class, 'start'])->middleware('throttle:otp');
+Route::post('/auth/otp/sms/verify', [\App\Http\Controllers\Auth\OtpAuthController::class, 'verify'])->middleware('throttle:otp');
+
 // Profile completion (used after first-time phone OTP sign-up to capture name/email/photo).
 Route::middleware('auth:sanctum')->post('/me/profile', [ProfileController::class, 'update']);
 
@@ -105,6 +110,15 @@ Route::middleware('auth:sanctum')->delete('/me/device-tokens/{token}', [DeviceTo
     ->where('token', '.*');
 // Device name / OS / app version captured on login (no notifications needed).
 Route::middleware('auth:sanctum')->post('/me/device-info', [DeviceTokensController::class, 'saveDeviceInfo']);
+
+// In-app notification inbox — role-agnostic (customer / driver / admin all use
+// these against their own notifications).
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me/notifications', [NotificationsController::class, 'index']);
+    Route::get('/me/notifications/unread-count', [NotificationsController::class, 'unreadCount']);
+    Route::post('/me/notifications/read-all', [NotificationsController::class, 'markAllRead']);
+    Route::post('/me/notifications/{appNotification}/read', [NotificationsController::class, 'markRead']);
+});
 
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
 
@@ -191,6 +205,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/trips/{trip}/driver-accept', [RideAssignmentController::class, 'accept']);
     Route::post('/trips/{trip}/driver-reject', [RideAssignmentController::class, 'reject']);
     Route::get('/driver/trips/history', [RatingsController::class, 'historyDriver']);
+    Route::get('/driver/trips/scheduled', [TripsController::class, 'driverScheduled']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
@@ -426,6 +441,8 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/rating', [RatingsController::class, 'store']);
     Route::post('/trips/{trip}/tip', [TripsController::class, 'tip']);
     Route::get('/customer/trips/history', [RatingsController::class, 'historyCustomer']);
+    // Must sit before the /{trip} wildcard so "scheduled" isn't read as a trip id.
+    Route::get('/customer/trips/scheduled', [TripsController::class, 'customerScheduled']);
     Route::get('/customer/trips/{trip}', [RatingsController::class, 'customerTripDetail']);
     Route::get('/me/coupons', [CustomerCouponsController::class, 'index']);
 });

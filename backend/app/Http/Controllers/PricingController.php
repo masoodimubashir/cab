@@ -186,6 +186,8 @@ class PricingController extends Controller
             'driver_factor' => (float) $dynamicRule->driver_fare_factor,
             'rule_id' => $dynamicRule->id,
             'fare_type' => $dynamicRule->fare_type,
+            'name' => $dynamicRule->name,
+            'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
         $fareInput = $fareEstimationService->fareInput(

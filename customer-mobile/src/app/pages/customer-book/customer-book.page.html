@@ -317,6 +317,29 @@
         <p>Offer a price, then search — drivers can accept it or send a counter.</p>
       </div>
 
+      <!-- Ride now vs schedule for later -->
+      <div class="when-select">
+        <button type="button" class="when-chip dc-press" [class.active]="scheduleMode === 'now'" (click)="setScheduleMode('now')">
+          <ion-icon name="flash-outline" aria-hidden="true"></ion-icon>
+          <span>Ride now</span>
+        </button>
+        <button type="button" class="when-chip dc-press" [class.active]="scheduleMode === 'later'" (click)="setScheduleMode('later')">
+          <ion-icon name="calendar-outline" aria-hidden="true"></ion-icon>
+          <span>Schedule</span>
+        </button>
+      </div>
+
+      <div class="when-picker" *ngIf="scheduleMode === 'later'">
+        <ion-datetime
+          presentation="date-time"
+          [min]="minScheduleAt"
+          [(ngModel)]="scheduledAt"
+          [preferWheel]="true"
+          hourCycle="h12"
+          size="cover"
+        ></ion-datetime>
+      </div>
+
       <div class="offer-amount-card">
         <button type="button" class="offer-step-btn dc-press" (click)="bumpOffer(-10)" [disabled]="(offerAmount || 0) <= minFare" aria-label="Decrease offer">&minus;</button>
         <div class="offer-amount-mid">
@@ -331,8 +354,8 @@
 
       <div class="action-footer">
         <button class="action-btn-back dc-press" (click)="state = 'ride-list'; error = null">Back</button>
-        <button class="action-btn-continue dc-press" (click)="sendOffer()" [disabled]="loading || !offerAmount">
-          {{ loading ? 'Searching…' : 'Search driver' }}
+        <button class="action-btn-continue dc-press" (click)="sendOffer()" [disabled]="loading || !offerAmount || (scheduleMode === 'later' && !scheduledAt)">
+          {{ loading ? 'Working…' : (scheduleMode === 'later' ? 'Schedule ride' : 'Search driver') }}
         </button>
       </div>
     </div>
@@ -481,6 +504,11 @@
       >
         <span>Surge × {{ estimate?.fare_breakdown?.surge_multiplier }}</span>
         <span></span>
+      </div>
+      <!-- Region-specific (area) fare — shown only when the city enables it. -->
+      <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.region_fare_name">
+        <span>{{ estimate?.fare_breakdown?.region_fare_name }} × {{ estimate?.fare_breakdown?.region_fare_factor }}</span>
+        <span>+₹{{ estimate?.fare_breakdown?.region_fare_amount }}</span>
       </div>
       <div
         class="breakdown-row promo"

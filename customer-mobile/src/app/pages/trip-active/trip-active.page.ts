@@ -74,6 +74,9 @@ export class TripActivePage implements OnInit, OnDestroy {
   // city∩driver fallback when present.
   serverAllowedMethods: PaymentMethod[] | null = null;
   selectedPaymentMethod: PaymentMethod | null = null;
+  // Per-city "Vehicle make & model" toggle (default ON). When false, the rider
+  // sees only the number plate — the make/model line is hidden.
+  showVehicleMakeModel = true;
 
   // Coupon entered on the payment screen. `couponPreview` is the validated
   // server response; until set, the payable amount equals trip.final_fare.
@@ -343,6 +346,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         negotiation?: { final_amount: number };
         city_payment_modes?: string[];
         available_payment_methods?: string[];
+        show_vehicle_make_model?: boolean;
         driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
       }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
@@ -361,6 +365,9 @@ export class TripActivePage implements OnInit, OnDestroy {
               this.serverAllowedMethods = res.available_payment_methods
                 .map((m) => m.toLowerCase())
                 .filter((m): m is PaymentMethod => m === 'cash' || m === 'razorpay');
+            }
+            if (typeof res.show_vehicle_make_model === 'boolean') {
+              this.showVehicleMakeModel = res.show_vehicle_make_model;
             }
             if (this.selectedPaymentMethod == null && this.trip.payment_method) {
               this.selectedPaymentMethod = this.trip.payment_method;

@@ -22,6 +22,8 @@ const wsScheme: 'http' | 'https' = USE_HTTPS ? 'https' : 'http';
 export const environment = {
   production: true,
   apiUrl: `${httpScheme}://${SERVER_HOST}/api`,
+  /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
+  useServerOtp: true,
   googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
   // Reverb websockets. Port 8080 is exposed directly by the server stack
   // (see backend deploy). With HTTPS you'd typically proxy this to 443.

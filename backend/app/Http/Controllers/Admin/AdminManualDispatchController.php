@@ -139,6 +139,7 @@ class AdminManualDispatchController
         TripStateMachineService $tripStateMachineService,
         SchedulingPolicyService $schedulingPolicy,
         PromotionApplicationService $promotionApplicationService,
+        \App\Services\NotificationCenter $notifier,
     ) {
         $data = $this->validateBookingPayload($request, requireUser: true);
 
@@ -312,7 +313,31 @@ class AdminManualDispatchController
         // Kick the expanding-ring auto-dispatcher so nearby drivers actually
         // get the broadcast — mirrors what /customer-offer does for customer
         // bookings. The job re-queues itself across hops until accepted.
-        DispatchHopJob::dispatch($trip->id, $estimatedFare, 1);
+        // A scheduled ride in DELAYED mode is parked instead — the alarm-time
+        // worker fires it near pickup.
+        if ($schedulingPolicy->shouldDispatchOnBooking($trip)) {
+            DispatchHopJob::startChain($trip->id, $estimatedFare);
+        }
+
+        // Confirm a scheduled booking to the customer + flag it to admins.
+        if ($trip->scheduled_at) {
+            $whenText = $trip->scheduled_at->copy()->timezone(config('app.timezone'))->format('D, d M · g:i A');
+            $notifier->notifyUserId(
+                $customer->id,
+                'scheduled_ride_booked',
+                'Ride scheduled',
+                "Your ride is booked for {$whenText}. We'll find you a driver near pickup time.",
+                ['trip_id' => $trip->id, 'scheduled_at' => $trip->scheduled_at->toIso8601String()],
+                'calendar-outline',
+            );
+            $notifier->notifyAdmins(
+                'scheduled_ride_booked',
+                'New scheduled ride',
+                "Trip #{$trip->id} scheduled for {$whenText} (manual dispatch).",
+                ['trip_id' => $trip->id, 'scheduled_at' => $trip->scheduled_at->toIso8601String()],
+                'calendar-outline',
+            );
+        }
 
         return response()->json([
             'trip' => $trip->fresh(),

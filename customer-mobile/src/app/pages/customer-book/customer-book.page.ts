@@ -46,6 +46,10 @@ type EstimateResponse = {
     time_component?: number;
     pickup_component?: number;
     surge_multiplier?: number;
+    // Area/region pricing line — present only when the city + rule allow showing it.
+    region_fare_name?: string | null;
+    region_fare_factor?: number | null;
+    region_fare_amount?: number | null;
     promo_discount?: number;
     applied_promotion?: {
       id: number;
@@ -258,6 +262,13 @@ export class CustomerBookPage implements OnDestroy {
   // Customer's counter-back price typed in the bids sheet — re-broadcasts a new
   // offer to every driver so bargaining can continue.
   counterOfferAmount: number | null = null;
+
+  // "Schedule for later" — on the fare step the customer can book a future ride
+  // instead of searching now. scheduledAt holds the chosen ISO time; the server
+  // parks it and the alarm-time worker dispatches near pickup.
+  scheduleMode: 'now' | 'later' = 'now';
+  scheduledAt: string | null = null;
+  minScheduleAt = new Date().toISOString();
 
   // Home skeleton-loading — a full-screen skeleton covers the whole home
   // (map + top bar + sheet) on cold start until BOTH the map and the home
@@ -924,7 +935,68 @@ export class CustomerBookPage implements OnDestroy {
       this.error = 'Enter a fare to offer.';
       return;
     }
+    if (this.scheduleMode === 'later') {
+      if (!this.scheduledAt) {
+        this.error = 'Pick a date & time for your ride.';
+        return;
+      }
+      await this.scheduleRide(amount);
+      return;
+    }
     await this.requestAutoDispatch(amount);
+  }
+
+  setScheduleMode(mode: 'now' | 'later'): void {
+    this.scheduleMode = mode;
+    this.error = null;
+    if (mode === 'now') {
+      this.scheduledAt = null;
+    } else if (!this.minScheduleAt) {
+      this.minScheduleAt = new Date().toISOString();
+    }
+  }
+
+  /**
+   * Book a future ride: create the trip with scheduled_at + record the customer's
+   * offer, then confirm and send the customer to their Scheduled rides list. The
+   * backend parks it and dispatches near pickup time (per the city's mode).
+   */
+  async scheduleRide(amount: number): Promise<void> {
+    this.loading = true;
+    this.error = null;
+    try {
+      if (!this.tripId) {
+        await this.createTrip();
+      }
+      if (!this.tripId) throw new Error('Trip creation failed.');
+
+      await this.api
+        .post(`/trips/${this.tripId}/negotiation/customer-offer`, { amount })
+        .toPromise();
+
+      const toast = await this.toastCtrl.create({
+        message: "Ride scheduled! We'll find you a driver near pickup time.",
+        duration: 2600,
+        color: 'success',
+      });
+      await toast.present();
+
+      this.resetAfterSchedule();
+      this.router.navigateByUrl('/customer-tabs/scheduled-rides');
+    } catch (e: any) {
+      this.error = e?.error?.message || e?.message || 'Could not schedule the ride.';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private resetAfterSchedule(): void {
+    this.state = 'idle';
+    this.tripId = null;
+    this.scheduledAt = null;
+    this.scheduleMode = 'now';
+    this.offerAmount = null;
+    this.lastSearchKey = null;
   }
 
   closeSheet(): void {
@@ -1404,6 +1476,8 @@ export class CustomerBookPage implements OnDestroy {
         drop_lng: this.drop.lng,
         route_distance_km: this.routeDistanceKm,
         route_time_min: this.routeTimeMin,
+        // Set when the customer chose "schedule for later"; null = ride now.
+        scheduled_at: this.scheduledAt,
         // Payment mode is chosen at the END of the trip now, not at booking.
         // Coupons are redeemed on the post-trip payment screen, not here.
         payment_method: null,

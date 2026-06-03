@@ -22,6 +22,8 @@ const wsScheme: 'http' | 'https' = USE_HTTPS ? 'https' : 'http';
 export const environment = {
   production: true,
   apiUrl: `${httpScheme}://${SERVER_HOST}/api`,
+  /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
+  useServerOtp: true,
   /** Same Web app config as dev; `appId` must be `…:web:…`, not Android/iOS. */
   firebase: {
     apiKey: "AIzaSyCCpdahYlxnjogTRS1ZSaF3sQ6cF9DTbVY",

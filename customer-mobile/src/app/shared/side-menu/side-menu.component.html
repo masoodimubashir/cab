@@ -47,6 +47,22 @@
         <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
       </ion-item>
 
+      <ion-item button (click)="go('/customer-tabs/scheduled-rides')" class="menu-item dc-press" detail="false">
+        <div class="icon-box" slot="start">
+          <ion-icon name="calendar" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Scheduled rides</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
+      </ion-item>
+
+      <ion-item button (click)="go('/customer-tabs/notifications')" class="menu-item dc-press" detail="false">
+        <div class="icon-box" slot="start">
+          <ion-icon name="notifications" class="menu-icon" aria-hidden="true"></ion-icon>
+        </div>
+        <ion-label class="menu-label">Notifications</ion-label>
+        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
+      </ion-item>
+
       <ion-item button (click)="go('/customer-tabs/coupons')" class="menu-item dc-press" detail="false">
         <div class="icon-box" slot="start">
           <ion-icon name="pricetags" class="menu-icon" aria-hidden="true"></ion-icon>
