@@ -11,7 +11,11 @@
    rule to bring the redesigned floating bar back.
    ============================================================ */
 
-.dc-tabbar { display: none; }
+/* Hidden on the booking/home tab (component adds .tabbar-hidden there). The
+   two-class selector outranks the `.dc-tabbar { display:flex }` below, so it
+   actually hides — unlike the old bare `.dc-tabbar { display:none }`, which the
+   flex rule silently overrode. */
+.dc-tabbar.tabbar-hidden { display: none !important; }
 
 .dc-tabbar {
   /* Floating, rounded, house-style bar */

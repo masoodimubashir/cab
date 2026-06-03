@@ -391,30 +391,32 @@
 /* ─────────────────────────────────────────────────────────────
    The bottom sheet (absolute · bottom:0 · rounded top)
    ───────────────────────────────────────────────────────────── */
+/* FLOATING modal: a rounded card lifted off the bottom with side margins +
+   shadow, so the map shows all around it. Applies to every state (home +
+   booking steps). Capped height so input-heavy steps scroll inside it. */
 .bottom-sheet {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
   background: var(--dc-surface, #fff);
-  border-top-left-radius: var(--dc-r-xl, 24px);
-  border-top-right-radius: var(--dc-r-xl, 24px);
-  box-shadow: 0 -10px 36px rgba(13, 27, 42, 0.10);
-  padding: 10px 18px calc(16px + env(safe-area-inset-bottom));
+  border-radius: var(--dc-r-xl, 24px);
+  box-shadow: 0 14px 44px rgba(13, 27, 42, 0.16);
+  padding: 16px;
   z-index: 2;
-  max-height: 72vh;
+  max-height: 64vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  animation: cbSheetIn 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* Grab handle */
-.sheet-grip {
-  width: 42px;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--dc-hairline-strong, #E2E6EA);
-  margin: 2px auto 12px;
+@keyframes cbSheetIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* No grab handle — this is a built-in panel, not a draggable modal sheet. */
+.sheet-grip { display: none; }
 
 /* ─────────────────────────────────────────────────────────────
    IDLE
@@ -1399,4 +1401,494 @@
   .premium-searching-sheet .search-pulse-dot::after {
     animation: none !important;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Step 2 — found-driver list (search step) + bargain-back counter (bids)
+   ───────────────────────────────────────────────────────────── */
+.sheet-find-driver .found-drivers {
+  max-height: 190px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.sheet-bids .bids-counter {
+  margin: 12px 0;
+
+  .bids-counter-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--dc-ink-soft, #6C757D);
+    margin-bottom: 8px;
+  }
+
+  .bids-counter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .offer-amount-card.slim {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--dc-surface-2, #FAFBFC);
+    border: 1px solid var(--dc-hairline, #EEF0F2);
+    border-radius: var(--dc-r-md, 14px);
+    padding: 6px 8px;
+
+    .offer-step-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--dc-surface, #fff);
+      border: 1px solid var(--dc-hairline, #EEF0F2);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--dc-ink, #0D1B2A);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      &:disabled { opacity: 0.4; }
+    }
+
+    .offer-amount-mid {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+
+      .offer-currency { font-size: 18px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
+      .offer-input {
+        width: 100%;
+        max-width: 90px;
+        border: none;
+        outline: none;
+        background: transparent;
+        text-align: center;
+        font-size: 24px;
+        font-weight: 800;
+        color: var(--dc-ink, #0D1B2A);
+        font-variant-numeric: tabular-nums;
+        &::placeholder { color: #C4CAD2; }
+      }
+    }
+  }
+
+  .bids-counter-send {
+    flex: 0 0 auto;
+    padding: 12px 20px;
+    border-radius: var(--dc-r-md, 14px);
+    border: none;
+    background: var(--dc-green, #12B35B);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 8px 20px rgba(18, 179, 91, 0.24);
+
+    &:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+    &:active:not(:disabled) { box-shadow: 0 4px 12px rgba(18, 179, 91, 0.18); }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Ride list (step 3) — ride-type selector + fare hint
+   ───────────────────────────────────────────────────────────── */
+.ride-list-hint {
+  margin: 10px 2px 2px;
+  font-size: 13px;
+  color: var(--dc-ink-soft, #6C757D);
+
+  strong { color: var(--dc-ink, #0D1B2A); font-weight: 800; }
+}
+
+.ride-type-select {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  -webkit-overflow-scrolling: touch;
+
+  .rt-chip {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--dc-hairline-strong, #E2E6EA);
+    background: var(--dc-surface, #fff);
+    color: var(--dc-ink, #0D1B2A);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &.active {
+      background: var(--dc-green, #12B35B);
+      border-color: var(--dc-green, #12B35B);
+      color: #fff;
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Idle (compact) — slim "Where to?" bar + product-kind pills
+   ───────────────────────────────────────────────────────────── */
+.sheet-idle-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 24vh;
+
+  .home-h {
+    margin: 2px 2px 0;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    color: var(--dc-ink, #0D1B2A);
+  }
+
+  .home-products {
+    display: flex;
+    gap: 12px;
+
+    .product-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 6px;
+      border-radius: var(--dc-r-lg, 18px);
+      border: 1.5px solid var(--dc-hairline, #EEF0F2);
+      background: var(--dc-surface-2, #FAFBFC);
+      cursor: pointer;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+
+      .pc-img {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--dc-surface, #fff);
+
+        img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        ion-icon { font-size: 24px; color: var(--dc-ink-soft, #6C757D); }
+        &.is-empty { background: var(--dc-canvas, #F4F6F8); }
+      }
+
+      .pc-name { font-size: 13px; font-weight: 700; color: var(--dc-ink, #0D1B2A); }
+
+      &.active {
+        border-color: var(--dc-green, #12B35B);
+        background: var(--dc-green-tint, #E7F8EF);
+        box-shadow: 0 6px 16px rgba(18, 179, 91, 0.16);
+      }
+    }
+  }
+
+  .kind-pills {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+
+    .kind-pill {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 14px 5px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--dc-hairline, #EEF0F2);
+      background: var(--dc-surface-2, #FAFBFC);
+      color: var(--dc-ink, #0D1B2A);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+
+      // Product image (or default icon when none) on the pill.
+      .kp-img {
+        flex: 0 0 auto;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--dc-surface, #fff);
+
+        img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        ion-icon { font-size: 15px; color: var(--dc-ink-soft, #6C757D); }
+
+        &.is-empty { background: var(--dc-canvas, #F4F6F8); }
+      }
+
+      .kp-label { line-height: 1; }
+
+      // Text-only pills (e.g. outstation packages) have no image — keep them
+      // comfortably padded on the left.
+      &:not(:has(.kp-img)) { padding-left: 14px; }
+
+      &.active {
+        background: var(--dc-green, #12B35B);
+        border-color: var(--dc-green, #12B35B);
+        color: #fff;
+      }
+    }
+  }
+
+  .where-to-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: auto;
+    padding: 15px 16px;
+    border-radius: var(--dc-r-lg, 18px);
+    border: none;
+    background: var(--dc-canvas, #F4F6F8);
+    cursor: pointer;
+
+    .wt-search { font-size: 20px; color: var(--dc-ink-soft, #6C757D); }
+    .wt-text {
+      flex: 1;
+      text-align: left;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--dc-ink, #0D1B2A);
+    }
+    .wt-arrow { font-size: 18px; color: var(--dc-green, #12B35B); }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Booking-flow motion — each step's content cascades in (every state:
+   home, pickup, drop, ride, fare, searching, bids). Layered on top of
+   the panel's float-in for a lively start-to-end feel.
+   ───────────────────────────────────────────────────────────── */
+@keyframes cbChildIn {
+  from { opacity: 0; transform: translateY(13px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.sheet-step > *,
+.sheet-idle-compact > *,
+.sheet-searching > *,
+.sheet-bids > * {
+  animation: cbChildIn 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.sheet-step > *:nth-child(1), .sheet-idle-compact > *:nth-child(1),
+.sheet-searching > *:nth-child(1), .sheet-bids > *:nth-child(1) { animation-delay: 0.05s; }
+.sheet-step > *:nth-child(2), .sheet-idle-compact > *:nth-child(2),
+.sheet-searching > *:nth-child(2), .sheet-bids > *:nth-child(2) { animation-delay: 0.11s; }
+.sheet-step > *:nth-child(3), .sheet-idle-compact > *:nth-child(3),
+.sheet-searching > *:nth-child(3), .sheet-bids > *:nth-child(3) { animation-delay: 0.17s; }
+.sheet-step > *:nth-child(4), .sheet-idle-compact > *:nth-child(4),
+.sheet-searching > *:nth-child(4), .sheet-bids > *:nth-child(4) { animation-delay: 0.23s; }
+.sheet-step > *:nth-child(n + 5), .sheet-idle-compact > *:nth-child(n + 5),
+.sheet-searching > *:nth-child(n + 5), .sheet-bids > *:nth-child(n + 5) { animation-delay: 0.29s; }
+
+/* Active step dot gently pops as you advance through the progress bar. */
+.floating-step-progress .step-item.active .step-number {
+  animation: cbDotPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes cbDotPop {
+  0%   { transform: scale(0.8); }
+  60%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-step > *, .sheet-idle-compact > *, .sheet-searching > *, .sheet-bids > *,
+  .floating-step-progress .step-item.active .step-number {
+    animation: none !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Full-screen cold-start skeleton — covers the WHOLE home (map +
+   top bar + floating sheet) until the map AND home data are ready,
+   then fades out to reveal the live screen with its cascade.
+   ───────────────────────────────────────────────────────────── */
+@keyframes cbShimmer {
+  0%   { background-position: -220px 0; }
+  100% { background-position: 220px 0; }
+}
+@keyframes hsMapSweep {
+  0%   { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+
+.home-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 50;                 /* above map (0), sheet (2), top-overlay (10) */
+  overflow: hidden;
+  background: var(--dc-canvas, #F4F6F8);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.5s ease;
+
+  /* shared shimmer for the placeholder blocks */
+  .hs-menu,
+  .hs-line,
+  .hs-bar,
+  .hs-card-circle,
+  .hs-card-name {
+    background: linear-gradient(90deg, #e9ecef 25%, #f4f6f8 37%, #e9ecef 63%);
+    background-size: 440px 100%;
+    animation: cbShimmer 1.25s ease-in-out infinite;
+    border-radius: 8px;
+  }
+
+  /* map area — soft tint + a slow light sweep, echoing the live map */
+  .hs-map {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 28% 32%, rgba(18, 179, 91, 0.06), transparent 42%),
+      linear-gradient(135deg, #eef1f4 0%, #e4e9ed 100%);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(100deg, transparent 38%, rgba(255, 255, 255, 0.5) 50%, transparent 62%);
+      background-size: 220% 100%;
+      background-position: 130% 0;
+      animation: hsMapSweep 1.8s ease-in-out infinite;
+    }
+  }
+
+  /* faint centre pin mirroring the home map's "you are here" dot */
+  .hs-pin {
+    position: absolute;
+    left: 50%;
+    top: 40%;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(18, 179, 91, 0.35);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 8px rgba(18, 179, 91, 0.12);
+  }
+
+  /* top bar: menu pill + pickup location bar */
+  .hs-top {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top, 16px));
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .hs-menu {
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .hs-locbar {
+    flex: 1;
+    min-width: 0;
+    height: 52px;
+    border-radius: 999px;
+    background: var(--dc-surface, #fff);
+    border: 1px solid var(--dc-hairline, #EEF0F2);
+    box-shadow: var(--dc-shadow-md, 0 8px 24px rgba(13, 27, 42, 0.12));
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+  }
+  .hs-loc-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--dc-green, #12B35B);
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+  .hs-loc-lines {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .hs-line.sm { height: 8px; width: 34%; }
+  .hs-line.lg { height: 11px; width: 76%; }
+
+  /* floating sheet: title · 3 product cards · "Where to?" bar */
+  .hs-sheet {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    background: var(--dc-surface, #fff);
+    border-radius: var(--dc-r-xl, 24px);
+    box-shadow: 0 14px 44px rgba(13, 27, 42, 0.16);
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 24vh;
+  }
+  .hs-bar.title { height: 24px; width: 62%; margin: 2px 2px 0; }
+  .hs-products {
+    display: flex;
+    gap: 12px;
+  }
+  .hs-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 6px;
+    border-radius: var(--dc-r-lg, 18px);
+    border: 1.5px solid var(--dc-hairline, #EEF0F2);
+    background: var(--dc-surface-2, #FAFBFC);
+  }
+  .hs-card-circle { width: 50px; height: 50px; border-radius: 50%; }
+  .hs-card-name { height: 12px; width: 68%; }
+  .hs-bar.wt {
+    height: 50px;
+    width: 100%;
+    border-radius: var(--dc-r-lg, 18px);
+    margin-top: auto;
+  }
+}
+
+/* Fade the whole overlay out once loading is done (kept in the DOM so the
+   crossfade plays, then visibility:hidden removes it from paint + a11y). */
+.home-skeleton.hs-done {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 0.5s ease, visibility 0s linear 0.5s;
+}
+.home-skeleton.hs-done * { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-skeleton .hs-menu,
+  .home-skeleton .hs-line,
+  .home-skeleton .hs-bar,
+  .home-skeleton .hs-card-circle,
+  .home-skeleton .hs-card-name,
+  .home-skeleton .hs-map::after { animation: none !important; }
+  .home-skeleton { transition: none !important; }
 }

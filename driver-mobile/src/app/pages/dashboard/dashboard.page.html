@@ -3,6 +3,29 @@
   <!-- ===== Full-bleed live map (ViewChild #mapDiv — DO NOT rename) ===== -->
   <div #mapDiv class="map-canvas"></div>
 
+  <!-- ===== FULL-SCREEN COLD-START SKELETON =====
+       Covers the whole dashboard (map + top bar + sheet) until BOTH the driver
+       profile and the map are ready, then fades out to reveal the live screen. -->
+  <div class="home-skeleton" [class.hs-done]="!homeLoading" aria-hidden="true">
+    <div class="hs-map"></div>
+    <div class="hs-pin"></div>
+
+    <!-- Top bar: avatar pill · DRIVER badge · status chip -->
+    <div class="hs-top">
+      <div class="hs-avatar dc-skeleton"></div>
+      <span class="drv-badge">DRIVER</span>
+      <div class="hs-status dc-skeleton"></div>
+    </div>
+
+    <!-- Bottom sheet: handle · title · hint · CTA -->
+    <div class="hs-sheet">
+      <div class="hs-handle"></div>
+      <div class="hs-line dc-skeleton"></div>
+      <div class="hs-sub dc-skeleton"></div>
+      <div class="hs-cta dc-skeleton"></div>
+    </div>
+  </div>
+
   <!-- ===== Floating driver top bar ===== -->
   <header class="drv-topbar">
     <!-- Menu / avatar = open drawer -->

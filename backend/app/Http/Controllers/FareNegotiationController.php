@@ -15,21 +15,42 @@ use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
+use App\Services\PaymentModeService;
 use App\Services\TripAssignmentService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
 
 class FareNegotiationController extends Controller
 {
-    public function show(Request $request, Trip $trip)
+    public function show(Request $request, Trip $trip, PaymentModeService $paymentModeService)
     {
         $user = $request->user();
         if (!$user) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        if ($trip->customer_id !== $user->id && $trip->driver_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden.'], 403);
+        // The customer and the bound/winning driver always have access. During
+        // a broadcast the trip has no bound driver yet, so any approved driver
+        // may view it to decide whether to bid — and any driver who already
+        // placed a bid keeps access to see the outcome.
+        $isParticipant = $trip->customer_id === $user->id
+            || $trip->driver_id === $user->id;
+        if (!$isParticipant) {
+            $openToDrivers = $trip->driver_id === null
+                && $trip->status === 'NEGOTIATION'
+                && Driver::query()
+                    ->where('user_id', $user->id)
+                    ->where('approval_status', 'approved')
+                    ->exists();
+            $hasBid = FareNegotiationOffer::query()
+                ->where('from_user_id', $user->id)
+                ->whereHas('fareNegotiation', function ($q) use ($trip) {
+                    $q->where('trip_id', $trip->id);
+                })
+                ->exists();
+            if (!$openToDrivers && !$hasBid) {
+                return response()->json(['message' => 'Forbidden.'], 403);
+            }
         }
 
         $negotiation = FareNegotiation::query()
@@ -78,6 +99,10 @@ class FareNegotiationController extends Controller
             'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
             'city_payment_modes' => $cityPaymentModes,
+            // Authoritative list the customer can actually pay with — city cap
+            // ∩ driver-effective modes (driver follows the city when the
+            // operator owns payment policy). The pay endpoints enforce the same.
+            'available_payment_methods' => $paymentModeService->allowedForTrip($trip),
             'driver_location' => $driverLocation,
         ]);
     }
@@ -213,18 +238,37 @@ class FareNegotiationController extends Controller
 
         $user = $request->user();
 
-        // Atomically claim the trip for this driver. Returns null if the trip is
-        // already claimed by another driver, no longer in NEGOTIATION, or gone.
-        $claimed = $tripAssignmentService->claim($trip->id, $user->id);
-        if (!$claimed) {
-            $fresh = $trip->fresh();
-            if ($fresh && $fresh->driver_id !== null && $fresh->driver_id !== $user->id) {
-                return response()->json(['message' => 'Trip already taken.'], 409);
+        // Eligibility check — deliberately NON-exclusive.
+        //
+        // A broadcast request (trip.driver_id === null) stays OPEN to every
+        // nearby driver: many drivers may ACCEPT or COUNTER the same request,
+        // and only the one the customer finally picks (via /customer-confirm)
+        // gets bound to the trip. We must NOT set trip.driver_id here — doing so
+        // would let the first responder lock everyone else out, and the customer
+        // could never compare competing bids.
+        //
+        // A pre-assigned request (manual dispatch, or a customer who used
+        // /select-driver) already carries a specific driver_id; only that driver
+        // may act on it. The lockForUpdate keeps the status/driver_id read
+        // race-free without writing anything.
+        $trip = DB::transaction(function () use ($trip, $user) {
+            $fresh = Trip::query()->where('id', $trip->id)->lockForUpdate()->first();
+            if (!$fresh || $fresh->status !== 'NEGOTIATION') {
+                return null;
             }
-            return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
-        }
-        $trip = $claimed;
+            if ($fresh->driver_id !== null && $fresh->driver_id !== $user->id) {
+                return null; // pre-assigned to another driver, or already confirmed
+            }
+            return $fresh;
+        });
 
+        if (!$trip) {
+            return response()->json(['message' => 'This request is no longer available.'], 409);
+        }
+
+        // One negotiation thread per trip. For a broadcast its driver_id stays
+        // null (no single owner) until the customer locks the winner; every
+        // driver's bid is identified by the offer's from_user_id, not here.
         $negotiation = FareNegotiation::query()->firstOrCreate(
             ['trip_id' => $trip->id],
             [
@@ -233,9 +277,6 @@ class FareNegotiationController extends Controller
                 'status' => 'NEGOTIATING',
             ]
         );
-
-        $negotiation->driver_id = $trip->driver_id;
-        $negotiation->save();
 
         if ($data['action'] === 'ACCEPT') {
             $customerOffer = $negotiation->offers()
@@ -247,9 +288,13 @@ class FareNegotiationController extends Controller
                 return response()->json(['message' => 'No customer offer found to accept.'], 422);
             }
 
-            // Supersede previous pending offers.
+            // Supersede only THIS driver's own prior pending offers. The
+            // customer's open offer and other drivers' live bids stay PENDING,
+            // so the request keeps showing to the whole pool and the customer
+            // can still compare competing bids.
             $negotiation->offers()
                 ->where('status', 'PENDING')
+                ->where('from_user_id', $user->id)
                 ->update(['status' => 'SUPERSEDED']);
 
             $amount = (float) $customerOffer->amount;
@@ -277,6 +322,7 @@ class FareNegotiationController extends Controller
             if ($trip->is_manual_dispatch) {
                 $confirmed = $tripAssignmentService->confirm($trip->id, (int) $offer->id, $amount);
                 if ($confirmed) {
+                    $negotiation->driver_id = $user->id;
                     $negotiation->status = 'LOCKED';
                     $negotiation->locked_at = now();
                     $negotiation->save();
@@ -295,8 +341,11 @@ class FareNegotiationController extends Controller
 
         $amount = (float) $data['amount'];
 
+        // Supersede only THIS driver's own prior pending offer (see the ACCEPT
+        // branch) so other drivers' bids and the customer's offer stay live.
         $negotiation->offers()
             ->where('status', 'PENDING')
+            ->where('from_user_id', $user->id)
             ->update(['status' => 'SUPERSEDED']);
 
         $offer = $negotiation->offers()->create([
@@ -367,6 +416,20 @@ class FareNegotiationController extends Controller
             return response()->json(['message' => 'Trip could not be confirmed (already taken or no longer in negotiation).'], 409);
         }
 
+        // Record the winning bid + the winning driver, then close out every
+        // other still-live bid now that the customer has chosen. confirm() has
+        // already moved the trip out of NEGOTIATION, so the pool stops seeing it.
+        $acceptedOffer->status = 'ACCEPTED';
+        $acceptedOffer->accepted_by_user_id = $user->id;
+        $acceptedOffer->decision_at = now();
+        $acceptedOffer->save();
+
+        $negotiation->offers()
+            ->where('status', 'PENDING')
+            ->where('id', '!=', $acceptedOffer->id)
+            ->update(['status' => 'SUPERSEDED']);
+
+        $negotiation->driver_id = $acceptedOffer->from_user_id;
         $negotiation->final_amount = $finalFare;
         $negotiation->status = 'LOCKED';
         $negotiation->locked_at = now();

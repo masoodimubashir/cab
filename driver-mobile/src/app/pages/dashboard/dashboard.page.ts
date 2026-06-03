@@ -54,6 +54,16 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   error: string | null = null;
   driver: Record<string, unknown> | null = null;
 
+  /**
+   * Full-screen cold-start skeleton — covers the whole dashboard (map + top
+   * bar + sheet) until BOTH the driver profile and the map are ready, then it
+   * fades out to reveal the live screen.
+   */
+  homeLoading = true;
+  private homeLoadStart = Date.now();
+  private profileReady = false;
+  private mapReady = false;
+
   /** Left navigation drawer (replaces the removed bottom tab bar). */
   drawerOpen = false;
   /** Recenter FAB busy spinner while we fetch a one-shot fix. */
@@ -124,6 +134,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         this.error = null;
       }
     });
+
+    // Safety: never trap the driver behind the skeleton if the map or profile
+    // is slow/unavailable (e.g. a pending location-permission prompt).
+    setTimeout(() => this.finishHomeLoading(), 6000);
   }
 
   ionViewWillEnter(): void {
@@ -182,6 +196,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       await this.startLiveTracking();
     } catch (e) {
       this.error = (e as Error).message;
+    } finally {
+      // Map is up (or failed) — release that half of the skeleton gate.
+      this.mapReady = true;
+      this.maybeFinishHome();
     }
   }
 
@@ -334,11 +352,38 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       error: (err) => {
         this.error = err?.error?.message || 'Could not load driver profile';
         this.driver = null;
+        this.profileReady = true;
+        this.maybeFinishHome();
       },
       complete: () => {
         this.loading = false;
+        this.profileReady = true;
+        this.maybeFinishHome();
       },
     });
+  }
+
+  /**
+   * The full-screen skeleton lifts only once BOTH the profile and the map are
+   * ready, so the driver never sees a half-loaded dashboard.
+   */
+  private maybeFinishHome(): void {
+    if (this.profileReady && this.mapReady) this.finishHomeLoading();
+  }
+
+  /**
+   * Fade the skeleton out once everything's ready, keeping it up for a short
+   * minimum so it never flashes on a fast load.
+   */
+  private finishHomeLoading(): void {
+    if (!this.homeLoading) return;
+    const elapsed = Date.now() - this.homeLoadStart;
+    const minMs = 500;
+    if (elapsed >= minMs) {
+      this.homeLoading = false;
+    } else {
+      setTimeout(() => (this.homeLoading = false), minMs - elapsed);
+    }
   }
 
   // -------------------------------------------------------------------- map ---

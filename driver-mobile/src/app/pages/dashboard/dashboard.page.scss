@@ -459,6 +459,101 @@
   100% { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0); }
 }
 
+/* ----------------------------------------------- full-screen cold-start skeleton
+   Covers the whole dashboard (map + top bar + sheet) on cold start, then fades
+   out. Shimmer blocks reuse the global .dc-skeleton; layout mirrors the live UI.
+   z 56: above home content (≤50), below the drawer (60). */
+.home-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 56;
+  overflow: hidden;
+  background: #F5F7FA;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.5s ease;
+
+  .hs-map {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 30% 34%, rgba(18, 179, 91, 0.07), transparent 42%),
+      linear-gradient(135deg, #EAEDEF 0%, #E0E4E7 100%);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(100deg, transparent 38%, rgba(255, 255, 255, 0.5) 50%, transparent 62%);
+      background-size: 220% 100%;
+      background-position: 130% 0;
+      animation: hsMapSweep 1.8s ease-in-out infinite;
+    }
+  }
+
+  .hs-pin {
+    position: absolute;
+    left: 50%;
+    top: 42%;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(18, 179, 91, 0.4);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 8px rgba(18, 179, 91, 0.14);
+  }
+
+  .hs-top {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: 14px;
+    right: 14px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hs-avatar { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; }
+  .hs-status { margin-left: auto; width: 108px; height: 34px; border-radius: 9999px; }
+
+  .hs-sheet {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    max-width: 520px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 22px;
+    box-shadow: 0 12px 40px rgba(13, 27, 42, 0.18);
+    padding: 16px;
+  }
+  .hs-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: #D6DCE2;
+    margin: -4px auto 16px;
+  }
+  .hs-line { height: 16px; width: 56%; margin: 0 auto 10px; border-radius: 9999px; }
+  .hs-sub  { height: 11px; width: 78%; margin: 0 auto 18px; border-radius: 9999px; }
+  .hs-cta  { height: 56px; width: 100%; border-radius: 9999px; }
+}
+
+/* Fade the overlay out once ready, then drop it from paint + a11y. */
+.home-skeleton.hs-done {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 0.5s ease, visibility 0s linear 0.5s;
+}
+.home-skeleton.hs-done * { animation-play-state: paused; }
+
+@keyframes hsMapSweep {
+  0%   { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .drv-topbar,
   .sheet,
@@ -466,4 +561,6 @@
   .scrim { animation: none; }
   .live-dot::after,
   .drv-menu__presence { animation: none; }
+  .home-skeleton .hs-map::after { animation: none !important; }
+  .home-skeleton { transition: none !important; }
 }

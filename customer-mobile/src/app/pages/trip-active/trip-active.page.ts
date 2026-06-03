@@ -69,6 +69,10 @@ export class TripActivePage implements OnInit, OnDestroy {
   trip: TripDetail | null = null;
   driverAccepts: PaymentMethod[] = ['cash', 'razorpay'];
   cityAcceptsUpper: string[] = ['CASH', 'RAZORPAY'];
+  // Authoritative list the backend computed (city ∩ driver-effective, honoring
+  // the operator's "drivers manage own modes" toggle). Preferred over the local
+  // city∩driver fallback when present.
+  serverAllowedMethods: PaymentMethod[] | null = null;
   selectedPaymentMethod: PaymentMethod | null = null;
 
   // Coupon entered on the payment screen. `couponPreview` is the validated
@@ -338,6 +342,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         trip?: TripDetail;
         negotiation?: { final_amount: number };
         city_payment_modes?: string[];
+        available_payment_methods?: string[];
         driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
       }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
@@ -351,6 +356,11 @@ export class TripActivePage implements OnInit, OnDestroy {
             }
             if (res.city_payment_modes?.length) {
               this.cityAcceptsUpper = res.city_payment_modes;
+            }
+            if (Array.isArray(res.available_payment_methods)) {
+              this.serverAllowedMethods = res.available_payment_methods
+                .map((m) => m.toLowerCase())
+                .filter((m): m is PaymentMethod => m === 'cash' || m === 'razorpay');
             }
             if (this.selectedPaymentMethod == null && this.trip.payment_method) {
               this.selectedPaymentMethod = this.trip.payment_method;
@@ -380,6 +390,10 @@ export class TripActivePage implements OnInit, OnDestroy {
    *   • driver.accepted_payment_methods (what this driver opted into)
    */
   get availablePaymentMethods(): PaymentMethod[] {
+    // Prefer the backend's authoritative list (it already honors the city cap,
+    // the driver's modes, and the operator's "drivers manage own modes" toggle).
+    // Fall back to the local city ∩ driver computation for older backends.
+    if (this.serverAllowedMethods) return this.serverAllowedMethods;
     const cityLower = this.cityAcceptsUpper
       .map((m) => m.toLowerCase())
       .filter((m): m is PaymentMethod => m === 'cash' || m === 'razorpay');

@@ -6,6 +6,7 @@ use App\Models\Payment;
 use App\Models\Trip;
 use App\Services\CouponService;
 use App\Services\InvoiceGeneratorService;
+use App\Services\PaymentModeService;
 use App\Services\RazorpayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -60,7 +61,7 @@ class PaymentsController extends Controller
         ]);
     }
 
-    public function payRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService, CouponService $couponService)
+    public function payRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService, CouponService $couponService, PaymentModeService $paymentModeService)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -73,6 +74,12 @@ class PaymentsController extends Controller
 
         if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
             return response()->json(['message' => 'Final fare not available.'], 422);
+        }
+
+        // Server-side guard: only accept a method the city + driver actually
+        // allow (same rule the customer screen shows). Never trust the client.
+        if (!in_array('razorpay', $paymentModeService->allowedForTrip($trip), true)) {
+            return response()->json(['message' => 'Online payment is not available for this trip.'], 422);
         }
 
         $data = $request->validate([
@@ -207,7 +214,7 @@ class PaymentsController extends Controller
         });
     }
 
-    public function payCash(Request $request, Trip $trip, CouponService $couponService)
+    public function payCash(Request $request, Trip $trip, CouponService $couponService, PaymentModeService $paymentModeService)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -220,6 +227,12 @@ class PaymentsController extends Controller
 
         if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
             return response()->json(['message' => 'Final fare not available.'], 422);
+        }
+
+        // Server-side guard: only accept a method the city + driver actually
+        // allow (same rule the customer screen shows). Never trust the client.
+        if (!in_array('cash', $paymentModeService->allowedForTrip($trip), true)) {
+            return response()->json(['message' => 'Cash is not available for this trip.'], 422);
         }
 
         $data = $request->validate([

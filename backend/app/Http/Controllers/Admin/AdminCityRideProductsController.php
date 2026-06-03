@@ -11,8 +11,8 @@ class AdminCityRideProductsController
 {
     private const KIND_DEFAULTS = [
         'local' => ['name' => 'Local', 'is_active' => true, 'sort_order' => 1],
-        'rental' => ['name' => 'Rental', 'is_active' => false, 'sort_order' => 2],
-        'outstation' => ['name' => 'Out Station', 'is_active' => false, 'sort_order' => 3],
+        'rental' => ['name' => 'Shuttle', 'is_active' => true, 'sort_order' => 2],
+        'outstation' => ['name' => 'Outstation', 'is_active' => true, 'sort_order' => 3],
     ];
 
     /**
@@ -53,6 +53,22 @@ class AdminCityRideProductsController
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'image' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
+
+        // Guard: a city must always keep at least ONE active ride product.
+        // Otherwise the customer app's booking screen renders no ride options
+        // and nobody in that city can book. Block deactivating the last one.
+        if (array_key_exists('is_active', $data) && !$request->boolean('is_active') && $product->is_active) {
+            $otherActiveExists = CityRideProduct::query()
+                ->where('city_id', $city->id)
+                ->where('id', '!=', $product->id)
+                ->where('is_active', true)
+                ->exists();
+            if (!$otherActiveExists) {
+                return response()->json([
+                    'message' => 'At least one ride product must stay active for this city.',
+                ], 422);
+            }
+        }
 
         if ($request->hasFile('image')) {
             if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
