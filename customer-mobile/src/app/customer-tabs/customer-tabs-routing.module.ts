@@ -38,6 +38,16 @@ const routes: Routes = [
           import('../pages/coupons/coupons.module').then((m) => m.CouponsPageModule),
       },
       {
+        path: 'scheduled-rides',
+        loadChildren: () =>
+          import('../pages/scheduled-rides/scheduled-rides.module').then((m) => m.ScheduledRidesPageModule),
+      },
+      {
+        path: 'notifications',
+        loadChildren: () =>
+          import('../pages/notifications/notifications.module').then((m) => m.NotificationsPageModule),
+      },
+      {
         // Same page/component as emergency-contacts; the URL switches it to the
         // Support view (official help numbers).
         path: 'support',

@@ -1,0 +1,40 @@
+.nt-error {
+  display: flex; align-items: center; gap: 8px;
+  color: #D33651; font-size: 0.88rem; font-weight: 600;
+  ion-icon { font-size: 20px; }
+}
+
+.nt-toolbar {
+  display: flex; justify-content: flex-end; margin-bottom: 4px;
+  .nt-markall {
+    border: none; background: transparent;
+    color: var(--ion-color-primary, #12B35B); font-size: 0.84rem; font-weight: 800; cursor: pointer;
+    padding: 4px 2px;
+    &[disabled] { color: #AEB8C2; }
+  }
+}
+
+.nt-skeletons { display: flex; flex-direction: column; gap: 10px; }
+.nt-list { display: flex; flex-direction: column; gap: 10px; }
+
+.nt-item {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left;
+  position: relative;
+  &.unread { background: #F2FAF5; }
+
+  .nt-icon {
+    width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+    background: rgba(var(--ion-color-primary-rgb), 0.12);
+    display: flex; align-items: center; justify-content: center;
+    ion-icon { font-size: 19px; color: var(--ion-color-primary, #12B35B); }
+  }
+  .nt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .nt-title { font-size: 0.92rem; font-weight: 800; color: var(--text-main, #0D1B2A); }
+  .nt-body { font-size: 0.83rem; color: var(--text-muted, #6C757D); line-height: 1.4; }
+  .nt-time { font-size: 0.72rem; font-weight: 600; color: #AEB8C2; margin-top: 2px; }
+
+  .nt-dot {
+    position: absolute; top: 14px; right: 14px;
+    width: 9px; height: 9px; border-radius: 50%; background: var(--ion-color-primary, #12B35B);
+  }
+}

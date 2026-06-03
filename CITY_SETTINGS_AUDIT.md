@@ -42,10 +42,10 @@ Real bugs, but they bite under specific conditions rather than every ride.
 
 | # | Fix | Why it matters | Effort | Where |
 |---|---|---|---|---|
-| **5** | **Overdue scheduled rides get stranded** | If the background worker is down >5 min, a pre-booked ride whose time passed is **never** woken again — the booked trip just never happens. | medium | `WakeScheduledTrips.php:36` (widen lower time bound) |
-| **6** | **Hidden 0.5 km radius floor** | Save a search radius under 500 m and the engine ignores it, using 500 m anyway. Your setting is silently overridden. | small | `DispatchHopJob.php:81` |
-| **7** | **No driver acceptance window** | A driver pinged in the first circle can accept much later, after the rider moved on. No "20 seconds to accept" timeout exists. | medium (new setting + job logic) | `DispatchHopJob` / new column |
-| **8** | **Duplicate pings + double-dispatch** | Same driver re-pinged on every circle expansion (spam); two search chains can run for one trip with no lock. | medium | `DispatchHopJob.php:83, 208` (cache lock + "newly-reached only") |
+| ~~**5**~~ ✅ **DONE** | ~~**Overdue scheduled rides get stranded**~~ | **Fixed (2026-06-03):** `WakeScheduledTrips` now uses a **2-hour catch-up window** (not 5 min) so a ride still gets a driver after a deploy/outage, plus an **expire pass** that auto-cancels rides overdue beyond the window and **notifies the customer + admins** — no more silent abandonment. | done | `WakeScheduledTrips.php` (catch-up + expire pass) |
+| ~~**6**~~ ✅ **DONE** | ~~**Hidden 0.5 km radius floor**~~ | **Fixed (2026-06-03):** `DispatchHopJob` now honours the configured request/hop radius (only falls back to 0.5 km when the config is blank/zero), so a sub-500 m radius actually takes effect. | done | `DispatchHopJob` (radius) |
+| ~~**7**~~ ✅ **DONE** | ~~**No driver acceptance window**~~ | **Fixed (2026-06-03):** new **Driver accept window (sec)** dispatcher setting (default 30, 0 = off). Each ping is timestamped per (trip, driver) in cache; a driver who taps accept after the window gets a clear "expired" 409. Manual/select-driver flows are unaffected. | done | `dispatcher_settings` + `DispatchHopJob` + `FareNegotiationController::driverAction` |
+| ~~**8**~~ ✅ **DONE** | ~~**Duplicate pings + double-dispatch**~~ | **Fixed (2026-06-03):** each driver is pinged **once** (only when newly reached by the ring), and a per-trip **generation token** makes any older/duplicate search chain self-abort so only one runs at a time. | done | `DispatchHopJob` (ping dedup + `startChain` gen token) |
 
 ---
 
@@ -65,8 +65,8 @@ Nothing's broken, but the panel currently shows switches that do nothing — it 
 
 | # | Fix | Where |
 |---|---|---|
-| 10 | **Wire up or remove the 4 dead City Settings switches** (chat toggle, region-specific fare, make/model, OTP message boxes) | `city-settings.component.ts` + backend consumers |
-| 11 | **Remove the dead `schedule_dispatch_instantly` selector** (or build the feature) | `dispatcher-settings.component.ts` |
+| 10 | **Dead City Settings switches** — 🔧 **3 of 4 done (2026-06-03):** ✅ **"Vehicle make & model"** (gates the make/model line on the rider's trip screen; default ON), ✅ **"Region-specific fare"** (shows the area rule's name + factor as an "Area fare" line in the rider's fare breakdown; default OFF, also gated per-rule by the rule's *is visible*), and ✅ **"Login OTP message" (Android/iOS)** — now used by the new **server-side MSG91 OTP** login path (`PhoneOtpService` reads the template). **Left:** ⬜ in-app chat toggle. | `city-settings.component.ts` + backend consumers |
+| ~~11~~ ✅ **DONE** | ~~**Remove the dead `schedule_dispatch_instantly` selector**~~ — **built the feature instead (2026-06-03):** the mode now drives dispatch timing — **Delayed** (fire at alarm), **Instant** (dispatch at booking), **Instant & Delayed** (both, with the alarm as a safety re-fire). | `SchedulingPolicyService` + `WakeScheduledTrips` + booking controllers |
 | 12 | **Fix the orphaned `emergency_no` field** (make it editable+used, or delete it) | `AdminCitySettingsController::shape()` |
 | 13 | **Ride Products: add reorder control + "remove banner" button** | `general-settings.component.ts` |
 | 14 | **Stop writing to the DB on page-load (GET)** — Ride Products & Dispatcher controllers re-insert rows on every visit | the two `index()` methods |
@@ -102,9 +102,9 @@ Shows **11 editable things but only ~5 do anything.**
 
 **Dead switches (look functional, change nothing):**
 - 🪦 In-app chat toggle
-- 🪦 "Show region-specific fare"
-- 🪦 "Show vehicle make & model"
-- 🪦 Login OTP message (Android + iOS) — login is Firebase; the one SMS path uses a hardcoded message
+- ✅ ~~🪦 "Show region-specific fare"~~ **Wired (2026-06-03)** — surfaces the area rule's name + factor as an "Area fare" line in the rider's fare breakdown (default OFF; per-rule *is visible* also required).
+- ✅ ~~🪦 "Show vehicle make & model"~~ **Wired (2026-06-03)** — gates the make/model line on the rider's trip screen (default ON; plate always shown).
+- ✅ ~~🪦 Login OTP message (Android + iOS) — login is Firebase; the one SMS path uses a hardcoded message~~ **Wired (2026-06-03)** — new **server-side MSG91 OTP** login path generates + verifies the code on the server and uses this template. Toggle the app's `useServerOtp` flag to switch from Firebase. (Firebase path kept as fallback.)
 - 🪦 `emergency_no` — orphaned: in DB but not editable on the screen and not read by the apps (they use the police number)
 
 **Bugs:**
@@ -125,16 +125,16 @@ Controls two engines: the **expanding-circle driver search** and the **scheduled
 **Big problem:** 🔴 **Rental and Outstation rows do nothing** — every dispatch consumer is hardcoded to read only the **Local** row (`DispatchHopJob.php:53`, `FareNegotiationController.php:138`, `WakeScheduledTrips.php:40`, `SchedulingPolicyService.php:89`).
 
 **Other dead/missing:**
-- 🪦 "Schedule dispatch mode" (Instant/Delayed/Both) — completely dead, never read.
-- ❌ No driver acceptance window.
-- ❌ No vehicle-type filter in auto-dispatch (bike requests pinged to car drivers).
+- ✅ ~~🪦 "Schedule dispatch mode" (Instant/Delayed/Both) — completely dead, never read.~~ **Wired up (2026-06-03)** — now controls when a scheduled ride dispatches (Delayed/Instant/Instant&Delayed).
+- ✅ ~~❌ No driver acceptance window.~~ **Added (2026-06-03)** — "Driver accept window (sec)" setting + per-ping expiry.
+- ✅ ~~❌ No vehicle-type filter in auto-dispatch (bike requests pinged to car drivers).~~ **Fixed earlier (Tier-1 #4).**
 
 **Serious bugs:**
 - 🔴 Manual-dispatch cities → "find drivers" silently returns nothing (`DispatchHopJob.php:54`).
-- 🟠 Saved radius < 500 m ignored (hidden 0.5 km floor, `DispatchHopJob.php:81`).
-- 🟠 Overdue scheduled rides permanently stranded if worker down >5 min (`WakeScheduledTrips.php:36`).
-- 🟡 Same driver re-pinged every circle expansion (no dedup).
-- 🟡 Possible double-dispatch (no lock).
+- ✅ ~~🟠 Saved radius < 500 m ignored (hidden 0.5 km floor).~~ **Fixed (2026-06-03)** — configured radius honoured.
+- ✅ ~~🟠 Overdue scheduled rides permanently stranded if worker down >5 min (`WakeScheduledTrips.php:36`).~~ **Fixed (2026-06-03)** — 2h catch-up window + auto-expire with notifications.
+- ✅ ~~🟡 Same driver re-pinged every circle expansion (no dedup).~~ **Fixed (2026-06-03)** — pinged once (newly-reached only).
+- ✅ ~~🟡 Possible double-dispatch (no lock).~~ **Fixed (2026-06-03)** — per-trip generation token.
 
 ---
 

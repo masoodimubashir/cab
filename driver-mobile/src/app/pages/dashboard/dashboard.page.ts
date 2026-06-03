@@ -84,6 +84,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       title: 'Drive',
       items: [
         { label: 'Rides', sub: 'Available & active trips', icon: 'car-outline', path: '/tabs/rides' },
+        { label: 'Scheduled rides', sub: 'Upcoming booked trips', icon: 'calendar-outline', path: '/tabs/scheduled' },
         { label: 'Earnings', sub: "Today & this week's income", icon: 'cash-outline', path: '/tabs/earnings' },
         { label: 'Wallet', sub: 'Balance & payouts', icon: 'wallet-outline', path: '/tabs/wallet' },
         { label: 'Trip history', sub: 'Your past rides', icon: 'time-outline', path: '/tabs/history' },
@@ -98,6 +99,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
         { label: 'Payment methods', sub: 'Cash & Razorpay', icon: 'card-outline', path: '/payment-methods' },
         { label: 'Emergency numbers', sub: 'SOS contacts', icon: 'people-outline', path: '/emergency-contacts' },
+        { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
         { label: 'Help & Support', sub: 'Contact us, FAQ & report', icon: 'help-buoy-outline', path: '/support' },
       ],
     },

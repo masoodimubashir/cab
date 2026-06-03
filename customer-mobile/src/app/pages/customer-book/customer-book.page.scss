@@ -1718,6 +1718,53 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Schedule-for-later selector (fare step)
+   ───────────────────────────────────────────────────────────── */
+.when-select {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+
+  .when-chip {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 11px 12px;
+    border-radius: var(--dc-r-md, 14px);
+    border: 1.5px solid var(--dc-hairline, #EEF0F2);
+    background: var(--dc-surface-2, #FAFBFC);
+    color: var(--dc-ink-soft, #6C757D);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+
+    ion-icon { font-size: 17px; }
+
+    &.active {
+      border-color: var(--dc-green, #12B35B);
+      background: var(--dc-green-tint, #E7F8EF);
+      color: var(--dc-green, #12B35B);
+    }
+  }
+}
+
+.when-picker {
+  margin-bottom: 12px;
+  border: 1px solid var(--dc-hairline, #EEF0F2);
+  border-radius: var(--dc-r-lg, 18px);
+  overflow: hidden;
+  background: var(--dc-surface, #fff);
+
+  ion-datetime {
+    --background: var(--dc-surface, #fff);
+    width: 100%;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
    Full-screen cold-start skeleton — covers the WHOLE home (map +
    top bar + floating sheet) until the map AND home data are ready,
    then fades out to reveal the live screen with its cascade.

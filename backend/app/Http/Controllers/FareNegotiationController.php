@@ -13,6 +13,7 @@ use App\Models\FareNegotiation;
 use App\Models\FareNegotiationOffer;
 use App\Models\Trip;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
 use App\Services\PaymentModeService;
@@ -85,14 +86,17 @@ class FareNegotiationController extends Controller
             }
         }
 
-        // City-level payment modes — the customer-mobile pay screen intersects
-        // these with the driver's accepted methods to render the final picker.
-        $cityModes = \App\Models\CitySetting::query()
+        // City-level settings — payment modes feed the pay screen, and
+        // show_vehicle_make_model gates whether the rider sees the driver's
+        // car make/model on the trip screen (default ON when no row exists).
+        $citySetting = \App\Models\CitySetting::query()
             ->where('city_id', $trip->city_id)
-            ->value('allowed_driver_payment_modes');
+            ->first();
+        $cityModes = $citySetting?->allowed_driver_payment_modes;
         $cityPaymentModes = is_array($cityModes) && $cityModes
             ? array_values(array_intersect($cityModes, ['CASH', 'RAZORPAY']))
             : ['RAZORPAY'];
+        $showVehicleMakeModel = $citySetting ? (bool) $citySetting->show_vehicle_make_model : true;
 
         return response()->json([
             'trip_id' => $trip->id,
@@ -103,11 +107,13 @@ class FareNegotiationController extends Controller
             // ∩ driver-effective modes (driver follows the city when the
             // operator owns payment policy). The pay endpoints enforce the same.
             'available_payment_methods' => $paymentModeService->allowedForTrip($trip),
+            // Per-city toggle: hide the driver's make/model from the rider when off.
+            'show_vehicle_make_model' => $showVehicleMakeModel,
             'driver_location' => $driverLocation,
         ]);
     }
 
-    public function customerOffer(Request $request, Trip $trip)
+    public function customerOffer(Request $request, Trip $trip, \App\Services\SchedulingPolicyService $scheduling)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -165,8 +171,11 @@ class FareNegotiationController extends Controller
             $autoOn = false; // operator must dispatch manually
         }
 
-        if ($autoOn) {
-            DispatchHopJob::dispatch($trip->id, $amount, 1);
+        // A scheduled ride in DELAYED mode must NOT dispatch now — the alarm-time
+        // worker (WakeScheduledTrips) fires it near pickup. INSTANT modes (and all
+        // non-scheduled rides) dispatch immediately, as before.
+        if ($autoOn && $scheduling->shouldDispatchOnBooking($trip)) {
+            DispatchHopJob::startChain($trip->id, $amount);
         }
 
         return response()->json([
@@ -264,6 +273,22 @@ class FareNegotiationController extends Controller
 
         if (!$trip) {
             return response()->json(['message' => 'This request is no longer available.'], 409);
+        }
+
+        // Acceptance window (bug #7): a driver auto-pinged by the dispatcher must
+        // act within driver_accept_window_sec of their ping. A late tap is
+        // rejected so the ride doesn't get claimed after the rider moved on.
+        // Drivers reached another way (manual pre-assign / customer select-driver)
+        // have no ping record and are unaffected.
+        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $window = (int) ($settings->driver_accept_window_sec ?? 0);
+        if ($window > 0) {
+            $pingedAt = Cache::get("dispatch_ping:{$trip->id}:{$user->id}");
+            if ($pingedAt !== null && (now()->timestamp - (int) $pingedAt) > $window) {
+                return response()->json([
+                    'message' => 'This request has expired. Please wait for the next one.',
+                ], 409);
+            }
         }
 
         // One negotiation thread per trip. For a broadcast its driver_id stays
@@ -373,7 +398,8 @@ class FareNegotiationController extends Controller
         Request $request,
         Trip $trip,
         TripAssignmentService $tripAssignmentService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        \App\Services\NotificationCenter $notifier
     ) {
         $data = $request->validate([
             'final_fare' => ['required', 'numeric', 'min:0'],
@@ -448,6 +474,24 @@ class FareNegotiationController extends Controller
                     'final_fare' => $finalFare,
                 ]
             );
+        }
+
+        // Scheduled ride → record inbox notifications (with the pickup time) for
+        // the customer, the assigned driver and the admins.
+        if ($confirmed->scheduled_at) {
+            $whenText = $confirmed->scheduled_at->copy()->timezone(config('app.timezone'))->format('D, d M · g:i A');
+            $payload = ['trip_id' => $confirmed->id, 'scheduled_at' => $confirmed->scheduled_at->toIso8601String()];
+
+            $notifier->notifyUserId($trip->customer_id, 'scheduled_ride_driver_assigned',
+                'Driver confirmed', "A driver is confirmed for your {$whenText} ride.", $payload, 'car-outline');
+
+            if ($driver) {
+                $notifier->notify($driver, 'scheduled_ride_driver_assigned',
+                    'Upcoming scheduled ride', "You're booked for trip #{$confirmed->id} on {$whenText}.", $payload, 'calendar-outline', push: false);
+            }
+
+            $notifier->notifyAdmins('scheduled_ride_driver_assigned',
+                'Scheduled ride assigned', "Trip #{$confirmed->id} ({$whenText}) now has a driver.", $payload, 'car-outline');
         }
 
         return response()->json(['trip' => $confirmed->fresh()]);

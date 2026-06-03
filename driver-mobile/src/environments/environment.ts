@@ -7,6 +7,13 @@ export const environment = {
   /** Laravel API base (include /api). */
   apiUrl: 'http://localhost:8000/api',
   /**
+   * Login OTP provider:
+   *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). Mock mode
+   *           (no MSG91 key on the backend) auto-fills the code for testing.
+   *   false → Firebase phone auth (legacy client-side path).
+   */
+  useServerOtp: true,
+  /**
    * Firebase: must be the **Web** app object (Console → Project settings → Your apps → </> Web).
    * If `appId` contains `:android:` or `:ios:` instead of `:web:`, Phone Auth in the browser throws
    * auth/configuration-not-found. Enable Phone sign-in; add `localhost` to Authorized domains.
