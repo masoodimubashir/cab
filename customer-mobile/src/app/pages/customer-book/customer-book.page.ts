@@ -106,6 +106,7 @@ type RideState =
   | 'idle'
   | 'pickup'
   | 'drop'
+  | 'ride-list'
   | 'find-driver'
   | 'offer'
   | 'waiting'
@@ -250,6 +251,22 @@ export class CustomerBookPage implements OnDestroy {
   // button state and the "Searching…" UI hint.
   searching = false;
 
+  // Route signature (pickup|drop) of the last discovery search, so re-entering
+  // the find-driver step without changing the route doesn't restart it.
+  private lastSearchKey: string | null = null;
+
+  // Customer's counter-back price typed in the bids sheet — re-broadcasts a new
+  // offer to every driver so bargaining can continue.
+  counterOfferAmount: number | null = null;
+
+  // Home skeleton-loading — a full-screen skeleton covers the whole home
+  // (map + top bar + sheet) on cold start until BOTH the map and the home
+  // data are ready, then it fades out and the live screen reveals.
+  homeLoading = true;
+  private homeLoadStart = Date.now();
+  private productsReady = false;
+  private mapReady = false;
+
   constructor(
     private api: ApiService,
     private auth: AuthService,
@@ -269,6 +286,10 @@ export class CustomerBookPage implements OnDestroy {
         next: (results) => (this.suggestions = results),
         error: () => (this.suggestions = []),
       });
+
+    // Safety: never let the full-screen skeleton stick if the map or data is
+    // slow/unavailable (e.g. a pending location-permission prompt).
+    setTimeout(() => this.finishHomeLoading(), 6000);
   }
 
   ionViewWillEnter(): void {
@@ -317,19 +338,29 @@ export class CustomerBookPage implements OnDestroy {
     this.api.get<{ data: VehicleType[] }>('/pricing/vehicle-types').subscribe({
       next: (res) => {
         this.vehicleTypes = res.data || [];
-        if (this.vehicleTypes.length && this.selectedVehicleTypeId == null) {
-          this.selectedVehicleTypeId = this.vehicleTypes[0].id;
-        }
+        // Default to "All" (selectedVehicleTypeId stays null). The customer
+        // picks a specific type on the find-driver step if they want one.
       },
       error: () => (this.vehicleTypes = []),
     });
   }
 
-  selectVehicleType(id: number): void {
+  /**
+   * Customer picked a ride type on the find-driver step. `null` = "All" (search
+   * every vehicle type). Re-prices the estimate for the chosen type and re-runs
+   * the driver search so the list only shows drivers who can serve it.
+   */
+  async selectRideVehicle(id: number | null): Promise<void> {
+    if (this.selectedVehicleTypeId === id) return;
     this.selectedVehicleTypeId = id;
     this.vehicleError = null;
-    void this.fetchEstimate();
-    void this.refreshDriverList();
+    await this.fetchEstimate();
+    // On the ride-list step (step 3) we only re-price; the search starts when
+    // the customer taps "Find drivers". If they're already on the driver-search
+    // step, re-run it so the list matches the newly chosen type.
+    if (this.state === 'find-driver') {
+      await this.discoverDrivers();
+    }
   }
 
   openReviewModal(): void {
@@ -406,9 +437,38 @@ export class CustomerBookPage implements OnDestroy {
         if (!this.productKinds.some((p) => p.kind === this.selectedProductKind) && this.productKinds.length) {
           this.selectedProductKind = this.productKinds[0].kind;
         }
+        this.productsReady = true;
+        this.maybeFinishHome();
       },
-      error: () => (this.productKinds = []),
+      error: () => {
+        this.productKinds = [];
+        this.productsReady = true;
+        this.maybeFinishHome();
+      },
     });
+  }
+
+  /**
+   * The full-screen home skeleton stays until BOTH the map and the home data
+   * (products) are ready, so the user never sees a half-loaded screen.
+   */
+  private maybeFinishHome(): void {
+    if (this.productsReady && this.mapReady) this.finishHomeLoading();
+  }
+
+  /**
+   * Hide the home skeleton once data is ready, keeping it visible for a short
+   * minimum so it never flashes; the real content then reveals with animation.
+   */
+  private finishHomeLoading(): void {
+    if (!this.homeLoading) return;
+    const elapsed = Date.now() - this.homeLoadStart;
+    const minMs = 500;
+    if (elapsed >= minMs) {
+      this.homeLoading = false;
+    } else {
+      setTimeout(() => (this.homeLoading = false), minMs - elapsed);
+    }
   }
 
   private iconForKind(kind: 'local' | 'outstation' | 'rental'): string {
@@ -480,8 +540,13 @@ export class CustomerBookPage implements OnDestroy {
       void this.startSelfLocationStream();
 
       this.startNearbyDriversPoll();
+      this.mapReady = true;
+      this.maybeFinishHome();
     } catch (e) {
       this.mapsError = (e as Error)?.message || 'Could not load map.';
+      // Don't trap the user behind the skeleton if the map fails to load.
+      this.mapReady = true;
+      this.maybeFinishHome();
     }
   }
 
@@ -767,8 +832,9 @@ export class CustomerBookPage implements OnDestroy {
     if (this.pickup && this.drop) void this.showRouteOnMap();
   }
 
-  // Step 2 → 3 — validate drop, draw the route path, show the driver radar.
-  goFindDriver(): void {
+  // Step 2 → 3 — validate drop, draw the route + price it, then show the ride
+  // list so the customer picks a ride type BEFORE we search for drivers.
+  goRideList(): void {
     this.dropError = null;
     if (!this.pickup) {
       this.goPickup();
@@ -779,15 +845,54 @@ export class CustomerBookPage implements OnDestroy {
       return;
     }
     this.suggestions = [];
-    this.state = 'find-driver';
-    // Draw the exact road path FIRST, then price the trip off its real driven
-    // distance (route_distance_km) — not the straight-line haversine. The
-    // estimate seeds the "name your price" base fare.
+    this.state = 'ride-list';
+    // Draw the road path, then price it off the real driven distance. The
+    // estimate reflects the selected ride type and seeds the "name your price"
+    // base fare. No driver search yet — that's step 4.
     void this.showRouteOnMap().then(() => this.fetchEstimate());
   }
 
-  // Step 3 → name your price. The base fare is the floor — the customer can
-  // only offer that or more, never less.
+  // Step 3 → 4 — start the expanding-circle driver search for the chosen ride
+  // type so the customer sees who's around before naming a price.
+  goFindDriver(): void {
+    if (!this.pickup || !this.drop) {
+      this.state = 'ride-list';
+      return;
+    }
+    this.suggestions = [];
+    this.state = 'find-driver';
+    void this.discoverDrivers();
+  }
+
+  /**
+   * Kick off the expanding-circle driver discovery for the current route so the
+   * customer can SEE who's around before naming a price. Reuses searchDrivers()
+   * (discovery mode: it finds + reveals drivers but never notifies them). Skips
+   * the restart when the route hasn't changed since the last search.
+   */
+  private async discoverDrivers(): Promise<void> {
+    if (!this.pickup || !this.drop) return;
+    if (!this.estimate?.estimated_fare) return; // estimate not ready yet
+    const key = `${this.pickup.lat},${this.pickup.lng}|${this.drop.lat},${this.drop.lng}|${this.selectedVehicleTypeId ?? 'all'}`;
+    if (key === this.lastSearchKey && this.tripId && this.drivers.length) {
+      return; // same route already searched — keep the list we already have
+    }
+    this.lastSearchKey = key;
+    // Tear down any prior search subscription so the next search binds to the
+    // NEW trip's channel (route changed → fresh trip), not the old one.
+    if (this.unsubscribeRealtime) {
+      this.unsubscribeRealtime();
+      this.unsubscribeRealtime = null;
+    }
+    // Force a fresh trip for the new route. An un-offered prior search trip has
+    // no customer offer, so it stays invisible to drivers and is harmless.
+    this.tripId = null;
+    await this.searchDrivers();
+  }
+
+  // Step 3 → 4 (Ride → Fare). Name your price. The base fare is the floor —
+  // the customer can only offer that or more, never less. (The route + estimate
+  // were already prepared on the ride step / goRideList.)
   goOffer(): void {
     const base = this.estimate?.estimated_fare
       ? Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5
@@ -983,18 +1088,6 @@ export class CustomerBookPage implements OnDestroy {
 
   cancelMapSelection(): void {
     this.state = this.activeSearchField === 'pickup' ? 'pickup' : 'drop';
-  }
-
-  addHome(): void {
-    // Add logic for saving/booking to home
-  }
-
-  addWork(): void {
-    // Add logic for saving/booking to work
-  }
-
-  addFavorite(): void {
-    // Add logic for saved places
   }
 
   selectProductKind(kind: 'local' | 'outstation' | 'rental'): void {
@@ -1225,6 +1318,8 @@ export class CustomerBookPage implements OnDestroy {
       const res = await this.api
         .post<EstimateResponse>('/pricing/estimate', {
           city_id: cityId,
+          // null = "All" → server prices the city's default vehicle.
+          vehicle_type_id: this.selectedVehicleTypeId,
           ride_type_id:
             this.selectedProductKind !== 'local' ? this.selectedRideTypeId : null,
           outstation_package_id:
@@ -1293,9 +1388,10 @@ export class CustomerBookPage implements OnDestroy {
     const tripRes = await this.api
       .post<{ trip: { id: number } }>('/trips', {
         city_id: cityId,
-        // No vehicle is requested — the trip stays open to any-vehicle drivers
-        // in the Match step. ride_type_id only goes through for outstation/
-        // rental so the right rate card and ride family are used.
+        // Vehicle type the customer chose on the find-driver step. null = "All"
+        // → the trip stays open to any-vehicle drivers; a specific id makes the
+        // search (and the driver list) match only that vehicle type.
+        vehicle_type_id: this.selectedVehicleTypeId,
         ride_type_id:
           this.selectedProductKind !== 'local' ? this.selectedRideTypeId : null,
         outstation_package_id:
@@ -1316,68 +1412,6 @@ export class CustomerBookPage implements OnDestroy {
     this.tripId = tripRes?.trip?.id ?? null;
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // Confirm request → select a specific driver
-  // ─────────────────────────────────────────────────────────────────
-
-
-  /**
-   * Customer taps a driver row → we send /trips/{id}/select-driver with the
-   * estimated fare as the opening offer. The chosen driver gets a direct push.
-   */
-  async confirmRequest(driver: NearbyDriver): Promise<void> {
-    if (!this.estimate?.estimated_fare) {
-      const t = await this.toastCtrl.create({
-        message: 'Still calculating fare — please wait a moment.',
-        duration: 2000,
-      });
-      await t.present();
-      return;
-    }
-
-    const amount = Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5;
-    const ok = await this.alertCtrl.create({
-      header: 'Confirm request',
-      message: `Send a ride request to ${driver.name || 'this driver'} at ₹${amount}?`,
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Confirm',
-          handler: () => this.doSelectDriver(driver, amount),
-        },
-      ],
-    });
-    await ok.present();
-  }
-
-  private async doSelectDriver(driver: NearbyDriver, amount: number): Promise<void> {
-    this.loading = true;
-    this.error = null;
-    try {
-      if (!this.tripId) {
-        await this.createTrip();
-      }
-      if (!this.tripId) throw new Error('Trip creation failed.');
-
-      await this.api
-        .post(`/trips/${this.tripId}/select-driver`, {
-          driver_id: driver.driver_id,
-          amount,
-        })
-        .toPromise();
-
-      this.selectedDriverId = driver.driver_id;
-      this.stopDriverListPoll();
-      this.startWaitingForDriver(amount);
-    } catch (e: any) {
-      this.error = e?.error?.message || e?.message || 'Could not select driver.';
-      // If the chosen driver is gone (409), refresh the list so the user can
-      // pick someone else.
-      await this.refreshDriverList();
-    } finally {
-      this.loading = false;
-    }
-  }
 
   /**
    * Auto-dispatch: POST /customer-offer instead of locking to one specific
@@ -1421,6 +1455,11 @@ export class CustomerBookPage implements OnDestroy {
   // ─────────────────────────────────────────────────────────────────
 
   private startWaitingForDriver(amount: number): void {
+    // Clear timers from any previous round (e.g. when the customer bargains
+    // back and re-broadcasts) so we never stack duplicate intervals.
+    if (this.searchTimer) clearInterval(this.searchTimer);
+    if (this.findAnotherTimeoutHandle) clearTimeout(this.findAnotherTimeoutHandle);
+    if (this.pollHandle) clearInterval(this.pollHandle);
     this.state = 'waiting';
     this.driverOffers = [];
     this.searchSecondsLeft = 60;
@@ -1561,10 +1600,10 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   /**
-   * Discovery-only search. Triggers DispatchHopJob in discoveryMode = true
-   * on the backend — drivers in each expanding ring are revealed to the
-   * customer but NOT notified. Customer manually picks one via the existing
-   * REQUEST flow (confirmRequest → /select-driver) after search ends.
+   * Discovery-only search. Triggers DispatchHopJob in discoveryMode = true on
+   * the backend — drivers in each expanding ring are revealed to the customer
+   * (populating the find-driver list) but NOT notified. The customer then names
+   * a price and broadcasts it to all of them via sendOffer → /customer-offer.
    */
   async searchDrivers(): Promise<void> {
     if (!this.estimate?.estimated_fare) {
@@ -1685,7 +1724,10 @@ export class CustomerBookPage implements OnDestroy {
     this.selectedDriverId = null;
     this.driverOffers = [];
     this.showFindAnother = false;
-    this.state = 'find-driver';
+    this.lastSearchKey = null;
+    // Back to the fare step so the customer can re-send "Search driver" (the
+    // cancelled trip is replaced by a fresh one on the next send).
+    this.state = 'offer';
   }
 
   private cleanupSearch(): void {
@@ -1740,6 +1782,22 @@ export class CustomerBookPage implements OnDestroy {
     if (!this.tripId) return;
     this.cleanupSearch();
     this.router.navigateByUrl(`/customer-tabs/trip/${this.tripId}`, { replaceUrl: true });
+  }
+
+  /**
+   * Customer re-broadcasts a brand-new price to ALL drivers from the bids sheet
+   * (bargaining back). Reuses the customer-offer path, so every driver sees the
+   * new ask and can re-accept or re-counter.
+   */
+  async counterBid(): Promise<void> {
+    let amount = Number(this.counterOfferAmount);
+    if (!amount || amount <= 0) {
+      this.error = 'Enter a price to send.';
+      return;
+    }
+    if (this.minFare && amount < this.minFare) amount = this.minFare;
+    this.counterOfferAmount = null;
+    await this.requestAutoDispatch(amount);
   }
 
   async confirmOffer(offer: DriverOffer): Promise<void> {

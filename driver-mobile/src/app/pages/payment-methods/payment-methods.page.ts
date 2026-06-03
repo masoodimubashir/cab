@@ -41,10 +41,21 @@ export class PaymentMethodsPage implements OnInit, OnDestroy {
     this.acceptRazorpay = methods.includes('razorpay');
 
     // Is the driver allowed to change these, or does the operator control them?
-    this.api.get<{ can_update: boolean }>('/operator/driver-payment-modes').subscribe({
-      next: (res) => { this.canUpdate = !!res?.can_update; },
-      error: () => { /* keep optimistic default; the backend still enforces */ },
-    });
+    this.api
+      .get<{ can_update: boolean; effective_modes?: string[] | null }>('/operator/driver-payment-modes')
+      .subscribe({
+        next: (res) => {
+          this.canUpdate = !!res?.can_update;
+          // When the operator owns payment policy, the driver follows their
+          // city's allowed modes — show those (locked) instead of the driver's
+          // own stored preference.
+          if (!this.canUpdate && Array.isArray(res?.effective_modes)) {
+            this.acceptCash = res.effective_modes.includes('cash');
+            this.acceptRazorpay = res.effective_modes.includes('razorpay');
+          }
+        },
+        error: () => { /* keep optimistic default; the backend still enforces */ },
+      });
 
     this.saveSub = this.save$.pipe(debounceTime(500)).subscribe(() => this.save());
   }

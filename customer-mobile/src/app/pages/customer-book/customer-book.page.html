@@ -2,6 +2,39 @@
   <!-- Full-bleed Google Map background layer (DO NOT change id) -->
   <div id="ride-map" class="ride-map"></div>
 
+  <!-- ───────── FULL-SCREEN COLD-START SKELETON ─────────
+       Covers the whole home (map + top bar + floating sheet) until BOTH the
+       map and the home data are ready, then fades out to reveal the live
+       screen with its cascade animation. -->
+  <div class="home-skeleton" [class.hs-done]="!homeLoading" aria-hidden="true">
+    <div class="hs-map"></div>
+    <div class="hs-pin"></div>
+
+    <!-- Top bar: menu pill + pickup location bar -->
+    <div class="hs-top">
+      <div class="hs-menu"></div>
+      <div class="hs-locbar">
+        <span class="hs-loc-dot"></span>
+        <div class="hs-loc-lines">
+          <div class="hs-line sm"></div>
+          <div class="hs-line lg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating sheet: title · 3 product cards · "Where to?" bar -->
+    <div class="hs-sheet">
+      <div class="hs-bar title"></div>
+      <div class="hs-products">
+        <div class="hs-card" *ngFor="let i of [0, 1, 2]">
+          <div class="hs-card-circle"></div>
+          <div class="hs-card-name"></div>
+        </div>
+      </div>
+      <div class="hs-bar wt"></div>
+    </div>
+  </div>
+
   <!-- Soft top scrim so white overlays read on a busy map -->
   <div class="map-scrim-top" *ngIf="state === 'idle'" aria-hidden="true"></div>
 
@@ -40,8 +73,8 @@
     </div>
   </div>
 
-  <!-- Floating step progress header (Pickup → Drop → Driver) -->
-  <div class="floating-step-progress dc-anim-up" *ngIf="state === 'pickup' || state === 'drop' || state === 'find-driver' || state === 'offer'">
+  <!-- Floating step progress header (Pickup → Drop → Ride → Fare) -->
+  <div class="floating-step-progress dc-anim-up" *ngIf="state === 'pickup' || state === 'drop' || state === 'ride-list' || state === 'offer'">
     <div class="step-progress-header">
       <div class="step-item" [class.active]="state === 'pickup'" [class.completed]="state !== 'pickup'">
         <span class="step-number">
@@ -52,21 +85,30 @@
       </div>
       <div class="step-line" [class.completed]="state !== 'pickup'"></div>
 
-      <div class="step-item" [class.active]="state === 'drop'" [class.completed]="state === 'find-driver' || state === 'offer'">
+      <div class="step-item" [class.active]="state === 'drop'" [class.completed]="state === 'ride-list' || state === 'offer'">
         <span class="step-number">
           <ion-icon name="checkmark" class="step-check" aria-hidden="true"></ion-icon>
           <span class="step-digit">2</span>
         </span>
         <span class="step-label">Drop</span>
       </div>
-      <div class="step-line" [class.completed]="state === 'find-driver' || state === 'offer'"></div>
+      <div class="step-line" [class.completed]="state === 'ride-list' || state === 'offer'"></div>
 
-      <div class="step-item" [class.active]="state === 'find-driver' || state === 'offer'">
+      <div class="step-item" [class.active]="state === 'ride-list'" [class.completed]="state === 'offer'">
         <span class="step-number">
           <ion-icon name="checkmark" class="step-check" aria-hidden="true"></ion-icon>
           <span class="step-digit">3</span>
         </span>
-        <span class="step-label">Driver</span>
+        <span class="step-label">Ride</span>
+      </div>
+      <div class="step-line" [class.completed]="state === 'offer'"></div>
+
+      <div class="step-item" [class.active]="state === 'offer'">
+        <span class="step-number">
+          <ion-icon name="checkmark" class="step-check" aria-hidden="true"></ion-icon>
+          <span class="step-digit">4</span>
+        </span>
+        <span class="step-label">Fare</span>
       </div>
     </div>
   </div>
@@ -82,67 +124,49 @@
     <!-- Grab handle shared by all states -->
     <div class="sheet-grip" aria-hidden="true"></div>
 
-    <!-- ───────── IDLE ───────── -->
-    <div *ngSwitchCase="'idle'" class="sheet-idle">
-      <!-- Welcome greeting header -->
-      <div class="greeting-header dc-anim-up">
-        <span class="greeting-subtitle">Hey {{ currentUser?.name || 'Lisa' }} 👋</span>
-        <h1 class="greeting-title">Where are you going?</h1>
-      </div>
+    <!-- ───────── HOME / IDLE (taller modal: title · product cards · where-to) ───────── -->
+    <div *ngSwitchCase="'idle'" class="sheet-idle-compact dc-anim-up">
+      <!-- The cold-start skeleton is the full-screen .home-skeleton overlay
+           above; here we render only the real content, which reveals with the
+           cascade animation once homeLoading flips off. -->
+      <ng-container *ngIf="!homeLoading">
+      <h2 class="home-h">Where are you going?</h2>
 
-      <!-- Ride type chips -->
-      <div class="ride-chips dc-stagger">
+      <!-- Product types as cards (image + name, default icon when no image) -->
+      <div class="home-products" *ngIf="productKinds.length">
         <button
           *ngFor="let p of productKinds"
-          class="chip dc-press"
+          type="button"
+          class="product-card dc-press"
           [class.active]="p.kind === selectedProductKind"
           (click)="selectProductKind(p.kind)"
         >
-          <div class="chip-icon-circle" [class.has-banner]="!!p.image_url" [class.is-empty]="!p.image_url">
+          <span class="pc-img" [class.is-empty]="!p.image_url">
             <img *ngIf="p.image_url" [src]="p.image_url" [alt]="p.label" />
-            <ion-icon *ngIf="!p.image_url" name="image-outline" aria-hidden="true"></ion-icon>
-          </div>
-          <span class="chip-label">{{ p.label }}</span>
-          <span class="chip-desc">
-            {{ p.kind === 'local' ? 'City rides' : (p.kind === 'outstation' ? 'Inter-city' : 'Hourly rental') }}
+            <ion-icon *ngIf="!p.image_url" name="car-outline" aria-hidden="true"></ion-icon>
           </span>
+          <span class="pc-name">{{ p.label }}</span>
         </button>
       </div>
 
       <!-- Outstation packages — One Way / Round Trip … -->
-      <div
-        class="package-picker dc-anim-up"
-        *ngIf="selectedProductKind === 'outstation' && outstationPackages.length"
-      >
-        <span class="package-picker__label">Package</span>
-        <div class="package-picker__chips">
-          <button
-            *ngFor="let pkg of outstationPackages"
-            type="button"
-            class="package-chip dc-press"
-            [class.active]="pkg.id === selectedPackageId"
-            (click)="selectPackage(pkg.id)"
-          >
-            {{ pkg.name }}
-          </button>
-        </div>
+      <div class="kind-pills" *ngIf="selectedProductKind === 'outstation' && outstationPackages.length">
+        <button
+          *ngFor="let pkg of outstationPackages"
+          type="button"
+          class="kind-pill dc-press"
+          [class.active]="pkg.id === selectedPackageId"
+          (click)="selectPackage(pkg.id)"
+        >{{ pkg.name }}</button>
       </div>
 
-      <!-- Primary New Trip CTA -->
-      <button class="new-trip-cta-btn dc-press dc-anim-up" (click)="goPickup()">
-        <div class="cta-left">
-          <div class="cta-icon-circle">
-            <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
-          </div>
-          <div class="cta-text">
-            <span class="cta-title">New Trip</span>
-            <span class="cta-sub">Set pickup &amp; destination</span>
-          </div>
-        </div>
-        <span class="cta-arrow-circle">
-          <ion-icon name="arrow-forward-outline" class="cta-arrow" aria-hidden="true"></ion-icon>
-        </span>
+      <!-- "Where to?" — pinned to the bottom of the taller modal -->
+      <button class="where-to-bar dc-press" (click)="goPickup()">
+        <ion-icon name="search-outline" class="wt-search" aria-hidden="true"></ion-icon>
+        <span class="wt-text">Where to?</span>
+        <ion-icon name="arrow-forward-outline" class="wt-arrow" aria-hidden="true"></ion-icon>
       </button>
+      </ng-container>
     </div>
 
     <!-- ───────── STEP 1: PICKUP ───────── -->
@@ -248,37 +272,49 @@
 
       <div class="action-footer">
         <button class="action-btn-back dc-press" (click)="goPickup()">Back</button>
-        <button class="action-btn-continue dc-press" (click)="goFindDriver()">Next</button>
+        <button class="action-btn-continue dc-press" (click)="goRideList()">Next</button>
       </div>
     </div>
 
-    <!-- ───────── STEP 3: FIND DRIVER (radar) ───────── -->
-    <div *ngSwitchCase="'find-driver'" class="sheet-find-driver sheet-step dc-anim-up">
-      <div class="finddriver-row">
-        <div class="radar-scanner mini">
-          <div class="radar-sweep"></div>
-          <div class="radar-circle circle-1"></div>
-          <div class="radar-circle circle-2"></div>
-          <div class="radar-circle circle-3"></div>
-          <div class="radar-icon-center"><ion-icon name="car"></ion-icon></div>
-        </div>
-        <div class="finddriver-text">
-          <span class="fd-title">Looking around you</span>
-          <span class="fd-sub">Nearby drivers are shown on the map. Set your fare to send a request.</span>
-        </div>
+    <!-- ───────── STEP 3: RIDE TYPES (choose your ride) ───────── -->
+    <div *ngSwitchCase="'ride-list'" class="sheet-ride-list sheet-step dc-anim-up">
+      <div class="step-title-row">
+        <h3 class="step-title">Choose your ride</h3>
       </div>
+
+      <!-- "All" rides every vehicle type; a specific type narrows step 4's
+           search to drivers with that vehicle. -->
+      <div class="ride-type-select" *ngIf="vehicleTypes.length">
+        <button
+          type="button"
+          class="rt-chip dc-press"
+          [class.active]="selectedVehicleTypeId === null"
+          (click)="selectRideVehicle(null)"
+        >All</button>
+        <button
+          type="button"
+          *ngFor="let v of vehicleTypes"
+          class="rt-chip dc-press"
+          [class.active]="selectedVehicleTypeId === v.id"
+          (click)="selectRideVehicle(v.id)"
+        >{{ v.name }}</button>
+      </div>
+
+      <p class="ride-list-hint" *ngIf="estimate?.estimated_fare">
+        Estimated fare <strong>₹{{ estimate?.estimated_fare }}</strong> · you'll name your own price next
+      </p>
 
       <div class="action-footer">
         <button class="action-btn-back dc-press" (click)="goDrop()">Back</button>
-        <button class="action-btn-continue dc-press" (click)="goOffer()">Request Ride</button>
+        <button class="action-btn-continue dc-press" (click)="goOffer()">Set your fare</button>
       </div>
     </div>
 
-    <!-- ───────── NAME YOUR PRICE ───────── -->
+    <!-- ───────── STEP 4: NAME YOUR PRICE → SEARCH DRIVER ───────── -->
     <div *ngSwitchCase="'offer'" class="sheet-offer sheet-step dc-anim-up">
       <div class="offer-head">
-        <h3>Name your fare</h3>
-        <p>Offer a price — drivers can accept it or send you a counter-offer.</p>
+        <h3>Set your fare</h3>
+        <p>Offer a price, then search — drivers can accept it or send a counter.</p>
       </div>
 
       <div class="offer-amount-card">
@@ -294,9 +330,9 @@
       <small *ngIf="error" class="fare-error">{{ error }}</small>
 
       <div class="action-footer">
-        <button class="action-btn-back dc-press" (click)="state = 'find-driver'; error = null">Back</button>
+        <button class="action-btn-back dc-press" (click)="state = 'ride-list'; error = null">Back</button>
         <button class="action-btn-continue dc-press" (click)="sendOffer()" [disabled]="loading || !offerAmount">
-          {{ loading ? 'Sending…' : 'Send to drivers' }}
+          {{ loading ? 'Searching…' : 'Search driver' }}
         </button>
       </div>
     </div>
@@ -347,7 +383,7 @@
       <div class="searching-head">
         <span class="searching-text">
           <span class="search-pulse-dot"></span>
-          Waiting for a driver…
+          Searching for a driver…
         </span>
         <span class="timer">0:{{ searchSecondsLeft.toString().padStart(2, '0') }}</span>
       </div>
@@ -364,7 +400,7 @@
     <div *ngSwitchCase="'bids'" class="sheet-bids dc-anim-up">
       <div class="bids-head">
         <div class="bids-badge dc-anim-pop"><ion-icon name="pricetag"></ion-icon></div>
-        <h3>Driver responded</h3>
+        <h3>{{ driverOffers.length > 1 ? driverOffers.length + ' drivers responded' : 'Driver responded' }}</h3>
       </div>
 
       <ion-list lines="none" class="bids-list dc-stagger">
@@ -377,6 +413,22 @@
           <ion-badge slot="end" color="success" class="bid-amount">₹{{ o.amount }}</ion-badge>
         </ion-item>
       </ion-list>
+
+      <!-- Bargain back: send a fresh price to every driver -->
+      <div class="bids-counter">
+        <span class="bids-counter-label">Not quite right? Send a new price to all drivers</span>
+        <div class="bids-counter-row">
+          <div class="offer-amount-card slim">
+            <button type="button" class="offer-step-btn dc-press" (click)="counterOfferAmount = (counterOfferAmount || minFare) - 10" aria-label="Decrease">&minus;</button>
+            <div class="offer-amount-mid">
+              <span class="offer-currency">&#8377;</span>
+              <input type="tel" inputmode="numeric" pattern="[0-9]*" class="offer-input" [(ngModel)]="counterOfferAmount" placeholder="0" />
+            </div>
+            <button type="button" class="offer-step-btn dc-press" (click)="counterOfferAmount = (counterOfferAmount || minFare) + 10" aria-label="Increase">+</button>
+          </div>
+          <button type="button" class="action-btn-continue bids-counter-send dc-press" (click)="counterBid()" [disabled]="loading || !counterOfferAmount">Send</button>
+        </div>
+      </div>
 
       <button type="button" class="btn-cancel-request dc-press" (click)="cancelRequest()">Cancel request</button>
     </div>

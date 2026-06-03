@@ -51,8 +51,15 @@ class DispatchHopJob implements ShouldQueue
         }
 
         $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
-        if (!$settings || !$settings->automatic_dispatcher_type) {
-            return; // operator must dispatch manually for this product/city
+        if (!$settings) {
+            return; // no city / dispatcher config to tune the search with
+        }
+        // Discovery mode is SEARCH-ONLY — it finds drivers and feeds the
+        // customer's widening-circle list, but never pushes notifications. So it
+        // must run even in cities set to manual dispatch. Only the notify path
+        // (discoveryMode === false) is gated on the automatic-dispatcher toggle.
+        if (!$this->discoveryMode && !$settings->automatic_dispatcher_type) {
+            return; // operator dispatches manually for this product/city
         }
 
         // Per-vehicle dispatcher overrides — the trip is bound to the exact
@@ -89,6 +96,26 @@ class DispatchHopJob implements ShouldQueue
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->whereNotIn('user_id', $busyDriverIds)
+            // When the customer picked a specific vehicle type, only drivers
+            // with that vehicle qualify (skipped for "any vehicle" trips, where
+            // requested_vehicle_type_id is null). Mirrors the nearbyDrivers list
+            // so the search and the customer's driver list always agree.
+            ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
+                $q->where('vehicle_type_id', $trip->requested_vehicle_type_id);
+            })
+            // Only drivers whose vehicle is configured + priced in this city.
+            ->whereExists(function ($sub) use ($trip) {
+                $sub->select(DB::raw(1))
+                    ->from('city_vehicle_types')
+                    ->whereColumn('city_vehicle_types.vehicle_type_id', 'drivers.vehicle_type_id')
+                    ->where('city_vehicle_types.city_id', $trip->city_id)
+                    ->where('city_vehicle_types.is_active', true)
+                    ->whereExists(function ($sub2) {
+                        $sub2->select(DB::raw(1))
+                            ->from('pricing_rules')
+                            ->whereColumn('pricing_rules.city_vehicle_type_id', 'city_vehicle_types.id');
+                    });
+            })
             ->pluck('user_id');
 
         if ($eligible->isEmpty()) {
