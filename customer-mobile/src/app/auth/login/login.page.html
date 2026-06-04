@@ -1,50 +1,48 @@
 <ion-content>
   <!-- ============ PERSISTENT MASTER AUTH SHELL ============ -->
-  <div class="auth-header">
-    <!-- Centered Back Button (Visible on sub-steps) -->
-    <div class="back-button-wrap" (click)="goBack()" *ngIf="step !== 'phone' && step !== 'success' && !loading" aria-label="Go Back">
-      <ion-icon name="arrow-back-outline"></ion-icon>
-    </div>
+  <div class="auth-header dc-anim-in" [class.auth-header--compact]="step === 'perms'">
+    <!-- Soft brand glow / sheen behind the hero -->
+    <div class="auth-header__sheen" aria-hidden="true"></div>
 
     <!-- Persistent Branding Elements -->
-    <div class="logo-mark">
+    <div class="logo-mark dc-anim-pop">
       <div class="logo-dots"></div>
       <div class="logo-arrow"></div>
     </div>
-    <div class="logo-text">
+    <div class="logo-text dc-anim-up">
       <span class="text-white">Dream</span><span class="text-primary">Cabs</span>
     </div>
 
     <!-- Stable Dynamic Headers (No layout jumps) -->
     <ng-container [ngSwitch]="step">
       <ng-container *ngSwitchCase="'phone'">
-        <h1 class="auth-title">Mobile Number</h1>
-        <p class="auth-subtitle">
+        <h1 class="auth-title dc-anim-up">Mobile Number</h1>
+        <p class="auth-subtitle dc-anim-up">
           Please enter your phone number. We will send you a {{ otpLength }}-digit code to verify your account.
         </p>
       </ng-container>
       <ng-container *ngSwitchCase="'perms'">
-        <h1 class="auth-title">Permissions</h1>
-        <p class="auth-subtitle">
+        <h1 class="auth-title dc-anim-up">Permissions</h1>
+        <p class="auth-subtitle dc-anim-up">
           We need a few permissions to give you the best ride experience.
         </p>
       </ng-container>
       <ng-container *ngSwitchCase="'otp'">
-        <h1 class="auth-title">OTP Verification</h1>
-        <p class="auth-subtitle">
+        <h1 class="auth-title dc-anim-up">OTP Verification</h1>
+        <p class="auth-subtitle dc-anim-up">
           Enter {{ otpLength }}-digit Code. We have sent it to <br>
           <span class="highlight-phone">+{{ country.code }} {{ phone }}</span>
         </p>
       </ng-container>
       <ng-container *ngSwitchCase="'info'">
-        <h1 class="auth-title">Profile Details</h1>
-        <p class="auth-subtitle">
+        <h1 class="auth-title dc-anim-up">Profile Details</h1>
+        <p class="auth-subtitle dc-anim-up">
           Please complete your profile details to finish setting up your account.
         </p>
       </ng-container>
       <ng-container *ngSwitchCase="'success'">
-        <h1 class="auth-title">Account Created!</h1>
-        <p class="auth-subtitle">
+        <h1 class="auth-title dc-anim-up">Account Created!</h1>
+        <p class="auth-subtitle dc-anim-up">
           Your account has been created successfully. Welcome to DreamCabs!
         </p>
       </ng-container>
@@ -54,24 +52,24 @@
   <!-- ============ DYNAMIC SCENE WRAPPER ============ -->
   <div class="auth-form-container">
     <div class="auth-scene-wrapper">
-      
+
       <!-- STEP 1: PHONE ENTRY -->
       <div class="step-slide" *ngIf="step === 'phone'">
         <label class="phone-entry-label">Verify Your Mobile Number</label>
-        
+
         <!-- Single Unified Premium Card Input -->
         <div class="phone-unified-card">
-          
+
           <!-- Left Side: Country Picker trigger -->
-          <div class="country-inline" (click)="showCountryPicker = true" [class.disabled]="loading">
+          <div class="country-inline dc-press" (click)="showCountryPicker = true" [class.disabled]="loading">
             <span class="flag">{{ country.flag }}</span>
             <span class="code">+{{ country.code }}</span>
             <ion-icon name="chevron-down-outline"></ion-icon>
           </div>
-          
+
           <!-- Thin vertical divider between Country and Number -->
           <div class="card-vertical-divider"></div>
-          
+
           <!-- Right Side: Standard Input with Custom Caret and Letter Spacing -->
           <div class="phone-input-wrap">
             <input
@@ -86,78 +84,84 @@
               autocomplete="tel"
             />
           </div>
-          
+
+        </div>
+
+        <!-- Reassurance line -->
+        <div class="phone-hint">
+          <ion-icon name="shield-checkmark-outline"></ion-icon>
+          <span>Your number stays private and secure</span>
         </div>
       </div>
 
       <!-- STEP 2: BENTO PERMISSIONS -->
       <div class="step-slide" *ngIf="step === 'perms'">
-        <div class="bento-perm-grid">
-          <div class="bento-card" style="animation-delay: 0.05s">
-            <div class="bento-icon-circle">
-              <ion-icon name="location-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+        <div class="bento-perm-grid dc-stagger">
+          <div class="bento-card dc-press" style="animation-delay: 0.05s">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="location-outline"></ion-icon>
+              </div>
               <span class="bento-title">Location</span>
-              <span class="bento-desc">Find rides near you</span>
             </div>
+            <span class="bento-desc">Find rides near you</span>
           </div>
 
-          <div class="bento-card" style="animation-delay: 0.1s">
-            <div class="bento-icon-circle">
-              <ion-icon name="call-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+          <div class="bento-card dc-press" style="animation-delay: 0.1s">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="call-outline"></ion-icon>
+              </div>
               <span class="bento-title">Phone</span>
-              <span class="bento-desc">Verify secure profile</span>
             </div>
+            <span class="bento-desc">Verify secure profile</span>
           </div>
 
-          <div class="bento-card" style="animation-delay: 0.15s">
-            <div class="bento-icon-circle">
-              <ion-icon name="chatbox-ellipses-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+          <div class="bento-card dc-press" style="animation-delay: 0.15s">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="chatbox-ellipses-outline"></ion-icon>
+              </div>
               <span class="bento-title">SMS</span>
-              <span class="bento-desc">Autofill secure OTPs</span>
             </div>
+            <span class="bento-desc">Autofill secure OTPs</span>
           </div>
 
-          <div class="bento-card" style="animation-delay: 0.2s">
-            <div class="bento-icon-circle">
-              <ion-icon name="people-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+          <div class="bento-card dc-press" style="animation-delay: 0.2s">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="people-outline"></ion-icon>
+              </div>
               <span class="bento-title">Contacts</span>
-              <span class="bento-desc">Share trusted SOS</span>
             </div>
+            <span class="bento-desc">Share trusted SOS</span>
           </div>
 
-          <div class="bento-card" style="animation-delay: 0.25s">
-            <div class="bento-icon-circle">
-              <ion-icon name="phone-portrait-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+          <div class="bento-card dc-press" style="animation-delay: 0.25s">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="phone-portrait-outline"></ion-icon>
+              </div>
               <span class="bento-title">Device</span>
-              <span class="bento-desc">Keep account safe</span>
             </div>
+            <span class="bento-desc">Keep account safe</span>
           </div>
 
-          <div class="bento-card" style="animation-delay: 0.3s">
-            <div class="bento-icon-circle">
-              <ion-icon name="folder-outline"></ion-icon>
-            </div>
-            <div class="bento-info">
+          <div class="bento-card dc-press" style="animation-delay: 0.3s">
+            <div class="bento-pill-top">
+              <div class="bento-icon-chip">
+                <ion-icon name="folder-outline"></ion-icon>
+              </div>
               <span class="bento-title">Storage</span>
-              <span class="bento-desc">Upload profile photo</span>
             </div>
+            <span class="bento-desc">Upload profile photo</span>
           </div>
         </div>
       </div>
 
       <!-- STEP 3: OTP VERIFICATION -->
       <div class="step-slide" *ngIf="step === 'otp'">
-        <div class="otp-input-wrapper">
+        <div class="otp-input-wrapper dc-anim-pop">
           <input
             type="tel"
             inputmode="numeric"
@@ -172,8 +176,8 @@
             (blur)="otpInputFocused = false"
           />
           <div class="otp-boxes-row">
-            <div 
-              class="otp-box" 
+            <div
+              class="otp-box"
               *ngFor="let char of otpCells; let i = index"
               [class.active]="otp.length === i && otpInputFocused"
               [class.filled]="otp.length > i"
@@ -188,16 +192,16 @@
             Didn't receive the code? <span class="countdown-text">{{ resendDisplay }}</span>
           </span>
           <span class="resend-text" *ngIf="resendSecondsLeft === 0">
-            Didn't receive the code? <a class="resend-link" (click)="resendOtp()">Resend OTP</a>
+            Didn't receive the code? <a class="resend-link dc-press" (click)="resendOtp()">Resend OTP</a>
           </span>
         </div>
       </div>
 
       <!-- STEP 4: PROFILE COMPLETION -->
       <div class="step-slide" *ngIf="step === 'info'">
-        <div class="info-form-wrapper">
+        <div class="info-form-wrapper dc-anim-up">
           <div class="avatar-wrap">
-            <label class="avatar-edit">
+            <label class="avatar-edit dc-press">
               <div
                 class="avatar"
                 [style.backgroundImage]="infoPhotoPreview ? 'url(' + infoPhotoPreview + ')' : null"
@@ -245,7 +249,7 @@
               <ul class="address-suggestions" *ngIf="addressSuggestions.length && !infoAddress">
                 <li
                   *ngFor="let s of addressSuggestions"
-                  class="address-suggestion"
+                  class="address-suggestion dc-press"
                   (click)="pickAddress(s)"
                 >
                   <ion-icon name="location-outline"></ion-icon>
@@ -265,7 +269,7 @@
       <div class="step-slide success-slide" *ngIf="step === 'success'">
         <div class="success-illustration-wrap">
           <div class="success-glow-ring"></div>
-          <div class="success-badge-circle">
+          <div class="success-badge-circle dc-anim-pop">
             <ion-icon name="checkmark-sharp"></ion-icon>
           </div>
         </div>
@@ -275,10 +279,10 @@
 
     <!-- ============ UNIFORMISED PERSISTENT CTA SECTION ============ -->
     <div class="submit-action">
-      <button 
-        class="fab-btn" 
+      <button
+        class="fab-btn dc-press"
         [class.fab-btn--block]="step === 'info' || step === 'success'"
-        [disabled]="loading || isButtonDisabled()" 
+        [disabled]="loading || isButtonDisabled()"
         (click)="handlePrimaryAction()"
         aria-label="Submit Action"
       >
@@ -289,7 +293,7 @@
         <ion-spinner name="crescent" color="light" *ngIf="loading"></ion-spinner>
       </button>
 
-      <button class="secondary-action-btn" (click)="denyPerms()" [disabled]="loading" *ngIf="step === 'perms'">
+      <button class="secondary-action-btn dc-press" (click)="denyPerms()" [disabled]="loading" *ngIf="step === 'perms'">
         Not now
       </button>
 
@@ -297,7 +301,7 @@
         By continuing you agree that you have read and accept our <br>
         <a>Term & Conditions</a> and <a>Privacy Policy</a>
       </p>
-      
+
       <p class="recaptcha-disclosure" *ngIf="step === 'phone' || step === 'otp'">
         Protected by reCAPTCHA. Google <a href="https://policies.google.com/privacy" target="_blank">Privacy</a> & <a href="https://policies.google.com/terms" target="_blank">Terms</a> apply.
       </p>
@@ -305,21 +309,22 @@
   </div>
 
   <!-- ============ COUNTRY PICKER MODAL ============ -->
-  <ion-modal 
-    [isOpen]="showCountryPicker" 
+  <ion-modal
+    [isOpen]="showCountryPicker"
     (didDismiss)="showCountryPicker = false"
     class="fixed-bottom-sheet"
   >
     <ng-template>
       <div class="sheet-header">
+        <div class="sheet-grabber" aria-hidden="true"></div>
         <h2>Select Country</h2>
       </div>
       <ion-content class="scrollable-country-list">
         <div class="country-list">
           <!-- Section 1: Selected Country -->
           <div class="country-section-header">Currently Selected</div>
-          <div 
-            class="selected-country"
+          <div
+            class="selected-country dc-press"
             (click)="pickCountry(country)"
           >
             <div class="country-left">
@@ -334,13 +339,13 @@
               </svg>
             </div>
           </div>
-          
+
           <!-- Section 2: All Other Countries -->
           <div class="country-section-header margin-top-sm">All Countries</div>
           <ng-container *ngFor="let c of countries">
-            <div 
+            <div
               *ngIf="c.iso !== country.iso"
-              class="country-item"
+              class="country-item dc-press"
               (click)="pickCountry(c)"
             >
               <div class="country-left">
@@ -360,8 +365,6 @@
 
   <!-- Shared dynamic errors -->
   <ion-text color="danger" *ngIf="error">
-    <p class="ion-padding-horizontal ion-margin-top error-banner">{{ error }}</p>
+    <p class="ion-padding-horizontal ion-margin-top error-banner dc-anim-up">{{ error }}</p>
   </ion-text>
 </ion-content>
-
-

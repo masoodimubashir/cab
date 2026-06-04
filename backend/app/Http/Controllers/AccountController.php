@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OperatorSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -45,6 +46,15 @@ class AccountController extends Controller
 
     public function updateDriverPaymentMethods(Request $request)
     {
+        // Drivers may only change their accepted methods when the operator
+        // allows it (Operator Settings → Driver). Otherwise the operator owns
+        // payment-mode policy.
+        if (!OperatorSetting::instance()->update_driver_payment_modes_enabled) {
+            return response()->json([
+                'message' => 'Payment methods are managed by your operator.',
+            ], 403);
+        }
+
         $data = $request->validate([
             'methods' => ['required', 'array', 'min:1'],
             'methods.*' => ['in:cash,razorpay'],

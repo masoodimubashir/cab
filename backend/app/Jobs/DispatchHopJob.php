@@ -12,7 +12,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Drives the "expanding-ring" auto-dispatch loop for a single trip.
@@ -39,7 +41,35 @@ class DispatchHopJob implements ShouldQueue
         public float $amount,
         public int $hop = 1,
         public bool $discoveryMode = false,
+        public string $genToken = '',
     ) {
+    }
+
+    /** Cache key holding the "current" dispatch generation for a trip. */
+    private static function genKey(int $tripId): string
+    {
+        return "dispatch_gen:{$tripId}";
+    }
+
+    /** Cache key recording when a driver was last pinged for a trip. */
+    private static function pingKey(int $tripId, int $driverUserId): string
+    {
+        return "dispatch_ping:{$tripId}:{$driverUserId}";
+    }
+
+    /**
+     * Start a FRESH dispatch chain for a trip. Stamps a new generation token so
+     * any earlier still-running chain for this trip self-aborts on its next hop
+     * (prevents the double-dispatch race — bug #8). A re-offer simply supersedes
+     * the previous search. Discovery searches are read-only and aren't locked.
+     */
+    public static function startChain(int $tripId, float $amount, bool $discoveryMode = false): void
+    {
+        $token = (string) Str::uuid();
+        if (!$discoveryMode) {
+            Cache::put(self::genKey($tripId), $token, now()->addMinutes(30));
+        }
+        self::dispatch($tripId, $amount, 1, $discoveryMode, $token);
     }
 
     public function handle(): void
@@ -50,9 +80,23 @@ class DispatchHopJob implements ShouldQueue
             return;
         }
 
+        // Only one notify chain may run per trip. If a newer chain superseded
+        // this one (re-offer, or an accidental second dispatch), bail out.
+        if (!$this->discoveryMode && $this->genToken !== ''
+            && Cache::get(self::genKey($this->tripId)) !== $this->genToken) {
+            return;
+        }
+
         $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
-        if (!$settings || !$settings->automatic_dispatcher_type) {
-            return; // operator must dispatch manually for this product/city
+        if (!$settings) {
+            return; // no city / dispatcher config to tune the search with
+        }
+        // Discovery mode is SEARCH-ONLY — it finds drivers and feeds the
+        // customer's widening-circle list, but never pushes notifications. So it
+        // must run even in cities set to manual dispatch. Only the notify path
+        // (discoveryMode === false) is gated on the automatic-dispatcher toggle.
+        if (!$this->discoveryMode && !$settings->automatic_dispatcher_type) {
+            return; // operator dispatches manually for this product/city
         }
 
         // Per-vehicle dispatcher overrides — the trip is bound to the exact
@@ -78,7 +122,9 @@ class DispatchHopJob implements ShouldQueue
 
         $startRadius = $requestRadiusM > 0 ? $requestRadiusM : $hopRadiusM;
         $radiusMeters = $startRadius + ($this->hop - 1) * $hopRadiusM;
-        $radiusKm = max($radiusMeters / 1000.0, 0.5);
+        // Honor the operator's configured radius (bug #6 — no hidden 500 m floor).
+        // Only guard against a zero/blank config, which would search nobody.
+        $radiusKm = $radiusMeters > 0 ? $radiusMeters / 1000.0 : 0.5;
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
@@ -89,6 +135,26 @@ class DispatchHopJob implements ShouldQueue
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->whereNotIn('user_id', $busyDriverIds)
+            // When the customer picked a specific vehicle type, only drivers
+            // with that vehicle qualify (skipped for "any vehicle" trips, where
+            // requested_vehicle_type_id is null). Mirrors the nearbyDrivers list
+            // so the search and the customer's driver list always agree.
+            ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
+                $q->where('vehicle_type_id', $trip->requested_vehicle_type_id);
+            })
+            // Only drivers whose vehicle is configured + priced in this city.
+            ->whereExists(function ($sub) use ($trip) {
+                $sub->select(DB::raw(1))
+                    ->from('city_vehicle_types')
+                    ->whereColumn('city_vehicle_types.vehicle_type_id', 'drivers.vehicle_type_id')
+                    ->where('city_vehicle_types.city_id', $trip->city_id)
+                    ->where('city_vehicle_types.is_active', true)
+                    ->whereExists(function ($sub2) {
+                        $sub2->select(DB::raw(1))
+                            ->from('pricing_rules')
+                            ->whereColumn('pricing_rules.city_vehicle_type_id', 'city_vehicle_types.id');
+                    });
+            })
             ->pluck('user_id');
 
         if ($eligible->isEmpty()) {
@@ -127,13 +193,26 @@ class DispatchHopJob implements ShouldQueue
         ));
 
         if (!$this->discoveryMode && $eligible->isNotEmpty()) {
-            SendDispatchNotificationsJob::dispatch(
-                driverUserIds: $eligible->values()->all(),
-                tripId: $trip->id,
-                amount: $this->amount,
-                pickupAddress: $trip->pickup_address,
-                paymentMethod: $trip->payment_method,
+            // Bug #8 (a): ping each driver only the FIRST time they enter the
+            // ring — not again on every expansion. The ping record (kept for the
+            // whole search) doubles as the acceptance-window clock for bug #7.
+            $searchTtlSec = max($maxHops * $hopIntervalSec + 120, 120);
+            $newlyReached = $eligible->reject(
+                fn ($uid) => Cache::has(self::pingKey($trip->id, (int) $uid))
             );
+            foreach ($newlyReached as $uid) {
+                Cache::put(self::pingKey($trip->id, (int) $uid), now()->timestamp, now()->addSeconds($searchTtlSec));
+            }
+
+            if ($newlyReached->isNotEmpty()) {
+                SendDispatchNotificationsJob::dispatch(
+                    driverUserIds: $newlyReached->values()->all(),
+                    tripId: $trip->id,
+                    amount: $this->amount,
+                    pickupAddress: $trip->pickup_address,
+                    paymentMethod: $trip->payment_method,
+                );
+            }
         }
 
         $this->requeue($maxHops, $hopIntervalSec);
@@ -205,7 +284,7 @@ class DispatchHopJob implements ShouldQueue
         if ($this->hop >= $maxHops) {
             return;
         }
-        self::dispatch($this->tripId, $this->amount, $this->hop + 1, $this->discoveryMode)
+        self::dispatch($this->tripId, $this->amount, $this->hop + 1, $this->discoveryMode, $this->genToken)
             ->delay(now()->addSeconds($hopIntervalSec));
     }
 

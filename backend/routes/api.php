@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\FirebaseAuthController;
 use App\Http\Controllers\DeviceTokensController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Admin\AdminRideTypesController;
 use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
 use App\Http\Controllers\Admin\AdminOperatorSettingsController;
+use App\Http\Controllers\Admin\AdminDataSubjectRequestsController;
 use App\Http\Controllers\Admin\AdminContactDriversController;
 use App\Http\Controllers\Admin\AdminDispatcherSettingsController;
 use App\Http\Controllers\Admin\AdminDispatchController;
@@ -36,6 +38,7 @@ use App\Http\Controllers\Admin\AdminReportsController;
 use App\Http\Controllers\TripTrackingController;
 use App\Http\Controllers\RideAssignmentController;
 use App\Http\Controllers\PaymentsController;
+use App\Http\Controllers\CustomerCouponsController;
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InvoicesController;
 use App\Http\Controllers\RatingsController;
@@ -66,6 +69,10 @@ Route::post('/admin/login', [AdminAuthController::class, 'login']);
 
 Route::post('/auth/otp/start', [FirebaseAuthController::class, 'startOtp'])->middleware('throttle:otp');
 Route::post('/auth/otp/verify', [FirebaseAuthController::class, 'verifyOtp'])->middleware('throttle:otp');
+
+// Server-side SMS OTP via MSG91 (the non-Firebase login path).
+Route::post('/auth/otp/sms/start', [\App\Http\Controllers\Auth\OtpAuthController::class, 'start'])->middleware('throttle:otp');
+Route::post('/auth/otp/sms/verify', [\App\Http\Controllers\Auth\OtpAuthController::class, 'verify'])->middleware('throttle:otp');
 
 // Profile completion (used after first-time phone OTP sign-up to capture name/email/photo).
 Route::middleware('auth:sanctum')->post('/me/profile', [ProfileController::class, 'update']);
@@ -101,6 +108,17 @@ Route::middleware('auth:sanctum')->post('/me/location', [LocationController::cla
 Route::middleware('auth:sanctum')->post('/me/device-tokens', [DeviceTokensController::class, 'store']);
 Route::middleware('auth:sanctum')->delete('/me/device-tokens/{token}', [DeviceTokensController::class, 'destroy'])
     ->where('token', '.*');
+// Device name / OS / app version captured on login (no notifications needed).
+Route::middleware('auth:sanctum')->post('/me/device-info', [DeviceTokensController::class, 'saveDeviceInfo']);
+
+// In-app notification inbox — role-agnostic (customer / driver / admin all use
+// these against their own notifications).
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me/notifications', [NotificationsController::class, 'index']);
+    Route::get('/me/notifications/unread-count', [NotificationsController::class, 'unreadCount']);
+    Route::post('/me/notifications/read-all', [NotificationsController::class, 'markAllRead']);
+    Route::post('/me/notifications/{appNotification}/read', [NotificationsController::class, 'markRead']);
+});
 
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
 
@@ -172,10 +190,11 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
     Route::get('/drivers/me/earnings', [DriversController::class, 'earnings']);
 
-    // Driver subscriptions: browse plans, see the active plan, buy one.
+    // Driver subscriptions: browse plans, see the active plan, buy one, cancel auto-renew.
     Route::get('/drivers/me/subscriptions/plans', [DriverSubscriptionsController::class, 'plans']);
     Route::get('/drivers/me/subscription', [DriverSubscriptionsController::class, 'current']);
     Route::post('/drivers/me/subscriptions', [DriverSubscriptionsController::class, 'purchase']);
+    Route::post('/drivers/me/subscriptions/cancel', [DriverSubscriptionsController::class, 'cancel']);
 
     // Driver wallet: balance + Razorpay top-up.
     Route::get('/drivers/me/wallet', [DriverWalletController::class, 'show']);
@@ -187,6 +206,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/trips/{trip}/driver-accept', [RideAssignmentController::class, 'accept']);
     Route::post('/trips/{trip}/driver-reject', [RideAssignmentController::class, 'reject']);
     Route::get('/driver/trips/history', [RatingsController::class, 'historyDriver']);
+    Route::get('/driver/trips/scheduled', [TripsController::class, 'driverScheduled']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
@@ -255,6 +275,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show']);
         Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
         Route::post('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
+
+        // Data Subject Access Requests (DSAR / data rights) — append-only queue.
+        Route::get('/admin/data-subject-requests', [AdminDataSubjectRequestsController::class, 'index']);
+        Route::post('/admin/data-subject-requests', [AdminDataSubjectRequestsController::class, 'store']);
+        Route::patch('/admin/data-subject-requests/{dataSubjectRequest}', [AdminDataSubjectRequestsController::class, 'update']);
 
         Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
         Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
@@ -417,11 +442,16 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/rating', [RatingsController::class, 'store']);
     Route::post('/trips/{trip}/tip', [TripsController::class, 'tip']);
     Route::get('/customer/trips/history', [RatingsController::class, 'historyCustomer']);
+    // Must sit before the /{trip} wildcard so "scheduled" isn't read as a trip id.
+    Route::get('/customer/trips/scheduled', [TripsController::class, 'customerScheduled']);
     Route::get('/customer/trips/{trip}', [RatingsController::class, 'customerTripDetail']);
+    Route::get('/me/coupons', [CustomerCouponsController::class, 'index']);
 });
 
 // Public operator config slices used by the customer/driver apps.
 Route::middleware('auth:sanctum')->get('/operator/tipping', [OperatorPublicController::class, 'tipping']);
+Route::middleware('auth:sanctum')->get('/operator/subscription-popup', [OperatorPublicController::class, 'subscriptionPopup']);
+Route::middleware('auth:sanctum')->get('/operator/driver-payment-modes', [OperatorPublicController::class, 'driverPaymentModes']);
 
 Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayWebhook'])->middleware('throttle:webhooks');
 

@@ -1,0 +1,13 @@
+# Keep the build context small + never bake secrets/local state into the image.
+.git
+.env
+.env.*
+node_modules
+vendor
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+tests
+deploy/secrets
+*.md

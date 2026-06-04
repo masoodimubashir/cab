@@ -1,35 +1,136 @@
-ion-tab-bar {
-  --background: #ffffff;
-  --border: none;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow: 0 -8px 24px rgba(13, 27, 42, 0.04);
+/* ============================================================
+   Customer bottom tab bar — polished house style
+   Clean floating / rounded bar, green active state,
+   subtle active-tab animation. CSS-only.
+
+   NOTE: This app navigates via the slide-out side menu, so the
+   bottom tab bar is hidden by default (as it was originally) —
+   showing it would also shrink ion-content and push the booking
+   page's bottom sheet up off the screen bottom. The polished
+   styling below is kept ready: delete the `.dc-tabbar { display:none }`
+   rule to bring the redesigned floating bar back.
+   ============================================================ */
+
+/* Hidden on the booking/home tab (component adds .tabbar-hidden there). The
+   two-class selector outranks the `.dc-tabbar { display:flex }` below, so it
+   actually hides — unlike the old bare `.dc-tabbar { display:none }`, which the
+   flex rule silently overrode. */
+.dc-tabbar.tabbar-hidden { display: none !important; }
+
+.dc-tabbar {
+  /* Floating, rounded, house-style bar */
+  --background: var(--dc-surface);
+  --border: 0;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 6px;
   height: 64px;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding: 8px 14px;
+  margin: 0 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--dc-hairline);
+  border-radius: var(--dc-r-xl);
+  background: var(--dc-surface);
+  box-shadow: var(--dc-shadow-md);
+  contain: layout style;
+  overflow: hidden;
 }
 
-ion-tab-button {
-  --color: #9CA3AF;
-  --color-selected: var(--ion-color-secondary, #0D1B2A);
+.dc-tab {
+  --color: var(--dc-ink-faint);
+  --color-selected: var(--dc-green);
+  --background: transparent;
+  --background-focused: transparent;
+  --background-selected: transparent;
+  --ripple-color: transparent;
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 48px;
+  border-radius: var(--dc-r-md);
   font-weight: 600;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  
-  ion-icon {
-    font-size: 22px;
-    margin-bottom: 3px;
-    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  letter-spacing: 0.1px;
+  transition:
+    color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Soft pill glow that grows behind the active tab */
+  .dc-tab-glow {
+    position: absolute;
+    inset: 4px 6px;
+    z-index: 0;
+    border-radius: var(--dc-r-md);
+    background: var(--dc-green-tint);
+    opacity: 0;
+    transform: scale(0.82);
+    transition:
+      opacity 0.28s cubic-bezier(0.22, 0.61, 0.36, 1),
+      transform 0.32s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: none;
   }
-  
+
+  ion-icon {
+    position: relative;
+    z-index: 1;
+    font-size: 22px;
+    color: var(--dc-ink-faint);
+    transition:
+      transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+      color 0.25s ease;
+  }
+
+  ion-label {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.1;
+    color: var(--dc-ink-faint);
+    transition: color 0.25s ease, font-weight 0.2s ease;
+  }
+
+  /* Active state — clear green */
   &.tab-selected {
     font-weight: 700;
-    
+
+    .dc-tab-glow {
+      opacity: 1;
+      transform: scale(1);
+    }
+
     ion-icon {
-      transform: scale(1.15) translateY(-1px);
-      color: var(--ion-color-primary, #12B35B); /* Elegant Emerald brand color for selected icon! */
+      color: var(--dc-green);
+      animation: dcTabIconPop 0.42s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
-    
+
     ion-label {
-      color: var(--ion-color-secondary, #0D1B2A);
-      font-size: 11px;
+      color: var(--dc-green);
+      font-weight: 700;
     }
+  }
+}
+
+/* Gentle pop for the active icon */
+@keyframes dcTabIconPop {
+  0%   { transform: scale(1) translateY(0); }
+  45%  { transform: scale(1.22) translateY(-2px); }
+  100% { transform: scale(1.12) translateY(-1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-tab,
+  .dc-tab .dc-tab-glow,
+  .dc-tab ion-icon,
+  .dc-tab ion-label {
+    transition: none !important;
+  }
+  .dc-tab.tab-selected ion-icon {
+    animation: none !important;
+    transform: none;
   }
 }

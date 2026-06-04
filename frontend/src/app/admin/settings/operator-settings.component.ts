@@ -338,7 +338,13 @@ interface SectionMeta {
               >Save changes</tm-button>
             </ng-container>
             <ng-template #rightsFoot>
-              <tm-button variant="ink" icon="shield" [disabled]="!selectedRight" (clicked)="submitRights()">
+              <tm-button
+                variant="ink"
+                icon="shield"
+                [loading]="submittingRights"
+                [disabled]="!selectedRight || submittingRights"
+                (clicked)="submitRights()"
+              >
                 Submit DSAR
               </tm-button>
             </ng-template>
@@ -576,13 +582,12 @@ export class OperatorSettingsComponent implements OnInit {
     { label: 'FlightMap', value: 'flightmap' },
   ];
 
+  // Only tokens the backend can actually fill are advertised, so a typed
+  // placeholder never renders blank for the customer.
   readonly acceptPlaceholders = [
     '{{customer_name}}',
     '{{operator_name}}',
     '{{driver_name}}',
-    '{{vehicle_no}}',
-    '{{eta}}',
-    '{{link}}',
   ];
 
   readonly cancelPlaceholders = ['{{engagement_id}}', '{{customer_name}}'];
@@ -718,11 +723,31 @@ export class OperatorSettingsComponent implements OnInit {
       });
   }
 
+  submittingRights = false;
+
   submitRights(): void {
-    // Wire-up placeholder — DSAR submission endpoint to be added later.
-    this.toast.info(`${this.selectedRight}: ${this.rightsReason || '(no reason)'}`, { title: 'DSAR queued' });
-    this.selectedRight = null;
-    this.rightsReason = '';
+    if (!this.selectedRight || this.submittingRights) return;
+    this.submittingRights = true;
+    this.api
+      .post('/admin/data-subject-requests', {
+        right: this.selectedRight,
+        reason: this.rightsReason || null,
+      })
+      .subscribe({
+        next: () => {
+          this.submittingRights = false;
+          this.toast.success('Your data request has been recorded.', { title: 'DSAR submitted' });
+          this.selectedRight = null;
+          this.rightsReason = '';
+        },
+        error: (err) => {
+          this.submittingRights = false;
+          const detail = err?.error?.errors
+            ? Object.values(err.error.errors).flat().join(', ')
+            : err?.error?.message || 'Could not submit the request';
+          this.toast.error(detail, { title: 'Submit failed' });
+        },
+      });
   }
 
   private titleFor(section: SectionKey): string {

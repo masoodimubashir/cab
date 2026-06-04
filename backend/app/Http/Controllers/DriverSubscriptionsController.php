@@ -57,7 +57,7 @@ class DriverSubscriptionsController
         $sub = $this->subscriptions->activeFor($user->id, $vehicleTypeId);
 
         return response()->json([
-            'subscription' => $sub ? $this->shapeSubscription($sub->load('plan', 'vehicleType')) : null,
+            'subscription' => $sub ? $this->shapeSubscription($sub->load('plan', 'vehicleType', 'nextPlan')) : null,
             'wallet_balance' => $this->wallet->balance($user),
             'currency' => 'INR',
         ]);
@@ -86,6 +86,27 @@ class DriverSubscriptionsController
             return response()->json(['message' => 'This plan is not available for you.'], 422);
         }
 
+        $vehicleTypeId = $driver->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
+        // Use the raw active row (incl. exhausted-but-unswept) so a buy during
+        // the renewal window queues instead of creating a second active sub.
+        $current = $this->subscriptions->currentActiveRow($user->id, $vehicleTypeId);
+
+        // One active subscription at a time. If the driver already has one, the
+        // new plan is queued to start — and is only charged — when the current
+        // plan ends (handled by the renewal sweep).
+        if ($current) {
+            $this->subscriptions->queueNext($current, $plan);
+
+            return response()->json([
+                'queued' => true,
+                'subscription' => $this->shapeSubscription(
+                    $current->fresh()->load('plan', 'vehicleType', 'nextPlan'),
+                ),
+                'wallet_balance' => $this->wallet->balance($user),
+                'message' => 'Plan queued — it starts when your current plan ends.',
+            ]);
+        }
+
         try {
             $sub = $this->subscriptions->purchase($user, $plan);
         } catch (RuntimeException $e) {
@@ -93,10 +114,37 @@ class DriverSubscriptionsController
         }
 
         return response()->json([
-            'subscription' => $this->shapeSubscription($sub->load('plan', 'vehicleType')),
+            'queued' => false,
+            'subscription' => $this->shapeSubscription($sub->load('plan', 'vehicleType', 'nextPlan')),
             'wallet_balance' => $this->wallet->balance($user),
             'message' => 'Subscription activated.',
         ], 201);
+    }
+
+    /**
+     * Turn off auto-renew for the driver's active plan. The plan stays active
+     * until it expires; it just won't renew, and any queued plan is dropped.
+     */
+    public function cancel(Request $request)
+    {
+        $user = $request->user();
+        $driver = $user->driver;
+        $vehicleTypeId = $driver?->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
+
+        // Raw active row so an exhausted-but-unswept plan can still be cancelled
+        // (turning off the pending auto-renewal) without waiting for the sweep.
+        $sub = $this->subscriptions->currentActiveRow($user->id, $vehicleTypeId);
+        if (! $sub) {
+            return response()->json(['message' => 'You have no active subscription to cancel.'], 422);
+        }
+
+        $this->subscriptions->cancel($sub);
+
+        return response()->json([
+            'subscription' => $this->shapeSubscription($sub->fresh()->load('plan', 'vehicleType', 'nextPlan')),
+            'wallet_balance' => $this->wallet->balance($user),
+            'message' => 'Auto-renew turned off. Your plan stays active until it expires.',
+        ]);
     }
 
     private function shapePlan(SubscriptionPlan $p): array
@@ -136,6 +184,14 @@ class DriverSubscriptionsController
             'vehicle_type_name' => $s->vehicleType?->name,
             'starts_at' => optional($s->starts_at)->toIso8601String(),
             'expires_at' => optional($s->expires_at)->toIso8601String(),
+            'auto_renew' => (bool) $s->auto_renew,
+            'cancelled_at' => optional($s->cancelled_at)->toIso8601String(),
+            'next_plan' => $s->nextPlan ? [
+                'id' => $s->nextPlan->id,
+                'title' => $s->nextPlan->title,
+                'amount' => (float) $s->nextPlan->amount,
+                'commission_percent' => (float) $s->nextPlan->commission_percent,
+            ] : null,
         ];
     }
 }

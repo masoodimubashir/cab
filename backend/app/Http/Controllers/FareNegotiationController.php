@@ -13,23 +13,45 @@ use App\Models\FareNegotiation;
 use App\Models\FareNegotiationOffer;
 use App\Models\Trip;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
+use App\Services\PaymentModeService;
 use App\Services\TripAssignmentService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
 
 class FareNegotiationController extends Controller
 {
-    public function show(Request $request, Trip $trip)
+    public function show(Request $request, Trip $trip, PaymentModeService $paymentModeService)
     {
         $user = $request->user();
         if (!$user) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        if ($trip->customer_id !== $user->id && $trip->driver_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden.'], 403);
+        // The customer and the bound/winning driver always have access. During
+        // a broadcast the trip has no bound driver yet, so any approved driver
+        // may view it to decide whether to bid — and any driver who already
+        // placed a bid keeps access to see the outcome.
+        $isParticipant = $trip->customer_id === $user->id
+            || $trip->driver_id === $user->id;
+        if (!$isParticipant) {
+            $openToDrivers = $trip->driver_id === null
+                && $trip->status === 'NEGOTIATION'
+                && Driver::query()
+                    ->where('user_id', $user->id)
+                    ->where('approval_status', 'approved')
+                    ->exists();
+            $hasBid = FareNegotiationOffer::query()
+                ->where('from_user_id', $user->id)
+                ->whereHas('fareNegotiation', function ($q) use ($trip) {
+                    $q->where('trip_id', $trip->id);
+                })
+                ->exists();
+            if (!$openToDrivers && !$hasBid) {
+                return response()->json(['message' => 'Forbidden.'], 403);
+            }
         }
 
         $negotiation = FareNegotiation::query()
@@ -40,27 +62,60 @@ class FareNegotiationController extends Controller
             ->first();
 
         $tripWithDriver = $trip->fresh()->load([
-            'driver:id,name,avatar_path,accepted_payment_methods',
+            'driver:id,name,phone,avatar_path,accepted_payment_methods,current_lat,current_lng',
+            'driver.driver:id,user_id,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
         ]);
 
-        // City-level payment modes — the customer-mobile pay screen intersects
-        // these with the driver's accepted methods to render the final picker.
-        $cityModes = \App\Models\CitySetting::query()
+        // Best-known driver position so the customer map can show the driver
+        // from the confirmation screen onward — before live trip streaming
+        // begins. Uses the freshest driver_locations ping (presence pings have
+        // trip_id=null; trip pings carry this trip id).
+        $driverLocation = null;
+        if ($trip->driver_id) {
+            $row = \App\Models\DriverLocation::query()
+                ->where('driver_id', $trip->driver_id)
+                ->orderByDesc('recorded_at')
+                ->orderByDesc('id')
+                ->first(['lat', 'lng', 'recorded_at']);
+            if ($row) {
+                $driverLocation = [
+                    'lat' => (float) $row->lat,
+                    'lng' => (float) $row->lng,
+                    'recorded_at' => optional($row->recorded_at)->toIso8601String(),
+                ];
+            }
+        }
+
+        // City-level settings — payment modes feed the pay screen, and
+        // show_vehicle_make_model gates whether the rider sees the driver's
+        // car make/model on the trip screen (default ON when no row exists).
+        $citySetting = \App\Models\CitySetting::query()
             ->where('city_id', $trip->city_id)
-            ->value('allowed_driver_payment_modes');
+            ->first();
+        $cityModes = $citySetting?->allowed_driver_payment_modes;
         $cityPaymentModes = is_array($cityModes) && $cityModes
             ? array_values(array_intersect($cityModes, ['CASH', 'RAZORPAY']))
             : ['RAZORPAY'];
+        $showVehicleMakeModel = $citySetting ? (bool) $citySetting->show_vehicle_make_model : true;
 
         return response()->json([
             'trip_id' => $trip->id,
             'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
             'city_payment_modes' => $cityPaymentModes,
+            // Authoritative list the customer can actually pay with — city cap
+            // ∩ driver-effective modes (driver follows the city when the
+            // operator owns payment policy). The pay endpoints enforce the same.
+            'available_payment_methods' => $paymentModeService->allowedForTrip($trip),
+            // Per-city toggle: hide the driver's make/model from the rider when off.
+            'show_vehicle_make_model' => $showVehicleMakeModel,
+            'driver_location' => $driverLocation,
+            // Floor + admin-configured +/- step amounts the apps render as buttons.
+            'negotiation_config' => $this->negotiationConfig($trip),
         ]);
     }
 
-    public function customerOffer(Request $request, Trip $trip)
+    public function customerOffer(Request $request, Trip $trip, \App\Services\SchedulingPolicyService $scheduling)
     {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -71,10 +126,10 @@ class FareNegotiationController extends Controller
             return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
         }
 
-        // Fare floor: at least ₹50, and at least 40% of the estimated fare.
-        // Prevents customers from spamming ₹1 offers.
-        $estimated = (float) ($trip->estimated_fare ?? 0);
-        $minAmount = max(50.0, round($estimated * 0.4, 2));
+        // Fare floor: the route's minimum fare (min_fare on the pricing rule).
+        // Neither side may offer below it; the apps clamp the +/- buttons to the
+        // same value and this is the server backstop.
+        $minAmount = $this->negotiationConfig($trip)['min_amount'];
 
         $data = $request->validate([
             'amount' => ['required', 'numeric', "min:{$minAmount}"],
@@ -118,8 +173,11 @@ class FareNegotiationController extends Controller
             $autoOn = false; // operator must dispatch manually
         }
 
-        if ($autoOn) {
-            DispatchHopJob::dispatch($trip->id, $amount, 1);
+        // A scheduled ride in DELAYED mode must NOT dispatch now — the alarm-time
+        // worker (WakeScheduledTrips) fires it near pickup. INSTANT modes (and all
+        // non-scheduled rides) dispatch immediately, as before.
+        if ($autoOn && $scheduling->shouldDispatchOnBooking($trip)) {
+            DispatchHopJob::startChain($trip->id, $amount);
         }
 
         return response()->json([
@@ -191,18 +249,53 @@ class FareNegotiationController extends Controller
 
         $user = $request->user();
 
-        // Atomically claim the trip for this driver. Returns null if the trip is
-        // already claimed by another driver, no longer in NEGOTIATION, or gone.
-        $claimed = $tripAssignmentService->claim($trip->id, $user->id);
-        if (!$claimed) {
-            $fresh = $trip->fresh();
-            if ($fresh && $fresh->driver_id !== null && $fresh->driver_id !== $user->id) {
-                return response()->json(['message' => 'Trip already taken.'], 409);
+        // Eligibility check — deliberately NON-exclusive.
+        //
+        // A broadcast request (trip.driver_id === null) stays OPEN to every
+        // nearby driver: many drivers may ACCEPT or COUNTER the same request,
+        // and only the one the customer finally picks (via /customer-confirm)
+        // gets bound to the trip. We must NOT set trip.driver_id here — doing so
+        // would let the first responder lock everyone else out, and the customer
+        // could never compare competing bids.
+        //
+        // A pre-assigned request (manual dispatch, or a customer who used
+        // /select-driver) already carries a specific driver_id; only that driver
+        // may act on it. The lockForUpdate keeps the status/driver_id read
+        // race-free without writing anything.
+        $trip = DB::transaction(function () use ($trip, $user) {
+            $fresh = Trip::query()->where('id', $trip->id)->lockForUpdate()->first();
+            if (!$fresh || $fresh->status !== 'NEGOTIATION') {
+                return null;
             }
-            return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
-        }
-        $trip = $claimed;
+            if ($fresh->driver_id !== null && $fresh->driver_id !== $user->id) {
+                return null; // pre-assigned to another driver, or already confirmed
+            }
+            return $fresh;
+        });
 
+        if (!$trip) {
+            return response()->json(['message' => 'This request is no longer available.'], 409);
+        }
+
+        // Acceptance window (bug #7): a driver auto-pinged by the dispatcher must
+        // act within driver_accept_window_sec of their ping. A late tap is
+        // rejected so the ride doesn't get claimed after the rider moved on.
+        // Drivers reached another way (manual pre-assign / customer select-driver)
+        // have no ping record and are unaffected.
+        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $window = (int) ($settings->driver_accept_window_sec ?? 0);
+        if ($window > 0) {
+            $pingedAt = Cache::get("dispatch_ping:{$trip->id}:{$user->id}");
+            if ($pingedAt !== null && (now()->timestamp - (int) $pingedAt) > $window) {
+                return response()->json([
+                    'message' => 'This request has expired. Please wait for the next one.',
+                ], 409);
+            }
+        }
+
+        // One negotiation thread per trip. For a broadcast its driver_id stays
+        // null (no single owner) until the customer locks the winner; every
+        // driver's bid is identified by the offer's from_user_id, not here.
         $negotiation = FareNegotiation::query()->firstOrCreate(
             ['trip_id' => $trip->id],
             [
@@ -211,9 +304,6 @@ class FareNegotiationController extends Controller
                 'status' => 'NEGOTIATING',
             ]
         );
-
-        $negotiation->driver_id = $trip->driver_id;
-        $negotiation->save();
 
         if ($data['action'] === 'ACCEPT') {
             $customerOffer = $negotiation->offers()
@@ -225,9 +315,13 @@ class FareNegotiationController extends Controller
                 return response()->json(['message' => 'No customer offer found to accept.'], 422);
             }
 
-            // Supersede previous pending offers.
+            // Supersede only THIS driver's own prior pending offers. The
+            // customer's open offer and other drivers' live bids stay PENDING,
+            // so the request keeps showing to the whole pool and the customer
+            // can still compare competing bids.
             $negotiation->offers()
                 ->where('status', 'PENDING')
+                ->where('from_user_id', $user->id)
                 ->update(['status' => 'SUPERSEDED']);
 
             $amount = (float) $customerOffer->amount;
@@ -255,6 +349,7 @@ class FareNegotiationController extends Controller
             if ($trip->is_manual_dispatch) {
                 $confirmed = $tripAssignmentService->confirm($trip->id, (int) $offer->id, $amount);
                 if ($confirmed) {
+                    $negotiation->driver_id = $user->id;
                     $negotiation->status = 'LOCKED';
                     $negotiation->locked_at = now();
                     $negotiation->save();
@@ -273,8 +368,19 @@ class FareNegotiationController extends Controller
 
         $amount = (float) $data['amount'];
 
+        // Floor: a driver's price can't drop below the route's minimum fare
+        // (the apps clamp their step buttons to the same value; this is the
+        // server backstop).
+        $minAmount = $this->negotiationConfig($trip)['min_amount'];
+        if ($amount < $minAmount) {
+            return response()->json(['message' => "Price can't be below ₹{$minAmount}."], 422);
+        }
+
+        // Supersede only THIS driver's own prior pending offer (see the ACCEPT
+        // branch) so other drivers' bids and the customer's offer stay live.
         $negotiation->offers()
             ->where('status', 'PENDING')
+            ->where('from_user_id', $user->id)
             ->update(['status' => 'SUPERSEDED']);
 
         $offer = $negotiation->offers()->create([
@@ -302,7 +408,8 @@ class FareNegotiationController extends Controller
         Request $request,
         Trip $trip,
         TripAssignmentService $tripAssignmentService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        \App\Services\NotificationCenter $notifier
     ) {
         $data = $request->validate([
             'final_fare' => ['required', 'numeric', 'min:0'],
@@ -345,6 +452,20 @@ class FareNegotiationController extends Controller
             return response()->json(['message' => 'Trip could not be confirmed (already taken or no longer in negotiation).'], 409);
         }
 
+        // Record the winning bid + the winning driver, then close out every
+        // other still-live bid now that the customer has chosen. confirm() has
+        // already moved the trip out of NEGOTIATION, so the pool stops seeing it.
+        $acceptedOffer->status = 'ACCEPTED';
+        $acceptedOffer->accepted_by_user_id = $user->id;
+        $acceptedOffer->decision_at = now();
+        $acceptedOffer->save();
+
+        $negotiation->offers()
+            ->where('status', 'PENDING')
+            ->where('id', '!=', $acceptedOffer->id)
+            ->update(['status' => 'SUPERSEDED']);
+
+        $negotiation->driver_id = $acceptedOffer->from_user_id;
         $negotiation->final_amount = $finalFare;
         $negotiation->status = 'LOCKED';
         $negotiation->locked_at = now();
@@ -365,7 +486,50 @@ class FareNegotiationController extends Controller
             );
         }
 
+        // Scheduled ride → record inbox notifications (with the pickup time) for
+        // the customer, the assigned driver and the admins.
+        if ($confirmed->scheduled_at) {
+            $whenText = $confirmed->scheduled_at->copy()->timezone(config('app.timezone'))->format('D, d M · g:i A');
+            $payload = ['trip_id' => $confirmed->id, 'scheduled_at' => $confirmed->scheduled_at->toIso8601String()];
+
+            $notifier->notifyUserId($trip->customer_id, 'scheduled_ride_driver_assigned',
+                'Driver confirmed', "A driver is confirmed for your {$whenText} ride.", $payload, 'car-outline');
+
+            if ($driver) {
+                $notifier->notify($driver, 'scheduled_ride_driver_assigned',
+                    'Upcoming scheduled ride', "You're booked for trip #{$confirmed->id} on {$whenText}.", $payload, 'calendar-outline', push: false);
+            }
+
+            $notifier->notifyAdmins('scheduled_ride_driver_assigned',
+                'Scheduled ride assigned', "Trip #{$confirmed->id} ({$whenText}) now has a driver.", $payload, 'car-outline');
+        }
+
         return response()->json(['trip' => $confirmed->fresh()]);
+    }
+
+    /**
+     * The one knob the apps need: the minimum offer for this route (the pricing
+     * rule's min_fare). Neither side may offer below it; the apps disable their
+     * send button below it and this is the server backstop.
+     *
+     * @return array{min_amount: float}
+     */
+    private function negotiationConfig(Trip $trip): array
+    {
+        $minFare = 0.0;
+        if ($trip->city_vehicle_type_id) {
+            $rule = \App\Models\PricingRule::resolveFor((int) $trip->city_vehicle_type_id);
+            if ($rule && isset($rule['min_fare'])) {
+                $minFare = (float) $rule['min_fare'];
+            }
+        }
+        // If a city has no min_fare configured, fall back to a safe floor so a
+        // missing pricing row can't reopen ₹1 spam.
+        if ($minFare <= 0) {
+            $minFare = max(50.0, round(((float) ($trip->estimated_fare ?? 0)) * 0.4, 2));
+        }
+
+        return ['min_amount' => round($minFare, 2)];
     }
 }
 

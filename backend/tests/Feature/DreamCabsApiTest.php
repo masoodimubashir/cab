@@ -265,5 +265,53 @@ class DreamCabsApiTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['invoice' => ['id', 'invoice_no', 'trip_id']]);
     }
+
+    /**
+     * Regression: in percentage-tip mode the client converts the chosen percent
+     * into rupees and posts rupees. The server must store that rupee value as-is
+     * and NOT re-interpret it as a percent (which double-converted: a 20% tip on
+     * a ₹200 fare was billed ₹80 instead of ₹40).
+     */
+    public function test_percentage_tip_is_stored_as_rupees_without_double_conversion(): void
+    {
+        [$cityId, $rideTypeId, $pricingRuleId] = $this->seedPricing();
+
+        $settings = \App\Models\OperatorSetting::instance();
+        $settings->tip_in_percentage = true;
+        $settings->save();
+
+        $customer = User::factory()->create(['role' => 'customer']);
+        $driver = User::factory()->create(['role' => 'driver']);
+
+        $trip = Trip::query()->create([
+            'customer_id' => $customer->id,
+            'driver_id' => $driver->id,
+            'ride_type_id' => $rideTypeId,
+            'pricing_rule_id' => $pricingRuleId,
+            'status' => 'COMPLETED',
+            'estimated_fare' => 200,
+            'final_fare' => 200,
+            'currency' => 'INR',
+            'pickup_lat' => 12.9716,
+            'pickup_lng' => 77.5946,
+            'drop_lat' => 12.9352,
+            'drop_lng' => 77.6245,
+            'completed_at' => now(),
+        ]);
+
+        // The client already turned "20%" of ₹200 into ₹40 before posting.
+        Sanctum::actingAs($customer);
+        $this->postJson("/api/trips/{$trip->id}/tip", ['amount' => 40])->assertOk();
+
+        // Stored as ₹40 — not re-converted to 40% of ₹200 (₹80).
+        $this->assertEquals(40.0, (float) $trip->fresh()->tip_amount);
+
+        // Driver credited for the tip.
+        $this->assertDatabaseHas('wallet_transactions', [
+            'user_id' => $driver->id,
+            'engagement_id' => $trip->id,
+            'reason' => 'Customer tip',
+        ]);
+    }
 }
 

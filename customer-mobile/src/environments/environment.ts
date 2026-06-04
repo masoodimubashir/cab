@@ -5,7 +5,14 @@
 export const environment = {
   production: false,
   /** Laravel API base (include /api). */
-  apiUrl: 'http://localhost:8000/api',
+  apiUrl: 'http://192.168.29.13:8000/api',
+  /**
+   * Login OTP provider:
+   *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). In mock mode
+   *           (no MSG91 key on the backend) the code is auto-filled for testing.
+   *   false → Firebase phone auth (the legacy client-side path).
+   */
+  useServerOtp: true,
   /**
    * Google Maps JavaScript API key (Places + Geocoding).
    * Used for:
@@ -20,7 +27,7 @@ export const environment = {
    * Leave reverbAppKey blank to fall back to polling-only.
    */
   reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: 'localhost',
+  reverbHost: '192.168.29.13',
   reverbPort: 8080,
   reverbScheme: 'http' as 'http' | 'https',
   /**

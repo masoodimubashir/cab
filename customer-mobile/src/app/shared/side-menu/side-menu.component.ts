@@ -12,6 +12,9 @@ import { PushService } from '../../core/push.service';
   standalone: false,
 })
 export class SideMenuComponent {
+  /** Set when the avatar image URL fails to load → we show initials instead. */
+  avatarBroken = false;
+
   constructor(
     public auth: AuthService,
     private api: ApiService,

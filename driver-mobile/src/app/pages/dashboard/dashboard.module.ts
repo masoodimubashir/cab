@@ -4,9 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { IonicModule } from '@ionic/angular';
 import { DashboardPage } from './dashboard.page';
 import { DashboardPageRoutingModule } from './dashboard-routing.module';
+import { ModeSelectModalModule } from '../../shared/mode-select-modal/mode-select-modal.module';
 
 @NgModule({
-  imports: [CommonModule, FormsModule, IonicModule, DashboardPageRoutingModule],
+  imports: [CommonModule, FormsModule, IonicModule, DashboardPageRoutingModule, ModeSelectModalModule],
   declarations: [DashboardPage],
 })
 export class DashboardPageModule {}

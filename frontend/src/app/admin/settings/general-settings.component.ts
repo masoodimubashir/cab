@@ -68,7 +68,9 @@ interface ProductForm {
 
         <label class="row__field">
           <span class="row__lbl">Display name</span>
-          <input type="text" [(ngModel)]="forms[p.id].name" placeholder="Product name" />
+          <!-- Disabled for now — product names use the seeded defaults
+               (Local / Shuttle / Outstation). -->
+          <input type="text" [(ngModel)]="forms[p.id].name" placeholder="Product name" disabled />
         </label>
 
         <label class="tgl" [title]="forms[p.id].is_active ? 'Enabled' : 'Disabled'">
@@ -310,9 +312,17 @@ export class GeneralSettingsComponent implements OnInit, OnDestroy {
           }
           this.toast.success(`${this.kindLabel(p.kind)} product saved`);
         },
-        error: () => {
+        error: (err) => {
           this.saving[p.id] = false;
-          this.toast.error(`Failed to save ${this.kindLabel(p.kind)} product`);
+          // Revert the toggle to the server's actual value so the UI never
+          // shows a state the backend rejected (e.g. the last active product).
+          const idx = this.products.findIndex((x) => x.id === p.id);
+          if (idx >= 0 && this.forms[p.id]) {
+            this.forms[p.id].is_active = !!this.products[idx].is_active;
+          }
+          this.toast.error(
+            err?.error?.message || `Failed to save ${this.kindLabel(p.kind)} product`,
+          );
         },
       });
   }

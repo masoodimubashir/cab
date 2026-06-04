@@ -14,40 +14,6 @@ class TripAssignmentService
     }
 
     /**
-     * Atomically claim an unassigned trip for a driver during negotiation.
-     *
-     * Returns the fresh Trip on success. Returns null when the trip is no
-     * longer claimable: already taken by another driver, no longer in
-     * NEGOTIATION, or doesn't exist.
-     *
-     * Callers should treat null as a 409 (someone else won, or customer cancelled).
-     */
-    public function claim(int $tripId, int $driverUserId): ?Trip
-    {
-        return DB::transaction(function () use ($tripId, $driverUserId) {
-            $trip = Trip::query()
-                ->where('id', $tripId)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$trip || $trip->status !== 'NEGOTIATION') {
-                return null;
-            }
-
-            if ($trip->driver_id !== null && $trip->driver_id !== $driverUserId) {
-                return null;
-            }
-
-            if ($trip->driver_id === null) {
-                $trip->driver_id = $driverUserId;
-                $trip->save();
-            }
-
-            return $trip->fresh();
-        });
-    }
-
-    /**
      * Atomically confirm a trip against a specific driver offer.
      *
      * Locks the trip, validates the offer belongs to it and is from a driver,

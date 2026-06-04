@@ -1,0 +1,56 @@
+<ion-content class="notif-page" [fullscreen]="true">
+
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
+
+    <h1 class="header-title">Notifications</h1>
+    <p class="header-sub">{{ unreadCount ? unreadCount + ' unread' : 'You\'re all caught up.' }}</p>
+  </div>
+
+  <!-- ============ Body ============ -->
+  <div class="page-body">
+
+    <div class="notif-toolbar dc-anim-in" *ngIf="!loading && notifications.length">
+      <button class="mark-all dc-press" (click)="markAllRead()" [disabled]="!unreadCount">Mark all read</button>
+    </div>
+
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+
+    <!-- Loading skeleton -->
+    <div class="notif-list" *ngIf="loading" aria-hidden="true">
+      <div class="skel-card" *ngFor="let s of [1,2,3,4]">
+        <span class="dc-skeleton skel-circle"></span>
+        <span class="skel-stack">
+          <span class="dc-skeleton skel-line skel-line--lg"></span>
+          <span class="dc-skeleton skel-line skel-line--full"></span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Notifications -->
+    <div class="notif-list dc-stagger" *ngIf="!loading && notifications.length">
+      <button class="notif-card dc-press" [class.unread]="!n.read_at" *ngFor="let n of notifications" (click)="open(n)">
+        <span class="notif-icon"><ion-icon [name]="iconFor(n)"></ion-icon></span>
+        <span class="notif-text">
+          <span class="notif-title">{{ n.title }}</span>
+          <span class="notif-body" *ngIf="n.body">{{ n.body }}</span>
+          <span class="notif-time">{{ n.created_at | date:'d MMM, h:mm a' }}</span>
+        </span>
+        <span class="notif-dot" *ngIf="!n.read_at" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <!-- Empty -->
+    <div class="state-box dc-anim-in" *ngIf="!loading && !notifications.length && !error">
+      <div class="state-icon"><ion-icon name="notifications-off-outline"></ion-icon></div>
+      <p class="state-title">No notifications</p>
+      <p class="state-sub">Updates about your rides will appear here.</p>
+    </div>
+  </div>
+</ion-content>

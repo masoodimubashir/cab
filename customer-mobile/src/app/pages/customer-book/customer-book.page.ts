@@ -4,12 +4,21 @@ import { AlertController, ToastController } from '@ionic/angular';
 import { Subject, debounceTime, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
-import { GeolocationService, LatLng } from '../../core/geolocation.service';
+import { GeolocationService, LatLng, GeoFix } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { RealtimeService, DispatchRingExpandedPayload } from '../../core/realtime.service';
 import { environment } from '../../../environments/environment';
 
 declare const google: any;
+
+type SavedPlace = {
+  id: number;
+  label: string;
+  address: string;
+  lat: number;
+  lng: number;
+  icon: string | null;
+};
 
 type RideType = { id: number; name: string; description?: string | null };
 type VehicleType = { id: number; name: string; description?: string | null; image_path?: string | null };
@@ -37,6 +46,10 @@ type EstimateResponse = {
     time_component?: number;
     pickup_component?: number;
     surge_multiplier?: number;
+    // Area/region pricing line — present only when the city + rule allow showing it.
+    region_fare_name?: string | null;
+    region_fare_factor?: number | null;
+    region_fare_amount?: number | null;
     promo_discount?: number;
     applied_promotion?: {
       id: number;
@@ -91,8 +104,19 @@ type DriverOffer = {
  *   bids    → driver countered; customer accepts/rejects the counter
  *   map-select → focused mode for map-based location selection
  */
-// Vehicle step removed — the booking flow is Route → Payment → Match.
-type RideState = 'idle' | 'route' | 'payment' | 'preview' | 'waiting' | 'bids' | 'map-select';
+// Booking flow: Pickup → Drop → Find Driver → (name your price) → negotiate.
+// Payment is no longer chosen here — it's handled at the end of the trip.
+type RideState =
+  | 'idle'
+  | 'pickup'
+  | 'drop'
+  | 'ride-list'
+  | 'find-driver'
+  | 'offer'
+  | 'waiting'
+  | 'bids'
+  | 'map-select'
+  | 'saved-select';
 
 @Component({
   selector: 'app-customer-book',
@@ -150,13 +174,22 @@ export class CustomerBookPage implements OnDestroy {
   activeSearchField: 'pickup' | 'drop' = 'drop';
   suggestions: PlaceSuggestion[] = [];
 
+  // Customer's saved places (Home, Work, …) surfaced as one-tap chips on the
+  // pickup and drop steps. Loaded once per view-enter.
+  savedPlaces: SavedPlace[] = [];
+
   selectedPaymentMode: 'cash' | 'razorpay' = 'cash';
-  couponInput = '';
-  couponApplying = false;
-  couponError: string | null = null;
-  couponPreview: { discount: number; final_amount: number; coupon: { assignment_id: number; title: string } } | null = null;
 
   estimate: EstimateResponse | null = null;
+
+  // "Name your own price" — the fare the customer types in for drivers on the
+  // price step. Starts EMPTY; the customer types any amount at or above the
+  // route's minimum fare (minFare). The send button stays disabled until a
+  // valid amount is entered.
+  offerAmount: number | null = null;
+  // The route's minimum fare (the pricing rule's min_fare). Delivered with the
+  // negotiation config as min_amount; the backend rejects anything below it.
+  minFare = 0;
 
   // Review Ride modal — opened from the preview sheet so the customer can see
   // the fare breakdown before picking a driver.
@@ -194,6 +227,10 @@ export class CustomerBookPage implements OnDestroy {
   private map: any | null = null;
   private pickupMarker: any | null = null;
   private dropMarker: any | null = null;
+  // Live "you" dot that follows the device as it moves (home-screen tracking).
+  private selfMarker: any | null = null;
+  private geoWatchId: string | null = null;
+  private selfPosition: LatLng | null = null;
   // Polylines drawn by Route.createPolylines() — kept so we can detach them
   // from the map when the customer picks a new destination.
   private routePolylines: any[] = [];
@@ -221,6 +258,29 @@ export class CustomerBookPage implements OnDestroy {
   // button state and the "Searching…" UI hint.
   searching = false;
 
+  // Route signature (pickup|drop) of the last discovery search, so re-entering
+  // the find-driver step without changing the route doesn't restart it.
+  private lastSearchKey: string | null = null;
+
+  // Customer's counter-back price typed in the bids sheet — re-broadcasts a new
+  // offer to every driver so bargaining can continue.
+  counterOfferAmount: number | null = null;
+
+  // "Schedule for later" — on the fare step the customer can book a future ride
+  // instead of searching now. scheduledAt holds the chosen ISO time; the server
+  // parks it and the alarm-time worker dispatches near pickup.
+  scheduleMode: 'now' | 'later' = 'now';
+  scheduledAt: string | null = null;
+  minScheduleAt = new Date().toISOString();
+
+  // Home skeleton-loading — a full-screen skeleton covers the whole home
+  // (map + top bar + sheet) on cold start until BOTH the map and the home
+  // data are ready, then it fades out and the live screen reveals.
+  homeLoading = true;
+  private homeLoadStart = Date.now();
+  private productsReady = false;
+  private mapReady = false;
+
   constructor(
     private api: ApiService,
     private auth: AuthService,
@@ -240,22 +300,34 @@ export class CustomerBookPage implements OnDestroy {
         next: (results) => (this.suggestions = results),
         error: () => (this.suggestions = []),
       });
+
+    // Safety: never let the full-screen skeleton stick if the map or data is
+    // slow/unavailable (e.g. a pending location-permission prompt).
+    setTimeout(() => this.finishHomeLoading(), 6000);
   }
 
   ionViewWillEnter(): void {
     this.loadRideTypes();
     this.loadVehicleTypes();
     this.loadCities();
+    this.loadSavedPlaces();
   }
 
   ionViewDidEnter(): void {
     void this.initMap();
   }
 
+  ionViewWillLeave(): void {
+    // Stop following the device while the page isn't visible (saves battery);
+    // initMap() restarts the stream when the view re-enters.
+    void this.stopSelfLocationStream();
+  }
+
   ngOnDestroy(): void {
     this.cleanupSearch();
     this.stopNearbyDriversPoll();
     this.stopDriverListPoll();
+    void this.stopSelfLocationStream();
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -280,19 +352,29 @@ export class CustomerBookPage implements OnDestroy {
     this.api.get<{ data: VehicleType[] }>('/pricing/vehicle-types').subscribe({
       next: (res) => {
         this.vehicleTypes = res.data || [];
-        if (this.vehicleTypes.length && this.selectedVehicleTypeId == null) {
-          this.selectedVehicleTypeId = this.vehicleTypes[0].id;
-        }
+        // Default to "All" (selectedVehicleTypeId stays null). The customer
+        // picks a specific type on the find-driver step if they want one.
       },
       error: () => (this.vehicleTypes = []),
     });
   }
 
-  selectVehicleType(id: number): void {
+  /**
+   * Customer picked a ride type on the find-driver step. `null` = "All" (search
+   * every vehicle type). Re-prices the estimate for the chosen type and re-runs
+   * the driver search so the list only shows drivers who can serve it.
+   */
+  async selectRideVehicle(id: number | null): Promise<void> {
+    if (this.selectedVehicleTypeId === id) return;
     this.selectedVehicleTypeId = id;
     this.vehicleError = null;
-    void this.fetchEstimate();
-    void this.refreshDriverList();
+    await this.fetchEstimate();
+    // On the ride-list step (step 3) we only re-price; the search starts when
+    // the customer taps "Find drivers". If they're already on the driver-search
+    // step, re-run it so the list matches the newly chosen type.
+    if (this.state === 'find-driver') {
+      await this.discoverDrivers();
+    }
   }
 
   openReviewModal(): void {
@@ -304,6 +386,13 @@ export class CustomerBookPage implements OnDestroy {
 
   closeReviewModal(): void {
     this.showReviewModal = false;
+  }
+
+  private loadSavedPlaces(): void {
+    this.api.get<{ data: SavedPlace[] }>('/me/saved-locations').subscribe({
+      next: (res) => (this.savedPlaces = res.data || []),
+      error: () => (this.savedPlaces = []),
+    });
   }
 
   private loadCities(): void {
@@ -362,9 +451,38 @@ export class CustomerBookPage implements OnDestroy {
         if (!this.productKinds.some((p) => p.kind === this.selectedProductKind) && this.productKinds.length) {
           this.selectedProductKind = this.productKinds[0].kind;
         }
+        this.productsReady = true;
+        this.maybeFinishHome();
       },
-      error: () => (this.productKinds = []),
+      error: () => {
+        this.productKinds = [];
+        this.productsReady = true;
+        this.maybeFinishHome();
+      },
     });
+  }
+
+  /**
+   * The full-screen home skeleton stays until BOTH the map and the home data
+   * (products) are ready, so the user never sees a half-loaded screen.
+   */
+  private maybeFinishHome(): void {
+    if (this.productsReady && this.mapReady) this.finishHomeLoading();
+  }
+
+  /**
+   * Hide the home skeleton once data is ready, keeping it visible for a short
+   * minimum so it never flashes; the real content then reveals with animation.
+   */
+  private finishHomeLoading(): void {
+    if (!this.homeLoading) return;
+    const elapsed = Date.now() - this.homeLoadStart;
+    const minMs = 500;
+    if (elapsed >= minMs) {
+      this.homeLoading = false;
+    } else {
+      setTimeout(() => (this.homeLoading = false), minMs - elapsed);
+    }
   }
 
   private iconForKind(kind: 'local' | 'outstation' | 'rental'): string {
@@ -422,9 +540,27 @@ export class CustomerBookPage implements OnDestroy {
       this.resolveCityForPickup();
       this.mapsReady = true;
 
+      // Live "you" dot — show it immediately at the current spot, then keep it
+      // following the device via the GPS watch. Detach any marker left over
+      // from a previous map (initMap re-runs each time the view re-enters).
+      if (this.selfMarker) this.selfMarker.map = null;
+      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: this.selfPosition ?? start,
+        map: this.map,
+        title: 'You',
+        content: this.buildDot('#1e6cf0'),
+        zIndex: 2,
+      });
+      void this.startSelfLocationStream();
+
       this.startNearbyDriversPoll();
+      this.mapReady = true;
+      this.maybeFinishHome();
     } catch (e) {
       this.mapsError = (e as Error)?.message || 'Could not load map.';
+      // Don't trap the user behind the skeleton if the map fails to load.
+      this.mapReady = true;
+      this.maybeFinishHome();
     }
   }
 
@@ -501,6 +637,65 @@ export class CustomerBookPage implements OnDestroy {
       marker.map = null;
     }
     this.nearbyDriverMarkers.clear();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Live self-location ("you" dot follows the device on the home map)
+  // ─────────────────────────────────────────────────────────────────
+
+  /** Blue location dot with a soft halo, mirroring the trip-active "you" dot. */
+  private buildDot(color: string): HTMLElement {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:22px',
+      'height:22px',
+      'border-radius:50%',
+      `background:${color}`,
+      'border:3px solid #fff',
+      'box-shadow:0 0 0 6px rgba(30,108,240,0.25), 0 2px 6px rgba(0,0,0,0.45)',
+      'box-sizing:border-box',
+    ].join(';');
+    return el;
+  }
+
+  /** Start streaming our GPS and move the "you" dot on every fix. Idempotent. */
+  private async startSelfLocationStream(): Promise<void> {
+    if (this.geoWatchId !== null) return;
+    this.geoWatchId = await this.geo.watchPosition(
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 },
+      (fix, err) => {
+        if (err) {
+          void this.stopSelfLocationStream();
+          return;
+        }
+        if (fix) this.onSelfPosition(fix);
+      },
+    );
+  }
+
+  private async stopSelfLocationStream(): Promise<void> {
+    if (this.geoWatchId !== null) {
+      await this.geo.clearWatch(this.geoWatchId);
+      this.geoWatchId = null;
+    }
+  }
+
+  /** Move (or create) the live "you" dot to the latest GPS fix. */
+  private onSelfPosition(fix: GeoFix): void {
+    const p = { lat: fix.lat, lng: fix.lng };
+    this.selfPosition = p;
+    if (!this.map) return;
+    if (!this.selfMarker) {
+      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: p,
+        map: this.map,
+        title: 'You',
+        content: this.buildDot('#1e6cf0'),
+        zIndex: 2,
+      });
+    } else {
+      this.selfMarker.position = p;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -611,14 +806,216 @@ export class CustomerBookPage implements OnDestroy {
     }
   }
 
-  goRoute(): void {
-    this.state = 'route';
+  /**
+   * Pan the map back to the live "you" dot. Unlike centerMapToCurrentLocation,
+   * this only moves the camera — it does NOT change the pickup. Uses the latest
+   * watched position, falling back to a fresh fix if the stream hasn't ticked.
+   */
+  async recenterOnMe(): Promise<void> {
+    let p = this.selfPosition;
+    if (!p) p = await this.geo.getCurrentPosition();
+    if (p && this.map) {
+      this.map.panTo(p);
+      if (this.map.getZoom && this.map.getZoom() < 15) this.map.setZoom(16);
+    }
+  }
+
+  // Step 1 — pickup. Seed the pickup field with the detected current location.
+  goPickup(): void {
+    this.state = 'pickup';
     this.suggestions = [];
-    this.toQuery = '';
     this.pickupQuery = this.pickup?.address || '';
-    this.activeSearchField = 'drop';
+    this.activeSearchField = 'pickup';
     this.pickupError = null;
     this.dropError = null;
+  }
+
+  // Step 1 → 2 — validate pickup, move to the destination step.
+  goDrop(): void {
+    this.pickupError = null;
+    if (!this.pickup) {
+      this.pickupError = 'Pickup location is required';
+      return;
+    }
+    this.state = 'drop';
+    this.suggestions = [];
+    this.toQuery = this.drop?.address || '';
+    this.activeSearchField = 'drop';
+    this.dropError = null;
+    // If a destination is already chosen, show the black path right away.
+    if (this.pickup && this.drop) void this.showRouteOnMap();
+  }
+
+  // Step 2 → 3 — validate drop, draw the route + price it, then show the ride
+  // list so the customer picks a ride type BEFORE we search for drivers.
+  goRideList(): void {
+    this.dropError = null;
+    if (!this.pickup) {
+      this.goPickup();
+      return;
+    }
+    if (!this.drop) {
+      this.dropError = 'Please select a destination';
+      return;
+    }
+    this.suggestions = [];
+    this.state = 'ride-list';
+    // Draw the road path, then price it off the real driven distance. The
+    // estimate reflects the selected ride type and seeds the "name your price"
+    // base fare. No driver search yet — that's step 4.
+    void this.showRouteOnMap().then(() => this.fetchEstimate());
+  }
+
+  // Step 3 → 4 — start the expanding-circle driver search for the chosen ride
+  // type so the customer sees who's around before naming a price.
+  goFindDriver(): void {
+    if (!this.pickup || !this.drop) {
+      this.state = 'ride-list';
+      return;
+    }
+    this.suggestions = [];
+    this.state = 'find-driver';
+    void this.discoverDrivers();
+  }
+
+  /**
+   * Kick off the expanding-circle driver discovery for the current route so the
+   * customer can SEE who's around before naming a price. Reuses searchDrivers()
+   * (discovery mode: it finds + reveals drivers but never notifies them). Skips
+   * the restart when the route hasn't changed since the last search.
+   */
+  private async discoverDrivers(): Promise<void> {
+    if (!this.pickup || !this.drop) return;
+    if (!this.estimate?.estimated_fare) return; // estimate not ready yet
+    const key = `${this.pickup.lat},${this.pickup.lng}|${this.drop.lat},${this.drop.lng}|${this.selectedVehicleTypeId ?? 'all'}`;
+    if (key === this.lastSearchKey && this.tripId && this.drivers.length) {
+      return; // same route already searched — keep the list we already have
+    }
+    this.lastSearchKey = key;
+    // Tear down any prior search subscription so the next search binds to the
+    // NEW trip's channel (route changed → fresh trip), not the old one.
+    if (this.unsubscribeRealtime) {
+      this.unsubscribeRealtime();
+      this.unsubscribeRealtime = null;
+    }
+    // Force a fresh trip for the new route. An un-offered prior search trip has
+    // no customer offer, so it stays invisible to drivers and is harmless.
+    this.tripId = null;
+    await this.searchDrivers();
+  }
+
+  // Step 3 → 4 (Ride → Fare). The customer types their own price. The text box
+  // starts EMPTY; minFare is the route's floor (shown near the box). (The route
+  // + estimate were already prepared on the ride step / goRideList.)
+  goOffer(): void {
+    // Seed minFare from the estimate so the floor shows immediately; the real
+    // route floor (min_amount) overwrites it once the negotiation config loads.
+    this.minFare = this.estimate?.estimated_fare
+      ? Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5
+      : 0;
+    // Start with an EMPTY box — the customer names their own price.
+    this.offerAmount = null;
+    this.error = null;
+    this.state = 'offer';
+    // Pull the route's true floor (min_amount) so the minimum-fare hint + the
+    // below-floor validation match the backend before the first send.
+    void this.fetchNegotiationConfig();
+  }
+
+  /**
+   * One-shot read of the route's negotiation config (min_amount) so the
+   * minimum-fare hint + the below-floor validation are correct as soon as the
+   * customer reaches the price step. Needs a trip; discovery creates one.
+   */
+  private async fetchNegotiationConfig(): Promise<void> {
+    if (!this.tripId) return;
+    try {
+      const res = await this.api
+        .get<{
+          negotiation_config?: { min_amount?: number };
+        }>(`/trips/${this.tripId}/negotiation`)
+        .toPromise();
+      this.captureNegotiationConfig(res?.negotiation_config);
+    } catch {
+      // Keep the estimate-derived minFare on failure.
+    }
+  }
+
+  // "Send to drivers" — fire the customer's typed price into the dispatch ring.
+  // The disabled send button is the primary guard; this re-checks the floor as
+  // a backstop and refuses to send anything below minFare.
+  async sendOffer(): Promise<void> {
+    const amount = Number(this.offerAmount);
+    if (!this.offerAmount || amount < this.minFare) {
+      this.error = `You can't offer below ₹${this.minFare} — the minimum fare for this route is ₹${this.minFare}.`;
+      return;
+    }
+    if (!amount || amount <= 0) {
+      this.error = 'Enter a fare to offer.';
+      return;
+    }
+    if (this.scheduleMode === 'later') {
+      if (!this.scheduledAt) {
+        this.error = 'Pick a date & time for your ride.';
+        return;
+      }
+      await this.scheduleRide(amount);
+      return;
+    }
+    await this.requestAutoDispatch(amount);
+  }
+
+  setScheduleMode(mode: 'now' | 'later'): void {
+    this.scheduleMode = mode;
+    this.error = null;
+    if (mode === 'now') {
+      this.scheduledAt = null;
+    } else if (!this.minScheduleAt) {
+      this.minScheduleAt = new Date().toISOString();
+    }
+  }
+
+  /**
+   * Book a future ride: create the trip with scheduled_at + record the customer's
+   * offer, then confirm and send the customer to their Scheduled rides list. The
+   * backend parks it and dispatches near pickup time (per the city's mode).
+   */
+  async scheduleRide(amount: number): Promise<void> {
+    this.loading = true;
+    this.error = null;
+    try {
+      if (!this.tripId) {
+        await this.createTrip();
+      }
+      if (!this.tripId) throw new Error('Trip creation failed.');
+
+      await this.api
+        .post(`/trips/${this.tripId}/negotiation/customer-offer`, { amount })
+        .toPromise();
+
+      const toast = await this.toastCtrl.create({
+        message: "Ride scheduled! We'll find you a driver near pickup time.",
+        duration: 2600,
+        color: 'success',
+      });
+      await toast.present();
+
+      this.resetAfterSchedule();
+      this.router.navigateByUrl('/customer-tabs/scheduled-rides');
+    } catch (e: any) {
+      this.error = e?.error?.message || e?.message || 'Could not schedule the ride.';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private resetAfterSchedule(): void {
+    this.state = 'idle';
+    this.tripId = null;
+    this.scheduledAt = null;
+    this.scheduleMode = 'now';
+    this.offerAmount = null;
+    this.lastSearchKey = null;
   }
 
   closeSheet(): void {
@@ -649,41 +1046,9 @@ export class CustomerBookPage implements OnDestroy {
     this.pickupQuery = this.pickup.address;
     
     void this.showRouteOnMap();
-    if (this.state === 'payment' || this.state === 'preview') {
+    if (this.state === 'find-driver') {
       void this.onRouteReady();
     }
-  }
-
-  /**
-   * Continue from the Route step. The Vehicle step has been retired — any
-   * available driver (Sedan / SUV / Hatchback / Auto) can pick the trip up
-   * in the Match step, so we go straight to Payment after validating the
-   * pickup + drop addresses.
-   */
-  goToPayment(): void {
-    this.pickupError = null;
-    this.dropError = null;
-
-    if (!this.pickup) {
-      this.pickupError = 'Pickup location is required';
-    }
-    if (!this.drop) {
-      this.dropError = 'Please select a destination';
-    }
-
-    if (this.pickupError || this.dropError) {
-      return;
-    }
-
-    this.suggestions = [];
-    this.state = 'payment';
-    void this.showRouteOnMap();
-    void this.fetchEstimate();
-  }
-
-  goToDrivers(): void {
-    this.state = 'preview';
-    void this.onRouteReady();
   }
 
   async pickSuggestion(s: PlaceSuggestion): Promise<void> {
@@ -711,10 +1076,55 @@ export class CustomerBookPage implements OnDestroy {
          this.dropError = null;
       }
       this.suggestions = [];
-      // Don't auto-navigate if both aren't set or if they're just editing pickup.
+      // Draw the black path as soon as both ends are known (e.g. on the drop
+      // step) so the customer sees the route before reaching step 3.
+      if (this.pickup && this.drop) void this.showRouteOnMap();
     } finally {
       this.loading = false;
     }
+  }
+
+  /** Ionicon name for a saved place — uses its stored icon, else maps the label. */
+  savedIcon(p: SavedPlace): string {
+    if (p.icon) return p.icon;
+    const l = (p.label || '').toLowerCase();
+    if (l === 'home') return 'home';
+    if (l === 'work' || l === 'office') return 'briefcase';
+    return 'location';
+  }
+
+  /**
+   * Open the full saved-locations list for the given step. We remember which
+   * field opened it via activeSearchField so picking a place returns to the
+   * exact step ('pickup' / 'drop') the customer came from.
+   */
+  openSavedPicker(field: 'pickup' | 'drop'): void {
+    this.activeSearchField = field;
+    this.suggestions = [];
+    this.state = 'saved-select';
+  }
+
+  /** Pick a saved place from the picker, then return to the step it was opened from. */
+  pickSavedPlaceAndReturn(p: SavedPlace): void {
+    const field = this.activeSearchField;
+    this.pickSavedPlace(p, field);
+    // The 'pickup' / 'drop' field values map 1:1 to their step states.
+    this.state = field;
+  }
+
+  /** One-tap fill of pickup/drop from a saved place — mirrors pickSuggestion. */
+  pickSavedPlace(p: SavedPlace, field: 'pickup' | 'drop'): void {
+    if (field === 'pickup') {
+      this.pickup = { lat: p.lat, lng: p.lng, address: p.address };
+      this.pickupQuery = p.address;
+      this.pickupError = null;
+    } else {
+      this.drop = { lat: p.lat, lng: p.lng, address: p.address, place_id: undefined };
+      this.toQuery = p.address;
+      this.dropError = null;
+    }
+    this.suggestions = [];
+    if (this.pickup && this.drop) void this.showRouteOnMap();
   }
 
   async setPickupCurrentLocation(): Promise<void> {
@@ -758,7 +1168,8 @@ export class CustomerBookPage implements OnDestroy {
         this.toQuery = address;
         this.dropError = null;
       }
-      this.state = 'route';
+      this.state = this.activeSearchField === 'pickup' ? 'pickup' : 'drop';
+      if (this.pickup && this.drop) void this.showRouteOnMap();
     } catch {
       // Ignored
     } finally {
@@ -767,19 +1178,7 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   cancelMapSelection(): void {
-    this.state = 'route';
-  }
-
-  addHome(): void {
-    // Add logic for saving/booking to home
-  }
-
-  addWork(): void {
-    // Add logic for saving/booking to work
-  }
-
-  addFavorite(): void {
-    // Add logic for saved places
+    this.state = this.activeSearchField === 'pickup' ? 'pickup' : 'drop';
   }
 
   selectProductKind(kind: 'local' | 'outstation' | 'rental'): void {
@@ -810,60 +1209,6 @@ export class CustomerBookPage implements OnDestroy {
   selectPaymentMode(mode: 'cash' | 'razorpay'): void {
     this.selectedPaymentMode = mode;
     this.tripId = null;
-    this.couponPreview = null;
-    this.couponInput = '';
-    this.couponError = null;
-  }
-
-  async applyCoupon(): Promise<void> {
-    if (this.couponPreview) {
-      this.couponPreview = null;
-      this.couponInput = '';
-      this.couponError = null;
-      return;
-    }
-
-    const code = (this.couponInput || '').trim();
-    if (!code) return;
-
-    this.couponApplying = true;
-    this.couponError = null;
-
-    try {
-      if (!this.tripId) {
-        await this.createTrip();
-      }
-      if (!this.tripId) {
-        this.couponError = 'Please select your route first.';
-        this.couponApplying = false;
-        return;
-      }
-
-      const res = await this.api
-        .post<{
-          discount?: number;
-          final_amount?: number;
-          coupon?: { assignment_id: number; title: string };
-          error?: string;
-        }>(`/trips/${this.tripId}/coupon-preview`, { coupon_title: code })
-        .toPromise();
-
-      if (res?.error) {
-        this.couponError = res.error;
-      } else if (res?.discount != null && res?.final_amount != null && res?.coupon) {
-        this.couponPreview = {
-          discount: res.discount,
-          final_amount: res.final_amount,
-          coupon: res.coupon,
-        };
-      } else {
-        this.couponError = 'Could not apply coupon.';
-      }
-    } catch (e: any) {
-      this.couponError = e?.error?.message || 'Could not apply coupon.';
-    } finally {
-      this.couponApplying = false;
-    }
   }
 
   selectPackage(id: number): void {
@@ -932,51 +1277,99 @@ export class CustomerBookPage implements OnDestroy {
       content: this.buildPin('B', '#c0392b'),
     });
 
-    // Clear any polylines from a previous destination before drawing the new
-    // route — Route.createPolylines() returns fresh instances each call.
+    // Clear any polylines from a previous destination before drawing the new one.
     for (const pl of this.routePolylines) pl.setMap?.(null);
     this.routePolylines = [];
+    this.routeDistanceKm = null;
+    this.routeTimeMin = null;
 
+    const origin = { lat: this.pickup.lat, lng: this.pickup.lng };
+    const destination = { lat: this.drop.lat, lng: this.drop.lng };
+
+    // 1) New Routes API — exact road geometry + real driven distance. Needs
+    //    the "Routes API (New)" enabled on the Maps key.
     try {
-      // New Routes library (`Route.computeRoutes`) replaces the deprecated
-      // `DirectionsService.route` + `DirectionsRenderer` pair. Requires the
-      // **Routes API (New)** to be enabled in Google Cloud.
       const { Route } = await (google.maps as any).importLibrary('routes');
-
       const { routes } = await Route.computeRoutes({
-        origin: { location: { latLng: { lat: this.pickup.lat, lng: this.pickup.lng } } },
-        destination: { location: { latLng: { lat: this.drop.lat, lng: this.drop.lng } } },
+        // origin/destination accept a plain LatLngLiteral ({lat,lng}).
+        origin,
+        destination,
         travelMode: google.maps.TravelMode.DRIVING,
-        fields: ['legs', 'path', 'distanceMeters', 'duration'],
+        fields: ['legs', 'path', 'distanceMeters', 'durationMillis'],
       });
-
       const route = routes?.[0];
-      if (!route) throw new Error('no_route');
-
-      // createPolylines() returns Polyline instances we attach ourselves.
-      this.routePolylines = route.createPolylines();
-      for (const pl of this.routePolylines) {
-        pl.setOptions?.({ strokeColor: '#000', strokeWeight: 4 });
-        pl.setMap(this.map);
+      const polylines: any[] = route?.createPolylines?.() ?? [];
+      let drew = false;
+      for (const pl of polylines) {
+        if (pl?.setMap) {
+          pl.setOptions?.({ strokeColor: '#000', strokeWeight: 6, strokeOpacity: 0.95 });
+          pl.setMap(this.map);
+          drew = true;
+        }
       }
-
-      // Distance + duration are now top-level on the route. Fall back to the
-      // first leg if the top-level fields aren't populated.
-      const distMeters = route.distanceMeters ?? route.legs?.[0]?.distanceMeters;
-      this.routeDistanceKm = typeof distMeters === 'number' ? distMeters / 1000 : null;
-      const dur = route.duration ?? route.legs?.[0]?.duration;
-      // duration arrives as either `{seconds: number}`, an ISO 8601 "1234s"
-      // string, or a plain number of seconds. Handle each shape.
-      const seconds = this.parseDurationSeconds(dur);
-      this.routeTimeMin = seconds != null ? seconds / 60 : null;
-    } catch {
-      this.routeDistanceKm = null;
-      this.routeTimeMin = null;
-      const bounds = new google.maps.LatLngBounds();
-      bounds.extend({ lat: this.pickup.lat, lng: this.pickup.lng });
-      bounds.extend({ lat: this.drop.lat, lng: this.drop.lng });
-      this.map.fitBounds(bounds, 80);
+      if (drew) {
+        this.routePolylines = polylines;
+        const distMeters = route.distanceMeters ?? route.legs?.[0]?.distanceMeters;
+        this.routeDistanceKm = typeof distMeters === 'number' ? distMeters / 1000 : null;
+        const ms = route.durationMillis ?? route.legs?.[0]?.durationMillis;
+        this.routeTimeMin = typeof ms === 'number' ? ms / 60000 : null;
+        console.log('[route] drawn via Routes API — km=', this.routeDistanceKm);
+        this.frameRoute(origin, destination);
+        return;
+      }
+    } catch (e) {
+      console.warn('[route] Routes API unavailable — trying DirectionsService', e);
     }
+
+    // 2) Legacy DirectionsService — also follows roads; needs "Directions API".
+    try {
+      const svc = new google.maps.DirectionsService();
+      const res: any = await svc.route({
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+      });
+      const r = res?.routes?.[0];
+      if (r?.overview_path?.length) {
+        const pl = new google.maps.Polyline({
+          path: r.overview_path,
+          strokeColor: '#000',
+          strokeWeight: 6,
+          strokeOpacity: 0.95,
+          map: this.map,
+        });
+        this.routePolylines = [pl];
+        const leg = r.legs?.[0];
+        this.routeDistanceKm = leg?.distance?.value != null ? leg.distance.value / 1000 : null;
+        this.routeTimeMin = leg?.duration?.value != null ? leg.duration.value / 60 : null;
+        console.log('[route] drawn via DirectionsService — km=', this.routeDistanceKm);
+        this.frameRoute(origin, destination);
+        return;
+      }
+    } catch (e) {
+      console.warn('[route] DirectionsService unavailable — drawing straight line', e);
+    }
+
+    // 3) Last resort — straight line. routeDistanceKm stays null, so the
+    //    backend prices off its haversine fallback.
+    const straight = new google.maps.Polyline({
+      path: [origin, destination],
+      strokeColor: '#000',
+      strokeWeight: 6,
+      strokeOpacity: 0.95,
+      map: this.map,
+    });
+    this.routePolylines = [straight];
+    this.frameRoute(origin, destination);
+  }
+
+  /** Fit the map so the whole pickup→drop route is visible. */
+  private frameRoute(a: { lat: number; lng: number }, b: { lat: number; lng: number }): void {
+    if (!this.map) return;
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(a);
+    bounds.extend(b);
+    this.map.fitBounds(bounds, 90);
   }
 
   /**
@@ -1016,6 +1409,8 @@ export class CustomerBookPage implements OnDestroy {
       const res = await this.api
         .post<EstimateResponse>('/pricing/estimate', {
           city_id: cityId,
+          // null = "All" → server prices the city's default vehicle.
+          vehicle_type_id: this.selectedVehicleTypeId,
           ride_type_id:
             this.selectedProductKind !== 'local' ? this.selectedRideTypeId : null,
           outstation_package_id:
@@ -1084,9 +1479,10 @@ export class CustomerBookPage implements OnDestroy {
     const tripRes = await this.api
       .post<{ trip: { id: number } }>('/trips', {
         city_id: cityId,
-        // No vehicle is requested — the trip stays open to any-vehicle drivers
-        // in the Match step. ride_type_id only goes through for outstation/
-        // rental so the right rate card and ride family are used.
+        // Vehicle type the customer chose on the find-driver step. null = "All"
+        // → the trip stays open to any-vehicle drivers; a specific id makes the
+        // search (and the driver list) match only that vehicle type.
+        vehicle_type_id: this.selectedVehicleTypeId,
         ride_type_id:
           this.selectedProductKind !== 'local' ? this.selectedRideTypeId : null,
         outstation_package_id:
@@ -1099,75 +1495,16 @@ export class CustomerBookPage implements OnDestroy {
         drop_lng: this.drop.lng,
         route_distance_km: this.routeDistanceKm,
         route_time_min: this.routeTimeMin,
-        payment_method: this.selectedPaymentMode,
-        coupon_title: this.couponPreview?.coupon.title ?? null,
+        // Set when the customer chose "schedule for later"; null = ride now.
+        scheduled_at: this.scheduledAt,
+        // Payment mode is chosen at the END of the trip now, not at booking.
+        // Coupons are redeemed on the post-trip payment screen, not here.
+        payment_method: null,
       })
       .toPromise();
     this.tripId = tripRes?.trip?.id ?? null;
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // Confirm request → select a specific driver
-  // ─────────────────────────────────────────────────────────────────
-
-
-  /**
-   * Customer taps a driver row → we send /trips/{id}/select-driver with the
-   * estimated fare as the opening offer. The chosen driver gets a direct push.
-   */
-  async confirmRequest(driver: NearbyDriver): Promise<void> {
-    if (!this.estimate?.estimated_fare) {
-      const t = await this.toastCtrl.create({
-        message: 'Still calculating fare — please wait a moment.',
-        duration: 2000,
-      });
-      await t.present();
-      return;
-    }
-
-    const amount = Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5;
-    const ok = await this.alertCtrl.create({
-      header: 'Confirm request',
-      message: `Send a ride request to ${driver.name || 'this driver'} at ₹${amount}?`,
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Confirm',
-          handler: () => this.doSelectDriver(driver, amount),
-        },
-      ],
-    });
-    await ok.present();
-  }
-
-  private async doSelectDriver(driver: NearbyDriver, amount: number): Promise<void> {
-    this.loading = true;
-    this.error = null;
-    try {
-      if (!this.tripId) {
-        await this.createTrip();
-      }
-      if (!this.tripId) throw new Error('Trip creation failed.');
-
-      await this.api
-        .post(`/trips/${this.tripId}/select-driver`, {
-          driver_id: driver.driver_id,
-          amount,
-        })
-        .toPromise();
-
-      this.selectedDriverId = driver.driver_id;
-      this.stopDriverListPoll();
-      this.startWaitingForDriver(amount);
-    } catch (e: any) {
-      this.error = e?.error?.message || e?.message || 'Could not select driver.';
-      // If the chosen driver is gone (409), refresh the list so the user can
-      // pick someone else.
-      await this.refreshDriverList();
-    } finally {
-      this.loading = false;
-    }
-  }
 
   /**
    * Auto-dispatch: POST /customer-offer instead of locking to one specific
@@ -1175,17 +1512,12 @@ export class CustomerBookPage implements OnDestroy {
    * each `hop_interval_sec` and broadcasts DispatchRingExpanded events for
    * the map circle animation. First driver in the ring to accept wins.
    */
-  async requestAutoDispatch(): Promise<void> {
-    if (!this.estimate?.estimated_fare) {
-      const t = await this.toastCtrl.create({
-        message: 'Still calculating fare — please wait a moment.',
-        duration: 2000,
-      });
-      await t.present();
+  async requestAutoDispatch(amount: number): Promise<void> {
+    if (!amount || amount <= 0) {
+      this.error = 'Enter a fare to offer.';
       return;
     }
 
-    const amount = Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5;
     this.loading = true;
     this.error = null;
     try {
@@ -1216,6 +1548,11 @@ export class CustomerBookPage implements OnDestroy {
   // ─────────────────────────────────────────────────────────────────
 
   private startWaitingForDriver(amount: number): void {
+    // Clear timers from any previous round (e.g. when the customer bargains
+    // back and re-broadcasts) so we never stack duplicate intervals.
+    if (this.searchTimer) clearInterval(this.searchTimer);
+    if (this.findAnotherTimeoutHandle) clearTimeout(this.findAnotherTimeoutHandle);
+    if (this.pollHandle) clearInterval(this.pollHandle);
     this.state = 'waiting';
     this.driverOffers = [];
     this.searchSecondsLeft = 60;
@@ -1356,10 +1693,10 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   /**
-   * Discovery-only search. Triggers DispatchHopJob in discoveryMode = true
-   * on the backend — drivers in each expanding ring are revealed to the
-   * customer but NOT notified. Customer manually picks one via the existing
-   * REQUEST flow (confirmRequest → /select-driver) after search ends.
+   * Discovery-only search. Triggers DispatchHopJob in discoveryMode = true on
+   * the backend — drivers in each expanding ring are revealed to the customer
+   * (populating the find-driver list) but NOT notified. The customer then names
+   * a price and broadcasts it to all of them via sendOffer → /customer-offer.
    */
   async searchDrivers(): Promise<void> {
     if (!this.estimate?.estimated_fare) {
@@ -1480,8 +1817,10 @@ export class CustomerBookPage implements OnDestroy {
     this.selectedDriverId = null;
     this.driverOffers = [];
     this.showFindAnother = false;
-    this.state = 'preview';
-    await this.refreshDriverList();
+    this.lastSearchKey = null;
+    // Back to the fare step so the customer can re-send "Search driver" (the
+    // cancelled trip is replaced by a fresh one on the next send).
+    this.state = 'offer';
   }
 
   private cleanupSearch(): void {
@@ -1508,11 +1847,14 @@ export class CustomerBookPage implements OnDestroy {
   private pollNegotiation(): void {
     if (!this.tripId) return;
     this.api
-      .get<{ trip_id: number; negotiation: { status: string; final_amount: number; offers: DriverOffer[] } }>(
-        `/trips/${this.tripId}/negotiation`
-      )
+      .get<{
+        trip_id: number;
+        negotiation: { status: string; final_amount: number; offers: DriverOffer[] };
+        negotiation_config?: { min_amount?: number };
+      }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
         next: (res) => {
+          this.captureNegotiationConfig(res?.negotiation_config);
           const offers = (res?.negotiation?.offers || []).filter(
             (o) => o.from_role === 'driver' && (o.status === 'PENDING' || o.status === 'ACCEPTED')
           );
@@ -1522,14 +1864,30 @@ export class CustomerBookPage implements OnDestroy {
       });
   }
 
+  /**
+   * Pull the route's price floor out of the negotiation response. min_amount is
+   * the true lowest the customer may offer, so it overrides minFare. The empty
+   * text box is left untouched — the customer types their own price.
+   */
+  private captureNegotiationConfig(
+    cfg?: { min_amount?: number } | null
+  ): void {
+    if (!cfg) return;
+    if (typeof cfg.min_amount === 'number' && cfg.min_amount > 0) {
+      this.minFare = cfg.min_amount;
+    }
+  }
+
   private onIncomingOffer(offer: DriverOffer): void {
     if (offer.from_role !== 'driver') return;
     const exists = this.driverOffers.some((o) => o.id != null && o.id === offer.id);
     if (exists) return;
     this.driverOffers = [...this.driverOffers, offer];
-    // Driver countered or accepted — surface the bids sheet so the customer
-    // can confirm.
-    if (this.state === 'waiting') this.state = 'bids';
+    // A driver replied — surface the bids sheet so the customer can confirm.
+    // The "send a new price" box stays EMPTY; the customer types their own.
+    if (this.state === 'waiting') {
+      this.state = 'bids';
+    }
   }
 
   private onLocked(): void {
@@ -1538,16 +1896,35 @@ export class CustomerBookPage implements OnDestroy {
     this.router.navigateByUrl(`/customer-tabs/trip/${this.tripId}`, { replaceUrl: true });
   }
 
+  /**
+   * Customer re-broadcasts a brand-new price to ALL drivers from the bids sheet
+   * (bargaining back). Reuses the customer-offer path, so every driver sees the
+   * new ask and can re-accept or re-counter.
+   */
+  async counterBid(): Promise<void> {
+    const amount = Number(this.counterOfferAmount);
+    if (!this.counterOfferAmount || amount <= 0) {
+      this.error = 'Enter a price to send.';
+      return;
+    }
+    // Backstop for the disabled send button: never send below the route's floor.
+    if (this.minFare && amount < this.minFare) {
+      this.error = `You can't offer below ₹${this.minFare} — the minimum fare for this route is ₹${this.minFare}.`;
+      return;
+    }
+    this.counterOfferAmount = null;
+    await this.requestAutoDispatch(amount);
+  }
+
   async confirmOffer(offer: DriverOffer): Promise<void> {
     if (!this.tripId) return;
 
     const ok = await this.alertCtrl.create({
-      header: 'Confirm fare',
-      message: `Accept ₹${offer.amount} from this driver?`,
+      header: `Take ₹${offer.amount}?`,
       buttons: [
-        { text: 'Cancel', role: 'cancel' },
+        { text: 'Back', role: 'cancel' },
         {
-          text: 'Confirm',
+          text: 'Take it',
           role: 'destructive',
           handler: () => this.lockOffer(offer),
         },

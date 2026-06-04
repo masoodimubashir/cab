@@ -83,7 +83,10 @@ class RatingsController extends Controller
         $this->applyTripFilters($request, $query);
 
         $trips = $query
-            ->with('payment:id,trip_id,method,status,amount,discount_amount,paid_at')
+            ->with([
+                'payment:id,trip_id,method,status,amount,discount_amount,paid_at',
+                'rideType:id,name',
+            ])
             ->orderByDesc('completed_at')
             ->orderByDesc('created_at')
             ->paginate(20);
@@ -100,7 +103,10 @@ class RatingsController extends Controller
         $this->applyTripFilters($request, $query);
 
         $trips = $query
-            ->with('payment:id,trip_id,method,status,amount,discount_amount,paid_at')
+            ->with([
+                'payment:id,trip_id,method,status,amount,discount_amount,paid_at',
+                'rideType:id,name',
+            ])
             ->orderByDesc('completed_at')
             ->orderByDesc('created_at')
             ->paginate(20);
@@ -143,6 +149,23 @@ class RatingsController extends Controller
                           $p->where('status', '!=', 'SUCCESS');
                       });
                 });
+        }
+
+        // ── ride type filter ────────────────────────────────────────
+        // Filters by the real ride_types row the trip was booked under.
+        if ($rideTypeId = $request->query('ride_type_id')) {
+            $query->where('ride_type_id', (int) $rideTypeId);
+        }
+
+        // ── payment method filter ───────────────────────────────────
+        // payments.method is the CASH / RAZORPAY enum; only trips with a
+        // matching payment row are returned.
+        $method = $request->query('payment_method');
+        if ($method && $method !== 'all') {
+            $method = strtoupper($method);
+            $query->whereHas('payment', function ($q) use ($method) {
+                $q->where('method', $method);
+            });
         }
 
         // Optional city + date-range filters (untouched when omitted).

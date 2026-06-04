@@ -47,7 +47,37 @@ export class TripHistoryPage {
   status: StatusFilter = 'all';
   payment: PaymentFilter = 'all';
 
+  // Client-side date filter (does not hit the server).
+  range: 'all' | 'today' | 'week' | 'month' = 'all';
+
+  // Filter bottom-sheet state.
+  filterOpen = false;
+
   constructor(private api: ApiService) {}
+
+  openFilters(): void {
+    this.filterOpen = true;
+  }
+
+  closeFilters(): void {
+    this.filterOpen = false;
+  }
+
+  /** How many filters are away from their default 'all' value. */
+  get activeFilterCount(): number {
+    let count = 0;
+    if (this.range !== 'all') count++;
+    if (this.status !== 'all') count++;
+    if (this.payment !== 'all') count++;
+    return count;
+  }
+
+  resetFilters(): void {
+    this.range = 'all';
+    this.status = 'all';
+    this.payment = 'all';
+    this.refresh();
+  }
 
   ionViewWillEnter(): void {
     this.refresh();
@@ -85,6 +115,65 @@ export class TripHistoryPage {
     if (this.payment === p) return;
     this.payment = p;
     this.refresh();
+  }
+
+  setRange(r: 'all' | 'today' | 'week' | 'month'): void {
+    this.range = r;
+  }
+
+  /**
+   * Client-side date filter applied on top of the server-side status/payment
+   * filters. Trips with no date fall outside today/week/month buckets.
+   */
+  get filteredTrips(): TripRow[] {
+    if (this.range === 'all') return this.trips;
+
+    const now = new Date();
+
+    return this.trips.filter((t) => {
+      const raw = this.dateDisplay(t);
+      if (!raw) return false;
+
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return false;
+
+      if (this.range === 'today') {
+        return (
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate()
+        );
+      }
+
+      const days = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+      if (this.range === 'week') return days >= 0 && days <= 7;
+      if (this.range === 'month') return days >= 0 && days <= 30;
+      return true;
+    });
+  }
+
+  /** Maps the Ionic color name from statusColor() to a dc-badge variant. */
+  statusBadgeClass(t: TripRow): string {
+    const color = this.statusColor(t);
+    return this.badgeClassForColor(color);
+  }
+
+  /** Maps the Ionic color name from paymentBadge() to a dc-badge variant. */
+  paymentBadgeClass(color: string): string {
+    return this.badgeClassForColor(color);
+  }
+
+  private badgeClassForColor(color: string): string {
+    switch (color) {
+      case 'success':
+        return 'dc-badge--ok';
+      case 'warning':
+        return 'dc-badge--warn';
+      case 'danger':
+        return 'dc-badge--bad';
+      default:
+        return 'dc-badge--muted';
+    }
   }
 
   statusLabel(t: TripRow): string {

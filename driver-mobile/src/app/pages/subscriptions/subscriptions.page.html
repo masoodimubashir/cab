@@ -1,75 +1,166 @@
-<ion-header [translucent]="true">
-  <ion-toolbar>
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
-      <ion-back-button defaultHref="/tabs/more"></ion-back-button>
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
-    <ion-title>Subscriptions</ion-title>
+    <ion-buttons slot="end">
+      <button type="button" class="pg-action dc-press" (click)="load()" aria-label="Reload">
+        <ion-icon name="refresh-outline"></ion-icon>
+        <span>Refresh</span>
+      </button>
+    </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="ion-padding">
-  <div class="wallet-row">
-    <span>Wallet balance</span>
-    <strong>₹{{ wallet | number: '1.0-2' }}</strong>
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <p class="pg-hero__label">Driver subscriptions</p>
+    <h1 class="pg-title">Ride plans</h1>
+    <p class="pg-subtitle">Subscribe once and keep more of every fare — no per-ride commission.</p>
+
+    <!-- Wallet (always visible — it funds plans and auto-renewals) -->
+    <div class="sub-wallet-pill">
+      <ion-icon name="wallet-outline"></ion-icon>
+      <span class="sub-wallet-pill__label">Wallet</span>
+      <strong class="sub-wallet-pill__amt">₹{{ wallet | number: '1.0-2' }}</strong>
+    </div>
   </div>
 
-  <ion-text color="danger" *ngIf="error">
-    <p>{{ error }}</p>
-  </ion-text>
+  <div class="pg-body">
+    <div class="sub-error dc-card" *ngIf="error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>{{ error }}</span>
+    </div>
 
-  <div *ngIf="loading && !plans.length" class="hint">Loading…</div>
+    <!-- Tabs -->
+    <ion-segment class="sub-seg" mode="ios" [value]="tab" (ionChange)="setTab($event.detail.value)">
+      <ion-segment-button value="current">
+        <ion-label>Current plan</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="all">
+        <ion-label>All plans</ion-label>
+      </ion-segment-button>
+    </ion-segment>
 
-  <!-- Active plan -->
-  <ng-container *ngIf="current as s">
-    <h2 class="section-title">Your plan</h2>
-    <div class="active-card">
-      <div class="active-card__head">
-        <div>
-          <h3>{{ s.title }}</h3>
-          <p *ngIf="s.subtitle">{{ s.subtitle }}</p>
+    <!-- ============================ CURRENT PLAN ============================ -->
+    <div *ngIf="tab === 'current'" class="pg-anim-body">
+
+      <!-- Loading -->
+      <div class="dc-card" *ngIf="loading && !current">
+        <div class="dc-skeleton" style="height:210px; border-radius:16px"></div>
+      </div>
+
+      <!-- Active plan -->
+      <div class="cur-card" *ngIf="current as s">
+        <div class="cur-card__head">
+          <div class="cur-card__badge-row">
+            <span class="cur-card__pill">Active plan</span>
+            <span class="dc-badge" [ngClass]="s.commission_percent > 0 ? 'dc-badge--warn' : 'dc-badge--ok'">
+              {{ s.commission_percent > 0 ? s.commission_percent + '% commission' : 'Commission-free' }}
+            </span>
+          </div>
+          <h2 class="cur-card__title">{{ s.title }}</h2>
+          <p class="cur-card__sub" *ngIf="s.subtitle">{{ s.subtitle }}</p>
         </div>
-        <span class="badge" [class.badge--free]="s.commission_percent <= 0">
-          {{ s.commission_percent > 0 ? s.commission_percent + '% commission' : 'Commission-free' }}
-        </span>
+
+        <div class="cur-card__body">
+          <div class="cur-stat">
+            <ion-icon name="checkmark-circle"></ion-icon>
+            <span>{{ remainingSummary(s) }}</span>
+          </div>
+
+          <div class="cur-stat cur-stat--renew" [class.cur-stat--off]="!s.auto_renew || s.cancelled_at">
+            <ion-icon [name]="(!s.auto_renew || s.cancelled_at) ? 'close-circle' : 'sync-circle'"></ion-icon>
+            <span>{{ renewSummary(s) }}</span>
+          </div>
+
+          <div class="cur-stat cur-stat--muted" *ngIf="s.vehicle_type_name">
+            <ion-icon name="car"></ion-icon>
+            <span>{{ s.vehicle_type_name }}</span>
+          </div>
+
+          <!-- Queued next plan -->
+          <div class="cur-queued" *ngIf="s.next_plan">
+            <ion-icon name="time-outline"></ion-icon>
+            <div>
+              <small>Up next</small>
+              <span><strong>{{ s.next_plan.title }}</strong> · ₹{{ s.next_plan.amount | number: '1.0-2' }} — starts when this one ends</span>
+            </div>
+          </div>
+
+          <!-- Cancel auto-renew -->
+          <button
+            type="button"
+            class="dc-cta dc-cta--ghost dc-press cur-cancel"
+            *ngIf="s.auto_renew && !s.cancelled_at"
+            (click)="confirmCancel()"
+          >
+            <ion-icon name="close-circle-outline"></ion-icon>
+            Cancel plan
+          </button>
+        </div>
       </div>
-      <p class="active-card__remaining">{{ remainingSummary(s) }}</p>
-      <p class="active-card__meta" *ngIf="s.vehicle_type_name">Vehicle: {{ s.vehicle_type_name }}</p>
-    </div>
-  </ng-container>
 
-  <!-- Available plans -->
-  <h2 class="section-title">{{ current ? 'Other plans' : 'Available plans' }}</h2>
-
-  <div *ngIf="!loading && !plans.length" class="hint">
-    No subscription plans are available for you right now.
-  </div>
-
-  <div class="plan-card" *ngFor="let p of plans">
-    <div class="plan-card__head">
-      <div>
-        <h3>{{ p.title }}</h3>
-        <p *ngIf="p.subtitle">{{ p.subtitle }}</p>
+      <!-- Auto-renew explainer (also shown while subscribed) -->
+      <div class="sub-note" *ngIf="current">
+        <ion-icon name="sync-outline"></ion-icon>
+        <span>This plan renews automatically from your wallet when it ends. Cancel anytime — it stays active until it expires.</span>
       </div>
-      <div class="plan-card__price">₹{{ p.amount | number: '1.0-2' }}</div>
+
+      <!-- Empty state -->
+      <div class="dc-card cur-empty" *ngIf="!loading && !current">
+        <div class="dc-empty">
+          <div class="dc-empty__icon"><ion-icon name="ribbon-outline"></ion-icon></div>
+          <strong>No active plan</strong>
+          <span>You're on standard per-ride commission. Pick a plan to keep more of every fare.</span>
+        </div>
+        <button type="button" class="dc-cta dc-press" (click)="setTab('all')">
+          <ion-icon name="pricetags-outline"></ion-icon>
+          Browse plans
+        </button>
+      </div>
     </div>
 
-    <div class="plan-card__tags">
-      <span class="tag">{{ meterSummary(p) }}</span>
-      <span class="tag" [class.tag--free]="p.commission_percent <= 0">
-        {{ p.commission_percent > 0 ? p.commission_percent + '% commission' : 'Commission-free' }}
-      </span>
-      <span class="tag" *ngIf="p.vehicle_type_name">{{ p.vehicle_type_name }}</span>
+    <!-- ============================== ALL PLANS ============================= -->
+    <div *ngIf="tab === 'all'" class="pg-anim-body">
+
+      <!-- Auto-renew explainer -->
+      <div class="sub-note">
+        <ion-icon name="sync-outline"></ion-icon>
+        <span>Every plan renews automatically from your wallet when it ends. Cancel anytime — your plan stays active until it expires.</span>
+      </div>
+
+      <!-- Loading skeletons -->
+      <ng-container *ngIf="loading && !plans.length">
+        <div class="dc-card"><div class="dc-skeleton" style="height:200px"></div></div>
+        <div class="dc-card"><div class="dc-skeleton" style="height:200px"></div></div>
+      </ng-container>
+
+      <!-- Section heading -->
+      <div class="sub-section" *ngIf="plans.length">
+        <h2 class="sub-section__title">Available plans</h2>
+        <span class="sub-section__count">{{ plans.length }}</span>
+      </div>
+
+      <!-- Plan cards -->
+      <app-plan-card
+        *ngFor="let p of plans"
+        [plan]="p"
+        [walletBalance]="wallet"
+        [buying]="buyingId === p.id"
+        [isCurrent]="!!current && current.title === p.title"
+        (subscribe)="confirmBuy($event)"
+      ></app-plan-card>
+
+      <!-- Empty -->
+      <div class="dc-card" *ngIf="!loading && !plans.length">
+        <div class="dc-empty">
+          <div class="dc-empty__icon"><ion-icon name="pricetags-outline"></ion-icon></div>
+          <strong>No plans available</strong>
+          <span>There are no subscription plans available for you right now. Check back soon.</span>
+        </div>
+      </div>
     </div>
 
-    <p class="plan-card__terms" *ngIf="p.terms">{{ p.terms }}</p>
-
-    <ion-button
-      expand="block"
-      size="small"
-      [disabled]="buyingId === p.id"
-      (click)="confirmBuy(p)"
-    >
-      {{ buyingId === p.id ? 'Subscribing…' : 'Subscribe' }}
-    </ion-button>
   </div>
 </ion-content>

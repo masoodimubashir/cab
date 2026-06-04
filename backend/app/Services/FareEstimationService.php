@@ -276,7 +276,18 @@ class FareEstimationService
 
         $customerFactor = (float) ($dynamicFactors['customer_factor'] ?? 1.0);
         $driverFactor = (float) ($dynamicFactors['driver_factor'] ?? 1.0);
+        $subtotalAfterSurge = $subtotal;
         $subtotal = $subtotal * $customerFactor;
+
+        // Region-specific (area) fare line — labelled for the rider only when the
+        // city's toggle AND the rule's own visibility are both on (region_visible).
+        // The factor itself always applies; this just exposes the delta + name.
+        $regionVisible = !empty($dynamicFactors['region_visible'])
+            && !empty($dynamicFactors['name'])
+            && abs($customerFactor - 1.0) > 0.0001;
+        $regionFareAmount = $regionVisible
+            ? round($subtotalAfterSurge * ($customerFactor - 1.0), 2)
+            : null;
 
         if ($minFare !== null && $subtotal < $minFare) {
             $subtotal = $minFare;
@@ -301,6 +312,10 @@ class FareEstimationService
                 'dynamic_driver_factor' => round($driverFactor, 3),
                 'dynamic_rule_id' => $dynamicFactors['rule_id'] ?? null,
                 'dynamic_fare_type' => $dynamicFactors['fare_type'] ?? null,
+                // Rider-facing "area fare" label (null unless region_visible).
+                'region_fare_name' => $regionVisible ? $dynamicFactors['name'] : null,
+                'region_fare_factor' => $regionVisible ? round($customerFactor, 3) : null,
+                'region_fare_amount' => $regionFareAmount,
                 'promo_discount' => round($promoDiscount, 2),
                 'applied_promotion' => $appliedPromoMeta,
                 'subtotal_before_tax' => round($subtotal, 2),

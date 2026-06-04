@@ -1,101 +1,224 @@
-.wallet-row {
-  display: flex;
-  justify-content: space-between;
+/* Subscriptions — DRIVER app. Two tabs (Current plan / All plans) over the
+   shared green→navy hero + white-card design system (theme/pages.scss). Only
+   page-specific composition lives here. */
+
+/* Wallet pill living on the navy hero — always visible across both tabs. */
+.sub-wallet-pill {
+  display: inline-flex;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--ion-color-light-shade, #eee);
-  margin-bottom: 16px;
-
-  strong { font-size: 1.1rem; }
-}
-
-.section-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  margin: 18px 0 8px;
-}
-
-.hint {
-  color: var(--ion-color-medium, #666);
-  font-size: 0.9rem;
-  padding: 8px 0;
-}
-
-.active-card {
-  background: var(--ion-color-primary);
-  color: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-
-  &__head {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 10px;
-
-    h3 { margin: 0; font-size: 1.05rem; }
-    p { margin: 2px 0 0; font-size: 0.82rem; opacity: 0.9; }
-  }
-
-  &__remaining { margin: 12px 0 0; font-weight: 600; }
-  &__meta { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.85; }
-}
-
-.badge {
-  flex: none;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 4px 9px;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
 
-  &--free { background: var(--ion-color-success, #2dd36f); }
-}
-
-.plan-card {
-  border: 1px solid var(--ion-color-light-shade, #e3e3e3);
-  border-radius: 12px;
-  padding: 14px;
-  margin-bottom: 12px;
-
-  &__head {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 10px;
-
-    h3 { margin: 0; font-size: 1rem; }
-    p { margin: 2px 0 0; font-size: 0.82rem; color: var(--ion-color-medium, #666); }
-  }
-
-  &__price { font-size: 1.1rem; font-weight: 800; flex: none; }
-
-  &__tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 10px 0;
-  }
-
-  &__terms {
-    font-size: 0.78rem;
-    color: var(--ion-color-medium, #666);
-    margin: 0 0 10px;
+  ion-icon { font-size: 18px; color: var(--ion-color-primary, #12B35B); }
+  &__label { font-size: 0.8rem; font-weight: 600; color: rgba(255, 255, 255, 0.7); }
+  &__amt {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
   }
 }
 
-.tag {
-  font-size: 0.72rem;
+/* Segment tab control. */
+.sub-seg {
+  margin: 2px 0 16px;
+  --background: #EEF1F4;
+  border-radius: 14px;
+  padding: 4px;
+
+  ion-segment-button {
+    --background-checked: #ffffff;
+    --color: var(--text-muted, #6C757D);
+    --color-checked: var(--dreamcab-dark-blue, #0D1B2A);
+    --indicator-color: #ffffff;
+    --border-radius: 10px;
+    --indicator-box-shadow: 0 2px 6px rgba(13, 27, 42, 0.12);
+    min-height: 40px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+}
+
+/* Inline error card. */
+.sub-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(235, 68, 90, 0.07);
+  border-color: rgba(235, 68, 90, 0.18);
+  box-shadow: none;
+  color: #D33651;
+  font-size: 0.86rem;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--ion-color-light-shade, #eee);
-  color: var(--ion-color-dark, #222);
+  ion-icon { font-size: 20px; flex-shrink: 0; }
+}
 
-  &--free {
-    background: rgba(45, 211, 111, 0.16);
-    color: var(--ion-color-success-shade, #28ba62);
+/* Always-on auto-renew explainer. */
+.sub-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 2px 14px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: rgba(var(--ion-color-primary-rgb), 0.07);
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.16);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted, #6C757D);
+  ion-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; color: var(--ion-color-primary, #12B35B); }
+}
+
+/* =============================== CURRENT PLAN ============================== */
+.cur-card {
+  margin-bottom: 14px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid #EEF0F2;
+  box-shadow: 0 8px 24px rgba(13, 27, 42, 0.08);
+
+  /* Premium navy header with a green glow corner. */
+  &__head {
+    padding: 18px 18px 20px;
+    color: #ffffff;
+    background:
+      radial-gradient(130% 150% at 100% 0%, rgba(18, 179, 91, 0.28) 0%, rgba(18, 179, 91, 0) 55%),
+      var(--dreamcab-dark-blue, #0D1B2A);
+  }
+
+  &__badge-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  &__pill {
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+  }
+  &__sub { margin: 4px 0 0; font-size: 0.85rem; color: rgba(255, 255, 255, 0.62); }
+
+  &__body {
+    padding: 16px;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+/* Stat rows inside the active-plan card. */
+.cur-stat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: 13px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  color: var(--ion-color-primary, #12B35B);
+  ion-icon { font-size: 20px; flex-shrink: 0; }
+
+  &--off {
+    background: rgba(211, 54, 81, 0.08);
+    color: #D33651;
+  }
+  &--muted {
+    background: #F4F6F8;
+    color: var(--text-muted, #6C757D);
+    font-weight: 600;
+    ion-icon { color: var(--text-muted, #6C757D); }
+  }
+}
+
+/* Queued next plan. */
+.cur-queued {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 13px;
+  border-radius: 13px;
+  background: rgba(var(--dreamcab-dark-blue-rgb, 13, 27, 42), 0.05);
+  border: 1px dashed rgba(var(--dreamcab-dark-blue-rgb, 13, 27, 42), 0.22);
+
+  ion-icon { font-size: 19px; flex-shrink: 0; margin-top: 1px; color: var(--dreamcab-dark-blue, #0D1B2A); }
+  div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  small {
+    font-size: 0.64rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted, #6C757D);
+  }
+  span { font-size: 0.84rem; color: var(--text-main, #0D1B2A); }
+  strong { font-weight: 800; }
+}
+
+/* Cancel auto-renew button (quiet, red-tinted ghost CTA). */
+.cur-cancel {
+  margin-top: 6px;
+  height: 46px;
+  color: #D33651;
+  border-color: rgba(211, 54, 81, 0.3);
+  ion-icon { font-size: 18px; }
+}
+
+/* Empty state on the Current tab — includes a Browse-plans CTA. */
+.cur-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ================================ ALL PLANS =============================== */
+.sub-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 2px 2px;
+
+  &__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+    color: var(--text-main, #0D1B2A);
+  }
+
+  &__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--dreamcab-dark-blue, #0D1B2A);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
   }
 }

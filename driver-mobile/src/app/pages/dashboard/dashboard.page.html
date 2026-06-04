@@ -1,65 +1,199 @@
-<ion-header [translucent]="true">
-  <ion-toolbar color="primary">
-    <ion-title>Dashboard</ion-title>
-    <ion-buttons slot="end">
-      <ion-button (click)="refresh()" [disabled]="loading" aria-label="Refresh">
-        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-  </ion-toolbar>
-</ion-header>
+<ion-content [fullscreen]="true" [scrollY]="false" class="dash-content">
 
-<ion-content [scrollY]="false">
-  <!-- Full-bleed map. The button bar floats above it. -->
+  <!-- ===== Full-bleed live map (ViewChild #mapDiv — DO NOT rename) ===== -->
   <div #mapDiv class="map-canvas"></div>
 
-  <ion-text color="danger" *ngIf="error">
-    <div class="banner banner--err">{{ error }}</div>
-  </ion-text>
+  <!-- ===== FULL-SCREEN COLD-START SKELETON =====
+       Covers the whole dashboard (map + top bar + sheet) until BOTH the driver
+       profile and the map are ready, then fades out to reveal the live screen. -->
+  <div class="home-skeleton" [class.hs-done]="!homeLoading" aria-hidden="true">
+    <div class="hs-map"></div>
+    <div class="hs-pin"></div>
 
-  <div class="status-pill" *ngIf="driver">
-    <span class="dot" [class.dot--on]="isOnline"></span>
-    {{ isOnline ? 'Online' : 'Offline' }}
+    <!-- Top bar: avatar pill · DRIVER badge · status chip -->
+    <div class="hs-top">
+      <div class="hs-avatar dc-skeleton"></div>
+      <span class="drv-badge">DRIVER</span>
+      <div class="hs-status dc-skeleton"></div>
+    </div>
+
+    <!-- Bottom sheet: handle · title · hint · CTA -->
+    <div class="hs-sheet">
+      <div class="hs-handle"></div>
+      <div class="hs-line dc-skeleton"></div>
+      <div class="hs-sub dc-skeleton"></div>
+      <div class="hs-cta dc-skeleton"></div>
+    </div>
   </div>
 
-  <!-- Bottom call-to-action. -->
-  <div class="cta-bar">
-    <ng-container *ngIf="driver; else loadingState">
+  <!-- ===== Floating driver top bar ===== -->
+  <header class="drv-topbar">
+    <!-- Menu / avatar = open drawer -->
+    <button class="drv-menu dc-press" (click)="openDrawer()" aria-label="Open menu">
+      <img class="drv-menu__img" [src]="avatarUrl || defaultAvatar" (error)="onAvatarError($event)" alt="" />
+      <span class="drv-menu__presence" *ngIf="isOnline"></span>
+    </button>
+
+    <!-- Driver identity badge -->
+    <span class="drv-badge drv-topbar__badge">DRIVER</span>
+
+    <!-- Live status chip -->
+    <ng-container *ngIf="driver; else pillSkeleton">
+      <div class="drv-status drv-topbar__status"
+           [class.is-offline]="!isOnline || !isApproved"
+           [ngClass]="{ 'is-review': !isApproved }">
+        <span class="drv-status__dot"></span>
+        <span>{{ !isApproved ? 'Under review' : (isOnline ? 'Online' : 'Offline') }}</span>
+      </div>
+    </ng-container>
+    <ng-template #pillSkeleton>
+      <div class="drv-status drv-topbar__status drv-topbar__status--skeleton dc-skeleton"></div>
+    </ng-template>
+  </header>
+
+  <!-- ===== Error banner ===== -->
+  <div class="error-banner" *ngIf="error">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span class="error-banner__text">{{ error }}</span>
+    <button class="error-banner__close dc-press" (click)="error = null" aria-label="Dismiss">
+      <ion-icon name="close-outline"></ion-icon>
+    </button>
+  </div>
+
+  <!-- ===== Recenter / my-location FAB ===== -->
+  <button
+    class="recenter-fab dc-press"
+    *ngIf="!drawerOpen"
+    [class.is-raised]="isApproved && isOnline"
+    (click)="recenter()"
+    aria-label="Center on my location"
+  >
+    <ion-spinner name="crescent" *ngIf="locating"></ion-spinner>
+    <ion-icon *ngIf="!locating" [name]="hasFix ? 'locate' : 'locate-outline'"></ion-icon>
+  </button>
+
+  <!-- ===== Bottom driver sheet ===== -->
+  <div class="sheet" [class.is-online]="isApproved && isOnline">
+    <div class="sheet__handle"></div>
+
+    <ng-container *ngIf="driver; else sheetSkeleton">
+
+      <!-- APPROVED -->
       <ng-container *ngIf="isApproved; else notApproved">
-        <ion-button
-          *ngIf="!isOnline"
-          expand="block"
-          color="success"
-          size="large"
-          (click)="goOnline()"
-          [disabled]="toggling"
-        >
-          <ion-icon name="power-outline" slot="start"></ion-icon>
-          {{ toggling ? 'Going online…' : 'Go Online' }}
-        </ion-button>
-        <ion-button
-          *ngIf="isOnline"
-          expand="block"
-          color="medium"
-          fill="outline"
-          size="large"
-          (click)="goOffline()"
-          [disabled]="toggling"
-        >
-          <ion-icon name="stop-circle-outline" slot="start"></ion-icon>
-          {{ toggling ? 'Going offline…' : 'Go Offline' }}
-        </ion-button>
+
+        <!-- OFFLINE -->
+        <ng-container *ngIf="!isOnline">
+          <div class="sheet__lead">
+            <span class="sheet__title">Ready to drive?</span>
+            <p class="sheet__hint">Go online to start receiving trip requests near you.</p>
+          </div>
+          <button class="dc-cta sheet__go dc-press" (click)="goOnline()" [disabled]="toggling">
+            <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
+            <ion-icon name="power" *ngIf="!toggling"></ion-icon>
+            <span>{{ toggling ? 'Going online…' : 'Go Online' }}</span>
+          </button>
+        </ng-container>
+
+        <!-- ONLINE -->
+        <ng-container *ngIf="isOnline">
+          <div class="sheet__header">
+            <span class="sheet__status"><span class="live-dot"></span> You're online</span>
+            <span class="sheet__timer">Online {{ onlineElapsed }}</span>
+          </div>
+
+          <div class="stat-strip">
+            <div class="stat">
+              <span class="stat__value">0</span>
+              <span class="stat__label">Trips</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">₹0</span>
+              <span class="stat__label">Earnings</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ onlineElapsed }}</span>
+              <span class="stat__label">Online</span>
+            </div>
+          </div>
+
+          <button class="dc-cta dc-cta--ghost sheet__stop dc-press" (click)="confirmGoOffline()" [disabled]="toggling">
+            <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
+            <ion-icon name="stop-circle-outline" *ngIf="!toggling"></ion-icon>
+            <span>{{ toggling ? 'Going offline…' : 'Go Offline' }}</span>
+          </button>
+        </ng-container>
       </ng-container>
 
+      <!-- NOT APPROVED -->
       <ng-template #notApproved>
-        <div class="warn-card">
-          Your account isn't approved yet. Hang tight — the operator will let you know.
+        <div class="review-card">
+          <div class="review-card__icon"><ion-icon name="time-outline"></ion-icon></div>
+          <div class="review-card__body">
+            <strong>Account under review</strong>
+            <span>We'll notify you the moment you're approved to go online.</span>
+          </div>
         </div>
+        <button class="dc-cta dc-cta--ghost dc-press" (click)="navTo('/driver-pending-review')">
+          <span>View application</span>
+          <ion-icon name="chevron-forward-outline"></ion-icon>
+        </button>
       </ng-template>
     </ng-container>
 
-    <ng-template #loadingState>
-      <ion-button expand="block" size="large" [disabled]="true">Loading…</ion-button>
+    <!-- LOADING -->
+    <ng-template #sheetSkeleton>
+      <div class="dc-skeleton sk-line"></div>
+      <div class="dc-skeleton sk-block"></div>
     </ng-template>
   </div>
+
+  <!-- ===== Drawer + scrim ===== -->
+  <div class="scrim" *ngIf="drawerOpen" (click)="closeDrawer()"></div>
+
+  <aside class="drawer" [class.is-open]="drawerOpen">
+    <!-- Driver identity header (green → navy hero) -->
+    <div class="drawer__header drv-hero">
+      <span class="drv-badge drawer__badge">DRIVER</span>
+      <div class="drawer__id" *ngIf="user as u">
+        <div class="drawer__avatar">
+          <img [src]="avatarUrl || defaultAvatar" (error)="onAvatarError($event)" alt="" />
+        </div>
+        <div class="drawer__who">
+          <strong>{{ u.name || 'Driver' }}</strong>
+          <span class="drawer__role">{{ (u.roles && u.roles.join(', ')) || u.role || 'Driver' }}</span>
+          <span class="drawer__chip" [class.is-on]="isOnline">
+            <span class="drawer__chipdot"></span>{{ isOnline ? 'Online' : 'Offline' }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="drawer__nav dc-stagger">
+      <ng-container *ngFor="let g of navGroups">
+        <p class="drawer__group">{{ g.title }}</p>
+        <button class="dc-row nav-row dc-press" *ngFor="let item of g.items" (click)="navTo(item.path)">
+          <span class="dc-row__icon">
+            <ion-icon [name]="item.icon"></ion-icon>
+          </span>
+          <span class="dc-row__text">
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.sub }}</small>
+          </span>
+          <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+        </button>
+      </ng-container>
+    </nav>
+
+    <!-- Footer -->
+    <div class="drawer__footer">
+      <button class="dc-row nav-row nav-row--danger dc-press" (click)="confirmSignOut()">
+        <span class="dc-row__icon dc-row__icon--danger">
+          <ion-icon name="log-out-outline"></ion-icon>
+        </span>
+        <span class="dc-row__text"><strong>Sign out</strong></span>
+      </button>
+    </div>
+  </aside>
+
 </ion-content>

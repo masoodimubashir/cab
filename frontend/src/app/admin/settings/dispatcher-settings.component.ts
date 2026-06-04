@@ -17,6 +17,7 @@ interface DispatcherSetting {
   dispatcher_hop_radius_m: number;
   request_radius_m: number;
   max_hops: number;
+  driver_accept_window_sec: number;
 
   schedule_available: boolean;
   schedule_dispatcher_type: boolean;
@@ -109,7 +110,12 @@ const DISPATCH_MODES = [
               <span class="field__lbl">Max hops</span>
               <input type="number" min="1" max="50" [(ngModel)]="active.max_hops" />
             </label>
+            <label class="field">
+              <span class="field__lbl">Driver accept window (sec)</span>
+              <input type="number" min="0" max="600" [(ngModel)]="active.driver_accept_window_sec" />
+            </label>
           </div>
+          <p class="hint">A pinged driver must accept within this many seconds (0 = no limit).</p>
         </div>
       </section>
 
@@ -259,6 +265,7 @@ const DISPATCH_MODES = [
       font-size: 13px; outline: none;
     }
     .field input:focus { border-color: var(--tm-green); }
+    .hint { margin: 2px 0 0; font-size: 11px; color: var(--tm-text-muted); }
 
     .toggles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
     .tgl { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
@@ -379,6 +386,7 @@ export class DispatcherSettingsComponent implements OnInit, OnDestroy {
       dispatcher_hop_radius_m: f.dispatcher_hop_radius_m,
       request_radius_m: f.request_radius_m,
       max_hops: f.max_hops,
+      driver_accept_window_sec: f.driver_accept_window_sec,
       schedule_available: f.schedule_available,
       schedule_dispatcher_type: f.schedule_dispatcher_type,
       dispatch_only_assigned_scheduled: f.dispatch_only_assigned_scheduled,
