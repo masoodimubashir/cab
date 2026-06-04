@@ -7,8 +7,7 @@ import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.s
 import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
-import { SubscriptionsModalComponent } from '../../shared/subscriptions-modal/subscriptions-modal.component';
-import { SubscriptionPlan } from '../../shared/plan-card/plan-card.component';
+import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 
 declare const google: any;
 
@@ -147,47 +146,42 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ionViewDidEnter(): void {
-    // Once per app session, greet the driver with the subscription plans.
-    void this.maybeShowSubscriptionPrompt();
+    // Once per app session, greet the driver with the mode chooser
+    // (Voice / Self) — the entry point for the in-app AI voice assistant.
+    void this.maybeShowModePrompt();
   }
-
-  private subPromptInFlight = false;
 
   /**
-   * Show the subscription plans modal when the driver opens the app — but only
-   * once per app session, and only if there are plans available to them.
+   * Greet the driver on app open with the mode chooser — "Continue with Voice"
+   * (the AI voice assistant) or "Continue as Self" (manual). Shown once per app
+   * session; the picked mode is remembered so the AI feature can wire in later.
    */
-  private maybeShowSubscriptionPrompt(): void {
-    if (this.subPromptInFlight) return;
+  private async maybeShowModePrompt(): Promise<void> {
     try {
-      if (sessionStorage.getItem('dc_sub_prompt_shown') === '1') return;
+      if (sessionStorage.getItem('dc_mode_prompt_shown') === '1') return;
     } catch { /* sessionStorage unavailable — fall through */ }
-    this.subPromptInFlight = true;
+    // Mark shown up-front so a slow render can't double-present the greeting.
+    try { sessionStorage.setItem('dc_mode_prompt_shown', '1'); } catch { /* ignore */ }
 
-    this.api.get<{ data: SubscriptionPlan[] }>('/drivers/me/subscriptions/plans').subscribe({
-      next: (res) => {
-        this.subPromptInFlight = false;
-        if (Array.isArray(res?.data) && res.data.length > 0) {
-          // Mark "shown" ONLY once we actually present — an empty result must
-          // not permanently suppress the prompt for the rest of the session.
-          try { sessionStorage.setItem('dc_sub_prompt_shown', '1'); } catch { /* ignore */ }
-          void this.presentSubscriptionModal(res.data);
-        }
-      },
-      error: () => { this.subPromptInFlight = false; },
-    });
-  }
-
-  private async presentSubscriptionModal(plans: SubscriptionPlan[]): Promise<void> {
     const modal = await this.modalCtrl.create({
-      component: SubscriptionsModalComponent,
-      cssClass: 'subscriptions-modal',
-      componentProps: { plans },
+      component: ModeSelectModalComponent,
+      cssClass: 'mode-select-modal',
+      componentProps: { current: this.readDriverMode() },
     });
     await modal.present();
-    const { data } = await modal.onWillDismiss<{ navigate?: string }>();
-    if (data?.navigate) {
-      void this.router.navigateByUrl(data.navigate);
+    const { data } = await modal.onWillDismiss<{ mode?: DriverMode }>();
+    if (data?.mode) {
+      try { localStorage.setItem('dc_driver_mode', data.mode); } catch { /* ignore */ }
+    }
+  }
+
+  /** The driver's last-picked mode, if any (used to highlight it on reopen). */
+  private readDriverMode(): DriverMode | null {
+    try {
+      const m = localStorage.getItem('dc_driver_mode');
+      return m === 'voice' || m === 'self' ? m : null;
+    } catch {
+      return null;
     }
   }
 
