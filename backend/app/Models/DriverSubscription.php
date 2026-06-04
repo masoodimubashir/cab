@@ -22,6 +22,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'starts_at',
     'expires_at',
     'status',
+    'auto_renew',
+    'cancelled_at',
+    'next_plan_id',
+    'notified_expiry_at',
 ])]
 class DriverSubscription extends Model
 {
@@ -40,11 +44,20 @@ class DriverSubscription extends Model
         'earnings_accrued' => 'decimal:2',
         'starts_at' => 'datetime',
         'expires_at' => 'datetime',
+        'auto_renew' => 'boolean',
+        'cancelled_at' => 'datetime',
+        'notified_expiry_at' => 'datetime',
     ];
 
     public function plan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'subscription_plan_id');
+    }
+
+    /** A plan queued (while this one is active) to start when this one ends. */
+    public function nextPlan(): BelongsTo
+    {
+        return $this->belongsTo(SubscriptionPlan::class, 'next_plan_id');
     }
 
     public function driver(): BelongsTo

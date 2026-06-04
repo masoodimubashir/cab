@@ -190,10 +190,11 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
     Route::get('/drivers/me/earnings', [DriversController::class, 'earnings']);
 
-    // Driver subscriptions: browse plans, see the active plan, buy one.
+    // Driver subscriptions: browse plans, see the active plan, buy one, cancel auto-renew.
     Route::get('/drivers/me/subscriptions/plans', [DriverSubscriptionsController::class, 'plans']);
     Route::get('/drivers/me/subscription', [DriverSubscriptionsController::class, 'current']);
     Route::post('/drivers/me/subscriptions', [DriverSubscriptionsController::class, 'purchase']);
+    Route::post('/drivers/me/subscriptions/cancel', [DriverSubscriptionsController::class, 'cancel']);
 
     // Driver wallet: balance + Razorpay top-up.
     Route::get('/drivers/me/wallet', [DriverWalletController::class, 'show']);

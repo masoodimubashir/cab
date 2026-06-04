@@ -182,10 +182,13 @@ export class CustomerBookPage implements OnDestroy {
 
   estimate: EstimateResponse | null = null;
 
-  // "Name your own price" — the fare the customer offers to drivers on the
-  // find-driver step. Seeded from the silent estimate; the customer can go
-  // UP but never below the base fare (minFare).
+  // "Name your own price" — the fare the customer types in for drivers on the
+  // price step. Starts EMPTY; the customer types any amount at or above the
+  // route's minimum fare (minFare). The send button stays disabled until a
+  // valid amount is entered.
   offerAmount: number | null = null;
+  // The route's minimum fare (the pricing rule's min_fare). Delivered with the
+  // negotiation config as min_amount; the backend rejects anything below it.
   minFare = 0;
 
   // Review Ride modal — opened from the preview sheet so the customer can see
@@ -901,35 +904,51 @@ export class CustomerBookPage implements OnDestroy {
     await this.searchDrivers();
   }
 
-  // Step 3 → 4 (Ride → Fare). Name your price. The base fare is the floor —
-  // the customer can only offer that or more, never less. (The route + estimate
-  // were already prepared on the ride step / goRideList.)
+  // Step 3 → 4 (Ride → Fare). The customer types their own price. The text box
+  // starts EMPTY; minFare is the route's floor (shown near the box). (The route
+  // + estimate were already prepared on the ride step / goRideList.)
   goOffer(): void {
-    const base = this.estimate?.estimated_fare
+    // Seed minFare from the estimate so the floor shows immediately; the real
+    // route floor (min_amount) overwrites it once the negotiation config loads.
+    this.minFare = this.estimate?.estimated_fare
       ? Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5
       : 0;
-    this.minFare = base;
-    if (this.offerAmount == null || this.offerAmount < base) {
-      this.offerAmount = base;
-    }
+    // Start with an EMPTY box — the customer names their own price.
+    this.offerAmount = null;
     this.error = null;
     this.state = 'offer';
+    // Pull the route's true floor (min_amount) so the minimum-fare hint + the
+    // below-floor validation match the backend before the first send.
+    void this.fetchNegotiationConfig();
   }
 
-  // +/- stepper for the "name your price" box. Clamped so it never drops below
-  // the base fare (minFare).
-  bumpOffer(delta: number): void {
-    const next = (Number(this.offerAmount) || 0) + delta;
-    this.offerAmount = next < this.minFare ? this.minFare : next;
+  /**
+   * One-shot read of the route's negotiation config (min_amount) so the
+   * minimum-fare hint + the below-floor validation are correct as soon as the
+   * customer reaches the price step. Needs a trip; discovery creates one.
+   */
+  private async fetchNegotiationConfig(): Promise<void> {
+    if (!this.tripId) return;
+    try {
+      const res = await this.api
+        .get<{
+          negotiation_config?: { min_amount?: number };
+        }>(`/trips/${this.tripId}/negotiation`)
+        .toPromise();
+      this.captureNegotiationConfig(res?.negotiation_config);
+    } catch {
+      // Keep the estimate-derived minFare on failure.
+    }
   }
 
-  // "Send to drivers" — fire the customer's named price into the dispatch ring.
-  // Anything typed below the base fare is bumped up to it before sending.
+  // "Send to drivers" — fire the customer's typed price into the dispatch ring.
+  // The disabled send button is the primary guard; this re-checks the floor as
+  // a backstop and refuses to send anything below minFare.
   async sendOffer(): Promise<void> {
-    let amount = Number(this.offerAmount);
-    if (!amount || amount < this.minFare) {
-      amount = this.minFare;
-      this.offerAmount = this.minFare;
+    const amount = Number(this.offerAmount);
+    if (!this.offerAmount || amount < this.minFare) {
+      this.error = `You can't offer below ₹${this.minFare} — the minimum fare for this route is ₹${this.minFare}.`;
+      return;
     }
     if (!amount || amount <= 0) {
       this.error = 'Enter a fare to offer.';
@@ -1828,11 +1847,14 @@ export class CustomerBookPage implements OnDestroy {
   private pollNegotiation(): void {
     if (!this.tripId) return;
     this.api
-      .get<{ trip_id: number; negotiation: { status: string; final_amount: number; offers: DriverOffer[] } }>(
-        `/trips/${this.tripId}/negotiation`
-      )
+      .get<{
+        trip_id: number;
+        negotiation: { status: string; final_amount: number; offers: DriverOffer[] };
+        negotiation_config?: { min_amount?: number };
+      }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
         next: (res) => {
+          this.captureNegotiationConfig(res?.negotiation_config);
           const offers = (res?.negotiation?.offers || []).filter(
             (o) => o.from_role === 'driver' && (o.status === 'PENDING' || o.status === 'ACCEPTED')
           );
@@ -1842,14 +1864,30 @@ export class CustomerBookPage implements OnDestroy {
       });
   }
 
+  /**
+   * Pull the route's price floor out of the negotiation response. min_amount is
+   * the true lowest the customer may offer, so it overrides minFare. The empty
+   * text box is left untouched — the customer types their own price.
+   */
+  private captureNegotiationConfig(
+    cfg?: { min_amount?: number } | null
+  ): void {
+    if (!cfg) return;
+    if (typeof cfg.min_amount === 'number' && cfg.min_amount > 0) {
+      this.minFare = cfg.min_amount;
+    }
+  }
+
   private onIncomingOffer(offer: DriverOffer): void {
     if (offer.from_role !== 'driver') return;
     const exists = this.driverOffers.some((o) => o.id != null && o.id === offer.id);
     if (exists) return;
     this.driverOffers = [...this.driverOffers, offer];
-    // Driver countered or accepted — surface the bids sheet so the customer
-    // can confirm.
-    if (this.state === 'waiting') this.state = 'bids';
+    // A driver replied — surface the bids sheet so the customer can confirm.
+    // The "send a new price" box stays EMPTY; the customer types their own.
+    if (this.state === 'waiting') {
+      this.state = 'bids';
+    }
   }
 
   private onLocked(): void {
@@ -1864,12 +1902,16 @@ export class CustomerBookPage implements OnDestroy {
    * new ask and can re-accept or re-counter.
    */
   async counterBid(): Promise<void> {
-    let amount = Number(this.counterOfferAmount);
-    if (!amount || amount <= 0) {
+    const amount = Number(this.counterOfferAmount);
+    if (!this.counterOfferAmount || amount <= 0) {
       this.error = 'Enter a price to send.';
       return;
     }
-    if (this.minFare && amount < this.minFare) amount = this.minFare;
+    // Backstop for the disabled send button: never send below the route's floor.
+    if (this.minFare && amount < this.minFare) {
+      this.error = `You can't offer below ₹${this.minFare} — the minimum fare for this route is ₹${this.minFare}.`;
+      return;
+    }
     this.counterOfferAmount = null;
     await this.requestAutoDispatch(amount);
   }
@@ -1878,12 +1920,11 @@ export class CustomerBookPage implements OnDestroy {
     if (!this.tripId) return;
 
     const ok = await this.alertCtrl.create({
-      header: 'Confirm fare',
-      message: `Accept ₹${offer.amount} from this driver?`,
+      header: `Take ₹${offer.amount}?`,
       buttons: [
-        { text: 'Cancel', role: 'cancel' },
+        { text: 'Back', role: 'cancel' },
         {
-          text: 'Confirm',
+          text: 'Take it',
           role: 'destructive',
           handler: () => this.lockOffer(offer),
         },

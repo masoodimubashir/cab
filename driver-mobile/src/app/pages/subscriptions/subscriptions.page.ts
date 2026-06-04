@@ -34,6 +34,9 @@ interface ActiveSubscription {
   vehicle_type_name: string | null;
   starts_at: string | null;
   expires_at: string | null;
+  auto_renew: boolean;
+  cancelled_at: string | null;
+  next_plan: { id: number; title: string; amount: number; commission_percent: number } | null;
 }
 
 /**
@@ -57,6 +60,11 @@ export class SubscriptionsPage implements OnInit {
   wallet = 0;
   currency = 'INR';
 
+  /** Which tab is showing. */
+  tab: 'current' | 'all' = 'current';
+  /** Once the driver taps a tab we stop auto-choosing one for them. */
+  private userPickedTab = false;
+
   constructor(
     private api: ApiService,
     private toastCtrl: ToastController,
@@ -65,6 +73,12 @@ export class SubscriptionsPage implements OnInit {
 
   ngOnInit(): void { this.load(); }
   ionViewWillEnter(): void { this.load(); }
+
+  /** Switch tabs (and remember the driver made a manual choice). */
+  setTab(v: unknown): void {
+    this.userPickedTab = true;
+    this.tab = v === 'all' ? 'all' : 'current';
+  }
 
   load(): void {
     this.loading = true;
@@ -77,6 +91,9 @@ export class SubscriptionsPage implements OnInit {
         this.current = res.subscription;
         this.wallet = res.wallet_balance ?? 0;
         this.currency = res.currency || 'INR';
+        // First load: land on the most useful tab — Current if they have a
+        // plan, otherwise All plans so they can pick one.
+        if (!this.userPickedTab) this.tab = this.current ? 'current' : 'all';
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not load your subscription.';
@@ -120,12 +137,41 @@ export class SubscriptionsPage implements OnInit {
     } catch { return iso; }
   }
 
+  /** True while the driver already has an active plan (new buys queue). */
+  get hasActive(): boolean {
+    return !!this.current;
+  }
+
+  /** Auto-renew status line for the active plan card. */
+  renewSummary(s: ActiveSubscription): string {
+    if (s.cancelled_at || !s.auto_renew) {
+      return s.expires_at ? `Won't renew — active until ${this.fmtDate(s.expires_at)}` : "Won't renew";
+    }
+    return s.expires_at ? `Auto-renews on ${this.fmtDate(s.expires_at)}` : 'Auto-renews when it ends';
+  }
+
   async confirmBuy(p: Plan): Promise<void> {
+    // Buying while a plan is active queues the new one — it starts (and is
+    // charged) only when the current plan ends.
+    if (this.current) {
+      const when = this.current.expires_at ? ` on ${this.fmtDate(this.current.expires_at)}` : '';
+      const alert = await this.alertCtrl.create({
+        header: 'Queue this plan?',
+        message: `You already have an active plan. “${p.title}” will start after your current plan ends${when}, and ₹${p.amount} will be charged from your wallet then.`,
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          { text: 'Queue plan', handler: () => this.buy(p) },
+        ],
+      });
+      await alert.present();
+      return;
+    }
+
     const alert = await this.alertCtrl.create({
       header: 'Subscribe?',
       message: `${p.title} — ₹${p.amount} will be debited from your wallet. ${
         p.commission_percent > 0 ? `Commission while active: ${p.commission_percent}%.` : 'Keep 100% of your fares while active.'
-      }`,
+      } It will auto-renew from your wallet when it ends — you can cancel anytime.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: 'Subscribe', handler: () => this.buy(p) },
@@ -137,15 +183,47 @@ export class SubscriptionsPage implements OnInit {
   buy(p: Plan): void {
     if (this.buyingId) return;
     this.buyingId = p.id;
-    this.api.post<{ message?: string }>('/drivers/me/subscriptions', { plan_id: p.id }).subscribe({
+    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', { plan_id: p.id }).subscribe({
       next: async (res) => {
         this.buyingId = null;
-        await this.presentToast(res?.message || 'Subscription activated', 'success');
+        await this.presentToast(res?.message || (res?.queued ? 'Plan queued' : 'Subscription activated'), 'success');
         this.load();
       },
       error: async (err) => {
         this.buyingId = null;
         await this.presentToast(err?.error?.message || 'Could not subscribe', 'danger');
+      },
+    });
+  }
+
+  /** Confirm + turn off auto-renew (plan stays active until it expires). */
+  async confirmCancel(): Promise<void> {
+    const s = this.current;
+    if (!s) return;
+    const until = s.expires_at ? ` until ${this.fmtDate(s.expires_at)}` : ' until it expires';
+    let message = `Auto-renew will be turned off. Your “${s.title}” stays active${until} and won't renew after that.`;
+    if (s.next_plan) {
+      message += ` Any plan you've queued (${s.next_plan.title}) will also be cancelled.`;
+    }
+    const alert = await this.alertCtrl.create({
+      header: 'Cancel subscription?',
+      message,
+      buttons: [
+        { text: 'Keep plan', role: 'cancel' },
+        { text: 'Cancel plan', role: 'destructive', handler: () => this.cancel() },
+      ],
+    });
+    await alert.present();
+  }
+
+  cancel(): void {
+    this.api.post<{ message?: string }>('/drivers/me/subscriptions/cancel', {}).subscribe({
+      next: async (res) => {
+        await this.presentToast(res?.message || 'Auto-renew turned off', 'success');
+        this.load();
+      },
+      error: async (err) => {
+        await this.presentToast(err?.error?.message || 'Could not cancel', 'danger');
       },
     });
   }

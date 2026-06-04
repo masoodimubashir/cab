@@ -300,21 +300,16 @@
         >{{ v.name }}</button>
       </div>
 
-      <p class="ride-list-hint" *ngIf="estimate?.estimated_fare">
-        Estimated fare <strong>₹{{ estimate?.estimated_fare }}</strong> · you'll name your own price next
-      </p>
-
       <div class="action-footer">
         <button class="action-btn-back dc-press" (click)="goDrop()">Back</button>
         <button class="action-btn-continue dc-press" (click)="goOffer()">Set your fare</button>
       </div>
     </div>
 
-    <!-- ───────── STEP 4: NAME YOUR PRICE → SEARCH DRIVER ───────── -->
+    <!-- ───────── STEP 4: OFFER YOUR PRICE → SEARCH DRIVER ───────── -->
     <div *ngSwitchCase="'offer'" class="sheet-offer sheet-step dc-anim-up">
       <div class="offer-head">
-        <h3>Set your fare</h3>
-        <p>Offer a price, then search — drivers can accept it or send a counter.</p>
+        <h3>Offer your price</h3>
       </div>
 
       <!-- Ride now vs schedule for later -->
@@ -340,21 +335,34 @@
         ></ion-datetime>
       </div>
 
-      <div class="offer-amount-card">
-        <button type="button" class="offer-step-btn dc-press" (click)="bumpOffer(-10)" [disabled]="(offerAmount || 0) <= minFare" aria-label="Decrease offer">&minus;</button>
-        <div class="offer-amount-mid">
-          <span class="offer-currency">&#8377;</span>
-          <input type="tel" inputmode="numeric" pattern="[0-9]*" class="offer-input" [(ngModel)]="offerAmount" placeholder="0" />
-        </div>
-        <button type="button" class="offer-step-btn dc-press" (click)="bumpOffer(10)" aria-label="Increase offer">+</button>
+      <!-- Type your own price (free numeric entry). Starts empty. -->
+      <div class="offer-input-card">
+        <span class="offer-input-currency">&#8377;</span>
+        <input
+          class="offer-input"
+          type="number"
+          inputmode="numeric"
+          min="0"
+          placeholder="Enter your price"
+          [(ngModel)]="offerAmount"
+          (input)="error = null"
+        />
       </div>
-      <p class="offer-min-hint" *ngIf="minFare > 0">Base fare ₹{{ minFare }} — you can offer more, not less.</p>
+
+      <small
+        *ngIf="offerAmount != null && +offerAmount < minFare"
+        class="fare-error"
+      >You can't offer below &#8377;{{ minFare }} — the minimum fare for this route is &#8377;{{ minFare }}.</small>
 
       <small *ngIf="error" class="fare-error">{{ error }}</small>
 
       <div class="action-footer">
         <button class="action-btn-back dc-press" (click)="state = 'ride-list'; error = null">Back</button>
-        <button class="action-btn-continue dc-press" (click)="sendOffer()" [disabled]="loading || !offerAmount || (scheduleMode === 'later' && !scheduledAt)">
+        <button
+          class="action-btn-continue dc-press"
+          (click)="sendOffer()"
+          [disabled]="loading || offerAmount == null || +offerAmount < minFare || (scheduleMode === 'later' && !scheduledAt)"
+        >
           {{ loading ? 'Working…' : (scheduleMode === 'later' ? 'Schedule ride' : 'Search driver') }}
         </button>
       </div>
@@ -419,7 +427,7 @@
       <button type="button" class="btn-cancel-request dc-press" (click)="cancelRequest()">Cancel request</button>
     </div>
 
-    <!-- ───────── BIDS: driver countered the fare ───────── -->
+    <!-- ───────── BIDS: drivers replied with their price ───────── -->
     <div *ngSwitchCase="'bids'" class="sheet-bids dc-anim-up">
       <div class="bids-head">
         <div class="bids-badge dc-anim-pop"><ion-icon name="pricetag"></ion-icon></div>
@@ -431,26 +439,41 @@
           <div class="bid-avatar" slot="start"><ion-icon name="person-circle-outline" aria-hidden="true"></ion-icon></div>
           <ion-label>
             <h3>{{ o.driver_name || 'Driver' }}</h3>
-            <p>Tap to accept this fare</p>
+            <p>Tap to take &#8377;{{ o.amount }}</p>
           </ion-label>
           <ion-badge slot="end" color="success" class="bid-amount">₹{{ o.amount }}</ion-badge>
         </ion-item>
       </ion-list>
 
-      <!-- Bargain back: send a fresh price to every driver -->
+      <!-- Send a fresh price to every driver -->
       <div class="bids-counter">
-        <span class="bids-counter-label">Not quite right? Send a new price to all drivers</span>
-        <div class="bids-counter-row">
-          <div class="offer-amount-card slim">
-            <button type="button" class="offer-step-btn dc-press" (click)="counterOfferAmount = (counterOfferAmount || minFare) - 10" aria-label="Decrease">&minus;</button>
-            <div class="offer-amount-mid">
-              <span class="offer-currency">&#8377;</span>
-              <input type="tel" inputmode="numeric" pattern="[0-9]*" class="offer-input" [(ngModel)]="counterOfferAmount" placeholder="0" />
-            </div>
-            <button type="button" class="offer-step-btn dc-press" (click)="counterOfferAmount = (counterOfferAmount || minFare) + 10" aria-label="Increase">+</button>
-          </div>
-          <button type="button" class="action-btn-continue bids-counter-send dc-press" (click)="counterBid()" [disabled]="loading || !counterOfferAmount">Send</button>
+        <span class="bids-counter-label">Send a new price to all</span>
+
+        <!-- Type the new price (free numeric entry). Starts empty. -->
+        <div class="offer-input-card slim">
+          <span class="offer-input-currency">&#8377;</span>
+          <input
+            class="offer-input"
+            type="number"
+            inputmode="numeric"
+            min="0"
+            placeholder="Enter your price"
+            [(ngModel)]="counterOfferAmount"
+            (input)="error = null"
+          />
         </div>
+
+        <small
+          *ngIf="counterOfferAmount != null && +counterOfferAmount < minFare"
+          class="fare-error"
+        >You can't offer below &#8377;{{ minFare }} — the minimum fare for this route is &#8377;{{ minFare }}.</small>
+
+        <button
+          type="button"
+          class="action-btn-continue bids-counter-send full dc-press"
+          (click)="counterBid()"
+          [disabled]="loading || counterOfferAmount == null || +counterOfferAmount < minFare"
+        >Send &#8377;{{ counterOfferAmount }}</button>
       </div>
 
       <button type="button" class="btn-cancel-request dc-press" (click)="cancelRequest()">Cancel request</button>

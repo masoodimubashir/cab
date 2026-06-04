@@ -171,7 +171,7 @@
   </ng-container>
 
   <!-- ════════════════════════════════════════════════════════════════
-       IDLE — available rides + negotiation
+       IDLE — available rides + price panel
        ════════════════════════════════════════════════════════════════ -->
   <ng-container *ngIf="!hasActiveTrip">
 
@@ -238,80 +238,116 @@
           </div>
           <div class="ride-card__cta">
             <button
-              class="dc-cta dc-press"
+              class="dc-cta dc-press take-btn"
               type="button"
               [disabled]="busy"
               (click)="pickAvailable(t, 'accept')"
             >
-              Accept ₹{{ t.customer_offer || t.estimated_fare || 0 }}
+              <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+              <span class="amt">₹{{ t.customer_offer || t.estimated_fare || 0 }}</span>
+              <span class="ok">OK</span>
             </button>
             <button
-              class="dc-cta dc-cta--ghost dc-press"
+              class="dc-cta dc-cta--ghost dc-press price-btn"
               type="button"
               [disabled]="busy"
-              (click)="pickAvailable(t, 'counter')"
+              (click)="pickAvailable(t, 'price')"
             >
-              Counter
+              <ion-icon name="pricetag" aria-hidden="true"></ion-icon>
+              My price
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Counter / negotiation panel — only when we have something to negotiate. -->
-      <div class="pg-card negotiation-card" *ngIf="counterAmount != null || negotiation">
+      <!-- Price panel — type your price in the box. -->
+      <div class="pg-card price-card" *ngIf="priceOpen || negotiation">
         <div class="pg-card__head">
           <div class="pg-card__icon">
-            <ion-icon name="swap-horizontal-outline" aria-hidden="true"></ion-icon>
+            <ion-icon name="pricetag" aria-hidden="true"></ion-icon>
           </div>
-          <h2 class="pg-card__title">Negotiate</h2>
+          <h2 class="pg-card__title">Offer your price</h2>
         </div>
 
-        <ion-item lines="full" class="counter-input">
-          <ion-label position="stacked">Your counter (₹)</ion-label>
+        <!-- Free numeric entry. Starts empty. -->
+        <div class="price-input">
+          <span class="rupee" aria-hidden="true">₹</span>
           <ion-input
             type="number"
-            inputmode="decimal"
-            step="1"
+            inputmode="numeric"
             [(ngModel)]="counterAmount"
+            placeholder="Enter your price"
+            aria-label="Enter your price"
           ></ion-input>
-        </ion-item>
+        </div>
 
-        <div class="counter-actions">
+        <p class="price-hint" *ngIf="minAmount > 0">Minimum for this route: ₹{{ minAmount }}</p>
+
+        <p class="price-error" *ngIf="minAmount > 0 && counterAmount != null && counterAmount < minAmount">
+          You can't go below ₹{{ minAmount }} — minimum fare for this route.
+        </p>
+
+        <div class="price-actions">
           <button
             class="dc-cta dc-press"
             type="button"
             [disabled]="negBusy"
             (click)="acceptCustomerOffer()"
           >
-            Accept customer offer
+            <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+            Take ₹{{ customerOffer }}
           </button>
           <button
             class="dc-cta dc-cta--dark dc-press"
             type="button"
-            [disabled]="negBusy"
+            [disabled]="negBusy || counterAmount == null || counterAmount < minAmount"
             (click)="counterCustomerOffer()"
           >
-            Send counter
+            <ion-icon name="paper-plane" aria-hidden="true"></ion-icon>
+            Send ₹{{ counterAmount }}
           </button>
         </div>
 
         <div class="offers-history" *ngIf="negotiation && offers.length">
-          <small class="muted">Offer history</small>
           <div
             class="offer"
             *ngFor="let o of offers"
             [class.from-driver]="o['from_role'] === 'driver'"
             [class.from-customer]="o['from_role'] === 'customer'"
           >
-            <div class="who">{{ o['from_role'] }}</div>
+            <div class="who">
+              <ion-icon
+                [name]="o['from_role'] === 'driver' ? 'car' : 'person'"
+                aria-hidden="true"
+              ></ion-icon>
+            </div>
             <div class="amount">₹{{ o['amount'] }}</div>
-            <div class="status">{{ o['status'] }}</div>
+            <div class="status">
+              <ion-icon
+                *ngIf="o['status'] === 'ACCEPTED'"
+                class="glyph glyph--ok"
+                name="checkmark-circle"
+                aria-hidden="true"
+              ></ion-icon>
+              <ion-icon
+                *ngIf="o['status'] === 'PENDING'"
+                class="glyph glyph--wait"
+                name="hourglass-outline"
+                aria-hidden="true"
+              ></ion-icon>
+              <ion-icon
+                *ngIf="o['status'] === 'SUPERSEDED' || o['status'] === 'REJECTED'"
+                class="glyph glyph--dash"
+                name="remove-outline"
+                aria-hidden="true"
+              ></ion-icon>
+            </div>
           </div>
         </div>
 
-        <div class="locked" *ngIf="finalAmount != null">
-          <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
-          Locked at ₹{{ finalAmount }}
+        <div class="won-badge" *ngIf="finalAmount != null">
+          <ion-icon name="trophy" aria-hidden="true"></ion-icon>
+          You got it · ₹{{ finalAmount }}
         </div>
       </div>
     </div>

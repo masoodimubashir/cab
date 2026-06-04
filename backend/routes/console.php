@@ -32,3 +32,8 @@ Schedule::command('subscriptions:expire')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('subscriptions:notify-expiring')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
