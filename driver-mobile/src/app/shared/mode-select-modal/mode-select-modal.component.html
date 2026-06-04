@@ -1,0 +1,35 @@
+<ion-content class="orb-content">
+  <div class="orb-wrap dc-stagger">
+    <button type="button" class="orb-close dc-press" (click)="close()" aria-label="Close">
+      <ion-icon name="close"></ion-icon>
+    </button>
+
+    <!-- Glowing voice orb with a "listening" pulse -->
+    <div class="orb">
+      <span class="orb__wave"></span>
+      <span class="orb__wave orb__wave--2"></span>
+      <span class="orb__wave orb__wave--3"></span>
+      <span class="orb__glow"></span>
+      <span class="orb__ring">
+        <ion-icon name="mic"></ion-icon>
+      </span>
+    </div>
+
+    <span class="orb-tag"><ion-icon name="mic"></ion-icon> Smart Voice Assistant</span>
+
+    <h1 class="orb-title">How do you want to continue?</h1>
+    <p class="orb-subtitle">
+      Go hands-free with the AI voice assistant — or keep tapping through it yourself.
+    </p>
+
+    <!-- Actions -->
+    <div class="orb-actions">
+      <button type="button" class="orb-btn orb-btn--voice dc-press" (click)="choose('voice')">
+        <ion-icon name="mic"></ion-icon> Continue with Voice
+      </button>
+      <button type="button" class="orb-btn orb-btn--self dc-press" (click)="choose('self')">
+        Continue as Self
+      </button>
+    </div>
+  </div>
+</ion-content>
