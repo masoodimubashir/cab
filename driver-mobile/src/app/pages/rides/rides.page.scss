@@ -363,42 +363,121 @@ ion-content.in-trip {
       height: 46px;
       font-size: 0.92rem;
     }
+
+    /* PRIMARY: number-first "₹X · OK" green take button. */
+    .take-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+
+      ion-icon {
+        font-size: 1.2rem;
+      }
+
+      .amt {
+        font-size: 1.05rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ok {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        opacity: 0.9;
+      }
+    }
+
+    /* SECONDARY: price-tag ghost button. */
+    .price-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+
+      ion-icon {
+        font-size: 1.1rem;
+      }
+    }
   }
 }
 
-.negotiation-card {
+/* ════════════════════════════════════════════════════════════════
+   PRICE panel — type your price
+   ════════════════════════════════════════════════════════════════ */
+
+.price-card {
   margin-bottom: 1.5rem;
 
-  .counter-input {
-    --background: transparent;
-    --padding-start: 0;
-    --inner-padding-end: 0;
-    --border-color: #eef0f2;
+  /* Free numeric entry with a leading rupee affix. */
+  .price-input {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 60px;
+    padding: 0 0.95rem;
+    margin: 0.5rem 0 0.5rem;
+    border: 1.5px solid #d6dce2;
+    border-radius: 0.85rem;
+    background: #fff;
+
+    .rupee {
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: #0d1b2a;
+    }
+
+    ion-input {
+      --padding-start: 0;
+      --padding-end: 0;
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: #0d1b2a;
+      --placeholder-color: #adb5bd;
+      --placeholder-font-weight: 500;
+    }
   }
 
-  .counter-actions {
+  .price-hint {
+    margin: 0 0 0.2rem;
+    font-size: 0.82rem;
+    color: #6c757d;
+  }
+
+  .price-error {
+    margin: 0.1rem 0 0.2rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #d33651;
+  }
+
+  .price-actions {
     display: flex;
     gap: 0.55rem;
     margin-top: 0.8rem;
 
     .dc-cta {
       flex: 1;
-      height: 46px;
-      font-size: 0.9rem;
+      height: 48px;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+
+      ion-icon {
+        font-size: 1.2rem;
+      }
     }
   }
 
   .offers-history {
     margin-top: 0.9rem;
 
-    small.muted {
-      display: block;
-      margin-bottom: 0.4rem;
-    }
-
     .offer {
       display: grid;
-      grid-template-columns: 5.5rem 1fr auto;
+      grid-template-columns: 2.2rem 1fr auto;
       align-items: center;
       gap: 0.6rem;
       padding: 0.5rem 0.65rem;
@@ -407,22 +486,43 @@ ion-content.in-trip {
       font-size: 0.88rem;
 
       .who {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: #6c757d;
-        text-transform: uppercase;
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+
+        ion-icon {
+          font-size: 1.25rem;
+        }
       }
 
       .amount {
-        font-weight: 700;
+        font-weight: 800;
         color: #0d1b2a;
+        font-size: 1rem;
+        font-variant-numeric: tabular-nums;
       }
 
       .status {
-        font-size: 0.7rem;
-        color: #6c757d;
-        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        .glyph {
+          font-size: 1.3rem;
+        }
+
+        .glyph--ok {
+          color: #0e8f47;
+        }
+
+        .glyph--wait {
+          color: #b7791f;
+        }
+
+        .glyph--dash {
+          color: #adb5bd;
+        }
       }
 
       &.from-driver {
@@ -435,20 +535,21 @@ ion-content.in-trip {
     }
   }
 
-  .locked {
+  .won-badge {
     margin-top: 0.7rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.45rem;
-    padding: 0.55rem 0.8rem;
-    background: rgba(18, 179, 91, 0.12);
-    border-radius: 0.6rem;
+    padding: 0.7rem 0.8rem;
+    background: rgba(18, 179, 91, 0.14);
+    border-radius: 0.7rem;
     color: #0e8f47;
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 800;
 
     ion-icon {
-      font-size: 1.1rem;
+      font-size: 1.35rem;
     }
   }
 }

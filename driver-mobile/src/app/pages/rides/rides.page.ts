@@ -54,6 +54,13 @@ export class RidesPage implements OnInit, OnDestroy {
   negotiation: Record<string, unknown> | null = null;
   counterAmount: number | null = null;
   negBusy = false;
+  /** True while the "Offer your price" panel is open from an available ride. */
+  priceOpen = false;
+
+  // The route's hard fare floor, read from negotiation_config on the
+  // /negotiation fetch. No offer may go below minAmount; the input validates
+  // against it and the send button stays disabled below it.
+  minAmount = 0;
 
   progressBusy = false;
   // Last breakdown returned by /driver-progress when status=COMPLETED — fed
@@ -67,6 +74,14 @@ export class RidesPage implements OnInit, OnDestroy {
 
   get finalAmount(): unknown {
     return this.negotiation?.['final_amount'] ?? null;
+  }
+
+  /** The customer's current offer for the active/selected trip (display only). */
+  get customerOffer(): number {
+    const t = this.lastTrip;
+    const fromTrip = t?.['customer_offer'] ?? t?.['estimated_fare'];
+    const n = Number(fromTrip);
+    return Number.isFinite(n) ? n : 0;
   }
 
   sosBusy = false;
@@ -286,7 +301,7 @@ export class RidesPage implements OnInit, OnDestroy {
 
   /**
    * True when we're rendering the focused active-trip layout (vs the
-   * available list). NEGOTIATION is handled by the available list / counter
+   * available list). NEGOTIATION is handled by the available list / price
    * card so the driver can still bid; CONFIRMED onwards is "locked in" and
    * deserves the in-trip view with its Accept-ride / progression CTA.
    */
@@ -328,8 +343,8 @@ export class RidesPage implements OnInit, OnDestroy {
       case 'ARRIVED_DROP':
         return { label: 'Complete ride', nextStatus: 'COMPLETED', kind: 'progress', confirm: true };
       default:
-        // NEGOTIATION is handled by the negotiation card (Accept/Counter
-        // buttons), not by the in-trip CTA, so we return null here.
+        // NEGOTIATION is handled by the price card (OK / My price buttons),
+        // not by the in-trip CTA, so we return null here.
         return null;
     }
   }
@@ -433,18 +448,21 @@ export class RidesPage implements OnInit, OnDestroy {
     this.refreshAvailable();
   }
 
-  pickAvailable(t: AvailableTrip, action: 'accept' | 'counter'): void {
+  pickAvailable(t: AvailableTrip, action: 'accept' | 'price'): void {
     this.tripId = t.id;
     this.error = null;
     this.message = null;
     if (action === 'accept') {
       // Accept the customer's offer at face value.
+      this.priceOpen = false;
       this.counterAmount = t.customer_offer ?? t.estimated_fare ?? 0;
       this.acceptCustomerOffer();
     } else {
-      // Pre-fill counter at +10 over what the customer offered.
-      const base = t.customer_offer ?? t.estimated_fare ?? 100;
-      this.counterAmount = Math.round((base + 10) / 5) * 5;
+      // Open the price panel with an empty input. A broadcast trip's floor isn't
+      // known client-side until a bid exists, so the server enforces the minimum.
+      this.counterAmount = null;
+      this.minAmount = 0;
+      this.priceOpen = true;
     }
   }
 
@@ -468,13 +486,23 @@ export class RidesPage implements OnInit, OnDestroy {
     this.error = null;
     this.message = null;
     this.api
-      .get<{ trip?: Record<string, unknown>; negotiation?: Record<string, unknown> }>(
+      .get<{
+        trip?: Record<string, unknown>;
+        negotiation?: Record<string, unknown>;
+        negotiation_config?: { min_amount?: number };
+      }>(
         `/trips/${id}/negotiation`
       )
       .subscribe({
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+
+          // Pull the route's hard fare floor — offers below it are rejected.
+          const cfg = res['negotiation_config'] || {};
+          const floor = Number(cfg.min_amount);
+          this.minAmount = Number.isFinite(floor) ? floor : 0;
+
           // If we just loaded an in-flight trip (e.g. after a reload mid-ride),
           // bring up the live map and re-subscribe to streams.
           const status = this.lastTrip?.['status'] as string | undefined;
@@ -874,8 +902,12 @@ export class RidesPage implements OnInit, OnDestroy {
   counterCustomerOffer(): void {
     const id = this.validId();
     if (id == null) return;
-    if (this.counterAmount == null || !Number.isFinite(this.counterAmount) || this.counterAmount < 0) {
-      this.error = 'Enter a valid counter amount.';
+    if (
+      this.counterAmount == null ||
+      !Number.isFinite(this.counterAmount) ||
+      this.counterAmount < this.minAmount
+    ) {
+      this.error = 'Pick a valid price.';
       return;
     }
 
@@ -891,10 +923,10 @@ export class RidesPage implements OnInit, OnDestroy {
       .subscribe({
         next: (res) => {
           this.negotiation = res.negotiation || null;
-          this.message = 'Counter sent';
+          this.message = `Price sent · ₹${this.counterAmount}`;
         },
         error: (err) => {
-          this.error = err?.error?.message || 'Counter failed';
+          this.error = err?.error?.message || 'Could not send price.';
           this.negotiation = null;
         },
         complete: () => {
