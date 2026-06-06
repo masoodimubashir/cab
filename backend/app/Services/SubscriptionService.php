@@ -28,62 +28,181 @@ class SubscriptionService
     }
 
     /**
-     * Purchase a plan for a driver. Debits the wallet by the plan amount
-     * (when > 0) and creates the snapshot subscription. Throws when the
-     * wallet balance can't cover the amount.
+     * The atomic entry point for a driver buying a plan. Everything that must be
+     * consistent — the one-running-subscription rule, the one-queued-plan rule,
+     * the wallet-balance check, and the debit — happens inside ONE transaction
+     * behind a per-driver lock, so two concurrent buys can't double-charge,
+     * overspend the wallet, or create two running subscriptions.
      *
-     * New subscriptions auto-renew by default; auto-renewal re-buys through
-     * this same method so the wallet debit + snapshot are identical.
+     * If the driver already has a running plan, the new plan is charged NOW and
+     * parked as a prepaid "queued" row that activates (with no further charge)
+     * when the current plan ends. Otherwise it activates immediately.
+     *
+     * @return array{subscription: DriverSubscription, queued: bool, current: ?DriverSubscription}
+     */
+    public function buy(User $driver, SubscriptionPlan $plan, ?int $vehicleTypeId): array
+    {
+        return DB::transaction(function () use ($driver, $plan, $vehicleTypeId) {
+            $this->lockDriver($driver);
+            $amount = (float) $plan->amount;
+
+            $current = $this->currentActiveRow($driver->id, $vehicleTypeId);
+            if ($current) {
+                if ($this->queuedFor($driver->id, $vehicleTypeId)) {
+                    throw new RuntimeException('You already have a plan queued to start next. Cancel it before queuing another.');
+                }
+                $this->assertCanAfford($driver, $amount);
+                $sub = $this->createQueuedRow($driver, $plan, $amount, true);
+                $this->debit($driver, $amount, 'Subscription (queued): ' . $plan->title);
+
+                return ['subscription' => $sub, 'queued' => true, 'current' => $current->fresh()];
+            }
+
+            $this->assertCanAfford($driver, $amount);
+            $sub = $this->createActiveRow($driver, $plan, $amount, true);
+            $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
+
+            return ['subscription' => $sub, 'queued' => false, 'current' => null];
+        });
+    }
+
+    /**
+     * Purchase a plan and activate it immediately. Used by the auto-renewal sweep
+     * (where the predecessor was already expired under a row lock). Locks the
+     * driver and re-checks the balance inside the transaction so a renewal can't
+     * race a manual buy into an overspend.
      */
     public function purchase(User $driver, SubscriptionPlan $plan, bool $autoRenew = true): DriverSubscription
     {
-        $amount = (float) $plan->amount;
-
-        if ($amount > 0 && $this->walletService->balance($driver) < $amount) {
-            throw new RuntimeException('Insufficient wallet balance to buy this plan.');
-        }
-
-        return DB::transaction(function () use ($driver, $plan, $amount, $autoRenew) {
-            $now = now();
-            $expiresAt = null;
-            if (in_array($plan->meter_type, [SubscriptionPlan::METER_DAYS, SubscriptionPlan::METER_DAILY], true)) {
-                $days = $plan->meter_type === SubscriptionPlan::METER_DAILY
-                    ? 1
-                    : (int) ($plan->days_count ?: 1);
-                $expiresAt = $now->copy()->addDays($days);
-            }
-
-            $sub = DriverSubscription::query()->create([
-                'subscription_plan_id' => $plan->id,
-                'driver_user_id' => $driver->id,
-                'city_id' => $plan->city_id,
-                'vehicle_type_id' => $plan->vehicle_type_id,
-                'meter_type' => $plan->meter_type,
-                'amount_paid' => $amount,
-                'commission_percent' => $plan->commission_percent,
-                'rides_allowed' => $plan->meter_type === SubscriptionPlan::METER_RIDES ? $plan->rides_count : null,
-                'rides_used' => 0,
-                'earnings_cap' => $plan->meter_type === SubscriptionPlan::METER_EARNINGS ? $plan->earnings_threshold : null,
-                'earnings_accrued' => 0,
-                'starts_at' => $now,
-                'expires_at' => $expiresAt,
-                'status' => DriverSubscription::STATUS_ACTIVE,
-                'auto_renew' => $autoRenew,
-            ]);
-
-            if ($amount > 0) {
-                $this->walletService->recordTransaction(
-                    $driver,
-                    WalletTransaction::TYPE_DEBIT,
-                    $amount,
-                    'Subscription: ' . $plan->title,
-                    null,
-                    $driver,
-                );
-            }
+        return DB::transaction(function () use ($driver, $plan, $autoRenew) {
+            $this->lockDriver($driver);
+            $amount = (float) $plan->amount;
+            $this->assertCanAfford($driver, $amount);
+            $sub = $this->createActiveRow($driver, $plan, $amount, $autoRenew);
+            $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
 
             return $sub;
         });
+    }
+
+    /** Serialise everything a driver does to their own wallet / subscriptions. */
+    private function lockDriver(User $driver): void
+    {
+        User::query()->whereKey($driver->id)->lockForUpdate()->first();
+    }
+
+    /** Throw when a positive amount can't be covered (call INSIDE the locked tx). */
+    private function assertCanAfford(User $driver, float $amount): void
+    {
+        if ($amount > 0 && $this->walletService->balance($driver) < $amount) {
+            throw new RuntimeException('Insufficient wallet balance to buy this plan.');
+        }
+    }
+
+    /** Create a live (running) subscription row. Does NOT charge. */
+    private function createActiveRow(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew): DriverSubscription
+    {
+        $now = now();
+
+        return DriverSubscription::query()->create($this->snapshotAttributes($driver, $plan, $amount, $autoRenew) + [
+            'starts_at' => $now,
+            'expires_at' => $this->expiryFor($plan->meter_type, (int) ($plan->days_count ?: 1), $now),
+            'status' => DriverSubscription::STATUS_ACTIVE,
+            'is_queued' => false,
+        ]);
+    }
+
+    /**
+     * Create a prepaid "queued" row (status=active + is_queued=true) that every
+     * running-subscription query ignores until it is activated. Does NOT charge —
+     * the caller debits. starts_at/expires_at are placeholders until activation.
+     */
+    private function createQueuedRow(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew): DriverSubscription
+    {
+        return DriverSubscription::query()->create($this->snapshotAttributes($driver, $plan, $amount, $autoRenew) + [
+            'starts_at' => now(),
+            'expires_at' => null,
+            'status' => DriverSubscription::STATUS_ACTIVE,
+            'is_queued' => true,
+        ]);
+    }
+
+    /**
+     * Activate a prepaid queued row when the previous plan ends. Pure status/date
+     * flip — the wallet was already charged at queue time, so nothing is debited
+     * here. Expiry is recomputed from the activation moment using the snapshot.
+     */
+    private function activateQueued(DriverSubscription $queued): void
+    {
+        DB::transaction(function () use ($queued) {
+            $sub = DriverSubscription::query()->lockForUpdate()->find($queued->id);
+            if (! $sub || ! $sub->is_queued || $sub->status !== DriverSubscription::STATUS_ACTIVE) {
+                // Normally a concurrent activation already handled it. If the row
+                // vanished entirely, the driver paid but got nothing — flag it.
+                if (! $sub) {
+                    \Illuminate\Support\Facades\Log::warning('Queued subscription missing at activation', [
+                        'subscription_id' => $queued->id,
+                        'driver_user_id' => $queued->driver_user_id,
+                    ]);
+                }
+                return;
+            }
+            $now = now();
+            $sub->is_queued = false;
+            $sub->starts_at = $now;
+            $sub->expires_at = $this->expiryFor($sub->meter_type, (int) ($sub->days_count ?: 1), $now);
+            $sub->save();
+        });
+    }
+
+    /** Shared snapshot of a plan's terms onto a (driver) subscription row. */
+    private function snapshotAttributes(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew): array
+    {
+        return [
+            'subscription_plan_id' => $plan->id,
+            'driver_user_id' => $driver->id,
+            'city_id' => $plan->city_id,
+            'vehicle_type_id' => $plan->vehicle_type_id,
+            'meter_type' => $plan->meter_type,
+            'amount_paid' => $amount,
+            'commission_percent' => $plan->commission_percent,
+            'pricing_model' => $plan->pricing_model ?? SubscriptionPlan::MODEL_SUBSCRIPTION,
+            'rides_allowed' => $plan->meter_type === SubscriptionPlan::METER_RIDES ? $plan->rides_count : null,
+            'rides_used' => 0,
+            'earnings_cap' => $plan->meter_type === SubscriptionPlan::METER_EARNINGS ? $plan->earnings_threshold : null,
+            'earnings_accrued' => 0,
+            'days_count' => in_array($plan->meter_type, [SubscriptionPlan::METER_DAYS, SubscriptionPlan::METER_DAILY], true)
+                ? ($plan->meter_type === SubscriptionPlan::METER_DAILY ? 1 : (int) ($plan->days_count ?: 1))
+                : null,
+            'auto_renew' => $autoRenew,
+        ];
+    }
+
+    /** Expiry for a time-metered plan (null for ride/earnings plans). */
+    private function expiryFor(string $meterType, int $daysCount, \Illuminate\Support\Carbon $from): ?\Illuminate\Support\Carbon
+    {
+        if ($meterType === SubscriptionPlan::METER_DAILY) {
+            return $from->copy()->addDay();
+        }
+        if ($meterType === SubscriptionPlan::METER_DAYS) {
+            return $from->copy()->addDays(max(1, $daysCount));
+        }
+        return null;
+    }
+
+    /** Debit the wallet for a plan purchase when the amount is positive. */
+    private function debit(User $driver, float $amount, string $reason): void
+    {
+        if ($amount > 0) {
+            $this->walletService->recordTransaction(
+                $driver,
+                WalletTransaction::TYPE_DEBIT,
+                $amount,
+                $reason,
+                null,
+                $driver,
+            );
+        }
     }
 
     /**
@@ -101,6 +220,7 @@ class SubscriptionService
         $candidates = DriverSubscription::query()
             ->where('driver_user_id', $driverUserId)
             ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
             ->where('starts_at', '<=', now())
             ->orderBy('created_at')
             ->get();
@@ -132,11 +252,31 @@ class SubscriptionService
         return DriverSubscription::query()
             ->where('driver_user_id', $driverUserId)
             ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
             ->where('starts_at', '<=', now())
             ->where(function ($q) use ($vehicleTypeId) {
                 $q->whereNull('vehicle_type_id')->orWhere('vehicle_type_id', $vehicleTypeId);
             })
             ->orderByDesc('created_at')
+            ->first();
+    }
+
+    /**
+     * The driver's prepaid queued plan (bought while another plan is active and
+     * waiting to start), or null. Matches the vehicle-type scoping of
+     * currentActiveRow() so a queued plan for one vehicle type doesn't block a
+     * purchase for another. One queued plan at a time per (driver, vehicle type).
+     */
+    public function queuedFor(int $driverUserId, ?int $vehicleTypeId = null): ?DriverSubscription
+    {
+        return DriverSubscription::query()
+            ->where('driver_user_id', $driverUserId)
+            ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', true)
+            ->where(function ($q) use ($vehicleTypeId) {
+                $q->whereNull('vehicle_type_id')->orWhere('vehicle_type_id', $vehicleTypeId);
+            })
+            ->orderBy('created_at')
             ->first();
     }
 
@@ -192,6 +332,7 @@ class SubscriptionService
         $count = 0;
         DriverSubscription::query()
             ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false) // prepaid queued rows aren't "running" yet
             ->orderBy('id')
             ->chunkById(200, function ($subs) use (&$count) {
                 foreach ($subs as $sub) {
@@ -205,14 +346,17 @@ class SubscriptionService
     }
 
     /**
-     * Expire one exhausted subscription and activate its successor when there is
-     * one. The successor is the queued plan if set, otherwise the same plan when
-     * auto-renew is on and the plan is still sellable. Cancelled plans (auto-renew
-     * off, no queue) simply expire.
+     * Expire one exhausted subscription and start its successor when there is one.
+     * The successor is, in order:
+     *   1. a PREPAID queued plan — activated with NO further charge (it was paid
+     *      for at queue time), or
+     *   2. the same plan, re-bought from the wallet when auto-renew is on and the
+     *      plan is still sellable.
+     * Cancelled plans with nothing queued simply expire.
      *
      * The old row is claimed + expired in its own locked transaction so that two
-     * concurrent callers can't double-renew, and so a failed re-buy (wallet short)
-     * still leaves the plan expired rather than rolling the expiry back.
+     * concurrent callers can't double-process, and so a failed re-buy (wallet
+     * short) still leaves the plan expired rather than rolling the expiry back.
      */
     private function renewOrExpire(DriverSubscription $old): void
     {
@@ -220,6 +364,7 @@ class SubscriptionService
             $sub = DriverSubscription::query()->lockForUpdate()->find($old->id);
             if (! $sub
                 || $sub->status !== DriverSubscription::STATUS_ACTIVE
+                || $sub->is_queued
                 || ! $sub->isExhausted()) {
                 return null; // already handled by another path, or not actually due
             }
@@ -237,35 +382,35 @@ class SubscriptionService
             return;
         }
 
-        // Defence-in-depth: never renew into a duplicate. If the driver already
-        // holds another active subscription (one-active-per-driver invariant),
-        // this one simply expires without a re-buy.
+        // Defence-in-depth: never end up with two running plans. If the driver
+        // already holds another *live* (non-queued) subscription, just expire.
         $hasOtherActive = DriverSubscription::query()
             ->where('driver_user_id', $driver->id)
             ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
             ->where('id', '!=', $claimed->id)
             ->exists();
         if ($hasOtherActive) {
             return;
         }
 
-        // Decide the successor plan: a queued plan wins, else same-plan
-        // auto-renew. Either way the plan must still be sellable now.
-        $plan = null;
-        if ($claimed->next_plan_id) {
-            $cand = SubscriptionPlan::query()->find($claimed->next_plan_id);
-            if ($cand && $cand->is_active && $cand->isAvailableNow()) {
-                $plan = $cand;
-            }
-        } elseif ($claimed->auto_renew && $claimed->subscription_plan_id) {
-            $cand = SubscriptionPlan::query()->find($claimed->subscription_plan_id);
-            if ($cand && $cand->is_active && $cand->isAvailableNow()) {
-                $plan = $cand;
-            }
+        // 1) A prepaid queued plan wins — activate it now, no charge.
+        $queued = $this->queuedFor($driver->id);
+        if ($queued) {
+            $this->activateQueued($queued);
+            $this->notifyQueuedActivated($driver, $queued->fresh());
+            return;
         }
 
-        if (! $plan) {
-            return; // cancelled, or plan no longer available — genuine expiry
+        // 2) Else same-plan auto-renew (charged from the wallet), if still sellable.
+        // By design the renewal re-reads the plan's CURRENT terms (price, days,
+        // commission) — so an admin's plan edit takes effect at the next renewal.
+        if (! $claimed->auto_renew || ! $claimed->subscription_plan_id) {
+            return; // cancelled — genuine expiry
+        }
+        $plan = SubscriptionPlan::query()->find($claimed->subscription_plan_id);
+        if (! $plan || ! $plan->is_active || ! $plan->isAvailableNow()) {
+            return; // plan no longer available — genuine expiry
         }
 
         try {
@@ -281,27 +426,16 @@ class SubscriptionService
 
     /**
      * Turn off auto-renew for an active subscription. The plan keeps running
-     * until it expires (status stays "active"); it just won't renew. Any queued
-     * next plan is dropped too.
+     * until it expires (status stays "active"); it just won't renew. A prepaid
+     * queued plan is NOT touched here — the driver already paid for it, so it
+     * still activates when this plan ends (cancel it separately for a refund).
      */
     public function cancel(DriverSubscription $sub): DriverSubscription
     {
         $sub->auto_renew = false;
         $sub->cancelled_at = now();
-        $sub->next_plan_id = null;
         $sub->save();
         return $sub;
-    }
-
-    /**
-     * Queue a plan to start when the given active subscription ends. No wallet
-     * debit now — the charge runs through the renewal path at activation.
-     */
-    public function queueNext(DriverSubscription $current, SubscriptionPlan $plan): DriverSubscription
-    {
-        $current->next_plan_id = $plan->id;
-        $current->save();
-        return $current;
     }
 
     /**
@@ -319,6 +453,7 @@ class SubscriptionService
 
         DriverSubscription::query()
             ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
             ->whereNotNull('expires_at')
             ->whereNull('notified_expiry_at')
             ->whereBetween('expires_at', [$now, $until])
@@ -335,9 +470,20 @@ class SubscriptionService
                     $title = $sub->plan?->title ?? 'Subscription';
 
                     if ($sub->auto_renew && ! $sub->cancelled_at) {
-                        $body = "Your {$title} expires on {$when}. It will be auto-renewed for ₹"
-                            . number_format((float) $sub->amount_paid, 0)
-                            . ' from your wallet. To change the plan or cancel, do it now.';
+                        if ((float) $sub->amount_paid > 0) {
+                            $body = "Your {$title} expires on {$when}. It will be auto-renewed for ₹"
+                                . number_format((float) $sub->amount_paid, 0)
+                                . ' from your wallet.';
+                            if ((float) $sub->commission_percent > 0) {
+                                $body .= ' ' . $this->fmtPercent($sub->commission_percent) . '% commission applies per ride.';
+                            }
+                            $body .= ' To change the plan or cancel, do it now.';
+                        } else {
+                            // Commission-only plan: nothing is taken from the wallet up front.
+                            $body = "Your {$title} renews on {$when} at no upfront charge — "
+                                . $this->fmtPercent($sub->commission_percent)
+                                . '% commission applies per ride. To change the plan or cancel, do it now.';
+                        }
                     } else {
                         $body = "Your {$title} expires on {$when} and will not renew. "
                             . 'Resubscribe to keep your commission rate.';
@@ -366,11 +512,48 @@ class SubscriptionService
     private function notifyRenewed(User $driver, DriverSubscription $sub): void
     {
         $title = $sub->plan?->title ?? 'Subscription';
+        $amount = (float) $sub->amount_paid;
+        $commission = (float) $sub->commission_percent;
+
+        if ($amount > 0) {
+            $body = "{$title} was renewed for ₹" . number_format($amount, 0) . ' from your wallet.';
+            if ($commission > 0) {
+                $body .= ' ' . $this->fmtPercent($commission) . '% commission applies per ride.';
+            }
+        } else {
+            // Commission-only plan: re-activated with no upfront charge.
+            $body = "{$title} was renewed at no upfront charge — "
+                . $this->fmtPercent($commission) . '% commission applies per ride.';
+        }
+
         $this->notifications->notify(
             $driver,
             'subscription_renewed',
             'Subscription renewed',
-            "{$title} was renewed for ₹" . number_format((float) $sub->amount_paid, 0) . ' from your wallet.',
+            $body,
+            ['subscription_id' => $sub->id],
+        );
+    }
+
+    /** Percent with trailing zeros trimmed: 15.00 -> "15", 12.50 -> "12.5". */
+    private function fmtPercent(float|string|null $pct): string
+    {
+        $n = (float) $pct;
+        return rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.');
+    }
+
+    private function notifyQueuedActivated(User $driver, DriverSubscription $sub): void
+    {
+        $title = $sub->plan?->title ?? 'Subscription';
+        $body = (float) $sub->amount_paid > 0
+            ? "Your queued plan {$title} is now active — it was already paid for, so nothing more was charged."
+            : "Your queued plan {$title} is now active.";
+
+        $this->notifications->notify(
+            $driver,
+            'subscription_activated',
+            'Queued plan activated',
+            $body,
             ['subscription_id' => $sub->id],
         );
     }

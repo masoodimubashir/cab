@@ -15,16 +15,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'meter_type',
     'amount_paid',
     'commission_percent',
+    'pricing_model',
     'rides_allowed',
     'rides_used',
     'earnings_cap',
     'earnings_accrued',
+    'days_count',
     'starts_at',
     'expires_at',
     'status',
+    'is_queued',
     'auto_renew',
     'cancelled_at',
-    'next_plan_id',
     'notified_expiry_at',
 ])]
 class DriverSubscription extends Model
@@ -35,6 +37,17 @@ class DriverSubscription extends Model
     public const STATUS_EXPIRED = 'expired';
     public const STATUS_CANCELLED = 'cancelled';
 
+    // A "queued" plan is a prepaid row that keeps status=active but carries
+    // is_queued=true so it stays out of every running-subscription query until
+    // the current plan ends and it is activated (with no further charge).
+
+    // Mirror the DB defaults so a snapshot built in memory always carries a
+    // model and is treated as a live (not queued) subscription unless told so.
+    protected $attributes = [
+        'pricing_model' => 'subscription',
+        'is_queued' => false,
+    ];
+
     protected $casts = [
         'amount_paid' => 'decimal:2',
         'commission_percent' => 'decimal:2',
@@ -42,8 +55,10 @@ class DriverSubscription extends Model
         'rides_used' => 'integer',
         'earnings_cap' => 'decimal:2',
         'earnings_accrued' => 'decimal:2',
+        'days_count' => 'integer',
         'starts_at' => 'datetime',
         'expires_at' => 'datetime',
+        'is_queued' => 'boolean',
         'auto_renew' => 'boolean',
         'cancelled_at' => 'datetime',
         'notified_expiry_at' => 'datetime',
@@ -52,12 +67,6 @@ class DriverSubscription extends Model
     public function plan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'subscription_plan_id');
-    }
-
-    /** A plan queued (while this one is active) to start when this one ends. */
-    public function nextPlan(): BelongsTo
-    {
-        return $this->belongsTo(SubscriptionPlan::class, 'next_plan_id');
     }
 
     public function driver(): BelongsTo

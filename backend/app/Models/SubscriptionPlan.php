@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'subtitle',
     'amount',
     'commission_percent',
+    'pricing_model',
     'meter_type',
     'rides_count',
     'days_count',
@@ -42,6 +43,23 @@ class SubscriptionPlan extends Model
     ];
 
     public const PLAN_TYPES = ['normal', 'new_registration', 'renewal', 'targeted'];
+
+    // Pricing model — how the driver is charged for the plan.
+    public const MODEL_SUBSCRIPTION = 'subscription'; // one-time amount, no commission
+    public const MODEL_COMMISSION = 'commission';     // no upfront amount, commission per ride
+    public const MODEL_HYBRID = 'hybrid';             // one-time amount + commission per ride
+
+    public const PRICING_MODELS = [
+        self::MODEL_SUBSCRIPTION,
+        self::MODEL_COMMISSION,
+        self::MODEL_HYBRID,
+    ];
+
+    // Mirror the DB default so a model built in memory (without an explicit
+    // value) still reports a pricing model rather than null.
+    protected $attributes = [
+        'pricing_model' => self::MODEL_SUBSCRIPTION,
+    ];
 
     protected $casts = [
         'amount' => 'decimal:2',

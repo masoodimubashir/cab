@@ -148,7 +148,7 @@ interface RecentRun {
       [open]="!!opened"
       [title]="opened?.name || ''"
       [subtitle]="opened?.type"
-      [width]="720"
+      [width]="960"
       (closed)="close()"
     >
       <div slot="body" *ngIf="opened" class="drawer">
@@ -177,28 +177,87 @@ interface RecentRun {
         <p *ngIf="error" class="msg msg--err">{{ error }}</p>
 
         <div *ngIf="result" class="result">
-          <div class="result__meta">
-            <strong>{{ result.rows.length }}</strong> rows · {{ result.from }} → {{ result.to }}
+          <!-- toolbar: live row count + search + filter toggle -->
+          <div class="rtoolbar">
+            <div class="rtoolbar__meta">
+              <strong>{{ totalFiltered }}</strong><span *ngIf="totalFiltered !== result.rows.length" class="muted"> / {{ result.rows.length }}</span> rows
+            </div>
+            <div class="rtoolbar__tools">
+              <div class="rsearch">
+                <tm-icon name="search" [size]="13" />
+                <input type="text" placeholder="Search results…" [(ngModel)]="resultSearch" (ngModelChange)="onResultSearch()" />
+                <button *ngIf="resultSearch" type="button" class="rsearch__clear" (click)="resultSearch=''; onResultSearch()" aria-label="Clear search">
+                  <tm-icon name="x" [size]="12" />
+                </button>
+              </div>
+              <button type="button" class="rbtn" [class.is-on]="showFilters" (click)="toggleFilters()">
+                <tm-icon name="filter" [size]="13" /> Filters
+              </button>
+            </div>
           </div>
+
           <div class="result__scroll">
             <table class="tbl">
               <thead>
                 <tr>
-                  <th *ngFor="let c of result.columns">{{ c.label }}</th>
+                  <th *ngFor="let c of result.columns" class="th-sort" [class.is-sorted]="sortKey === c.key" (click)="sortBy(c.key)" [title]="'Sort by ' + c.label">
+                    <span class="th-inner">
+                      {{ c.label }}
+                      <tm-icon class="th-arrow" [name]="sortKey === c.key ? (sortDir === 'asc' ? 'chevron-up' : 'chevron-down') : 'chevron-down'" [size]="11" />
+                    </span>
+                  </th>
+                </tr>
+                <tr *ngIf="showFilters" class="filter-row">
+                  <th *ngFor="let c of result.columns">
+                    <input
+                      type="text"
+                      class="col-filter"
+                      [placeholder]="c.label"
+                      [ngModel]="colFilters[c.key] || ''"
+                      (ngModelChange)="setColFilter(c.key, $event)"
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let row of result.rows.slice(0, 200)">
-                  <td *ngFor="let c of result.columns">{{ formatCell(row[c.key]) }}</td>
+                <tr *ngFor="let row of pageRows">
+                  <td *ngFor="let c of result.columns" [attr.data-k]="c.key">
+                    <ng-container *ngIf="opened?.key === 'ratings_reviews' && c.key === 'score' && isScore(row[c.key]); else plainCell">
+                      <span class="stars" [title]="formatCell(row[c.key]) + ' / 5'">
+                        <tm-icon *ngFor="let s of stars" name="star" [size]="12" class="star" [class.star-on]="scoreFilled(row[c.key], s)" />
+                      </span>
+                    </ng-container>
+                    <ng-template #plainCell>{{ formatCell(row[c.key]) }}</ng-template>
+                  </td>
                 </tr>
-                <tr *ngIf="!result.rows.length">
-                  <td [attr.colspan]="result.columns.length" class="tbl__empty">No rows for this range.</td>
+                <tr *ngIf="!pageRows.length">
+                  <td [attr.colspan]="result.columns.length" class="tbl__empty">
+                    {{ result.rows.length ? 'No rows match your search or filters.' : 'No rows for this range.' }}
+                  </td>
                 </tr>
               </tbody>
             </table>
-            <p *ngIf="result.rows.length > 200" class="muted small">
-              Showing 200 of {{ result.rows.length }} rows · download CSV for the full set.
-            </p>
+          </div>
+
+          <!-- pagination -->
+          <div class="rpager" *ngIf="totalFiltered > 0">
+            <label class="rpager__size">
+              Rows per page
+              <select [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
+                <option [ngValue]="25">25</option>
+                <option [ngValue]="50">50</option>
+                <option [ngValue]="100">100</option>
+              </select>
+            </label>
+            <div class="rpager__nav">
+              <span class="rpager__range">{{ pageStart }}–{{ pageEnd }} of {{ totalFiltered }}</span>
+              <button type="button" class="rpager__btn" [disabled]="page <= 1" (click)="goPage(page - 1)" aria-label="Previous page">
+                <tm-icon name="chevron-left" [size]="14" />
+              </button>
+              <button type="button" class="rpager__btn" [disabled]="page >= maxPage" (click)="goPage(page + 1)" aria-label="Next page">
+                <tm-icon name="chevron-right" [size]="14" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -356,7 +415,33 @@ interface RecentRun {
     /* result table */
     .result__meta { font: 700 12px var(--tm-font-body); color: var(--tm-text); }
     .result__meta strong { font-family: var(--tm-font-mono); color: var(--tm-text); }
-    .result__scroll { overflow-x: auto; }
+    /* toolbar above the results table */
+    .rtoolbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      flex-wrap: wrap; margin-bottom: 10px;
+    }
+    .rtoolbar__meta { font: 700 12px var(--tm-font-body); color: var(--tm-text); }
+    .rtoolbar__meta strong { font-family: var(--tm-font-mono); }
+    .rtoolbar__tools { display: inline-flex; gap: 8px; align-items: center; }
+    .rsearch {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 10px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md);
+      color: var(--tm-text-muted); background: var(--tm-surface);
+    }
+    .rsearch:focus-within { border-color: var(--tm-ink); }
+    .rsearch input { border: 0; outline: 0; background: transparent; font: 600 12px var(--tm-font-body); color: var(--tm-text); min-width: 180px; }
+    .rsearch__clear { border: 0; background: transparent; color: var(--tm-text-soft); cursor: pointer; display: inline-flex; padding: 0; }
+    .rsearch__clear:hover { color: var(--tm-ink); }
+    .rbtn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md);
+      background: var(--tm-surface); color: var(--tm-text-muted); cursor: pointer;
+      font: 700 12px var(--tm-font-body);
+    }
+    .rbtn:hover { color: var(--tm-text); border-color: var(--tm-ink); }
+    .rbtn.is-on { background: var(--tm-ink); color: #fff; border-color: var(--tm-ink); }
+
+    .result__scroll { overflow-x: auto; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); }
     .tbl {
       width: 100%; min-width: 600px;
       border-collapse: collapse;
@@ -367,15 +452,56 @@ interface RecentRun {
       border-bottom: 1px solid var(--tm-line);
       white-space: nowrap;
     }
-    .tbl th {
+    .tbl thead th {
+      position: sticky; top: 0; z-index: 1;
       font: 800 11px var(--tm-font-body);
       text-transform: uppercase; letter-spacing: 0.06em;
       color: var(--tm-text-muted);
       background: var(--tm-canvas-2);
     }
+    .th-sort { cursor: pointer; user-select: none; }
+    .th-sort:hover { color: var(--tm-text); }
+    .th-inner { display: inline-flex; align-items: center; gap: 4px; }
+    .th-arrow { opacity: 0; transition: opacity var(--tm-duration-fast) var(--tm-ease); }
+    .th-sort:hover .th-arrow { opacity: 0.5; }
+    .th-sort.is-sorted { color: var(--tm-text); }
+    .th-sort.is-sorted .th-arrow { opacity: 1; color: var(--tm-ink); }
+    .filter-row th { background: var(--tm-surface); padding: 6px 8px; position: static; }
+    .col-filter {
+      width: 100%; min-width: 90px; padding: 5px 8px;
+      border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-sm, 6px);
+      font: 600 11px var(--tm-font-body); color: var(--tm-text); background: var(--tm-canvas);
+      text-transform: none; letter-spacing: 0;
+    }
+    .col-filter:focus { outline: 0; border-color: var(--tm-ink); }
     .tbl td { color: var(--tm-text); }
     .tbl tbody tr:hover { background: var(--tm-canvas-2); }
     .tbl__empty { text-align: center; color: var(--tm-text-muted); padding: 32px 0 !important; }
+
+    /* star rating cell */
+    .stars { display: inline-flex; gap: 1px; }
+    .star { color: var(--tm-line-2, #d4d8de); }
+    .star.star-on { color: #f59e0b; }
+
+    /* pagination */
+    .rpager {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      flex-wrap: wrap; margin-top: 12px;
+    }
+    .rpager__size { font: 600 12px var(--tm-font-body); color: var(--tm-text-muted); display: inline-flex; align-items: center; gap: 6px; }
+    .rpager__size select {
+      padding: 5px 8px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-sm, 6px);
+      background: var(--tm-surface); color: var(--tm-text); font: 700 12px var(--tm-font-body); cursor: pointer;
+    }
+    .rpager__nav { display: inline-flex; align-items: center; gap: 8px; }
+    .rpager__range { font: 600 12px var(--tm-font-mono); color: var(--tm-text-muted); }
+    .rpager__btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: var(--tm-radius-sm, 6px);
+      border: 1px solid var(--tm-line-2); background: var(--tm-surface); color: var(--tm-text); cursor: pointer;
+    }
+    .rpager__btn:hover:not(:disabled) { border-color: var(--tm-ink); }
+    .rpager__btn:disabled { opacity: 0.4; cursor: default; }
 
     .muted { color: var(--tm-text-muted); }
     .small { font-size: 11px; }
@@ -394,6 +520,18 @@ export class AnalyticsReportsComponent implements OnInit, AfterViewInit, OnDestr
   result: ReportRunResponse | null = null;
   error: string | null = null;
   loading = false;
+
+  // ── Results view state: search / per-column filter / sort / paginate ──
+  resultSearch = '';
+  colFilters: Record<string, string> = {};
+  showFilters = false;
+  sortKey: string | null = null;
+  sortDir: 'asc' | 'desc' = 'asc';
+  page = 1;
+  pageSize = 25;
+  /** Filtered + sorted rows (recomputed only when inputs change). */
+  processed: Record<string, unknown>[] = [];
+  readonly stars = [1, 2, 3, 4, 5];
 
   recent: RecentRun[] = [];
   private storageKey = 'dreamcabs_recent_reports_v1';
@@ -437,8 +575,9 @@ export class AnalyticsReportsComponent implements OnInit, AfterViewInit, OnDestr
     });
   }
 
-  iconFor(type: string): 'chart-bar' | 'chart-line' | 'rupee' | 'user' | 'car' | 'shield' {
+  iconFor(type: string): 'chart-bar' | 'chart-line' | 'rupee' | 'user' | 'car' | 'shield' | 'star' {
     const t = (type || '').toLowerCase();
+    if (t.includes('review') || t.includes('rating')) return 'star';
     if (t.includes('finance') || t.includes('revenue') || t.includes('payment')) return 'rupee';
     if (t.includes('driver')) return 'user';
     if (t.includes('trip') || t.includes('ride')) return 'car';
@@ -482,6 +621,8 @@ export class AnalyticsReportsComponent implements OnInit, AfterViewInit, OnDestr
       next: (r) => {
         this.result = r;
         this.loading = false;
+        this.resetView();
+        this.recompute();
         this.pushRecent({
           key: this.opened!.key,
           name: this.opened!.name,
@@ -514,6 +655,110 @@ export class AnalyticsReportsComponent implements OnInit, AfterViewInit, OnDestr
   formatCell(v: unknown): string {
     if (v == null || v === '') return '—';
     return String(v);
+  }
+
+  isScore(v: unknown): boolean {
+    const n = Number(v);
+    return !isNaN(n) && n >= 1 && n <= 5;
+  }
+
+  /** True when a 1–5 star at position `s` should be filled for value `v`. */
+  scoreFilled(v: unknown, s: number): boolean {
+    return Number(v) >= s;
+  }
+
+  // ── Results: search / filter / sort / paginate ──────────────────
+  /** Default the view back to first page / no sort when a new report runs. */
+  private resetView(): void {
+    this.resultSearch = '';
+    this.colFilters = {};
+    this.showFilters = false;
+    this.sortKey = null;
+    this.sortDir = 'asc';
+    this.page = 1;
+  }
+
+  onResultSearch(): void {
+    this.page = 1;
+    this.recompute();
+  }
+
+  toggleFilters(): void {
+    this.showFilters = !this.showFilters;
+  }
+
+  setColFilter(key: string, value: string): void {
+    this.colFilters = { ...this.colFilters, [key]: value };
+    this.page = 1;
+    this.recompute();
+  }
+
+  sortBy(key: string): void {
+    if (this.sortKey === key) {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortKey = key;
+      this.sortDir = 'asc';
+    }
+    this.recompute();
+  }
+
+  setPageSize(size: number): void {
+    this.pageSize = Number(size) || 25;
+    this.page = 1;
+    this.recompute();
+  }
+
+  goPage(p: number): void {
+    this.page = Math.min(Math.max(1, p), this.maxPage);
+  }
+
+  get totalFiltered(): number { return this.processed.length; }
+  get maxPage(): number { return Math.max(1, Math.ceil(this.processed.length / this.pageSize)); }
+  get pageStart(): number { return this.processed.length ? (this.page - 1) * this.pageSize + 1 : 0; }
+  get pageEnd(): number { return Math.min(this.page * this.pageSize, this.processed.length); }
+  get pageRows(): Record<string, unknown>[] {
+    const start = (this.page - 1) * this.pageSize;
+    return this.processed.slice(start, start + this.pageSize);
+  }
+
+  /** Apply search + per-column filters + sort once; the template only slices. */
+  private recompute(): void {
+    if (!this.result) { this.processed = []; return; }
+    const cols = this.result.columns;
+    let rows = this.result.rows.slice();
+
+    const q = this.resultSearch.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) => cols.some((c) => this.cellText(r[c.key]).toLowerCase().includes(q)));
+    }
+    for (const c of cols) {
+      const f = (this.colFilters[c.key] || '').trim().toLowerCase();
+      if (f) rows = rows.filter((r) => this.cellText(r[c.key]).toLowerCase().includes(f));
+    }
+    if (this.sortKey) {
+      const key = this.sortKey;
+      const dir = this.sortDir === 'asc' ? 1 : -1;
+      rows.sort((a, b) => this.compareCells(a[key], b[key]) * dir);
+    }
+
+    this.processed = rows;
+    if (this.page > this.maxPage) this.page = this.maxPage;
+    if (this.page < 1) this.page = 1;
+  }
+
+  private cellText(v: unknown): string {
+    return v == null ? '' : String(v);
+  }
+
+  /** Numeric when both sides parse as numbers, else case-insensitive text. */
+  private compareCells(a: unknown, b: unknown): number {
+    const na = Number(a);
+    const nb = Number(b);
+    const aNum = a !== '' && a != null && !isNaN(na);
+    const bNum = b !== '' && b != null && !isNaN(nb);
+    if (aNum && bNum) return na - nb;
+    return this.cellText(a).localeCompare(this.cellText(b));
   }
 
   // ── Date range picker (mounted lazily once the drawer opens) ────
