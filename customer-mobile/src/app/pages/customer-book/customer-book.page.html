@@ -383,6 +383,29 @@
           ></ion-datetime>
         </div>
 
+        <!-- Book a ride for a friend / family -->
+        <div class="bf-card">
+          <label class="bf-toggle">
+            <span class="bf-toggle__text">
+              <strong>Booking for someone else?</strong>
+              <small>The driver picks up &amp; calls them. You still pay as usual.</small>
+            </span>
+            <ion-toggle [(ngModel)]="bookingForOther"></ion-toggle>
+          </label>
+
+          <div class="bf-fields" *ngIf="bookingForOther">
+            <button type="button" class="bf-contact dc-press" (click)="pickBookedForContact()">
+              <ion-icon name="person-add-outline" aria-hidden="true"></ion-icon> Pick from contacts
+            </button>
+            <input class="bf-input" type="text" placeholder="Friend / family name" maxlength="120" [(ngModel)]="bookedForName" />
+            <div class="bf-phone">
+              <span class="bf-phone__code">+{{ bookedForCountryCode }}</span>
+              <input class="bf-input bf-phone__num" type="tel" inputmode="numeric" maxlength="10"
+                     placeholder="Their mobile number" [(ngModel)]="bookedForPhone" (ngModelChange)="onBookedForPhoneInput()" />
+            </div>
+          </div>
+        </div>
+
         <!-- Type your own price (free numeric entry). Starts empty. -->
         <div class="offer-input-card">
           <span class="offer-input-currency">&#8377;</span>
@@ -410,7 +433,7 @@
         <button
           class="action-btn-continue dc-press"
           (click)="sendOffer()"
-          [disabled]="loading || offerAmount == null || +offerAmount < minFare || (scheduleMode === 'later' && !scheduledAt)"
+          [disabled]="loading || offerAmount == null || +offerAmount < minFare || (scheduleMode === 'later' && !scheduledAt) || (bookingForOther && (!bookedForName.trim() || bookedForPhone.length < 10))"
         >
           {{ loading ? 'Working…' : (scheduleMode === 'later' ? 'Schedule ride' : 'Search driver') }}
         </button>

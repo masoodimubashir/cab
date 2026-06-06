@@ -45,8 +45,8 @@ class AdminOperatorSettingsController
             'check_driver_debt' => ['nullable', 'boolean'],
             'update_driver_payment_modes_enabled' => ['nullable', 'boolean'],
 
-            // Wallet
-            'wallet_cash_tnc' => ['nullable', 'string', 'max:10000'],
+            // Wallet — min is signed (may be negative to allow debt); max 0 = no limit.
+            'wallet_cash_min_capping' => ['nullable', 'integer', 'min:-1000000', 'max:1000000'],
             'wallet_cash_max_capping' => ['nullable', 'integer', 'min:0', 'max:1000000'],
 
             // Subscriptions
@@ -71,6 +71,23 @@ class AdminOperatorSettingsController
         ]);
 
         $settings = OperatorSetting::instance();
+
+        // Min must not exceed a real max (max 0 = no limit). Resolve each side
+        // against the STORED value when the request omits it, so a partial update
+        // (only one of the two fields sent) is still validated against its
+        // persisted counterpart — otherwise an inconsistent min > max could be
+        // saved and freeze the wallet for every manual move.
+        $min = array_key_exists('wallet_cash_min_capping', $data)
+            ? (int) $data['wallet_cash_min_capping']
+            : (int) $settings->wallet_cash_min_capping;
+        $max = array_key_exists('wallet_cash_max_capping', $data)
+            ? (int) $data['wallet_cash_max_capping']
+            : (int) $settings->wallet_cash_max_capping;
+        if ($max > 0 && $min > $max) {
+            return response()->json([
+                'message' => 'Wallet minimum capping cannot be greater than the maximum.',
+            ], 422);
+        }
 
         // Handle image uploads first.
         foreach (self::IMAGE_FIELDS as $input => $column) {

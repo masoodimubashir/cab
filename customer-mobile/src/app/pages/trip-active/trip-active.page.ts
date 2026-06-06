@@ -26,6 +26,9 @@ type TripDetail = {
   final_fare: number | null;
   tip_amount?: number | null;
   payment_method?: PaymentMethod | null;
+  is_for_other?: boolean;
+  booked_for_name?: string | null;
+  booked_for_phone?: string | null;
   pickup_lat?: number | null;
   pickup_lng?: number | null;
   drop_lat?: number | null;
@@ -67,6 +70,11 @@ export class TripActivePage implements OnInit, OnDestroy {
   tripId!: number;
   loading = true;
   trip: TripDetail | null = null;
+  // Active start-ride OTP, shown to the booker once the driver is at the pickup.
+  // On a for-a-friend trip the same code is also SMSed to the friend; this lets
+  // the booker read it off-screen and relay it if the SMS didn't arrive.
+  startOtp: string | null = null;
+  private startOtpInFlight = false;
   driverAccepts: PaymentMethod[] = ['cash', 'razorpay'];
   cityAcceptsUpper: string[] = ['CASH', 'RAZORPAY'];
   // Authoritative list the backend computed (city ∩ driver-effective, honoring
@@ -85,6 +93,9 @@ export class TripActivePage implements OnInit, OnDestroy {
   couponError: string | null = null;
   couponPreview: { discount: number; final_amount: number; coupon: { assignment_id: number; title: string } } | null = null;
   driverPosition: { lat: number; lng: number } | null = null;
+  // Per-city radius (metres): once the driver is this close to pickup the rider
+  // can no longer cancel. 0 = no limit. Sourced from the negotiation payload.
+  cancelBlockRadiusM = 0;
   liveConnected = false;
   etaMinutes: number | null = null;
   etaUpdatedAt: number | null = null;
@@ -300,7 +311,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.unsubscribeRealtime = this.realtime.subscribeTracking(
       this.tripId,
       (p) => this.onLocation(p),
-      (p) => this.onStatus(p)
+      (p) => this.onStatus(p),
+      undefined,
+      () => this.syncStartOtp()
     );
     this.liveConnected = !!this.unsubscribeRealtime;
   }
@@ -347,6 +360,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         city_payment_modes?: string[];
         available_payment_methods?: string[];
         show_vehicle_make_model?: boolean;
+        cancel_block_radius_m?: number;
         driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
       }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
@@ -369,6 +383,9 @@ export class TripActivePage implements OnInit, OnDestroy {
             if (typeof res.show_vehicle_make_model === 'boolean') {
               this.showVehicleMakeModel = res.show_vehicle_make_model;
             }
+            if (typeof res.cancel_block_radius_m === 'number') {
+              this.cancelBlockRadiusM = res.cancel_block_radius_m;
+            }
             if (this.selectedPaymentMethod == null && this.trip.payment_method) {
               this.selectedPaymentMethod = this.trip.payment_method;
             }
@@ -380,6 +397,7 @@ export class TripActivePage implements OnInit, OnDestroy {
             );
             this.updateRouteMarkers();
             this.syncCustomerLocationStream();
+            this.syncStartOtp();
             // If the first init bailed (slow API → map div wasn't in the DOM
             // yet), retry now that the page has rendered.
             if (!this.map) void this.initMap();
@@ -632,7 +650,13 @@ export class TripActivePage implements OnInit, OnDestroy {
     if (!loc || loc.lat == null || loc.lng == null) return;
     // A real live fix arrived — from now on it owns the marker; stop seeding.
     this.liveDriverFix = true;
-    this.driverPosition = { lat: Number(loc.lat), lng: Number(loc.lng) };
+    // This fires from a websocket callback (outside Angular's zone). Re-enter
+    // the zone for the state mutation so the cancel-proximity gate (canCancel /
+    // cancelBlockedByProximity) re-evaluates the instant the driver crosses the
+    // radius — not only on the next poll tick. Marker plotting can stay outside.
+    this.zone.run(() => {
+      this.driverPosition = { lat: Number(loc.lat), lng: Number(loc.lng) };
+    });
     this.scheduleEtaUpdate();
     this.ensureDriverMarker();
   }
@@ -886,9 +910,43 @@ export class TripActivePage implements OnInit, OnDestroy {
     }
 
     this.syncCustomerLocationStream();
+    this.syncStartOtp();
     // Show the trip path the instant the driver starts the ride, hide it on
     // completion/cancel — without waiting for the next status poll.
     this.syncRoute();
+  }
+
+  /**
+   * Fetch the live start-ride OTP while the driver waits at the pickup, clear it
+   * otherwise. Owner-only endpoint — returns the code only after the driver has
+   * requested it, so the booker sees it appear the moment the driver taps Start.
+   */
+  private syncStartOtp(): void {
+    if (this.trip?.status !== 'ARRIVED_PICKUP') {
+      this.startOtp = null;
+      return;
+    }
+    if (this.startOtpInFlight) return;
+    this.startOtpInFlight = true;
+    this.api.get<{ start_otp: string | null }>(`/trips/${this.tripId}/start-otp`).subscribe({
+      next: (res) => {
+        this.startOtpInFlight = false;
+        // Guard against a late response arriving after the trip moved on.
+        const code = this.trip?.status === 'ARRIVED_PICKUP' ? (res?.start_otp ?? null) : null;
+        // When the code first appears, make sure the booker can actually see it
+        // even if they'd collapsed the sheet to watch the map.
+        if (code && !this.startOtp) this.sheetCollapsed = false;
+        this.startOtp = code;
+      },
+      error: () => {
+        this.startOtpInFlight = false;
+      },
+    });
+  }
+
+  /** Per-cell digits for the start-code display. */
+  get otpDigits(): string[] {
+    return this.startOtp ? this.startOtp.split('') : [];
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -978,7 +1036,45 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   canCancel(): boolean {
     if (!this.trip) return false;
-    return ['CONFIRMED', 'ASSIGNED'].includes(this.trip.status);
+    // EN_ROUTE_PICKUP is included so the rider can still bail while the driver
+    // is approaching — the proximity gate removes the option once close.
+    if (!['CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'].includes(this.trip.status)) return false;
+    return !this.driverWithinCancelBlock();
+  }
+
+  /** True only when cancellation was hidden specifically because the driver is
+   *  now within the city's cancel-block radius — drives the inline hint. */
+  cancelBlockedByProximity(): boolean {
+    if (!this.trip) return false;
+    if (!['CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'].includes(this.trip.status)) return false;
+    return this.driverWithinCancelBlock();
+  }
+
+  /** Driver within the configured radius of pickup. Fails OPEN (false) when the
+   *  gate is off or we can't measure — the server enforces the real rule. */
+  private driverWithinCancelBlock(): boolean {
+    const r = this.cancelBlockRadiusM;
+    if (!r || r <= 0) return false; // gate disabled for this city/product
+    const pickup = this.pickupLatLng();
+    if (!pickup || !this.driverPosition) return false; // can't measure → allow
+    return this.metersBetween(this.driverPosition, pickup) <= r;
+  }
+
+  private pickupLatLng(): { lat: number; lng: number } | null {
+    const t = this.trip;
+    if (!t || t.pickup_lat == null || t.pickup_lng == null) return null;
+    return { lat: Number(t.pickup_lat), lng: Number(t.pickup_lng) };
+  }
+
+  /** Great-circle distance between two lat/lng points, in metres. */
+  private metersBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const R = 6371000; // m
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+    const s =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
   }
 
   isCompleted(): boolean {
@@ -1446,6 +1542,36 @@ export class TripActivePage implements OnInit, OnDestroy {
     } catch (e: any) {
       const t = await this.toastCtrl.create({
         message: e?.error?.message || 'Could not generate share link.',
+        duration: 2500,
+        color: 'danger',
+      });
+      await t.present();
+    } finally {
+      this.shareBusy = false;
+    }
+  }
+
+  /** Whether this ride was booked for a friend whose number we have. */
+  canTextFriend(): boolean {
+    return !!(this.trip?.is_for_other && this.trip?.booked_for_phone)
+      && !['CANCELLED', 'COMPLETED'].includes(this.trip?.status ?? '');
+  }
+
+  /** Generate the live-tracking link and open a text to the friend's number. */
+  async textTrackingToFriend(): Promise<void> {
+    if (this.shareBusy || !this.trip?.booked_for_phone) return;
+    this.shareBusy = true;
+    try {
+      const res: any = await this.api.post(`/trips/${this.tripId}/share-link`, {}).toPromise();
+      const token = res?.token;
+      if (!token) throw new Error('No token returned');
+      const shareUrl = this.buildShareUrl(token);
+      const name = this.trip.booked_for_name || 'there';
+      const body = encodeURIComponent(`Hi ${name}, your DreamCabs ride is on the way — track it live: ${shareUrl}`);
+      window.location.href = `sms:${this.trip.booked_for_phone}?body=${body}`;
+    } catch (e: any) {
+      const t = await this.toastCtrl.create({
+        message: e?.error?.message || 'Could not create the tracking link.',
         duration: 2500,
         color: 'danger',
       });

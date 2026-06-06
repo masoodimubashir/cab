@@ -2443,3 +2443,75 @@
   font-size: 15px;
 }
 .review-modal .review-done { --background: var(--dc-green, #12B35B); --border-radius: 16px; font-weight: 800; height: 52px; margin: 0; }
+
+/* ── Book for a friend / family (offer step) ── */
+.bf-card {
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  border-radius: 16px;
+  background: var(--dc-surface-2, #FAFBFC);
+  padding: 2px 14px;
+  margin-bottom: 12px;
+}
+.bf-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.bf-toggle__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bf-toggle__text strong { font-size: 14px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
+.bf-toggle__text small { font-size: 11.5px; color: var(--dc-ink-soft, #6C757D); line-height: 1.35; }
+.bf-toggle ion-toggle { flex: none; }
+.bf-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 12px;
+  border-top: 1px solid var(--dc-hairline, #EEF0F2);
+}
+.bf-contact {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  border: 1.5px solid var(--dc-green, #12B35B);
+  background: var(--dc-green-tint, #E7F8EF);
+  color: var(--dc-green, #12B35B);
+  font-size: 12.5px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+}
+.bf-contact ion-icon { font-size: 15px; }
+.bf-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1.5px solid var(--dc-hairline-strong, #E2E6EA);
+  border-radius: 12px;
+  background: var(--dc-surface, #fff);
+  color: var(--dc-ink, #0D1B2A);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+}
+.bf-input:focus { border-color: var(--dc-green, #12B35B); }
+.bf-phone { display: flex; align-items: center; gap: 8px; }
+.bf-phone__code {
+  flex: none;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 13px;
+  border: 1.5px solid var(--dc-hairline-strong, #E2E6EA);
+  border-radius: 12px;
+  background: var(--dc-canvas, #F4F6F8);
+  color: var(--dc-ink, #0D1B2A);
+  font-size: 15px;
+  font-weight: 800;
+}
+.bf-phone__num { flex: 1; }

@@ -78,7 +78,7 @@ class RideAssignmentController extends Controller
 
         $tripStateMachineService->transition($trip, 'ASSIGNED');
 
-        return response()->json(['trip' => $trip->fresh()]);
+        return response()->json(['trip' => $trip->fresh()->appendDriverRiderContact()]);
     }
 
     public function reject(Request $request, Trip $trip)

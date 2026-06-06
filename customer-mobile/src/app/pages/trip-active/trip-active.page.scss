@@ -142,6 +142,27 @@
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;
 }
 
+/* Start-ride code — highlighted so the rider can read it back at a glance */
+.otp-card {
+  border-color: rgba(18, 179, 91, 0.35);
+  background: linear-gradient(180deg, rgba(18, 179, 91, 0.06), var(--dc-surface, #fff));
+}
+.otp-digits {
+  display: flex; gap: 8px; justify-content: center; margin: 2px 0 10px;
+}
+.otp-digit {
+  flex: 1; max-width: 48px; aspect-ratio: 1 / 1.12;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid rgba(18, 179, 91, 0.4); border-radius: 12px;
+  background: var(--dc-surface, #fff);
+  font-size: 24px; font-weight: 800; color: var(--dc-ink, #0D1B2A);
+  font-variant-numeric: tabular-nums;
+}
+.otp-hint {
+  margin: 0; text-align: center; font-size: 13px; line-height: 1.45;
+  color: var(--dc-ink-soft, #6C757D);
+}
+
 /* Fare */
 .fare-card {
   display: flex; flex-direction: column; gap: 10px;
@@ -170,6 +191,14 @@
   &--cancel { background: var(--dc-surface, #fff); border-color: #F3C9CD; color: var(--dc-danger, #DC3545); }
   &--sos { background: var(--dc-danger, #DC3545); color: #fff; box-shadow: 0 6px 18px rgba(220, 53, 69, 0.28); }
   &--ghost { background: var(--dc-surface, #fff); border-color: #E7EAEE; color: var(--dc-ink, #0D1B2A); }
+}
+
+.cancel-blocked-hint {
+  display: flex; align-items: center; gap: 7px;
+  margin: 10px 0 0; padding: 9px 11px;
+  background: rgba(13, 27, 42, 0.04); border-radius: var(--dc-r-md, 14px);
+  font-size: 12.5px; font-weight: 600; color: var(--dc-ink-faint, #6B7682);
+  ion-icon { font-size: 17px; flex-shrink: 0; }
 }
 
 /* Coupon */

@@ -5,9 +5,10 @@ import { IonicModule } from '@ionic/angular';
 import { RidesPage } from './rides.page';
 import { RidesPageRoutingModule } from './rides-routing.module';
 import { TripSummaryModal } from './trip-summary.modal';
+import { StartOtpModal } from './start-otp.modal';
 
 @NgModule({
   imports: [CommonModule, FormsModule, IonicModule, RidesPageRoutingModule],
-  declarations: [RidesPage, TripSummaryModal],
+  declarations: [RidesPage, TripSummaryModal, StartOtpModal],
 })
 export class RidesPageModule {}

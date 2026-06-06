@@ -18,6 +18,7 @@ interface DispatcherSetting {
   request_radius_m: number;
   max_hops: number;
   driver_accept_window_sec: number;
+  cancel_block_radius_m: number;
 
   schedule_available: boolean;
   schedule_dispatcher_type: boolean;
@@ -116,6 +117,24 @@ const DISPATCH_MODES = [
             </label>
           </div>
           <p class="hint">A pinged driver must accept within this many seconds (0 = no limit).</p>
+        </div>
+      </section>
+
+      <!-- Ride cancellation -->
+      <section class="sec">
+        <header class="sec__head">
+          <span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span>
+          <div>
+            <h3 class="sec__title">Ride cancellation</h3>
+            <p class="sec__desc">How close the driver can get before the rider loses the option to cancel.</p>
+          </div>
+        </header>
+        <div class="sec__body">
+          <label class="field field--narrow">
+            <span class="field__lbl">Block cancel within (m)</span>
+            <input type="number" min="0" max="50000" [(ngModel)]="active.cancel_block_radius_m" />
+          </label>
+          <p class="hint">Once the driver is within this many metres of the pickup, the rider can no longer cancel. 0 = no limit (cancel allowed right up to pickup). 1000 = 1&nbsp;km.</p>
         </div>
       </section>
 
@@ -383,6 +402,7 @@ export class DispatcherSettingsComponent implements OnInit, OnDestroy {
       request_radius_m: f.request_radius_m,
       max_hops: f.max_hops,
       driver_accept_window_sec: f.driver_accept_window_sec,
+      cancel_block_radius_m: f.cancel_block_radius_m,
       schedule_available: f.schedule_available,
       schedule_dispatcher_type: f.schedule_dispatcher_type,
       dispatch_only_assigned_scheduled: f.dispatch_only_assigned_scheduled,

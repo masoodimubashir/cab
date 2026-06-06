@@ -65,6 +65,9 @@ class FareNegotiationController extends Controller
             'driver:id,name,phone,avatar_path,accepted_payment_methods,current_lat,current_lng',
             'driver.driver:id,user_id,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
         ]);
+        // So the driver sees + can call the actual rider (the friend on a
+        // for-someone-else booking); the booker's relation stays hidden.
+        $tripWithDriver->appendDriverRiderContact();
 
         // Best-known driver position so the customer map can show the driver
         // from the confirmation screen onward — before live trip streaming
@@ -98,11 +101,18 @@ class FareNegotiationController extends Controller
             : ['RAZORPAY'];
         $showVehicleMakeModel = $citySetting ? (bool) $citySetting->show_vehicle_make_model : true;
 
+        // Per-(city, kind) cancel-block radius so the rider's app can hide the
+        // Cancel button the moment the driver gets within range (the cancel
+        // endpoint enforces the same server-side). 0 = no proximity limit.
+        $dispatchSettings = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
+        $cancelBlockRadiusM = (int) ($dispatchSettings?->cancel_block_radius_m ?? 0);
+
         return response()->json([
             'trip_id' => $trip->id,
             'trip' => $tripWithDriver,
             'negotiation' => $negotiation,
             'city_payment_modes' => $cityPaymentModes,
+            'cancel_block_radius_m' => $cancelBlockRadiusM,
             // Authoritative list the customer can actually pay with — city cap
             // ∩ driver-effective modes (driver follows the city when the
             // operator owns payment policy). The pay endpoints enforce the same.

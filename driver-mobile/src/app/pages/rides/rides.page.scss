@@ -595,3 +595,31 @@ ion-content.in-trip {
     &[data-s="NO_SHOW"], &[data-s="CANCELLED"] { background: rgba(235, 68, 68, 0.12); color: #d92d2d; }
   }
 }
+
+/* Call-rider button on the active-trip customer row. */
+.rider-call {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ion-color-primary, #12B35B);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.35);
+  ion-icon { font-size: 20px; }
+}
+
+/* "For a friend" badge on an incoming-offer card. */
+.friend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(var(--dreamcab-dark-blue-rgb, 13, 27, 42), 0.08);
+  color: var(--dreamcab-dark-blue, #0D1B2A);
+  font-weight: 800;
+  ion-icon { font-size: 13px; }
+}

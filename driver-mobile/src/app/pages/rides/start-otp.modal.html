@@ -1,0 +1,54 @@
+<ion-content class="otp-lock">
+  <div class="otp-wrap">
+    <button type="button" class="otp-close dc-press" (click)="cancel()" aria-label="Cancel">
+      <ion-icon name="close"></ion-icon>
+    </button>
+
+    <div class="otp-badge"><ion-icon name="lock-closed"></ion-icon></div>
+
+    <h1 class="otp-title">Verify to start the ride</h1>
+    <p class="otp-sub">
+      Ask <strong>{{ riderName }}</strong> for the 6-digit start code sent to their phone, then enter it below.
+    </p>
+
+    <div class="otp-input-wrapper">
+      <input
+        type="tel"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        [attr.maxlength]="otpLength"
+        [(ngModel)]="otp"
+        (ngModelChange)="onOtpInput()"
+        [disabled]="verifying"
+        class="hidden-otp-input"
+        autocomplete="one-time-code"
+        (focus)="otpInputFocused = true"
+        (blur)="otpInputFocused = false"
+      />
+      <div class="otp-boxes-row">
+        <div
+          class="otp-box"
+          *ngFor="let c of otpCells; let i = index"
+          [class.active]="otp.length === i && otpInputFocused"
+          [class.filled]="otp.length > i"
+        >
+          {{ otp[i] || '' }}
+        </div>
+      </div>
+    </div>
+
+    <p class="otp-error" *ngIf="error">{{ error }}</p>
+    <p class="otp-dev" *ngIf="devCode">
+      Testing (no SMS gateway): the code is <strong>{{ devCode }}</strong>
+    </p>
+
+    <div class="otp-actions">
+      <button type="button" class="otp-cta dc-press" [disabled]="!otpReady || verifying" (click)="verify()">
+        {{ verifying ? 'Starting…' : 'Start ride' }}
+      </button>
+      <button type="button" class="otp-resend dc-press" [disabled]="verifying" (click)="resend()">
+        Resend code
+      </button>
+    </div>
+  </div>
+</ion-content>

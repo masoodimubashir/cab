@@ -9,6 +9,7 @@ import { GeolocationService, LatLng, GeoFix } from '../../core/geolocation.servi
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { RealtimeService, DispatchRingExpandedPayload } from '../../core/realtime.service';
 import { environment } from '../../../environments/environment';
+import { Contacts } from '@capacitor-community/contacts';
 
 declare const google: any;
 
@@ -211,6 +212,13 @@ export class CustomerBookPage implements OnDestroy {
   // Review Ride modal — opened from the preview sheet so the customer can see
   // the fare breakdown before picking a driver.
   showReviewModal = false;
+
+  // "Book a ride for a friend / family" — toggled on the offer step. The booker
+  // still owns + pays the trip; these identify the actual rider for the driver.
+  bookingForOther = false;
+  bookedForName = '';
+  bookedForCountryCode = '91';
+  bookedForPhone = '';
 
   // Driver list shown on the preview sheet (the customer picks one of these).
   drivers: NearbyDriver[] = [];
@@ -1638,9 +1646,53 @@ export class CustomerBookPage implements OnDestroy {
         // Payment mode is chosen at the END of the trip now, not at booking.
         // Coupons are redeemed on the post-trip payment screen, not here.
         payment_method: null,
+        // "Book a ride for a friend / family" — the booker still owns + pays the
+        // trip; these tell the driver who to pick up + call.
+        is_for_other: this.bookingForOther,
+        booked_for_name: this.bookingForOther ? (this.bookedForName.trim() || null) : null,
+        booked_for_phone: this.bookingForOther && this.bookedForPhone
+          ? '+' + this.bookedForCountryCode + this.bookedForPhone.replace(/\D/g, '')
+          : null,
       })
       .toPromise();
     this.tripId = tripRes?.trip?.id ?? null;
+  }
+
+  // ----- "Book for a friend / family" helpers -------------------------------
+
+  /** Keep the friend's phone box digits-only and capped at 10. */
+  onBookedForPhoneInput(): void {
+    this.bookedForPhone = (this.bookedForPhone || '').replace(/\D/g, '').slice(0, 10);
+  }
+
+  /** Split a raw contact number into a dial code + local 10-digit number. */
+  private splitFriendPhone(raw: string): { code: string; local: string } {
+    let p = (raw || '').replace(/[\s\-()]/g, '');
+    if (p.startsWith('+91')) return { code: '91', local: p.slice(3).replace(/\D/g, '').slice(-10) };
+    if (p.startsWith('0')) p = p.slice(1);
+    if (p.length > 10 && p.startsWith('91')) return { code: '91', local: p.slice(2).slice(-10) };
+    return { code: this.bookedForCountryCode || '91', local: p.replace(/\D/g, '').slice(-10) };
+  }
+
+  /** Open the phone's native contact picker to fill the friend's name + number. */
+  async pickBookedForContact(): Promise<void> {
+    try {
+      const res = await Contacts.pickContact({ projection: { name: true, phones: true } });
+      const c = res?.contact;
+      if (!c) return; // cancelled
+      const rawPhone = c.phones?.find((p) => p.number)?.number ?? '';
+      const { code, local } = this.splitFriendPhone(rawPhone);
+      this.bookingForOther = true;
+      this.bookedForName = c.name?.display ?? this.bookedForName;
+      this.bookedForCountryCode = code;
+      this.bookedForPhone = local;
+    } catch {
+      const t = await this.toastCtrl.create({
+        message: 'Could not open the contacts picker on this device.',
+        duration: 2500, color: 'warning',
+      });
+      await t.present();
+    }
   }
 
 
@@ -2134,6 +2186,11 @@ export class CustomerBookPage implements OnDestroy {
     this.selectedDriverId = null;
     this.driverOffers = [];
     this.drivers = [];
+    // Fresh booking → clear any "for a friend" details.
+    this.bookingForOther = false;
+    this.bookedForName = '';
+    this.bookedForCountryCode = '91';
+    this.bookedForPhone = '';
     this.state = 'idle';
   }
 }

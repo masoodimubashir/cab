@@ -58,7 +58,16 @@ class TripsController extends Controller
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
             'scope' => ['nullable', 'in:local,outstation'],
+
+            // "Book a ride for a friend / family" — the booker still owns + pays
+            // the trip; these identify the actual rider so the driver can reach
+            // them. Name + phone are required only when booking for someone else.
+            'is_for_other' => ['nullable', 'boolean'],
+            'booked_for_name' => ['nullable', 'required_if:is_for_other,true', 'string', 'max:120'],
+            'booked_for_phone' => ['nullable', 'required_if:is_for_other,true', 'string', 'max:20'],
         ]);
+
+        $isForOther = (bool) ($data['is_for_other'] ?? false);
 
         $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
 
@@ -180,6 +189,9 @@ class TripsController extends Controller
 
         $trip = Trip::query()->create([
             'customer_id' => $request->user()->id,
+            'is_for_other' => $isForOther,
+            'booked_for_name' => $isForOther ? ($data['booked_for_name'] ?? null) : null,
+            'booked_for_phone' => $isForOther ? ($data['booked_for_phone'] ?? null) : null,
             'driver_id' => null,
             'city_id' => $cityId,
             'scope' => $scope,
@@ -306,7 +318,7 @@ class TripsController extends Controller
             ->get([
                 'id', 'customer_id', 'driver_id', 'pickup_address', 'pickup_lat', 'pickup_lng',
                 'drop_address', 'drop_lat', 'drop_lng', 'estimated_fare',
-                'payment_method', 'created_at',
+                'payment_method', 'created_at', 'is_for_other', 'booked_for_name',
             ]);
 
         $tripIds = $trips->pluck('id')->all();
@@ -339,6 +351,10 @@ class TripsController extends Controller
                 'customer_offer' => $latestAmount !== null ? (float) $latestAmount : null,
                 'payment_method' => $t->payment_method,
                 'created_at' => $t->created_at,
+                // For a "booked for a friend" ride, show the driver who they're
+                // actually picking up before they accept.
+                'is_for_other' => (bool) $t->is_for_other,
+                'booked_for_name' => $t->is_for_other ? $t->booked_for_name : null,
             ];
         });
 
@@ -351,6 +367,7 @@ class TripsController extends Controller
         TripStateMachineService $tripStateMachineService,
         SchedulingPolicyService $schedulingPolicy,
         \App\Services\NotificationCenter $notifier,
+        \App\Services\GeoService $geo,
     ) {
         $request->validate([
             'reason' => ['nullable', 'string', 'max:1000'],
@@ -361,8 +378,24 @@ class TripsController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED'], true)) {
+        // EN_ROUTE_PICKUP is cancellable too — the rider may still bail while the
+        // driver is approaching. The proximity gate below revokes that option
+        // once the driver is within the city's configured cancel-block radius.
+        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
             return response()->json(['message' => 'Trip cannot be cancelled in current status.'], 409);
+        }
+
+        // Driver-proximity gate: block cancellation once the assigned driver is
+        // within the per-city radius of the pickup. Fails OPEN (cancel allowed)
+        // when we can't positively measure the driver inside that radius.
+        $tooClose = $this->cancellationBlockedByProximity($trip, $geo);
+        if ($tooClose !== null) {
+            return response()->json([
+                'message' => 'Your driver is almost at the pickup point, so this ride can no longer be cancelled.',
+                'reason' => 'driver_close',
+                'distance_m' => $tooClose['distance_m'],
+                'block_radius_m' => $tooClose['radius_m'],
+            ], 422);
         }
 
         // Late-cancellation fee for scheduled rides cancelled inside the
@@ -408,6 +441,53 @@ class TripsController extends Controller
             'trip' => $trip->fresh(),
             'late_cancellation' => $insideWindow,
         ]);
+    }
+
+    /**
+     * Returns null when cancellation is allowed; otherwise the measured
+     * distance + the configured radius that triggered the block. Only applies
+     * once a driver is assigned and approaching pickup; missing coordinates or
+     * an unknown driver position fail OPEN (cancel allowed).
+     */
+    private function cancellationBlockedByProximity(Trip $trip, \App\Services\GeoService $geo): ?array
+    {
+        if (!$trip->driver_id || !in_array($trip->status, ['CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
+            return null;
+        }
+        if ($trip->pickup_lat === null || $trip->pickup_lng === null) {
+            return null; // can't measure → allow
+        }
+
+        $settings = \App\Models\DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
+        $radius = (int) ($settings?->cancel_block_radius_m ?? 0);
+        if ($radius <= 0) {
+            return null; // gate disabled for this city/product
+        }
+
+        // Freshest known driver position — the trip ping stream first, then the
+        // driver's last-known global fix as a fallback.
+        $loc = \App\Models\DriverLocation::query()
+            ->where('driver_id', $trip->driver_id)
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->first(['lat', 'lng']);
+        $dLat = $loc?->lat ?? $trip->driver?->current_lat;
+        $dLng = $loc?->lng ?? $trip->driver?->current_lng;
+        if ($dLat === null || $dLng === null) {
+            return null; // unknown driver position → allow
+        }
+
+        $distance = $geo->haversineMeters(
+            (float) $dLat,
+            (float) $dLng,
+            (float) $trip->pickup_lat,
+            (float) $trip->pickup_lng,
+        );
+        if ($distance > $radius) {
+            return null; // driver still beyond the radius → allow
+        }
+
+        return ['distance_m' => (int) round($distance), 'radius_m' => $radius];
     }
 
     /**
@@ -472,8 +552,12 @@ class TripsController extends Controller
                 ? ['id' => $t->driver->id, 'name' => $t->driver->name, 'phone' => $t->driver->phone]
                 : null;
         } else {
-            $row['customer'] = $t->customer
-                ? ['id' => $t->customer->id, 'name' => $t->customer->name, 'phone' => $t->customer->phone]
+            // The driver sees the actual rider — the friend on a for-someone-else
+            // booking, never the booker's number.
+            $riderName = $t->booked_for_name ?: $t->customer?->name;
+            $riderPhone = $t->booked_for_phone ?: $t->customer?->phone;
+            $row['customer'] = ($riderName || $riderPhone)
+                ? ['id' => $t->customer?->id, 'name' => $riderName, 'phone' => $riderPhone]
                 : null;
             $row['pickup_lat'] = $t->pickup_lat;
             $row['pickup_lng'] = $t->pickup_lng;
@@ -549,7 +633,7 @@ class TripsController extends Controller
         ]);
 
         return response()->json([
-            'trip' => $trip->fresh(),
+            'trip' => $trip->fresh()->appendDriverRiderContact(),
             'fee' => $fee,
         ]);
     }
@@ -576,6 +660,83 @@ class TripsController extends Controller
         return response()->json(['trip' => $trip->fresh()]);
     }
 
+    /**
+     * Generate + SMS the start-ride OTP to the rider (the friend's phone on a
+     * for-someone-else booking, the booker's otherwise). The driver calls this
+     * from the pickup; the rider reads the code back and the driver enters it to
+     * start the ride. dev_code is returned only in mock mode (no SMS gateway).
+     */
+    public function requestStartOtp(Request $request, Trip $trip, \App\Services\Msg91Service $msg91)
+    {
+        $user = $request->user();
+        if ($trip->driver_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        if ($trip->status !== 'ARRIVED_PICKUP') {
+            return response()->json([
+                'message' => 'You can request the start code once you have arrived at the pickup.',
+            ], 409);
+        }
+
+        // customer_phone resolves to the friend's number on a for-friend trip.
+        $phone = $trip->customer_phone;
+        if (!$phone) {
+            return response()->json(['message' => 'No rider phone number on this trip.'], 422);
+        }
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        // Stored plaintext (hidden from every serialization) so the booker can
+        // also read it on their live-trip screen via customerStartOtp().
+        $trip->forceFill([
+            'start_otp' => $code,
+            'start_otp_expires_at' => now()->addMinutes(10),
+        ])->save();
+
+        $msg91->sendOtp(
+            $phone,
+            $code,
+            "Your DreamCabs ride start code is {$code}. Share it with your driver to begin the trip.",
+        );
+
+        // Nudge the booker's live-trip screen to fetch the code right away
+        // (no code in the payload — the tracking channel is shared with the driver).
+        broadcast(new \App\Events\StartOtpReady(tripId: $trip->id));
+
+        return response()->json([
+            'ok' => true,
+            'sent_to_name' => $trip->customer_name,
+            // Present ONLY in mock mode (no SMS gateway) so the flow is testable.
+            'dev_code' => $msg91->isLive() ? null : $code,
+        ]);
+    }
+
+    /**
+     * Surface the active start-ride OTP to the BOOKER (trip owner) so they can
+     * read it off their live-trip screen and, on a for-a-friend trip, relay it
+     * if the SMS didn't reach the friend. Owner-only; returns the code only
+     * while it is live (driver at pickup, not expired). Never exposed to the
+     * driver — they must hear it from the rider.
+     */
+    public function customerStartOtp(Request $request, Trip $trip)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $active = $trip->start_otp
+            && $trip->start_otp_expires_at
+            && !$trip->start_otp_expires_at->isPast()
+            && $trip->status === 'ARRIVED_PICKUP';
+
+        return response()->json([
+            'start_otp' => $active ? $trip->start_otp : null,
+            'expires_at' => $active ? $trip->start_otp_expires_at->toIso8601String() : null,
+            'is_for_other' => (bool) $trip->is_for_other,
+            'booked_for_name' => $trip->is_for_other ? $trip->booked_for_name : null,
+        ]);
+    }
+
     public function driverProgress(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)
     {
         $data = $request->validate([
@@ -583,6 +744,8 @@ class TripsController extends Controller
             'location' => ['nullable', 'array'],
             'location.lat' => ['nullable', 'numeric', 'between:-90,90'],
             'location.lng' => ['nullable', 'numeric', 'between:-180,180'],
+            // Start-ride OTP — required only for the "Start ride" transition.
+            'code' => ['nullable', 'required_if:status,EN_ROUTE_DROP', 'digits:6'],
         ]);
 
         $user = $request->user();
@@ -606,6 +769,24 @@ class TripsController extends Controller
             return response()->json(['message' => 'Trip already finished.'], 409);
         }
 
+        // Start-ride OTP gate: the journey can only begin once the driver enters
+        // the 6-digit code the rider received on their phone. This is the single
+        // authoritative chokepoint, so the API rejects a start without it
+        // regardless of which client calls it.
+        if ($data['status'] === 'EN_ROUTE_DROP') {
+            $valid = $trip->start_otp
+                && $trip->start_otp_expires_at
+                && !$trip->start_otp_expires_at->isPast()
+                && hash_equals((string) $trip->start_otp, (string) $data['code']);
+            if (!$valid) {
+                return response()->json([
+                    'message' => 'Incorrect or expired start code. Ask the rider to read it again.',
+                ], 422);
+            }
+            // Single-use — clear it once accepted.
+            $trip->forceFill(['start_otp' => null, 'start_otp_expires_at' => null])->save();
+        }
+
         // Stamp the location BEFORE the transition so a COMPLETED recompute
         // sees the final ping in driver_locations.
         if (!empty($data['location']['lat']) && !empty($data['location']['lng'])) {
@@ -618,7 +799,7 @@ class TripsController extends Controller
         }
 
         $tripStateMachineService->transition($trip, $data['status']);
-        $fresh = $trip->fresh();
+        $fresh = $trip->fresh()->appendDriverRiderContact();
 
         // On COMPLETED, return the breakdown so the driver app can render the
         // summary modal without an extra round-trip.
