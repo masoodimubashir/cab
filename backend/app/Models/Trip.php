@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'customer_id',
     'driver_id',
     'city_id',
+    'scope',
     'fleet_id',
     'dispatched_by_admin_id',
     'ride_type_id',
@@ -20,8 +21,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'requested_vehicle_type_id',
     'city_vehicle_type_id',
     'outstation_package_id',
-    'applied_promotion_id',
-    'promo_discount_amount',
+    'route_id',
+    'route_departure_id',
     'pricing_rule_id',
     'status',
     'estimated_fare',
@@ -73,6 +74,22 @@ class Trip extends Model
 
     public const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED'];
 
+    /**
+     * A driver is "busy" (cannot take another trip) once they hold a trip in any
+     * of these — CONFIRMED (bound/pre-assigned, not yet accepted) through the
+     * active leg. The single source of truth for every driver-eligibility / busy
+     * filter, so private and shared dispatch can never disagree (which would
+     * double-book a driver).
+     */
+    public const DRIVER_BUSY_STATUSES = [
+        'CONFIRMED',
+        'ASSIGNED',
+        'EN_ROUTE_PICKUP',
+        'ARRIVED_PICKUP',
+        'EN_ROUTE_DROP',
+        'ARRIVED_DROP',
+    ];
+
     public static function isActiveStatus(string $status): bool
     {
         return in_array($status, self::ACTIVE_DRIVER_STATUSES, true)
@@ -88,7 +105,6 @@ class Trip extends Model
         'final_fare' => 'float',
         'commission_percent' => 'float',
         'commission_amount' => 'float',
-        'promo_discount_amount' => 'float',
         'stops' => 'array',
         'is_round_trip' => 'boolean',
         'is_manual_dispatch' => 'boolean',
@@ -128,6 +144,53 @@ class Trip extends Model
         return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
     }
 
+    /** Shared-ride corridor/line this trip runs (null for private trips). */
+    public function route(): BelongsTo
+    {
+        return $this->belongsTo(Route::class, 'route_id');
+    }
+
+    /** Shared-ride departure this trip is the vehicle journey for. */
+    public function routeDeparture(): BelongsTo
+    {
+        return $this->belongsTo(RouteDeparture::class, 'route_departure_id');
+    }
+
+    /** Passengers on this vehicle journey (shared rides only). */
+    public function seatReservations(): HasMany
+    {
+        return $this->hasMany(SeatReservation::class, 'trip_id');
+    }
+
+    /** A shared (fixed/shuttle) journey carries a departure; private trips don't. */
+    public function isShared(): bool
+    {
+        return $this->route_departure_id !== null;
+    }
+
+    /**
+     * Is this user a rider on the trip? For a private trip that's the single
+     * customer; for a shared journey (no single customer) it's anyone holding a
+     * non-cancelled seat. Used by the live-location / messaging / SOS guards so
+     * they work for both ride types.
+     */
+    public function isParticipant(?int $userId): bool
+    {
+        if ($userId === null) {
+            return false;
+        }
+        if ($this->customer_id !== null && (int) $this->customer_id === $userId) {
+            return true;
+        }
+        if ($this->route_departure_id !== null) {
+            return $this->seatReservations()
+                ->where('customer_id', $userId)
+                ->whereIn('status', SeatReservation::ACTIVE_STATUSES) // booked/confirmed/boarded only
+                ->exists();
+        }
+        return false;
+    }
+
     public function fleet(): BelongsTo
     {
         return $this->belongsTo(Fleet::class, 'fleet_id');
@@ -141,11 +204,6 @@ class Trip extends Model
     public function pricingRule(): BelongsTo
     {
         return $this->belongsTo(PricingRule::class, 'pricing_rule_id');
-    }
-
-    public function appliedPromotion(): BelongsTo
-    {
-        return $this->belongsTo(CityWidePromotion::class, 'applied_promotion_id');
     }
 
     public function fareNegotiation(): HasOne

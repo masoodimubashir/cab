@@ -13,6 +13,8 @@ use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
+use App\Http\Controllers\SharedRidesController;
+use App\Http\Controllers\DriverManifestController;
 use App\Http\Controllers\FareNegotiationController;
 use App\Http\Controllers\DriversController;
 use App\Http\Controllers\Admin\AdminCitiesController;
@@ -49,8 +51,8 @@ use App\Http\Controllers\Admin\AdminVehicleSetsController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminOutstationPackagesController;
-use App\Http\Controllers\Admin\AdminCityWidePromotionsController;
-use App\Http\Controllers\Admin\AdminPromoCodesController;
+use App\Http\Controllers\Admin\AdminRoutesController;
+use App\Http\Controllers\Admin\AdminRouteDeparturesController;
 use App\Http\Controllers\Admin\AdminCouponsController;
 use App\Http\Controllers\Admin\AdminPermissionsController;
 use App\Http\Controllers\Admin\AdminManagerRolesController;
@@ -121,6 +123,7 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
+Route::post('/pricing/seat-estimate', [PricingController::class, 'seatEstimate'])->middleware('throttle:booking');
 
 // Public lookup endpoints for the mobile booking UI.
 Route::get('/pricing/cities', [PricingController::class, 'cities']);
@@ -138,6 +141,14 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/trips/{trip}/nearby-drivers', [TripsController::class, 'nearbyDrivers']);
     Route::post('/trips/{trip}/select-driver', [TripsController::class, 'selectDriver']);
     Route::post('/trips/{trip}/search-drivers', [TripsController::class, 'searchDrivers'])->middleware('throttle:booking');
+
+    // Shared-ride (Fixed / Shuttle) seat booking.
+    Route::get('/shared/routes', [SharedRidesController::class, 'routes']);
+    Route::get('/shared/routes/{route}/departures', [SharedRidesController::class, 'departures']);
+    Route::post('/shared/seat-reservations', [SharedRidesController::class, 'book'])->middleware(['throttle:booking', 'idempotent']);
+    Route::get('/shared/seat-reservations', [SharedRidesController::class, 'myReservations']);
+    Route::post('/shared/seat-reservations/{reservation}/cancel', [SharedRidesController::class, 'cancel'])->middleware('throttle:booking');
+    Route::post('/shared/seat-reservations/{reservation}/rating', [SharedRidesController::class, 'rate']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -145,6 +156,11 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
     Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
     Route::post('/trips/{trip}/no-show', [TripsController::class, 'markNoShow']);
+
+    // Shared-departure manifest: read + per-seat board / no-show.
+    Route::get('/trips/{trip}/manifest', [DriverManifestController::class, 'show']);
+    Route::post('/trips/{trip}/seat-reservations/{reservation}/board', [DriverManifestController::class, 'board']);
+    Route::post('/trips/{trip}/seat-reservations/{reservation}/no-show', [DriverManifestController::class, 'noShow']);
 });
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -269,8 +285,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon']);
         Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy']);
         Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
-        Route::patch('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
-        Route::post('/admin/cities/{city}/ride-products/{product}', [AdminCityRideProductsController::class, 'update']);
+        Route::match(['patch', 'post'], '/admin/cities/{city}/ride-scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope']);
+        Route::match(['patch', 'post'], '/admin/cities/{city}/ride-modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
         // Operator-wide (global, non-city) settings.
         Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show']);
         Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
@@ -309,6 +325,24 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::post('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'store']);
         Route::patch('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'update']);
         Route::delete('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'destroy']);
+
+        // Shared-ride routes (fixed corridors / shuttle lines) + their stops + timetable.
+        Route::middleware('permission:routes.manage')->group(function () {
+            Route::get('/admin/cities/{city}/routes', [AdminRoutesController::class, 'index']);
+            Route::post('/admin/cities/{city}/routes', [AdminRoutesController::class, 'store']);
+            Route::patch('/admin/cities/{city}/routes/{route}', [AdminRoutesController::class, 'update']);
+            Route::post('/admin/cities/{city}/routes/{route}', [AdminRoutesController::class, 'update']);
+            Route::delete('/admin/cities/{city}/routes/{route}', [AdminRoutesController::class, 'destroy']);
+        });
+        // Manually (re)generate a shuttle route's upcoming departures.
+        Route::middleware('permission:schedules.manage')
+            ->post('/admin/cities/{city}/routes/{route}/generate-departures', [AdminRouteDeparturesController::class, 'generate']);
+
+        // Departures board + per-departure passenger manifest.
+        Route::middleware('permission:reservations.view')->group(function () {
+            Route::get('/admin/cities/{city}/departures', [AdminRouteDeparturesController::class, 'index']);
+            Route::get('/admin/cities/{city}/departures/{departure}/manifest', [AdminRouteDeparturesController::class, 'manifest']);
+        });
     });
     Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
     Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);
@@ -360,22 +394,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate']);
 
     Route::middleware('manager.city')->group(function () {
-        // ── Promotions: city-wide promotions ────────────────────────────
-        Route::get('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'index']);
-        Route::post('/admin/cities/{city}/promotions', [AdminCityWidePromotionsController::class, 'store']);
-        Route::get('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'show']);
-        Route::patch('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'update']);
-        Route::delete('/admin/cities/{city}/promotions/{promotion}', [AdminCityWidePromotionsController::class, 'destroy']);
-
-        // ── Promotions: promo codes ─────────────────────────────────────
-        Route::get('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'index']);
-        Route::post('/admin/cities/{city}/promo-codes', [AdminPromoCodesController::class, 'store']);
-        Route::get('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'show']);
-        Route::patch('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'update']);
-        Route::delete('/admin/cities/{city}/promo-codes/{promoCode}', [AdminPromoCodesController::class, 'destroy']);
-        Route::get('/admin/cities/{city}/promo-codes/{promoCode}/assignments', [AdminPromoCodesController::class, 'assignments']);
-        Route::post('/admin/cities/{city}/promo-codes/{promoCode}/give', [AdminPromoCodesController::class, 'give']);
-
         // ── Promotions: coupons ─────────────────────────────────────────
         Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index']);
         Route::post('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'store']);

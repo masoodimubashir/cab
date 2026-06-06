@@ -9,20 +9,23 @@ use Illuminate\Validation\Rule;
 
 class AdminDispatcherSettingsController
 {
-    private const KINDS = ['local', 'rental', 'outstation'];
+    private const KINDS = ['local', 'outstation'];
 
     public function index(City $city)
     {
-        // Auto-seed missing rows so the admin always sees all 3 kinds.
+        // Auto-seed missing rows so the admin always sees each kind.
         foreach (self::KINDS as $kind) {
             DispatcherSetting::query()->firstOrCreate(
                 ['city_id' => $city->id, 'kind' => $kind],
             );
         }
 
+        // Only return the live kinds — the retired 'rental' kind is hidden even
+        // if a stale row still exists for some city.
         $rows = DispatcherSetting::query()
             ->where('city_id', $city->id)
-            ->orderByRaw("FIELD(kind, 'local', 'rental', 'outstation')")
+            ->whereIn('kind', self::KINDS)
+            ->orderByRaw("FIELD(kind, 'local', 'outstation')")
             ->get()
             ->map(fn (DispatcherSetting $s) => $this->shape($s));
 

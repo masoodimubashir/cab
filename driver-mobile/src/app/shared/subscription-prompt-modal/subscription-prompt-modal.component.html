@@ -1,0 +1,73 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="end">
+      <button type="button" class="pg-action dc-press" (click)="close()" aria-label="Close">
+        <ion-icon name="close-outline"></ion-icon>
+        <span>Close</span>
+      </button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <p class="pg-hero__label">Driver subscriptions</p>
+    <h1 class="pg-title">{{ heroTitle }}</h1>
+    <p class="pg-subtitle">{{ heroSubtitle }}</p>
+
+    <!-- Wallet (funds plans + auto-renewals) -->
+    <div class="sub-wallet-pill">
+      <ion-icon name="wallet-outline"></ion-icon>
+      <span class="sub-wallet-pill__label">Wallet</span>
+      <strong class="sub-wallet-pill__amt">₹{{ wallet | number: '1.0-2' }}</strong>
+    </div>
+  </div>
+
+  <div class="pg-body">
+    <div class="sub-error dc-card" *ngIf="error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>{{ error }}</span>
+    </div>
+
+    <!-- Auto-renew explainer -->
+    <div class="sub-note">
+      <ion-icon name="sync-outline"></ion-icon>
+      <span>Every plan renews automatically from your wallet when it ends. Cancel anytime — your plan stays active until it expires.</span>
+    </div>
+
+    <!-- Loading skeletons -->
+    <ng-container *ngIf="loading && !plans.length">
+      <div class="dc-card"><div class="dc-skeleton" style="height:200px"></div></div>
+      <div class="dc-card"><div class="dc-skeleton" style="height:200px"></div></div>
+    </ng-container>
+
+    <!-- Section heading -->
+    <div class="sub-section" *ngIf="plans.length">
+      <h2 class="sub-section__title">Available plans</h2>
+      <span class="sub-section__count">{{ plans.length }}</span>
+    </div>
+
+    <!-- Plan cards — identical to the Subscriptions screen -->
+    <app-plan-card
+      *ngFor="let p of plans"
+      [plan]="p"
+      [walletBalance]="wallet"
+      [buying]="buyingId === p.id"
+      [isCurrent]="false"
+      (subscribe)="confirmBuy($event)"
+    ></app-plan-card>
+
+    <!-- Empty -->
+    <div class="dc-card" *ngIf="!loading && !plans.length">
+      <div class="dc-empty">
+        <div class="dc-empty__icon"><ion-icon name="pricetags-outline"></ion-icon></div>
+        <strong>No plans available</strong>
+        <span>There are no subscription plans available for you right now. Check back soon.</span>
+      </div>
+    </div>
+
+    <button type="button" class="dc-cta dc-cta--ghost dc-press sp-later" (click)="close()">
+      Maybe later
+    </button>
+  </div>
+</ion-content>

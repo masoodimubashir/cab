@@ -63,9 +63,11 @@ class TripStateMachineService
                 if (isset($meta['final_fare'])) {
                     $trip->final_fare = (float) $meta['final_fare'];
                 }
+                $this->stampDriverFleet($trip);
                 break;
             case 'ASSIGNED':
                 $trip->assigned_at = now();
+                $this->stampDriverFleet($trip);
                 break;
             case 'EN_ROUTE_PICKUP':
                 $trip->en_route_pickup_at = now();
@@ -152,6 +154,26 @@ class TripStateMachineService
         });
 
         return $trip->fresh();
+    }
+
+    /**
+     * Stamp the trip with the assigned driver's fleet (when the driver belongs
+     * to one) so fleet-level trip reporting works. The driver is bound to a
+     * trip just before it enters CONFIRMED (shared pre-assign) or ASSIGNED
+     * (private accept), so both call this. No-op for independent drivers or once
+     * the fleet is already set.
+     */
+    private function stampDriverFleet(Trip $trip): void
+    {
+        if ($trip->driver_id === null || $trip->fleet_id !== null) {
+            return;
+        }
+        $fleetId = \App\Models\Driver::query()
+            ->where('user_id', $trip->driver_id)
+            ->value('fleet_id');
+        if ($fleetId !== null) {
+            $trip->fleet_id = $fleetId;
+        }
     }
 
     /**

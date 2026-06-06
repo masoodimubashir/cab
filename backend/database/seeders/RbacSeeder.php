@@ -69,7 +69,7 @@ class RbacSeeder extends Seeder
             'vehicles.view', 'vehicles.manage',
             'trips.view', 'trips.manage', 'rides.map', 'rides.dispatch',
             'pricing.view', 'pricing.manage', 'dynamic_pricing.manage',
-            'promotions.manage', 'coupons.manage', 'promo_codes.manage', 'referrals.manage',
+            'coupons.manage', 'referrals.manage',
             'subscriptions.manage',
             'fleets.manage',
             'analytics.view', 'reports.view',
@@ -78,6 +78,7 @@ class RbacSeeder extends Seeder
             'customers.view', 'customers.manage', 'customers.wallet',
             'contact_drivers.send',
             'settings.manage',
+            'routes.manage', 'schedules.manage', 'reservations.view', 'reservations.manage',
         ]);
 
         $cityManager = ManagerRole::query()->updateOrCreate(
@@ -95,6 +96,7 @@ class RbacSeeder extends Seeder
             'trips.view', 'trips.manage', 'rides.map', 'rides.dispatch',
             'analytics.view', 'reports.view', 'safety.view',
             'contact_drivers.send', 'subscriptions.manage',
+            'reservations.view', 'reservations.manage',
         ]);
 
         $manualDispatch = ManagerRole::query()->updateOrCreate(
@@ -123,7 +125,7 @@ class RbacSeeder extends Seeder
         );
         $this->syncBySlug($marketing, [
             'dashboard.view',
-            'promotions.manage', 'coupons.manage', 'promo_codes.manage', 'referrals.manage',
+            'coupons.manage', 'referrals.manage',
             'contact_drivers.send',
             'analytics.view',
         ]);
@@ -230,8 +232,6 @@ class RbacSeeder extends Seeder
                 ['dynamic_pricing.manage', 'Manage Dynamic Pricing', 'Create and edit dynamic surge rules.'],
             ],
             'Promotions' => [
-                ['promotions.manage', 'Manage City Promotions', 'Create city-wide promotions.'],
-                ['promo_codes.manage', 'Manage Promo Codes', 'Create promo codes.'],
                 ['coupons.manage', 'Manage Coupons', 'Create coupons.'],
                 ['referrals.manage', 'Manage Referrals', 'Configure referral benefits and copy.'],
             ],
@@ -240,6 +240,12 @@ class RbacSeeder extends Seeder
             ],
             'Subscriptions' => [
                 ['subscriptions.manage', 'Manage Subscriptions', 'Create and edit driver subscription plans.'],
+            ],
+            'Shared Rides' => [
+                ['routes.manage', 'Manage Routes', 'Create and edit shared-ride routes (fixed corridors and shuttle lines) and their stops.'],
+                ['schedules.manage', 'Manage Schedules', 'Create and edit shuttle timetables and generate departures.'],
+                ['reservations.view', 'View Reservations', 'See shared-ride departures and their passenger manifests.'],
+                ['reservations.manage', 'Manage Reservations', 'Book, cancel and manage shared-ride seat reservations.'],
             ],
             'Analytics' => [
                 ['analytics.view', 'View Analytics', 'See real-time analytics, graphs and reports.'],

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CityVehicleType;
 use App\Models\OperatorSetting;
 use App\Models\PricingRule;
+use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\WalletTransaction;
 
@@ -34,6 +35,15 @@ class CommissionSettlementService
     public function settle(Trip $trip): void
     {
         if (! $trip->driver_id) {
+            return;
+        }
+
+        // Shared (fixed/shuttle) journeys are settled PER SEAT, and the money
+        // flows the other way: riders already paid the platform at booking, so
+        // the driver is CREDITED their net earnings (fares − commission) rather
+        // than debited a commission they'd otherwise owe on collected cash.
+        if ($trip->route_departure_id !== null) {
+            $this->settleShared($trip);
             return;
         }
 
@@ -80,6 +90,62 @@ class CommissionSettlementService
         // Count this ride against any active subscription (and expire it if
         // this was its last ride / it hit its earnings cap).
         $this->subscriptions->consume($trip);
+    }
+
+    /**
+     * Per-seat settlement for a shared journey. Each carried seat (not cancelled,
+     * not no-show) contributes its fare and its own commission; the driver is
+     * credited the summed net (gross − commission). No-show seats are forfeit
+     * (the rider paid, the driver didn't carry them), so the driver earns nothing
+     * on them. Subscriptions are not consumed (a different commission model).
+     */
+    private function settleShared(Trip $trip): void
+    {
+        $seats = SeatReservation::query()
+            ->where('trip_id', $trip->id)
+            ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
+            ->get();
+
+        $takeCommission = (OperatorSetting::instance()->commission_deduction ?? 'no_commission') !== 'no_commission';
+
+        $gross = 0.0;
+        $commission = 0.0;
+        foreach ($seats as $seat) {
+            $fare = (float) ($seat->fare_amount ?? 0);
+            $pct = $seat->commission_percent !== null
+                ? (float) $seat->commission_percent
+                : $this->defaultCommissionPercent($trip);
+            $seatCommission = $takeCommission && $fare > 0 ? round($fare * $pct / 100, 2) : 0.0;
+
+            $gross += $fare;
+            $commission += $seatCommission;
+
+            $seat->commission_amount = $seatCommission;
+            if (in_array($seat->status, ['BOOKED', 'CONFIRMED', 'BOARDED'], true)) {
+                $seat->status = 'COMPLETED';
+                $seat->dropped_at = $seat->dropped_at ?? now();
+            }
+            $seat->save();
+        }
+
+        $commission = round($commission, 2);
+        $net = round($gross - $commission, 2);
+
+        $trip->final_fare = round($gross, 2);
+        $trip->commission_amount = $commission;
+        $trip->commission_percent = $gross > 0 ? round($commission / $gross * 100, 2) : 0.0;
+        $trip->save();
+
+        if ($net > 0 && $trip->driver) {
+            $this->wallet->recordTransaction(
+                $trip->driver,
+                WalletTransaction::TYPE_CREDIT,
+                $net,
+                'Shared ride earnings',
+                $trip->id,
+                null,
+            );
+        }
     }
 
     /**

@@ -50,6 +50,18 @@ class TripAssignmentService
                 return null;
             }
 
+            // One-trip-per-driver: don't bind a driver already committed
+            // elsewhere (e.g. a pre-assigned shared trip). The /driver-accept
+            // guard is the locked backstop; this stops the obvious case early.
+            $driverBusy = Trip::query()
+                ->where('driver_id', $offer->from_user_id)
+                ->where('id', '!=', $trip->id)
+                ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
+                ->exists();
+            if ($driverBusy) {
+                return null;
+            }
+
             if ($trip->driver_id === null) {
                 $trip->driver_id = $offer->from_user_id;
                 $trip->save();

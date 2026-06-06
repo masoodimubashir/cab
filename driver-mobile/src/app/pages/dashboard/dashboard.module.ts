@@ -5,9 +5,10 @@ import { IonicModule } from '@ionic/angular';
 import { DashboardPage } from './dashboard.page';
 import { DashboardPageRoutingModule } from './dashboard-routing.module';
 import { ModeSelectModalModule } from '../../shared/mode-select-modal/mode-select-modal.module';
+import { SubscriptionPromptModalModule } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.module';
 
 @NgModule({
-  imports: [CommonModule, FormsModule, IonicModule, DashboardPageRoutingModule, ModeSelectModalModule],
+  imports: [CommonModule, FormsModule, IonicModule, DashboardPageRoutingModule, ModeSelectModalModule, SubscriptionPromptModalModule],
   declarations: [DashboardPage],
 })
 export class DashboardPageModule {}

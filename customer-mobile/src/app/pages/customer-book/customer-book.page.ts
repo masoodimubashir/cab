@@ -1,8 +1,9 @@
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
-import { AlertController, ToastController } from '@ionic/angular';
+import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { Subject, debounceTime, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
+import { ModeSelectModalComponent, AssistantMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { GeolocationService, LatLng, GeoFix } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
@@ -50,13 +51,6 @@ type EstimateResponse = {
     region_fare_name?: string | null;
     region_fare_factor?: number | null;
     region_fare_amount?: number | null;
-    promo_discount?: number;
-    applied_promotion?: {
-      id: number;
-      title: string;
-      discount_type: 'percentage' | 'flat';
-      discount_value: number;
-    } | null;
     subtotal_before_tax?: number;
     tax_percent?: number;
     tax_amount?: number;
@@ -152,12 +146,35 @@ export class CustomerBookPage implements OnDestroy {
    * the DB stores banners, not Ionicon names.
    */
   productKinds: {
-    kind: 'local' | 'outstation' | 'rental';
+    kind: 'local' | 'outstation' | 'rental' | 'fixed' | 'shuttle';
+    scope: 'local' | 'outstation' | null;
+    mode: 'private' | 'fixed' | 'shuttle' | null;
     label: string;
     image_url: string | null;
     icon: string;
   }[] = [];
   selectedProductKind: 'local' | 'outstation' | 'rental' = 'local';
+
+  /**
+   * Two-step picker: the customer first chooses a scope (Local / Outstation),
+   * then a mode (Private / Fixed / Shuttle) within it. `scopeOptions` is the
+   * grouped catalogue; `selectedScope` is the step-1 choice (null = show scopes).
+   */
+  scopeOptions: {
+    scope: 'local' | 'outstation';
+    label: string;
+    icon: string;
+    modes: {
+      kind: 'local' | 'outstation' | 'rental' | 'fixed' | 'shuttle';
+      scope: 'local' | 'outstation' | null;
+      mode: 'private' | 'fixed' | 'shuttle' | null;
+      label: string;
+      image_url: string | null;
+      icon: string;
+    }[];
+  }[] = [];
+  selectedScope: 'local' | 'outstation' | null = null;
+
   // Outstation packages (One Way / Round Trip …) for the picked ride type.
   outstationPackages: { id: number; name: string }[] = [];
   selectedPackageId: number | null = null;
@@ -289,7 +306,8 @@ export class CustomerBookPage implements OnDestroy {
     private places: PlacesService,
     private realtime: RealtimeService,
     private alertCtrl: AlertController,
-    private toastCtrl: ToastController
+    private toastCtrl: ToastController,
+    private modalCtrl: ModalController
   ) {
     this.toQuery$
       .pipe(
@@ -315,6 +333,43 @@ export class CustomerBookPage implements OnDestroy {
 
   ionViewDidEnter(): void {
     void this.initMap();
+    // Greet the customer with the AI mode chooser (Voice / Self), once per app
+    // session — the entry point for the in-app AI voice assistant.
+    void this.maybeShowModePrompt();
+  }
+
+  /**
+   * App-open mode chooser — "Continue with Voice" (the AI voice assistant) or
+   * "Continue as Self" (manual). Shown once per app session; the picked mode is
+   * remembered so the AI feature can wire in later.
+   */
+  private async maybeShowModePrompt(): Promise<void> {
+    try {
+      if (sessionStorage.getItem('dc_mode_prompt_shown') === '1') return;
+    } catch { /* sessionStorage unavailable — fall through */ }
+    // Mark shown up-front so a slow render can't double-present the greeting.
+    try { sessionStorage.setItem('dc_mode_prompt_shown', '1'); } catch { /* ignore */ }
+
+    const modal = await this.modalCtrl.create({
+      component: ModeSelectModalComponent,
+      cssClass: 'mode-select-modal',
+      componentProps: { current: this.readMode() },
+    });
+    await modal.present();
+    const { data } = await modal.onWillDismiss<{ mode?: AssistantMode }>();
+    if (data?.mode) {
+      try { localStorage.setItem('dc_customer_mode', data.mode); } catch { /* ignore */ }
+    }
+  }
+
+  /** The customer's last-picked mode, if any (used to highlight it on reopen). */
+  private readMode(): AssistantMode | null {
+    try {
+      const m = localStorage.getItem('dc_customer_mode');
+      return m === 'voice' || m === 'self' ? m : null;
+    } catch {
+      return null;
+    }
   }
 
   ionViewWillLeave(): void {
@@ -434,28 +489,65 @@ export class CustomerBookPage implements OnDestroy {
    */
   private loadRideProducts(cityId: number): void {
     type ApiProduct = {
-      kind: 'local' | 'outstation' | 'rental';
+      kind: 'local' | 'outstation' | 'rental' | 'fixed' | 'shuttle';
+      scope?: 'local' | 'outstation' | null;
+      mode?: 'private' | 'fixed' | 'shuttle' | null;
       name: string;
       image_url: string | null;
     };
-    this.api.get<{ data: ApiProduct[] }>(`/pricing/cities/${cityId}/products`).subscribe({
+    type ApiScope = {
+      scope: 'local' | 'outstation';
+      name: string;
+      modes: ApiProduct[];
+    };
+    this.api
+      .get<{ data: ApiProduct[]; scopes?: ApiScope[] }>(`/pricing/cities/${cityId}/products`)
+      .subscribe({
       next: (res) => {
         const rows = res?.data ?? [];
         this.productKinds = rows.map((p) => ({
           kind: p.kind,
+          scope: p.scope ?? null,
+          mode: p.mode ?? null,
           label: p.name,
           image_url: p.image_url,
           icon: this.iconForKind(p.kind),
         }));
-        // Snap to the first enabled product if the current selection isn't.
-        if (!this.productKinds.some((p) => p.kind === this.selectedProductKind) && this.productKinds.length) {
-          this.selectedProductKind = this.productKinds[0].kind;
+
+        // Grouped tree for the two-step picker.
+        this.scopeOptions = (res?.scopes ?? []).map((s) => ({
+          scope: s.scope,
+          label: s.name || (s.scope === 'outstation' ? 'Outstation' : 'Local'),
+          icon: s.scope === 'outstation' ? 'airplane-outline' : 'location-outline',
+          modes: (s.modes ?? []).map((m) => ({
+            kind: m.kind,
+            scope: m.scope ?? s.scope,
+            mode: m.mode ?? null,
+            label: m.name,
+            image_url: m.image_url,
+            icon: this.iconForKind(m.mode ?? m.kind),
+          })),
+        }));
+        // Always start on the scope step (Local / Outstation) — the customer
+        // picks a scope first, then its modes. Only drop a stale selection if
+        // that scope no longer exists for this city.
+        if (this.selectedScope && !this.scopeOptions.some((o) => o.scope === this.selectedScope)) {
+          this.selectedScope = null;
+        }
+
+        // Snap the private selection to the first private product available.
+        const firstPrivate = this.productKinds.find(
+          (p) => p.kind === 'local' || p.kind === 'outstation' || p.kind === 'rental',
+        );
+        if (!this.productKinds.some((p) => p.kind === this.selectedProductKind) && firstPrivate) {
+          this.selectedProductKind = firstPrivate.kind as 'local' | 'outstation' | 'rental';
         }
         this.productsReady = true;
         this.maybeFinishHome();
       },
       error: () => {
         this.productKinds = [];
+        this.scopeOptions = [];
         this.productsReady = true;
         this.maybeFinishHome();
       },
@@ -485,9 +577,11 @@ export class CustomerBookPage implements OnDestroy {
     }
   }
 
-  private iconForKind(kind: 'local' | 'outstation' | 'rental'): string {
+  private iconForKind(kind: string): string {
     if (kind === 'outstation') return 'airplane-outline';
     if (kind === 'rental') return 'time-outline';
+    if (kind === 'shuttle') return 'bus-outline';
+    if (kind === 'fixed') return 'git-branch-outline';
     return 'car-outline';
   }
 
@@ -1181,8 +1275,49 @@ export class CustomerBookPage implements OnDestroy {
     this.state = this.activeSearchField === 'pickup' ? 'pickup' : 'drop';
   }
 
+  /**
+   * Product card tap. A shared product (Fixed/Shuttle) opens the dedicated
+   * seat-booking page; Private products (local/outstation/rental) stay in the
+   * existing metered flow here, untouched.
+   */
+  onSelectProduct(p: { kind: string; scope: 'local' | 'outstation' | null; mode: 'private' | 'fixed' | 'shuttle' | null }): void {
+    const isShared = p.mode === 'fixed' || p.mode === 'shuttle' || p.kind === 'fixed' || p.kind === 'shuttle';
+    if (isShared) {
+      const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
+      if (!cityId) return;
+      void this.router.navigate(['/shared-book'], {
+        queryParams: { city_id: cityId, scope: p.scope ?? '', mode: p.mode ?? p.kind },
+      });
+      return;
+    }
+    this.selectProductKind(p.kind as 'local' | 'outstation' | 'rental');
+  }
+
+  /** The modes available under the scope the customer picked in step 1. */
+  get currentModes() {
+    return this.scopeOptions.find((o) => o.scope === this.selectedScope)?.modes ?? [];
+  }
+
+  /** Step 1: pick a scope (Local / Outstation); preselect its private mode if any. */
+  pickScope(scope: 'local' | 'outstation'): void {
+    this.selectedScope = scope;
+    const opt = this.scopeOptions.find((o) => o.scope === scope);
+    if (opt?.modes.some((m) => m.mode === 'private')) {
+      this.selectProductKind(scope);
+    }
+  }
+
+  /** Back to step 1 (scope chooser). */
+  clearScope(): void {
+    this.selectedScope = null;
+  }
+
   selectProductKind(kind: 'local' | 'outstation' | 'rental'): void {
     this.selectedProductKind = kind;
+    // Keep the two-step picker in sync when the kind changes programmatically
+    // (e.g. the auto-switch to Outstation when a drop falls outside the area).
+    // 'rental' is a legacy outstation-style kind, so it maps to the Outstation scope.
+    this.selectedScope = kind === 'outstation' || kind === 'rental' ? 'outstation' : 'local';
     // User accepted the suggested kind — drop the banner.
     if (this.outsideServiceAreaNotice && kind !== 'local') {
       this.outsideServiceAreaNotice = null;
@@ -1254,6 +1389,9 @@ export class CustomerBookPage implements OnDestroy {
       this.outsideServiceAreaNotice =
         'You have selected a location outside this service area. Switching to Outstation.';
       this.selectedProductKind = 'outstation';
+      // Keep the two-step picker in sync (set inline rather than via
+      // selectProductKind, which would clear the notice we just set).
+      this.selectedScope = 'outstation';
     } else {
       this.outsideServiceAreaNotice = null;
     }

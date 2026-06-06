@@ -51,7 +51,7 @@ class AdminFleetsController
         ManagerScope::assertCityAllowed((int) $data['city_id']);
         $file = $request->file('logo');
 
-        $fleet = Fleet::query()->create($this->withoutLogo($data));
+        $fleet = Fleet::query()->create($this->withoutLogo($this->deriveActive($data)));
         if ($file) {
             $fleet->logo_path = $file->store('fleets/logos', 'public');
             $fleet->save();
@@ -72,7 +72,7 @@ class AdminFleetsController
         }
         $file = $request->file('logo');
 
-        $fleet->fill($this->withoutLogo($data));
+        $fleet->fill($this->withoutLogo($this->deriveActive($data)));
         if ($file) {
             if ($fleet->logo_path && Storage::disk('public')->exists($fleet->logo_path)) {
                 Storage::disk('public')->delete($fleet->logo_path);
@@ -117,9 +117,22 @@ class AdminFleetsController
             'vat_enabled' => ['nullable', 'boolean'],
             'vat_number' => ['nullable', 'string', 'max:80'],
             'status' => ['nullable', 'string', 'in:active,inactive,suspended,pending'],
-            'is_active' => ['nullable', 'boolean'],
             'logo' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
+    }
+
+    /**
+     * `status` is the single source of truth for a fleet's availability; the
+     * boolean is_active is derived from it so the two can never disagree
+     * (e.g. status=suspended with is_active=true). is_active is no longer
+     * accepted from the client.
+     */
+    private function deriveActive(array $data): array
+    {
+        if (array_key_exists('status', $data) && $data['status'] !== null) {
+            $data['is_active'] = $data['status'] === 'active';
+        }
+        return $data;
     }
 
     private function withoutLogo(array $data): array

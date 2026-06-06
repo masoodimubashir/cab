@@ -50,6 +50,7 @@ class AdminOperatorSettingsController
             'wallet_cash_max_capping' => ['nullable', 'integer', 'min:0', 'max:1000000'],
 
             // Subscriptions
+            'subscription_popup_enabled' => ['nullable', 'boolean'],
             'subscription_popup_title' => ['nullable', 'string', 'max:191'],
             'subscription_popup_desc' => ['nullable', 'string', 'max:1000'],
             'subscription_popup_button1' => ['nullable', 'string', 'max:120'],

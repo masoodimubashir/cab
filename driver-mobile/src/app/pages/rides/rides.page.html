@@ -127,6 +127,27 @@
         </div>
       </div>
 
+      <!-- Shared-departure passenger manifest -->
+      <div class="pg-card trip-card manifest-card" *ngIf="isSharedDeparture">
+        <div class="manifest-head">
+          <span class="manifest-title">{{ sharedManifest?.route_name || 'Passengers' }}</span>
+          <span class="manifest-count">{{ manifestPassengers.length }} pax</span>
+        </div>
+        <p class="manifest-empty" *ngIf="!manifestPassengers.length">No passengers booked yet.</p>
+        <div class="pax-row" *ngFor="let p of manifestPassengers">
+          <div class="pax-main">
+            <span class="pax-name">{{ p.name || 'Guest' }}<small *ngIf="p.seats > 1"> · {{ p.seats }} seats</small></span>
+            <span class="pax-board">{{ p.board || '—' }}</span>
+          </div>
+          <div class="pax-actions" *ngIf="p.status === 'CONFIRMED' || p.status === 'BOOKED'">
+            <button class="pax-btn pax-btn--board dc-press" type="button" [disabled]="busy" (click)="boardPassenger(p.id)">Board</button>
+            <button class="pax-btn pax-btn--noshow dc-press" type="button" [disabled]="busy" (click)="noShowPassenger(p.id)">No-show</button>
+          </div>
+          <span class="pax-status" [attr.data-s]="p.status"
+                *ngIf="p.status !== 'CONFIRMED' && p.status !== 'BOOKED'">{{ p.status }}</span>
+        </div>
+      </div>
+
       <!-- Secondary actions -->
       <div class="secondary-actions">
         <button
