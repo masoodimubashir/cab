@@ -87,7 +87,7 @@ class DispatchHopJob implements ShouldQueue
             return;
         }
 
-        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
         if (!$settings) {
             return; // no city / dispatcher config to tune the search with
         }
@@ -128,7 +128,7 @@ class DispatchHopJob implements ShouldQueue
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->pluck('driver_id');
 
         $eligible = Driver::query()

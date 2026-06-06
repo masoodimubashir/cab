@@ -27,13 +27,6 @@ interface TripDriver {
   avatar_path?: string | null;
 }
 
-interface AppliedPromotion {
-  id: number;
-  title?: string | null;
-  discount_type?: 'percentage' | 'flat' | null;
-  discount_value?: number | null;
-}
-
 interface TripDetail {
   id: number;
   status: string;
@@ -47,7 +40,6 @@ interface TripDetail {
   final_fare?: number | null;
   currency?: string | null;
   payment_method?: string | null;
-  promo_discount_amount?: number | null;
   cancellation_fee_amount?: number | null;
   waiting_charge_amount?: number | null;
   tip_amount?: number | null;
@@ -65,7 +57,6 @@ interface TripDetail {
   cancelled_at?: string | null;
   payment?: TripPayment | null;
   driver?: TripDriver | null;
-  applied_promotion?: AppliedPromotion | null;
 }
 
 /**
@@ -204,13 +195,6 @@ export class TripDetailsPage {
     }
     if (t.final_fare != null) {
       rows.push({ label: 'Final fare', value: `₹${t.final_fare}` });
-    }
-    if (t.applied_promotion?.title && t.promo_discount_amount) {
-      rows.push({
-        label: `Promotion (${t.applied_promotion.title})`,
-        value: `-₹${t.promo_discount_amount}`,
-        negative: true,
-      });
     }
     if (t.payment?.discount_amount && t.payment.discount_amount > 0) {
       rows.push({

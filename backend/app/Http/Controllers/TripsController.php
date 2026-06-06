@@ -17,7 +17,6 @@ use App\Models\WalletTransaction;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\NotificationService;
-use App\Services\PromotionApplicationService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use Carbon\Carbon;
@@ -32,7 +31,6 @@ class TripsController extends Controller
         TripStateMachineService $tripStateMachineService,
         DynamicPricingService $dynamicPricingService,
         SchedulingPolicyService $schedulingPolicy,
-        PromotionApplicationService $promotionApplicationService,
         \App\Services\NotificationCenter $notifier,
     ) {
         $data = $request->validate([
@@ -59,9 +57,16 @@ class TripsController extends Controller
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
+            'scope' => ['nullable', 'in:local,outstation'],
         ]);
 
         $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
+
+        // Local vs outstation drives which per-city dispatcher row + booking
+        // window applies. Honour an explicit scope from the client; otherwise a
+        // private ride is outstation when it carries an outstation package.
+        $scope = ($data['scope'] ?? null)
+            ?: (isset($data['outstation_package_id']) ? 'outstation' : 'local');
 
         // Resolve the city_vehicle_type up front — it carries city_id,
         // ride_type_id and vehicle_type_id, so the downstream code stops
@@ -82,7 +87,7 @@ class TripsController extends Controller
         $policyError = $schedulingPolicy->validateBooking(
             customerId: $request->user()->id,
             cityId: $cityId,
-            kind: 'local',
+            kind: $scope,
             scheduledAt: $scheduledAt,
         );
         if ($policyError) {
@@ -148,34 +153,10 @@ class TripsController extends Controller
             'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
-        // Resolve the best applicable city-wide promotion using a quick
-        // promo-free estimate as the subtotal proxy, then re-estimate with
-        // the promo applied so the breakdown matches what gets persisted.
         $fareInput = $fareEstimationService->fareInput(
             $pricingRule->toArray(),
             isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
         );
-        $previewEstimate = $fareEstimationService->estimateFare(
-            $fareInput,
-            (float) $data['pickup_lat'],
-            (float) $data['pickup_lng'],
-            (float) $data['drop_lat'],
-            (float) $data['drop_lng'],
-            $dynamicFactors,
-            null,
-            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
-            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-        );
-        $promo = $promotionApplicationService->findBestForBooking(
-            cityId: $cityId,
-            cityVehicleTypeId: $cityVehicleTypeId,
-            pickupLat: (float) $data['pickup_lat'],
-            pickupLng: (float) $data['pickup_lng'],
-            dropLat: (float) $data['drop_lat'],
-            dropLng: (float) $data['drop_lng'],
-            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
-        );
-
         $estimate = $fareEstimationService->estimateFare(
             $fareInput,
             (float) $data['pickup_lat'],
@@ -186,7 +167,6 @@ class TripsController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-            $promo,
         );
 
         // "Any vehicle / ride now" mode — client sent only city info, no
@@ -202,6 +182,7 @@ class TripsController extends Controller
             'customer_id' => $request->user()->id,
             'driver_id' => null,
             'city_id' => $cityId,
+            'scope' => $scope,
             'city_vehicle_type_id' => $cityVehicleTypeId,
             // Denormalised legacy axes — kept so dispatcher matching and older
             // queries (driver vehicle_type_id match, etc.) still resolve when
@@ -212,10 +193,6 @@ class TripsController extends Controller
                 : null,
             'outstation_package_id' => isset($data['outstation_package_id'])
                 ? (int) $data['outstation_package_id']
-                : null,
-            'applied_promotion_id' => $promo?->id,
-            'promo_discount_amount' => $promo
-                ? (float) ($estimate['fare_breakdown']['promo_discount'] ?? 0)
                 : null,
             'pricing_rule_id' => $pricingRule->id,
             'scheduled_at' => $scheduledAt,
@@ -284,7 +261,7 @@ class TripsController extends Controller
         // queue from busy drivers so they don't even see the trips.
         $hasActiveTrip = Trip::query()
             ->where('driver_id', $user->id)
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->exists();
         if ($hasActiveTrip) {
             return response()->json(['data' => [], 'reason' => 'Driver has an active trip in progress.']);
@@ -727,7 +704,7 @@ class TripsController extends Controller
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->pluck('driver_id');
 
         $candidates = Driver::query()
@@ -873,7 +850,7 @@ class TripsController extends Controller
         }
         $driverBusy = Trip::query()
             ->where('driver_id', $driverUserId)
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->exists();
         if ($driverBusy) {
             return response()->json(['message' => 'Driver just took another ride.'], 409);

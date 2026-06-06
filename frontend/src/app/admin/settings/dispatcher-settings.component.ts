@@ -10,7 +10,7 @@ import { ButtonComponent, IconComponent } from '../../ui';
 interface DispatcherSetting {
   id: number;
   city_id: number;
-  kind: 'local' | 'rental' | 'outstation';
+  kind: 'local' | 'outstation';
 
   automatic_dispatcher_type: boolean;
   dispatcher_hop_interval_sec: number;
@@ -347,15 +347,11 @@ export class DispatcherSettingsComponent implements OnInit, OnDestroy {
   }
 
   kindLabel(k: string): string {
-    if (k === 'rental') return 'Rental';
-    if (k === 'outstation') return 'Outstation';
-    return 'Local';
+    return k === 'outstation' ? 'Outstation' : 'Local';
   }
 
-  kindIcon(k: string): 'car' | 'road' | 'map' {
-    if (k === 'rental') return 'map';
-    if (k === 'outstation') return 'road';
-    return 'car';
+  kindIcon(k: string): 'car' | 'road' {
+    return k === 'outstation' ? 'road' : 'car';
   }
 
   fetch(): void {

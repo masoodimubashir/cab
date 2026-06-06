@@ -321,7 +321,20 @@ class DriversController extends Controller
             ->orderByDesc('updated_at')
             ->first();
 
-        return response()->json(['trip' => $trip]);
+        if (!$trip) {
+            return response()->json(['trip' => null]);
+        }
+
+        $payload = $trip->toArray();
+        $payload['is_shared'] = $trip->route_departure_id !== null;
+
+        // Shared (fixed/shuttle) journey → attach the passenger manifest + the
+        // ordered route stops so the driver app can render the pickup list.
+        if ($trip->route_departure_id !== null) {
+            $payload = array_merge($payload, app(\App\Services\SeatReservationService::class)->manifestFor($trip));
+        }
+
+        return response()->json(['trip' => $payload]);
     }
 
     /**
@@ -349,7 +362,7 @@ class DriversController extends Controller
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->pluck('driver_id');
 
         $eligibleIds = Driver::query()

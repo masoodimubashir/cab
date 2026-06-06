@@ -30,6 +30,7 @@ interface OperatorSettings {
   wallet_cash_tnc: string | null;
   wallet_cash_max_capping: number;
 
+  subscription_popup_enabled: boolean;
   subscription_popup_title: string | null;
   subscription_popup_desc: string | null;
   subscription_popup_button1: string | null;
@@ -214,6 +215,16 @@ interface SectionMeta {
 
             <!-- ============= SUBSCRIPTION ============= -->
             <ng-container *ngIf="activeSection === 'subscription'">
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">Prompt drivers to subscribe</span>
+                  <span class="switch-row__sub">When on, drivers see this popup as soon as they open the Subscriptions screen. When off, it stays hidden.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.subscription_popup_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
               <div class="fields">
                 <div class="field">
                   <span class="field__label">Popup title</span>
@@ -620,6 +631,7 @@ export class OperatorSettingsComponent implements OnInit {
     ],
     wallet: ['wallet_cash_tnc', 'wallet_cash_max_capping'],
     subscription: [
+      'subscription_popup_enabled',
       'subscription_popup_title',
       'subscription_popup_desc',
       'subscription_popup_button1',

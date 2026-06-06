@@ -168,7 +168,7 @@ class FareNegotiationController extends Controller
         // drivers in the current ring, then re-queues itself until acceptance or
         // exhaustion. Falls back gracefully when no settings row exists.
         $autoOn = true;
-        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
         if ($settings && !$settings->automatic_dispatcher_type) {
             $autoOn = false; // operator must dispatch manually
         }
@@ -282,7 +282,7 @@ class FareNegotiationController extends Controller
         // rejected so the ride doesn't get claimed after the rider moved on.
         // Drivers reached another way (manual pre-assign / customer select-driver)
         // have no ping record and are unaffected.
-        $settings = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $settings = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
         $window = (int) ($settings->driver_accept_window_sec ?? 0);
         if ($window > 0) {
             $pingedAt = Cache::get("dispatch_ping:{$trip->id}:{$user->id}");

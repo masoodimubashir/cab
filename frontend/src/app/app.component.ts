@@ -38,10 +38,10 @@ export class AppComponent implements OnInit {
     [/^\/pricing/,                  'Pricing'],
     [/^\/vehicle-fares/,            'Vehicle Fares'],
     [/^\/vehicles/,                 'Vehicles'],
-    [/^\/promotions\/city-wide/,    'City Wide Promotions'],
-    [/^\/promotions\/promo-codes/,  'Promo Codes'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
+    [/^\/routes/,                   'Routes'],
+    [/^\/departures/,               'Departures'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -71,8 +71,10 @@ export class AppComponent implements OnInit {
     /^\/city\b/,
     /^\/pricing\b/,
     /^\/vehicle-fares\b/,
-    /^\/promotions\/(city-wide|promo-codes|coupons)\b/,
+    /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
+    /^\/routes\b/,
+    /^\/departures\b/,
     /^\/settings\/(city|fleets|vehicle-types)\b/,
   ];
 
@@ -142,18 +144,10 @@ export class AppComponent implements OnInit {
     if (canAny(['pricing.view','dynamic_pricing.manage']))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
     if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Fares', icon: 'car', route: '/vehicle-fares' });
+    if (can('routes.manage'))          citySetup.push({ label: 'Routes',        icon: 'road', route: '/routes' });
     if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
-    if (canAny(['promotions.manage','promo_codes.manage','coupons.manage'])) {
-      citySetup.push({
-        label: 'Promotions', icon: 'gift',
-        children: filterTruthy([
-          can('promotions.manage')  && { label: 'City Wide',   icon: 'pin',  route: '/promotions/city-wide' },
-          can('promo_codes.manage') && { label: 'Promo Codes', icon: 'tag',  route: '/promotions/promo-codes' },
-          can('coupons.manage')     && { label: 'Coupons',     icon: 'tag',  route: '/promotions/coupons' },
-        ]),
-      });
-    }
+    if (can('coupons.manage')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
 
     if (canAny(['subscriptions.manage', 'settings.manage']))
                                        citySetup.push({ label: 'Subscriptions', icon: 'star', route: '/subscriptions' });
@@ -162,6 +156,8 @@ export class AppComponent implements OnInit {
 
     // --- Operations ---
     if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
+
+    if (can('reservations.view')) operations.push({ label: 'Departures', icon: 'calendar', route: '/departures' });
 
     if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 

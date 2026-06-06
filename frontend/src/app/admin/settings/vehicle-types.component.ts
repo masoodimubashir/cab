@@ -158,11 +158,9 @@ const STATUS_OPTIONS = [
     <tm-drawer [open]="createOpen" title="Add Vehicle Type" [width]="520" (closed)="createOpen = false">
       <div slot="body" class="form">
         <label class="field">
-          <span class="field__lbl">City <i>*</i></span>
-          <select [(ngModel)]="createForm.city_id">
-            <option [ngValue]="null" disabled>Select city</option>
-            <option *ngFor="let c of cities" [ngValue]="c.id">{{ c.name }}</option>
-          </select>
+          <span class="field__lbl">City</span>
+          <input type="text" [value]="currentCityName" readonly />
+          <span class="field__hint">Switch cities from the top bar to add elsewhere.</span>
         </label>
         <label class="field">
           <span class="field__lbl">Vehicle Name <i>*</i></span>
@@ -474,8 +472,15 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
     };
   }
 
+  get currentCityName(): string {
+    return this.cities.find((c) => c.id === this.cityId)?.name ?? '';
+  }
+
   openCreate(): void {
+    // Vehicles are always created in the city currently selected in the top bar,
+    // so the ride-type/vehicle-type options on screen always match the target.
     this.createForm = this.blankCreate();
+    this.createForm.city_id = this.cityId;
     this.createOpen = true;
   }
 

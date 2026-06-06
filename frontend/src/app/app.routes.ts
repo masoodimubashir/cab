@@ -20,10 +20,10 @@ import { OperatorSettingsComponent } from './admin/settings/operator-settings.co
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { VehicleTypesComponent } from './admin/settings/vehicle-types.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
-import { CityWidePromotionsComponent } from './admin/promotions/city-wide-promotions.component';
-import { PromoCodesComponent } from './admin/promotions/promo-codes.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
+import { RoutesComponent } from './admin/routes/routes.component';
+import { DeparturesComponent } from './admin/routes/departures.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
 import { ManagersComponent } from './admin/rbac/managers.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
@@ -94,12 +94,13 @@ export const routes: Routes = [
 
   { path: 'vehicles', component: VehiclesComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'promotions', redirectTo: 'promotions/city-wide', pathMatch: 'full' },
-  { path: 'promotions/city-wide', component: CityWidePromotionsComponent, canActivate: [adminAuthGuard] },
-  { path: 'promotions/promo-codes', component: PromoCodesComponent, canActivate: [adminAuthGuard] },
+  { path: 'promotions', redirectTo: 'promotions/coupons', pathMatch: 'full' },
   { path: 'promotions/coupons', component: CouponsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard] },
+
+  { path: 'routes', component: RoutesComponent, canActivate: [adminAuthGuard] },
+  { path: 'departures', component: DeparturesComponent, canActivate: [adminAuthGuard] },
 
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard] },
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard] },

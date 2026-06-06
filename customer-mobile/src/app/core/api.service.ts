@@ -44,8 +44,12 @@ export class ApiService {
     return this.http.get<T>(this.url(path), { headers: this.jsonHeaders() });
   }
 
-  post<T>(path: string, body: unknown): Observable<T> {
-    return this.http.post<T>(this.url(path), body, { headers: this.jsonHeaders() });
+  post<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Observable<T> {
+    let headers = this.jsonHeaders();
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) headers = headers.set(k, v);
+    }
+    return this.http.post<T>(this.url(path), body, { headers });
   }
 
   patch<T>(path: string, body: unknown): Observable<T> {

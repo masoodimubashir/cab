@@ -100,14 +100,15 @@ class SchedulingPolicyService
         if (!$trip->scheduled_at) {
             return true;
         }
-        $cfg = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $scope = $trip->scope ?: 'local';
+        $cfg = DispatcherSetting::forTrip($trip->city_id, $scope);
         if (!$cfg || !$cfg->schedule_dispatcher_type) {
             return false; // no config, or operator handles scheduled rides manually
         }
         if ($cfg->dispatch_only_assigned_scheduled && !$trip->driver_id) {
             return false;
         }
-        return in_array($this->dispatchMode($trip->city_id, 'local'), ['INSTANT', 'INSTANT_AND_DELAYED'], true);
+        return in_array($this->dispatchMode($trip->city_id, $scope), ['INSTANT', 'INSTANT_AND_DELAYED'], true);
     }
 
     /**
@@ -120,7 +121,7 @@ class SchedulingPolicyService
         if (!$trip->scheduled_at) {
             return false;
         }
-        $cfg = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $cfg = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
         if (!$cfg) {
             return false;
         }

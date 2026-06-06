@@ -553,3 +553,45 @@ ion-content.in-trip {
     }
   }
 }
+
+/* ---- Shared-departure passenger manifest ---- */
+.manifest-card {
+  .manifest-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .manifest-title { font-size: 14px; font-weight: 800; color: var(--dreamcab-dark-blue, #0d1b2a); }
+  .manifest-count { font-size: 11px; font-weight: 700; color: var(--ion-color-medium); }
+  .manifest-empty { margin: 6px 0 0; font-size: 13px; color: var(--ion-color-medium); }
+
+  .pax-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 0;
+    border-top: 1px solid rgba(13, 27, 42, 0.06);
+
+    &:first-of-type { border-top: 0; }
+  }
+  .pax-main { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .pax-name { font-size: 13px; font-weight: 700; color: var(--dreamcab-dark-blue, #0d1b2a); small { font-weight: 600; color: var(--ion-color-medium); } }
+  .pax-board { font-size: 11px; color: var(--ion-color-medium); }
+
+  .pax-actions { display: inline-flex; gap: 6px; flex: none; }
+  .pax-btn { border: 0; border-radius: 9px; padding: 7px 12px; font-size: 12px; font-weight: 800; cursor: pointer; }
+  .pax-btn--board { background: var(--ion-color-primary, #12b35b); color: #fff; }
+  .pax-btn--noshow { background: rgba(13, 27, 42, 0.06); color: var(--dreamcab-dark-blue, #0d1b2a); }
+  .pax-btn:disabled { opacity: 0.5; }
+
+  .pax-status {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.3px; text-transform: capitalize;
+    padding: 4px 10px; border-radius: 999px; flex: none;
+    background: rgba(13, 27, 42, 0.06); color: var(--ion-color-medium);
+
+    &[data-s="BOARDED"], &[data-s="DROPPED"], &[data-s="COMPLETED"] { background: rgba(18, 179, 91, 0.12); color: var(--ion-color-primary, #12b35b); }
+    &[data-s="NO_SHOW"], &[data-s="CANCELLED"] { background: rgba(235, 68, 68, 0.12); color: #d92d2d; }
+  }
+}

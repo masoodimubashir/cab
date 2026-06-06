@@ -1,6 +1,7 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.service';
@@ -8,6 +9,7 @@ import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
 import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
+import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
 
 declare const google: any;
 
@@ -21,6 +23,15 @@ interface NavItem {
 interface NavGroup {
   title: string;
   items: NavItem[];
+}
+
+/** Operator-configured subscription prompt (Operator Settings → Subscription). */
+interface SubscriptionPrompt {
+  enabled: boolean;
+  title: string | null;
+  desc: string | null;
+  button1: string | null;
+  button2: string | null;
 }
 
 /**
@@ -146,9 +157,20 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ionViewDidEnter(): void {
-    // Once per app session, greet the driver with the mode chooser
-    // (Voice / Self) — the entry point for the in-app AI voice assistant.
-    void this.maybeShowModePrompt();
+    // App-open greeting: the AI mode chooser (Voice / Self), then — if the
+    // operator enabled it — the subscription nudge.
+    void this.greetOnAppOpen();
+  }
+
+  /**
+   * Runs the app-open prompts in order: the mode chooser first, then the
+   * subscription nudge. The two are independent (each has its own guard) so the
+   * subscription prompt still shows even when the mode chooser was already shown
+   * this session.
+   */
+  private async greetOnAppOpen(): Promise<void> {
+    await this.maybeShowModePrompt();
+    await this.maybeShowSubscriptionPrompt();
   }
 
   /**
@@ -172,6 +194,50 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     const { data } = await modal.onWillDismiss<{ mode?: DriverMode }>();
     if (data?.mode) {
       try { localStorage.setItem('dc_driver_mode', data.mode); } catch { /* ignore */ }
+    }
+  }
+
+  /**
+   * Operator-controlled subscription nudge, shown on app open right after the
+   * mode chooser. Off (Operator Settings → Subscription) or already-subscribed
+   * = nothing shows. The buttons (admin-labelled) open the Subscriptions screen
+   * so the driver can pick a plan.
+   */
+  /** Shown at most once per app launch (resets on a cold start). */
+  private static subPromptShown = false;
+  /** Synchronous guard against a concurrent double-fire of the prompt. */
+  private subPromptBusy = false;
+
+  private async maybeShowSubscriptionPrompt(): Promise<void> {
+    if (DashboardPage.subPromptShown || this.subPromptBusy) return;
+    this.subPromptBusy = true;
+    try {
+      const cfg = await firstValueFrom(
+        this.api.get<SubscriptionPrompt>('/operator/subscription-popup'),
+      ).catch(() => null);
+      if (!cfg?.enabled) return;
+
+      // Don't nag drivers who already hold a plan.
+      const sub = await firstValueFrom(
+        this.api.get<{ subscription: unknown | null }>('/drivers/me/subscription'),
+      ).catch(() => null);
+      if (sub?.subscription) return;
+
+      // Mark shown only once we've passed the gates, so a disabled/subscribed
+      // state doesn't permanently suppress it for this launch.
+      DashboardPage.subPromptShown = true;
+
+      // Full-page modal that mirrors the Subscriptions screen (hero + plan
+      // cards); the operator's title/description drive the headline.
+      const modal = await this.modalCtrl.create({
+        component: SubscriptionPromptModalComponent,
+        componentProps: { title: cfg.title, desc: cfg.desc },
+      });
+      await modal.present();
+    } catch {
+      /* best-effort prompt — never block the dashboard */
+    } finally {
+      this.subPromptBusy = false;
     }
   }
 

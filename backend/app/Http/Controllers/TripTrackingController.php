@@ -94,7 +94,9 @@ class TripTrackingController extends Controller
         ]);
 
         $user = $request->user();
-        if ($trip->customer_id !== $user->id) {
+        // Any rider on the trip may stream their pin — the single customer on a
+        // private trip, or any seat-holder on a shared journey.
+        if (!$trip->isParticipant($user->id)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 

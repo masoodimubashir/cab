@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Model;
     'wallet_cash_max_capping',
 
     // Subscriptions
+    'subscription_popup_enabled',
     'subscription_popup_title',
     'subscription_popup_desc',
     'subscription_popup_button1',
@@ -52,6 +53,7 @@ class OperatorSetting extends Model
 
     protected $casts = [
         'tip_in_percentage' => 'boolean',
+        'subscription_popup_enabled' => 'boolean',
         'check_destination_outside_geofence' => 'boolean',
         'check_driver_debt' => 'boolean',
         'update_driver_payment_modes_enabled' => 'boolean',

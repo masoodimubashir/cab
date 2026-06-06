@@ -3,47 +3,67 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\City;
-use App\Models\CityRideProduct;
+use App\Models\CityRideMode;
+use App\Models\CityRideScope;
+use App\Models\Route;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
+/**
+ * The service catalogue as a two-tier tree: scope (Local / Outstation) → mode
+ * (Private / Fixed / Shuttle). The admin city-settings screen renders one panel
+ * per scope with the three mode switches underneath, and the customer app books
+ * in the same two steps.
+ *
+ * Private is on by default (the existing metered ride); the four shared cells
+ * stay inactive until a matching route is configured (feature flag). The city
+ * must always keep at least one bookable option (an active mode under an active
+ * scope), or the booking screen would render nothing.
+ */
 class AdminCityRideProductsController
 {
-    private const KIND_DEFAULTS = [
-        'local' => ['name' => 'Local', 'is_active' => true, 'sort_order' => 1],
-        'rental' => ['name' => 'Shuttle', 'is_active' => true, 'sort_order' => 2],
-        'outstation' => ['name' => 'Outstation', 'is_active' => true, 'sort_order' => 3],
+    /** Scope defaults: [scope, name, sort_order]. Both scopes on by default. */
+    private const SCOPE_DEFAULTS = [
+        ['local', 'Local', 1],
+        ['outstation', 'Outstation', 2],
+    ];
+
+    /** Mode defaults per scope: [mode, name, is_active, sort_order]. */
+    private const MODE_DEFAULTS = [
+        ['private', 'Private', true, 1],
+        ['fixed', 'Fixed', false, 2],
+        ['shuttle', 'Shuttle', false, 3],
     ];
 
     /**
-     * Return all 3 ride products for a city, auto-seeding any missing kinds.
+     * Return the catalogue tree for a city, auto-seeding any missing scope/mode
+     * cells so the screen always shows the full 2×3 matrix.
      */
     public function index(City $city)
     {
-        foreach (self::KIND_DEFAULTS as $kind => $defaults) {
-            CityRideProduct::query()->firstOrCreate(
-                ['city_id' => $city->id, 'kind' => $kind],
-                $defaults,
-            );
-        }
+        $this->ensureCatalogue($city);
 
-        // Re-query after seeding so DB defaults (e.g. timestamps) and any
-        // newly-inserted columns are reflected.
-        $products = CityRideProduct::query()
+        $scopes = CityRideScope::query()
             ->where('city_id', $city->id)
+            ->with('modes')
             ->orderBy('sort_order')
-            ->get()
-            ->map(fn (CityRideProduct $p) => $this->shape($p));
+            ->orderBy('id')
+            ->get();
 
         return response()->json([
             'city_id' => $city->id,
-            'data' => $products,
+            'scopes' => $scopes->map(fn (CityRideScope $s) => $this->shapeScope($s)),
         ]);
     }
 
-    public function update(Request $request, City $city, CityRideProduct $product)
+    /**
+     * Toggle / edit a single mode (Private / Fixed / Shuttle) under a scope.
+     */
+    public function updateMode(Request $request, City $city, CityRideMode $mode)
     {
-        if ($product->city_id !== $city->id) {
+        $scope = $mode->rideScope()->first();
+        if (!$scope || $scope->city_id !== $city->id) {
             abort(404);
         }
 
@@ -54,55 +74,172 @@ class AdminCityRideProductsController
             'image' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
 
-        // Guard: a city must always keep at least ONE active ride product.
-        // Otherwise the customer app's booking screen renders no ride options
-        // and nobody in that city can book. Block deactivating the last one.
-        if (array_key_exists('is_active', $data) && !$request->boolean('is_active') && $product->is_active) {
-            $otherActiveExists = CityRideProduct::query()
-                ->where('city_id', $city->id)
-                ->where('id', '!=', $product->id)
-                ->where('is_active', true)
-                ->exists();
-            if (!$otherActiveExists) {
+        return DB::transaction(function () use ($request, $city, $mode, $data) {
+            // Serialize every catalogue toggle for this city (lock the scope tier)
+            // so two concurrent deactivations can't both pass the "keep >=1
+            // bookable option" guard and strip the city to zero.
+            CityRideScope::query()->where('city_id', $city->id)->lockForUpdate()->get();
+
+            // Re-read the target under the lock so its is_active is current.
+            $mode = CityRideMode::query()->lockForUpdate()->findOrFail($mode->id);
+            $scope = $mode->rideScope()->first();
+
+            $turningOff = array_key_exists('is_active', $data) && !$request->boolean('is_active') && $mode->is_active;
+            $turningOn = array_key_exists('is_active', $data) && $request->boolean('is_active') && !$mode->is_active;
+
+            // Invariant: never leave the city with zero bookable options.
+            if ($turningOff && $this->bookableCount($city, excludeModeId: $mode->id) === 0) {
                 return response()->json([
-                    'message' => 'At least one ride product must stay active for this city.',
+                    'message' => 'At least one ride option must stay active for this city.',
                 ], 422);
             }
-        }
 
-        if ($request->hasFile('image')) {
-            if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
-                Storage::disk('public')->delete($product->image_path);
+            // Feature flag: a shared mode (Fixed / Shuttle) can only go live once an
+            // active route of that scope+mode exists — otherwise the rider would see
+            // an option they can't actually book into.
+            if ($turningOn && in_array($mode->mode, ['fixed', 'shuttle'], true)) {
+                $hasRoute = Route::query()
+                    ->where('city_id', $city->id)
+                    ->where('scope', $scope->scope)
+                    ->where('mode', $mode->mode)
+                    ->where('is_active', true)
+                    ->exists();
+                if (!$hasRoute) {
+                    return response()->json([
+                        'message' => "Add an active {$scope->scope} {$mode->mode} route before enabling this option.",
+                    ], 422);
+                }
             }
-            $product->image_path = $request->file('image')->store('city_ride_products', 'public');
-        }
 
-        foreach (['name', 'is_active', 'sort_order'] as $field) {
-            if (array_key_exists($field, $data)) {
-                $product->{$field} = $data[$field];
+            if ($request->hasFile('image')) {
+                if ($mode->image_path && Storage::disk('public')->exists($mode->image_path)) {
+                    Storage::disk('public')->delete($mode->image_path);
+                }
+                $mode->image_path = $request->file('image')->store('city_ride_products', 'public');
             }
-        }
 
-        $product->save();
+            foreach (['name', 'is_active', 'sort_order'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $mode->{$field} = $data[$field];
+                }
+            }
 
-        return response()->json([
-            'product' => $this->shape($product->fresh()),
-            'message' => 'Ride product updated.',
-        ]);
+            $mode->save();
+
+            return response()->json([
+                'mode' => $this->shapeMode($mode, $scope),
+                'message' => 'Ride option updated.',
+            ]);
+        });
     }
 
-    private function shape(CityRideProduct $p): array
+    /**
+     * Toggle / edit a scope (Local / Outstation) master row. Switching a scope
+     * off hides all of its modes from customers at once.
+     */
+    public function updateScope(Request $request, City $city, CityRideScope $scope)
+    {
+        if ($scope->city_id !== $city->id) {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:120'],
+            'is_active' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000'],
+        ]);
+
+        return DB::transaction(function () use ($request, $city, $scope, $data) {
+            // Same per-city serialization as updateMode (see there).
+            CityRideScope::query()->where('city_id', $city->id)->lockForUpdate()->get();
+            $scope = CityRideScope::query()->lockForUpdate()->findOrFail($scope->id);
+
+            $turningOff = array_key_exists('is_active', $data) && !$request->boolean('is_active') && $scope->is_active;
+
+            // Invariant: disabling a scope must not strip the city of every bookable
+            // option (an active mode under an active scope).
+            if ($turningOff && $this->bookableCount($city, excludeScopeId: $scope->id) === 0) {
+                return response()->json([
+                    'message' => 'At least one ride option must stay active for this city.',
+                ], 422);
+            }
+
+            foreach (['name', 'is_active', 'sort_order'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $scope->{$field} = $data[$field];
+                }
+            }
+
+            $scope->save();
+
+            return response()->json([
+                'scope' => $this->shapeScope($scope->load('modes')),
+                'message' => 'Scope updated.',
+            ]);
+        });
+    }
+
+    /** Seed the full 2 scopes × 3 modes for a city (idempotent). */
+    private function ensureCatalogue(City $city): void
+    {
+        foreach (self::SCOPE_DEFAULTS as [$scope, $name, $sortOrder]) {
+            $scopeRow = CityRideScope::query()->firstOrCreate(
+                ['city_id' => $city->id, 'scope' => $scope],
+                ['name' => $name, 'is_active' => true, 'sort_order' => $sortOrder],
+            );
+
+            foreach (self::MODE_DEFAULTS as [$mode, $modeName, $isActive, $modeSort]) {
+                CityRideMode::query()->firstOrCreate(
+                    ['city_ride_scope_id' => $scopeRow->id, 'mode' => $mode],
+                    ['name' => $modeName, 'is_active' => $isActive, 'sort_order' => $modeSort],
+                );
+            }
+        }
+    }
+
+    /** Number of bookable options (active mode under an active scope) in a city,
+     *  optionally excluding one scope or one mode that's about to be turned off. */
+    private function bookableCount(City $city, ?int $excludeScopeId = null, ?int $excludeModeId = null): int
+    {
+        return CityRideMode::query()
+            ->where('is_active', true)
+            ->when($excludeModeId, fn ($q) => $q->where('id', '!=', $excludeModeId))
+            ->whereHas('rideScope', function ($q) use ($city, $excludeScopeId) {
+                $q->where('city_id', $city->id)->where('is_active', true);
+                if ($excludeScopeId) {
+                    $q->where('id', '!=', $excludeScopeId);
+                }
+            })
+            ->count();
+    }
+
+    private function shapeScope(CityRideScope $s): array
     {
         return [
-            'id' => $p->id,
-            'city_id' => $p->city_id,
-            'kind' => $p->kind,
-            'name' => $p->name,
-            'image_path' => $p->image_path,
-            'image_url' => $p->image_url,
-            'is_active' => (bool) $p->is_active,
-            'sort_order' => (int) $p->sort_order,
-            'updated_at' => optional($p->updated_at)->toIso8601String(),
+            'id' => $s->id,
+            'city_id' => $s->city_id,
+            'scope' => $s->scope,
+            'name' => $s->name,
+            'is_active' => (bool) $s->is_active,
+            'sort_order' => (int) $s->sort_order,
+            'modes' => $s->modes->map(fn (CityRideMode $m) => $this->shapeMode($m, $s)),
+        ];
+    }
+
+    private function shapeMode(CityRideMode $m, CityRideScope $scope): array
+    {
+        return [
+            'id' => $m->id,
+            'city_ride_scope_id' => $m->city_ride_scope_id,
+            'scope' => $scope->scope,
+            'mode' => $m->mode,
+            'kind' => $m->mode === 'private' ? $scope->scope : $m->mode, // compat
+            'name' => $m->name,
+            'image_path' => $m->image_path,
+            'image_url' => $m->image_url,
+            'is_active' => (bool) $m->is_active,
+            'sort_order' => (int) $m->sort_order,
+            'updated_at' => optional($m->updated_at)->toIso8601String(),
         ];
     }
 }

@@ -112,7 +112,7 @@ class WakeScheduledTrips extends Command
             ->where('scheduled_at', '>=', $catchUpFloor) // widened from now−5min → now−2h (bug #5)
             ->cursor()
             ->each(function (Trip $trip) use ($stateMachine, $notifier, $now, &$woken) {
-                $cfg = DispatcherSetting::forTrip($trip->city_id, 'local');
+                $cfg = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
                 if (!$cfg) {
                     return;
                 }

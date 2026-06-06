@@ -4,10 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Driver;
 use App\Models\FareNegotiation;
+use App\Models\RouteDeparture;
+use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\TripAssignment;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RideAssignmentController extends Controller
 {
@@ -38,14 +41,33 @@ class RideAssignmentController extends Controller
             ], 422);
         }
 
-        // Ensure we only create one active assignment record per driver.
-        TripAssignment::query()->updateOrCreate(
-            ['trip_id' => $trip->id, 'driver_id' => $user->id],
-            ['status' => 'ACCEPTED', 'assigned_at' => now(), 'decided_at' => now()]
-        );
+        // Authoritative one-trip-per-driver guard: serialise on the driver row
+        // and reject if they already hold another committed trip (e.g. a
+        // pre-assigned shared trip). This is the backstop that makes a
+        // double-booking impossible regardless of which feed surfaced it.
+        $conflict = DB::transaction(function () use ($user, $trip) {
+            Driver::query()->where('user_id', $user->id)->lockForUpdate()->first();
+            $other = Trip::query()
+                ->where('driver_id', $user->id)
+                ->where('id', '!=', $trip->id)
+                ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
+                ->exists();
+            if ($other) {
+                return true;
+            }
 
-        $trip->driver_id = $user->id;
-        $trip->save();
+            TripAssignment::query()->updateOrCreate(
+                ['trip_id' => $trip->id, 'driver_id' => $user->id],
+                ['status' => 'ACCEPTED', 'assigned_at' => now(), 'decided_at' => now()]
+            );
+            $trip->driver_id = $user->id;
+            $trip->save();
+            return false;
+        });
+
+        if ($conflict) {
+            return response()->json(['message' => 'You already have an active trip.'], 409);
+        }
 
         // Link negotiation thread to the assigned driver.
         $negotiation = FareNegotiation::query()->where('trip_id', $trip->id)->first();
@@ -76,6 +98,30 @@ class RideAssignmentController extends Controller
             ['trip_id' => $trip->id, 'driver_id' => $user->id],
             ['status' => 'REJECTED', 'decided_at' => now()]
         );
+
+        // A shared journey was pre-assigned, not bid on — if its driver rejects,
+        // free the departure so the next dispatch cycle re-offers it to another
+        // driver (the already-paid riders must not be stranded). Reset it to its
+        // pre-dispatch state, detach the seats, and cancel the orphan trip.
+        if ($trip->isShared() && (int) $trip->driver_id === (int) $user->id) {
+            DB::transaction(function () use ($trip) {
+                $dep = RouteDeparture::query()->lockForUpdate()->find($trip->route_departure_id);
+                if ($dep) {
+                    $dep->update([
+                        'trip_id' => null,
+                        'driver_id' => null,
+                        'status' => $dep->route_schedule_id ? 'SCHEDULED' : 'FORMING',
+                    ]);
+                }
+                SeatReservation::query()->where('trip_id', $trip->id)->update(['trip_id' => null]);
+                $trip->update([
+                    'driver_id' => null,
+                    'status' => 'CANCELLED',
+                    'cancelled_at' => now(),
+                    'cancelled_reason' => 'shared_driver_rejected',
+                ]);
+            });
+        }
 
         return response()->json(['message' => 'Rejected.']);
     }

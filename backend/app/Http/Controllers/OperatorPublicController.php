@@ -38,15 +38,17 @@ class OperatorPublicController extends Controller
     }
 
     /**
-     * Copy for the driver-app subscription popup (title / description / two
-     * button labels) set in Operator Settings → Subscription. Null fields mean
-     * "use the app's built-in default".
+     * Copy for the driver-app subscription popup (on/off flag + title /
+     * description / two button labels) set in Operator Settings → Subscription.
+     * When `enabled` is false the driver app must not show the popup. Null copy
+     * fields mean "use the app's built-in default".
      */
     public function subscriptionPopup(Request $request)
     {
         $s = OperatorSetting::instance();
 
         return response()->json([
+            'enabled' => (bool) $s->subscription_popup_enabled,
             'title' => $s->subscription_popup_title,
             'desc' => $s->subscription_popup_desc,
             'button1' => $s->subscription_popup_button1,

@@ -32,6 +32,20 @@ type AvailableTrip = {
   created_at?: string;
 };
 
+type ManifestPassenger = {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  seats: number;
+  status: string;
+  board: string | null;
+  board_lat: number | null;
+  board_lng: number | null;
+  drop: string | null;
+};
+
+type ManifestStop = { id: number; seq: number; name: string; lat: number; lng: number };
+
 @Component({
   selector: 'app-rides',
   templateUrl: './rides.page.html',
@@ -50,6 +64,10 @@ export class RidesPage implements OnInit, OnDestroy {
 
   available: AvailableTrip[] = [];
   loadingAvailable = false;
+
+  // Shared (fixed/shuttle) journey manifest — passengers + ordered stops.
+  // Null for a private trip.
+  sharedManifest: { route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] } | null = null;
 
   negotiation: Record<string, unknown> | null = null;
   counterAmount: number | null = null;
@@ -497,6 +515,7 @@ export class RidesPage implements OnInit, OnDestroy {
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+          this.maybeRefreshManifest();
 
           // Pull the route's hard fare floor — offers below it are rejected.
           const cfg = res['negotiation_config'] || {};
@@ -829,6 +848,60 @@ export class RidesPage implements OnInit, OnDestroy {
     ].join(';');
     wrap.appendChild(arrow);
     return wrap;
+  }
+
+  /** A shared journey carries a route departure; private trips don't. */
+  get isSharedDeparture(): boolean {
+    return this.lastTrip?.['route_departure_id'] != null;
+  }
+
+  get manifestPassengers(): ManifestPassenger[] {
+    return this.sharedManifest?.passengers ?? [];
+  }
+
+  /** Fetch the passenger manifest when the active trip is a shared departure. */
+  private maybeRefreshManifest(): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id || !this.isSharedDeparture) {
+      this.sharedManifest = null;
+      return;
+    }
+    this.api
+      .get<{ route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] }>(`/trips/${id}/manifest`)
+      .subscribe({
+        next: (res) => {
+          this.sharedManifest = {
+            route_name: res.route_name,
+            passengers: res.passengers || [],
+            stops: res.stops || [],
+          };
+        },
+        error: () => undefined,
+      });
+  }
+
+  boardPassenger(reservationId: number): void {
+    this.seatAction(reservationId, 'board');
+  }
+  noShowPassenger(reservationId: number): void {
+    this.seatAction(reservationId, 'no-show');
+  }
+  private seatAction(reservationId: number, action: 'board' | 'no-show'): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.api
+      .post(`/trips/${id}/seat-reservations/${reservationId}/${action}`, {})
+      .subscribe({
+        next: () => this.maybeRefreshManifest(),
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not update passenger';
+        },
+        complete: () => {
+          this.busy = false;
+        },
+      });
   }
 
   markCustomerNoShow(): void {
