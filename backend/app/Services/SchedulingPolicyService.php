@@ -77,6 +77,41 @@ class SchedulingPolicyService
     }
 
     /**
+     * Resolve the scheduled-dispatch mode for a (city, kind):
+     * DELAYED | INSTANT | INSTANT_AND_DELAYED. Defaults to DELAYED.
+     */
+    public function dispatchMode(?int $cityId, string $kind = 'local'): string
+    {
+        $cfg = DispatcherSetting::forTrip($cityId, $kind);
+        $mode = strtoupper((string) ($cfg->schedule_dispatch_instantly ?? 'DELAYED'));
+        return in_array($mode, ['DELAYED', 'INSTANT', 'INSTANT_AND_DELAYED'], true) ? $mode : 'DELAYED';
+    }
+
+    /**
+     * Should this trip be dispatched the MOMENT it is booked?
+     *
+     *  - Non-scheduled (ASAP) rides → always true (preserves today's behavior).
+     *  - Scheduled rides → only when scheduled auto-dispatch is on AND the mode
+     *    is INSTANT / INSTANT_AND_DELAYED AND the "only pre-assigned" gate is
+     *    satisfied. DELAYED scheduled rides wait for the alarm-time worker.
+     */
+    public function shouldDispatchOnBooking(Trip $trip): bool
+    {
+        if (!$trip->scheduled_at) {
+            return true;
+        }
+        $scope = $trip->scope ?: 'local';
+        $cfg = DispatcherSetting::forTrip($trip->city_id, $scope);
+        if (!$cfg || !$cfg->schedule_dispatcher_type) {
+            return false; // no config, or operator handles scheduled rides manually
+        }
+        if ($cfg->dispatch_only_assigned_scheduled && !$trip->driver_id) {
+            return false;
+        }
+        return in_array($this->dispatchMode($trip->city_id, $scope), ['INSTANT', 'INSTANT_AND_DELAYED'], true);
+    }
+
+    /**
      * True when cancelling NOW for a scheduled trip falls inside the
      * "cancel window" — i.e. close enough to pickup that a fee should
      * apply. Cancelling earlier than the window is free.
@@ -86,7 +121,7 @@ class SchedulingPolicyService
         if (!$trip->scheduled_at) {
             return false;
         }
-        $cfg = DispatcherSetting::forTrip($trip->city_id, 'local');
+        $cfg = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
         if (!$cfg) {
             return false;
         }

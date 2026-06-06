@@ -3,16 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\City;
-use App\Models\CityRideProduct;
+use App\Models\CityRideMode;
+use App\Models\CityRideScope;
 use App\Models\CityVehicleType;
 use App\Models\OperatorSetting;
 use App\Models\OutstationPackage;
 use App\Models\RideType;
 use App\Models\PricingRule;
+use App\Models\Route;
 use App\Models\VehicleType;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
-use App\Services\PromotionApplicationService;
 use Illuminate\Http\Request;
 
 class PricingController extends Controller
@@ -26,6 +27,7 @@ class PricingController extends Controller
         // sheet can render only the modes operators enabled for the city.
         $cities = City::query()
             ->leftJoin('city_settings', 'city_settings.city_id', '=', 'cities.id')
+            ->where('cities.is_active', true)
             ->orderBy('cities.name')
             ->get([
                 'cities.id',
@@ -60,28 +62,49 @@ class PricingController extends Controller
     }
 
     /**
-     * Public list of ride products (Local / Rental / Out Station …) for a
-     * city. Driven by the city_ride_products table — the customer mobile
-     * renders the idle-screen chips from this, instead of a hardcoded enum.
-     * Disabled products are filtered out.
+     * Public catalogue for a city as a two-step tree: scope (Local / Outstation)
+     * → mode (Private / Fixed / Shuttle). The customer app shows the scopes first,
+     * then the modes within the chosen one. A scope is only returned if it's
+     * switched on AND has at least one active mode; inactive modes are dropped.
+     *
+     * `data` is the flat list of active modes (compat for the current app, which
+     * reads scope/mode/kind off a flat list); `scopes` is the grouped tree the
+     * two-step picker consumes.
      */
     public function products(City $city)
     {
-        $rows = CityRideProduct::query()
+        $scopes = CityRideScope::query()
             ->where('city_id', $city->id)
             ->where('is_active', true)
+            ->with(['modes' => fn ($q) => $q->where('is_active', true)])
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get(['id', 'kind', 'name', 'image_path', 'sort_order'])
-            ->map(fn (CityRideProduct $p) => [
-                'id' => $p->id,
-                'kind' => $p->kind,
-                'name' => $p->name,
-                'image_url' => $p->image_url,
-                'sort_order' => (int) $p->sort_order,
-            ]);
+            ->get()
+            ->filter(fn (CityRideScope $s) => $s->modes->isNotEmpty())
+            ->values();
 
-        return response()->json(['data' => $rows]);
+        $tree = $scopes->map(fn (CityRideScope $s) => [
+            'scope' => $s->scope,
+            'name' => $s->name,
+            'sort_order' => (int) $s->sort_order,
+            'modes' => $s->modes->map(fn (CityRideMode $m) => [
+                'id' => $m->id,
+                'scope' => $s->scope,
+                'mode' => $m->mode,
+                'kind' => $m->mode === 'private' ? $s->scope : $m->mode, // compat
+                'name' => $m->name,
+                'image_url' => $m->image_url,
+                'sort_order' => (int) $m->sort_order,
+            ])->values(),
+        ]);
+
+        // Flat list kept for older clients that haven't moved to the tree yet.
+        $flat = $tree->flatMap(fn ($s) => $s['modes'])->values();
+
+        return response()->json([
+            'data' => $flat,
+            'scopes' => $tree,
+        ]);
     }
 
     public function vehicleTypes(Request $request)
@@ -120,7 +143,6 @@ class PricingController extends Controller
         Request $request,
         FareEstimationService $fareEstimationService,
         DynamicPricingService $dynamicPricingService,
-        PromotionApplicationService $promotionApplicationService,
     ) {
         $data = $request->validate([
             // Primary axis: the exact per-city vehicle the customer picked.
@@ -186,33 +208,14 @@ class PricingController extends Controller
             'driver_factor' => (float) $dynamicRule->driver_fare_factor,
             'rule_id' => $dynamicRule->id,
             'fare_type' => $dynamicRule->fare_type,
+            'name' => $dynamicRule->name,
+            'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
         $fareInput = $fareEstimationService->fareInput(
             $pricingRule->toArray(),
             isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
         );
-        $previewEstimate = $fareEstimationService->estimateFare(
-            $fareInput,
-            (float) $data['pickup_lat'],
-            (float) $data['pickup_lng'],
-            (float) $data['drop_lat'],
-            (float) $data['drop_lng'],
-            $dynamicFactors,
-            null,
-            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
-            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-        );
-        $promo = $promotionApplicationService->findBestForBooking(
-            cityId: $pricingRule->city_id ? (int) $pricingRule->city_id : 0,
-            cityVehicleTypeId: $cityVehicleTypeId,
-            pickupLat: (float) $data['pickup_lat'],
-            pickupLng: (float) $data['pickup_lng'],
-            dropLat: (float) $data['drop_lat'],
-            dropLng: (float) $data['drop_lng'],
-            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
-        );
-
         $estimate = $fareEstimationService->estimateFare(
             $fareInput,
             (float) $data['pickup_lat'],
@@ -223,11 +226,47 @@ class PricingController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-            $promo,
         );
 
         return response()->json([
             'currency' => 'INR',
+            ...$estimate,
+        ]);
+    }
+
+    /**
+     * Per-seat fare quote for a shared (fixed/shuttle) route. The price is flat
+     * from the route's fare_config — no metered distance/time — but still runs
+     * through the shared tail (min_fare, tax, commission) so it matches the rest
+     * of the platform.
+     */
+    public function seatEstimate(
+        Request $request,
+        FareEstimationService $fareEstimationService,
+    ) {
+        $data = $request->validate([
+            'route_id' => ['required', 'integer', 'exists:routes,id'],
+            'seats' => ['nullable', 'integer', 'min:1', 'max:10'],
+        ]);
+
+        $route = Route::query()->find((int) $data['route_id']);
+        if (!$route || !$route->is_active) {
+            return response()->json(['message' => 'Route not available.'], 404);
+        }
+
+        $fareConfig = is_array($route->fare_config) ? $route->fare_config : [];
+        if (!isset($fareConfig['seat_fare']) || (float) $fareConfig['seat_fare'] <= 0) {
+            return response()->json(['message' => 'Seat fare is not configured for this route.'], 404);
+        }
+
+        $seats = isset($data['seats']) ? (int) $data['seats'] : 1;
+
+        $estimate = $fareEstimationService->seatFare($fareConfig, $seats);
+
+        return response()->json([
+            'currency' => 'INR',
+            'route_id' => $route->id,
+            'mode' => $route->mode,
             ...$estimate,
         ]);
     }

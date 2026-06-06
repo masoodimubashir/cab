@@ -65,7 +65,16 @@ class AdminTripsController
 
         $perPage = (int) $request->query('per_page', 25);
         $perPage = max(1, min(100, $perPage));
-        $trips = $query->orderByDesc('created_at')->paginate($perPage);
+
+        // Scheduled rides read best by pickup time (next pickup first); everything
+        // else stays newest-first.
+        if ($category && strtolower($category) === 'scheduled') {
+            $query->orderBy('scheduled_at');
+        } else {
+            $query->orderByDesc('created_at');
+        }
+
+        $trips = $query->paginate($perPage);
 
         return response()->json(['data' => $trips]);
     }
@@ -99,9 +108,10 @@ class AdminTripsController
                 return;
 
             case 'scheduled':
-                // No scheduling feature yet — return an empty set on purpose so the UI
-                // renders an "empty" state instead of leaking historical trips.
-                $query->whereRaw('1 = 0');
+                // Pre-booked rides that haven't finished yet — upcoming + in-progress.
+                // Completed/cancelled scheduled rides fall into their own buckets.
+                $query->whereNotNull('scheduled_at')
+                      ->whereNotIn('status', Trip::TERMINAL_STATUSES);
                 return;
 
             case 'all':
@@ -123,8 +133,8 @@ class AdminTripsController
     /**
      * Full trip detail for the admin ride-details screen — eager-loads every
      * relation the page renders (parties, pricing axes, payment with coupon
-     * snapshot, applied promotion) plus the latest 100 driver-location pings
-     * for the map path. One round trip serves the entire page.
+     * snapshot) plus the latest 100 driver-location pings for the map path.
+     * One round trip serves the entire page.
      */
     public function show(Trip $trip)
     {
@@ -138,7 +148,6 @@ class AdminTripsController
             'cityVehicleType.vehicleType:id,name',
             'cityVehicleType.rideType:id,name',
             'pricingRule',
-            'appliedPromotion:id,title,discount_type,discount_value,promo_type',
             'payment:id,trip_id,method,provider,status,amount,discount_amount,paid_at,coupon_assignment_id,razorpay_payment_id,razorpay_order_id',
             'payment.couponAssignment.coupon:id,title,discount_type,discount_value',
         ]);

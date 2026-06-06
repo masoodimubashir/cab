@@ -158,7 +158,8 @@ export class RealtimeService {
     tripId: number,
     onLocation: (p: TripLocationPayload) => void,
     onStatus: (p: TripStatusPayload) => void,
-    onCustomerLocation?: (p: TripCustomerLocationPayload) => void
+    onCustomerLocation?: (p: TripCustomerLocationPayload) => void,
+    onStartOtp?: () => void
   ): () => void {
     const pusher = this.ensure();
     if (!pusher) return () => {};
@@ -169,15 +170,19 @@ export class RealtimeService {
     const locHandler = (data: TripLocationPayload) => onLocation(data);
     const statusHandler = (data: TripStatusPayload) => onStatus(data);
     const custLocHandler = (data: TripCustomerLocationPayload) => onCustomerLocation?.(data);
+    // Signal-only: the driver just requested the start code — fetch it now.
+    const startOtpHandler = () => onStartOtp?.();
 
     channel.bind('TripLocationUpdated', locHandler);
     channel.bind('TripStatusUpdated', statusHandler);
     if (onCustomerLocation) channel.bind('TripCustomerLocationUpdated', custLocHandler);
+    if (onStartOtp) channel.bind('StartOtpReady', startOtpHandler);
 
     return () => {
       channel.unbind('TripLocationUpdated', locHandler);
       channel.unbind('TripStatusUpdated', statusHandler);
       if (onCustomerLocation) channel.unbind('TripCustomerLocationUpdated', custLocHandler);
+      if (onStartOtp) channel.unbind('StartOtpReady', startOtpHandler);
       pusher.unsubscribe(channelName);
     };
   }

@@ -10,7 +10,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, Subscription } from 'rxjs';
+import { of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
@@ -21,23 +21,8 @@ import {
   ButtonComponent,
   DrawerComponent,
   IconComponent,
-  IconName,
   ModalComponent,
 } from '../../ui';
-
-/** One row in the dependency-ordered setup checklist. */
-interface SetupStep {
-  key: string;
-  title: string;
-  description: string;
-  icon: IconName;
-  route: string | null;
-  /** 'done' | 'todo' | 'optional' | 'soon' — drives the badge + tone. */
-  state: 'done' | 'todo' | 'optional' | 'soon';
-  status: string;
-  /** Handled on this page (e.g. geofencing) — renders an action button, not a link. */
-  local?: boolean;
-}
 
 interface LatLng {
   lat: number;
@@ -53,11 +38,11 @@ interface CityForm {
 }
 
 /**
- * City Workspace — the hub for everything city-scoped.
+ * City Workspace — the hub for city basics.
  *
- * Top: city basics CRUD (create / edit / delete cities).
- * Below: a dependency-ordered setup checklist for the selected city, each
- * card showing live status and a deep link into the relevant editor.
+ * Top: city CRUD (create / edit / delete cities).
+ * Below: the selected city's service-area map, where the geofence boundary
+ * is drawn and edited.
  */
 @Component({
   selector: 'app-city-workspace',
@@ -136,6 +121,14 @@ interface CityForm {
               icon="edit"
               (clicked)="startFenceEdit()"
             >{{ hasFence ? 'Edit boundary' : 'Draw boundary' }}</tm-button>
+            <tm-button
+              *ngIf="!editingFence && hasFence"
+              variant="ghost"
+              size="sm"
+              icon="trash"
+              [disabled]="savingFence"
+              (clicked)="removeFence()"
+            >Remove</tm-button>
 
             <ng-container *ngIf="editingFence">
               <tm-button variant="ghost" size="sm" icon="refresh"
@@ -160,61 +153,8 @@ interface CityForm {
         <div class="cw__map" #cityMap></div>
       </section>
 
-      <!-- ===== Setup checklist ===== -->
-      <section class="cw__setup" *ngIf="currentId != null">
-        <div class="cw__setup-head">
-          <div>
-            <span class="cw__overline">Setup checklist</span>
-            <h2 class="cw__setup-title">{{ currentName }}</h2>
-          </div>
-          <div class="cw__progress" *ngIf="!loading">
-            <div class="cw__progress-bar">
-              <span [style.width.%]="progressPercent"></span>
-            </div>
-            <span class="cw__progress-lbl">{{ doneCount }}/{{ requiredCount }} essentials done</span>
-          </div>
-        </div>
-
-        <div class="cw__steps" *ngIf="!loading; else loadingTpl">
-          <article
-            *ngFor="let s of steps; let i = index"
-            class="step"
-            [class.step--soon]="s.state === 'soon'"
-          >
-            <div class="step__index" [attr.data-state]="s.state">
-              <tm-icon *ngIf="s.state === 'done'" name="check" [size]="14" />
-              <span *ngIf="s.state !== 'done'">{{ i + 1 }}</span>
-            </div>
-            <div class="step__icon"><tm-icon [name]="s.icon" [size]="18" /></div>
-            <div class="step__body">
-              <div class="step__title-row">
-                <span class="step__title">{{ s.title }}</span>
-                <span class="step__badge" [attr.data-state]="s.state">{{ s.status }}</span>
-              </div>
-              <p class="step__desc">{{ s.description }}</p>
-            </div>
-            <div class="step__go">
-              <a *ngIf="s.route" [routerLink]="s.route" class="step__link">
-                Open <tm-icon name="arrow-right" [size]="14" />
-              </a>
-              <button *ngIf="s.local" type="button" class="step__link step__link--btn"
-                      (click)="focusFenceEditor()">
-                Edit on map <tm-icon name="arrow-right" [size]="14" />
-              </button>
-              <span *ngIf="!s.route && !s.local" class="step__soon">Coming soon</span>
-            </div>
-          </article>
-        </div>
-
-        <ng-template #loadingTpl>
-          <div class="cw__loading">
-            <tm-icon name="refresh" [size]="18" /> Loading setup status…
-          </div>
-        </ng-template>
-      </section>
-
       <div class="cw__pick-hint" *ngIf="currentId == null && cities.length > 0">
-        Select a city above to see its setup checklist.
+        Select a city above to manage its service area.
       </div>
     </div>
 
@@ -393,79 +333,7 @@ interface CityForm {
     .cw__edithint strong { font-weight: 800; }
     .cw__map { width: 100%; height: 360px; background: var(--tm-canvas-2); }
 
-    /* Setup checklist */
-    .cw__setup {
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg, 14px);
-      padding: 18px;
-    }
-    .cw__setup-head {
-      display: flex; align-items: flex-end; justify-content: space-between;
-      gap: 16px; margin-bottom: 14px; flex-wrap: wrap;
-    }
-    .cw__setup-title { margin: 3px 0 0; font-size: 18px; font-weight: 800; color: var(--tm-text); }
-    .cw__progress { display: flex; flex-direction: column; gap: 5px; min-width: 180px; }
-    .cw__progress-bar {
-      height: 7px; border-radius: 999px; background: var(--tm-canvas-2); overflow: hidden;
-    }
-    .cw__progress-bar span {
-      display: block; height: 100%;
-      background: var(--tm-green, #06b6d4);
-      transition: width var(--tm-duration-base) var(--tm-ease);
-    }
-    .cw__progress-lbl { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
-
-    .cw__steps { display: flex; flex-direction: column; gap: 8px; }
-    .step {
-      display: flex; align-items: center; gap: 12px;
-      padding: 12px;
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-md, 10px);
-      background: var(--tm-canvas);
-    }
-    .step--soon { opacity: 0.62; }
-    .step__index {
-      flex: none;
-      width: 26px; height: 26px; border-radius: 50%;
-      display: inline-flex; align-items: center; justify-content: center;
-      font-size: 12px; font-weight: 800;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-    }
-    .step__index[data-state="done"] { background: var(--tm-green, #06b6d4); color: #fff; }
-    .step__index[data-state="todo"] { background: #fdecc8; color: #92600a; }
-    .step__icon {
-      flex: none;
-      width: 36px; height: 36px; border-radius: 9px;
-      display: inline-flex; align-items: center; justify-content: center;
-      background: var(--tm-canvas-2); color: var(--tm-text);
-    }
-    .step__body { flex: 1; min-width: 0; }
-    .step__title-row { display: flex; align-items: center; gap: 8px; }
-    .step__title { font-size: 14px; font-weight: 700; color: var(--tm-text); }
-    .step__badge {
-      font-size: 10px; font-weight: 800; letter-spacing: 0.3px;
-      padding: 2px 7px; border-radius: 999px;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-    }
-    .step__badge[data-state="done"] { background: #dcfce7; color: #15803d; }
-    .step__badge[data-state="todo"] { background: #fdecc8; color: #92600a; }
-    .step__desc { margin: 2px 0 0; font-size: 12px; color: var(--tm-text-muted); }
-    .step__go { flex: none; }
-    .step__link {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-size: 12px; font-weight: 700;
-      color: var(--tm-green, #06b6d4);
-      text-decoration: none;
-    }
-    .step__link:hover { text-decoration: underline; }
-    .step__link--btn {
-      background: none; border: none; cursor: pointer; font: inherit;
-      padding: 0; line-height: 1;
-    }
-    .step__soon { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
-
-    .cw__loading, .cw__pick-hint {
+    .cw__pick-hint {
       display: flex; align-items: center; gap: 8px; justify-content: center;
       padding: 24px; font-size: 13px; color: var(--tm-text-muted);
     }
@@ -514,9 +382,6 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
 
   cities: CityOption[] = [];
   currentId: number | null = null;
-
-  steps: SetupStep[] = [];
-  loading = false;
 
   // Drawer / form state
   formOpen = false;
@@ -575,7 +440,7 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
           // Switching cities discards any in-progress boundary edit.
           this.editingFence = false;
           this.savingFence = false;
-          this.loadStatus();
+          this.loadCity();
         }
       }),
     );
@@ -610,54 +475,21 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
     return 'No map centre set';
   }
 
-  get currentName(): string {
-    return this.cities.find((c) => c.id === this.currentId)?.name ?? '';
-  }
-
   select(id: number): void {
     this.cityCtx.setCityId(id);
   }
 
-  // ----- Progress -----
-  get requiredCount(): number {
-    return this.steps.filter((s) => s.state !== 'soon' && s.state !== 'optional').length;
-  }
-  get doneCount(): number {
-    return this.steps.filter((s) => s.state === 'done').length;
-  }
-  get progressPercent(): number {
-    const req = this.requiredCount;
-    return req === 0 ? 0 : Math.round((this.doneCount / req) * 100);
-  }
-
-  // ----- Setup status -----
-  private loadStatus(): void {
+  // ----- City record (drives the service-area map) -----
+  private loadCity(): void {
     const id = this.currentId;
-    if (id == null) {
-      this.steps = [];
-      return;
-    }
-    this.loading = true;
-    const safe = <T>(path: string) =>
-      this.api.get<T>(path).pipe(catchError(() => of(null as unknown as T)));
-
-    forkJoin({
-      city: safe<any>(`/admin/cities/${id}`),
-      vehicleTypes: safe<any>(`/admin/cities/${id}/vehicle-types`),
-      pricing: safe<any>(`/admin/pricing-rules?city_id=${id}`),
-      dynamic: safe<any>(`/admin/dynamic-pricing-rules?city_id=${id}`),
-      settings: safe<any>(`/admin/cities/${id}/settings`),
-      promotions: safe<any>(`/admin/cities/${id}/promotions`),
-      promoCodes: safe<any>(`/admin/cities/${id}/promo-codes`),
-      coupons: safe<any>(`/admin/cities/${id}/coupons`),
-      fleets: safe<any>(`/admin/fleets?city_id=${id}`),
-      drivers: safe<any>(`/admin/drivers?city_id=${id}`),
-    }).subscribe((r) => {
-      this.steps = this.buildSteps(r);
-      this.loading = false;
-      this.cdr.markForCheck();
-      this.renderCityOnMap(this.cityRecord(r['city']));
-    });
+    if (id == null) return;
+    this.api
+      .get<any>(`/admin/cities/${id}`)
+      .pipe(catchError(() => of(null)))
+      .subscribe((res) => {
+        this.renderCityOnMap(this.cityRecord(res));
+        this.cdr.markForCheck();
+      });
   }
 
   // ----- City map + geofencing -----
@@ -762,12 +594,6 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
 
   // ----- Geofencing edit actions -----
 
-  /** Scrolls the map into view and starts boundary editing (from checklist). */
-  focusFenceEditor(): void {
-    this.cityMapRef?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    this.startFenceEdit();
-  }
-
   startFenceEdit(): void {
     if (this.currentId == null) return;
     this.editingFence = true;
@@ -779,6 +605,29 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
     this.editingFence = false;
     this.draftPolygon = this.polygonOf(this.mapCity);
     this.redrawFence();
+  }
+
+  /** Clears the saved service-area boundary (sends a null polygon). */
+  removeFence(): void {
+    if (this.currentId == null || !this.hasFence || this.savingFence) return;
+    this.savingFence = true;
+    this.api
+      .patch<any>(`/admin/cities/${this.currentId}/polygon`, { boundary_polygon: null })
+      .subscribe({
+        next: () => {
+          this.savingFence = false;
+          this.editingFence = false;
+          this.draftPolygon = [];
+          this.mapCity = { ...this.mapCity, boundary_polygon: null };
+          this.redrawFence();
+          this.toast.success('Service-area boundary removed');
+          this.loadCity();
+        },
+        error: (err) => {
+          this.savingFence = false;
+          this.toast.error(err?.error?.message || 'Could not remove the boundary.');
+        },
+      });
   }
 
   undoFencePoint(): void {
@@ -802,7 +651,7 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
           this.editingFence = false;
           this.mapCity = { ...this.mapCity, boundary_polygon: [...this.draftPolygon] };
           this.toast.success('Service-area boundary saved');
-          this.loadStatus(); // refresh checklist + map framing
+          this.loadCity(); // refresh map framing
         },
         error: (err) => {
           this.savingFence = false;
@@ -885,128 +734,12 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Normalises an API payload (array or {data:[]}) to an array. */
-  private list(res: any): any[] {
-    if (Array.isArray(res)) return res;
-    if (res && Array.isArray(res.data)) return res.data;
-    return [];
-  }
-
   /**
    * Unwraps a single-city API payload to the bare record. The cities API
    * returns `{ city: {...} }`; some other paths use `{ data: {...} }`.
    */
   private cityRecord(res: any): any {
     return res?.city ?? res?.data ?? res ?? {};
-  }
-
-  private buildSteps(r: Record<string, any>): SetupStep[] {
-    const cityObj = this.cityRecord(r['city']);
-    const polygon: any[] = Array.isArray(cityObj?.boundary_polygon) ? cityObj.boundary_polygon : [];
-    const vt = this.list(r['vehicleTypes']).length;
-    const pr = this.list(r['pricing']).length;
-    const dp = this.list(r['dynamic']).length;
-    const promoTotal =
-      this.list(r['promotions']).length +
-      this.list(r['promoCodes']).length +
-      this.list(r['coupons']).length;
-    const fleets = this.list(r['fleets']).length;
-    const drivers = this.list(r['drivers']).length;
-    const hasSettings = !!(r['settings']?.data ?? r['settings']);
-
-    return [
-      {
-        key: 'geofencing',
-        title: 'Geofencing',
-        description: 'Draw the city service-area boundary on the map above.',
-        icon: 'map',
-        route: null,
-        local: true,
-        state: polygon.length >= 3 ? 'done' : 'todo',
-        status: polygon.length >= 3 ? `${polygon.length} points` : 'No fence',
-      },
-      {
-        key: 'vehicles',
-        title: 'Ride & Vehicle types',
-        description: 'Add the vehicle products customers can book in this city.',
-        icon: 'car',
-        route: '/vehicles',
-        state: vt > 0 ? 'done' : 'todo',
-        status: vt > 0 ? `${vt} configured` : 'None',
-      },
-      {
-        key: 'pricing',
-        title: 'Base pricing',
-        description: 'Set fare rate cards per vehicle type.',
-        icon: 'tag',
-        route: '/pricing',
-        state: pr > 0 ? 'done' : 'todo',
-        status: pr > 0 ? `${pr} rate cards` : 'Not priced',
-      },
-      {
-        key: 'city-settings',
-        title: 'City settings',
-        description: 'Branding, toggles, support contacts and payment modes.',
-        icon: 'cog',
-        route: '/settings/city',
-        state: hasSettings ? 'done' : 'todo',
-        status: hasSettings ? 'Configured' : 'Defaults',
-      },
-      {
-        key: 'dynamic-pricing',
-        title: 'Dynamic pricing',
-        description: 'Optional surge / region-based fare multipliers.',
-        icon: 'bolt',
-        route: '/pricing',
-        state: dp > 0 ? 'done' : 'optional',
-        status: dp > 0 ? `${dp} rules` : 'Optional',
-      },
-      {
-        key: 'promotions',
-        title: 'Promotions',
-        description: 'City-wide promotions, promo codes and coupons.',
-        icon: 'gift',
-        route: '/promotions/city-wide',
-        state: promoTotal > 0 ? 'done' : 'optional',
-        status: promoTotal > 0 ? `${promoTotal} live` : 'Optional',
-      },
-      {
-        key: 'fleets',
-        title: 'Fleets',
-        description: 'Optional fleet/franchise operators within the city.',
-        icon: 'car',
-        route: '/settings/fleets',
-        state: fleets > 0 ? 'done' : 'optional',
-        status: fleets > 0 ? `${fleets} fleets` : 'Optional',
-      },
-      {
-        key: 'banners',
-        title: 'Banners',
-        description: 'Promotional banners per audience — not built yet.',
-        icon: 'gift',
-        route: null,
-        state: 'soon',
-        status: 'Coming soon',
-      },
-      {
-        key: 'driver-subscriptions',
-        title: 'Driver subscriptions',
-        description: 'Subscription plans for drivers — not built yet.',
-        icon: 'id-card',
-        route: null,
-        state: 'soon',
-        status: 'Coming soon',
-      },
-      {
-        key: 'drivers',
-        title: 'Drivers',
-        description: 'Onboard and approve drivers for this city.',
-        icon: 'driver-helmet',
-        route: '/drivers',
-        state: drivers > 0 ? 'done' : 'todo',
-        status: drivers > 0 ? `${drivers} drivers` : 'None yet',
-      },
-    ];
   }
 
   // ----- City CRUD -----
@@ -1088,7 +821,7 @@ export class CityWorkspaceComponent implements OnInit, OnDestroy {
         const created = this.cityRecord(res);
         this.cityCtx.ensureCitiesLoaded(true).subscribe(() => {
           if (!wasEditing && created?.id) this.cityCtx.setCityId(created.id);
-          else this.loadStatus();
+          else this.loadCity();
         });
       },
       error: (err) => {

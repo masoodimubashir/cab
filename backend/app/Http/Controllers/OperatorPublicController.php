@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Driver;
 use App\Models\OperatorSetting;
+use App\Services\PaymentModeService;
 use Illuminate\Http\Request;
 
 /**
@@ -36,15 +38,17 @@ class OperatorPublicController extends Controller
     }
 
     /**
-     * Copy for the driver-app subscription popup (title / description / two
-     * button labels) set in Operator Settings → Subscription. Null fields mean
-     * "use the app's built-in default".
+     * Copy for the driver-app subscription popup (on/off flag + title /
+     * description / two button labels) set in Operator Settings → Subscription.
+     * When `enabled` is false the driver app must not show the popup. Null copy
+     * fields mean "use the app's built-in default".
      */
     public function subscriptionPopup(Request $request)
     {
         $s = OperatorSetting::instance();
 
         return response()->json([
+            'enabled' => (bool) $s->subscription_popup_enabled,
             'title' => $s->subscription_popup_title,
             'desc' => $s->subscription_popup_desc,
             'button1' => $s->subscription_popup_button1,
@@ -57,10 +61,22 @@ class OperatorPublicController extends Controller
      * Settings → Driver). When false, the driver app locks the toggles and the
      * update endpoint rejects changes.
      */
-    public function driverPaymentModes(Request $request)
+    public function driverPaymentModes(Request $request, PaymentModeService $paymentModeService)
     {
+        $canUpdate = (bool) OperatorSetting::instance()->update_driver_payment_modes_enabled;
+
+        // When the operator owns payment policy (can_update = false), the driver
+        // follows their city's allowed modes. Surface those (lowercased) so the
+        // app can show the correct toggles, locked.
+        $effectiveModes = null;
+        if (!$canUpdate) {
+            $driver = Driver::query()->where('user_id', $request->user()->id)->first();
+            $effectiveModes = array_map('strtolower', $paymentModeService->cityModes($driver?->city_id));
+        }
+
         return response()->json([
-            'can_update' => (bool) OperatorSetting::instance()->update_driver_payment_modes_enabled,
+            'can_update' => $canUpdate,
+            'effective_modes' => $effectiveModes,
         ]);
     }
 }

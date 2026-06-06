@@ -79,6 +79,12 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    path: 'notifications',
+    loadChildren: () =>
+      import('./pages/notifications/notifications.module').then((m) => m.NotificationsPageModule),
+    canActivate: [AuthGuard],
+  },
+  {
     path: 'delete-account',
     loadChildren: () =>
       import('./pages/delete-account/delete-account.module').then((m) => m.DeleteAccountPageModule),

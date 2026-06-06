@@ -23,8 +23,11 @@ class TripSeeder extends Seeder
             return;
         }
 
-        $rideMini = RideType::query()->where('name', 'Mini')->first();
-        $rideSedan = RideType::query()->where('name', 'Sedan')->first();
+        // Use ride types DatabaseSeeder actually creates (Normal / Outstation);
+        // 'Mini'/'Sedan' are vehicle types, not ride types, so the old lookups
+        // always missed and this seeder silently no-opped.
+        $rideMini = RideType::query()->where('name', 'Normal')->first();
+        $rideSedan = RideType::query()->where('name', 'Outstation')->first();
         if (! $rideMini || ! $rideSedan) {
             $this->command?->warn('TripSeeder skipped: ride types missing. Run DatabaseSeeder first.');
 

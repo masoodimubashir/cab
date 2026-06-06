@@ -55,8 +55,8 @@ class RatingsController extends Controller
 
     /**
      * Detail view for a single customer trip — the trip-details screen.
-     * Loads payment + driver + applied_promotion eager so the breakdown,
-     * payment status, and Pay-button gating can be rendered in one round-trip.
+     * Loads payment + driver eager so the breakdown, payment status, and
+     * Pay-button gating can be rendered in one round-trip.
      */
     public function customerTripDetail(Request $request, Trip $trip)
     {
@@ -68,7 +68,6 @@ class RatingsController extends Controller
         $trip->load([
             'payment:id,trip_id,method,status,amount,discount_amount,paid_at,coupon_assignment_id',
             'driver:id,name,phone,avatar_path',
-            'appliedPromotion:id,title,discount_type,discount_value',
         ]);
 
         return response()->json(['trip' => $trip]);

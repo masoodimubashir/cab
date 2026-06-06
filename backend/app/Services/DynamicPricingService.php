@@ -2,12 +2,29 @@
 
 namespace App\Services;
 
+use App\Models\CitySetting;
 use App\Models\DynamicPricingRule;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
 class DynamicPricingService
 {
+    /**
+     * Whether an applied dynamic (area) rule should be SHOWN to the rider as a
+     * labelled "area fare" line. True only when the rule's own visibility is on
+     * AND the rule's city has the "Region-specific fare" toggle on. The fare
+     * factor still applies regardless — this only governs transparency.
+     */
+    public function isFareVisibleToRider(DynamicPricingRule $rule): bool
+    {
+        if (!$rule->is_visible) {
+            return false;
+        }
+        return (bool) CitySetting::query()
+            ->where('city_id', $rule->city_id)
+            ->value('show_region_specific_fare');
+    }
+
     /**
      * Returns the best-matching dynamic rule for a pickup at a given moment.
      *

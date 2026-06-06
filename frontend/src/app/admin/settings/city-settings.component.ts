@@ -534,9 +534,9 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
           }
           this.toast.success('City settings saved');
         },
-        error: () => {
+        error: (err) => {
           this.saving = false;
-          this.toast.error('Failed to save settings');
+          this.toast.error(err?.error?.message || 'Failed to save settings');
         },
       });
   }

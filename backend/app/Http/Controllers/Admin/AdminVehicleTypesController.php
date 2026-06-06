@@ -6,7 +6,6 @@ use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\RideType;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class AdminVehicleTypesController
@@ -37,12 +36,6 @@ class AdminVehicleTypesController
             'available_vehicle_types' => \App\Models\VehicleType::query()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
-                ->get(['id', 'name'])
-                ->toArray(),
-            'available_vehicle_sets' => \App\Models\VehicleSet::query()
-                ->where('city_id', $city->id)
-                ->orderBy('sort_order')
-                ->orderBy('name')
                 ->get(['id', 'name'])
                 ->toArray(),
         ]);
@@ -99,8 +92,8 @@ class AdminVehicleTypesController
     }
 
     /**
-     * Full edit — every toggle, every commercial, every dispatcher override,
-     * and Android/iOS image uploads. Multipart accepted for the image fields.
+     * Full edit — every toggle, every commercial, every dispatcher override.
+     * (Per-vehicle imagery lives in the separate image gallery.)
      */
     public function update(Request $request, City $city, CityVehicleType $vehicleType)
     {
@@ -139,29 +132,26 @@ class AdminVehicleTypesController
             'override_max_hops' => ['nullable', 'integer', 'min:1', 'max:50'],
 
             'is_active' => ['nullable', 'boolean'],
-
-            'android_image' => ['nullable', 'file', 'image', 'max:4096'],
-            'ios_image' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
 
-        // Image swaps — delete old file before writing the new one.
-        if ($request->hasFile('android_image')) {
-            if ($vehicleType->android_image_path && Storage::disk('public')->exists($vehicleType->android_image_path)) {
-                Storage::disk('public')->delete($vehicleType->android_image_path);
-            }
-            $vehicleType->android_image_path = $request->file('android_image')->store('vehicle_types/android', 'public');
-        }
-        if ($request->hasFile('ios_image')) {
-            if ($vehicleType->ios_image_path && Storage::disk('public')->exists($vehicleType->ios_image_path)) {
-                Storage::disk('public')->delete($vehicleType->ios_image_path);
-            }
-            $vehicleType->ios_image_path = $request->file('ios_image')->store('vehicle_types/ios', 'public');
+        // Re-check the (city, ride_type, display_name) uniqueness when either
+        // key changes, so a rename / ride-type change returns a friendly 409
+        // instead of a raw DB integrity 500.
+        $targetRideTypeId = $data['ride_type_id'] ?? $vehicleType->ride_type_id;
+        $targetName = $data['display_name'] ?? $vehicleType->display_name;
+        $clash = CityVehicleType::query()
+            ->where('city_id', $city->id)
+            ->where('ride_type_id', $targetRideTypeId)
+            ->where('display_name', $targetName)
+            ->where('id', '!=', $vehicleType->id)
+            ->exists();
+        if ($clash) {
+            return response()->json([
+                'message' => 'A vehicle with this name already exists for this ride type.',
+            ], 409);
         }
 
         foreach ($data as $field => $value) {
-            if (in_array($field, ['android_image', 'ios_image'], true)) {
-                continue;
-            }
             $vehicleType->{$field} = $value;
         }
         $vehicleType->save();
@@ -175,12 +165,6 @@ class AdminVehicleTypesController
     public function destroy(City $city, CityVehicleType $vehicleType)
     {
         $this->guard($city, $vehicleType);
-
-        foreach (['android_image_path', 'ios_image_path'] as $col) {
-            if ($vehicleType->{$col} && Storage::disk('public')->exists($vehicleType->{$col})) {
-                Storage::disk('public')->delete($vehicleType->{$col});
-            }
-        }
         $vehicleType->delete();
 
         return response()->json(['message' => 'Vehicle type deleted.']);
@@ -200,16 +184,13 @@ class AdminVehicleTypesController
             'city_id' => $v->city_id,
             'ride_type_id' => $v->ride_type_id,
             'ride_type_name' => $v->rideType?->name,
+            'is_outstation' => (bool) $v->rideType?->isOutstation(),
             'vehicle_type_id' => $v->vehicle_type_id,
             'vehicle_type_name' => $v->vehicleType?->name,
             'vehicle_set_id' => $v->vehicle_set_id,
             'vehicle_set_name' => $v->vehicleSet?->name,
             'display_name' => $v->display_name,
             'display_order' => (int) $v->display_order,
-            'android_image_path' => $v->android_image_path,
-            'android_image_url' => $v->android_image_url,
-            'ios_image_path' => $v->ios_image_path,
-            'ios_image_url' => $v->ios_image_url,
             'max_people' => (int) $v->max_people,
             'luggage_capacity' => (int) $v->luggage_capacity,
 

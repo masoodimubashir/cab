@@ -94,7 +94,9 @@ class TripTrackingController extends Controller
         ]);
 
         $user = $request->user();
-        if ($trip->customer_id !== $user->id) {
+        // Any rider on the trip may stream their pin — the single customer on a
+        // private trip, or any seat-holder on a shared journey.
+        if (!$trip->isParticipant($user->id)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -190,6 +192,10 @@ class TripTrackingController extends Controller
         if (!$trip) {
             return response()->json(['message' => 'Trip not found.'], 404);
         }
+
+        // This is a PUBLIC link (no auth). Never expose the rider's personal
+        // contact — including a friend's name/number on a for-someone-else trip.
+        $trip->makeHidden(['booked_for_phone', 'booked_for_name']);
 
         $latestLocation = DriverLocation::query()
             ->where('trip_id', $trip->id)

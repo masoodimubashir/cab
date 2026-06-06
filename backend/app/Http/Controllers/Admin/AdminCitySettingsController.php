@@ -39,14 +39,37 @@ class AdminCitySettingsController
 
         $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
 
-        // Normalize allowed_driver_payment_modes — accept JSON string or array.
+        // Normalize + LOCK allowed_driver_payment_modes to the two supported
+        // values. Accept a JSON string, comma list, or array; upper-case each
+        // entry and require every one to be CASH or RAZORPAY — anything else is
+        // rejected (not silently dropped) so the stored value always matches
+        // what the apps actually honor. A city must keep at least one mode, or
+        // no rider there could pay.
         if (array_key_exists('allowed_driver_payment_modes', $data)) {
             $modes = $data['allowed_driver_payment_modes'];
             if (is_string($modes)) {
                 $decoded = json_decode($modes, true);
                 $modes = is_array($decoded) ? $decoded : array_map('trim', explode(',', $modes));
             }
-            $settings->allowed_driver_payment_modes = is_array($modes) ? array_values(array_filter($modes)) : [];
+            $modes = is_array($modes) ? $modes : [];
+            $modes = array_values(array_unique(array_map(
+                fn ($m) => strtoupper(trim((string) $m)),
+                array_filter($modes, fn ($m) => trim((string) $m) !== ''),
+            )));
+
+            $allowed = ['CASH', 'RAZORPAY'];
+            if (array_diff($modes, $allowed)) {
+                return response()->json([
+                    'message' => 'Payment modes must be CASH or RAZORPAY only.',
+                ], 422);
+            }
+            if (empty($modes)) {
+                return response()->json([
+                    'message' => 'At least one payment mode (CASH or RAZORPAY) must be enabled for this city.',
+                ], 422);
+            }
+
+            $settings->allowed_driver_payment_modes = $modes;
             unset($data['allowed_driver_payment_modes']);
         }
 

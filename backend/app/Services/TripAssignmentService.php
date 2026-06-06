@@ -14,40 +14,6 @@ class TripAssignmentService
     }
 
     /**
-     * Atomically claim an unassigned trip for a driver during negotiation.
-     *
-     * Returns the fresh Trip on success. Returns null when the trip is no
-     * longer claimable: already taken by another driver, no longer in
-     * NEGOTIATION, or doesn't exist.
-     *
-     * Callers should treat null as a 409 (someone else won, or customer cancelled).
-     */
-    public function claim(int $tripId, int $driverUserId): ?Trip
-    {
-        return DB::transaction(function () use ($tripId, $driverUserId) {
-            $trip = Trip::query()
-                ->where('id', $tripId)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$trip || $trip->status !== 'NEGOTIATION') {
-                return null;
-            }
-
-            if ($trip->driver_id !== null && $trip->driver_id !== $driverUserId) {
-                return null;
-            }
-
-            if ($trip->driver_id === null) {
-                $trip->driver_id = $driverUserId;
-                $trip->save();
-            }
-
-            return $trip->fresh();
-        });
-    }
-
-    /**
      * Atomically confirm a trip against a specific driver offer.
      *
      * Locks the trip, validates the offer belongs to it and is from a driver,
@@ -81,6 +47,18 @@ class TripAssignmentService
 
             // Ensure offer is for this trip's negotiation.
             if ($trip->fareNegotiation && $offer->fare_negotiation_id !== $trip->fareNegotiation->id) {
+                return null;
+            }
+
+            // One-trip-per-driver: don't bind a driver already committed
+            // elsewhere (e.g. a pre-assigned shared trip). The /driver-accept
+            // guard is the locked backstop; this stops the obvious case early.
+            $driverBusy = Trip::query()
+                ->where('driver_id', $offer->from_user_id)
+                ->where('id', '!=', $trip->id)
+                ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
+                ->exists();
+            if ($driverBusy) {
                 return null;
             }
 

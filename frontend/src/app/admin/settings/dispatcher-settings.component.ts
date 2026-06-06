@@ -10,13 +10,15 @@ import { ButtonComponent, IconComponent } from '../../ui';
 interface DispatcherSetting {
   id: number;
   city_id: number;
-  kind: 'local' | 'rental' | 'outstation';
+  kind: 'local' | 'outstation';
 
   automatic_dispatcher_type: boolean;
   dispatcher_hop_interval_sec: number;
   dispatcher_hop_radius_m: number;
   request_radius_m: number;
   max_hops: number;
+  driver_accept_window_sec: number;
+  cancel_block_radius_m: number;
 
   schedule_available: boolean;
   schedule_dispatcher_type: boolean;
@@ -109,7 +111,30 @@ const DISPATCH_MODES = [
               <span class="field__lbl">Max hops</span>
               <input type="number" min="1" max="50" [(ngModel)]="active.max_hops" />
             </label>
+            <label class="field">
+              <span class="field__lbl">Driver accept window (sec)</span>
+              <input type="number" min="0" max="600" [(ngModel)]="active.driver_accept_window_sec" />
+            </label>
           </div>
+          <p class="hint">A pinged driver must accept within this many seconds (0 = no limit).</p>
+        </div>
+      </section>
+
+      <!-- Ride cancellation -->
+      <section class="sec">
+        <header class="sec__head">
+          <span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span>
+          <div>
+            <h3 class="sec__title">Ride cancellation</h3>
+            <p class="sec__desc">How close the driver can get before the rider loses the option to cancel.</p>
+          </div>
+        </header>
+        <div class="sec__body">
+          <label class="field field--narrow">
+            <span class="field__lbl">Block cancel within (m)</span>
+            <input type="number" min="0" max="50000" [(ngModel)]="active.cancel_block_radius_m" />
+          </label>
+          <p class="hint">Once the driver is within this many metres of the pickup, the rider can no longer cancel. 0 = no limit (cancel allowed right up to pickup). 1000 = 1&nbsp;km.</p>
         </div>
       </section>
 
@@ -259,6 +284,7 @@ const DISPATCH_MODES = [
       font-size: 13px; outline: none;
     }
     .field input:focus { border-color: var(--tm-green); }
+    .hint { margin: 2px 0 0; font-size: 11px; color: var(--tm-text-muted); }
 
     .toggles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
     .tgl { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
@@ -340,15 +366,11 @@ export class DispatcherSettingsComponent implements OnInit, OnDestroy {
   }
 
   kindLabel(k: string): string {
-    if (k === 'rental') return 'Rental';
-    if (k === 'outstation') return 'Outstation';
-    return 'Local';
+    return k === 'outstation' ? 'Outstation' : 'Local';
   }
 
-  kindIcon(k: string): 'car' | 'road' | 'map' {
-    if (k === 'rental') return 'map';
-    if (k === 'outstation') return 'road';
-    return 'car';
+  kindIcon(k: string): 'car' | 'road' {
+    return k === 'outstation' ? 'road' : 'car';
   }
 
   fetch(): void {
@@ -379,6 +401,8 @@ export class DispatcherSettingsComponent implements OnInit, OnDestroy {
       dispatcher_hop_radius_m: f.dispatcher_hop_radius_m,
       request_radius_m: f.request_radius_m,
       max_hops: f.max_hops,
+      driver_accept_window_sec: f.driver_accept_window_sec,
+      cancel_block_radius_m: f.cancel_block_radius_m,
       schedule_available: f.schedule_available,
       schedule_dispatcher_type: f.schedule_dispatcher_type,
       dispatch_only_assigned_scheduled: f.dispatch_only_assigned_scheduled,

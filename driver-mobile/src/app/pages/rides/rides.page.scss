@@ -363,42 +363,121 @@ ion-content.in-trip {
       height: 46px;
       font-size: 0.92rem;
     }
+
+    /* PRIMARY: number-first "₹X · OK" green take button. */
+    .take-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+
+      ion-icon {
+        font-size: 1.2rem;
+      }
+
+      .amt {
+        font-size: 1.05rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ok {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        opacity: 0.9;
+      }
+    }
+
+    /* SECONDARY: price-tag ghost button. */
+    .price-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+
+      ion-icon {
+        font-size: 1.1rem;
+      }
+    }
   }
 }
 
-.negotiation-card {
+/* ════════════════════════════════════════════════════════════════
+   PRICE panel — type your price
+   ════════════════════════════════════════════════════════════════ */
+
+.price-card {
   margin-bottom: 1.5rem;
 
-  .counter-input {
-    --background: transparent;
-    --padding-start: 0;
-    --inner-padding-end: 0;
-    --border-color: #eef0f2;
+  /* Free numeric entry with a leading rupee affix. */
+  .price-input {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 60px;
+    padding: 0 0.95rem;
+    margin: 0.5rem 0 0.5rem;
+    border: 1.5px solid #d6dce2;
+    border-radius: 0.85rem;
+    background: #fff;
+
+    .rupee {
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: #0d1b2a;
+    }
+
+    ion-input {
+      --padding-start: 0;
+      --padding-end: 0;
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: #0d1b2a;
+      --placeholder-color: #adb5bd;
+      --placeholder-font-weight: 500;
+    }
   }
 
-  .counter-actions {
+  .price-hint {
+    margin: 0 0 0.2rem;
+    font-size: 0.82rem;
+    color: #6c757d;
+  }
+
+  .price-error {
+    margin: 0.1rem 0 0.2rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #d33651;
+  }
+
+  .price-actions {
     display: flex;
     gap: 0.55rem;
     margin-top: 0.8rem;
 
     .dc-cta {
       flex: 1;
-      height: 46px;
-      font-size: 0.9rem;
+      height: 48px;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+
+      ion-icon {
+        font-size: 1.2rem;
+      }
     }
   }
 
   .offers-history {
     margin-top: 0.9rem;
 
-    small.muted {
-      display: block;
-      margin-bottom: 0.4rem;
-    }
-
     .offer {
       display: grid;
-      grid-template-columns: 5.5rem 1fr auto;
+      grid-template-columns: 2.2rem 1fr auto;
       align-items: center;
       gap: 0.6rem;
       padding: 0.5rem 0.65rem;
@@ -407,22 +486,43 @@ ion-content.in-trip {
       font-size: 0.88rem;
 
       .who {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: #6c757d;
-        text-transform: uppercase;
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+
+        ion-icon {
+          font-size: 1.25rem;
+        }
       }
 
       .amount {
-        font-weight: 700;
+        font-weight: 800;
         color: #0d1b2a;
+        font-size: 1rem;
+        font-variant-numeric: tabular-nums;
       }
 
       .status {
-        font-size: 0.7rem;
-        color: #6c757d;
-        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        .glyph {
+          font-size: 1.3rem;
+        }
+
+        .glyph--ok {
+          color: #0e8f47;
+        }
+
+        .glyph--wait {
+          color: #b7791f;
+        }
+
+        .glyph--dash {
+          color: #adb5bd;
+        }
       }
 
       &.from-driver {
@@ -435,20 +535,91 @@ ion-content.in-trip {
     }
   }
 
-  .locked {
+  .won-badge {
     margin-top: 0.7rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.45rem;
-    padding: 0.55rem 0.8rem;
-    background: rgba(18, 179, 91, 0.12);
-    border-radius: 0.6rem;
+    padding: 0.7rem 0.8rem;
+    background: rgba(18, 179, 91, 0.14);
+    border-radius: 0.7rem;
     color: #0e8f47;
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 800;
 
     ion-icon {
-      font-size: 1.1rem;
+      font-size: 1.35rem;
     }
   }
+}
+
+/* ---- Shared-departure passenger manifest ---- */
+.manifest-card {
+  .manifest-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .manifest-title { font-size: 14px; font-weight: 800; color: var(--dreamcab-dark-blue, #0d1b2a); }
+  .manifest-count { font-size: 11px; font-weight: 700; color: var(--ion-color-medium); }
+  .manifest-empty { margin: 6px 0 0; font-size: 13px; color: var(--ion-color-medium); }
+
+  .pax-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 0;
+    border-top: 1px solid rgba(13, 27, 42, 0.06);
+
+    &:first-of-type { border-top: 0; }
+  }
+  .pax-main { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .pax-name { font-size: 13px; font-weight: 700; color: var(--dreamcab-dark-blue, #0d1b2a); small { font-weight: 600; color: var(--ion-color-medium); } }
+  .pax-board { font-size: 11px; color: var(--ion-color-medium); }
+
+  .pax-actions { display: inline-flex; gap: 6px; flex: none; }
+  .pax-btn { border: 0; border-radius: 9px; padding: 7px 12px; font-size: 12px; font-weight: 800; cursor: pointer; }
+  .pax-btn--board { background: var(--ion-color-primary, #12b35b); color: #fff; }
+  .pax-btn--noshow { background: rgba(13, 27, 42, 0.06); color: var(--dreamcab-dark-blue, #0d1b2a); }
+  .pax-btn:disabled { opacity: 0.5; }
+
+  .pax-status {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.3px; text-transform: capitalize;
+    padding: 4px 10px; border-radius: 999px; flex: none;
+    background: rgba(13, 27, 42, 0.06); color: var(--ion-color-medium);
+
+    &[data-s="BOARDED"], &[data-s="DROPPED"], &[data-s="COMPLETED"] { background: rgba(18, 179, 91, 0.12); color: var(--ion-color-primary, #12b35b); }
+    &[data-s="NO_SHOW"], &[data-s="CANCELLED"] { background: rgba(235, 68, 68, 0.12); color: #d92d2d; }
+  }
+}
+
+/* Call-rider button on the active-trip customer row. */
+.rider-call {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ion-color-primary, #12B35B);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.35);
+  ion-icon { font-size: 20px; }
+}
+
+/* "For a friend" badge on an incoming-offer card. */
+.friend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(var(--dreamcab-dark-blue-rgb, 13, 27, 42), 0.08);
+  color: var(--dreamcab-dark-blue, #0D1B2A);
+  font-weight: 800;
+  ion-icon { font-size: 13px; }
 }

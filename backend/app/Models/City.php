@@ -25,9 +25,11 @@ class City extends Model
         return $this->hasMany(PricingRule::class, 'city_id');
     }
 
-    public function rideProducts(): HasMany
+    public function rideScopes(): HasMany
     {
-        return $this->hasMany(CityRideProduct::class, 'city_id');
+        return $this->hasMany(CityRideScope::class, 'city_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     public function settings(): HasOne

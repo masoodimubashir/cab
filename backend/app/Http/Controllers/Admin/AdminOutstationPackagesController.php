@@ -96,6 +96,8 @@ class AdminOutstationPackagesController
             'is_active' => ['nullable', 'boolean'],
             'fare_config' => ['nullable', 'array'],
             'fare_config.*' => ['nullable', 'numeric', 'min:0'],
+            // A 0 surge would zero the whole fare — require ≥0.1 when set.
+            'fare_config.surge_multiplier' => ['nullable', 'numeric', 'min:0.1', 'max:10'],
         ]);
     }
 
@@ -120,8 +122,7 @@ class AdminOutstationPackagesController
         if ($vehicleType->city_id !== $city->id) {
             throw new NotFoundHttpException('Vehicle type not found in this city.');
         }
-        $rideTypeName = strtolower((string) $vehicleType->rideType?->name);
-        if ($rideTypeName !== 'outstation') {
+        if (! $vehicleType->rideType?->isOutstation()) {
             throw new NotFoundHttpException('Packages are only available for outstation vehicles.');
         }
         if ($package && $package->city_vehicle_type_id !== $vehicleType->id) {
