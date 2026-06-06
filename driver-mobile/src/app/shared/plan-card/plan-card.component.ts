@@ -7,6 +7,7 @@ export interface SubscriptionPlan {
   subtitle: string | null;
   amount: number;
   commission_percent: number;
+  pricing_model?: 'subscription' | 'commission' | 'hybrid';
   meter_type: 'rides' | 'days' | 'daily' | 'earnings';
   rides_count: number | null;
   days_count: number | null;
@@ -47,6 +48,50 @@ export class PlanCardComponent {
 
   get commissionFree(): boolean {
     return this.plan.commission_percent === 0;
+  }
+
+  /** Does this plan charge a one-time amount up front? (false = commission-only) */
+  get hasUpfront(): boolean {
+    return this.plan.amount > 0;
+  }
+
+  /**
+   * The plan's pricing model. Uses the backend field when present and falls
+   * back to deriving it from the amount/commission for any legacy plan.
+   */
+  get modelKey(): 'subscription' | 'commission' | 'hybrid' {
+    const m = this.plan.pricing_model;
+    if (m === 'commission' || m === 'hybrid' || m === 'subscription') return m;
+    if (this.plan.amount > 0 && this.plan.commission_percent > 0) return 'hybrid';
+    if (this.plan.amount <= 0 && this.plan.commission_percent > 0) return 'commission';
+    return 'subscription';
+  }
+
+  /** Market-friendly label shown on the model chip. */
+  get modelLabel(): string {
+    switch (this.modelKey) {
+      case 'commission': return 'Pay-as-you-go';
+      case 'hybrid': return 'Hybrid';
+      default: return 'Subscription';
+    }
+  }
+
+  get modelIcon(): string {
+    switch (this.modelKey) {
+      case 'commission': return 'trending-up-outline';
+      case 'hybrid': return 'layers-outline';
+      default: return 'ribbon-outline';
+    }
+  }
+
+  /** Headline price text — "₹499" for paid plans, a clear note for commission-only. */
+  get priceText(): string {
+    return this.hasUpfront ? `₹${Math.round(this.plan.amount).toLocaleString('en-IN')}` : 'No upfront fee';
+  }
+
+  /** CTA label — paid plans show the price, commission-only plans just activate. */
+  get ctaText(): string {
+    return this.hasUpfront ? `Subscribe · ${this.priceText}` : 'Activate plan';
   }
 
   /** Headline value: the % of each fare the driver keeps while subscribed. */
@@ -91,9 +136,10 @@ export class PlanCardComponent {
     }
   }
 
-  /** Effective unit cost where it makes sense (rides / days plans). */
+  /** Effective unit cost where it makes sense (paid rides / days plans). */
   get effectiveCost(): string | null {
     const p = this.plan;
+    if (!this.hasUpfront) return null; // commission-only plans have no per-unit price
     if (p.meter_type === 'rides' && p.rides_count && p.rides_count > 0) {
       return `≈ ₹${Math.round(p.amount / p.rides_count)} per ride`;
     }
@@ -112,6 +158,11 @@ export class PlanCardComponent {
       icon: 'cash-outline',
       text: this.commissionFree ? 'Keep 100% of your fares' : `Pay only ${p.commission_percent}% commission`,
     });
+
+    // Make the "no money down" benefit explicit for commission-only plans.
+    if (!this.hasUpfront) {
+      list.push({ icon: 'wallet-outline', text: 'No upfront payment — pay only as you ride' });
+    }
 
     let validity = '';
     if (p.meter_type === 'rides') validity = p.rides_count ? `Valid for ${p.rides_count} rides` : 'Valid for the included rides';

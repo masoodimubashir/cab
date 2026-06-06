@@ -111,6 +111,23 @@
     border-radius: 999px;
   }
 
+  /* Pricing model chip — light chip with model-coloured text on the navy head. */
+  &__model {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.93);
+    color: #0E8F47;
+    ion-icon { font-size: 12px; }
+
+    &[data-m="commission"] { color: #1D4ED8; }
+    &[data-m="hybrid"] { color: #6D28D9; }
+  }
+
   &__title {
     margin: 0;
     font-size: 1.5rem;

@@ -55,9 +55,12 @@ class DriverSubscriptionsController
         $vehicleTypeId = $driver?->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
 
         $sub = $this->subscriptions->activeFor($user->id, $vehicleTypeId);
+        $queued = $this->subscriptions->queuedFor($user->id);
 
         return response()->json([
-            'subscription' => $sub ? $this->shapeSubscription($sub->load('plan', 'vehicleType', 'nextPlan')) : null,
+            'subscription' => $sub
+                ? $this->shapeSubscription($sub->load('plan', 'vehicleType'), $queued?->load('plan'))
+                : null,
             'wallet_balance' => $this->wallet->balance($user),
             'currency' => 'INR',
         ]);
@@ -87,35 +90,32 @@ class DriverSubscriptionsController
         }
 
         $vehicleTypeId = $driver->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
-        // Use the raw active row (incl. exhausted-but-unswept) so a buy during
-        // the renewal window queues instead of creating a second active sub.
-        $current = $this->subscriptions->currentActiveRow($user->id, $vehicleTypeId);
 
-        // One active subscription at a time. If the driver already has one, the
-        // new plan is queued to start — and is only charged — when the current
-        // plan ends (handled by the renewal sweep).
-        if ($current) {
-            $this->subscriptions->queueNext($current, $plan);
-
-            return response()->json([
-                'queued' => true,
-                'subscription' => $this->shapeSubscription(
-                    $current->fresh()->load('plan', 'vehicleType', 'nextPlan'),
-                ),
-                'wallet_balance' => $this->wallet->balance($user),
-                'message' => 'Plan queued — it starts when your current plan ends.',
-            ]);
-        }
-
+        // One atomic call decides active-vs-queued, checks the wallet, and
+        // charges — all under a per-driver lock — so concurrent buys can't
+        // double-charge or create two running subscriptions. If a plan is already
+        // running, the new plan is charged NOW and queued to start when it ends.
         try {
-            $sub = $this->subscriptions->purchase($user, $plan);
+            $result = $this->subscriptions->buy($user, $plan, $vehicleTypeId);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
+        if ($result['queued']) {
+            return response()->json([
+                'queued' => true,
+                'subscription' => $this->shapeSubscription(
+                    $result['current']->load('plan', 'vehicleType'),
+                    $result['subscription']->load('plan'),
+                ),
+                'wallet_balance' => $this->wallet->balance($user),
+                'message' => 'Plan purchased — it starts when your current plan ends.',
+            ], 201);
+        }
+
         return response()->json([
             'queued' => false,
-            'subscription' => $this->shapeSubscription($sub->load('plan', 'vehicleType', 'nextPlan')),
+            'subscription' => $this->shapeSubscription($result['subscription']->load('plan', 'vehicleType')),
             'wallet_balance' => $this->wallet->balance($user),
             'message' => 'Subscription activated.',
         ], 201);
@@ -123,7 +123,8 @@ class DriverSubscriptionsController
 
     /**
      * Turn off auto-renew for the driver's active plan. The plan stays active
-     * until it expires; it just won't renew, and any queued plan is dropped.
+     * until it expires; it just won't renew. A prepaid queued plan is left alone
+     * — it was already paid for and still starts when this plan ends.
      */
     public function cancel(Request $request)
     {
@@ -141,7 +142,10 @@ class DriverSubscriptionsController
         $this->subscriptions->cancel($sub);
 
         return response()->json([
-            'subscription' => $this->shapeSubscription($sub->fresh()->load('plan', 'vehicleType', 'nextPlan')),
+            'subscription' => $this->shapeSubscription(
+                $sub->fresh()->load('plan', 'vehicleType'),
+                $this->subscriptions->queuedFor($user->id)?->load('plan'),
+            ),
             'wallet_balance' => $this->wallet->balance($user),
             'message' => 'Auto-renew turned off. Your plan stays active until it expires.',
         ]);
@@ -155,6 +159,7 @@ class DriverSubscriptionsController
             'subtitle' => $p->subtitle,
             'amount' => (float) $p->amount,
             'commission_percent' => (float) $p->commission_percent,
+            'pricing_model' => $p->pricing_model,
             'meter_type' => $p->meter_type,
             'rides_count' => $p->rides_count,
             'days_count' => $p->days_count,
@@ -165,7 +170,7 @@ class DriverSubscriptionsController
         ];
     }
 
-    private function shapeSubscription(DriverSubscription $s): array
+    private function shapeSubscription(DriverSubscription $s, ?DriverSubscription $queued = null): array
     {
         return [
             'id' => $s->id,
@@ -174,6 +179,7 @@ class DriverSubscriptionsController
             'status' => $s->status,
             'meter_type' => $s->meter_type,
             'commission_percent' => (float) $s->commission_percent,
+            'pricing_model' => $s->pricing_model,
             'amount_paid' => (float) $s->amount_paid,
             'rides_allowed' => $s->rides_allowed,
             'rides_used' => $s->rides_used,
@@ -186,11 +192,14 @@ class DriverSubscriptionsController
             'expires_at' => optional($s->expires_at)->toIso8601String(),
             'auto_renew' => (bool) $s->auto_renew,
             'cancelled_at' => optional($s->cancelled_at)->toIso8601String(),
-            'next_plan' => $s->nextPlan ? [
-                'id' => $s->nextPlan->id,
-                'title' => $s->nextPlan->title,
-                'amount' => (float) $s->nextPlan->amount,
-                'commission_percent' => (float) $s->nextPlan->commission_percent,
+            // The driver's prepaid queued plan (already charged, waiting to start).
+            'next_plan' => $queued ? [
+                'id' => $queued->subscription_plan_id,
+                'title' => $queued->plan?->title ?? 'Queued plan',
+                'amount' => (float) $queued->amount_paid,
+                'commission_percent' => (float) $queued->commission_percent,
+                'pricing_model' => $queued->pricing_model,
+                'prepaid' => true,
             ] : null,
         ];
     }

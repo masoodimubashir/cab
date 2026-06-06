@@ -57,6 +57,25 @@
     ion-icon { font-size: 13px; }
   }
 
+  /* Pricing model chip — colour-coded per model so it reads at a glance. */
+  &__model {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 12px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill, 9999px);
+    font-size: 0.72rem;
+    font-weight: 800;
+    background: #EEF1F4;
+    color: var(--text-muted, #6C757D);
+    ion-icon { font-size: 13px; }
+
+    &[data-m="subscription"] { background: rgba(var(--ion-color-primary-rgb), 0.12); color: #0E8F47; }
+    &[data-m="commission"] { background: rgba(29, 78, 216, 0.12); color: #1D4ED8; }
+    &[data-m="hybrid"] { background: rgba(109, 40, 217, 0.14); color: #6D28D9; }
+  }
+
   /* Head: title block + "you keep %" value hero */
   &__head {
     display: flex;
@@ -118,6 +137,12 @@
     letter-spacing: -0.6px;
     color: var(--text-main, #0D1B2A);
     font-variant-numeric: tabular-nums;
+
+    /* Commission-only plans show a short phrase instead of a number. */
+    &--free {
+      font-size: 1.35rem;
+      letter-spacing: -0.3px;
+    }
   }
   &__period {
     font-size: 0.85rem;
