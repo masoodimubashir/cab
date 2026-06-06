@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
             'role_any' => \App\Http\Middleware\EnsureAnyRole::class,
+            'permission' => \App\Http\Middleware\EnsurePermission::class,
             'idempotent' => \App\Http\Middleware\IdempotencyKey::class,
             'manager.city' => \App\Http\Middleware\EnforceManagerCity::class,
         ]);

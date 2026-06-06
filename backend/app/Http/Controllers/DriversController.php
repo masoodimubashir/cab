@@ -321,7 +321,28 @@ class DriversController extends Controller
             ->orderByDesc('updated_at')
             ->first();
 
-        return response()->json(['trip' => $trip]);
+        if (!$trip) {
+            return response()->json(['trip' => null]);
+        }
+
+        $payload = $trip->toArray();
+        $payload['is_shared'] = $trip->route_departure_id !== null;
+
+        // Rider contact the driver should call to coordinate pickup. For a
+        // "booked for a friend" trip that's the friend the booker named; for a
+        // normal trip it's the account holder. (is_for_other / booked_for_* are
+        // already in the toArray payload.)
+        $trip->loadMissing('customer:id,name,phone');
+        $payload['customer_name'] = $trip->booked_for_name ?: $trip->customer?->name;
+        $payload['customer_phone'] = $trip->booked_for_phone ?: $trip->customer?->phone;
+
+        // Shared (fixed/shuttle) journey → attach the passenger manifest + the
+        // ordered route stops so the driver app can render the pickup list.
+        if ($trip->route_departure_id !== null) {
+            $payload = array_merge($payload, app(\App\Services\SeatReservationService::class)->manifestFor($trip));
+        }
+
+        return response()->json(['trip' => $payload]);
     }
 
     /**
@@ -349,7 +370,7 @@ class DriversController extends Controller
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->pluck('driver_id');
 
         $eligibleIds = Driver::query()

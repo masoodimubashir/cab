@@ -47,13 +47,6 @@ interface Payment {
   coupon_assignment?: { id: number; coupon?: { id: number; title?: string | null } | null } | null;
 }
 
-interface AppliedPromotion {
-  id: number;
-  title?: string | null;
-  discount_type?: 'percentage' | 'flat' | null;
-  discount_value?: number | null;
-  promo_type?: string | null;
-}
 
 interface CityVehicleType {
   id: number;
@@ -77,7 +70,6 @@ interface Trip {
   final_fare?: number | null;
   currency?: string | null;
   payment_method?: string | null;
-  promo_discount_amount?: number | null;
   cancellation_fee_amount?: number | null;
   waiting_charge_amount?: number | null;
   tip_amount?: number | null;
@@ -97,7 +89,6 @@ interface Trip {
   driver?: Party | null;
   ride_type?: { id: number; name?: string | null } | null;
   city_vehicle_type?: CityVehicleType | null;
-  applied_promotion?: AppliedPromotion | null;
   payment?: Payment | null;
 }
 
@@ -298,10 +289,6 @@ interface ShowResponse {
               </div>
               <div class="line" *ngIf="trip.final_fare != null">
                 <span>Final</span><span>₹{{ trip.final_fare | number: '1.0-2' }}</span>
-              </div>
-              <div class="line line--neg" *ngIf="trip.applied_promotion?.title && trip.promo_discount_amount">
-                <span>Promo ({{ trip.applied_promotion?.title }})</span>
-                <span>−₹{{ trip.promo_discount_amount | number: '1.0-2' }}</span>
               </div>
               <div class="line line--neg" *ngIf="trip.payment?.discount_amount && (trip.payment?.discount_amount || 0) > 0">
                 <span>Coupon{{ trip.payment?.coupon_assignment?.coupon?.title ? ' (' + trip.payment?.coupon_assignment?.coupon?.title + ')' : '' }}</span>

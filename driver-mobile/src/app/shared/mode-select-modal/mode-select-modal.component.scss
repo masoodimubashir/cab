@@ -1,0 +1,228 @@
+/* App-open mode chooser — dark voice screen in the DreamCabs palette.
+   Background = the page-header navy (--dreamcab-dark-blue); the orb + primary
+   action use the brand green (--ion-color-primary). Layout mirrors the Orby
+   reference: glowing mic orb, serif headline + chip, two stacked actions. */
+
+/* ---- shell: one navy surface, no header / no border ---------------------- */
+.orb-content {
+  --background: var(--dreamcab-dark-blue, #0D1B2A);
+}
+
+/* Floating close button — no toolbar, so nothing draws a top border. */
+.orb-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 10px;
+  z-index: 5;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+  ion-icon { font-size: 24px; }
+}
+
+/* Centered column; a soft green haze glows behind the orb. */
+.orb-wrap {
+  position: relative;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 26px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  background:
+    radial-gradient(110% 60% at 50% 26%, rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.22) 0%, rgba(13, 27, 42, 0) 58%),
+    var(--dreamcab-dark-blue, #0D1B2A);
+}
+
+/* ---- glowing voice orb --------------------------------------------------- */
+.orb {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  margin: 58px auto 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Diffuse outer halo. */
+.orb__glow {
+  position: absolute;
+  inset: -26px;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(18, 179, 91, 0.55) 0%, rgba(18, 179, 91, 0.34) 40%, rgba(13, 27, 42, 0) 70%);
+  filter: blur(14px);
+  animation: orbPulse 3.6s ease-in-out infinite;
+}
+
+/* Sonar rings radiating outward — the "listening" pulse. */
+.orb__wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150px;
+  height: 150px;
+  margin: -75px 0 0 -75px;
+  z-index: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(18, 179, 91, 0.55);
+  animation: orbWave 2.8s ease-out infinite;
+  &--2 { animation-delay: 0.93s; }
+  &--3 { animation-delay: 1.86s; }
+}
+
+/* The sphere itself — lit from below so the bright green pools at the bottom. */
+.orb__ring {
+  position: relative;
+  z-index: 1;
+  width: 150px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  /* No fill — just a glowing green ring + halo around the mic. */
+  background: transparent;
+  box-shadow:
+    0 0 40px rgba(18, 179, 91, 0.45),
+    0 0 82px rgba(18, 179, 91, 0.25),
+    inset 0 0 28px rgba(18, 179, 91, 0.16);
+  /* Gentle breathing, as if the assistant is listening. */
+  animation: orbBreathe 2.6s ease-in-out infinite;
+
+  ion-icon {
+    font-size: 62px;
+    color: #ffffff;
+    filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
+    /* The mic "speaks" — a quicker pulse layered on the breathing. */
+    animation: micPulse 1.5s ease-in-out infinite;
+  }
+
+  /* Bright gradient rim (thin glowing outline). */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    padding: 2px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 42%, rgba(60, 240, 140, 0.7) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+/* ---- chip + copy --------------------------------------------------------- */
+.orb-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 40px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #E8EEF0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  ion-icon { font-size: 14px; color: #3CF08C; }
+}
+
+.orb-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.85rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  margin: 18px 0 10px;
+  max-width: 300px;
+}
+
+.orb-subtitle {
+  margin: 0;
+  max-width: 300px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---- actions (pinned to the bottom) -------------------------------------- */
+.orb-actions {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orb-btn {
+  width: 100%;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 15px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+  &:active { transform: scale(0.98); }
+  ion-icon { font-size: 19px; }
+
+  /* Primary = brand green (matches the app's .dc-cta). */
+  &--voice {
+    color: #ffffff;
+    background: linear-gradient(135deg, #16C465 0%, #0E9C4E 100%);
+    box-shadow: 0 12px 28px rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.42);
+  }
+
+  /* Secondary = quiet outlined button on the navy. */
+  &--self {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+}
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1);    opacity: 0.9; }
+  50%      { transform: scale(1.07); opacity: 1; }
+}
+
+/* Expanding sonar ring. */
+@keyframes orbWave {
+  0%   { transform: scale(0.92); opacity: 0.7; }
+  70%  { opacity: 0; }
+  100% { transform: scale(1.95); opacity: 0; }
+}
+
+/* Orb "listening" breathe. */
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.045); }
+}
+
+/* Mic "speaking" pulse. */
+@keyframes micPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb__glow,
+  .orb__ring,
+  .orb__ring ion-icon { animation: none; }
+  .orb__wave { display: none; }
+}

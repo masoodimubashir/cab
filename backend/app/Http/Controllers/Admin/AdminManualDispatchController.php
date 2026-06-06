@@ -11,7 +11,6 @@ use App\Models\Trip;
 use App\Models\User;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
-use App\Services\PromotionApplicationService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use Illuminate\Http\Request;
@@ -54,7 +53,6 @@ class AdminManualDispatchController
         Request $request,
         FareEstimationService $fareEstimationService,
         DynamicPricingService $dynamicPricingService,
-        PromotionApplicationService $promotionApplicationService,
     ) {
         $data = $this->validateBookingPayload($request, requireUser: false);
 
@@ -85,24 +83,6 @@ class AdminManualDispatchController
             'fare_type' => $dynamicRule->fare_type,
         ] : null;
 
-        $previewEstimate = $fareEstimationService->estimateFare(
-            $pricingRule->toArray(),
-            (float) $data['pickup_lat'],
-            (float) $data['pickup_lng'],
-            (float) $data['drop_lat'],
-            (float) $data['drop_lng'],
-            $dynamicFactors,
-        );
-        $promo = $promotionApplicationService->findBestForBooking(
-            cityId: (int) $data['city_id'],
-            cityVehicleTypeId: $pricingRule->city_vehicle_type_id ? (int) $pricingRule->city_vehicle_type_id : null,
-            pickupLat: (float) $data['pickup_lat'],
-            pickupLng: (float) $data['pickup_lng'],
-            dropLat: (float) $data['drop_lat'],
-            dropLng: (float) $data['drop_lng'],
-            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
-        );
-
         $estimate = $fareEstimationService->estimateFare(
             $pricingRule->toArray(),
             (float) $data['pickup_lat'],
@@ -110,10 +90,6 @@ class AdminManualDispatchController
             (float) $data['drop_lat'],
             (float) $data['drop_lng'],
             $dynamicFactors,
-            null,
-            null,
-            null,
-            $promo,
         );
 
         // Round-trip is a simple 2x heuristic for now — same pickup/drop both legs.
@@ -138,7 +114,7 @@ class AdminManualDispatchController
         DynamicPricingService $dynamicPricingService,
         TripStateMachineService $tripStateMachineService,
         SchedulingPolicyService $schedulingPolicy,
-        PromotionApplicationService $promotionApplicationService,
+        \App\Services\NotificationCenter $notifier,
     ) {
         $data = $this->validateBookingPayload($request, requireUser: true);
 
@@ -219,24 +195,6 @@ class AdminManualDispatchController
             'fare_type' => $dynamicRule->fare_type,
         ] : null;
 
-        $previewEstimate = $fareEstimationService->estimateFare(
-            $pricingRule->toArray(),
-            (float) $data['pickup_lat'],
-            (float) $data['pickup_lng'],
-            (float) $data['drop_lat'],
-            (float) $data['drop_lng'],
-            $dynamicFactors,
-        );
-        $promo = $promotionApplicationService->findBestForBooking(
-            cityId: (int) $data['city_id'],
-            cityVehicleTypeId: $pricingRule->city_vehicle_type_id ? (int) $pricingRule->city_vehicle_type_id : null,
-            pickupLat: (float) $data['pickup_lat'],
-            pickupLng: (float) $data['pickup_lng'],
-            dropLat: (float) $data['drop_lat'],
-            dropLng: (float) $data['drop_lng'],
-            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
-        );
-
         $estimate = $fareEstimationService->estimateFare(
             $pricingRule->toArray(),
             (float) $data['pickup_lat'],
@@ -244,10 +202,6 @@ class AdminManualDispatchController
             (float) $data['drop_lat'],
             (float) $data['drop_lng'],
             $dynamicFactors,
-            null,
-            null,
-            null,
-            $promo,
         );
 
         $estimatedFare = $estimate['estimated_fare'];
@@ -262,10 +216,6 @@ class AdminManualDispatchController
             'dispatched_by_admin_id' => $request->user()->id,
             'ride_type_id' => $rideTypeId,
             'city_vehicle_type_id' => $pricingRule->city_vehicle_type_id,
-            'applied_promotion_id' => $promo?->id,
-            'promo_discount_amount' => $promo
-                ? (float) ($estimate['fare_breakdown']['promo_discount'] ?? 0)
-                : null,
             'pricing_rule_id' => $pricingRule->id,
             'status' => 'REQUESTED',
             'estimated_fare' => $estimatedFare,
@@ -312,7 +262,31 @@ class AdminManualDispatchController
         // Kick the expanding-ring auto-dispatcher so nearby drivers actually
         // get the broadcast — mirrors what /customer-offer does for customer
         // bookings. The job re-queues itself across hops until accepted.
-        DispatchHopJob::dispatch($trip->id, $estimatedFare, 1);
+        // A scheduled ride in DELAYED mode is parked instead — the alarm-time
+        // worker fires it near pickup.
+        if ($schedulingPolicy->shouldDispatchOnBooking($trip)) {
+            DispatchHopJob::startChain($trip->id, $estimatedFare);
+        }
+
+        // Confirm a scheduled booking to the customer + flag it to admins.
+        if ($trip->scheduled_at) {
+            $whenText = $trip->scheduled_at->copy()->timezone(config('app.timezone'))->format('D, d M · g:i A');
+            $notifier->notifyUserId(
+                $customer->id,
+                'scheduled_ride_booked',
+                'Ride scheduled',
+                "Your ride is booked for {$whenText}. We'll find you a driver near pickup time.",
+                ['trip_id' => $trip->id, 'scheduled_at' => $trip->scheduled_at->toIso8601String()],
+                'calendar-outline',
+            );
+            $notifier->notifyAdmins(
+                'scheduled_ride_booked',
+                'New scheduled ride',
+                "Trip #{$trip->id} scheduled for {$whenText} (manual dispatch).",
+                ['trip_id' => $trip->id, 'scheduled_at' => $trip->scheduled_at->toIso8601String()],
+                'calendar-outline',
+            );
+        }
 
         return response()->json([
             'trip' => $trip->fresh(),

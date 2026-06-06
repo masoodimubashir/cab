@@ -9,20 +9,23 @@ use Illuminate\Validation\Rule;
 
 class AdminDispatcherSettingsController
 {
-    private const KINDS = ['local', 'rental', 'outstation'];
+    private const KINDS = ['local', 'outstation'];
 
     public function index(City $city)
     {
-        // Auto-seed missing rows so the admin always sees all 3 kinds.
+        // Auto-seed missing rows so the admin always sees each kind.
         foreach (self::KINDS as $kind) {
             DispatcherSetting::query()->firstOrCreate(
                 ['city_id' => $city->id, 'kind' => $kind],
             );
         }
 
+        // Only return the live kinds — the retired 'rental' kind is hidden even
+        // if a stale row still exists for some city.
         $rows = DispatcherSetting::query()
             ->where('city_id', $city->id)
-            ->orderByRaw("FIELD(kind, 'local', 'rental', 'outstation')")
+            ->whereIn('kind', self::KINDS)
+            ->orderByRaw("FIELD(kind, 'local', 'outstation')")
             ->get()
             ->map(fn (DispatcherSetting $s) => $this->shape($s));
 
@@ -44,6 +47,8 @@ class AdminDispatcherSettingsController
             'dispatcher_hop_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
             'request_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
             'max_hops' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'driver_accept_window_sec' => ['nullable', 'integer', 'min:0', 'max:600'],
+            'cancel_block_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
 
             'schedule_available' => ['nullable', 'boolean'],
             'schedule_dispatcher_type' => ['nullable', 'boolean'],
@@ -82,6 +87,8 @@ class AdminDispatcherSettingsController
             'dispatcher_hop_radius_m' => (int) $s->dispatcher_hop_radius_m,
             'request_radius_m' => (int) $s->request_radius_m,
             'max_hops' => (int) $s->max_hops,
+            'driver_accept_window_sec' => (int) $s->driver_accept_window_sec,
+            'cancel_block_radius_m' => (int) $s->cancel_block_radius_m,
 
             'schedule_available' => (bool) $s->schedule_available,
             'schedule_dispatcher_type' => (bool) $s->schedule_dispatcher_type,

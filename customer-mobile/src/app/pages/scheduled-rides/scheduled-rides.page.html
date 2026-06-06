@@ -1,0 +1,91 @@
+<ion-content class="sched-page" [fullscreen]="true">
+
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
+
+    <h1 class="header-title">Scheduled rides</h1>
+    <p class="header-sub">Your upcoming pre-booked trips.</p>
+  </div>
+
+  <!-- ============ Body ============ -->
+  <div class="page-body">
+
+    <!-- Filter chips -->
+    <div class="chip-bar dc-anim-in" *ngIf="!loading && rides.length">
+      <button class="chip dc-press" [class.active]="filter === 'all'" (click)="setFilter('all')">All</button>
+      <button class="chip dc-press" [class.active]="filter === 'awaiting'" (click)="setFilter('awaiting')">Awaiting driver</button>
+      <button class="chip dc-press" [class.active]="filter === 'confirmed'" (click)="setFilter('confirmed')">Confirmed</button>
+    </div>
+
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+
+    <!-- Loading skeleton -->
+    <div class="rides-list" *ngIf="loading" aria-hidden="true">
+      <div class="skel-card" *ngFor="let s of [1,2,3]">
+        <span class="dc-skeleton skel-line skel-line--lg"></span>
+        <span class="dc-skeleton skel-line skel-line--full"></span>
+        <span class="dc-skeleton skel-line skel-line--mid"></span>
+      </div>
+    </div>
+
+    <!-- Scheduled cards -->
+    <div class="rides-list dc-stagger" *ngIf="!loading && visibleRides.length">
+      <div class="sched-card dc-press" *ngFor="let r of visibleRides" (click)="openRide(r)">
+
+        <!-- Date/time banner -->
+        <div class="sched-when">
+          <div class="when-cal"><ion-icon name="calendar-outline"></ion-icon></div>
+          <div class="when-text">
+            <span class="when-date">{{ r.scheduled_at | date:'EEE, d MMM' }}</span>
+            <span class="when-time">{{ r.scheduled_at | date:'h:mm a' }}</span>
+          </div>
+          <span class="badge badge--{{ statusColor(r) }}">{{ statusLabel(r) }}</span>
+        </div>
+
+        <!-- Pickup → drop route -->
+        <div class="ride-route" *ngIf="r.pickup_address || r.drop_address">
+          <div class="route-track">
+            <span class="route-dot route-dot--start"></span>
+            <span class="route-bar"></span>
+            <span class="route-dot route-dot--end"></span>
+          </div>
+          <div class="route-text">
+            <p class="route-addr" *ngIf="r.pickup_address">{{ r.pickup_address }}</p>
+            <p class="route-addr route-addr--drop" *ngIf="r.drop_address">{{ r.drop_address }}</p>
+          </div>
+        </div>
+
+        <div class="ride-divider"></div>
+
+        <div class="ride-footer">
+          <span class="ride-fare" *ngIf="fareDisplay(r) as f">{{ f }}</span>
+          <span class="ride-fare ride-fare--muted" *ngIf="!fareDisplay(r)">—</span>
+          <span class="ride-meta">
+            #{{ r.id }}
+            <ng-container *ngIf="r.driver?.name"> · {{ r.driver?.name }}</ng-container>
+          </span>
+        </div>
+
+        <div class="ride-actions" *ngIf="canCancel(r)">
+          <button class="ride-btn ride-btn--danger dc-press" (click)="cancelRide(r, $event)">
+            <ion-icon name="close-circle-outline"></ion-icon>
+            <span>Cancel</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty -->
+    <div class="state-box dc-anim-in" *ngIf="!loading && !visibleRides.length && !error">
+      <div class="state-icon"><ion-icon name="calendar-outline"></ion-icon></div>
+      <p class="state-title">No scheduled rides</p>
+      <p class="state-sub">Book a ride for later from the home screen and it'll show up here.</p>
+    </div>
+  </div>
+</ion-content>

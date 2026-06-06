@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
@@ -7,6 +8,7 @@ import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { RealtimeService, TripCustomerLocationPayload } from '../../core/realtime.service';
 import { TripSummaryModal } from './trip-summary.modal';
+import { StartOtpModal } from './start-otp.modal';
 import {
   coordsFromTrip,
   googleMapsDirectionsUrl,
@@ -30,7 +32,24 @@ type AvailableTrip = {
   customer_offer?: number | null;
   payment_method?: PaymentMethod | null;
   created_at?: string;
+  // "Booked for a friend / family" — who the driver will actually pick up.
+  is_for_other?: boolean;
+  booked_for_name?: string | null;
 };
+
+type ManifestPassenger = {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  seats: number;
+  status: string;
+  board: string | null;
+  board_lat: number | null;
+  board_lng: number | null;
+  drop: string | null;
+};
+
+type ManifestStop = { id: number; seq: number; name: string; lat: number; lng: number };
 
 @Component({
   selector: 'app-rides',
@@ -51,9 +70,20 @@ export class RidesPage implements OnInit, OnDestroy {
   available: AvailableTrip[] = [];
   loadingAvailable = false;
 
+  // Shared (fixed/shuttle) journey manifest — passengers + ordered stops.
+  // Null for a private trip.
+  sharedManifest: { route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] } | null = null;
+
   negotiation: Record<string, unknown> | null = null;
   counterAmount: number | null = null;
   negBusy = false;
+  /** True while the "Offer your price" panel is open from an available ride. */
+  priceOpen = false;
+
+  // The route's hard fare floor, read from negotiation_config on the
+  // /negotiation fetch. No offer may go below minAmount; the input validates
+  // against it and the send button stays disabled below it.
+  minAmount = 0;
 
   progressBusy = false;
   // Last breakdown returned by /driver-progress when status=COMPLETED — fed
@@ -67,6 +97,14 @@ export class RidesPage implements OnInit, OnDestroy {
 
   get finalAmount(): unknown {
     return this.negotiation?.['final_amount'] ?? null;
+  }
+
+  /** The customer's current offer for the active/selected trip (display only). */
+  get customerOffer(): number {
+    const t = this.lastTrip;
+    const fromTrip = t?.['customer_offer'] ?? t?.['estimated_fare'];
+    const n = Number(fromTrip);
+    return Number.isFinite(n) ? n : 0;
   }
 
   sosBusy = false;
@@ -284,9 +322,25 @@ export class RidesPage implements OnInit, OnDestroy {
     return customer?.name || 'Customer';
   }
 
+  /** Rider's phone (the friend's number on a for-someone-else booking). */
+  get customerPhone(): string {
+    return ((this.lastTrip?.['customer_phone'] as string | undefined) || '').trim();
+  }
+
+  /** True when this active trip was booked for a friend / family. */
+  get isForOther(): boolean {
+    return !!this.lastTrip?.['is_for_other'];
+  }
+
+  /** Dial the rider to coordinate pickup. */
+  call(phone: string | null | undefined): void {
+    const p = (phone || '').trim();
+    if (p) window.location.href = `tel:${p}`;
+  }
+
   /**
    * True when we're rendering the focused active-trip layout (vs the
-   * available list). NEGOTIATION is handled by the available list / counter
+   * available list). NEGOTIATION is handled by the available list / price
    * card so the driver can still bid; CONFIRMED onwards is "locked in" and
    * deserves the in-trip view with its Accept-ride / progression CTA.
    */
@@ -328,8 +382,8 @@ export class RidesPage implements OnInit, OnDestroy {
       case 'ARRIVED_DROP':
         return { label: 'Complete ride', nextStatus: 'COMPLETED', kind: 'progress', confirm: true };
       default:
-        // NEGOTIATION is handled by the negotiation card (Accept/Counter
-        // buttons), not by the in-trip CTA, so we return null here.
+        // NEGOTIATION is handled by the price card (OK / My price buttons),
+        // not by the in-trip CTA, so we return null here.
         return null;
     }
   }
@@ -338,6 +392,14 @@ export class RidesPage implements OnInit, OnDestroy {
     const id = (this.lastTrip?.['id'] as number | undefined) ?? this.tripId;
     const action = this.nextAction();
     if (!id || !action || this.progressBusy) return;
+
+    // "Start ride" (ARRIVED_PICKUP → EN_ROUTE_DROP) is gated by a start OTP the
+    // rider received on their phone — open the locked verify screen instead of
+    // advancing directly.
+    if (action.kind === 'progress' && action.nextStatus === 'EN_ROUTE_DROP') {
+      await this.startRideWithOtp(id);
+      return;
+    }
 
     if (action.confirm) {
       const ok = await this.alertCtrl.create({
@@ -352,6 +414,42 @@ export class RidesPage implements OnInit, OnDestroy {
       return;
     }
     void this.doAdvance(id, action.nextStatus, action.kind);
+  }
+
+  /**
+   * Start-ride OTP flow: request a code (sent to the rider's phone), then lock
+   * the driver on the full-screen verify screen. The modal itself verifies via
+   * /driver-progress and only dismisses with { started } on success.
+   */
+  private async startRideWithOtp(tripId: number): Promise<void> {
+    this.progressBusy = true;
+    this.error = null;
+    let devCode: string | null = null;
+    try {
+      const res: any = await firstValueFrom(this.api.post(`/trips/${tripId}/start-otp`, {}));
+      devCode = res?.dev_code ?? null;
+    } catch (err: any) {
+      this.error = err?.error?.message || 'Could not send the start code. Try again.';
+      this.progressBusy = false;
+      return;
+    }
+
+    const modal = await this.modalCtrl.create({
+      component: StartOtpModal,
+      cssClass: 'start-otp-modal',
+      backdropDismiss: false,
+      componentProps: { tripId, riderName: this.customerName, devCode },
+    });
+    try {
+      await modal.present();
+      const { data } = await modal.onWillDismiss<{ started?: boolean; trip?: Record<string, unknown> }>();
+      if (data?.started && data.trip) {
+        this.lastTrip = data.trip;
+      }
+    } finally {
+      // Always re-enable the CTA, however the modal closed.
+      this.progressBusy = false;
+    }
   }
 
   private async doAdvance(tripId: number, nextStatus: string, kind: 'accept' | 'progress'): Promise<void> {
@@ -433,18 +531,21 @@ export class RidesPage implements OnInit, OnDestroy {
     this.refreshAvailable();
   }
 
-  pickAvailable(t: AvailableTrip, action: 'accept' | 'counter'): void {
+  pickAvailable(t: AvailableTrip, action: 'accept' | 'price'): void {
     this.tripId = t.id;
     this.error = null;
     this.message = null;
     if (action === 'accept') {
       // Accept the customer's offer at face value.
+      this.priceOpen = false;
       this.counterAmount = t.customer_offer ?? t.estimated_fare ?? 0;
       this.acceptCustomerOffer();
     } else {
-      // Pre-fill counter at +10 over what the customer offered.
-      const base = t.customer_offer ?? t.estimated_fare ?? 100;
-      this.counterAmount = Math.round((base + 10) / 5) * 5;
+      // Open the price panel with an empty input. A broadcast trip's floor isn't
+      // known client-side until a bid exists, so the server enforces the minimum.
+      this.counterAmount = null;
+      this.minAmount = 0;
+      this.priceOpen = true;
     }
   }
 
@@ -468,13 +569,24 @@ export class RidesPage implements OnInit, OnDestroy {
     this.error = null;
     this.message = null;
     this.api
-      .get<{ trip?: Record<string, unknown>; negotiation?: Record<string, unknown> }>(
+      .get<{
+        trip?: Record<string, unknown>;
+        negotiation?: Record<string, unknown>;
+        negotiation_config?: { min_amount?: number };
+      }>(
         `/trips/${id}/negotiation`
       )
       .subscribe({
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+          this.maybeRefreshManifest();
+
+          // Pull the route's hard fare floor — offers below it are rejected.
+          const cfg = res['negotiation_config'] || {};
+          const floor = Number(cfg.min_amount);
+          this.minAmount = Number.isFinite(floor) ? floor : 0;
+
           // If we just loaded an in-flight trip (e.g. after a reload mid-ride),
           // bring up the live map and re-subscribe to streams.
           const status = this.lastTrip?.['status'] as string | undefined;
@@ -803,6 +915,60 @@ export class RidesPage implements OnInit, OnDestroy {
     return wrap;
   }
 
+  /** A shared journey carries a route departure; private trips don't. */
+  get isSharedDeparture(): boolean {
+    return this.lastTrip?.['route_departure_id'] != null;
+  }
+
+  get manifestPassengers(): ManifestPassenger[] {
+    return this.sharedManifest?.passengers ?? [];
+  }
+
+  /** Fetch the passenger manifest when the active trip is a shared departure. */
+  private maybeRefreshManifest(): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id || !this.isSharedDeparture) {
+      this.sharedManifest = null;
+      return;
+    }
+    this.api
+      .get<{ route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] }>(`/trips/${id}/manifest`)
+      .subscribe({
+        next: (res) => {
+          this.sharedManifest = {
+            route_name: res.route_name,
+            passengers: res.passengers || [],
+            stops: res.stops || [],
+          };
+        },
+        error: () => undefined,
+      });
+  }
+
+  boardPassenger(reservationId: number): void {
+    this.seatAction(reservationId, 'board');
+  }
+  noShowPassenger(reservationId: number): void {
+    this.seatAction(reservationId, 'no-show');
+  }
+  private seatAction(reservationId: number, action: 'board' | 'no-show'): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id || this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.api
+      .post(`/trips/${id}/seat-reservations/${reservationId}/${action}`, {})
+      .subscribe({
+        next: () => this.maybeRefreshManifest(),
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not update passenger';
+        },
+        complete: () => {
+          this.busy = false;
+        },
+      });
+  }
+
   markCustomerNoShow(): void {
     const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
     if (!id) return;
@@ -874,8 +1040,12 @@ export class RidesPage implements OnInit, OnDestroy {
   counterCustomerOffer(): void {
     const id = this.validId();
     if (id == null) return;
-    if (this.counterAmount == null || !Number.isFinite(this.counterAmount) || this.counterAmount < 0) {
-      this.error = 'Enter a valid counter amount.';
+    if (
+      this.counterAmount == null ||
+      !Number.isFinite(this.counterAmount) ||
+      this.counterAmount < this.minAmount
+    ) {
+      this.error = 'Pick a valid price.';
       return;
     }
 
@@ -891,10 +1061,10 @@ export class RidesPage implements OnInit, OnDestroy {
       .subscribe({
         next: (res) => {
           this.negotiation = res.negotiation || null;
-          this.message = 'Counter sent';
+          this.message = `Price sent · ₹${this.counterAmount}`;
         },
         error: (err) => {
-          this.error = err?.error?.message || 'Counter failed';
+          this.error = err?.error?.message || 'Could not send price.';
           this.negotiation = null;
         },
         complete: () => {

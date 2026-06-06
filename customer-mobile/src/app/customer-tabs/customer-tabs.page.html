@@ -1,5 +1,5 @@
-<ion-tabs>
-  <ion-tab-bar slot="bottom" class="dc-tabbar">
+<ion-tabs (ionTabsDidChange)="onTabChange($event)">
+  <ion-tab-bar slot="bottom" class="dc-tabbar" [class.tabbar-hidden]="hideTabBar">
     <ion-tab-button tab="book" href="/customer-tabs/book" class="dc-tab dc-press">
       <span class="dc-tab-glow" aria-hidden="true"></span>
       <ion-icon name="navigate-outline" aria-hidden="true"></ion-icon>

@@ -24,10 +24,11 @@ use Illuminate\Database\Eloquent\Model;
     'update_driver_payment_modes_enabled',
 
     // Wallet
-    'wallet_cash_tnc',
+    'wallet_cash_min_capping',
     'wallet_cash_max_capping',
 
     // Subscriptions
+    'subscription_popup_enabled',
     'subscription_popup_title',
     'subscription_popup_desc',
     'subscription_popup_button1',
@@ -52,6 +53,7 @@ class OperatorSetting extends Model
 
     protected $casts = [
         'tip_in_percentage' => 'boolean',
+        'subscription_popup_enabled' => 'boolean',
         'check_destination_outside_geofence' => 'boolean',
         'check_driver_debt' => 'boolean',
         'update_driver_payment_modes_enabled' => 'boolean',
@@ -62,6 +64,7 @@ class OperatorSetting extends Model
         'corporate_tip_value_1' => 'integer',
         'corporate_tip_value_2' => 'integer',
         'corporate_tip_value_3' => 'integer',
+        'wallet_cash_min_capping' => 'integer',
         'wallet_cash_max_capping' => 'integer',
     ];
 

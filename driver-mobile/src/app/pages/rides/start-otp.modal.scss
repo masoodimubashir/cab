@@ -1,0 +1,155 @@
+/* Full-screen start-ride OTP lock. The driver can't proceed until the correct
+   code (read back by the rider) is entered. Reuses the login OTP cell style. */
+
+.otp-lock { --background: #ffffff; }
+
+.otp-wrap {
+  position: relative;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 44px) 26px calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+
+.otp-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #6C757D);
+  cursor: pointer;
+  ion-icon { font-size: 24px; }
+}
+
+.otp-badge {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 179, 91, 0.1);
+  color: var(--ion-color-primary, #12B35B);
+  font-size: 34px;
+  margin: 26px 0 18px;
+}
+
+.otp-title {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-main, #0D1B2A);
+}
+
+.otp-sub {
+  margin: 0 0 28px;
+  max-width: 320px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text-muted, #6C757D);
+  strong { color: var(--text-main, #0D1B2A); }
+}
+
+/* --- OTP cells (copied from the login OTP step) --- */
+.otp-input-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  margin-bottom: 14px;
+
+  .hidden-otp-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    z-index: 10;
+    cursor: pointer;
+  }
+
+  .otp-boxes-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    width: 100%;
+
+    .otp-box {
+      flex: 1;
+      max-width: 44px;
+      aspect-ratio: 1 / 1.15;
+      border: 1.5px solid #E5E7EB;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-main, #0D1B2A);
+      background: #ffffff;
+      transition: all 0.2s ease;
+
+      &.active {
+        border-color: var(--ion-color-primary, #12B35B);
+        box-shadow: 0 0 0 3px rgba(18, 179, 91, 0.12);
+      }
+      &.filled { border-color: var(--text-main, #0D1B2A); }
+    }
+  }
+}
+
+.otp-error {
+  color: #D33651;
+  font-weight: 700;
+  font-size: 0.88rem;
+  margin: 4px 0 0;
+  max-width: 320px;
+}
+
+.otp-dev {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted, #6C757D);
+  strong { color: var(--ion-color-primary, #12B35B); font-variant-numeric: tabular-nums; }
+}
+
+.otp-actions {
+  margin-top: auto;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 24px;
+}
+
+.otp-cta {
+  width: 100%;
+  height: 54px;
+  border: none;
+  border-radius: 15px;
+  background: var(--ion-color-primary, #12B35B);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(18, 179, 91, 0.35);
+  cursor: pointer;
+  &:disabled { opacity: 0.5; box-shadow: none; }
+}
+
+.otp-resend {
+  width: 100%;
+  height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--ion-color-primary, #12B35B);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  &:disabled { opacity: 0.5; }
+}

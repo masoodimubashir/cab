@@ -7,12 +7,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
     'city_id', 'ride_type_id', 'vehicle_type_id', 'vehicle_set_id',
     'display_name', 'display_order',
-    'android_image_path', 'ios_image_path',
     'max_people', 'luggage_capacity',
     'destination_mandatory', 'fare_mandatory', 'reverse_bidding_enabled',
     'waiting_charges_applicable', 'customer_notes_enabled',
@@ -51,8 +49,6 @@ class CityVehicleType extends Model
         'override_hop_radius_m' => 'integer',
         'override_max_hops' => 'integer',
     ];
-
-    protected $appends = ['android_image_url', 'ios_image_url'];
 
     public function city(): BelongsTo
     {
@@ -120,20 +116,6 @@ class CityVehicleType extends Model
         }
 
         return $query->orderBy('display_order')->orderBy('id')->value('id');
-    }
-
-    public function getAndroidImageUrlAttribute(): ?string
-    {
-        return $this->android_image_path
-            ? Storage::disk('public')->url($this->android_image_path)
-            : null;
-    }
-
-    public function getIosImageUrlAttribute(): ?string
-    {
-        return $this->ios_image_path
-            ? Storage::disk('public')->url($this->ios_image_path)
-            : null;
     }
 
     /**

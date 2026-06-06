@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\CityWidePromotion;
 use App\Models\DriverLocation;
 use App\Models\PricingRule;
 use App\Models\Trip;
@@ -203,7 +202,10 @@ class FareEstimationService
         }
         $override = array_filter($package->fare_config, fn ($v) => $v !== null);
         $merged = array_merge($pricingRule, $override);
-        if (!isset($merged['surge_multiplier']) || $merged['surge_multiplier'] === null) {
+        // A zero/blank surge would multiply the whole fare to 0, so never let a
+        // package override sink surge below 1 — an unset or non-positive surge
+        // means "no surge", not "free ride".
+        if (!isset($merged['surge_multiplier']) || !((float) $merged['surge_multiplier'] > 0)) {
             $merged['surge_multiplier'] = 1;
         }
         return $merged;
@@ -214,7 +216,6 @@ class FareEstimationService
      * @param  float|null  $pickupDistanceKm  driver→customer distance (when a driver is already picked)
      * @param  float|null  $routeDistanceKm   real routed distance (from Google Directions) — overrides haversine when set
      * @param  float|null  $routeTimeMin      real routed time — overrides the speed-heuristic when set
-     * @param  CityWidePromotion|null  $promo  resolved by PromotionApplicationService — applied pre-tax, never sinks subtotal below min_fare
      */
     public function estimateFare(
         array $pricingRule,
@@ -226,7 +227,6 @@ class FareEstimationService
         ?float $pickupDistanceKm = null,
         ?float $routeDistanceKm = null,
         ?float $routeTimeMin = null,
-        ?CityWidePromotion $promo = null,
     ): array {
         // Prefer the real routed distance from Google Directions when the
         // client supplies it; fall back to great-circle if not available.
@@ -274,15 +274,30 @@ class FareEstimationService
         $subtotalBeforeSurge = $baseFare + $distanceComponent + $timeComponent + $pickupComponent;
         $subtotal = $subtotalBeforeSurge * $surgeMultiplier;
 
-        $customerFactor = (float) ($dynamicFactors['customer_factor'] ?? 1.0);
-        $driverFactor = (float) ($dynamicFactors['driver_factor'] ?? 1.0);
-        $subtotal = $subtotal * $customerFactor;
+        // A dynamic rule is either 'percentage' (customer_factor is a multiplier,
+        // e.g. 1.5×) or 'flat' (customer_factor is a fixed surcharge in currency,
+        // e.g. +₹50). A flat rule defaults its factor to 0 (no charge), a
+        // percentage rule to 1 (no change) — applying the wrong op silently
+        // multiplies a flat ₹50 into ×50.
+        $fareType = $dynamicFactors['fare_type'] ?? 'percentage';
+        $isFlat = $fareType === 'flat';
+        $customerFactor = (float) ($dynamicFactors['customer_factor'] ?? ($isFlat ? 0.0 : 1.0));
+        $driverFactor = (float) ($dynamicFactors['driver_factor'] ?? ($isFlat ? 0.0 : 1.0));
+        $subtotalAfterSurge = $subtotal;
+        $subtotal = $isFlat ? ($subtotal + $customerFactor) : ($subtotal * $customerFactor);
+
+        // Region-specific (area) fare line — labelled for the rider only when the
+        // city's toggle AND the rule's own visibility are both on (region_visible).
+        // The factor itself always applies; this just exposes the delta + name.
+        $regionDelta = $isFlat ? $customerFactor : ($subtotalAfterSurge * ($customerFactor - 1.0));
+        $regionVisible = !empty($dynamicFactors['region_visible'])
+            && !empty($dynamicFactors['name'])
+            && abs($regionDelta) > 0.0001;
+        $regionFareAmount = $regionVisible ? round($regionDelta, 2) : null;
 
         if ($minFare !== null && $subtotal < $minFare) {
             $subtotal = $minFare;
         }
-
-        [$subtotal, $promoDiscount, $appliedPromoMeta] = $this->applyPromotion($subtotal, $minFare, $promo);
 
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $fare = $subtotal + $taxAmount;
@@ -301,8 +316,10 @@ class FareEstimationService
                 'dynamic_driver_factor' => round($driverFactor, 3),
                 'dynamic_rule_id' => $dynamicFactors['rule_id'] ?? null,
                 'dynamic_fare_type' => $dynamicFactors['fare_type'] ?? null,
-                'promo_discount' => round($promoDiscount, 2),
-                'applied_promotion' => $appliedPromoMeta,
+                // Rider-facing "area fare" label (null unless region_visible).
+                'region_fare_name' => $regionVisible ? $dynamicFactors['name'] : null,
+                'region_fare_factor' => $regionVisible ? round($customerFactor, 3) : null,
+                'region_fare_amount' => $regionFareAmount,
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),
@@ -313,29 +330,73 @@ class FareEstimationService
     }
 
     /**
-     * Apply a city-wide promo's discount to the pre-tax subtotal. The
-     * discount is clipped so the subtotal never falls below min_fare (if
-     * configured), which keeps drivers from being underpaid on cheap rides.
+     * Per-seat fare for a shared (fixed/shuttle) route.
      *
-     * @return array{0: float, 1: float, 2: array{id:int,title:string,discount_type:string,discount_value:float}|null}
+     * A shared seat is priced FLAT from the route's fare_config (`seat_fare`),
+     * NOT metered — there is no distance/time component. We charge
+     * seat_fare × seats and then run it through the SAME tail as a metered fare
+     * (surge → dynamic factor → min_fare floor → tax) so commission and tax
+     * behave identically across every ride type. v1 leaves dynamicFactors null
+     * for predictable pricing; pass them to enable an optional fixed-mode
+     * demand factor later.
+     *
+     * fare_config keys honoured: seat_fare (required), min_fare?,
+     * surge_multiplier? (defaults 1), commission_percent?, tax_percent?.
+     * min_fare acts as a per-booking floor.
+     *
+     * @param  array{customer_factor?: float, driver_factor?: float, rule_id?: ?int, fare_type?: ?string}|null  $dynamicFactors
+     * @return array{seats:int, seat_fare:float, fare_breakdown:array, estimated_fare:float, commission_percent:float}
      */
-    private function applyPromotion(float $subtotal, ?float $minFare, ?CityWidePromotion $promo): array
-    {
-        if ($promo === null) {
-            return [$subtotal, 0.0, null];
+    public function seatFare(
+        array $fareConfig,
+        int $seats = 1,
+        ?array $dynamicFactors = null,
+    ): array {
+        $seats = max(1, $seats);
+
+        $seatFare = (float) ($fareConfig['seat_fare'] ?? 0);
+        $surgeMultiplier = isset($fareConfig['surge_multiplier']) && $fareConfig['surge_multiplier'] !== null
+            ? (float) $fareConfig['surge_multiplier']
+            : 1.0;
+        $minFare = isset($fareConfig['min_fare']) ? (float) $fareConfig['min_fare'] : null;
+        $commissionPercent = (float) ($fareConfig['commission_percent'] ?? 0);
+        $taxPercent = isset($fareConfig['tax_percent']) ? (float) $fareConfig['tax_percent'] : 0.0;
+
+        $baseSeatsAmount = $seatFare * $seats;          // flat — no distance/time math
+        $subtotal = $baseSeatsAmount * $surgeMultiplier;
+
+        // Same flat-vs-percentage semantics as estimateFare (see there).
+        $isFlat = ($dynamicFactors['fare_type'] ?? 'percentage') === 'flat';
+        $customerFactor = (float) ($dynamicFactors['customer_factor'] ?? ($isFlat ? 0.0 : 1.0));
+        $driverFactor = (float) ($dynamicFactors['driver_factor'] ?? ($isFlat ? 0.0 : 1.0));
+        $subtotal = $isFlat ? ($subtotal + $customerFactor) : ($subtotal * $customerFactor);
+
+        // Per-booking floor.
+        if ($minFare !== null && $subtotal < $minFare) {
+            $subtotal = $minFare;
         }
-        $discount = $promo->computeDiscount($subtotal);
-        if ($minFare !== null && ($subtotal - $discount) < $minFare) {
-            $discount = max(0.0, $subtotal - $minFare);
-        }
-        $subtotal = max(0.0, $subtotal - $discount);
-        $meta = [
-            'id' => (int) $promo->id,
-            'title' => (string) $promo->title,
-            'discount_type' => (string) $promo->discount_type,
-            'discount_value' => (float) $promo->discount_value,
+
+        $taxAmount = $subtotal * ($taxPercent / 100.0);
+        $fare = $subtotal + $taxAmount;
+
+        return [
+            'seats' => $seats,
+            'seat_fare' => round($seatFare, 2),
+            'fare_breakdown' => [
+                'seat_fare' => round($seatFare, 2),
+                'seats' => $seats,
+                'base_seats_amount' => round($baseSeatsAmount, 2),
+                'surge_multiplier' => $surgeMultiplier,
+                'dynamic_customer_factor' => round($customerFactor, 3),
+                'dynamic_driver_factor' => round($driverFactor, 3),
+                'dynamic_rule_id' => $dynamicFactors['rule_id'] ?? null,
+                'subtotal_before_tax' => round($subtotal, 2),
+                'tax_percent' => round($taxPercent, 2),
+                'tax_amount' => round($taxAmount, 2),
+            ],
+            'estimated_fare' => round($fare, 2),
+            'commission_percent' => round($commissionPercent, 2),
         ];
-        return [$subtotal, $discount, $meta];
     }
 
     /**
@@ -352,6 +413,26 @@ class FareEstimationService
      */
     public function recomputeFinal(Trip $trip, float $negotiatedFloor): array
     {
+        // Shared rides (fixed/shuttle) are priced per seat at booking — never
+        // re-meter the vehicle journey, or each rider would be overcharged a
+        // metered distance/time amount. The journey's final fare is simply the
+        // sum of its seats' booked fares (cancelled/no-show seats excluded);
+        // per-seat settlement happens against seat_reservations.
+        if ($trip->route_departure_id !== null) {
+            $seatTotal = (float) $trip->seatReservations()
+                ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
+                ->sum('fare_amount');
+
+            return [
+                'final_fare' => round(max($seatTotal, 0.0), 2),
+                'waiting_charge_amount' => 0.0,
+                'breakdown' => [
+                    'shared_ride' => true,
+                    'seat_fare_total' => round($seatTotal, 2),
+                ],
+            ];
+        }
+
         $rule = $trip->city_vehicle_type_id
             ? PricingRule::resolveFor((int) $trip->city_vehicle_type_id)
             : null;
@@ -438,13 +519,6 @@ class FareEstimationService
             $subtotal = $minFare;
         }
 
-        // Honour the promo captured at booking time so the final fare actually
-        // delivers the discount the customer was shown in the estimate.
-        $promo = $trip->relationLoaded('appliedPromotion')
-            ? $trip->appliedPromotion
-            : $trip->appliedPromotion()->first();
-        [$subtotal, $promoDiscount, $appliedPromoMeta] = $this->applyPromotion($subtotal, $minFare, $promo);
-
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $computed = $subtotal + $taxAmount;
 
@@ -464,8 +538,6 @@ class FareEstimationService
                 'time_component' => round($timeComponent, 2),
                 'waiting_charge' => round($waitingCharge, 2),
                 'surge_multiplier' => $surge,
-                'promo_discount' => round($promoDiscount, 2),
-                'applied_promotion' => $appliedPromoMeta,
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),

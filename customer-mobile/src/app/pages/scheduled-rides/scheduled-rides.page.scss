@@ -1,0 +1,149 @@
+.sched-page { --background: var(--dc-canvas, #F4F6F8); }
+
+/* ============ Hero header (navy) ============ */
+.page-header {
+  position: relative;
+  background: var(--dc-ink, #0D1B2A);
+  border-bottom-left-radius: 28px;
+  border-bottom-right-radius: 28px;
+  padding: calc(env(safe-area-inset-top, 18px) + 56px) 22px 24px;
+
+  .header-back,
+  .header-refresh {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 18px) + 12px);
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: none; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0;
+    transition: background 0.16s ease;
+    ion-icon { font-size: 20px; }
+    &:active { background: rgba(255, 255, 255, 0.22); }
+    &[disabled] { opacity: 0.5; }
+  }
+  .header-back { left: 16px; }
+  .header-refresh { right: 16px; }
+
+  .header-title { color: #fff; font-size: 22px; font-weight: 800; margin: 0; letter-spacing: -0.4px; }
+  .header-sub { color: #9CA3AF; font-size: 13px; margin: 6px 0 0; line-height: 1.4; }
+}
+
+/* ============ Body ============ */
+.page-body {
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.chip-bar { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.chip {
+  flex: 0 0 auto;
+  padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--dc-hairline, #EEF0F2); background: var(--dc-surface, #fff);
+  color: var(--dc-ink-soft, #6C757D); font-size: 13px; font-weight: 700; cursor: pointer;
+  &.active { background: var(--dc-green, #12B35B); border-color: var(--dc-green, #12B35B); color: #fff; }
+}
+
+.page-error {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; padding: 12px 14px; border-radius: var(--dc-r-md, 14px);
+  background: var(--dc-danger-tint, #FEF2F2); color: var(--dc-danger, #DC3545);
+  font-size: 13px; font-weight: 600;
+}
+
+.rides-list { display: flex; flex-direction: column; gap: 12px; }
+
+.skel-card {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--dc-surface, #fff); border: 1px solid var(--dc-hairline, #EEF0F2);
+  border-radius: var(--dc-r-lg, 18px); padding: 16px;
+}
+.skel-line { height: 12px; border-radius: 7px; }
+.skel-line--lg { width: 46%; height: 16px; }
+.skel-line--full { width: 100%; }
+.skel-line--mid { width: 70%; }
+
+/* ============ Scheduled cards ============ */
+.sched-card {
+  background: var(--dc-surface, #fff);
+  border: 1px solid var(--dc-hairline, #EEF0F2);
+  border-radius: var(--dc-r-lg, 18px);
+  padding: 14px 16px;
+  box-shadow: var(--dc-shadow-sm, 0 2px 10px rgba(13, 27, 42, 0.04));
+  cursor: pointer;
+  &:active { box-shadow: 0 1px 6px rgba(13, 27, 42, 0.06); }
+}
+
+.sched-when {
+  display: flex; align-items: center; gap: 12px;
+
+  .when-cal {
+    width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+    background: var(--dc-green-tint, rgba(18, 179, 91, 0.1));
+    display: flex; align-items: center; justify-content: center;
+    ion-icon { font-size: 20px; color: var(--dc-green, #12B35B); }
+  }
+  .when-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .when-date { font-size: 15px; font-weight: 800; color: var(--dc-ink, #0D1B2A); letter-spacing: -0.2px; }
+  .when-time { font-size: 13px; font-weight: 600; color: var(--dc-ink-soft, #6C757D); }
+}
+
+.badge {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.badge--success { background: var(--dc-green-tint, #E7F8EF); color: var(--dc-green, #12B35B); }
+.badge--warning { background: #FEF3E2; color: #C77700; }
+
+.ride-route {
+  display: flex; gap: 12px; margin-top: 14px;
+  .route-track {
+    display: flex; flex-direction: column; align-items: center; padding-top: 4px;
+    .route-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+      &--start { background: var(--dc-green, #12B35B); }
+      &--end { background: var(--dc-danger, #DC3545); }
+    }
+    .route-bar { width: 2px; flex: 1; min-height: 16px; background: #E3E7EB; margin: 3px 0; }
+  }
+  .route-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .route-addr {
+    margin: 0; font-size: 13.5px; font-weight: 600; color: var(--dc-ink, #0D1B2A); line-height: 1.35;
+    &--drop { color: #4A5563; }
+  }
+}
+
+.ride-divider { height: 1px; background: var(--dc-hairline, #EEF0F2); margin: 14px 0 12px; }
+
+.ride-footer {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  .ride-fare { font-size: 17px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
+  .ride-fare--muted { color: var(--dc-ink-faint, #9AA3AE); }
+  .ride-meta { font-size: 12.5px; font-weight: 600; color: var(--dc-ink-faint, #9AA3AE); }
+}
+
+.ride-actions { display: flex; gap: 10px; margin-top: 12px; }
+.ride-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 14px; border-radius: var(--dc-r-md, 14px);
+  border: 1px solid var(--dc-hairline, #EEF0F2); background: var(--dc-surface, #fff);
+  color: var(--dc-ink, #0D1B2A); font-size: 13px; font-weight: 700; cursor: pointer;
+  ion-icon { font-size: 16px; }
+  &--danger { border-color: var(--dc-danger-tint, #FEE2E2); color: var(--dc-danger, #DC3545); background: var(--dc-danger-tint, #FEF2F2); }
+}
+
+/* ============ Empty state ============ */
+.state-box {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 48px 24px; gap: 6px;
+  .state-icon {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: var(--dc-surface, #fff); border: 1px solid var(--dc-hairline, #EEF0F2);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 6px;
+    ion-icon { font-size: 30px; color: var(--dc-ink-faint, #9AA3AE); }
+  }
+  .state-title { margin: 0; font-size: 16px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
+  .state-sub { margin: 0; font-size: 13px; color: var(--dc-ink-soft, #6C757D); line-height: 1.4; max-width: 260px; }
+}

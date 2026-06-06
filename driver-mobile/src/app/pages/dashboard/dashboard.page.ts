@@ -1,14 +1,15 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.service';
 import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
-import { SubscriptionsModalComponent } from '../../shared/subscriptions-modal/subscriptions-modal.component';
-import { SubscriptionPlan } from '../../shared/plan-card/plan-card.component';
+import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
+import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
 
 declare const google: any;
 
@@ -22,6 +23,15 @@ interface NavItem {
 interface NavGroup {
   title: string;
   items: NavItem[];
+}
+
+/** Operator-configured subscription prompt (Operator Settings → Subscription). */
+interface SubscriptionPrompt {
+  enabled: boolean;
+  title: string | null;
+  desc: string | null;
+  button1: string | null;
+  button2: string | null;
 }
 
 /**
@@ -54,6 +64,16 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   error: string | null = null;
   driver: Record<string, unknown> | null = null;
 
+  /**
+   * Full-screen cold-start skeleton — covers the whole dashboard (map + top
+   * bar + sheet) until BOTH the driver profile and the map are ready, then it
+   * fades out to reveal the live screen.
+   */
+  homeLoading = true;
+  private homeLoadStart = Date.now();
+  private profileReady = false;
+  private mapReady = false;
+
   /** Left navigation drawer (replaces the removed bottom tab bar). */
   drawerOpen = false;
   /** Recenter FAB busy spinner while we fetch a one-shot fix. */
@@ -74,6 +94,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       title: 'Drive',
       items: [
         { label: 'Rides', sub: 'Available & active trips', icon: 'car-outline', path: '/tabs/rides' },
+        { label: 'Scheduled rides', sub: 'Upcoming booked trips', icon: 'calendar-outline', path: '/tabs/scheduled' },
         { label: 'Earnings', sub: "Today & this week's income", icon: 'cash-outline', path: '/tabs/earnings' },
         { label: 'Wallet', sub: 'Balance & payouts', icon: 'wallet-outline', path: '/tabs/wallet' },
         { label: 'Trip history', sub: 'Your past rides', icon: 'time-outline', path: '/tabs/history' },
@@ -88,6 +109,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
         { label: 'Payment methods', sub: 'Cash & Razorpay', icon: 'card-outline', path: '/payment-methods' },
         { label: 'Emergency numbers', sub: 'SOS contacts', icon: 'people-outline', path: '/emergency-contacts' },
+        { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
         { label: 'Help & Support', sub: 'Contact us, FAQ & report', icon: 'help-buoy-outline', path: '/support' },
       ],
     },
@@ -124,6 +146,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         this.error = null;
       }
     });
+
+    // Safety: never trap the driver behind the skeleton if the map or profile
+    // is slow/unavailable (e.g. a pending location-permission prompt).
+    setTimeout(() => this.finishHomeLoading(), 6000);
   }
 
   ionViewWillEnter(): void {
@@ -131,47 +157,97 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ionViewDidEnter(): void {
-    // Once per app session, greet the driver with the subscription plans.
-    void this.maybeShowSubscriptionPrompt();
+    // App-open greeting: the AI mode chooser (Voice / Self), then — if the
+    // operator enabled it — the subscription nudge.
+    void this.greetOnAppOpen();
   }
-
-  private subPromptInFlight = false;
 
   /**
-   * Show the subscription plans modal when the driver opens the app — but only
-   * once per app session, and only if there are plans available to them.
+   * Runs the app-open prompts in order: the mode chooser first, then the
+   * subscription nudge. The two are independent (each has its own guard) so the
+   * subscription prompt still shows even when the mode chooser was already shown
+   * this session.
    */
-  private maybeShowSubscriptionPrompt(): void {
-    if (this.subPromptInFlight) return;
-    try {
-      if (sessionStorage.getItem('dc_sub_prompt_shown') === '1') return;
-    } catch { /* sessionStorage unavailable — fall through */ }
-    this.subPromptInFlight = true;
-
-    this.api.get<{ data: SubscriptionPlan[] }>('/drivers/me/subscriptions/plans').subscribe({
-      next: (res) => {
-        this.subPromptInFlight = false;
-        if (Array.isArray(res?.data) && res.data.length > 0) {
-          // Mark "shown" ONLY once we actually present — an empty result must
-          // not permanently suppress the prompt for the rest of the session.
-          try { sessionStorage.setItem('dc_sub_prompt_shown', '1'); } catch { /* ignore */ }
-          void this.presentSubscriptionModal(res.data);
-        }
-      },
-      error: () => { this.subPromptInFlight = false; },
-    });
+  private async greetOnAppOpen(): Promise<void> {
+    await this.maybeShowModePrompt();
+    await this.maybeShowSubscriptionPrompt();
   }
 
-  private async presentSubscriptionModal(plans: SubscriptionPlan[]): Promise<void> {
+  /**
+   * Greet the driver on app open with the mode chooser — "Continue with Voice"
+   * (the AI voice assistant) or "Continue as Self" (manual). Shown once per app
+   * session; the picked mode is remembered so the AI feature can wire in later.
+   */
+  private async maybeShowModePrompt(): Promise<void> {
+    try {
+      if (sessionStorage.getItem('dc_mode_prompt_shown') === '1') return;
+    } catch { /* sessionStorage unavailable — fall through */ }
+    // Mark shown up-front so a slow render can't double-present the greeting.
+    try { sessionStorage.setItem('dc_mode_prompt_shown', '1'); } catch { /* ignore */ }
+
     const modal = await this.modalCtrl.create({
-      component: SubscriptionsModalComponent,
-      cssClass: 'subscriptions-modal',
-      componentProps: { plans },
+      component: ModeSelectModalComponent,
+      cssClass: 'mode-select-modal',
+      componentProps: { current: this.readDriverMode() },
     });
     await modal.present();
-    const { data } = await modal.onWillDismiss<{ navigate?: string }>();
-    if (data?.navigate) {
-      void this.router.navigateByUrl(data.navigate);
+    const { data } = await modal.onWillDismiss<{ mode?: DriverMode }>();
+    if (data?.mode) {
+      try { localStorage.setItem('dc_driver_mode', data.mode); } catch { /* ignore */ }
+    }
+  }
+
+  /**
+   * Operator-controlled subscription nudge, shown on app open right after the
+   * mode chooser. Off (Operator Settings → Subscription) or already-subscribed
+   * = nothing shows. The buttons (admin-labelled) open the Subscriptions screen
+   * so the driver can pick a plan.
+   */
+  /** Shown at most once per app launch (resets on a cold start). */
+  private static subPromptShown = false;
+  /** Synchronous guard against a concurrent double-fire of the prompt. */
+  private subPromptBusy = false;
+
+  private async maybeShowSubscriptionPrompt(): Promise<void> {
+    if (DashboardPage.subPromptShown || this.subPromptBusy) return;
+    this.subPromptBusy = true;
+    try {
+      const cfg = await firstValueFrom(
+        this.api.get<SubscriptionPrompt>('/operator/subscription-popup'),
+      ).catch(() => null);
+      if (!cfg?.enabled) return;
+
+      // Don't nag drivers who already hold a plan.
+      const sub = await firstValueFrom(
+        this.api.get<{ subscription: unknown | null }>('/drivers/me/subscription'),
+      ).catch(() => null);
+      if (sub?.subscription) return;
+
+      // Mark shown only once we've passed the gates, so a disabled/subscribed
+      // state doesn't permanently suppress it for this launch.
+      DashboardPage.subPromptShown = true;
+
+      // Full-page modal that mirrors the Subscriptions screen (hero + plan
+      // cards); the operator's title/description drive the headline.
+      const modal = await this.modalCtrl.create({
+        component: SubscriptionPromptModalComponent,
+        componentProps: { title: cfg.title, desc: cfg.desc },
+      });
+      await modal.present();
+    } catch {
+      /* best-effort prompt — never block the dashboard */
+    } finally {
+      this.subPromptBusy = false;
+    }
+  }
+
+  /** The driver's last-picked mode, if any (used to highlight it on reopen). */
+  private readDriverMode(): DriverMode | null {
+    try {
+      const m = localStorage.getItem('dc_driver_mode');
+      return m === 'voice' || m === 'self' ? m : null;
+    } catch {
+      return null;
     }
   }
 
@@ -182,6 +258,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       await this.startLiveTracking();
     } catch (e) {
       this.error = (e as Error).message;
+    } finally {
+      // Map is up (or failed) — release that half of the skeleton gate.
+      this.mapReady = true;
+      this.maybeFinishHome();
     }
   }
 
@@ -334,11 +414,38 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       error: (err) => {
         this.error = err?.error?.message || 'Could not load driver profile';
         this.driver = null;
+        this.profileReady = true;
+        this.maybeFinishHome();
       },
       complete: () => {
         this.loading = false;
+        this.profileReady = true;
+        this.maybeFinishHome();
       },
     });
+  }
+
+  /**
+   * The full-screen skeleton lifts only once BOTH the profile and the map are
+   * ready, so the driver never sees a half-loaded dashboard.
+   */
+  private maybeFinishHome(): void {
+    if (this.profileReady && this.mapReady) this.finishHomeLoading();
+  }
+
+  /**
+   * Fade the skeleton out once everything's ready, keeping it up for a short
+   * minimum so it never flashes on a fast load.
+   */
+  private finishHomeLoading(): void {
+    if (!this.homeLoading) return;
+    const elapsed = Date.now() - this.homeLoadStart;
+    const minMs = 500;
+    if (elapsed >= minMs) {
+      this.homeLoading = false;
+    } else {
+      setTimeout(() => (this.homeLoading = false), minMs - elapsed);
+    }
   }
 
   // -------------------------------------------------------------------- map ---

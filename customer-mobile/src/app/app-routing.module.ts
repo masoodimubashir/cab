@@ -47,6 +47,12 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    path: 'shared-book',
+    loadChildren: () =>
+      import('./pages/shared-book/shared-book.module').then((m) => m.SharedBookPageModule),
+    canActivate: [AuthGuard],
+  },
+  {
     path: '',
     redirectTo: 'splash',
     pathMatch: 'full',

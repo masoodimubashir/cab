@@ -17,7 +17,6 @@ use App\Models\WalletTransaction;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\NotificationService;
-use App\Services\PromotionApplicationService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use Carbon\Carbon;
@@ -32,7 +31,7 @@ class TripsController extends Controller
         TripStateMachineService $tripStateMachineService,
         DynamicPricingService $dynamicPricingService,
         SchedulingPolicyService $schedulingPolicy,
-        PromotionApplicationService $promotionApplicationService,
+        \App\Services\NotificationCenter $notifier,
     ) {
         $data = $request->validate([
             // Primary axis: the exact per-city vehicle the customer picked.
@@ -58,9 +57,25 @@ class TripsController extends Controller
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
+            'scope' => ['nullable', 'in:local,outstation'],
+
+            // "Book a ride for a friend / family" — the booker still owns + pays
+            // the trip; these identify the actual rider so the driver can reach
+            // them. Name + phone are required only when booking for someone else.
+            'is_for_other' => ['nullable', 'boolean'],
+            'booked_for_name' => ['nullable', 'required_if:is_for_other,true', 'string', 'max:120'],
+            'booked_for_phone' => ['nullable', 'required_if:is_for_other,true', 'string', 'max:20'],
         ]);
 
+        $isForOther = (bool) ($data['is_for_other'] ?? false);
+
         $scheduledAt = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
+
+        // Local vs outstation drives which per-city dispatcher row + booking
+        // window applies. Honour an explicit scope from the client; otherwise a
+        // private ride is outstation when it carries an outstation package.
+        $scope = ($data['scope'] ?? null)
+            ?: (isset($data['outstation_package_id']) ? 'outstation' : 'local');
 
         // Resolve the city_vehicle_type up front — it carries city_id,
         // ride_type_id and vehicle_type_id, so the downstream code stops
@@ -81,7 +96,7 @@ class TripsController extends Controller
         $policyError = $schedulingPolicy->validateBooking(
             customerId: $request->user()->id,
             cityId: $cityId,
-            kind: 'local',
+            kind: $scope,
             scheduledAt: $scheduledAt,
         );
         if ($policyError) {
@@ -143,36 +158,14 @@ class TripsController extends Controller
             'driver_factor' => (float) $dynamicRule->driver_fare_factor,
             'rule_id' => $dynamicRule->id,
             'fare_type' => $dynamicRule->fare_type,
+            'name' => $dynamicRule->name,
+            'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
-        // Resolve the best applicable city-wide promotion using a quick
-        // promo-free estimate as the subtotal proxy, then re-estimate with
-        // the promo applied so the breakdown matches what gets persisted.
         $fareInput = $fareEstimationService->fareInput(
             $pricingRule->toArray(),
             isset($data['outstation_package_id']) ? (int) $data['outstation_package_id'] : null,
         );
-        $previewEstimate = $fareEstimationService->estimateFare(
-            $fareInput,
-            (float) $data['pickup_lat'],
-            (float) $data['pickup_lng'],
-            (float) $data['drop_lat'],
-            (float) $data['drop_lng'],
-            $dynamicFactors,
-            null,
-            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
-            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-        );
-        $promo = $promotionApplicationService->findBestForBooking(
-            cityId: $cityId,
-            cityVehicleTypeId: $cityVehicleTypeId,
-            pickupLat: (float) $data['pickup_lat'],
-            pickupLng: (float) $data['pickup_lng'],
-            dropLat: (float) $data['drop_lat'],
-            dropLng: (float) $data['drop_lng'],
-            subtotal: (float) ($previewEstimate['fare_breakdown']['subtotal_before_tax'] ?? 0),
-        );
-
         $estimate = $fareEstimationService->estimateFare(
             $fareInput,
             (float) $data['pickup_lat'],
@@ -183,7 +176,6 @@ class TripsController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-            $promo,
         );
 
         // "Any vehicle / ride now" mode — client sent only city info, no
@@ -197,8 +189,12 @@ class TripsController extends Controller
 
         $trip = Trip::query()->create([
             'customer_id' => $request->user()->id,
+            'is_for_other' => $isForOther,
+            'booked_for_name' => $isForOther ? ($data['booked_for_name'] ?? null) : null,
+            'booked_for_phone' => $isForOther ? ($data['booked_for_phone'] ?? null) : null,
             'driver_id' => null,
             'city_id' => $cityId,
+            'scope' => $scope,
             'city_vehicle_type_id' => $cityVehicleTypeId,
             // Denormalised legacy axes — kept so dispatcher matching and older
             // queries (driver vehicle_type_id match, etc.) still resolve when
@@ -209,10 +205,6 @@ class TripsController extends Controller
                 : null,
             'outstation_package_id' => isset($data['outstation_package_id'])
                 ? (int) $data['outstation_package_id']
-                : null,
-            'applied_promotion_id' => $promo?->id,
-            'promo_discount_amount' => $promo
-                ? (float) ($estimate['fare_breakdown']['promo_discount'] ?? 0)
                 : null,
             'pricing_rule_id' => $pricingRule->id,
             'scheduled_at' => $scheduledAt,
@@ -231,6 +223,27 @@ class TripsController extends Controller
 
         // Immediately start negotiation stage.
         $tripStateMachineService->transition($trip, 'NEGOTIATION');
+
+        // Scheduled ride → confirm the booking to the customer and flag it to admins.
+        // (ASAP rides go straight into the live search, so no booking notice there.)
+        if ($scheduledAt) {
+            $whenText = $scheduledAt->copy()->timezone(config('app.timezone'))->format('D, d M · g:i A');
+            $notifier->notifyUserId(
+                $trip->customer_id,
+                'scheduled_ride_booked',
+                'Ride scheduled',
+                "Your ride is booked for {$whenText}. We'll find you a driver near pickup time.",
+                ['trip_id' => $trip->id, 'scheduled_at' => $scheduledAt->toIso8601String()],
+                'calendar-outline',
+            );
+            $notifier->notifyAdmins(
+                'scheduled_ride_booked',
+                'New scheduled ride',
+                "Trip #{$trip->id} scheduled for {$whenText}.",
+                ['trip_id' => $trip->id, 'scheduled_at' => $scheduledAt->toIso8601String()],
+                'calendar-outline',
+            );
+        }
 
         // NOTE: fare_negotiations + negotiation offers are created in `fare-negotiation`.
         return response()->json([
@@ -260,7 +273,7 @@ class TripsController extends Controller
         // queue from busy drivers so they don't even see the trips.
         $hasActiveTrip = Trip::query()
             ->where('driver_id', $user->id)
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->exists();
         if ($hasActiveTrip) {
             return response()->json(['data' => [], 'reason' => 'Driver has an active trip in progress.']);
@@ -305,7 +318,7 @@ class TripsController extends Controller
             ->get([
                 'id', 'customer_id', 'driver_id', 'pickup_address', 'pickup_lat', 'pickup_lng',
                 'drop_address', 'drop_lat', 'drop_lng', 'estimated_fare',
-                'payment_method', 'created_at',
+                'payment_method', 'created_at', 'is_for_other', 'booked_for_name',
             ]);
 
         $tripIds = $trips->pluck('id')->all();
@@ -338,6 +351,10 @@ class TripsController extends Controller
                 'customer_offer' => $latestAmount !== null ? (float) $latestAmount : null,
                 'payment_method' => $t->payment_method,
                 'created_at' => $t->created_at,
+                // For a "booked for a friend" ride, show the driver who they're
+                // actually picking up before they accept.
+                'is_for_other' => (bool) $t->is_for_other,
+                'booked_for_name' => $t->is_for_other ? $t->booked_for_name : null,
             ];
         });
 
@@ -349,6 +366,8 @@ class TripsController extends Controller
         Trip $trip,
         TripStateMachineService $tripStateMachineService,
         SchedulingPolicyService $schedulingPolicy,
+        \App\Services\NotificationCenter $notifier,
+        \App\Services\GeoService $geo,
     ) {
         $request->validate([
             'reason' => ['nullable', 'string', 'max:1000'],
@@ -359,8 +378,24 @@ class TripsController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED'], true)) {
+        // EN_ROUTE_PICKUP is cancellable too — the rider may still bail while the
+        // driver is approaching. The proximity gate below revokes that option
+        // once the driver is within the city's configured cancel-block radius.
+        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
             return response()->json(['message' => 'Trip cannot be cancelled in current status.'], 409);
+        }
+
+        // Driver-proximity gate: block cancellation once the assigned driver is
+        // within the per-city radius of the pickup. Fails OPEN (cancel allowed)
+        // when we can't positively measure the driver inside that radius.
+        $tooClose = $this->cancellationBlockedByProximity($trip, $geo);
+        if ($tooClose !== null) {
+            return response()->json([
+                'message' => 'Your driver is almost at the pickup point, so this ride can no longer be cancelled.',
+                'reason' => 'driver_close',
+                'distance_m' => $tooClose['distance_m'],
+                'block_radius_m' => $tooClose['radius_m'],
+            ], 422);
         }
 
         // Late-cancellation fee for scheduled rides cancelled inside the
@@ -379,10 +414,158 @@ class TripsController extends Controller
             'cancelled_reason' => $request->input('reason'),
         ]);
 
+        // For a scheduled ride, let an already-assigned driver + the admins know
+        // the customer called it off (the customer initiated, so they don't need
+        // a notice).
+        if ($trip->scheduled_at) {
+            if ($trip->driver_id) {
+                $notifier->notifyUserId(
+                    $trip->driver_id,
+                    'scheduled_ride_cancelled',
+                    'Scheduled ride cancelled',
+                    "The customer cancelled scheduled trip #{$trip->id}.",
+                    ['trip_id' => $trip->id],
+                    'close-circle-outline',
+                );
+            }
+            $notifier->notifyAdmins(
+                'scheduled_ride_cancelled',
+                'Scheduled ride cancelled',
+                "Scheduled trip #{$trip->id} was cancelled by the customer.",
+                ['trip_id' => $trip->id],
+                'close-circle-outline',
+            );
+        }
+
         return response()->json([
             'trip' => $trip->fresh(),
             'late_cancellation' => $insideWindow,
         ]);
+    }
+
+    /**
+     * Returns null when cancellation is allowed; otherwise the measured
+     * distance + the configured radius that triggered the block. Only applies
+     * once a driver is assigned and approaching pickup; missing coordinates or
+     * an unknown driver position fail OPEN (cancel allowed).
+     */
+    private function cancellationBlockedByProximity(Trip $trip, \App\Services\GeoService $geo): ?array
+    {
+        if (!$trip->driver_id || !in_array($trip->status, ['CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
+            return null;
+        }
+        if ($trip->pickup_lat === null || $trip->pickup_lng === null) {
+            return null; // can't measure → allow
+        }
+
+        $settings = \App\Models\DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
+        $radius = (int) ($settings?->cancel_block_radius_m ?? 0);
+        if ($radius <= 0) {
+            return null; // gate disabled for this city/product
+        }
+
+        // Freshest known driver position — the trip ping stream first, then the
+        // driver's last-known global fix as a fallback.
+        $loc = \App\Models\DriverLocation::query()
+            ->where('driver_id', $trip->driver_id)
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->first(['lat', 'lng']);
+        $dLat = $loc?->lat ?? $trip->driver?->current_lat;
+        $dLng = $loc?->lng ?? $trip->driver?->current_lng;
+        if ($dLat === null || $dLng === null) {
+            return null; // unknown driver position → allow
+        }
+
+        $distance = $geo->haversineMeters(
+            (float) $dLat,
+            (float) $dLng,
+            (float) $trip->pickup_lat,
+            (float) $trip->pickup_lng,
+        );
+        if ($distance > $radius) {
+            return null; // driver still beyond the radius → allow
+        }
+
+        return ['distance_m' => (int) round($distance), 'radius_m' => $radius];
+    }
+
+    /**
+     * The signed-in customer's upcoming / active scheduled rides — next pickup
+     * first. Terminal trips (completed / cancelled) drop off; they live in the
+     * normal trip history + the notification inbox.
+     */
+    public function customerScheduled(Request $request)
+    {
+        $trips = Trip::query()
+            ->where('customer_id', $request->user()->id)
+            ->whereNotNull('scheduled_at')
+            ->whereNotIn('status', Trip::TERMINAL_STATUSES)
+            ->with(['driver:id,name,phone,avatar_path', 'rideType:id,name'])
+            ->orderBy('scheduled_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'data' => $trips->map(fn (Trip $t) => $this->scheduledRow($t, 'customer'))->all(),
+        ]);
+    }
+
+    /**
+     * The signed-in driver's upcoming scheduled rides (ones they've been
+     * assigned / accepted), next pickup first.
+     */
+    public function driverScheduled(Request $request)
+    {
+        $trips = Trip::query()
+            ->where('driver_id', $request->user()->id)
+            ->whereNotNull('scheduled_at')
+            ->whereNotIn('status', Trip::TERMINAL_STATUSES)
+            ->with(['customer:id,name,phone,avatar_path', 'rideType:id,name'])
+            ->orderBy('scheduled_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'data' => $trips->map(fn (Trip $t) => $this->scheduledRow($t, 'driver'))->all(),
+        ]);
+    }
+
+    /** Shared row shape for the scheduled-rides lists. */
+    private function scheduledRow(Trip $t, string $audience): array
+    {
+        $row = [
+            'id' => $t->id,
+            'status' => $t->status,
+            'scheduled_at' => optional($t->scheduled_at)->toIso8601String(),
+            'pickup_address' => $t->pickup_address,
+            'drop_address' => $t->drop_address,
+            'estimated_fare' => $t->estimated_fare,
+            'final_fare' => $t->final_fare,
+            'payment_method' => $t->payment_method,
+            'ride_type' => $t->rideType?->name,
+            'created_at' => optional($t->created_at)->toIso8601String(),
+        ];
+
+        if ($audience === 'customer') {
+            $row['driver'] = $t->driver
+                ? ['id' => $t->driver->id, 'name' => $t->driver->name, 'phone' => $t->driver->phone]
+                : null;
+        } else {
+            // The driver sees the actual rider — the friend on a for-someone-else
+            // booking, never the booker's number.
+            $riderName = $t->booked_for_name ?: $t->customer?->name;
+            $riderPhone = $t->booked_for_phone ?: $t->customer?->phone;
+            $row['customer'] = ($riderName || $riderPhone)
+                ? ['id' => $t->customer?->id, 'name' => $riderName, 'phone' => $riderPhone]
+                : null;
+            $row['pickup_lat'] = $t->pickup_lat;
+            $row['pickup_lng'] = $t->pickup_lng;
+            $row['drop_lat'] = $t->drop_lat;
+            $row['drop_lng'] = $t->drop_lng;
+        }
+
+        return $row;
     }
 
     /**
@@ -450,7 +633,7 @@ class TripsController extends Controller
         ]);
 
         return response()->json([
-            'trip' => $trip->fresh(),
+            'trip' => $trip->fresh()->appendDriverRiderContact(),
             'fee' => $fee,
         ]);
     }
@@ -477,6 +660,83 @@ class TripsController extends Controller
         return response()->json(['trip' => $trip->fresh()]);
     }
 
+    /**
+     * Generate + SMS the start-ride OTP to the rider (the friend's phone on a
+     * for-someone-else booking, the booker's otherwise). The driver calls this
+     * from the pickup; the rider reads the code back and the driver enters it to
+     * start the ride. dev_code is returned only in mock mode (no SMS gateway).
+     */
+    public function requestStartOtp(Request $request, Trip $trip, \App\Services\Msg91Service $msg91)
+    {
+        $user = $request->user();
+        if ($trip->driver_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        if ($trip->status !== 'ARRIVED_PICKUP') {
+            return response()->json([
+                'message' => 'You can request the start code once you have arrived at the pickup.',
+            ], 409);
+        }
+
+        // customer_phone resolves to the friend's number on a for-friend trip.
+        $phone = $trip->customer_phone;
+        if (!$phone) {
+            return response()->json(['message' => 'No rider phone number on this trip.'], 422);
+        }
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        // Stored plaintext (hidden from every serialization) so the booker can
+        // also read it on their live-trip screen via customerStartOtp().
+        $trip->forceFill([
+            'start_otp' => $code,
+            'start_otp_expires_at' => now()->addMinutes(10),
+        ])->save();
+
+        $msg91->sendOtp(
+            $phone,
+            $code,
+            "Your DreamCabs ride start code is {$code}. Share it with your driver to begin the trip.",
+        );
+
+        // Nudge the booker's live-trip screen to fetch the code right away
+        // (no code in the payload — the tracking channel is shared with the driver).
+        broadcast(new \App\Events\StartOtpReady(tripId: $trip->id));
+
+        return response()->json([
+            'ok' => true,
+            'sent_to_name' => $trip->customer_name,
+            // Present ONLY in mock mode (no SMS gateway) so the flow is testable.
+            'dev_code' => $msg91->isLive() ? null : $code,
+        ]);
+    }
+
+    /**
+     * Surface the active start-ride OTP to the BOOKER (trip owner) so they can
+     * read it off their live-trip screen and, on a for-a-friend trip, relay it
+     * if the SMS didn't reach the friend. Owner-only; returns the code only
+     * while it is live (driver at pickup, not expired). Never exposed to the
+     * driver — they must hear it from the rider.
+     */
+    public function customerStartOtp(Request $request, Trip $trip)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $active = $trip->start_otp
+            && $trip->start_otp_expires_at
+            && !$trip->start_otp_expires_at->isPast()
+            && $trip->status === 'ARRIVED_PICKUP';
+
+        return response()->json([
+            'start_otp' => $active ? $trip->start_otp : null,
+            'expires_at' => $active ? $trip->start_otp_expires_at->toIso8601String() : null,
+            'is_for_other' => (bool) $trip->is_for_other,
+            'booked_for_name' => $trip->is_for_other ? $trip->booked_for_name : null,
+        ]);
+    }
+
     public function driverProgress(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)
     {
         $data = $request->validate([
@@ -484,6 +744,8 @@ class TripsController extends Controller
             'location' => ['nullable', 'array'],
             'location.lat' => ['nullable', 'numeric', 'between:-90,90'],
             'location.lng' => ['nullable', 'numeric', 'between:-180,180'],
+            // Start-ride OTP — required only for the "Start ride" transition.
+            'code' => ['nullable', 'required_if:status,EN_ROUTE_DROP', 'digits:6'],
         ]);
 
         $user = $request->user();
@@ -507,6 +769,24 @@ class TripsController extends Controller
             return response()->json(['message' => 'Trip already finished.'], 409);
         }
 
+        // Start-ride OTP gate: the journey can only begin once the driver enters
+        // the 6-digit code the rider received on their phone. This is the single
+        // authoritative chokepoint, so the API rejects a start without it
+        // regardless of which client calls it.
+        if ($data['status'] === 'EN_ROUTE_DROP') {
+            $valid = $trip->start_otp
+                && $trip->start_otp_expires_at
+                && !$trip->start_otp_expires_at->isPast()
+                && hash_equals((string) $trip->start_otp, (string) $data['code']);
+            if (!$valid) {
+                return response()->json([
+                    'message' => 'Incorrect or expired start code. Ask the rider to read it again.',
+                ], 422);
+            }
+            // Single-use — clear it once accepted.
+            $trip->forceFill(['start_otp' => null, 'start_otp_expires_at' => null])->save();
+        }
+
         // Stamp the location BEFORE the transition so a COMPLETED recompute
         // sees the final ping in driver_locations.
         if (!empty($data['location']['lat']) && !empty($data['location']['lng'])) {
@@ -519,7 +799,7 @@ class TripsController extends Controller
         }
 
         $tripStateMachineService->transition($trip, $data['status']);
-        $fresh = $trip->fresh();
+        $fresh = $trip->fresh()->appendDriverRiderContact();
 
         // On COMPLETED, return the breakdown so the driver app can render the
         // summary modal without an extra round-trip.
@@ -558,10 +838,9 @@ class TripsController extends Controller
             return response()->json(['message' => 'Trip already has a driver assigned.'], 409);
         }
 
-        DispatchHopJob::dispatch(
+        DispatchHopJob::startChain(
             $trip->id,
             (float) ($trip->estimated_fare ?? 0),
-            1,
             true,
         );
 
@@ -606,7 +885,7 @@ class TripsController extends Controller
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->pluck('driver_id');
 
         $candidates = Driver::query()
@@ -752,7 +1031,7 @@ class TripsController extends Controller
         }
         $driverBusy = Trip::query()
             ->where('driver_id', $driverUserId)
-            ->whereIn('status', Trip::ACTIVE_DRIVER_STATUSES)
+            ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->exists();
         if ($driverBusy) {
             return response()->json(['message' => 'Driver just took another ride.'], 409);

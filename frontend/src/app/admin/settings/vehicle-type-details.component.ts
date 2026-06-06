@@ -21,6 +21,7 @@ interface VehicleType {
   vehicle_set_id: number | null;
   vehicle_set_name: string | null;
   ride_type_name: string;
+  is_outstation: boolean;
   display_name: string;
   display_order: number;
   max_people: number;
@@ -678,7 +679,10 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
   }
 
   isOutstation(): boolean {
-    return (this.form?.ride_type_name ?? '').toLowerCase() === 'outstation';
+    // Prefer the server-computed flag (single source of truth); fall back to the
+    // name only for older payloads that don't carry it yet.
+    return this.form?.is_outstation
+      ?? (this.form?.ride_type_name ?? '').toLowerCase() === 'outstation';
   }
 
   back(): void {
