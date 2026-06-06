@@ -11,6 +11,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'customer_id',
+    'is_for_other',
+    'booked_for_name',
+    'booked_for_phone',
+    'start_otp',
+    'start_otp_expires_at',
     'driver_id',
     'city_id',
     'scope',
@@ -106,6 +111,8 @@ class Trip extends Model
         'commission_percent' => 'float',
         'commission_amount' => 'float',
         'stops' => 'array',
+        'is_for_other' => 'boolean',
+        'start_otp_expires_at' => 'datetime',
         'is_round_trip' => 'boolean',
         'is_manual_dispatch' => 'boolean',
         'scheduled_at' => 'datetime',
@@ -124,9 +131,43 @@ class Trip extends Model
         'completed_at' => 'datetime',
     ];
 
+    /**
+     * The start-ride OTP is never auto-serialized to any client (the shared
+     * trip payloads reach the driver too). It is surfaced only to the trip
+     * owner via the dedicated TripsController::customerStartOtp() endpoint.
+     */
+    protected $hidden = ['start_otp'];
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    /**
+     * Rider name the assigned driver should see: the friend's on a "booked for
+     * a friend" trip, else the account holder's. Computed, never auto-appended
+     * (only emitted where a controller opts in via appendDriverRiderContact()).
+     */
+    public function getCustomerNameAttribute(): ?string
+    {
+        return $this->booked_for_name ?: $this->customer?->name;
+    }
+
+    /** Rider phone the assigned driver should call (friend's, else booker's). */
+    public function getCustomerPhoneAttribute(): ?string
+    {
+        return $this->booked_for_phone ?: $this->customer?->phone;
+    }
+
+    /**
+     * Prepare this trip for a DRIVER-facing response: attach the friend-aware
+     * rider name + phone, and hide the booker's raw user relation so their real
+     * number never leaks for a for-friend trip.
+     */
+    public function appendDriverRiderContact(): static
+    {
+        $this->loadMissing('customer:id,name,phone');
+        return $this->append(['customer_name', 'customer_phone'])->makeHidden('customer');
     }
 
     public function driver(): BelongsTo

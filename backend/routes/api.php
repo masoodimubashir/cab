@@ -153,6 +153,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/trips/available', [TripsController::class, 'available']);
+    Route::post('/trips/{trip}/start-otp', [TripsController::class, 'requestStartOtp'])->middleware('throttle:otp');
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
     Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
     Route::post('/trips/{trip}/no-show', [TripsController::class, 'markNoShow']);
@@ -175,6 +176,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/negotiation/customer-offer', [FareNegotiationController::class, 'customerOffer']);
     Route::post('/trips/{trip}/negotiation/customer-confirm', [FareNegotiationController::class, 'customerConfirm']);
+    // Booker reads the active start-ride OTP off their live-trip screen.
+    Route::get('/trips/{trip}/start-otp', [TripsController::class, 'customerStartOtp']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {

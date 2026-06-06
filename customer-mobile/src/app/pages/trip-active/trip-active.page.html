@@ -60,6 +60,21 @@
       <!-- Collapsible body -->
       <div class="sheet-body dc-stagger">
 
+        <!-- Start-ride code: shown once the driver is at the pickup and has
+             requested it. The rider reads it back to the driver to begin. -->
+        <div class="info-card otp-card" *ngIf="startOtp">
+          <span class="card-label">Ride start code</span>
+          <div class="otp-digits">
+            <span class="otp-digit" *ngFor="let d of otpDigits">{{ d }}</span>
+          </div>
+          <p class="otp-hint" *ngIf="trip?.is_for_other">
+            Also sent to {{ trip?.booked_for_name || 'your friend' }}. Share it so they can give it to the driver to start the trip.
+          </p>
+          <p class="otp-hint" *ngIf="!trip?.is_for_other">
+            Give this to your driver to start the trip.
+          </p>
+        </div>
+
         <!-- Fare summary (completed only — during the ride the fare lives in the details modal) -->
         <div class="info-card fare-card" *ngIf="isCompleted() && (t.final_fare != null || couponPreview)">
           <span class="card-label">Fare summary</span>
@@ -86,7 +101,16 @@
           <button *ngIf="canShare()" class="act act--ghost dc-press" [disabled]="shareBusy" (click)="shareTrip()">
             <ion-icon name="share-social-outline"></ion-icon><span>Share</span>
           </button>
+          <button *ngIf="canTextFriend()" class="act act--ghost dc-press" [disabled]="shareBusy" (click)="textTrackingToFriend()">
+            <ion-icon name="chatbubble-ellipses-outline"></ion-icon><span>Text {{ trip?.booked_for_name || 'rider' }}</span>
+          </button>
         </div>
+
+        <!-- Cancellation no longer available: driver is within the cut-off radius -->
+        <p class="cancel-blocked-hint" *ngIf="cancelBlockedByProximity()">
+          <ion-icon name="information-circle-outline"></ion-icon>
+          <span>Your driver is almost here — this ride can no longer be cancelled.</span>
+        </p>
 
         <!-- Completed: coupon -->
         <div class="info-card coupon-card" *ngIf="isCompleted()">

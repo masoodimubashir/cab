@@ -48,6 +48,7 @@ class AdminDispatcherSettingsController
             'request_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
             'max_hops' => ['nullable', 'integer', 'min:1', 'max:50'],
             'driver_accept_window_sec' => ['nullable', 'integer', 'min:0', 'max:600'],
+            'cancel_block_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
 
             'schedule_available' => ['nullable', 'boolean'],
             'schedule_dispatcher_type' => ['nullable', 'boolean'],
@@ -87,6 +88,7 @@ class AdminDispatcherSettingsController
             'request_radius_m' => (int) $s->request_radius_m,
             'max_hops' => (int) $s->max_hops,
             'driver_accept_window_sec' => (int) $s->driver_accept_window_sec,
+            'cancel_block_radius_m' => (int) $s->cancel_block_radius_m,
 
             'schedule_available' => (bool) $s->schedule_available,
             'schedule_dispatcher_type' => (bool) $s->schedule_dispatcher_type,

@@ -27,7 +27,7 @@ interface OperatorSettings {
   check_driver_debt: boolean;
   update_driver_payment_modes_enabled: boolean;
 
-  wallet_cash_tnc: string | null;
+  wallet_cash_min_capping: number;
   wallet_cash_max_capping: number;
 
   subscription_popup_enabled: boolean;
@@ -203,13 +203,15 @@ interface SectionMeta {
             <ng-container *ngIf="activeSection === 'wallet'">
               <div class="fields">
                 <div class="field">
-                  <span class="field__label">Wallet cash max capping (₹)</span>
-                  <tm-input type="number" [(ngModel)]="settings.wallet_cash_max_capping" />
+                  <span class="field__label">Wallet min capping (₹)</span>
+                  <tm-input type="number" [(ngModel)]="settings.wallet_cash_min_capping" />
+                  <span class="field__hint">Lowest balance a wallet may reach. Can be negative (e.g. -500 allows up to ₹500 of debt). 0 = can't go below zero.</span>
                 </div>
-              </div>
-              <div class="field field--full">
-                <span class="field__label">Wallet cash terms &amp; conditions</span>
-                <textarea class="ta" rows="6" [(ngModel)]="settings.wallet_cash_tnc"></textarea>
+                <div class="field">
+                  <span class="field__label">Wallet max capping (₹)</span>
+                  <tm-input type="number" [(ngModel)]="settings.wallet_cash_max_capping" />
+                  <span class="field__hint">Highest balance a wallet may hold. 0 = no upper limit.</span>
+                </div>
               </div>
             </ng-container>
 
@@ -629,7 +631,7 @@ export class OperatorSettingsComponent implements OnInit {
       'check_driver_debt',
       'update_driver_payment_modes_enabled',
     ],
-    wallet: ['wallet_cash_tnc', 'wallet_cash_max_capping'],
+    wallet: ['wallet_cash_min_capping', 'wallet_cash_max_capping'],
     subscription: [
       'subscription_popup_enabled',
       'subscription_popup_title',

@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
@@ -7,6 +8,7 @@ import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { RealtimeService, TripCustomerLocationPayload } from '../../core/realtime.service';
 import { TripSummaryModal } from './trip-summary.modal';
+import { StartOtpModal } from './start-otp.modal';
 import {
   coordsFromTrip,
   googleMapsDirectionsUrl,
@@ -30,6 +32,9 @@ type AvailableTrip = {
   customer_offer?: number | null;
   payment_method?: PaymentMethod | null;
   created_at?: string;
+  // "Booked for a friend / family" — who the driver will actually pick up.
+  is_for_other?: boolean;
+  booked_for_name?: string | null;
 };
 
 type ManifestPassenger = {
@@ -317,6 +322,22 @@ export class RidesPage implements OnInit, OnDestroy {
     return customer?.name || 'Customer';
   }
 
+  /** Rider's phone (the friend's number on a for-someone-else booking). */
+  get customerPhone(): string {
+    return ((this.lastTrip?.['customer_phone'] as string | undefined) || '').trim();
+  }
+
+  /** True when this active trip was booked for a friend / family. */
+  get isForOther(): boolean {
+    return !!this.lastTrip?.['is_for_other'];
+  }
+
+  /** Dial the rider to coordinate pickup. */
+  call(phone: string | null | undefined): void {
+    const p = (phone || '').trim();
+    if (p) window.location.href = `tel:${p}`;
+  }
+
   /**
    * True when we're rendering the focused active-trip layout (vs the
    * available list). NEGOTIATION is handled by the available list / price
@@ -372,6 +393,14 @@ export class RidesPage implements OnInit, OnDestroy {
     const action = this.nextAction();
     if (!id || !action || this.progressBusy) return;
 
+    // "Start ride" (ARRIVED_PICKUP → EN_ROUTE_DROP) is gated by a start OTP the
+    // rider received on their phone — open the locked verify screen instead of
+    // advancing directly.
+    if (action.kind === 'progress' && action.nextStatus === 'EN_ROUTE_DROP') {
+      await this.startRideWithOtp(id);
+      return;
+    }
+
     if (action.confirm) {
       const ok = await this.alertCtrl.create({
         header: 'End the ride?',
@@ -385,6 +414,42 @@ export class RidesPage implements OnInit, OnDestroy {
       return;
     }
     void this.doAdvance(id, action.nextStatus, action.kind);
+  }
+
+  /**
+   * Start-ride OTP flow: request a code (sent to the rider's phone), then lock
+   * the driver on the full-screen verify screen. The modal itself verifies via
+   * /driver-progress and only dismisses with { started } on success.
+   */
+  private async startRideWithOtp(tripId: number): Promise<void> {
+    this.progressBusy = true;
+    this.error = null;
+    let devCode: string | null = null;
+    try {
+      const res: any = await firstValueFrom(this.api.post(`/trips/${tripId}/start-otp`, {}));
+      devCode = res?.dev_code ?? null;
+    } catch (err: any) {
+      this.error = err?.error?.message || 'Could not send the start code. Try again.';
+      this.progressBusy = false;
+      return;
+    }
+
+    const modal = await this.modalCtrl.create({
+      component: StartOtpModal,
+      cssClass: 'start-otp-modal',
+      backdropDismiss: false,
+      componentProps: { tripId, riderName: this.customerName, devCode },
+    });
+    try {
+      await modal.present();
+      const { data } = await modal.onWillDismiss<{ started?: boolean; trip?: Record<string, unknown> }>();
+      if (data?.started && data.trip) {
+        this.lastTrip = data.trip;
+      }
+    } finally {
+      // Always re-enable the CTA, however the modal closed.
+      this.progressBusy = false;
+    }
   }
 
   private async doAdvance(tripId: number, nextStatus: string, kind: 'accept' | 'progress'): Promise<void> {

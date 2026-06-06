@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Model;
     'update_driver_payment_modes_enabled',
 
     // Wallet
-    'wallet_cash_tnc',
+    'wallet_cash_min_capping',
     'wallet_cash_max_capping',
 
     // Subscriptions
@@ -64,6 +64,7 @@ class OperatorSetting extends Model
         'corporate_tip_value_1' => 'integer',
         'corporate_tip_value_2' => 'integer',
         'corporate_tip_value_3' => 'integer',
+        'wallet_cash_min_capping' => 'integer',
         'wallet_cash_max_capping' => 'integer',
     ];
 

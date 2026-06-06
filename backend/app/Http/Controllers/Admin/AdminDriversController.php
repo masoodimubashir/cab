@@ -380,6 +380,11 @@ class AdminDriversController
             'engagement_id' => ['nullable', 'integer', 'exists:trips,id'],
         ]);
 
+        // Admin add/remove respects the operator's wallet min/max caps.
+        if ($msg = $this->walletService->capViolation($user, $data['type'], (float) $data['amount'])) {
+            return response()->json(['message' => $msg], 422);
+        }
+
         $txn = $this->walletService->recordTransaction(
             user: $user,
             type: $data['type'],

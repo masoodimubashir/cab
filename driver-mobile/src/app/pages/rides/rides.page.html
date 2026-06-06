@@ -55,9 +55,12 @@
               <ion-icon name="person-circle-outline" aria-hidden="true"></ion-icon>
             </div>
             <div class="dc-row__text">
-              <small>Customer</small>
+              <small>{{ isForOther ? 'Rider · booked for a friend' : 'Customer' }}</small>
               <strong>{{ customerName }}</strong>
             </div>
+            <button type="button" class="rider-call dc-press" *ngIf="customerPhone" (click)="call(customerPhone)" aria-label="Call rider">
+              <ion-icon name="call" aria-hidden="true"></ion-icon>
+            </button>
           </div>
           <div class="dc-row" style="cursor: default;">
             <div class="dc-row__icon">
@@ -237,6 +240,10 @@
             <span class="dc-badge dc-badge--warn badge selected" *ngIf="t.is_selected_for_me">
               <ion-icon name="star" aria-hidden="true"></ion-icon>
               Requested for you
+            </span>
+            <span class="dc-badge badge friend-badge" *ngIf="t.is_for_other">
+              <ion-icon name="people-outline" aria-hidden="true"></ion-icon>
+              For {{ t.booked_for_name || 'a friend' }}
             </span>
             <div class="ride-card__headrow">
               <h2 class="fare">

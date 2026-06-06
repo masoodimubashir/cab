@@ -57,6 +57,14 @@ class DriverWalletController
 
         $user = $request->user();
         $amount = round((float) $data['amount'], 2);
+
+        // Enforce the operator's wallet max-cap BEFORE the rider pays — a top-up
+        // may not push the balance over the cap. We gate here (not at verify):
+        // once Razorpay has captured the money, refusing the credit would lose it.
+        if ($msg = $this->wallet->capViolation($user, WalletTransaction::TYPE_CREDIT, $amount)) {
+            return response()->json(['message' => $msg], 422);
+        }
+
         $amountPaise = (int) round($amount * 100);
         $receipt = 'wallet_' . $user->id . '_' . now()->format('YmdHis');
 
@@ -127,6 +135,9 @@ class DriverWalletController
             $topup->paid_at = now();
             $topup->save();
 
+            // No cap re-check here: the payment is already captured by Razorpay,
+            // so the wallet must be credited. The max-cap gate runs at order
+            // creation (topupRazorpay), before the rider pays.
             $this->wallet->recordTransaction(
                 $user,
                 WalletTransaction::TYPE_CREDIT,

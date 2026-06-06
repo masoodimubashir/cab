@@ -193,6 +193,10 @@ class TripTrackingController extends Controller
             return response()->json(['message' => 'Trip not found.'], 404);
         }
 
+        // This is a PUBLIC link (no auth). Never expose the rider's personal
+        // contact — including a friend's name/number on a for-someone-else trip.
+        $trip->makeHidden(['booked_for_phone', 'booked_for_name']);
+
         $latestLocation = DriverLocation::query()
             ->where('trip_id', $trip->id)
             ->orderByDesc('recorded_at')
