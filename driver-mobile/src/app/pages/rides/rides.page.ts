@@ -35,6 +35,9 @@ type AvailableTrip = {
   // "Booked for a friend / family" — who the driver will actually pick up.
   is_for_other?: boolean;
   booked_for_name?: string | null;
+  // Per-vehicle reverse-bidding flag. When false the driver may only accept or
+  // reject — countering ("Send ₹N") is disabled. Defaults to true when absent.
+  reverse_bidding_enabled?: boolean;
 };
 
 type ManifestPassenger = {
@@ -79,6 +82,14 @@ export class RidesPage implements OnInit, OnDestroy {
   negBusy = false;
   /** True while the "Offer your price" panel is open from an available ride. */
   priceOpen = false;
+
+  /**
+   * Whether the driver may COUNTER the customer's offer ("Send ₹N"). Driven by
+   * the vehicle's reverse_bidding_enabled flag on the available-trip / loaded
+   * trip; defaults to true when the server omits it. When false the price panel
+   * shows Accept/Reject only and counterCustomerOffer() no-ops.
+   */
+  allowCountering = true;
 
   // The route's hard fare floor, read from negotiation_config on the
   // /negotiation fetch. No offer may go below minAmount; the input validates
@@ -531,10 +542,21 @@ export class RidesPage implements OnInit, OnDestroy {
     this.refreshAvailable();
   }
 
+  /**
+   * Read the vehicle's reverse-bidding flag off a trip-shaped object. Absent =
+   * allowed (?? true), matching the shared contract default.
+   */
+  private readReverseBidding(trip: Record<string, unknown> | null | undefined): boolean {
+    const raw = trip?.['reverse_bidding_enabled'];
+    return raw == null ? true : !!raw;
+  }
+
   pickAvailable(t: AvailableTrip, action: 'accept' | 'price'): void {
     this.tripId = t.id;
     this.error = null;
     this.message = null;
+    // Latch the vehicle's reverse-bidding rule for the price panel.
+    this.allowCountering = t.reverse_bidding_enabled ?? true;
     if (action === 'accept') {
       // Accept the customer's offer at face value.
       this.priceOpen = false;
@@ -580,6 +602,8 @@ export class RidesPage implements OnInit, OnDestroy {
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+          // Latch the vehicle's reverse-bidding rule from the loaded trip.
+          this.allowCountering = this.readReverseBidding(this.lastTrip);
           this.maybeRefreshManifest();
 
           // Pull the route's hard fare floor — offers below it are rejected.
@@ -1040,6 +1064,11 @@ export class RidesPage implements OnInit, OnDestroy {
   counterCustomerOffer(): void {
     const id = this.validId();
     if (id == null) return;
+    // Reverse bidding off for this vehicle — accept or reject only.
+    if (!this.allowCountering) {
+      this.message = "Countering isn't available for this vehicle — accept or reject.";
+      return;
+    }
     if (
       this.counterAmount == null ||
       !Number.isFinite(this.counterAmount) ||

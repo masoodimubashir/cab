@@ -17,7 +17,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'per_km',
     'per_min',
     'surge_multiplier',
-    'commission_percent',
     'min_fare',
     'threshold_distance_1_km',
     'fare_per_km_after_threshold_1',

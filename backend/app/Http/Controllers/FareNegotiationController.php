@@ -6,6 +6,7 @@ use App\Events\FareNegotiationLocked;
 use App\Events\FareNegotiationOfferAdded;
 use App\Jobs\DispatchHopJob;
 use App\Jobs\SendDispatchNotificationsJob;
+use App\Models\CityVehicleType;
 use App\Models\DispatcherSetting;
 use App\Models\Driver;
 use App\Models\DriverLocation;
@@ -64,6 +65,7 @@ class FareNegotiationController extends Controller
         $tripWithDriver = $trip->fresh()->load([
             'driver:id,name,phone,avatar_path,accepted_payment_methods,current_lat,current_lng',
             'driver.driver:id,user_id,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
+            'cityVehicleType:id,reverse_bidding_enabled',
         ]);
         // So the driver sees + can call the actual rider (the friend on a
         // for-someone-else booking); the booker's relation stays hidden.
@@ -285,6 +287,19 @@ class FareNegotiationController extends Controller
 
         if (!$trip) {
             return response()->json(['message' => 'This request is no longer available.'], 409);
+        }
+
+        // Reverse-bidding gate: when the trip's vehicle has reverse bidding OFF,
+        // the driver may only ACCEPT (or ignore) — never COUNTER with their own price.
+        if ($data['action'] === 'COUNTER') {
+            $cvt = $trip->city_vehicle_type_id
+                ? CityVehicleType::query()->find($trip->city_vehicle_type_id)
+                : null;
+            if ($cvt && ! $cvt->reverse_bidding_enabled) {
+                return response()->json([
+                    'message' => 'Countering is not allowed for this vehicle. You can only accept or reject this offer.',
+                ], 422);
+            }
         }
 
         // Acceptance window (bug #7): a driver auto-pinged by the dispatcher must

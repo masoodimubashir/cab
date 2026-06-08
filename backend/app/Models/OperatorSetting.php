@@ -7,8 +7,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 #[Fillable([
-    'commission_deduction',
-
     // Tipping
     'customer_tip_value_1',
     'customer_tip_value_2',
@@ -33,15 +31,6 @@ use Illuminate\Database\Eloquent\Model;
     'subscription_popup_desc',
     'subscription_popup_button1',
     'subscription_popup_button2',
-
-    // Referral
-    'invite_earn_image_android',
-    'invite_earn_image_ios',
-
-    // Maps
-    'maps_preference',
-    'map_browser_key',
-    'web_google_api_key',
 
     // Templates
     'customer_ride_accept_msg',

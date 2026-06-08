@@ -3,26 +3,22 @@
 namespace App\Services;
 
 use App\Models\CityVehicleType;
-use App\Models\OperatorSetting;
-use App\Models\PricingRule;
 use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\WalletTransaction;
 
 /**
- * Settles the operator's commission on a completed trip.
+ * Settles a completed trip's earnings.
  *
- * The pieces this ties together already existed separately: the commission %
- * lived only in the fare estimate, the operator's deduction mode was an unused
- * setting, and the wallet ledger had no per-ride debit. This is the missing
- * step that actually takes the cut.
- *
- * Flow on completion:
- *   1. Resolve the trip's default commission % (pricing rule → vehicle type).
- *   2. Let an active subscription override it (usually to 0 = commission-free).
- *   3. Apply the operator's deduction mode (none / with-debt / without-debt).
- *   4. Debit the driver's wallet and record the rate+amount on the trip.
- *   5. Consume the subscription (count this ride; expire it when used up).
+ *   - Solo (normal) rides: the platform takes a commission from the driver,
+ *     debited from their prepaid wallet float. The cut is sourced from the
+ *     trip's CityVehicleType — either fare × commission_percent/100, or a flat
+ *     fixed_commission (₹) — UNLESS an active subscription overrides the rate
+ *     (its percent wins, usually 0% = commission-free). The subscription then
+ *     consumes one ride against its allowance.
+ *   - Shared (fixed/shuttle) journeys: NO commission. Riders paid the platform
+ *     at booking, so the driver is CREDITED the full fares of the seats they
+ *     actually carried.
  */
 class CommissionSettlementService
 {
@@ -38,66 +34,79 @@ class CommissionSettlementService
             return;
         }
 
-        // Shared (fixed/shuttle) journeys are settled PER SEAT, and the money
-        // flows the other way: riders already paid the platform at booking, so
-        // the driver is CREDITED their net earnings (fares − commission) rather
-        // than debited a commission they'd otherwise owe on collected cash.
+        // Shared journeys settle PER SEAT and flow the other way (credit, not
+        // debit), so they have their own path.
         if ($trip->route_departure_id !== null) {
             $this->settleShared($trip);
             return;
         }
 
+        // Solo ride: take the platform commission from the driver's wallet.
         $fare = (float) ($trip->final_fare ?? 0);
 
-        $vehicleTypeId = $trip->vehicle_type_id ?? $trip->driver?->driver?->vehicle_type_id;
-        $vehicleTypeId = $vehicleTypeId ? (int) $vehicleTypeId : null;
+        // The vehicle is the single source of the commission rule. Resolve it
+        // from the trip's city_vehicle_type_id; null-safe if the trip never
+        // carried one (treat as commission-free).
+        $cvt = $trip->city_vehicle_type_id
+            ? CityVehicleType::query()->find($trip->city_vehicle_type_id)
+            : null;
 
-        // The rate for THIS ride: an active subscription wins over the default.
-        // Resolve before consuming, so the ride that exhausts a plan is still
-        // charged at the plan's rate.
-        $defaultPct = $this->defaultCommissionPercent($trip);
-        $pct = $this->subscriptions->effectiveCommissionPercent((int) $trip->driver_id, $vehicleTypeId, $defaultPct);
+        $vehicleTypeId = $trip->vehicle_type_id
+            ?? $trip->driver?->driver?->vehicle_type_id;
 
-        $commission = $fare > 0 ? round($fare * $pct / 100, 2) : 0.0;
+        // An active subscription overrides the vehicle's commission with its own
+        // percent (usually 0%). Use a sentinel default of -1 so we can tell
+        // "no active sub" (default returned) apart from a real 0% sub rate.
+        $subPct = $this->subscriptions->effectiveCommissionPercent(
+            (int) $trip->driver_id,
+            $vehicleTypeId ? (int) $vehicleTypeId : null,
+            -1.0,
+        );
 
-        $mode = OperatorSetting::instance()->commission_deduction ?? 'no_commission';
-        $charge = 0.0;
-        if ($mode !== 'no_commission' && $commission > 0) {
-            if ($mode === 'commission_without_debt') {
-                // Never push the wallet negative: take only what's available.
-                $balance = max(0.0, $this->wallet->balance($trip->driver));
-                $charge = min($commission, $balance);
-            } else { // commission_with_debt
-                $charge = $commission;
-            }
+        if ($subPct >= 0.0) {
+            // Active subscription: its percent rate wins.
+            $percent = $subPct;
+            $cut = round($fare * $percent / 100, 2);
+        } elseif ($cvt && $cvt->commission_type === 'fixed') {
+            // Flat per-ride fee from the vehicle.
+            $percent = 0.0;
+            $cut = round((float) $cvt->fixed_commission, 2);
+        } else {
+            // Percentage of the fare from the vehicle (default when no vehicle).
+            $percent = $cvt ? (float) $cvt->commission_percent : 0.0;
+            $cut = round($fare * $percent / 100, 2);
         }
 
-        $trip->commission_percent = $pct;
-        $trip->commission_amount = $charge;
-        $trip->save();
+        // A fixed fee can't exceed the fare; never push the driver into debt for
+        // a single ride beyond the fare they collected.
+        if ($cut > $fare) {
+            $cut = $fare;
+        }
 
-        if ($charge > 0) {
+        if ($cut > 0 && $trip->driver) {
             $this->wallet->recordTransaction(
                 $trip->driver,
                 WalletTransaction::TYPE_DEBIT,
-                $charge,
+                $cut,
                 'Ride commission',
                 $trip->id,
                 null,
             );
         }
 
-        // Count this ride against any active subscription (and expire it if
-        // this was its last ride / it hit its earnings cap).
+        $trip->commission_percent = round($percent, 2);
+        $trip->commission_amount = $cut;
+        $trip->save();
+
+        // Count this ride against any active subscription (expiring it when used up).
         $this->subscriptions->consume($trip);
     }
 
     /**
      * Per-seat settlement for a shared journey. Each carried seat (not cancelled,
-     * not no-show) contributes its fare and its own commission; the driver is
-     * credited the summed net (gross − commission). No-show seats are forfeit
-     * (the rider paid, the driver didn't carry them), so the driver earns nothing
-     * on them. Subscriptions are not consumed (a different commission model).
+     * not no-show) contributes its full fare to the driver's earnings. No-show
+     * seats are forfeit (the rider paid, the driver didn't carry them), so the
+     * driver earns nothing on them.
      */
     private function settleShared(Trip $trip): void
     {
@@ -106,21 +115,11 @@ class CommissionSettlementService
             ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
             ->get();
 
-        $takeCommission = (OperatorSetting::instance()->commission_deduction ?? 'no_commission') !== 'no_commission';
-
         $gross = 0.0;
-        $commission = 0.0;
         foreach ($seats as $seat) {
-            $fare = (float) ($seat->fare_amount ?? 0);
-            $pct = $seat->commission_percent !== null
-                ? (float) $seat->commission_percent
-                : $this->defaultCommissionPercent($trip);
-            $seatCommission = $takeCommission && $fare > 0 ? round($fare * $pct / 100, 2) : 0.0;
+            $gross += (float) ($seat->fare_amount ?? 0);
 
-            $gross += $fare;
-            $commission += $seatCommission;
-
-            $seat->commission_amount = $seatCommission;
+            $seat->commission_amount = 0.0;
             if (in_array($seat->status, ['BOOKED', 'CONFIRMED', 'BOARDED'], true)) {
                 $seat->status = 'COMPLETED';
                 $seat->dropped_at = $seat->dropped_at ?? now();
@@ -128,45 +127,22 @@ class CommissionSettlementService
             $seat->save();
         }
 
-        $commission = round($commission, 2);
-        $net = round($gross - $commission, 2);
+        $gross = round($gross, 2);
 
-        $trip->final_fare = round($gross, 2);
-        $trip->commission_amount = $commission;
-        $trip->commission_percent = $gross > 0 ? round($commission / $gross * 100, 2) : 0.0;
+        $trip->final_fare = $gross;
+        $trip->commission_amount = 0.0;
+        $trip->commission_percent = 0.0;
         $trip->save();
 
-        if ($net > 0 && $trip->driver) {
+        if ($gross > 0 && $trip->driver) {
             $this->wallet->recordTransaction(
                 $trip->driver,
                 WalletTransaction::TYPE_CREDIT,
-                $net,
+                $gross,
                 'Shared ride earnings',
                 $trip->id,
                 null,
             );
         }
-    }
-
-    /**
-     * The commission % that would apply without a subscription. Prefers the
-     * trip's pricing rule (what the fare estimate used), then the city vehicle
-     * type, then 0.
-     */
-    private function defaultCommissionPercent(Trip $trip): float
-    {
-        if ($trip->pricing_rule_id) {
-            $rule = PricingRule::query()->find($trip->pricing_rule_id);
-            if ($rule && $rule->commission_percent !== null) {
-                return (float) $rule->commission_percent;
-            }
-        }
-        if ($trip->city_vehicle_type_id) {
-            $cvt = CityVehicleType::query()->find($trip->city_vehicle_type_id);
-            if ($cvt) {
-                return (float) $cvt->commission_percent;
-            }
-        }
-        return 0.0;
     }
 }

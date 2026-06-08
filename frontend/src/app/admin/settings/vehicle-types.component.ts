@@ -192,20 +192,6 @@ const STATUS_OPTIONS = [
         </div>
 
         <div class="field">
-          <span class="field__lbl">Destination Mandatory <i>*</i></span>
-          <div class="radio-row">
-            <label><input type="radio" name="destMand" [value]="true" [(ngModel)]="createForm.destination_mandatory" /> Yes</label>
-            <label><input type="radio" name="destMand" [value]="false" [(ngModel)]="createForm.destination_mandatory" /> No</label>
-          </div>
-        </div>
-        <div class="field">
-          <span class="field__lbl">Fare Mandatory <i>*</i></span>
-          <div class="radio-row">
-            <label><input type="radio" name="fareMand" [value]="true" [(ngModel)]="createForm.fare_mandatory" /> Yes</label>
-            <label><input type="radio" name="fareMand" [value]="false" [(ngModel)]="createForm.fare_mandatory" /> No</label>
-          </div>
-        </div>
-        <div class="field">
           <span class="field__lbl">Toll Applicable <i>*</i></span>
           <div class="radio-row">
             <label><input type="radio" name="toll" [value]="true" [(ngModel)]="createForm.toll_applicable" /> Yes</label>
@@ -213,10 +199,22 @@ const STATUS_OPTIONS = [
           </div>
         </div>
 
+        <div class="field">
+          <span class="field__lbl">Commission Mode <i>*</i></span>
+          <div class="radio-row">
+            <label><input type="radio" name="commType" [value]="'percent'" [(ngModel)]="createForm.commission_type" /> Percentage (%)</label>
+            <label><input type="radio" name="commType" [value]="'fixed'" [(ngModel)]="createForm.commission_type" /> Fixed (₹)</label>
+          </div>
+        </div>
+
         <div class="row">
-          <label class="field">
+          <label class="field" *ngIf="createForm.commission_type === 'percent'">
             <span class="field__lbl">Commission (%) <i>*</i></span>
             <input type="number" min="0" max="100" step="0.01" [(ngModel)]="createForm.commission_percent" />
+          </label>
+          <label class="field" *ngIf="createForm.commission_type === 'fixed'">
+            <span class="field__lbl">Fixed commission (₹) <i>*</i></span>
+            <input type="number" min="0" step="0.01" [(ngModel)]="createForm.fixed_commission" />
           </label>
           <label class="field">
             <span class="field__lbl">Luggage Capacity <i>*</i></span>
@@ -465,9 +463,12 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       display_order: null as number | null,
       max_people: null as number | null,
       luggage_capacity: null as number | null,
+      commission_type: 'percent' as 'percent' | 'fixed',
       commission_percent: null as number | null,
-      destination_mandatory: false,
-      fare_mandatory: false,
+      fixed_commission: 0 as number | null,
+      min_driver_balance: 0 as number | null,
+      show_low_wallet_alert: true,
+      reverse_bidding_enabled: true,
       toll_applicable: false,
     };
   }
@@ -486,6 +487,8 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
 
   get createValid(): boolean {
     const f = this.createForm;
+    const commissionValid =
+      f.commission_type === 'percent' ? f.commission_percent != null : f.fixed_commission != null;
     return (
       f.city_id != null &&
       f.ride_type_id != null &&
@@ -493,7 +496,7 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       !!f.display_name.trim() &&
       f.display_order != null &&
       f.max_people != null &&
-      f.commission_percent != null &&
+      commissionValid &&
       f.luggage_capacity != null
     );
   }
@@ -509,9 +512,12 @@ export class VehicleTypesComponent implements OnInit, OnDestroy {
       display_order: f.display_order,
       max_people: f.max_people,
       luggage_capacity: f.luggage_capacity,
-      commission_percent: f.commission_percent,
-      destination_mandatory: f.destination_mandatory,
-      fare_mandatory: f.fare_mandatory,
+      commission_type: f.commission_type,
+      commission_percent: f.commission_type === 'percent' ? (f.commission_percent ?? 0) : 0,
+      fixed_commission: f.commission_type === 'fixed' ? (f.fixed_commission ?? 0) : 0,
+      min_driver_balance: f.min_driver_balance,
+      show_low_wallet_alert: f.show_low_wallet_alert,
+      reverse_bidding_enabled: f.reverse_bidding_enabled,
       toll_mode: f.toll_applicable ? 'yes' : 'no',
     };
 

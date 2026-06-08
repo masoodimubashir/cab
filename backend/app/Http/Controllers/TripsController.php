@@ -319,7 +319,10 @@ class TripsController extends Controller
                 'id', 'customer_id', 'driver_id', 'pickup_address', 'pickup_lat', 'pickup_lng',
                 'drop_address', 'drop_lat', 'drop_lng', 'estimated_fare',
                 'payment_method', 'created_at', 'is_for_other', 'booked_for_name',
+                'city_vehicle_type_id',
             ]);
+
+        $trips->load('cityVehicleType:id,reverse_bidding_enabled');
 
         $tripIds = $trips->pluck('id')->all();
 
@@ -355,6 +358,7 @@ class TripsController extends Controller
                 // actually picking up before they accept.
                 'is_for_other' => (bool) $t->is_for_other,
                 'booked_for_name' => $t->is_for_other ? $t->booked_for_name : null,
+                'reverse_bidding_enabled' => $t->cityVehicleType?->reverse_bidding_enabled ?? true,
             ];
         });
 

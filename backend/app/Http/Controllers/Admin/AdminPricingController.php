@@ -41,7 +41,6 @@ class AdminPricingController
             'per_km' => ['nullable', 'numeric', 'min:0'],
             'per_min' => ['nullable', 'numeric', 'min:0'],
             'surge_multiplier' => ['nullable', 'numeric', 'min:0'],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'min_fare' => ['nullable', 'numeric', 'min:0'],
             'threshold_distance_1_km' => ['nullable', 'numeric', 'min:0'],
             'fare_per_km_after_threshold_1' => ['nullable', 'numeric', 'min:0'],
@@ -69,8 +68,8 @@ class AdminPricingController
             'cancel_subsidy_threshold_distance_km' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        // per_min and commission_percent columns are NOT NULL — keep 0 when blank.
-        foreach (['per_min', 'commission_percent'] as $col) {
+        // per_min column is NOT NULL — keep 0 when blank.
+        foreach (['per_min'] as $col) {
             if (array_key_exists($col, $data) && $data[$col] === null) {
                 $data[$col] = 0;
             }
@@ -110,7 +109,6 @@ class AdminPricingController
             'per_km' => ['required', 'numeric', 'min:0'],
             'per_min' => ['nullable', 'numeric', 'min:0'],
             'surge_multiplier' => ['required', 'numeric', 'min:0'],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'min_fare' => ['required', 'numeric', 'min:0'],
             'threshold_distance_1_km' => ['nullable', 'numeric', 'min:0'],
             'fare_per_km_after_threshold_1' => ['nullable', 'numeric', 'min:0'],
@@ -138,9 +136,9 @@ class AdminPricingController
             'cancel_subsidy_threshold_distance_km' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        // per_min and commission_percent are optional on the form, but their
-        // columns are NOT NULL — fall back to 0 when the admin leaves them blank.
-        foreach (['per_min', 'commission_percent'] as $col) {
+        // per_min is optional on the form, but its column is NOT NULL — fall back
+        // to 0 when the admin leaves it blank.
+        foreach (['per_min'] as $col) {
             if (array_key_exists($col, $data) && $data[$col] === null) {
                 $data[$col] = 0;
             }

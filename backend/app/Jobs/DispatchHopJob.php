@@ -3,10 +3,12 @@
 namespace App\Jobs;
 
 use App\Events\DispatchRingExpanded;
+use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\DispatcherSetting;
 use App\Models\Driver;
 use App\Models\Trip;
+use App\Services\DynamicPricingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -35,6 +37,17 @@ class DispatchHopJob implements ShouldQueue
     use SerializesModels;
 
     public int $tries = 1;
+
+    /** Ring-mode fallbacks for any single override left blank (no city inheritance). */
+    private const RING_HOP_INTERVAL_SEC = 5;
+    private const RING_HOP_RADIUS_M = 500;
+    private const RING_MAX_HOPS = 5;
+
+    /** Geofence-mode (all overrides blank) nearest-first wave cadence. */
+    private const GEOFENCE_WAVE_SIZE = 3;
+    private const GEOFENCE_WAVE_INTERVAL_SEC = 6;
+    private const GEOFENCE_MIN_WAVES = 5;
+    private const GEOFENCE_MAX_WAVES = 40;
 
     public function __construct(
         public int $tripId,
@@ -111,20 +124,32 @@ class DispatchHopJob implements ShouldQueue
                     ->first()
                 : null);
 
-        $hopIntervalSec = (int) ($vehicleType?->override_hop_interval_sec ?? $settings->dispatcher_hop_interval_sec);
-        $hopRadiusM = (int) ($vehicleType?->override_hop_radius_m ?? $settings->dispatcher_hop_radius_m);
-        $requestRadiusM = (int) ($vehicleType?->override_request_radius_m ?? $settings->request_radius_m);
-        $maxHops = (int) ($vehicleType?->override_max_hops ?? $settings->max_hops);
+        // Two dispatch modes:
+        //  • RING (any per-vehicle override set) — expanding-radius search using
+        //    the entered numbers, with built-in fallbacks for any blank field
+        //    (NO city-default inheritance).
+        //  • GEOFENCE (all overrides blank) — offer to every eligible driver
+        //    inside the city's boundary polygon, nearest-first in widening waves
+        //    until the whole geofence is covered. No radius cap.
+        $geofenceMode = !$this->hasRingOverride($vehicleType);
 
-        if ($this->hop > $maxHops) {
-            return;
+        if ($geofenceMode) {
+            if ($this->hop > self::GEOFENCE_MAX_WAVES) {
+                return;
+            }
+            $intervalSec = self::GEOFENCE_WAVE_INTERVAL_SEC;
+            $emptyRequeueCap = self::GEOFENCE_MAX_WAVES;
+        } else {
+            $hopIntervalSec = (int) ($vehicleType?->override_hop_interval_sec ?? self::RING_HOP_INTERVAL_SEC);
+            $hopRadiusM = (int) ($vehicleType?->override_hop_radius_m ?? self::RING_HOP_RADIUS_M);
+            $requestRadiusM = (int) ($vehicleType?->override_request_radius_m ?? 0);
+            $maxHops = (int) ($vehicleType?->override_max_hops ?? self::RING_MAX_HOPS);
+            if ($this->hop > $maxHops) {
+                return;
+            }
+            $intervalSec = $hopIntervalSec;
+            $emptyRequeueCap = $maxHops;
         }
-
-        $startRadius = $requestRadiusM > 0 ? $requestRadiusM : $hopRadiusM;
-        $radiusMeters = $startRadius + ($this->hop - 1) * $hopRadiusM;
-        // Honor the operator's configured radius (bug #6 — no hidden 500 m floor).
-        // Only guard against a zero/blank config, which would search nobody.
-        $radiusKm = $radiusMeters > 0 ? $radiusMeters / 1000.0 : 0.5;
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
@@ -158,26 +183,51 @@ class DispatchHopJob implements ShouldQueue
             ->pluck('user_id');
 
         if ($eligible->isEmpty()) {
-            $this->requeue($maxHops, $hopIntervalSec);
+            $this->requeue($emptyRequeueCap, $intervalSec);
             return;
         }
 
         $eligibleBeforeFilter = $eligible->toArray();
-        $eligible = $this->filterByPickupRadius(
-            $eligible,
-            (float) $trip->pickup_lat,
-            (float) $trip->pickup_lng,
-            $radiusKm,
-            5,
-        );
 
-        \Illuminate\Support\Facades\Log::info('[dispatch-hop] tripId=' . $trip->id . ' hop=' . $this->hop . ' radiusKm=' . $radiusKm . ' eligibleBefore=' . json_encode($eligibleBeforeFilter) . ' eligibleAfter=' . json_encode($eligible->toArray()) . ' discoveryMode=' . ($this->discoveryMode ? 'true' : 'false'));
+        if ($geofenceMode) {
+            // Everyone eligible inside the city polygon, nearest first. Each wave
+            // reaches the nearest (waveSize * hop) drivers; the ping-once cache
+            // means each is notified only the first wave they fall into.
+            $ranked = $this->rankByPolygonDistance(
+                $eligible,
+                $trip,
+                (float) $trip->pickup_lat,
+                (float) $trip->pickup_lng,
+                5,
+            );
+            $cap = min(
+                self::GEOFENCE_MAX_WAVES,
+                max(self::GEOFENCE_MIN_WAVES, (int) ceil(count($ranked) / self::GEOFENCE_WAVE_SIZE)),
+            );
+            $slice = array_slice($ranked, 0, self::GEOFENCE_WAVE_SIZE * $this->hop);
+            $eligible = collect(array_map(static fn ($r) => $r['uid'], $slice));
+            $radiusMeters = $slice ? (int) round(((float) $slice[count($slice) - 1]['km']) * 1000.0) : 0;
+        } else {
+            $startRadius = $requestRadiusM > 0 ? $requestRadiusM : $hopRadiusM;
+            $radiusMeters = $startRadius + ($this->hop - 1) * $hopRadiusM;
+            // Honor the configured radius; only guard a zero/blank that would
+            // otherwise search nobody.
+            $radiusKm = $radiusMeters > 0 ? $radiusMeters / 1000.0 : 0.5;
+            $eligible = $this->filterByPickupRadius(
+                $eligible,
+                (float) $trip->pickup_lat,
+                (float) $trip->pickup_lng,
+                $radiusKm,
+                5,
+            );
+            $cap = $maxHops;
+        }
 
-        // Discovery-mode hops are search-only — find drivers in the ring,
-        // hand them back to the customer-mobile via the broadcast payload,
-        // but DO NOT push notifications. The customer manually picks a driver
-        // from the consolidated list after search ends and select-driver
-        // sends the request to the chosen one.
+        \Illuminate\Support\Facades\Log::info('[dispatch-hop] tripId=' . $trip->id . ' hop=' . $this->hop . ' mode=' . ($geofenceMode ? 'geofence' : 'ring') . ' radiusMeters=' . $radiusMeters . ' eligibleBefore=' . json_encode($eligibleBeforeFilter) . ' eligibleAfter=' . json_encode($eligible->toArray()) . ' discoveryMode=' . ($this->discoveryMode ? 'true' : 'false'));
+
+        // Discovery-mode hops are search-only — find drivers, hand them back to
+        // the customer-mobile via the broadcast payload, but DO NOT push
+        // notifications. The customer manually picks a driver afterwards.
         $driverDetails = $this->discoveryMode
             ? $this->buildDriverDetails($eligible, (float) $trip->pickup_lat, (float) $trip->pickup_lng)
             : [];
@@ -185,18 +235,17 @@ class DispatchHopJob implements ShouldQueue
         broadcast(new DispatchRingExpanded(
             tripId: $trip->id,
             hop: $this->hop,
-            maxHops: $maxHops,
+            maxHops: $cap,
             radiusMeters: $radiusMeters,
-            hopIntervalSec: $hopIntervalSec,
+            hopIntervalSec: $intervalSec,
             eligibleDriverCount: $eligible->count(),
             drivers: $driverDetails,
         ));
 
         if (!$this->discoveryMode && $eligible->isNotEmpty()) {
-            // Bug #8 (a): ping each driver only the FIRST time they enter the
-            // ring — not again on every expansion. The ping record (kept for the
-            // whole search) doubles as the acceptance-window clock for bug #7.
-            $searchTtlSec = max($maxHops * $hopIntervalSec + 120, 120);
+            // Ping each driver only the FIRST time they're reached — not again on
+            // every wave. The ping record doubles as the acceptance-window clock.
+            $searchTtlSec = max($cap * $intervalSec + 120, 120);
             $newlyReached = $eligible->reject(
                 fn ($uid) => Cache::has(self::pingKey($trip->id, (int) $uid))
             );
@@ -215,7 +264,7 @@ class DispatchHopJob implements ShouldQueue
             }
         }
 
-        $this->requeue($maxHops, $hopIntervalSec);
+        $this->requeue($cap, $intervalSec);
     }
 
     /**
@@ -286,6 +335,74 @@ class DispatchHopJob implements ShouldQueue
         }
         self::dispatch($this->tripId, $this->amount, $this->hop + 1, $this->discoveryMode, $this->genToken)
             ->delay(now()->addSeconds($hopIntervalSec));
+    }
+
+    /** True when the vehicle sets any per-vehicle dispatch override (→ ring mode). */
+    private function hasRingOverride(?CityVehicleType $vt): bool
+    {
+        return $vt !== null && (
+            $vt->override_request_radius_m !== null
+            || $vt->override_hop_interval_sec !== null
+            || $vt->override_hop_radius_m !== null
+            || $vt->override_max_hops !== null
+        );
+    }
+
+    /**
+     * Eligible drivers INSIDE the city's boundary polygon with a fresh location
+     * ping, ordered nearest-first by distance from pickup. A city with no polygon
+     * (NULL) is treated as unbounded — all fresh drivers are kept.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $driverUserIds
+     * @return array<int, array{uid:int, km:float}>
+     */
+    private function rankByPolygonDistance(
+        \Illuminate\Support\Collection $driverUserIds,
+        Trip $trip,
+        float $pickupLat,
+        float $pickupLng,
+        int $freshnessMinutes,
+    ): array {
+        if ($driverUserIds->isEmpty()) {
+            return [];
+        }
+        $cutoff = now()->subMinutes($freshnessMinutes)->toDateTimeString();
+
+        $rows = DB::table('driver_locations as dl')
+            ->select(['dl.driver_id', 'dl.lat', 'dl.lng'])
+            ->whereIn('dl.id', function ($q) use ($driverUserIds) {
+                $q->select(DB::raw('MAX(id)'))
+                    ->from('driver_locations')
+                    ->whereIn('driver_id', $driverUserIds)
+                    ->groupBy('driver_id');
+            })
+            ->where('dl.recorded_at', '>=', $cutoff)
+            ->get();
+
+        // boundary_polygon is cast to an array on the City model; NULL/empty or a
+        // degenerate ring (< 3 points) means "unbounded" — keep every fresh driver.
+        $polygon = City::find($trip->city_id)?->boundary_polygon;
+        $polygon = is_array($polygon) && count($polygon) >= 3 ? $polygon : null;
+        $geo = app(DynamicPricingService::class);
+
+        $ranked = [];
+        foreach ($rows as $row) {
+            if ($row->lat === null || $row->lng === null) {
+                continue;
+            }
+            $lat = (float) $row->lat;
+            $lng = (float) $row->lng;
+            if ($polygon !== null && !$geo->pointInPolygon($lat, $lng, $polygon)) {
+                continue;
+            }
+            $ranked[] = [
+                'uid' => (int) $row->driver_id,
+                'km' => $this->haversineKm($pickupLat, $pickupLng, $lat, $lng),
+            ];
+        }
+
+        usort($ranked, static fn ($a, $b) => $a['km'] <=> $b['km']);
+        return $ranked;
     }
 
     /**
