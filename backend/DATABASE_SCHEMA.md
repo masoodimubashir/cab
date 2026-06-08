@@ -1045,8 +1045,9 @@ _Configuration templates for driver subscription plans (commission, metering, av
 | vehicle_type_id | bigint unsigned | Yes | Foreign key → vehicle_types.id; vehicle type the plan applies to; null = all vehicles. |
 | title | varchar(191) | No | Display name of the subscription plan. |
 | subtitle | varchar(191) | Yes | Optional tagline or description. |
-| amount | decimal(10,2) | No | Purchase price in currency; default=0.00. |
-| commission_percent | decimal(5,2) | No | Commission rate charged to driver while plan is active; default=0.00. |
+| amount | decimal(10,2) | No | Purchase price in currency; default=0.00 (always 0 for the 'commission' pricing model). |
+| commission_percent | decimal(5,2) | No | Commission rate charged to driver while plan is active; default=0.00 (always 0 for the 'subscription' pricing model). |
+| pricing_model | enum('subscription','commission','hybrid') | No | How the plan charges the driver: 'subscription' (one-time amount, no commission), 'commission' (no upfront amount, commission per ride), 'hybrid' (both); default='subscription'. |
 | meter_type | enum('rides','days','daily','earnings') | No | How the plan is metered: 'rides' (cap on rides), 'days' (total days), 'daily' (renews daily), 'earnings' (cap on earnings); default='days'. |
 | rides_count | int unsigned | Yes | Number of rides allowed (when meter_type='rides'). |
 | days_count | int unsigned | Yes | Number of days in the subscription (when meter_type='days' or 'daily'). |
@@ -1072,16 +1073,18 @@ _Individual driver subscription purchases, with metering, auto-renewal, and queu
 | meter_type | varchar(16) | No | Snapshot of plan's meter_type at purchase: 'rides', 'days', 'daily', or 'earnings'. |
 | amount_paid | decimal(10,2) | No | Amount charged to the driver; default=0.00. |
 | commission_percent | decimal(5,2) | No | Commission rate snapshot at purchase; default=0.00. |
+| pricing_model | enum('subscription','commission','hybrid') | No | Snapshot of the plan's pricing_model at purchase; default='subscription'. |
 | rides_allowed | int unsigned | Yes | Rides cap (when meter_type='rides'); null otherwise. |
 | rides_used | int unsigned | No | Rides consumed so far; default=0. |
 | earnings_cap | decimal(10,2) | Yes | Earnings cap in currency (when meter_type='earnings'); null otherwise. |
 | earnings_accrued | decimal(10,2) | No | Earnings accumulated under the plan; default=0.00. |
-| starts_at | datetime | No | When the subscription became active. |
-| expires_at | datetime | Yes | When the subscription expires; null = open-ended or not yet set. |
-| status | enum('active','expired','cancelled') | No | Current state: 'active' (running), 'expired' (time/meter exhausted), 'cancelled' (user cancellation); default='active'. |
+| days_count | int unsigned | Yes | Snapshot of the plan's day count (time/daily plans) so a queued plan's expiry can be computed at activation; null for ride/earnings plans. |
+| starts_at | datetime | No | When the subscription became active (reset to activation time for a queued plan). |
+| expires_at | datetime | Yes | When the subscription expires; null = open-ended, or not yet set (queued plan before activation). |
+| status | enum('active','expired','cancelled') | No | Current state: 'active' (running OR prepaid-queued, see is_queued), 'expired' (time/meter exhausted), 'cancelled' (user cancellation); default='active'. |
+| is_queued | tinyint(1) | No | If true, this is a PREPAID plan bought while another was active: charged immediately but dormant (excluded from every running-subscription query) until the current plan ends, when it is activated with no further charge; default=0. |
 | auto_renew | tinyint(1) | No | Whether to automatically re-purchase at expiry; default=1. |
 | cancelled_at | datetime | Yes | When the driver cancelled; subscription continues to expiry but won't renew. |
-| next_plan_id | bigint unsigned | Yes | Foreign key → subscription_plans.id; a plan queued to activate when this one expires. |
 | notified_expiry_at | datetime | Yes | When the "expiring in 24h" reminder was sent; deduplicates notifications. |
 | created_at | timestamp | Yes | Record creation timestamp. |
 | updated_at | timestamp | Yes | Record last update timestamp. |

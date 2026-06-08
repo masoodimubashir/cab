@@ -21,7 +21,8 @@ class AdminSubscriptionsController
             ->where('city_id', $city->id)
             ->with('vehicleType')
             ->withCount(['driverSubscriptions as active_subscribers_count' => function ($w) {
-                $w->where('status', DriverSubscription::STATUS_ACTIVE);
+                // Count only live subscribers, not prepaid plans still queued.
+                $w->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', false);
             }]);
 
         if ($request->has('is_active') && $request->query('is_active') !== '') {
@@ -30,6 +31,10 @@ class AdminSubscriptionsController
 
         if ($meter = $request->query('meter_type')) {
             $q->where('meter_type', $meter);
+        }
+
+        if (($model = $request->query('pricing_model')) && in_array($model, SubscriptionPlan::PRICING_MODELS, true)) {
+            $q->where('pricing_model', $model);
         }
 
         if ($search = trim((string) $request->query('q', ''))) {
@@ -66,7 +71,7 @@ class AdminSubscriptionsController
     public function update(Request $request, City $city, SubscriptionPlan $plan)
     {
         $this->guard($city, $plan);
-        $data = $this->validatePayload($request, partial: true);
+        $data = $this->validatePayload($request, partial: true, plan: $plan);
         $plan->fill($data)->save();
 
         return response()->json([
@@ -87,7 +92,7 @@ class AdminSubscriptionsController
         abort_if($plan->city_id !== $city->id, 404);
     }
 
-    private function validatePayload(Request $request, bool $partial): array
+    private function validatePayload(Request $request, bool $partial, ?SubscriptionPlan $plan = null): array
     {
         $sometimes = $partial ? 'sometimes' : 'required';
 
@@ -96,6 +101,7 @@ class AdminSubscriptionsController
             'subtitle' => ['nullable', 'string', 'max:191'],
             'amount' => [$sometimes, 'numeric', 'min:0', 'max:1000000'],
             'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'pricing_model' => ['sometimes', Rule::in(SubscriptionPlan::PRICING_MODELS)],
             'meter_type' => [$sometimes, Rule::in(SubscriptionPlan::METER_TYPES)],
             'rides_count' => ['nullable', 'integer', 'min:1', 'max:100000'],
             'days_count' => ['nullable', 'integer', 'min:1', 'max:3650'],
@@ -107,6 +113,52 @@ class AdminSubscriptionsController
             'available_to' => ['nullable', 'date', 'after_or_equal:available_from'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        // The pricing model dictates which money fields are usable. Keep the
+        // stored row consistent regardless of what the client sent: a
+        // subscription is commission-free, a commission plan has no upfront
+        // amount, a hybrid keeps both. Resolve the model and money values the
+        // SAVED row will end up with by merging the request over the existing
+        // plan (so a partial PATCH can't sneak the row into an invalid state).
+        $model = $data['pricing_model']
+            ?? $plan?->pricing_model
+            ?? SubscriptionPlan::MODEL_SUBSCRIPTION;
+        $data['pricing_model'] = $model;
+
+        $hasAmount = array_key_exists('amount', $data);
+        $hasCommission = array_key_exists('commission_percent', $data);
+        $amount = $hasAmount ? (float) $data['amount'] : (float) ($plan?->amount ?? 0);
+        $commission = $hasCommission ? (float) ($data['commission_percent'] ?? 0) : (float) ($plan?->commission_percent ?? 0);
+
+        // 1) Always normalise the locked field for the model — this is what makes
+        //    the lock authoritative on the server, not just in the UI.
+        if ($model === SubscriptionPlan::MODEL_SUBSCRIPTION) {
+            $data['commission_percent'] = 0;
+            $commission = 0.0;
+        } elseif ($model === SubscriptionPlan::MODEL_COMMISSION) {
+            $data['amount'] = 0;
+            $amount = 0.0;
+        }
+
+        // 2) Require the model's meaningful field(s) to be positive. Enforce on
+        //    create, when the model is (re)set, or when that field is being
+        //    edited — but don't retroactively reject a legacy row the caller
+        //    isn't touching.
+        $modelGiven = array_key_exists('pricing_model', $request->all());
+        $checkRequired = ! $partial || $modelGiven;
+        $needsAmount = in_array($model, [SubscriptionPlan::MODEL_SUBSCRIPTION, SubscriptionPlan::MODEL_HYBRID], true);
+        $needsCommission = in_array($model, [SubscriptionPlan::MODEL_COMMISSION, SubscriptionPlan::MODEL_HYBRID], true);
+
+        if ($needsAmount && ($checkRequired || $hasAmount) && $amount <= 0) {
+            abort(422, $model === SubscriptionPlan::MODEL_HYBRID
+                ? 'A hybrid plan needs a one-time amount greater than zero.'
+                : 'A subscription plan needs a one-time amount greater than zero.');
+        }
+        if ($needsCommission && ($checkRequired || $hasCommission) && $commission <= 0) {
+            abort(422, $model === SubscriptionPlan::MODEL_HYBRID
+                ? 'A hybrid plan needs a commission percentage greater than zero.'
+                : 'A commission plan needs a commission percentage greater than zero.');
+        }
 
         // The meter type dictates which limit field is required. Only enforce
         // when the meter type is actually present in this request.
@@ -139,6 +191,7 @@ class AdminSubscriptionsController
             'subtitle' => $p->subtitle,
             'amount' => (float) $p->amount,
             'commission_percent' => (float) $p->commission_percent,
+            'pricing_model' => $p->pricing_model,
             'meter_type' => $p->meter_type,
             'rides_count' => $p->rides_count,
             'days_count' => $p->days_count,

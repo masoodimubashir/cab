@@ -13,12 +13,14 @@ import {
   FilterPillComponent,
   FilterSelectComponent,
   IconComponent,
+  type IconName,
   InputComponent,
   ModalComponent,
 } from '../../ui';
 
 type MeterType = 'rides' | 'days' | 'daily' | 'earnings';
 type PlanType = 'normal' | 'new_registration' | 'renewal' | 'targeted';
+type PricingModel = 'subscription' | 'commission' | 'hybrid';
 
 interface SubscriptionPlan {
   id: number;
@@ -29,6 +31,7 @@ interface SubscriptionPlan {
   subtitle: string | null;
   amount: number;
   commission_percent: number;
+  pricing_model: PricingModel;
   meter_type: MeterType;
   rides_count: number | null;
   days_count: number | null;
@@ -63,6 +66,28 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
 ];
 
 /**
+ * The three ways a plan can charge a driver. The chosen model locks the money
+ * fields: a subscription is commission-free, a commission plan has no up-front
+ * amount, and a hybrid keeps both. Order matches the product spec.
+ */
+const PRICING_MODEL_OPTIONS: {
+  value: PricingModel; label: string; short: string; desc: string; icon: IconName;
+}[] = [
+  {
+    value: 'subscription', label: 'Subscription model', short: 'Subscription', icon: 'star',
+    desc: 'One-time payment · no commission on rides',
+  },
+  {
+    value: 'commission', label: 'Commission model', short: 'Commission', icon: 'rupee',
+    desc: 'No upfront fee · commission on every ride',
+  },
+  {
+    value: 'hybrid', label: 'Hybrid model', short: 'Hybrid', icon: 'bolt',
+    desc: 'One-time payment + commission per ride',
+  },
+];
+
+/**
  * Subscriptions — driver subscription plans for the city chosen in the topbar
  * switcher. A plan lets a driver pay up front and keep (usually) 100% of their
  * fares for a window metered by rides / days / a daily pass / an earnings cap.
@@ -83,7 +108,7 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
       <header class="page__hero">
         <div>
           <h1 class="page__title">Subscriptions</h1>
-          <p class="page__sub">Commission-free driver plans sold in this city.</p>
+          <p class="page__sub">Driver plans sold in this city — subscription, commission, or hybrid.</p>
         </div>
         <tm-button
           *ngIf="cityId != null"
@@ -117,6 +142,14 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
 
           <ng-container slot="filters">
             <tm-filter-select
+              icon="tag"
+              ariaLabel="Model filter"
+              allLabel="All models"
+              [options]="modelFilterOptions"
+              [value]="model"
+              (valueChange)="onModelChange($event)"
+            />
+            <tm-filter-select
               icon="shield"
               ariaLabel="Status filter"
               allLabel="All statuses"
@@ -136,6 +169,7 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
 
           <ng-container slot="banner">
             <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+            <tm-filter-pill *ngIf="model !== 'all'" icon="tag" label="Model" [value]="modelShort(model)" (clear)="clearModel()" />
             <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
             <tm-filter-pill *ngIf="meter !== 'all'" icon="bolt" label="Type" [value]="meterLabel(meter)" (clear)="clearMeter()" />
           </ng-container>
@@ -144,7 +178,10 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
           <tm-column key="title" label="Plan">
             <ng-template let-row>
               <div class="cell-id">
-                <span class="cell-name">{{ row.title }}</span>
+                <span class="cell-name-row">
+                  <span class="cell-name">{{ row.title }}</span>
+                  <span class="model-chip" [attr.data-m]="row.pricing_model">{{ modelShort(row.pricing_model) }}</span>
+                </span>
                 <span class="cell-sub">{{ row.subtitle || planTypeLabel(row.plan_type) }}</span>
               </div>
             </ng-template>
@@ -218,17 +255,46 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
       (closed)="open = false"
     >
       <div slot="body" class="form">
+        <!-- Pricing model selector — drives which money fields are editable. -->
+        <div class="model-pick" role="radiogroup" aria-label="Pricing model">
+          <button
+            *ngFor="let m of pricingModelOptions"
+            type="button"
+            class="model-card"
+            [class.is-on]="form.pricing_model === m.value"
+            role="radio"
+            [attr.aria-checked]="form.pricing_model === m.value"
+            (click)="setPricingModel(m.value)"
+          >
+            <span class="model-card__top">
+              <tm-icon [name]="m.icon" [size]="16" />
+              <tm-icon *ngIf="form.pricing_model === m.value" name="check" [size]="14" class="model-card__tick" />
+            </span>
+            <span class="model-card__label">{{ m.label }}</span>
+            <span class="model-card__desc">{{ m.desc }}</span>
+          </button>
+        </div>
+
         <div class="grid2">
-          <label class="field">
-            <span class="field__lbl">Amount <i>*</i></span>
+          <label class="field" [class.is-locked]="amountLocked">
+            <span class="field__lbl">
+              Amount <i *ngIf="!amountLocked">*</i>
+              <span class="field__tag" *ngIf="amountLocked">Not used</span>
+            </span>
             <input type="number" min="0" step="0.01" [(ngModel)]="form.amount" (ngModelChange)="touched.amount = true"
-                   placeholder="e.g. 49" />
-            <span class="field__err" *ngIf="touched.amount && (form.amount == null || form.amount < 0)">Enter a valid amount.</span>
+                   [disabled]="amountLocked"
+                   [placeholder]="amountLocked ? 'No upfront payment' : 'e.g. 49'" />
+            <span class="field__err" *ngIf="!amountLocked && touched.amount && (form.amount == null || form.amount <= 0)">Enter an amount greater than 0.</span>
           </label>
-          <label class="field">
-            <span class="field__lbl">Commission (%)</span>
-            <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent"
-                   placeholder="0 = commission-free" />
+          <label class="field" [class.is-locked]="commissionLocked">
+            <span class="field__lbl">
+              Commission (%) <i *ngIf="!commissionLocked">*</i>
+              <span class="field__tag" *ngIf="commissionLocked">Not used</span>
+            </span>
+            <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" (ngModelChange)="touched.commission = true"
+                   [disabled]="commissionLocked"
+                   [placeholder]="commissionLocked ? 'Commission-free' : 'e.g. 15'" />
+            <span class="field__err" *ngIf="!commissionLocked && touched.commission && (form.commission_percent == null || form.commission_percent <= 0)">Enter a commission greater than 0.</span>
           </label>
         </div>
 
@@ -393,6 +459,48 @@ const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
     .field__err { font-size: 11px; font-weight: 600; color: var(--tm-danger, #ef4444); }
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
+
+    /* ---------- Pricing model selector ---------- */
+    .model-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .model-card {
+      display: flex; flex-direction: column; gap: 6px;
+      text-align: left; padding: 12px 12px 13px;
+      border: 1.5px solid var(--tm-line); border-radius: 12px;
+      background: var(--tm-canvas); color: var(--tm-text);
+      cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+    .model-card:hover { border-color: var(--tm-text-muted); }
+    .model-card.is-on {
+      border-color: var(--tm-green); background: var(--tm-success-bg);
+      box-shadow: 0 0 0 1px var(--tm-green) inset;
+    }
+    .model-card__top { display: flex; align-items: center; justify-content: space-between; color: var(--tm-text-muted); }
+    .model-card.is-on .model-card__top { color: var(--tm-green-deep); }
+    .model-card__tick { color: var(--tm-green-deep); }
+    .model-card__label { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .model-card__desc { font-size: 11px; line-height: 1.4; color: var(--tm-text-muted); }
+
+    /* Locked money field (greyed, not editable for the chosen model) */
+    .field.is-locked .field__lbl { color: var(--tm-text-muted); }
+    .field__tag {
+      margin-left: 6px; font-size: 10px; font-weight: 800; letter-spacing: .3px;
+      text-transform: uppercase; color: var(--tm-text-muted);
+      background: var(--tm-canvas-2); padding: 1px 6px; border-radius: var(--tm-radius-pill);
+    }
+    .field.is-locked input { background: var(--tm-canvas-2); cursor: not-allowed; }
+
+    /* ---------- List model chip ---------- */
+    .cell-name-row { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+    .model-chip {
+      flex-shrink: 0; font-size: 9px; font-weight: 800; letter-spacing: .3px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: var(--tm-radius-pill);
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+    }
+    .model-chip[data-m="subscription"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .model-chip[data-m="commission"] { background: var(--tm-info-bg); color: var(--tm-info-fg); }
+    .model-chip[data-m="hybrid"] { background: #ede9fe; color: #6d28d9; }
+
+    @media (max-width: 560px) { .model-pick { grid-template-columns: 1fr; } }
   `],
 })
 export class SubscriptionsComponent implements OnInit, OnDestroy {
@@ -406,15 +514,20 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   search = '';
   status: StatusFilter = 'all';
   meter: MeterType | 'all' = 'all';
+  model: PricingModel | 'all' = 'all';
 
   meterOptions = METER_OPTIONS;
   planTypeOptions = PLAN_TYPE_OPTIONS;
+  pricingModelOptions = PRICING_MODEL_OPTIONS;
   statusFilterOptions: { label: string; value: string }[] = [
     { label: 'Active', value: 'active' },
     { label: 'Inactive', value: 'inactive' },
   ];
   get meterFilterOptions(): { label: string; value: string }[] {
     return METER_OPTIONS.map((m) => ({ label: m.label, value: m.value }));
+  }
+  get modelFilterOptions(): { label: string; value: string }[] {
+    return PRICING_MODEL_OPTIONS.map((m) => ({ label: m.short, value: m.value }));
   }
 
   // ── Drawer / delete state ───────────────────────────────────────
@@ -424,7 +537,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   deleteTarget: SubscriptionPlan | null = null;
 
   form = this.blankForm();
-  touched = { title: false, amount: false, limit: false };
+  touched = { title: false, amount: false, commission: false, limit: false };
 
   private subs: Subscription[] = [];
   private searchDebounce: any = null;
@@ -470,6 +583,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     const params = new URLSearchParams();
     if (this.status !== 'all') params.set('is_active', this.status === 'active' ? '1' : '0');
     if (this.meter !== 'all') params.set('meter_type', this.meter);
+    if (this.model !== 'all') params.set('pricing_model', this.model);
     const q = this.search.trim();
     if (q) params.set('q', q);
 
@@ -522,9 +636,42 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     this.fetchPlans();
   }
 
+  onModelChange(value: string): void {
+    this.model = value as PricingModel | 'all';
+    this.fetchPlans();
+  }
+  clearModel(): void {
+    if (this.model === 'all') return;
+    this.model = 'all';
+    this.fetchPlans();
+  }
+
   // ── Display helpers ─────────────────────────────────────────────
   meterLabel(m: MeterType | 'all'): string {
     return METER_OPTIONS.find((o) => o.value === m)?.label ?? 'All types';
+  }
+  modelShort(m: PricingModel | 'all'): string {
+    if (m === 'all') return 'All models';
+    return PRICING_MODEL_OPTIONS.find((o) => o.value === m)?.short ?? 'Subscription';
+  }
+
+  /** Commission is fixed at 0 for a pure subscription plan. */
+  get commissionLocked(): boolean {
+    return this.form.pricing_model === 'subscription';
+  }
+  /** There is no up-front amount for a pure commission plan. */
+  get amountLocked(): boolean {
+    return this.form.pricing_model === 'commission';
+  }
+
+  /**
+   * Switch the pricing model and zero out whichever money field the model
+   * disables, so a locked field can never carry a stale value into the payload.
+   */
+  setPricingModel(model: PricingModel): void {
+    this.form.pricing_model = model;
+    if (model === 'subscription') this.form.commission_percent = 0;
+    if (model === 'commission') this.form.amount = 0;
   }
   planTypeLabel(p: PlanType): string {
     return PLAN_TYPE_OPTIONS.find((o) => o.value === p)?.label ?? '';
@@ -546,6 +693,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
       subtitle: '',
       amount: null as number | null,
       commission_percent: 0 as number | null,
+      pricing_model: 'subscription' as PricingModel,
       meter_type: 'daily' as MeterType,
       rides_count: null as number | null,
       days_count: null as number | null,
@@ -562,18 +710,19 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.editingId = null;
     this.form = this.blankForm();
-    this.touched = { title: false, amount: false, limit: false };
+    this.touched = { title: false, amount: false, commission: false, limit: false };
     this.open = true;
   }
 
   openEdit(p: SubscriptionPlan): void {
     this.editingId = p.id;
-    this.touched = { title: false, amount: false, limit: false };
+    this.touched = { title: false, amount: false, commission: false, limit: false };
     this.form = {
       title: p.title,
       subtitle: p.subtitle || '',
       amount: p.amount,
       commission_percent: p.commission_percent,
+      pricing_model: p.pricing_model ?? 'subscription',
       meter_type: p.meter_type,
       rides_count: p.rides_count,
       days_count: p.days_count,
@@ -590,7 +739,9 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
   get formValid(): boolean {
     if (!this.form.title.trim()) return false;
-    if (this.form.amount == null || this.form.amount < 0) return false;
+    // The chosen pricing model decides which money fields must be positive.
+    if (!this.amountLocked && (this.form.amount == null || this.form.amount <= 0)) return false;
+    if (!this.commissionLocked && (this.form.commission_percent == null || this.form.commission_percent <= 0)) return false;
     if (this.form.meter_type === 'rides' && !this.form.rides_count) return false;
     if (this.form.meter_type === 'days' && !this.form.days_count) return false;
     if (this.form.meter_type === 'earnings' && !this.form.earnings_threshold) return false;
@@ -598,15 +749,17 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   }
 
   submit(): void {
-    this.touched = { title: true, amount: true, limit: true };
+    this.touched = { title: true, amount: true, commission: true, limit: true };
     if (!this.formValid || this.saving || this.cityId == null) return;
 
     const f = this.form;
     const body: Record<string, unknown> = {
       title: f.title.trim(),
       subtitle: f.subtitle?.trim() || null,
-      amount: f.amount,
-      commission_percent: f.commission_percent ?? 0,
+      // A locked field never reaches the server with a value — the model owns it.
+      amount: this.amountLocked ? 0 : f.amount,
+      commission_percent: this.commissionLocked ? 0 : (f.commission_percent ?? 0),
+      pricing_model: f.pricing_model,
       meter_type: f.meter_type,
       plan_type: f.plan_type,
       vehicle_type_id: f.vehicle_type_id,
