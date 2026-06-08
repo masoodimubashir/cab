@@ -64,13 +64,20 @@ export class SubscriptionPromptModalComponent implements OnInit {
   }
 
   async confirmBuy(p: SubscriptionPlan): Promise<void> {
+    const paid = p.amount > 0;
+    const lead = paid
+      ? `${p.title} — ₹${p.amount} will be debited from your wallet.`
+      : `${p.title} — no upfront payment.`;
+    const rate = p.commission_percent > 0
+      ? `You'll pay ${p.commission_percent}% commission on each ride while active.`
+      : 'Keep 100% of your fares while active.';
+    const renew = paid
+      ? 'It auto-renews from your wallet when it ends — you can cancel anytime.'
+      : 'It renews automatically (no upfront charge) when it ends — you can cancel anytime.';
+
     const alert = await this.alertCtrl.create({
       header: 'Subscribe?',
-      message: `${p.title} — ₹${p.amount} will be debited from your wallet. ${
-        p.commission_percent > 0
-          ? `Commission while active: ${p.commission_percent}%.`
-          : 'Keep 100% of your fares while active.'
-      } It auto-renews from your wallet when it ends — you can cancel anytime.`,
+      message: `${lead} ${rate} ${renew}`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: 'Subscribe', handler: () => this.buy(p) },

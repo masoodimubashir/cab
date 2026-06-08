@@ -8,6 +8,7 @@ interface Plan {
   subtitle: string | null;
   amount: number;
   commission_percent: number;
+  pricing_model?: 'subscription' | 'commission' | 'hybrid';
   meter_type: 'rides' | 'days' | 'daily' | 'earnings';
   rides_count: number | null;
   days_count: number | null;
@@ -24,6 +25,7 @@ interface ActiveSubscription {
   status: string;
   meter_type: Plan['meter_type'];
   commission_percent: number;
+  pricing_model?: 'subscription' | 'commission' | 'hybrid';
   amount_paid: number;
   rides_allowed: number | null;
   rides_used: number;
@@ -36,7 +38,7 @@ interface ActiveSubscription {
   expires_at: string | null;
   auto_renew: boolean;
   cancelled_at: string | null;
-  next_plan: { id: number; title: string; amount: number; commission_percent: number } | null;
+  next_plan: { id: number; title: string; amount: number; commission_percent: number; pricing_model?: string; prepaid?: boolean } | null;
 }
 
 /**
@@ -112,6 +114,29 @@ export class SubscriptionsPage implements OnInit {
     });
   }
 
+  /** Pricing model of the active subscription (with a legacy fallback). */
+  modelKey(s: ActiveSubscription): 'subscription' | 'commission' | 'hybrid' {
+    const m = s.pricing_model;
+    if (m === 'commission' || m === 'hybrid' || m === 'subscription') return m;
+    if (s.amount_paid > 0 && s.commission_percent > 0) return 'hybrid';
+    if (s.amount_paid <= 0 && s.commission_percent > 0) return 'commission';
+    return 'subscription';
+  }
+  modelLabel(s: ActiveSubscription): string {
+    switch (this.modelKey(s)) {
+      case 'commission': return 'Pay-as-you-go';
+      case 'hybrid': return 'Hybrid';
+      default: return 'Subscription';
+    }
+  }
+  modelIcon(s: ActiveSubscription): string {
+    switch (this.modelKey(s)) {
+      case 'commission': return 'trending-up-outline';
+      case 'hybrid': return 'layers-outline';
+      default: return 'ribbon-outline';
+    }
+  }
+
   meterSummary(p: Plan): string {
     switch (p.meter_type) {
       case 'rides': return `${p.rides_count} rides`;
@@ -151,27 +176,43 @@ export class SubscriptionsPage implements OnInit {
   }
 
   async confirmBuy(p: Plan): Promise<void> {
-    // Buying while a plan is active queues the new one — it starts (and is
-    // charged) only when the current plan ends.
+    const paid = p.amount > 0;
+    // What the driver pays per ride while the plan is active — shown in both
+    // the queue and the immediate-buy dialogs so the cost is never hidden.
+    const rate = p.commission_percent > 0
+      ? `You'll pay ${p.commission_percent}% commission on each ride while active.`
+      : 'Keep 100% of your fares while active.';
+
+    // Buying while a plan is active charges the wallet NOW and queues the new
+    // plan to start (with no further charge) when the current plan ends.
     if (this.current) {
       const when = this.current.expires_at ? ` on ${this.fmtDate(this.current.expires_at)}` : '';
+      const lead = paid
+        ? `₹${p.amount} will be debited from your wallet now and “${p.title}” will start when your current plan ends${when}.`
+        : `“${p.title}” will start when your current plan ends${when}.`;
       const alert = await this.alertCtrl.create({
-        header: 'Queue this plan?',
-        message: `You already have an active plan. “${p.title}” will start after your current plan ends${when}, and ₹${p.amount} will be charged from your wallet then.`,
+        header: 'Buy this plan?',
+        message: `You already have an active plan. ${lead} ${rate}`,
         buttons: [
           { text: 'Cancel', role: 'cancel' },
-          { text: 'Queue plan', handler: () => this.buy(p) },
+          { text: paid ? 'Buy & queue' : 'Queue plan', handler: () => this.buy(p) },
         ],
       });
       await alert.present();
       return;
     }
 
+    // Lead line depends on whether there's an up-front charge.
+    const lead = paid
+      ? `${p.title} — ₹${p.amount} will be debited from your wallet.`
+      : `${p.title} — no upfront payment.`;
+    const renew = paid
+      ? 'It auto-renews from your wallet when it ends — you can cancel anytime.'
+      : 'It renews automatically (no upfront charge) when it ends — you can cancel anytime.';
+
     const alert = await this.alertCtrl.create({
       header: 'Subscribe?',
-      message: `${p.title} — ₹${p.amount} will be debited from your wallet. ${
-        p.commission_percent > 0 ? `Commission while active: ${p.commission_percent}%.` : 'Keep 100% of your fares while active.'
-      } It will auto-renew from your wallet when it ends — you can cancel anytime.`,
+      message: `${lead} ${rate} ${renew}`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: 'Subscribe', handler: () => this.buy(p) },
@@ -203,7 +244,7 @@ export class SubscriptionsPage implements OnInit {
     const until = s.expires_at ? ` until ${this.fmtDate(s.expires_at)}` : ' until it expires';
     let message = `Auto-renew will be turned off. Your “${s.title}” stays active${until} and won't renew after that.`;
     if (s.next_plan) {
-      message += ` Any plan you've queued (${s.next_plan.title}) will also be cancelled.`;
+      message += ` Your queued plan (${s.next_plan.title}) is already paid for and will still start when this plan ends.`;
     }
     const alert = await this.alertCtrl.create({
       header: 'Cancel subscription?',

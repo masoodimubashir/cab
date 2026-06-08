@@ -55,6 +55,10 @@
         <div class="cur-card__head">
           <div class="cur-card__badge-row">
             <span class="cur-card__pill">Active plan</span>
+            <span class="cur-card__model" [attr.data-m]="modelKey(s)">
+              <ion-icon [name]="modelIcon(s)"></ion-icon>
+              {{ modelLabel(s) }}
+            </span>
             <span class="dc-badge" [ngClass]="s.commission_percent > 0 ? 'dc-badge--warn' : 'dc-badge--ok'">
               {{ s.commission_percent > 0 ? s.commission_percent + '% commission' : 'Commission-free' }}
             </span>
@@ -83,8 +87,10 @@
           <div class="cur-queued" *ngIf="s.next_plan">
             <ion-icon name="time-outline"></ion-icon>
             <div>
-              <small>Up next</small>
-              <span><strong>{{ s.next_plan.title }}</strong> · ₹{{ s.next_plan.amount | number: '1.0-2' }} — starts when this one ends</span>
+              <small>Up next · paid</small>
+              <span>
+                <strong>{{ s.next_plan.title }}</strong><ng-container *ngIf="s.next_plan.amount > 0"> · ₹{{ s.next_plan.amount | number: '1.0-0' }} paid</ng-container> — starts when this one ends
+              </span>
             </div>
           </div>
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\Driver;
+use App\Models\Rating;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -452,6 +453,21 @@ class AdminAnalyticsController
                     ['key' => 'rides', 'label' => 'Rides'],
                 ],
             ],
+            [
+                'key' => 'ratings_reviews',
+                'name' => 'Ratings & Reviews',
+                'type' => 'Reviews',
+                'tags' => ['ratings', 'reviews', 'feedback', 'drivers'],
+                'description' => 'Customer ratings and written reviews left on completed rides.',
+                'columns' => [
+                    ['key' => 'created_at', 'label' => 'Date'],
+                    ['key' => 'score', 'label' => 'Rating'],
+                    ['key' => 'comment', 'label' => 'Review'],
+                    ['key' => 'driver_name', 'label' => 'Driver'],
+                    ['key' => 'customer_name', 'label' => 'Customer'],
+                    ['key' => 'trip_id', 'label' => 'Trip'],
+                ],
+            ],
         ];
     }
 
@@ -546,6 +562,29 @@ class AdminAnalyticsController
                     'name' => $r->name,
                     'phone' => $r->phone,
                     'rides' => (int) $r->rides,
+                ])->all(),
+
+            'ratings_reviews' => Rating::query()
+                ->leftJoin('users as drv', 'drv.id', '=', 'ratings.driver_id')
+                ->leftJoin('users as cust', 'cust.id', '=', 'ratings.customer_id')
+                ->whereBetween('ratings.created_at', [$from, $to])
+                ->orderByDesc('ratings.created_at')
+                ->limit(2000)
+                ->get([
+                    'ratings.trip_id',
+                    'ratings.created_at',
+                    'ratings.score',
+                    'ratings.comment',
+                    'drv.name as driver_name',
+                    'cust.name as customer_name',
+                ])
+                ->map(fn ($r) => [
+                    'trip_id' => $r->trip_id,
+                    'created_at' => optional($r->created_at)->toIso8601String(),
+                    'score' => (int) $r->score,
+                    'comment' => $r->comment,
+                    'driver_name' => $r->driver_name,
+                    'customer_name' => $r->customer_name,
                 ])->all(),
 
             default => [],

@@ -77,11 +77,13 @@ class SubscriptionAutoRenewTest extends TestCase
         ], $extra));
     }
 
+    /** Running (live) subscriptions — excludes prepaid queued rows. */
     private function activeCount(User $user): int
     {
         return DriverSubscription::query()
             ->where('driver_user_id', $user->id)
             ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
             ->count();
     }
 
@@ -127,7 +129,7 @@ class SubscriptionAutoRenewTest extends TestCase
         ]);
     }
 
-    public function test_cancel_keeps_plan_active_and_drops_queued(): void
+    public function test_cancel_keeps_plan_active_and_keeps_prepaid_queue(): void
     {
         $user = User::factory()->create();
         $this->fundWallet($user, 500);
@@ -135,8 +137,14 @@ class SubscriptionAutoRenewTest extends TestCase
         $planB = $this->makePlan(SubscriptionPlan::METER_DAYS, 150);
 
         $sub = $this->service()->purchase($user, $planA);
-        $this->service()->queueNext($sub, $planB);
-        $this->assertSame($planB->id, $sub->fresh()->next_plan_id);
+        $this->assertSame(400.0, $this->balance($user));
+
+        // Buying B while A is active charges NOW and parks B as a prepaid queue.
+        $queued = $this->service()->buy($user, $planB, null)['subscription'];
+        $this->assertSame(250.0, $this->balance($user));         // B charged immediately
+        $this->assertTrue((bool) $queued->is_queued);
+        $this->assertSame(DriverSubscription::STATUS_ACTIVE, $queued->status);
+        $this->assertSame(1, $this->activeCount($user));          // queued row isn't "running"
 
         $this->service()->cancel($sub);
         $fresh = $sub->fresh();
@@ -144,15 +152,20 @@ class SubscriptionAutoRenewTest extends TestCase
         $this->assertSame(DriverSubscription::STATUS_ACTIVE, $fresh->status); // still active
         $this->assertFalse((bool) $fresh->auto_renew);                       // won't renew
         $this->assertNotNull($fresh->cancelled_at);
-        $this->assertNull($fresh->next_plan_id);                             // queue dropped
+
+        // Prepaid queued plan is KEPT (already paid for) — it still starts later.
+        $stillQueued = $this->service()->queuedFor($user->id);
+        $this->assertNotNull($stillQueued);
+        $this->assertSame($queued->id, $stillQueued->id);
+        $this->assertSame(250.0, $this->balance($user));         // no refund, no extra charge
     }
 
     /**
-     * Regression for the double-charge / two-active-subs bug: buying during the
-     * exhausted-but-unswept window must QUEUE (not immediately purchase), and the
-     * sweep must activate the queued plan exactly once.
+     * Buying during the exhausted-but-unswept window must charge NOW and queue
+     * (not create a second running sub), and the sweep must activate the queued
+     * plan exactly once with NO further charge.
      */
-    public function test_buy_during_exhausted_window_queues_without_double_charge(): void
+    public function test_buy_during_exhausted_window_charges_now_and_activates_once(): void
     {
         $user = User::factory()->create();
         $this->fundWallet($user, 500);
@@ -165,22 +178,95 @@ class SubscriptionAutoRenewTest extends TestCase
         // Exhaust the rides plan (used up) but DON'T sweep yet.
         $subA->forceFill(['rides_used' => 1])->save();
 
-        // The crux of the fix: activeFor() hides the exhausted sub (perk gone),
-        // but currentActiveRow() still sees it so a new buy queues.
+        // activeFor() hides the exhausted sub (perk gone), but currentActiveRow()
+        // still sees it so a new buy queues instead of running concurrently.
         $this->assertNull($this->service()->activeFor($user->id, null));
         $this->assertNotNull($this->service()->currentActiveRow($user->id, null));
 
-        // Buy plan B during the window → queued onto the exhausted row, no charge.
-        $this->service()->queueNext($this->service()->currentActiveRow($user->id, null), $planB);
-        $this->assertSame(400.0, $this->balance($user)); // not charged at queue time
+        // Buy plan B during the window → charged NOW, parked as prepaid queue.
+        $queued = $this->service()->buy($user, $planB, null)['subscription'];
+        $this->assertSame(250.0, $this->balance($user)); // 500 - 100(A) - 150(B) charged now
+        $this->assertTrue((bool) $queued->is_queued);
 
-        // Sweep: A expires, queued B activates — charged once, single active row.
+        // Sweep: A expires, queued B activates — single running row, no re-charge.
         $this->service()->expireDue();
 
         $this->assertSame(DriverSubscription::STATUS_EXPIRED, $subA->fresh()->status);
-        $this->assertSame(1, $this->activeCount($user)); // exactly one active (no duplicate)
+        $this->assertSame(1, $this->activeCount($user)); // exactly one running (no duplicate)
         $active = $this->service()->currentActiveRow($user->id, null);
-        $this->assertSame($planB->id, $active->subscription_plan_id); // it's B, not a re-buy of A
-        $this->assertSame(250.0, $this->balance($user)); // 500 - 100(A) - 150(B); A NOT re-charged
+        $this->assertSame($planB->id, $active->subscription_plan_id); // it's B, now live
+        $this->assertFalse((bool) $active->is_queued);
+        $this->assertSame(250.0, $this->balance($user)); // B NOT charged again at activation
+    }
+
+    /**
+     * The headline behaviour: buying B while A is active debits the wallet NOW
+     * and B starts (with no further charge) when A ends.
+     */
+    public function test_buy_while_active_charges_now_and_activates_on_expiry(): void
+    {
+        $user = User::factory()->create();
+        $this->fundWallet($user, 500);
+        $planA = $this->makePlan(SubscriptionPlan::METER_DAYS, 100); // days_count 30
+        $planB = $this->makePlan(SubscriptionPlan::METER_DAYS, 150);
+
+        $subA = $this->service()->purchase($user, $planA);
+        $this->assertSame(400.0, $this->balance($user));
+
+        // Buy B while A is active → charged now, queued.
+        $queued = $this->service()->buy($user, $planB, null)['subscription'];
+        $this->assertSame(250.0, $this->balance($user)); // B charged immediately
+        $this->assertTrue((bool) $queued->is_queued);
+
+        // While A runs, only A is the active plan; B is invisible to activeFor.
+        $active = $this->service()->activeFor($user->id, null);
+        $this->assertNotNull($active);
+        $this->assertSame($planA->id, $active->subscription_plan_id);
+        $this->assertSame(1, $this->activeCount($user));
+
+        // A expires → B activates with NO further charge, expiry computed afresh.
+        $subA->forceFill(['expires_at' => now()->subMinute()])->save();
+        $this->service()->expireDue();
+
+        $this->assertSame(DriverSubscription::STATUS_EXPIRED, $subA->fresh()->status);
+        $this->assertSame(250.0, $this->balance($user)); // NOT recharged at activation
+        $nowActive = $this->service()->activeFor($user->id, null);
+        $this->assertNotNull($nowActive);
+        $this->assertSame($planB->id, $nowActive->subscription_plan_id);
+        $this->assertFalse((bool) $nowActive->is_queued);
+        $this->assertNotNull($nowActive->expires_at); // days plan → expiry set at activation
+        $this->assertSame(1, $this->activeCount($user));
+    }
+
+    /**
+     * A ride-metered queued plan activates with no expiry date when the active
+     * plan (also ride-metered, exhausted) is swept — and is usable immediately.
+     */
+    public function test_queued_rides_plan_activates_with_no_expiry(): void
+    {
+        $user = User::factory()->create();
+        $this->fundWallet($user, 500);
+        $planA = $this->makePlan(SubscriptionPlan::METER_RIDES, 100); // rides_count 1
+        $planB = $this->makePlan(SubscriptionPlan::METER_RIDES, 150); // rides_count 1
+
+        $this->service()->purchase($user, $planA);
+        $queued = $this->service()->buy($user, $planB, null)['subscription'];
+        $this->assertSame(250.0, $this->balance($user)); // both charged now
+        $this->assertTrue((bool) $queued->is_queued);
+
+        // Exhaust + sweep A → B activates.
+        DriverSubscription::query()->where('id', $queued->id)->exists(); // sanity
+        $subA = $this->service()->currentActiveRow($user->id, null);
+        $subA->forceFill(['rides_used' => 1])->save();
+        $this->service()->expireDue();
+
+        $nowActive = $this->service()->activeFor($user->id, null);
+        $this->assertNotNull($nowActive);
+        $this->assertSame($planB->id, $nowActive->subscription_plan_id);
+        $this->assertFalse((bool) $nowActive->is_queued);
+        $this->assertNull($nowActive->expires_at);           // rides plan → no date expiry
+        $this->assertSame(1, $nowActive->rides_allowed);     // usable allowance
+        $this->assertSame(250.0, $this->balance($user));     // no recharge at activation
+        $this->assertSame(1, $this->activeCount($user));
     }
 }
