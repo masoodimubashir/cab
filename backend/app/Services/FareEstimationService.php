@@ -241,7 +241,11 @@ class FareEstimationService
         $perMin = (float) $pricingRule['per_min'];
         $surgeMultiplier = (float) $pricingRule['surge_multiplier'];
         $minFare = isset($pricingRule['min_fare']) ? (float) $pricingRule['min_fare'] : null;
-        $commissionPercent = (float) $pricingRule['commission_percent'];
+        // Driver commission no longer lives on pricing_rules — it moved to the
+        // CityVehicleType (percent or fixed) and is taken at settlement, not in
+        // the rider's estimate. Keep the breakdown key for a stable response
+        // shape, but always report 0 here.
+        $commissionPercent = 0.0;
         $taxPercent = isset($pricingRule['tax_percent']) ? (float) $pricingRule['tax_percent'] : 0.0;
 
         $distanceComponent = $this->tieredDistanceFare(

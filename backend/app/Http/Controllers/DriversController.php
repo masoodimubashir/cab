@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\DriverDocument;
 use App\Models\DriverLocation;
@@ -152,6 +153,9 @@ class DriversController extends Controller
                 : url('/storage/'.ltrim($user->avatar_path, '/')))
             : null;
 
+        // Per-vehicle wallet-gate config so the app can pre-disable "Go online".
+        $cvt = $driver ? $this->resolveDriverCityVehicleType($driver) : null;
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -164,6 +168,10 @@ class DriversController extends Controller
             ],
             'driver' => $driver,
             'documents' => $documents,
+            'city_vehicle_type_config' => [
+                'show_low_wallet_alert' => (bool) ($cvt?->show_low_wallet_alert ?? false),
+                'min_driver_balance' => (float) ($cvt?->min_driver_balance ?? 0),
+            ],
         ]);
     }
 
@@ -519,6 +527,41 @@ class DriversController extends Controller
         return response()->json(['document' => $doc->fresh()]);
     }
 
+    /**
+     * Resolve the CityVehicleType row that governs this driver: by
+     * (city_id + vehicle_type_id) first, then by (city_id + ride_type_id), then
+     * null when neither matches. Drives the per-vehicle wallet gate + the
+     * /drivers/me config block. Returns null when the driver isn't pinned to a
+     * city (no gate to apply).
+     */
+    private function resolveDriverCityVehicleType(Driver $driver): ?CityVehicleType
+    {
+        if (!$driver->city_id) {
+            return null;
+        }
+
+        if ($driver->vehicle_type_id) {
+            $row = CityVehicleType::query()
+                ->where('city_id', $driver->city_id)
+                ->where('vehicle_type_id', $driver->vehicle_type_id)
+                ->orderBy('id')
+                ->first();
+            if ($row) {
+                return $row;
+            }
+        }
+
+        if ($driver->ride_type_id) {
+            return CityVehicleType::query()
+                ->where('city_id', $driver->city_id)
+                ->where('ride_type_id', $driver->ride_type_id)
+                ->orderBy('id')
+                ->first();
+        }
+
+        return null;
+    }
+
     public function goOnline(Request $request, WalletService $walletService)
     {
         $user = $request->user();
@@ -584,6 +627,26 @@ class DriversController extends Controller
                     'message' => 'Clear your outstanding balance of ₹' . number_format(abs($balance), 2) . ' before going online.',
                     'error_code' => 'driver_debt',
                     'balance' => $balance,
+                ], 422);
+            }
+        }
+
+        // Per-vehicle low-wallet gate: the driver's CityVehicleType can require a
+        // minimum prepaid float before going online (so commission can be taken
+        // ride-to-ride). Only enforced when that vehicle has the alert switched
+        // on; skipped entirely when no matching vehicle row is configured.
+        $cvt = $this->resolveDriverCityVehicleType($driver);
+        if ($cvt && $cvt->show_low_wallet_alert) {
+            $minBalance = (float) $cvt->min_driver_balance;
+            $current = $walletService->balance($user);
+            if ($current < $minBalance) {
+                return response()->json([
+                    'message' => 'Your wallet balance of ₹' . number_format($current, 2)
+                        . ' is below the ₹' . number_format($minBalance, 2)
+                        . ' required to go online. Please top up to continue.',
+                    'error_code' => 'low_wallet_balance',
+                    'required_balance' => round($minBalance, 2),
+                    'current_balance' => round($current, 2),
                 ], 422);
             }
         }

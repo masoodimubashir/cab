@@ -5,7 +5,6 @@ import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
-  FileDropComponent,
   IconComponent,
   IconName,
   InputComponent,
@@ -13,8 +12,6 @@ import {
 } from '../../ui';
 
 interface OperatorSettings {
-  commission_deduction: 'no_commission' | 'commission_with_debt' | 'commission_without_debt';
-
   customer_tip_value_1: number;
   customer_tip_value_2: number;
   customer_tip_value_3: number;
@@ -36,29 +33,16 @@ interface OperatorSettings {
   subscription_popup_button1: string | null;
   subscription_popup_button2: string | null;
 
-  invite_earn_image_android: string | null;
-  invite_earn_image_ios: string | null;
-  invite_earn_image_android_url: string | null;
-  invite_earn_image_ios_url: string | null;
-
-  maps_preference: 'google' | 'flightmap';
-  map_browser_key: string | null;
-  web_google_api_key: string | null;
-
   customer_ride_accept_msg: string | null;
   ride_cancellation_msg: string | null;
 }
 
 type SectionKey =
   | 'tipping'
-  | 'commission'
   | 'geofence'
   | 'wallet'
   | 'subscription'
-  | 'referral'
-  | 'maps'
-  | 'templates'
-  | 'rights';
+  | 'templates';
 
 interface SectionMeta {
   key: SectionKey;
@@ -74,7 +58,6 @@ interface SectionMeta {
     CommonModule,
     FormsModule,
     ButtonComponent,
-    FileDropComponent,
     IconComponent,
     InputComponent,
     SelectComponent,
@@ -150,19 +133,6 @@ interface SectionMeta {
                   <span class="switch__track"><span class="switch__thumb"></span></span>
                 </span>
               </label>
-            </ng-container>
-
-            <!-- ============= COMMISSION ============= -->
-            <ng-container *ngIf="activeSection === 'commission'">
-              <div class="field field--full">
-                <span class="field__label">Commission deduction</span>
-                <tm-select
-                  [options]="commissionOptions"
-                  [(ngModel)]="settings.commission_deduction"
-                  placeholder="Select commission model"
-                />
-                <span class="field__hint">Controls whether (and how) driver commission is taken on ride settlement.</span>
-              </div>
             </ng-container>
 
             <!-- ============= GEOFENCE / DRIVER ============= -->
@@ -247,63 +217,6 @@ interface SectionMeta {
               </div>
             </ng-container>
 
-            <!-- ============= REFERRAL ============= -->
-            <ng-container *ngIf="activeSection === 'referral'">
-              <div class="fields">
-                <div class="field">
-                  <span class="field__label">Invite-earn image — Android</span>
-                  <div *ngIf="settings.invite_earn_image_android_url" class="thumb">
-                    <img [src]="settings.invite_earn_image_android_url" alt="Android invite-earn" />
-                  </div>
-                  <tm-file-drop
-                    accept="image/*"
-                    [multiple]="false"
-                    [maxSizeMb]="8"
-                    title="Drop image, or click to browse"
-                    hint="PNG / JPG up to 8 MB"
-                    (filesAdded)="onFilesAdded($event, 'invite_earn_image_android')"
-                    (rejected)="onFilesRejected($event)"
-                  />
-                  <span class="pending" *ngIf="pendingName('invite_earn_image_android') as n">Selected: {{ n }}</span>
-                </div>
-                <div class="field">
-                  <span class="field__label">Invite-earn image — iOS</span>
-                  <div *ngIf="settings.invite_earn_image_ios_url" class="thumb">
-                    <img [src]="settings.invite_earn_image_ios_url" alt="iOS invite-earn" />
-                  </div>
-                  <tm-file-drop
-                    accept="image/*"
-                    [multiple]="false"
-                    [maxSizeMb]="8"
-                    title="Drop image, or click to browse"
-                    hint="PNG / JPG up to 8 MB"
-                    (filesAdded)="onFilesAdded($event, 'invite_earn_image_ios')"
-                    (rejected)="onFilesRejected($event)"
-                  />
-                  <span class="pending" *ngIf="pendingName('invite_earn_image_ios') as n">Selected: {{ n }}</span>
-                </div>
-              </div>
-            </ng-container>
-
-            <!-- ============= MAPS ============= -->
-            <ng-container *ngIf="activeSection === 'maps'">
-              <div class="fields">
-                <div class="field">
-                  <span class="field__label">Maps preference</span>
-                  <tm-select [options]="mapsOptions" [(ngModel)]="settings.maps_preference" />
-                </div>
-                <div class="field">
-                  <span class="field__label">Map browser key</span>
-                  <tm-input [(ngModel)]="settings.map_browser_key" />
-                </div>
-                <div class="field field--full">
-                  <span class="field__label">Web Google API key</span>
-                  <tm-input [(ngModel)]="settings.web_google_api_key" />
-                  <span class="field__hint">Stored server-side. Treat as a secret — anyone with admin access can view it.</span>
-                </div>
-              </div>
-            </ng-container>
-
             <!-- ============= TEMPLATES ============= -->
             <ng-container *ngIf="activeSection === 'templates'">
               <div class="field field--full">
@@ -321,46 +234,15 @@ interface SectionMeta {
                 </div>
               </div>
             </ng-container>
-
-            <!-- ============= RIGHTS ============= -->
-            <ng-container *ngIf="activeSection === 'rights'">
-              <p class="lede">
-                We take security seriously and are proud to exceed industry standards when it comes to
-                protecting personal information.
-              </p>
-              <div class="fields">
-                <div class="field">
-                  <span class="field__label">Select your right</span>
-                  <tm-select [options]="rightsOptions" [(ngModel)]="selectedRight" placeholder="Select a right" />
-                </div>
-                <div class="field field--full">
-                  <span class="field__label">Reason</span>
-                  <textarea class="ta" rows="3" [(ngModel)]="rightsReason"></textarea>
-                </div>
-              </div>
-            </ng-container>
           </div>
 
           <footer class="panel__foot">
-            <ng-container *ngIf="activeSection !== 'rights'; else rightsFoot">
-              <tm-button
-                variant="ink"
-                icon="check"
-                [loading]="saving[activeSection]"
-                (clicked)="save(activeSection)"
-              >Save changes</tm-button>
-            </ng-container>
-            <ng-template #rightsFoot>
-              <tm-button
-                variant="ink"
-                icon="shield"
-                [loading]="submittingRights"
-                [disabled]="!selectedRight || submittingRights"
-                (clicked)="submitRights()"
-              >
-                Submit DSAR
-              </tm-button>
-            </ng-template>
+            <tm-button
+              variant="ink"
+              icon="check"
+              [loading]="saving[activeSection]"
+              (clicked)="save(activeSection)"
+            >Save changes</tm-button>
           </footer>
         </section>
       </div>
@@ -465,8 +347,6 @@ interface SectionMeta {
       background: var(--tm-canvas);
     }
 
-    .lede { margin: 0; font-size: 13px; line-height: 1.6; color: var(--tm-text-muted); }
-
     /* -------- Fields -------- */
     .fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tm-space-4); }
     .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -526,14 +406,6 @@ interface SectionMeta {
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
     }
 
-    /* -------- Image thumb -------- */
-    .thumb {
-      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md);
-      overflow: hidden; max-width: 260px;
-    }
-    .thumb img { display: block; width: 100%; }
-    .pending { font-size: 12px; font-weight: 700; color: var(--tm-green-deep); }
-
     /* -------- Responsive -------- */
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
@@ -556,44 +428,19 @@ export class OperatorSettingsComponent implements OnInit {
 
   readonly sections: SectionMeta[] = [
     { key: 'tipping',      label: 'Tipping',           icon: 'gift',          desc: 'Preset tip amounts shown to riders, and whether they are flat ₹ or a percentage of fare.' },
-    { key: 'commission',   label: 'Commission',        icon: 'handshake',     desc: 'How driver commission is deducted on ride settlement.' },
     { key: 'geofence',     label: 'Driver & Geofence', icon: 'driver-helmet', desc: 'Operational safety checks applied to drivers and trips.' },
     { key: 'wallet',       label: 'Wallet',            icon: 'rupee',         desc: 'Cash-wallet limits and the terms shown to users.' },
     { key: 'subscription', label: 'Subscription',      icon: 'star',          desc: 'Copy for the driver subscription promo popup.' },
-    { key: 'referral',     label: 'Referral Images',   icon: 'user-plus',     desc: 'Artwork shown on the invite-and-earn screens.' },
-    { key: 'maps',         label: 'Maps',              icon: 'map',           desc: 'Map provider and API keys used across the apps.' },
     { key: 'templates',    label: 'Templates',         icon: 'envelope',      desc: 'Notification copy with dynamic placeholders.' },
-    { key: 'rights',       label: 'Data Rights',       icon: 'shield',        desc: 'Submit a data subject access request (DSAR).' },
   ];
 
   saving: Record<SectionKey, boolean> = {
     tipping: false,
-    commission: false,
     geofence: false,
     wallet: false,
     subscription: false,
-    referral: false,
-    maps: false,
     templates: false,
-    rights: false,
   };
-
-  // Pending file uploads keyed by API field name.
-  private pendingFiles: Partial<Record<string, File>> = {};
-
-  selectedRight: string | null = null;
-  rightsReason = '';
-
-  readonly commissionOptions = [
-    { label: 'No Commission', value: 'no_commission' },
-    { label: 'Commission with Debt', value: 'commission_with_debt' },
-    { label: 'Commission without Debt', value: 'commission_without_debt' },
-  ];
-
-  readonly mapsOptions = [
-    { label: 'Google Maps', value: 'google' },
-    { label: 'FlightMap', value: 'flightmap' },
-  ];
 
   // Only tokens the backend can actually fill are advertised, so a typed
   // placeholder never renders blank for the customer.
@@ -604,15 +451,6 @@ export class OperatorSettingsComponent implements OnInit {
   ];
 
   readonly cancelPlaceholders = ['{{engagement_id}}', '{{customer_name}}'];
-
-  readonly rightsOptions = [
-    { label: 'Right to be Forgotten', value: 'erasure' },
-    { label: 'Right to Data Portability', value: 'portability' },
-    { label: 'Right to Rectification', value: 'rectification' },
-    { label: 'Right to Access', value: 'access' },
-    { label: 'Right to Restrict Processing', value: 'restrict' },
-    { label: 'Right to Object', value: 'object' },
-  ];
 
   /** Which form fields each section is responsible for. */
   private readonly sectionFields: Record<SectionKey, string[]> = {
@@ -625,7 +463,6 @@ export class OperatorSettingsComponent implements OnInit {
       'corporate_tip_value_3',
       'tip_in_percentage',
     ],
-    commission: ['commission_deduction'],
     geofence: [
       'check_destination_outside_geofence',
       'check_driver_debt',
@@ -639,10 +476,7 @@ export class OperatorSettingsComponent implements OnInit {
       'subscription_popup_button1',
       'subscription_popup_button2',
     ],
-    referral: ['invite_earn_image_android', 'invite_earn_image_ios'],
-    maps: ['maps_preference', 'map_browser_key', 'web_google_api_key'],
     templates: ['customer_ride_accept_msg', 'ride_cancellation_msg'],
-    rights: [],
   };
 
   constructor(private api: ApiService, private toast: ToastService) {}
@@ -673,20 +507,6 @@ export class OperatorSettingsComponent implements OnInit {
     });
   }
 
-  onFilesAdded(files: File[], field: string): void {
-    if (files?.length) this.pendingFiles[field] = files[0];
-  }
-
-  onFilesRejected(items: { file: File; reason: string }[]): void {
-    for (const r of items) {
-      this.toast.error(`${r.file.name}: ${r.reason}`, { title: 'File rejected' });
-    }
-  }
-
-  pendingName(field: string): string | null {
-    return this.pendingFiles[field]?.name ?? null;
-  }
-
   save(section: SectionKey): void {
     if (!this.settings) return;
     this.saving[section] = true;
@@ -696,12 +516,6 @@ export class OperatorSettingsComponent implements OnInit {
 
     const fields = this.sectionFields[section];
     for (const field of fields) {
-      // Image-upload fields read from pendingFiles.
-      if (this.pendingFiles[field]) {
-        fd.append(field, this.pendingFiles[field] as File);
-        continue;
-      }
-
       const raw = (this.settings as unknown as Record<string, unknown>)[field];
       if (raw === undefined) continue;
 
@@ -723,8 +537,6 @@ export class OperatorSettingsComponent implements OnInit {
         next: (res) => {
           this.saving[section] = false;
           this.settings = res.settings;
-          // Clear any consumed file inputs.
-          for (const f of fields) delete this.pendingFiles[f];
           this.toast.success(`${this.titleFor(section)} saved`);
         },
         error: (err) => {
@@ -733,33 +545,6 @@ export class OperatorSettingsComponent implements OnInit {
             ? Object.values(err.error.errors).flat().join(', ')
             : err?.error?.message || 'Save failed';
           this.toast.error(detail, { title: 'Save failed' });
-        },
-      });
-  }
-
-  submittingRights = false;
-
-  submitRights(): void {
-    if (!this.selectedRight || this.submittingRights) return;
-    this.submittingRights = true;
-    this.api
-      .post('/admin/data-subject-requests', {
-        right: this.selectedRight,
-        reason: this.rightsReason || null,
-      })
-      .subscribe({
-        next: () => {
-          this.submittingRights = false;
-          this.toast.success('Your data request has been recorded.', { title: 'DSAR submitted' });
-          this.selectedRight = null;
-          this.rightsReason = '';
-        },
-        error: (err) => {
-          this.submittingRights = false;
-          const detail = err?.error?.errors
-            ? Object.values(err.error.errors).flat().join(', ')
-            : err?.error?.message || 'Could not submit the request';
-          this.toast.error(detail, { title: 'Submit failed' });
         },
       });
   }

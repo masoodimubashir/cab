@@ -298,7 +298,7 @@
         </div>
 
         <!-- Free numeric entry. Starts empty. -->
-        <div class="price-input">
+        <div class="price-input" *ngIf="allowCountering">
           <span class="rupee" aria-hidden="true">₹</span>
           <ion-input
             type="number"
@@ -309,11 +309,13 @@
           ></ion-input>
         </div>
 
-        <p class="price-hint" *ngIf="minAmount > 0">Minimum for this route: ₹{{ minAmount }}</p>
+        <p class="price-hint" *ngIf="allowCountering && minAmount > 0">Minimum for this route: ₹{{ minAmount }}</p>
 
-        <p class="price-error" *ngIf="minAmount > 0 && counterAmount != null && counterAmount < minAmount">
+        <p class="price-error" *ngIf="allowCountering && minAmount > 0 && counterAmount != null && counterAmount < minAmount">
           You can't go below ₹{{ minAmount }} — minimum fare for this route.
         </p>
+
+        <p class="price-hint" *ngIf="!allowCountering">Countering isn't available for this vehicle — you can only accept or reject this offer.</p>
 
         <div class="price-actions">
           <button
@@ -326,6 +328,7 @@
             Take ₹{{ customerOffer }}
           </button>
           <button
+            *ngIf="allowCountering"
             class="dc-cta dc-cta--dark dc-press"
             type="button"
             [disabled]="negBusy || counterAmount == null || counterAmount < minAmount"

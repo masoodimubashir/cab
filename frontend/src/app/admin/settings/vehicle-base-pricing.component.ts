@@ -25,7 +25,6 @@ const FARE_SECTIONS: FareSection[] = [
       { key: 'min_fare', label: 'Minimum fare', req: true },
       { key: 'per_km', label: 'Per km', req: true },
       { key: 'per_min', label: 'Per min' },
-      { key: 'commission_percent', label: 'Commission %' },
     ],
   },
   {

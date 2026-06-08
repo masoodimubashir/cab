@@ -24,7 +24,6 @@ use App\Http\Controllers\Admin\AdminRideTypesController;
 use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
 use App\Http\Controllers\Admin\AdminOperatorSettingsController;
-use App\Http\Controllers\Admin\AdminDataSubjectRequestsController;
 use App\Http\Controllers\Admin\AdminContactDriversController;
 use App\Http\Controllers\Admin\AdminDispatcherSettingsController;
 use App\Http\Controllers\Admin\AdminDispatchController;
@@ -294,11 +293,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show']);
         Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
         Route::post('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
-
-        // Data Subject Access Requests (DSAR / data rights) — append-only queue.
-        Route::get('/admin/data-subject-requests', [AdminDataSubjectRequestsController::class, 'index']);
-        Route::post('/admin/data-subject-requests', [AdminDataSubjectRequestsController::class, 'store']);
-        Route::patch('/admin/data-subject-requests/{dataSubjectRequest}', [AdminDataSubjectRequestsController::class, 'update']);
 
         Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
         Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);

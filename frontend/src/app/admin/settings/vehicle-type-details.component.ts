@@ -6,12 +6,13 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
-import { ButtonComponent, IconComponent, ModalComponent } from '../../ui';
+import { ButtonComponent, IconComponent, IconName, ModalComponent } from '../../ui';
 import { OutstationPackagesComponent } from './outstation-packages.component';
 import { VehicleBasePricingComponent } from './vehicle-base-pricing.component';
 
-type TollMode = 'no' | 'yes' | 'yes_locked';
+type TollMode = 'no' | 'yes';
 type Platform = 'android' | 'ios';
+type TabKey = 'overview' | 'fares' | 'images' | 'dispatch';
 
 interface VehicleType {
   id: number;
@@ -26,19 +27,12 @@ interface VehicleType {
   display_order: number;
   max_people: number;
   luggage_capacity: number;
-  destination_mandatory: boolean;
-  fare_mandatory: boolean;
   reverse_bidding_enabled: boolean;
-  waiting_charges_applicable: boolean;
-  customer_notes_enabled: boolean;
-  multiple_destinations_enabled: boolean;
   show_low_wallet_alert: boolean;
   toll_mode: TollMode;
+  commission_type: 'percent' | 'fixed';
   commission_percent: number;
   fixed_commission: number;
-  convenience_charge: number;
-  convenience_customer_waiver: number;
-  convenience_driver_cut: number;
   min_driver_balance: number;
   override_request_radius_m: number | null;
   override_hop_interval_sec: number | null;
@@ -65,9 +59,10 @@ interface VehicleTypeImage {
 }
 
 /**
- * Vehicle Details — modeled on the reference's sectioned layout. One row =
- * one vehicle; each section (Vehicle Type, Fare Structure, Images, Dispatcher
- * Details) is edited independently with its own CHANGE / Cancel pair.
+ * Vehicle Details — a tabbed workspace for a single CityVehicleType. A rich hero
+ * header carries identity + status + the enable/disable action; the body is split
+ * into Overview / Fares / Images / Dispatch tabs, and core edits are committed
+ * from one sticky save bar (shown only on the tabs that edit core fields).
  */
 @Component({
   selector: 'app-vehicle-type-details',
@@ -86,21 +81,25 @@ interface VehicleTypeImage {
       <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading vehicle…</p>
     </div>
 
-    <div class="page" *ngIf="!loading && form">
-      <!-- ── Header bar ───────────────────────────── -->
-      <header class="vhead">
+    <div class="wrap" *ngIf="!loading && form">
+      <!-- ── Hero ─────────────────────────────────── -->
+      <header class="vhero">
         <button type="button" class="iconbtn" (click)="back()" aria-label="Back">
           <tm-icon name="chevron-left" [size]="18" />
         </button>
-        <span class="vhead__icon"><tm-icon name="car" [size]="18" /></span>
-        <div class="vhead__id">
-          <div class="vhead__name">{{ form.display_name }}</div>
-          <div class="vhead__meta">
+        <span class="vhero__icon"><tm-icon name="car" [size]="20" /></span>
+        <div class="vhero__id">
+          <div class="vhero__name">{{ form.display_name }}</div>
+          <div class="vhero__meta">
             <span class="tag">{{ form.ride_type_name }}</span>
             <span class="tag" [class.tag--on]="form.is_active" [class.tag--off]="!form.is_active">
               {{ form.is_active ? 'Active' : 'Inactive' }}
             </span>
             <span class="tag" *ngIf="isOutstation()">Packages</span>
+            <span class="dot">·</span>
+            <span class="stat">{{ form.max_people }} seats</span>
+            <span class="stat">{{ form.luggage_capacity }} bags</span>
+            <span class="stat">#{{ form.display_order }}</span>
           </div>
         </div>
         <tm-button
@@ -111,240 +110,243 @@ interface VehicleTypeImage {
         >{{ form.is_active ? 'Disable' : 'Enable' }}</tm-button>
       </header>
 
-      <!-- ── Edit Vehicle Type ────────────────────── -->
-      <section class="psec">
-        <header class="psec__head">
-          <h3 class="psec__title"><tm-icon name="car" [size]="14" /> Edit Vehicle Type</h3>
-        </header>
-        <div class="psec__body">
-          <div class="pgrid">
-            <label class="pfield pfield--full">
-              <span class="pfield__lbl">Vehicle Name</span>
-              <input type="text" [(ngModel)]="form.display_name" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Display Order</span>
-              <input type="number" min="0" max="9999" [(ngModel)]="form.display_order" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Max People</span>
-              <input type="number" min="1" max="20" [(ngModel)]="form.max_people" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Luggage Capacity <i class="req">*</i></span>
-              <input type="number" min="0" max="20" [(ngModel)]="form.luggage_capacity" />
-            </label>
-          </div>
+      <!-- ── Tabs ─────────────────────────────────── -->
+      <nav class="vtabs" aria-label="Vehicle sections">
+        <button
+          *ngFor="let t of tabs"
+          type="button"
+          class="vtab"
+          [class.is-active]="activeTab === t.key"
+          (click)="setTab(t.key)"
+        >
+          <tm-icon [name]="t.icon" [size]="15" />
+          <span>{{ t.label }}</span>
+        </button>
+      </nav>
 
-          <div class="toggles">
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" />
-              <span>Show low-wallet alert (driver)</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.reverse_bidding_enabled" />
-              <span>Reverse bidding enabled</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.destination_mandatory" />
-              <span>Destination mandatory</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.fare_mandatory" />
-              <span>Fare mandatory (no bidding)</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.waiting_charges_applicable" />
-              <span>Waiting charges applicable</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.customer_notes_enabled" />
-              <span>Customer notes enabled</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.multiple_destinations_enabled" />
-              <span>Multiple destinations enabled</span></label>
-          </div>
-
-          <div class="pfield pfield--full">
-            <span class="pfield__lbl">Toll Applicable</span>
-            <div class="chips">
-              <button type="button" class="chip" [class.is-on]="form.toll_mode === 'yes'"        (click)="form.toll_mode = 'yes'">Yes</button>
-              <button type="button" class="chip" [class.is-on]="form.toll_mode === 'yes_locked'" (click)="form.toll_mode = 'yes_locked'">Yes — driver locked</button>
-              <button type="button" class="chip" [class.is-on]="form.toll_mode === 'no'"         (click)="form.toll_mode = 'no'">No</button>
-            </div>
-          </div>
-
-          <div class="psec__sub">Commercials</div>
-          <div class="pgrid">
-            <label class="pfield">
-              <span class="pfield__lbl">Commission (%)</span>
-              <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Fixed commission</span>
-              <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Convenience charge</span>
-              <input type="number" min="0" step="0.01" [(ngModel)]="form.convenience_charge" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Customer waiver</span>
-              <input type="number" min="0" step="0.01" [(ngModel)]="form.convenience_customer_waiver" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Driver cut</span>
-              <input type="number" min="0" step="0.01" [(ngModel)]="form.convenience_driver_cut" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Min driver balance</span>
-              <input type="number" step="0.01" [(ngModel)]="form.min_driver_balance" />
-            </label>
-          </div>
-        </div>
-        <footer class="psec__foot">
-          <tm-button variant="ghost" size="sm" (clicked)="cancelEdits()">Cancel</tm-button>
-          <tm-button variant="green" size="sm" icon="check" [disabled]="saving" (clicked)="saveCore()">
-            {{ saving ? 'Saving…' : 'Save changes' }}
-          </tm-button>
-        </footer>
-      </section>
-
-      <!-- ── Edit Vehicle Set ─────────────────────── -->
-      <section class="psec">
-        <header class="psec__head">
-          <h3 class="psec__title"><tm-icon name="handshake" [size]="14" /> Vehicle Set</h3>
-          <span class="psec__hint">Group related vehicles (e.g. SEDAN L + SEDAN O).</span>
-        </header>
-        <div class="psec__body">
-          <div class="pgrid">
-            <label class="pfield pfield--full">
-              <span class="pfield__lbl">Set</span>
-              <select [ngModel]="form.vehicle_set_id" (ngModelChange)="onSetChange($event)">
-                <option [ngValue]="null">— Standalone (no set) —</option>
-                <option *ngFor="let s of vehicleSets" [ngValue]="s.id">
-                  {{ s.name }} ({{ s.member_count }})
-                </option>
-                <option [ngValue]="'__new'">+ Create new set…</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="newset" *ngIf="creatingSet">
-            <input
-              type="text"
-              [(ngModel)]="newSetName"
-              placeholder="Set name — e.g. SWIFT family"
-              (keydown.enter)="createSet()"
-            />
-            <tm-button variant="green" size="sm" [disabled]="!newSetName.trim() || savingSet" (clicked)="createSet()">
-              {{ savingSet ? 'Saving…' : 'Create' }}
-            </tm-button>
-            <tm-button variant="ghost" size="sm" (clicked)="cancelNewSet()">Cancel</tm-button>
-          </div>
-
-          <div class="siblings" *ngIf="form.vehicle_set_id && siblingNames().length">
-            <span class="overline">Other members</span>
-            <div class="siblings__chips">
-              <span class="tag" *ngFor="let n of siblingNames()">{{ n }}</span>
-            </div>
-          </div>
-        </div>
-        <footer class="psec__foot">
-          <tm-button variant="ghost" size="sm" (clicked)="cancelEdits()">Cancel</tm-button>
-          <tm-button variant="green" size="sm" icon="check" [disabled]="saving" (clicked)="saveCore()">
-            {{ saving ? 'Saving…' : 'Save changes' }}
-          </tm-button>
-        </footer>
-      </section>
-
-      <!-- ── Edit Fare Structure ──────────────────── -->
-      <section class="psec">
-        <header class="psec__head">
-          <h3 class="psec__title"><tm-icon name="bolt" [size]="14" /> Fare Structure</h3>
-          <span class="psec__hint" *ngIf="!isOutstation()">Set the base rate card for this vehicle.</span>
-          <span class="psec__hint" *ngIf="isOutstation()">Outstation vehicles use named fare packages instead of a base rate.</span>
-        </header>
-        <div class="psec__body" *ngIf="!isOutstation()">
-          <app-vehicle-base-pricing [cityId]="cityId" [cityVehicleTypeId]="form.id"></app-vehicle-base-pricing>
-        </div>
-        <div class="psec__body" *ngIf="isOutstation()">
-          <app-outstation-packages [cityId]="cityId" [vehicleTypeId]="form.id"></app-outstation-packages>
-        </div>
-      </section>
-
-      <!-- ── Vehicle Type Images ──────────────────── -->
-      <section class="psec">
-        <header class="psec__head">
-          <h3 class="psec__title"><tm-icon name="upload" [size]="14" /> Vehicle Images</h3>
-          <tm-button variant="green" size="sm" icon="plus" (clicked)="openAddImage()">Add image</tm-button>
-        </header>
-        <div class="psec__body psec__body--padless">
-          <div *ngIf="imagesLoading" class="cue cue--inline">
-            <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading images…</p>
-          </div>
-          <ng-container *ngIf="!imagesLoading">
-            <div class="imgblock" *ngFor="let plat of platformOptions">
-              <div class="imgblock__head">
-                <span class="overline">{{ plat.label }} app</span>
-                <span class="overline overline--mute" *ngIf="!imagesFor(plat.value).length">empty</span>
+      <!-- ── Panels ───────────────────────────────── -->
+      <div class="vpanel">
+        <!-- ===== OVERVIEW ===== -->
+        <ng-container *ngIf="activeTab === 'overview'">
+          <section class="vcard">
+            <header class="vcard__head">
+              <tm-icon name="car" [size]="14" /><h3>Vehicle Type</h3>
+            </header>
+            <div class="vcard__body">
+              <div class="pgrid">
+                <label class="pfield pfield--full">
+                  <span class="pfield__lbl">Vehicle Name</span>
+                  <input type="text" [(ngModel)]="form.display_name" />
+                </label>
+                <label class="pfield">
+                  <span class="pfield__lbl">Display Order</span>
+                  <input type="number" min="0" max="9999" [(ngModel)]="form.display_order" />
+                </label>
+                <label class="pfield">
+                  <span class="pfield__lbl">Max People</span>
+                  <input type="number" min="1" max="20" [(ngModel)]="form.max_people" />
+                </label>
+                <label class="pfield">
+                  <span class="pfield__lbl">Luggage Capacity <i class="req">*</i></span>
+                  <input type="number" min="0" max="20" [(ngModel)]="form.luggage_capacity" />
+                </label>
               </div>
-              <div class="imggrid" *ngIf="imagesFor(plat.value).length">
-                <div class="imgcard" *ngFor="let img of imagesFor(plat.value)">
-                  <div class="imgcard__media">
-                    <img *ngIf="img.image_url" [src]="img.image_url" />
-                  </div>
-                  <div class="imgcard__meta">
-                    <span class="imgcard__key">{{ img.key }}</span>
-                    <div class="imgcard__actions">
-                      <button type="button" class="iconact" (click)="replaceImage(img)" aria-label="Replace">
-                        <tm-icon name="edit" [size]="13" />
-                      </button>
-                      <button type="button" class="iconact iconact--danger" (click)="deleteImage(img)" aria-label="Delete">
-                        <tm-icon name="trash" [size]="13" />
-                      </button>
-                    </div>
-                  </div>
+
+              <div class="toggles">
+                <label class="toggle"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" />
+                  <span>Show low-wallet alert (driver)</span></label>
+                <label class="toggle"><input type="checkbox" [(ngModel)]="form.reverse_bidding_enabled" />
+                  <span>Reverse bidding enabled</span></label>
+              </div>
+
+              <div class="pfield pfield--full">
+                <span class="pfield__lbl">Toll Applicable</span>
+                <div class="chips">
+                  <button type="button" class="chip" [class.is-on]="form.toll_mode === 'yes'" (click)="form.toll_mode = 'yes'">Yes</button>
+                  <button type="button" class="chip" [class.is-on]="form.toll_mode === 'no'" (click)="form.toll_mode = 'no'">No</button>
                 </div>
               </div>
-              <div class="imgblock__empty" *ngIf="!imagesFor(plat.value).length">
-                No {{ plat.label }} images yet — add slots like <code>tab_normal</code> or <code>ride_now_highlighted</code>.
+
+              <div class="vcard__sub">Commercials</div>
+              <div class="pfield pfield--full">
+                <span class="pfield__lbl">Commission Mode</span>
+                <div class="chips">
+                  <button type="button" class="chip" [class.is-on]="form.commission_type === 'percent'" (click)="setCommissionType('percent')">Percentage (%)</button>
+                  <button type="button" class="chip" [class.is-on]="form.commission_type === 'fixed'" (click)="setCommissionType('fixed')">Fixed (₹)</button>
+                </div>
+              </div>
+              <div class="pgrid">
+                <label class="pfield" *ngIf="form.commission_type === 'percent'">
+                  <span class="pfield__lbl">Commission (%)</span>
+                  <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" />
+                </label>
+                <label class="pfield" *ngIf="form.commission_type === 'fixed'">
+                  <span class="pfield__lbl">Fixed commission (₹)</span>
+                  <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" />
+                </label>
+                <label class="pfield" *ngIf="form.show_low_wallet_alert">
+                  <span class="pfield__lbl">Min driver balance</span>
+                  <input type="number" step="0.01" [(ngModel)]="form.min_driver_balance" />
+                </label>
               </div>
             </div>
-          </ng-container>
-        </div>
-      </section>
+          </section>
 
-      <!-- ── Edit Dispatcher Details ──────────────── -->
-      <section class="psec">
-        <header class="psec__head">
-          <h3 class="psec__title"><tm-icon name="map-marker" [size]="14" /> Dispatcher Overrides</h3>
-          <span class="psec__hint">Leave blank to inherit the city defaults.</span>
-        </header>
-        <div class="psec__body">
-          <div class="pgrid">
-            <label class="pfield">
-              <span class="pfield__lbl">Request radius (m)</span>
-              <input type="number" min="0" max="50000" [(ngModel)]="form.override_request_radius_m" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Hop interval (sec)</span>
-              <input type="number" min="1" max="600" [(ngModel)]="form.override_hop_interval_sec" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Hop radius (m)</span>
-              <input type="number" min="0" max="50000" [(ngModel)]="form.override_hop_radius_m" />
-            </label>
-            <label class="pfield">
-              <span class="pfield__lbl">Max hops</span>
-              <input type="number" min="1" max="50" [(ngModel)]="form.override_max_hops" />
-            </label>
-          </div>
-        </div>
-        <footer class="psec__foot">
+          <section class="vcard">
+            <header class="vcard__head">
+              <tm-icon name="handshake" [size]="14" /><h3>Vehicle Set</h3>
+              <span class="vcard__hint">Group related vehicles (e.g. SEDAN L + SEDAN O).</span>
+            </header>
+            <div class="vcard__body">
+              <div class="pgrid">
+                <label class="pfield pfield--full">
+                  <span class="pfield__lbl">Set</span>
+                  <select [ngModel]="form.vehicle_set_id" (ngModelChange)="onSetChange($event)">
+                    <option [ngValue]="null">— Standalone (no set) —</option>
+                    <option *ngFor="let s of vehicleSets" [ngValue]="s.id">
+                      {{ s.name }} ({{ s.member_count }})
+                    </option>
+                    <option [ngValue]="'__new'">+ Create new set…</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="newset" *ngIf="creatingSet">
+                <input
+                  type="text"
+                  [(ngModel)]="newSetName"
+                  placeholder="Set name — e.g. SWIFT family"
+                  (keydown.enter)="createSet()"
+                />
+                <tm-button variant="green" size="sm" [disabled]="!newSetName.trim() || savingSet" (clicked)="createSet()">
+                  {{ savingSet ? 'Saving…' : 'Create' }}
+                </tm-button>
+                <tm-button variant="ghost" size="sm" (clicked)="cancelNewSet()">Cancel</tm-button>
+              </div>
+
+              <div class="siblings" *ngIf="form.vehicle_set_id && siblingNames().length">
+                <span class="overline">Other members</span>
+                <div class="siblings__chips">
+                  <span class="tag" *ngFor="let n of siblingNames()">{{ n }}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="vcard vcard--danger">
+            <div class="vcard__danger">
+              <div>
+                <div class="vcard__dtitle">Delete this vehicle</div>
+                <div class="vcard__dsub">Removes the vehicle row, its rate card and any uploaded images.</div>
+              </div>
+              <tm-button variant="danger" size="sm" icon="trash" (clicked)="deleteOpen = true">Delete</tm-button>
+            </div>
+          </section>
+        </ng-container>
+
+        <!-- ===== FARES ===== -->
+        <ng-container *ngIf="activeTab === 'fares'">
+          <section class="vcard">
+            <header class="vcard__head">
+              <tm-icon name="rupee" [size]="14" /><h3>Fare Structure</h3>
+              <span class="vcard__hint" *ngIf="!isOutstation()">Set the base rate card for this vehicle.</span>
+              <span class="vcard__hint" *ngIf="isOutstation()">Outstation vehicles use named fare packages instead of a base rate.</span>
+            </header>
+            <div class="vcard__body" *ngIf="!isOutstation()">
+              <app-vehicle-base-pricing [cityId]="cityId" [cityVehicleTypeId]="form.id"></app-vehicle-base-pricing>
+            </div>
+            <div class="vcard__body" *ngIf="isOutstation()">
+              <app-outstation-packages [cityId]="cityId" [vehicleTypeId]="form.id"></app-outstation-packages>
+            </div>
+          </section>
+        </ng-container>
+
+        <!-- ===== IMAGES ===== -->
+        <ng-container *ngIf="activeTab === 'images'">
+          <section class="vcard">
+            <header class="vcard__head">
+              <tm-icon name="upload" [size]="14" /><h3>Vehicle Images</h3>
+              <tm-button class="vcard__action" variant="green" size="sm" icon="plus" (clicked)="openAddImage()">Add image</tm-button>
+            </header>
+            <div class="vcard__body vcard__body--flush">
+              <div *ngIf="imagesLoading" class="cue cue--inline">
+                <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading images…</p>
+              </div>
+              <ng-container *ngIf="!imagesLoading">
+                <div class="imgblock" *ngFor="let plat of platformOptions">
+                  <div class="imgblock__head">
+                    <span class="overline">{{ plat.label }} app</span>
+                    <span class="overline overline--mute" *ngIf="!imagesFor(plat.value).length">empty</span>
+                  </div>
+                  <div class="imggrid" *ngIf="imagesFor(plat.value).length">
+                    <div class="imgcard" *ngFor="let img of imagesFor(plat.value)">
+                      <div class="imgcard__media">
+                        <img *ngIf="img.image_url" [src]="img.image_url" />
+                      </div>
+                      <div class="imgcard__meta">
+                        <span class="imgcard__key">{{ img.key }}</span>
+                        <div class="imgcard__actions">
+                          <button type="button" class="iconact" (click)="replaceImage(img)" aria-label="Replace">
+                            <tm-icon name="edit" [size]="13" />
+                          </button>
+                          <button type="button" class="iconact iconact--danger" (click)="deleteImage(img)" aria-label="Delete">
+                            <tm-icon name="trash" [size]="13" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="imgblock__empty" *ngIf="!imagesFor(plat.value).length">
+                    No {{ plat.label }} images yet — add slots like <code>tab_normal</code> or <code>ride_now_highlighted</code>.
+                  </div>
+                </div>
+              </ng-container>
+            </div>
+          </section>
+        </ng-container>
+
+        <!-- ===== DISPATCH ===== -->
+        <ng-container *ngIf="activeTab === 'dispatch'">
+          <section class="vcard">
+            <header class="vcard__head">
+              <tm-icon name="map-marker" [size]="14" /><h3>Dispatcher Overrides</h3>
+              <span class="vcard__hint" *ngIf="!dispatchPartial">Leave all four blank to offer the ride to every free, online driver inside the city geofence — nearest first. Fill them in to use a fixed expanding-radius search instead.</span>
+              <span class="vcard__hint vcard__hint--err" *ngIf="dispatchPartial">All four are required together — fill them all, or clear all four to use the city geofence.</span>
+            </header>
+            <div class="vcard__body">
+              <div class="pgrid">
+                <label class="pfield">
+                  <span class="pfield__lbl">Request radius (m) <i class="req" *ngIf="dispatchPartial">*</i></span>
+                  <input type="number" min="0" max="50000" [(ngModel)]="form.override_request_radius_m" />
+                </label>
+                <label class="pfield">
+                  <span class="pfield__lbl">Hop interval (sec) <i class="req" *ngIf="dispatchPartial">*</i></span>
+                  <input type="number" min="1" max="600" [(ngModel)]="form.override_hop_interval_sec" />
+                </label>
+                <label class="pfield">
+                  <span class="pfield__lbl">Hop radius (m) <i class="req" *ngIf="dispatchPartial">*</i></span>
+                  <input type="number" min="0" max="50000" [(ngModel)]="form.override_hop_radius_m" />
+                </label>
+                <label class="pfield">
+                  <span class="pfield__lbl">Max hops <i class="req" *ngIf="dispatchPartial">*</i></span>
+                  <input type="number" min="1" max="50" [(ngModel)]="form.override_max_hops" />
+                </label>
+              </div>
+            </div>
+          </section>
+        </ng-container>
+      </div>
+
+      <!-- ── Sticky save bar (core-field tabs only) ── -->
+      <footer class="vbar" *ngIf="canSave">
+        <span class="vbar__hint">Changes apply to the whole vehicle.</span>
+        <div class="vbar__actions">
           <tm-button variant="ghost" size="sm" (clicked)="cancelEdits()">Cancel</tm-button>
           <tm-button variant="green" size="sm" icon="check" [disabled]="saving" (clicked)="saveCore()">
             {{ saving ? 'Saving…' : 'Save changes' }}
           </tm-button>
-        </footer>
-      </section>
-
-      <!-- ── Danger zone ──────────────────────────── -->
-      <section class="dangerzone">
-        <div>
-          <div class="dangerzone__title">Delete this vehicle</div>
-          <div class="dangerzone__sub">Removes the vehicle row, its rate card and any uploaded images.</div>
         </div>
-        <tm-button variant="danger" size="sm" icon="trash" (clicked)="deleteOpen = true">Delete</tm-button>
-      </section>
+      </footer>
     </div>
 
     <!-- Add / Replace image modal -->
@@ -407,7 +409,7 @@ interface VehicleTypeImage {
     </tm-modal>
   `,
   styles: [`
-    :host { display: flex; flex-direction: column; gap: 18px; }
+    :host { display: block; }
 
     /* ── Empty-state cue (shared) ─────────────────────────────── */
     .cue {
@@ -421,29 +423,31 @@ interface VehicleTypeImage {
     .cue--inline { padding: 22px 18px; background: transparent; border: 0; }
     .cue__text { margin: 0; font-size: 13px; max-width: 380px; }
 
-    /* ── Header bar ───────────────────────────────────────────── */
-    .page { display: flex; flex-direction: column; gap: 18px; }
-    .vhead {
-      display: flex; align-items: center; gap: 12px;
+    .wrap { display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Hero ─────────────────────────────────────────────────── */
+    .vhero {
+      display: flex; align-items: center; gap: 14px;
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);
       border-radius: var(--tm-radius-lg, 14px);
-      padding: 14px 16px;
+      padding: 16px 18px;
     }
     .iconbtn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 32px; height: 32px; border-radius: 8px; flex: none; border: 0;
+      width: 34px; height: 34px; border-radius: 9px; flex: none; border: 0;
       background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
+      transition: background var(--tm-duration-fast, .15s) var(--tm-ease, ease), color var(--tm-duration-fast, .15s) var(--tm-ease, ease);
     }
     .iconbtn:hover { background: var(--tm-ink, #111827); color: #fff; }
-    .vhead__icon {
-      width: 36px; height: 36px; border-radius: 9px; flex: none;
+    .vhero__icon {
+      width: 44px; height: 44px; border-radius: 12px; flex: none;
       display: inline-flex; align-items: center; justify-content: center;
       background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green);
     }
-    .vhead__id { flex: 1; min-width: 0; }
-    .vhead__name { font-size: 17px; font-weight: 800; color: var(--tm-text); line-height: 1.2; }
-    .vhead__meta { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .vhero__id { flex: 1; min-width: 0; }
+    .vhero__name { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; color: var(--tm-text); line-height: 1.15; }
+    .vhero__meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
     .tag {
       font-size: 10px; font-weight: 800; letter-spacing: 0.3px;
       padding: 2px 8px; border-radius: 999px;
@@ -452,40 +456,80 @@ interface VehicleTypeImage {
     }
     .tag--on  { background: var(--tm-success-bg); color: var(--tm-success-fg); }
     .tag--off { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
+    .dot { color: var(--tm-text-muted); opacity: 0.5; }
+    .stat { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
 
-    /* ── Section card ─────────────────────────────────────────── */
-    .psec {
+    /* ── Tabs ─────────────────────────────────────────────────── */
+    .vtabs {
+      display: flex; gap: 2px;
+      border-bottom: 1px solid var(--tm-line);
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .vtabs::-webkit-scrollbar { display: none; }
+    .vtab {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 11px 16px; border: 0; background: transparent;
+      font-family: inherit; font-size: 13px; font-weight: 700;
+      color: var(--tm-text-muted); cursor: pointer; white-space: nowrap;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color var(--tm-duration-fast, .15s) var(--tm-ease, ease),
+                  border-color var(--tm-duration-fast, .15s) var(--tm-ease, ease);
+    }
+    .vtab:hover { color: var(--tm-text); }
+    .vtab.is-active { color: var(--tm-green); border-bottom-color: var(--tm-green); }
+
+    /* ── Panel + card ─────────────────────────────────────────── */
+    .vpanel { display: flex; flex-direction: column; gap: 16px; }
+    .vcard {
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);
       border-radius: var(--tm-radius-lg, 14px);
       overflow: hidden;
     }
-    .psec__head {
-      display: flex; align-items: center; justify-content: space-between; gap: 10px;
-      padding: 12px 16px;
+    .vcard__head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 13px 16px;
       border-bottom: 1px solid var(--tm-line);
+      color: var(--tm-text-muted);
     }
-    .psec__title {
-      display: flex; align-items: center; gap: 6px;
+    .vcard__head h3 {
       margin: 0; font-size: 12px; font-weight: 800;
-      text-transform: uppercase; letter-spacing: 0.5px;
-      color: var(--tm-text-muted);
+      text-transform: uppercase; letter-spacing: 0.5px; color: var(--tm-text-muted);
     }
-    .psec__hint { font-size: 12px; color: var(--tm-text-muted); }
-    .psec__body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
-    .psec__body--padless { padding: 0; }
-    .psec__body--cue { padding: 8px 12px; }
-    .psec__sub {
-      margin-top: 4px; font-size: 11px; font-weight: 800;
-      text-transform: uppercase; letter-spacing: 0.4px;
-      color: var(--tm-text-muted);
+    .vcard__hint {
+      font-size: 12px; color: var(--tm-text-muted); font-weight: 500;
+      text-transform: none; letter-spacing: 0;
     }
-    .psec__foot {
-      display: flex; justify-content: flex-end; gap: 8px;
-      padding: 10px 14px;
-      background: var(--tm-canvas, #f8fafc);
-      border-top: 1px solid var(--tm-line);
+    .vcard__hint--err { color: var(--tm-danger, #ef4444); font-weight: 700; }
+    .vcard__action { margin-left: auto; }
+    .vcard__body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .vcard__body--flush { padding: 0; }
+    .vcard__sub {
+      margin-top: 2px; font-size: 11px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.4px; color: var(--tm-text-muted);
     }
+
+    /* ── Danger card ──────────────────────────────────────────── */
+    .vcard--danger { border-left: 3px solid var(--tm-danger, #ef4444); }
+    .vcard__danger {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      padding: 14px 16px;
+    }
+    .vcard__dtitle { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .vcard__dsub { font-size: 12px; color: var(--tm-text-muted); margin-top: 2px; }
+
+    /* ── Sticky save bar ──────────────────────────────────────── */
+    .vbar {
+      position: sticky; bottom: 0; z-index: 5;
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-lg, 14px);
+      box-shadow: 0 -4px 16px rgba(15, 20, 25, 0.06);
+    }
+    .vbar__hint { font-size: 12px; color: var(--tm-text-muted); font-weight: 500; }
+    .vbar__actions { display: flex; gap: 8px; margin-left: auto; }
 
     /* ── Form grid + field ────────────────────────────────────── */
     .pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -505,9 +549,7 @@ interface VehicleTypeImage {
     .pfield input:focus, .pfield select:focus { border-color: var(--tm-green); }
 
     /* ── Toggles (compact, two-column) ────────────────────────── */
-    .toggles {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px;
-    }
+    .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
     .toggle {
       display: inline-flex; align-items: center; gap: 8px;
       font-size: 13px; font-weight: 600; color: var(--tm-text);
@@ -526,7 +568,7 @@ interface VehicleTypeImage {
       border-color: var(--tm-green); color: var(--tm-green);
     }
 
-    /* ── Images section ───────────────────────────────────────── */
+    /* ── Images ───────────────────────────────────────────────── */
     .imgblock { padding: 14px 16px; border-bottom: 1px solid var(--tm-line); }
     .imgblock:last-child { border-bottom: 0; }
     .imgblock__head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -589,20 +631,20 @@ interface VehicleTypeImage {
     .siblings { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
     .siblings__chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
-    /* ── Danger zone ──────────────────────────────────────────── */
-    .dangerzone {
-      display: flex; align-items: center; justify-content: space-between; gap: 14px;
-      padding: 14px 16px;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-left: 3px solid var(--tm-danger, #ef4444);
-      border-radius: var(--tm-radius-lg, 14px);
-    }
-    .dangerzone__title { font-size: 13px; font-weight: 800; color: var(--tm-text); }
-    .dangerzone__sub { font-size: 12px; color: var(--tm-text-muted); margin-top: 2px; }
-
-    /* ── Add/replace image modal (reuses .pfield) ─────────────── */
+    /* ── Modal form ───────────────────────────────────────────── */
     .form { display: flex; flex-direction: column; gap: 12px; }
+    .f { display: flex; flex-direction: column; gap: 4px; }
+    .f__lbl {
+      font-size: 11px; font-weight: 700; color: var(--tm-text);
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .f input, .f select {
+      width: 100%; height: 36px; padding: 0 10px;
+      border: 1px solid var(--tm-line); border-radius: 8px;
+      background: var(--tm-canvas); color: var(--tm-text);
+      font-size: 13px; outline: none; font-family: inherit;
+    }
+    .f input:focus, .f select:focus { border-color: var(--tm-green); }
     .img-thumb {
       max-width: 100%; max-height: 160px; border-radius: 8px;
       border: 1px solid var(--tm-line); display: block;
@@ -611,6 +653,7 @@ interface VehicleTypeImage {
     @media (max-width: 720px) {
       .pgrid { grid-template-columns: 1fr; }
       .toggles { grid-template-columns: 1fr; }
+      .vhero { flex-wrap: wrap; }
     }
   `],
 })
@@ -620,7 +663,14 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
   loading = true;
   saving = false;
   form: VehicleType | null = null;
-  openFareEditor = false;
+
+  activeTab: TabKey = 'overview';
+  readonly tabs: { key: TabKey; label: string; icon: IconName }[] = [
+    { key: 'overview', label: 'Overview', icon: 'car' },
+    { key: 'fares',    label: 'Fares',    icon: 'rupee' },
+    { key: 'images',   label: 'Images',   icon: 'upload' },
+    { key: 'dispatch', label: 'Dispatch', icon: 'map-marker' },
+  ];
 
   images: VehicleTypeImage[] = [];
   imagesLoading = false;
@@ -676,6 +726,15 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
+  }
+
+  setTab(key: TabKey): void {
+    this.activeTab = key;
+  }
+
+  /** The sticky save bar only applies to tabs that edit core vehicle fields. */
+  get canSave(): boolean {
+    return this.activeTab === 'overview' || this.activeTab === 'dispatch';
   }
 
   isOutstation(): boolean {
@@ -784,10 +843,45 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
       .map((m) => m.display_name);
   }
 
+  /** The four dispatcher-override fields — edited and validated as one group. */
+  private readonly dispatchKeys = [
+    'override_request_radius_m',
+    'override_hop_interval_sec',
+    'override_hop_radius_m',
+    'override_max_hops',
+  ] as const;
+
+  /** True when SOME but not all dispatcher fields are filled — an invalid mix. */
+  get dispatchPartial(): boolean {
+    const f = this.form;
+    if (!f) return false;
+    const filled = this.dispatchKeys.filter((k) => {
+      const v = f[k];
+      return v !== null && v !== undefined && (v as unknown) !== '';
+    }).length;
+    return filled > 0 && filled < this.dispatchKeys.length;
+  }
+
+  /** Switch commission mode and zero the now-inactive field. */
+  setCommissionType(mode: 'percent' | 'fixed'): void {
+    if (!this.form || this.form.commission_type === mode) return;
+    this.form.commission_type = mode;
+    if (mode === 'percent') this.form.fixed_commission = 0;
+    else this.form.commission_percent = 0;
+  }
+
   saveCore(): void {
     if (!this.form || this.cityId == null) return;
-    this.saving = true;
     const f = this.form;
+
+    // Dispatcher overrides are all-or-nothing: all four set (ring search) or all
+    // blank (city-geofence dispatch). Block a partial mix.
+    if (this.dispatchPartial) {
+      this.toast.error('Set all four dispatcher fields, or leave all four blank.');
+      return;
+    }
+
+    this.saving = true;
     const fd = new FormData();
     fd.append('_method', 'PATCH');
 
@@ -801,33 +895,23 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
     append('display_order', f.display_order);
     append('max_people', f.max_people);
     append('luggage_capacity', f.luggage_capacity);
-    append('destination_mandatory', f.destination_mandatory);
-    append('fare_mandatory', f.fare_mandatory);
     append('reverse_bidding_enabled', f.reverse_bidding_enabled);
-    append('waiting_charges_applicable', f.waiting_charges_applicable);
-    append('customer_notes_enabled', f.customer_notes_enabled);
-    append('multiple_destinations_enabled', f.multiple_destinations_enabled);
     append('show_low_wallet_alert', f.show_low_wallet_alert);
     append('toll_mode', f.toll_mode);
-    append('commission_percent', f.commission_percent);
-    append('fixed_commission', f.fixed_commission);
-    append('convenience_charge', f.convenience_charge);
-    append('convenience_customer_waiver', f.convenience_customer_waiver);
-    append('convenience_driver_cut', f.convenience_driver_cut);
+    // CityVehicleType is the single source of driver commission. Always send the
+    // mode and force the inactive field to 0 so only one rate is ever live.
+    fd.append('commission_type', f.commission_type);
+    fd.append('commission_percent', f.commission_type === 'percent' ? String(f.commission_percent ?? 0) : '0');
+    fd.append('fixed_commission', f.commission_type === 'fixed' ? String(f.fixed_commission ?? 0) : '0');
     append('min_driver_balance', f.min_driver_balance);
     // vehicle_set_id is nullable — send empty string to clear it server-side.
     fd.append('vehicle_set_id', f.vehicle_set_id == null ? '' : String(f.vehicle_set_id));
 
-    for (const k of [
-      'override_request_radius_m',
-      'override_hop_interval_sec',
-      'override_hop_radius_m',
-      'override_max_hops',
-    ] as const) {
+    // Dispatcher overrides — always send all four (empty as '') so clearing them
+    // persists server-side and the vehicle falls back to city-geofence dispatch.
+    for (const k of this.dispatchKeys) {
       const v = f[k];
-      if (v !== null && v !== undefined && v !== ('' as unknown)) {
-        fd.append(k, String(v));
-      }
+      fd.append(k, v === null || v === undefined ? '' : String(v));
     }
 
     this.api

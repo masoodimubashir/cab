@@ -10,7 +10,7 @@ use Illuminate\Validation\Rule;
 
 class AdminVehicleTypesController
 {
-    private const TOLL_MODES = ['no', 'yes', 'yes_locked'];
+    private const TOLL_MODES = ['no', 'yes'];
 
     /**
      * List all vehicle types for a city. The Enabled/Disabled split in the
@@ -63,11 +63,23 @@ class AdminVehicleTypesController
             'display_order' => ['required', 'integer', 'min:0', 'max:9999'],
             'max_people' => ['required', 'integer', 'min:1', 'max:99'],
             'luggage_capacity' => ['required', 'integer', 'min:0', 'max:99'],
-            'destination_mandatory' => ['required', 'boolean'],
-            'fare_mandatory' => ['required', 'boolean'],
             'toll_mode' => ['required', Rule::in(self::TOLL_MODES)],
-            'commission_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'commission_type' => ['required', Rule::in(['percent', 'fixed'])],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'min_driver_balance' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'show_low_wallet_alert' => ['nullable', 'boolean'],
+            'reverse_bidding_enabled' => ['nullable', 'boolean'],
         ]);
+
+        // Commission is one mode or the other — zero out the field the chosen
+        // mode doesn't use so the trip-settlement math can read either column
+        // unconditionally.
+        if (($data['commission_type'] ?? 'percent') === 'fixed') {
+            $data['commission_percent'] = 0;
+        } else {
+            $data['fixed_commission'] = 0;
+        }
 
         $existing = CityVehicleType::query()
             ->where('city_id', $city->id)
@@ -81,7 +93,14 @@ class AdminVehicleTypesController
         }
 
         $row = CityVehicleType::query()->create(array_merge(
-            ['city_id' => $city->id, 'is_active' => true],
+            [
+                'city_id' => $city->id,
+                'is_active' => true,
+                'commission_type' => 'percent',
+                'show_low_wallet_alert' => true,
+                'min_driver_balance' => 0,
+                'reverse_bidding_enabled' => true,
+            ],
             $data,
         ));
 
@@ -110,20 +129,13 @@ class AdminVehicleTypesController
             'max_people' => ['nullable', 'integer', 'min:1', 'max:99'],
             'luggage_capacity' => ['nullable', 'integer', 'min:0', 'max:99'],
 
-            'destination_mandatory' => ['nullable', 'boolean'],
-            'fare_mandatory' => ['nullable', 'boolean'],
             'reverse_bidding_enabled' => ['nullable', 'boolean'],
-            'waiting_charges_applicable' => ['nullable', 'boolean'],
-            'customer_notes_enabled' => ['nullable', 'boolean'],
-            'multiple_destinations_enabled' => ['nullable', 'boolean'],
             'show_low_wallet_alert' => ['nullable', 'boolean'],
             'toll_mode' => ['nullable', Rule::in(self::TOLL_MODES)],
 
+            'commission_type' => ['nullable', Rule::in(['percent', 'fixed'])],
             'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
-            'convenience_charge' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
-            'convenience_customer_waiver' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
-            'convenience_driver_cut' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             'min_driver_balance' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
 
             'override_request_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
@@ -133,6 +145,31 @@ class AdminVehicleTypesController
 
             'is_active' => ['nullable', 'boolean'],
         ]);
+
+        // Commission is one mode or the other. When the admin sets the mode,
+        // force the unused amount column to 0 so settlement can read either side
+        // safely. (When commission_type isn't in this payload we leave both
+        // amount columns as the request set them.)
+        if (array_key_exists('commission_type', $data) && $data['commission_type'] !== null) {
+            if ($data['commission_type'] === 'fixed') {
+                $data['commission_percent'] = 0;
+            } else {
+                $data['fixed_commission'] = 0;
+            }
+        }
+
+        // Dispatcher overrides are all-or-nothing: either all four set (per-vehicle
+        // ring search) or all blank (city-geofence dispatch). Reject a partial mix.
+        $dispatchKeys = ['override_request_radius_m', 'override_hop_interval_sec', 'override_hop_radius_m', 'override_max_hops'];
+        $dispatchSet = array_filter(
+            $dispatchKeys,
+            fn ($k) => array_key_exists($k, $data) && $data[$k] !== null,
+        );
+        if (count($dispatchSet) !== 0 && count($dispatchSet) !== count($dispatchKeys)) {
+            return response()->json([
+                'message' => 'Set all four dispatcher fields, or leave all four blank.',
+            ], 422);
+        }
 
         // Re-check the (city, ride_type, display_name) uniqueness when either
         // key changes, so a rename / ride-type change returns a friendly 409
@@ -194,20 +231,13 @@ class AdminVehicleTypesController
             'max_people' => (int) $v->max_people,
             'luggage_capacity' => (int) $v->luggage_capacity,
 
-            'destination_mandatory' => (bool) $v->destination_mandatory,
-            'fare_mandatory' => (bool) $v->fare_mandatory,
             'reverse_bidding_enabled' => (bool) $v->reverse_bidding_enabled,
-            'waiting_charges_applicable' => (bool) $v->waiting_charges_applicable,
-            'customer_notes_enabled' => (bool) $v->customer_notes_enabled,
-            'multiple_destinations_enabled' => (bool) $v->multiple_destinations_enabled,
             'show_low_wallet_alert' => (bool) $v->show_low_wallet_alert,
             'toll_mode' => $v->toll_mode,
 
+            'commission_type' => $v->commission_type ?? 'percent',
             'commission_percent' => (float) $v->commission_percent,
             'fixed_commission' => (float) $v->fixed_commission,
-            'convenience_charge' => (float) $v->convenience_charge,
-            'convenience_customer_waiver' => (float) $v->convenience_customer_waiver,
-            'convenience_driver_cut' => (float) $v->convenience_driver_cut,
             'min_driver_balance' => (float) $v->min_driver_balance,
 
             'override_request_radius_m' => $v->override_request_radius_m,
