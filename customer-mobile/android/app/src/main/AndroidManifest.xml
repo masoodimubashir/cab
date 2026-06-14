@@ -19,5 +19,6 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:maxSdkVersion="32" android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Required by @capacitor-community/contacts pickContact() (native picker). -->
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
 </manifest>

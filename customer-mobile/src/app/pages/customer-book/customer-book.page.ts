@@ -41,6 +41,7 @@ type EstimateResponse = {
   distance_km?: number;
   time_min?: number;
   estimated_fare?: number;
+  toll_amount?: number;
   commission_percent?: number;
   fare_breakdown?: {
     base_fare?: number;
@@ -55,6 +56,8 @@ type EstimateResponse = {
     subtotal_before_tax?: number;
     tax_percent?: number;
     tax_amount?: number;
+    // Toll passed through from Google; 0 when the route has none.
+    toll_amount?: number;
   };
 };
 
@@ -244,6 +247,10 @@ export class CustomerBookPage implements OnDestroy {
   // rather than haversine.
   routeDistanceKm: number | null = null;
   routeTimeMin: number | null = null;
+  // Toll for the drawn route, read from Google's Routes API when it provides one
+  // (else null → no toll). Sent to the server, which applies it only if the
+  // booked vehicle has tolls turned on. We never invent a number.
+  tollAmount: number | null = null;
 
   driverOffers: DriverOffer[] = [];
   private unsubscribeRealtime: (() => void) | null = null;
@@ -1428,6 +1435,7 @@ export class CustomerBookPage implements OnDestroy {
     this.routePolylines = [];
     this.routeDistanceKm = null;
     this.routeTimeMin = null;
+    this.tollAmount = null;
 
     const origin = { lat: this.pickup.lat, lng: this.pickup.lng };
     const destination = { lat: this.drop.lat, lng: this.drop.lng };
@@ -1441,7 +1449,12 @@ export class CustomerBookPage implements OnDestroy {
         origin,
         destination,
         travelMode: google.maps.TravelMode.DRIVING,
-        fields: ['legs', 'path', 'distanceMeters', 'durationMillis'],
+        // 'travelAdvisory' + extraComputations TOLLS ask Google for the toll on
+        // this route. Google only fills it in where it has toll prices (it does
+        // not for many regions), so a blank simply leaves the toll at null.
+        fields: ['legs', 'path', 'distanceMeters', 'durationMillis', 'travelAdvisory'],
+        extraComputations: ['TOLLS'],
+        routeModifiers: { vehicleInfo: { emissionType: 'GASOLINE' } },
       });
       const route = routes?.[0];
       const polylines: any[] = route?.createPolylines?.() ?? [];
@@ -1459,7 +1472,8 @@ export class CustomerBookPage implements OnDestroy {
         this.routeDistanceKm = typeof distMeters === 'number' ? distMeters / 1000 : null;
         const ms = route.durationMillis ?? route.legs?.[0]?.durationMillis;
         this.routeTimeMin = typeof ms === 'number' ? ms / 60000 : null;
-        console.log('[route] drawn via Routes API — km=', this.routeDistanceKm);
+        this.tollAmount = this.readGoogleToll(route);
+        console.log('[route] drawn via Routes API — km=', this.routeDistanceKm, 'toll=', this.tollAmount);
         this.frameRoute(origin, destination);
         return;
       }
@@ -1507,6 +1521,22 @@ export class CustomerBookPage implements OnDestroy {
     });
     this.routePolylines = [straight];
     this.frameRoute(origin, destination);
+  }
+
+  /**
+   * Pull the toll for a route out of Google's Routes API response, in rupees.
+   * `travelAdvisory.tollInfo.estimatedPrice` is an array of Money objects (one
+   * per currency: { currencyCode, units, nanos }); we take the INR one (or the
+   * only one). Returns null when Google reports no toll for the route — which is
+   * the common case in regions Google doesn't price tolls for.
+   */
+  private readGoogleToll(route: any): number | null {
+    const prices = route?.travelAdvisory?.tollInfo?.estimatedPrice;
+    if (!Array.isArray(prices) || !prices.length) return null;
+    const money = prices.find((p: any) => p?.currencyCode === 'INR') ?? prices[0];
+    if (!money) return null;
+    const rupees = Number(money.units ?? 0) + Number(money.nanos ?? 0) / 1e9;
+    return Number.isFinite(rupees) && rupees > 0 ? Math.round(rupees * 100) / 100 : null;
   }
 
   /** Fit the map so the whole pickup→drop route is visible. */
@@ -1567,6 +1597,7 @@ export class CustomerBookPage implements OnDestroy {
           drop_lng: this.drop.lng,
           route_distance_km: this.routeDistanceKm,
           route_time_min: this.routeTimeMin,
+          toll_amount: this.tollAmount,
         })
         .toPromise();
       this.estimate = res ?? null;

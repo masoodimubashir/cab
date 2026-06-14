@@ -42,7 +42,12 @@ class CommissionSettlementService
         }
 
         // Solo ride: take the platform commission from the driver's wallet.
+        // Commission is charged on the RIDE only. Any toll folded into the fare
+        // is the driver's own booth payment (FASTag) passing back through to
+        // them, so it is never commissionable — strip it before computing the cut.
         $fare = (float) ($trip->final_fare ?? 0);
+        $toll = (float) ($trip->toll_amount ?? 0);
+        $commissionableFare = max(0.0, $fare - $toll);
 
         // The vehicle is the single source of the commission rule. Resolve it
         // from the trip's city_vehicle_type_id; null-safe if the trip never
@@ -66,7 +71,7 @@ class CommissionSettlementService
         if ($subPct >= 0.0) {
             // Active subscription: its percent rate wins.
             $percent = $subPct;
-            $cut = round($fare * $percent / 100, 2);
+            $cut = round($commissionableFare * $percent / 100, 2);
         } elseif ($cvt && $cvt->commission_type === 'fixed') {
             // Flat per-ride fee from the vehicle.
             $percent = 0.0;
@@ -74,13 +79,13 @@ class CommissionSettlementService
         } else {
             // Percentage of the fare from the vehicle (default when no vehicle).
             $percent = $cvt ? (float) $cvt->commission_percent : 0.0;
-            $cut = round($fare * $percent / 100, 2);
+            $cut = round($commissionableFare * $percent / 100, 2);
         }
 
-        // A fixed fee can't exceed the fare; never push the driver into debt for
-        // a single ride beyond the fare they collected.
-        if ($cut > $fare) {
-            $cut = $fare;
+        // A fixed fee can't exceed the ride fare; never push the driver into debt
+        // for a single ride, and never let it eat into the toll they're owed back.
+        if ($cut > $commissionableFare) {
+            $cut = $commissionableFare;
         }
 
         if ($cut > 0 && $trip->driver) {

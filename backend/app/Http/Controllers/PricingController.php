@@ -159,6 +159,9 @@ class PricingController extends Controller
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
+            // Toll the client read from Google for this route (₹). Honoured only
+            // when the vehicle's toll_mode is 'yes'; absent/blank → no toll.
+            'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
         ]);
 
         $cityVehicleTypeId = isset($data['city_vehicle_type_id'])
@@ -172,6 +175,14 @@ class PricingController extends Controller
         if (!$cityVehicleTypeId) {
             return response()->json(['message' => 'No matching vehicle for this booking.'], 404);
         }
+
+        // Toll is gated by the vehicle: only an outstation vehicle with the toll
+        // toggle ON carries it. We never invent a number — it's whatever Google
+        // gave the client, or 0.
+        $cvt = CityVehicleType::query()->find($cityVehicleTypeId);
+        $tollCharge = ($cvt && $cvt->toll_mode === 'yes')
+            ? (float) ($data['toll_amount'] ?? 0)
+            : 0.0;
 
         $pricingRule = PricingRule::resolveFor($cityVehicleTypeId);
         if (!$pricingRule) {
@@ -226,6 +237,7 @@ class PricingController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            $tollCharge,
         );
 
         return response()->json([
