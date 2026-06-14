@@ -57,6 +57,9 @@ class TripsController extends Controller
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
+            // Toll the client read from Google for this route (₹). Applied only
+            // when the booked vehicle's toll_mode is 'yes'; absent/blank → 0.
+            'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'scope' => ['nullable', 'in:local,outstation'],
 
             // "Book a ride for a friend / family" — the booker still owns + pays
@@ -92,6 +95,13 @@ class TripsController extends Controller
             return response()->json(['message' => 'No matching vehicle for this booking.'], 404);
         }
         $cityId = (int) $cvt->city_id;
+
+        // Toll is gated by the vehicle: only an outstation vehicle with the toll
+        // toggle ON carries it, using whatever Google gave the client (else 0).
+        // Captured here so the same amount settles at completion.
+        $tollCharge = ($cvt->toll_mode === 'yes')
+            ? (float) ($data['toll_amount'] ?? 0)
+            : 0.0;
 
         $policyError = $schedulingPolicy->validateBooking(
             customerId: $request->user()->id,
@@ -176,6 +186,7 @@ class TripsController extends Controller
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            $tollCharge,
         );
 
         // "Any vehicle / ride now" mode — client sent only city info, no
@@ -210,6 +221,7 @@ class TripsController extends Controller
             'scheduled_at' => $scheduledAt,
             'status' => 'REQUESTED',
             'estimated_fare' => $estimate['estimated_fare'],
+            'toll_amount' => $estimate['toll_amount'] ?? 0,
             'final_fare' => null,
             'currency' => 'INR',
             'pickup_address' => $data['pickup_address'] ?? null,

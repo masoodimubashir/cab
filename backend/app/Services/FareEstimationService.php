@@ -227,6 +227,7 @@ class FareEstimationService
         ?float $pickupDistanceKm = null,
         ?float $routeDistanceKm = null,
         ?float $routeTimeMin = null,
+        ?float $tollCharge = null,
     ): array {
         // Prefer the real routed distance from Google Directions when the
         // client supplies it; fall back to great-circle if not available.
@@ -304,7 +305,12 @@ class FareEstimationService
         }
 
         $taxAmount = $subtotal * ($taxPercent / 100.0);
-        $fare = $subtotal + $taxAmount;
+        // Toll is a pass-through reimbursement to the driver (they pay it at the
+        // booth via FASTag) — added AFTER tax and itself untaxed. It's folded
+        // into the fare total so payment/displays "just work", but reported
+        // separately so commission can be charged on the ride only at settlement.
+        $toll = max(0.0, (float) ($tollCharge ?? 0));
+        $fare = $subtotal + $taxAmount + $toll;
 
         return [
             'distance_km' => round($distanceKm, 3),
@@ -327,8 +333,10 @@ class FareEstimationService
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),
+                'toll_amount' => round($toll, 2),
             ],
             'estimated_fare' => round($fare, 2),
+            'toll_amount' => round($toll, 2),
             'commission_percent' => round($commissionPercent, 2),
         ];
     }
@@ -526,9 +534,18 @@ class FareEstimationService
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $computed = $subtotal + $taxAmount;
 
-        // Floor at the negotiated amount — matches Uber's "minimum trip price"
-        // and removes the surprise of being charged less than you offered.
-        $finalFare = round(max($computed, $negotiatedFloor), 2);
+        // Toll was captured from Google at booking and stored on the trip; it
+        // passes straight through to the driver. The negotiated floor (= the
+        // estimate/agreed amount) already INCLUDES this toll, so strip it before
+        // flooring the ride and add it back exactly once — otherwise a toll trip
+        // would be charged the toll twice.
+        $toll = max(0.0, (float) ($trip->toll_amount ?? 0));
+        $rideFloor = max(0.0, $negotiatedFloor - $toll);
+
+        // Floor the ride at the negotiated amount — matches Uber's "minimum trip
+        // price" and removes the surprise of being charged less than you offered.
+        $rideFare = max($computed, $rideFloor);
+        $finalFare = round($rideFare + $toll, 2);
 
         return [
             'final_fare' => $finalFare,
@@ -545,6 +562,7 @@ class FareEstimationService
                 'subtotal_before_tax' => round($subtotal, 2),
                 'tax_percent' => round($taxPercent, 2),
                 'tax_amount' => round($taxAmount, 2),
+                'toll_amount' => round($toll, 2),
                 'computed_fare' => round($computed, 2),
                 'negotiated_floor' => round($negotiatedFloor, 2),
             ],

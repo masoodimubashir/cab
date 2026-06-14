@@ -626,6 +626,11 @@
           <span>Tax ({{ estimate?.fare_breakdown?.tax_percent }}%)</span>
           <span>₹{{ estimate?.fare_breakdown?.tax_amount }}</span>
         </div>
+        <!-- Toll — shown only when this route actually has one. -->
+        <div class="breakdown-row" *ngIf="estimate?.fare_breakdown?.toll_amount">
+          <span>Toll</span>
+          <span>₹{{ estimate?.fare_breakdown?.toll_amount }}</span>
+        </div>
         <div class="breakdown-row total">
           <span>Estimated total</span>
           <span>₹{{ estimate?.estimated_fare }}</span>
