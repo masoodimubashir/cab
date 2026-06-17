@@ -17,7 +17,7 @@ class AdminOutstationPackagesController
 {
     /** Fare fields a package's fare_config may carry. Anything else is dropped. */
     private const FARE_KEYS = [
-        'base_fare', 'min_fare', 'per_km', 'per_min',
+        'base_fare',
         'surge_multiplier', 'commission_percent', 'tax_percent',
         'threshold_distance_1_km', 'fare_per_km_after_threshold_1',
         'threshold_distance_2_km', 'fare_per_km_after_threshold_2',

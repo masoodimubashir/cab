@@ -22,9 +22,6 @@ const FARE_SECTIONS: FareSection[] = [
     title: 'Base fare',
     fields: [
       { key: 'base_fare', label: 'Base fare', req: true },
-      { key: 'min_fare', label: 'Minimum fare', req: true },
-      { key: 'per_km', label: 'Per km', req: true },
-      { key: 'per_min', label: 'Per min' },
     ],
   },
   {
@@ -86,8 +83,8 @@ const FARE_SECTIONS: FareSection[] = [
 const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.key));
 
 /**
- * Base Pricing editor for one vehicle — the rate card (base fare, per-km,
- * thresholds, …) for this vehicle's (city, vehicle type, product kind).
+ * Base Pricing editor for one vehicle — the rate card (base fare, thresholds,
+ * taxes, …) for this vehicle's (city, vehicle type, product kind).
  * Embedded as a tab on the vehicle detail page.
  */
 @Component({
@@ -174,7 +171,7 @@ export class VehicleBasePricingComponent implements OnChanges {
 
   get canSave(): boolean {
     const filled = (v: unknown) => v !== null && v !== undefined && (v as any) !== '';
-    return filled(this.form['base_fare']) && filled(this.form['min_fare']) && filled(this.form['per_km']);
+    return filled(this.form['base_fare']);
   }
 
   load(): void {

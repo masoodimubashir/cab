@@ -117,48 +117,6 @@
 }
 
 /* Locked (read-only) value display in edit mode. */
-.pf-input--locked {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: #F0F2F5;
-  color: var(--text-muted, #6C757D);
-  font-weight: 600;
-
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  // Read-only email: a real disabled <input> nested in the locked shell so the
-  // value is selectable/copyable but never editable. Strip its native chrome.
-  input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    background: transparent;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: inherit;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    text-overflow: ellipsis;
-
-    &::placeholder { color: #AEB6BF; font-weight: 500; }
-    &:disabled { opacity: 1; -webkit-text-fill-color: var(--text-muted, #6C757D); }
-  }
-
-  ion-icon {
-    flex-shrink: 0;
-    font-size: 15px;
-    color: #AEB6BF;
-  }
-}
-
 /* ----------------------------------------------- locked / verified info card */
 /* dc-list rows are read-only here — neutralise the tap affordance. */
 .pf-locked .dc-list { box-shadow: none; }

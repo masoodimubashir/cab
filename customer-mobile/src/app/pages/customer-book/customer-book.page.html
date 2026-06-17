@@ -182,10 +182,10 @@
             </div>
           </ng-container>
 
-          <!-- No active products configured for this city -->
+          <!-- No active products configured for this pickup area -->
           <div class="no-products" *ngIf="!scopeOptions.length">
             <ion-icon name="car-outline" aria-hidden="true"></ion-icon>
-            <span>No ride options are available here yet. You can still set your destination below.</span>
+            <span>No ride options are available for this pickup area yet. Please change your pickup location or try again later.</span>
           </div>
 
           <!-- Outstation packages — One Way / Round Trip … -->
@@ -200,7 +200,7 @@
           </div>
         </div>
 
-        <div class="sheet-foot">
+        <div class="sheet-foot" *ngIf="scopeOptions.length">
           <button class="where-to-bar dc-press" (click)="goPickup()">
             <ion-icon name="search-outline" class="wt-search" aria-hidden="true"></ion-icon>
             <span class="wt-text">Where to?</span>
@@ -423,7 +423,7 @@
         <small
           *ngIf="offerAmount != null && +offerAmount < minFare"
           class="fare-error"
-        >You can't offer below &#8377;{{ minFare }} — the minimum fare for this route is &#8377;{{ minFare }}.</small>
+        >You can't offer below &#8377;{{ minFare }} — the minimum allowed offer is &#8377;{{ minFare }}.</small>
 
         <small *ngIf="error" class="fare-error">{{ error }}</small>
       </div>
@@ -550,7 +550,7 @@
           <small
             *ngIf="counterOfferAmount != null && +counterOfferAmount < minFare"
             class="fare-error"
-          >You can't offer below &#8377;{{ minFare }} — the minimum fare for this route is &#8377;{{ minFare }}.</small>
+          >You can't offer below &#8377;{{ minFare }} — the minimum allowed offer is &#8377;{{ minFare }}.</small>
 
           <button
             type="button"

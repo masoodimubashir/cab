@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * For outstation routes, origin_city_id / dest_city_id name the endpoints; for
  * local routes they are null (single city_id). Per-seat fare numbers live in the
- * `fare_config` JSON blob (e.g. { seat_fare, min_fare, ... }), mirroring
+ * `fare_config` JSON blob (e.g. { seat_fare, tax_percent, ... }), mirroring
  * outstation_packages, so the rate-card shape can grow without schema churn.
  */
 return new class extends Migration {
@@ -43,7 +43,7 @@ return new class extends Migration {
             $table->unsignedInteger('corridor_buffer_m')->default(300);
             // Default vehicle class run on this route (seat capacity + commission).
             $table->foreignId('city_vehicle_type_id')->nullable()->constrained('city_vehicle_types')->nullOnDelete();
-            $table->json('fare_config')->nullable(); // { seat_fare, min_fare, ... }
+            $table->json('fare_config')->nullable(); // { seat_fare, tax_percent, ... }
             $table->boolean('advance_required')->default(false);
             $table->boolean('board_anywhere')->default(false);
             $table->boolean('is_active')->default(true);

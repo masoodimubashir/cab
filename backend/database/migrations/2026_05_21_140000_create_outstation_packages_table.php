@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('name', 120);
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->boolean('is_active')->default(true);
-            // { base_fare, per_km, per_min, min_fare, threshold_*, ... }
+            // { base_fare, threshold_*, surge_multiplier, tax_percent, ... }
             $table->json('fare_config')->nullable();
             $table->timestamps();
 

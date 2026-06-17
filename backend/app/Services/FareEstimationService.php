@@ -9,13 +9,13 @@ use App\Models\Trip;
 class FareEstimationService
 {
     /**
-     * Cumulative slab math: rate applies only to the segment of distance that
-     * falls inside that slab.
+     * Base fare covers the first distance/time threshold. Distance charges begin
+     * only after threshold_1.
      *
-     * Worked example with threshold_1 = 10 km @ ₹10/km, after_threshold_1 = ₹7/km:
-     *   13 km  → 10×10 + 3×7 = ₹121
+     * Worked example with threshold_1 = 10 km, after_threshold_1 = ₹7/km:
+     *   13 km  → 3×7 = ₹21 distance component, plus base fare
      *   25 km (and threshold_2 = 20 km @ ₹5/km after_2) →
-     *           10×10 + (20-10)×7 + (25-20)×5 = 100 + 70 + 25 = ₹195
+     *           (20-10)×7 + (25-20)×5 = 70 + 25 = ₹95
      */
     public function tieredDistanceFare(
         float $distanceKm,
@@ -26,27 +26,25 @@ class FareEstimationService
         ?float $rateAfterThreshold2
     ): float {
         if ($threshold1Km === null || $threshold1Km <= 0) {
-            return $distanceKm * $baseRatePerKm;
+            return 0.0;
         }
 
-        $tier1Distance = min($distanceKm, $threshold1Km);
         $remainingAfterT1 = max(0.0, $distanceKm - $threshold1Km);
         $tier2Rate = $rateAfterThreshold1 ?? $baseRatePerKm;
 
         if ($threshold2Km === null || $threshold2Km <= $threshold1Km) {
-            return ($tier1Distance * $baseRatePerKm) + ($remainingAfterT1 * $tier2Rate);
+            return $remainingAfterT1 * $tier2Rate;
         }
 
         $tier2Distance = max(0.0, min($distanceKm, $threshold2Km) - $threshold1Km);
         $tier3Distance = max(0.0, $distanceKm - $threshold2Km);
         $tier3Rate = $rateAfterThreshold2 ?? $tier2Rate;
 
-        return ($tier1Distance * $baseRatePerKm)
-            + ($tier2Distance * $tier2Rate)
+        return ($tier2Distance * $tier2Rate)
             + ($tier3Distance * $tier3Rate);
     }
 
-    /** Same cumulative slab logic as tieredDistanceFare, on minutes. */
+    /** Same included-threshold logic as tieredDistanceFare, on minutes. */
     public function tieredTimeFare(
         float $timeMin,
         float $baseRatePerMin,
@@ -56,23 +54,21 @@ class FareEstimationService
         ?float $rateAfterThreshold2
     ): float {
         if ($threshold1Min === null || $threshold1Min <= 0) {
-            return $timeMin * $baseRatePerMin;
+            return 0.0;
         }
 
-        $tier1Time = min($timeMin, $threshold1Min);
         $remainingAfterT1 = max(0.0, $timeMin - $threshold1Min);
         $tier2Rate = $rateAfterThreshold1 ?? $baseRatePerMin;
 
         if ($threshold2Min === null || $threshold2Min <= $threshold1Min) {
-            return ($tier1Time * $baseRatePerMin) + ($remainingAfterT1 * $tier2Rate);
+            return $remainingAfterT1 * $tier2Rate;
         }
 
         $tier2Time = max(0.0, min($timeMin, $threshold2Min) - $threshold1Min);
         $tier3Time = max(0.0, $timeMin - $threshold2Min);
         $tier3Rate = $rateAfterThreshold2 ?? $tier2Rate;
 
-        return ($tier1Time * $baseRatePerMin)
-            + ($tier2Time * $tier2Rate)
+        return ($tier2Time * $tier2Rate)
             + ($tier3Time * $tier3Rate);
     }
 
@@ -238,10 +234,7 @@ class FareEstimationService
         $timeMin = $routeTimeMin ?? max(1.0, ($distanceKm / $avgSpeedKmh) * 60.0);
 
         $baseFare = (float) $pricingRule['base_fare'];
-        $perKm = (float) $pricingRule['per_km'];
-        $perMin = (float) $pricingRule['per_min'];
         $surgeMultiplier = (float) $pricingRule['surge_multiplier'];
-        $minFare = isset($pricingRule['min_fare']) ? (float) $pricingRule['min_fare'] : null;
         // Driver commission no longer lives on pricing_rules — it moved to the
         // CityVehicleType (percent or fixed) and is taken at settlement, not in
         // the rider's estimate. Keep the breakdown key for a stable response
@@ -251,7 +244,7 @@ class FareEstimationService
 
         $distanceComponent = $this->tieredDistanceFare(
             $distanceKm,
-            $perKm,
+            0.0,
             isset($pricingRule['threshold_distance_1_km']) ? (float) $pricingRule['threshold_distance_1_km'] : null,
             isset($pricingRule['fare_per_km_after_threshold_1']) ? (float) $pricingRule['fare_per_km_after_threshold_1'] : null,
             isset($pricingRule['threshold_distance_2_km']) ? (float) $pricingRule['threshold_distance_2_km'] : null,
@@ -260,7 +253,7 @@ class FareEstimationService
 
         $timeComponent = $this->tieredTimeFare(
             $timeMin,
-            $perMin,
+            0.0,
             isset($pricingRule['threshold_time_1_min']) ? (float) $pricingRule['threshold_time_1_min'] : null,
             isset($pricingRule['fare_per_min_after_threshold_time_1']) ? (float) $pricingRule['fare_per_min_after_threshold_time_1'] : null,
             isset($pricingRule['threshold_time_2_min']) ? (float) $pricingRule['threshold_time_2_min'] : null,
@@ -299,10 +292,6 @@ class FareEstimationService
             && !empty($dynamicFactors['name'])
             && abs($regionDelta) > 0.0001;
         $regionFareAmount = $regionVisible ? round($regionDelta, 2) : null;
-
-        if ($minFare !== null && $subtotal < $minFare) {
-            $subtotal = $minFare;
-        }
 
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         // Toll is a pass-through reimbursement to the driver (they pay it at the
@@ -347,14 +336,13 @@ class FareEstimationService
      * A shared seat is priced FLAT from the route's fare_config (`seat_fare`),
      * NOT metered — there is no distance/time component. We charge
      * seat_fare × seats and then run it through the SAME tail as a metered fare
-     * (surge → dynamic factor → min_fare floor → tax) so commission and tax
+     * (surge → dynamic factor → tax) so commission and tax
      * behave identically across every ride type. v1 leaves dynamicFactors null
      * for predictable pricing; pass them to enable an optional fixed-mode
      * demand factor later.
      *
-     * fare_config keys honoured: seat_fare (required), min_fare?,
-     * surge_multiplier? (defaults 1), commission_percent?, tax_percent?.
-     * min_fare acts as a per-booking floor.
+     * fare_config keys honoured: seat_fare (required), surge_multiplier?
+     * (defaults 1), commission_percent?, tax_percent?.
      *
      * @param  array{customer_factor?: float, driver_factor?: float, rule_id?: ?int, fare_type?: ?string}|null  $dynamicFactors
      * @return array{seats:int, seat_fare:float, fare_breakdown:array, estimated_fare:float, commission_percent:float}
@@ -370,7 +358,6 @@ class FareEstimationService
         $surgeMultiplier = isset($fareConfig['surge_multiplier']) && $fareConfig['surge_multiplier'] !== null
             ? (float) $fareConfig['surge_multiplier']
             : 1.0;
-        $minFare = isset($fareConfig['min_fare']) ? (float) $fareConfig['min_fare'] : null;
         $commissionPercent = (float) ($fareConfig['commission_percent'] ?? 0);
         $taxPercent = isset($fareConfig['tax_percent']) ? (float) $fareConfig['tax_percent'] : 0.0;
 
@@ -382,11 +369,6 @@ class FareEstimationService
         $customerFactor = (float) ($dynamicFactors['customer_factor'] ?? ($isFlat ? 0.0 : 1.0));
         $driverFactor = (float) ($dynamicFactors['driver_factor'] ?? ($isFlat ? 0.0 : 1.0));
         $subtotal = $isFlat ? ($subtotal + $customerFactor) : ($subtotal * $customerFactor);
-
-        // Per-booking floor.
-        if ($minFare !== null && $subtotal < $minFare) {
-            $subtotal = $minFare;
-        }
 
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $fare = $subtotal + $taxAmount;
@@ -507,11 +489,10 @@ class FareEstimationService
         $baseFare = (float) ($r['base_fare'] ?? 0);
         $surge = (float) ($r['surge_multiplier'] ?? 1);
         $taxPercent = (float) ($r['tax_percent'] ?? 0);
-        $minFare = isset($r['min_fare']) ? (float) $r['min_fare'] : null;
 
         $distanceComponent = $this->tieredDistanceFare(
             $distanceKm,
-            (float) ($r['per_km'] ?? 0),
+            0.0,
             isset($r['threshold_distance_1_km']) ? (float) $r['threshold_distance_1_km'] : null,
             isset($r['fare_per_km_after_threshold_1']) ? (float) $r['fare_per_km_after_threshold_1'] : null,
             isset($r['threshold_distance_2_km']) ? (float) $r['threshold_distance_2_km'] : null,
@@ -519,7 +500,7 @@ class FareEstimationService
         );
         $timeComponent = $this->tieredTimeFare(
             $timeMin,
-            (float) ($r['per_min'] ?? 0),
+            0.0,
             isset($r['threshold_time_1_min']) ? (float) $r['threshold_time_1_min'] : null,
             isset($r['fare_per_min_after_threshold_time_1']) ? (float) $r['fare_per_min_after_threshold_time_1'] : null,
             isset($r['threshold_time_2_min']) ? (float) $r['threshold_time_2_min'] : null,
@@ -527,9 +508,6 @@ class FareEstimationService
         );
 
         $subtotal = ($baseFare + $distanceComponent + $timeComponent + $waitingCharge) * $surge;
-        if ($minFare !== null && $subtotal < $minFare) {
-            $subtotal = $minFare;
-        }
 
         $taxAmount = $subtotal * ($taxPercent / 100.0);
         $computed = $subtotal + $taxAmount;

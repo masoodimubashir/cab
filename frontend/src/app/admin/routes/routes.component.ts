@@ -48,7 +48,6 @@ interface FormSchedule {
 
 interface FareConfig {
   seat_fare: number | null;
-  min_fare: number | null;
   surge_multiplier: number | null;
   commission_percent: number | null;
   tax_percent: number | null;
@@ -328,7 +327,6 @@ const MODE_OPTIONS: { label: string; value: RouteMode }[] = [
               <input type="number" min="0" step="0.01" [(ngModel)]="form.seat_fare" (ngModelChange)="touched.fare = true" placeholder="150" />
               <span class="field__err" *ngIf="touched.fare && (form.seat_fare == null || form.seat_fare <= 0)">Enter a seat fare.</span>
             </label>
-            <label class="field"><span class="field__lbl">Min fare (₹)</span><input type="number" min="0" step="0.01" [(ngModel)]="form.min_fare" placeholder="floor" /></label>
             <label class="field"><span class="field__lbl">Surge ×</span><input type="number" min="0" step="0.01" [(ngModel)]="form.surge_multiplier" placeholder="1.0" /></label>
             <label class="field"><span class="field__lbl">Commission (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" placeholder="20" /></label>
             <label class="field"><span class="field__lbl">Tax (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.tax_percent" placeholder="0" /></label>
@@ -693,7 +691,7 @@ export class RoutesComponent implements OnInit, OnDestroy {
       origin_city_id: null as number | null, dest_city_id: null as number | null,
       name: '', origin_name: '', origin_lat: null as number | null, origin_lng: null as number | null,
       dest_name: '', dest_lat: null as number | null, dest_lng: null as number | null,
-      seat_fare: null as number | null, min_fare: null as number | null, surge_multiplier: null as number | null,
+      seat_fare: null as number | null, surge_multiplier: null as number | null,
       commission_percent: null as number | null, tax_percent: null as number | null,
       corridor_buffer_m: 300 as number, city_vehicle_type_id: null as number | null,
       advance_required: false, board_anywhere: true, is_active: true, sort_order: 0 as number | null,
@@ -742,7 +740,7 @@ export class RoutesComponent implements OnInit, OnDestroy {
       scope: r.scope, mode: r.mode, origin_city_id: r.origin_city_id, dest_city_id: r.dest_city_id,
       name: r.name, origin_name: r.origin_name, origin_lat: r.origin_lat, origin_lng: r.origin_lng,
       dest_name: r.dest_name, dest_lat: r.dest_lat, dest_lng: r.dest_lng,
-      seat_fare: fc.seat_fare ?? null, min_fare: fc.min_fare ?? null, surge_multiplier: fc.surge_multiplier ?? null,
+      seat_fare: fc.seat_fare ?? null, surge_multiplier: fc.surge_multiplier ?? null,
       commission_percent: fc.commission_percent ?? null, tax_percent: fc.tax_percent ?? null,
       corridor_buffer_m: r.corridor_buffer_m ?? 300, city_vehicle_type_id: r.city_vehicle_type_id,
       advance_required: r.advance_required, board_anywhere: r.board_anywhere, is_active: r.is_active, sort_order: r.sort_order ?? 0,
@@ -1196,7 +1194,7 @@ export class RoutesComponent implements OnInit, OnDestroy {
       path_polyline,
       corridor_buffer_m: f.corridor_buffer_m ?? 300, city_vehicle_type_id: f.city_vehicle_type_id,
       advance_required: f.advance_required, board_anywhere: f.board_anywhere, is_active: f.is_active, sort_order: f.sort_order ?? 0,
-      fare_config: { seat_fare: f.seat_fare, min_fare: f.min_fare, surge_multiplier: f.surge_multiplier, commission_percent: f.commission_percent, tax_percent: f.tax_percent },
+      fare_config: { seat_fare: f.seat_fare, surge_multiplier: f.surge_multiplier, commission_percent: f.commission_percent, tax_percent: f.tax_percent },
       stops, schedules,
     };
 

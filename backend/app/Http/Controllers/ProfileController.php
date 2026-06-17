@@ -20,7 +20,7 @@ class ProfileController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => [
-                'required',
+                'nullable',
                 'email',
                 Rule::unique('users', 'email')->ignore($user->id),
             ],
@@ -44,7 +44,9 @@ class ProfileController extends Controller
         }
 
         $user->name = $data['name'];
-        $user->email = $data['email'];
+        if (array_key_exists('email', $data) && $data['email'] !== null) {
+            $user->email = $data['email'];
+        }
         foreach (['dob', 'address', 'app_version', 'os_version', 'device_type'] as $field) {
             if (array_key_exists($field, $data) && $data[$field] !== null) {
                 $user->{$field} = $data[$field];

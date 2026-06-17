@@ -59,8 +59,8 @@ class DatabaseSeeder extends Seeder
         // saves the Base Pricing tab for each vehicle.
         $pricing = [
             'Sedan' => [
-                'base_fare' => 50, 'per_km' => 10, 'per_min' => 1.5,
-                'surge_multiplier' => 1.0, 'commission_percent' => 20, 'min_fare' => 100,
+                'base_fare' => 50,
+                'surge_multiplier' => 1.0, 'commission_percent' => 20,
                 'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 7,
                 'threshold_distance_2_km' => 20, 'fare_per_km_after_threshold_2' => 5,
                 'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 1.0,
@@ -71,8 +71,8 @@ class DatabaseSeeder extends Seeder
                 'pickup_threshold_distance_km' => 3, 'tax_percent' => 5,
             ],
             'SUV' => [
-                'base_fare' => 80, 'per_km' => 14, 'per_min' => 2.0,
-                'surge_multiplier' => 1.0, 'commission_percent' => 20, 'min_fare' => 150,
+                'base_fare' => 80,
+                'surge_multiplier' => 1.0, 'commission_percent' => 20,
                 'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 10,
                 'threshold_distance_2_km' => 20, 'fare_per_km_after_threshold_2' => 8,
                 'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 1.5,
@@ -80,21 +80,21 @@ class DatabaseSeeder extends Seeder
                 'cancellation_charges' => 50, 'tax_percent' => 5,
             ],
             'Hatchback' => [
-                'base_fare' => 40, 'per_km' => 8, 'per_min' => 1.2,
-                'surge_multiplier' => 1.0, 'commission_percent' => 18, 'min_fare' => 80,
+                'base_fare' => 40,
+                'surge_multiplier' => 1.0, 'commission_percent' => 18,
                 'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 6,
                 'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 0.8,
                 'cancellation_charges' => 20, 'tax_percent' => 5,
             ],
             'Van' => [
-                'base_fare' => 120, 'per_km' => 18, 'per_min' => 2.5,
-                'surge_multiplier' => 1.0, 'commission_percent' => 22, 'min_fare' => 250,
+                'base_fare' => 120,
+                'surge_multiplier' => 1.0, 'commission_percent' => 22,
                 'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 14,
                 'cancellation_charges' => 80, 'tax_percent' => 5,
             ],
             'Motorcycle' => [
-                'base_fare' => 20, 'per_km' => 5, 'per_min' => 0.8,
-                'surge_multiplier' => 1.0, 'commission_percent' => 15, 'min_fare' => 40,
+                'base_fare' => 20,
+                'surge_multiplier' => 1.0, 'commission_percent' => 15,
                 'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 4,
                 'cancellation_charges' => 10, 'tax_percent' => 5,
             ],

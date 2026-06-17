@@ -26,6 +26,7 @@ interface CitySettings {
   customer_login_otp_message_ios: string | null;
 
   allowed_driver_payment_modes: string[];
+  negotiation_floor_percent: number | null;
 
   emergency_no: string | null;
   emergency_police_no: string | null;
@@ -49,6 +50,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
   { id: 'sec-toggles', label: 'Feature toggles', icon: 'bolt' },
   { id: 'sec-messaging', label: 'Customer messaging', icon: 'envelope' },
   { id: 'sec-payment', label: 'Payment', icon: 'tag' },
+  { id: 'sec-negotiation', label: 'Negotiation', icon: 'rupee' },
   { id: 'sec-contacts', label: 'Support contacts', icon: 'phone' },
 ];
 
@@ -157,6 +159,29 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 {{ p.label }}
               </button>
             </div>
+          </div>
+        </section>
+
+        <!-- Negotiation -->
+        <section class="sec" id="sec-negotiation">
+          <header class="sec__head">
+            <span class="sec__icon"><tm-icon name="rupee" [size]="16" /></span>
+            <div>
+              <h3 class="sec__title">Negotiation</h3>
+              <p class="sec__desc">Set how far below the calculated fare offers can go.</p>
+            </div>
+          </header>
+          <div class="sec__body grid grid-2">
+            <label class="field">
+              <span class="field__lbl">Maximum negotiation discount (%)</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                [(ngModel)]="form.negotiation_floor_percent"
+              />
+            </label>
           </div>
         </section>
 
@@ -300,6 +325,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
     /* fields */
     .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
     .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .field__hint { font-size: 11px; color: var(--tm-text-muted); line-height: 1.35; }
     .field input[type=text], .field input[type=number], .field input[type=email], .field textarea {
       width: 100%; padding: 9px 11px;
       border: 1px solid var(--tm-line); border-radius: 9px;
@@ -476,6 +502,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
           if (!Array.isArray(s.allowed_driver_payment_modes)) {
             s.allowed_driver_payment_modes = [];
           }
+          s.negotiation_floor_percent = Number(s.negotiation_floor_percent ?? 10);
           this.form = s;
           this.loading = false;
           this.activeId = NAV[0].id;
@@ -514,6 +541,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       'allowed_driver_payment_modes',
       JSON.stringify(f.allowed_driver_payment_modes ?? []),
     );
+    append('negotiation_floor_percent', f.negotiation_floor_percent ?? 10);
 
     append('emergency_no', f.emergency_no);
     append('emergency_police_no', f.emergency_police_no);
@@ -530,6 +558,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
             if (!Array.isArray(res.settings.allowed_driver_payment_modes)) {
               res.settings.allowed_driver_payment_modes = [];
             }
+            res.settings.negotiation_floor_percent = Number(res.settings.negotiation_floor_percent ?? 10);
             this.form = res.settings;
           }
           this.toast.success('City settings saved');

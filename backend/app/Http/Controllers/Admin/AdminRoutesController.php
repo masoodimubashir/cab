@@ -20,7 +20,7 @@ class AdminRoutesController
 {
     /** Fare fields a route's fare_config may carry. Anything else is dropped. */
     private const FARE_KEYS = [
-        'seat_fare', 'min_fare', 'surge_multiplier', 'commission_percent', 'tax_percent',
+        'seat_fare', 'surge_multiplier', 'commission_percent', 'tax_percent',
     ];
 
     public function index(City $city)

@@ -29,13 +29,10 @@ return new class extends Migration
             $table->foreignId('ride_type_id')->constrained('ride_types')->cascadeOnDelete();
 
             $table->decimal('base_fare', 10, 2)->default(0);
-            $table->decimal('per_km', 10, 2)->default(0);
-            $table->decimal('per_min', 10, 2)->default(0);
             $table->decimal('surge_multiplier', 8, 3)->default(1);
 
             // Driver commission percent (e.g. 20 = driver gets 80%).
             $table->decimal('commission_percent', 5, 2)->default(20);
-            $table->decimal('min_fare', 10, 2)->nullable();
 
             $table->timestamps();
 

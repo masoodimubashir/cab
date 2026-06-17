@@ -41,8 +41,8 @@ interface ModeForm {
  * Ride Products — the catalogue as a two-step tree for the city chosen in the
  * topbar switcher: one panel per scope (Local / Outstation), each with a master
  * switch and the three mode toggles underneath (Private / Fixed / Shuttle).
- * Customers book in the same two steps. Fixed & Shuttle stay off until a
- * matching route is configured.
+ * Customers book in the same two steps. Fixed & Shuttle can be enabled during setup; customers only see them once a
+ * matching active route is configured.
  */
 @Component({
   selector: 'app-general-settings',
@@ -53,7 +53,7 @@ interface ModeForm {
       Ride options offered in this city, grouped the way customers pick them:
       first <strong>Local</strong> or <strong>Outstation</strong>, then
       <strong>Private / Fixed / Shuttle</strong>. Turn a whole scope off with its master
-      switch, or toggle one option. Fixed &amp; Shuttle stay off until a route is configured.
+      switch, or toggle one option. Fixed &amp; Shuttle can be enabled during setup; customers see them after a matching active route is configured.
     </p>
 
     <div class="cue" *ngIf="!cityId">
@@ -374,7 +374,7 @@ export class GeneralSettingsComponent implements OnInit, OnDestroy {
         error: (err) => {
           this.savingMode[m.id] = false;
           // Revert the toggle to the server's actual value so the UI never shows
-          // a state the backend rejected (last bookable / route-gated option).
+          // a state the backend rejected (last bookable option).
           const idx = scope.modes.findIndex((x) => x.id === m.id);
           if (idx >= 0 && this.modeForms[m.id]) {
             this.modeForms[m.id].is_active = !!scope.modes[idx].is_active;

@@ -537,11 +537,12 @@ paths:
               type: object
               properties:
                 base_fare: { type: number }
-                per_km: { type: number }
-                per_min: { type: number }
                 surge_multiplier: { type: number }
                 commission_percent: { type: number }
-                min_fare: { type: number }
+                threshold_distance_1_km: { type: number }
+                fare_per_km_after_threshold_1: { type: number }
+                threshold_time_1_min: { type: number }
+                fare_per_min_after_threshold_time_1: { type: number }
       responses:
         "200":
           description: Updated pricing rule

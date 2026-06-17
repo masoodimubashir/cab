@@ -482,7 +482,7 @@ Named fare structures ("price lists") for outstation rides within a vehicle type
 | name | varchar(120) | No | Package name (e.g., "One Way", "Round Trip") |
 | sort_order | smallint unsigned | No | Display order; defaults to 0 |
 | is_active | tinyint(1) | No | Whether the package is available; defaults to 1 (true) |
-| fare_config | json | Yes | Fare structure JSON (base_fare, per_km, per_min, min_fare, thresholds, etc.) |
+| fare_config | json | Yes | Fare structure JSON (base_fare, thresholds, surge_multiplier, tax_percent, etc.) |
 | created_at | timestamp | Yes | Timestamp when the record was created |
 | updated_at | timestamp | Yes | Timestamp of last modification |
 
@@ -754,19 +754,16 @@ _Stores base fare and surge pricing configurations for each city vehicle, with d
 | city_vehicle_type_id | bigint unsigned | Yes | Foreign key referencing city_vehicle_types; the specific vehicle this rate card is assigned to |
 | vehicle_type_id | bigint unsigned | Yes | Foreign key referencing vehicle_types; global vehicle type (legacy, kept for backward compatibility) |
 | ride_type_id | bigint unsigned | Yes | Foreign key referencing ride_types; product category (legacy, made nullable) |
-| base_fare | decimal(10,2) | No | Minimum fare amount charged at ride start, defaults to 0.00 |
-| per_km | decimal(10,2) | No | Price per kilometer, defaults to 0.00 |
-| per_min | decimal(10,2) | No | Price per minute of ride duration, defaults to 0.00 |
+| base_fare | decimal(10,2) | No | Base charge that covers travel through Threshold 1, defaults to 0.00 |
 | surge_multiplier | decimal(8,3) | No | Multiplier applied during surge (e.g., 1.5 for 50% surge), defaults to 1.000 |
 | commission_percent | decimal(5,2) | No | Percentage of fare retained as operator commission (e.g., 20 means driver gets 80%), defaults to 20.00 |
-| min_fare | decimal(10,2) | Yes | Minimum total fare guaranteed regardless of distance/time |
-| threshold_distance_1_km | decimal(10,2) | Yes | Distance in km at which per_km rate changes for first tier |
+| threshold_distance_1_km | decimal(10,2) | Yes | Distance in km included in base fare before per-km charges begin |
 | fare_per_km_after_threshold_1 | decimal(10,2) | Yes | Price per km after first distance threshold is crossed |
-| threshold_distance_2_km | decimal(10,2) | Yes | Distance in km at which per_km rate changes for second tier |
+| threshold_distance_2_km | decimal(10,2) | Yes | Distance in km at which the second post-threshold distance rate begins |
 | fare_per_km_after_threshold_2 | decimal(10,2) | Yes | Price per km after second distance threshold is crossed |
-| threshold_time_1_min | decimal(10,2) | Yes | Ride duration in minutes at which per_min rate changes for first tier |
+| threshold_time_1_min | decimal(10,2) | Yes | Ride duration in minutes included before per-minute charges begin |
 | fare_per_min_after_threshold_time_1 | decimal(10,2) | Yes | Price per minute after first time threshold is crossed |
-| threshold_time_2_min | decimal(10,2) | Yes | Ride duration in minutes at which per_min rate changes for second tier |
+| threshold_time_2_min | decimal(10,2) | Yes | Ride duration in minutes at which the second post-threshold time rate begins |
 | fare_per_min_after_threshold_time_2 | decimal(10,2) | Yes | Price per minute after second time threshold is crossed |
 | threshold_waiting_time_min | decimal(10,2) | Yes | Minutes after which waiting time charges begin |
 | fare_per_waiting_minute | decimal(10,2) | Yes | Price per minute during driver waiting (after pickup, before start) |

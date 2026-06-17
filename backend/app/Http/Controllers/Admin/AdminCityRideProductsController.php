@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Models\City;
 use App\Models\CityRideMode;
 use App\Models\CityRideScope;
-use App\Models\Route;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -16,10 +15,11 @@ use Illuminate\Support\Facades\Storage;
  * per scope with the three mode switches underneath, and the customer app books
  * in the same two steps.
  *
- * Private is on by default (the existing metered ride); the four shared cells
- * stay inactive until a matching route is configured (feature flag). The city
- * must always keep at least one bookable option (an active mode under an active
- * scope), or the booking screen would render nothing.
+ * Private is on by default (the existing metered ride). Shared modes can be
+ * enabled during setup; the customer product API only exposes them once a
+ * matching active route exists. The city must always keep at least one
+ * bookable option (an active mode under an active scope), or the booking
+ * screen would render nothing.
  */
 class AdminCityRideProductsController
 {
@@ -85,30 +85,12 @@ class AdminCityRideProductsController
             $scope = $mode->rideScope()->first();
 
             $turningOff = array_key_exists('is_active', $data) && !$request->boolean('is_active') && $mode->is_active;
-            $turningOn = array_key_exists('is_active', $data) && $request->boolean('is_active') && !$mode->is_active;
 
             // Invariant: never leave the city with zero bookable options.
             if ($turningOff && $this->bookableCount($city, excludeModeId: $mode->id) === 0) {
                 return response()->json([
                     'message' => 'At least one ride option must stay active for this city.',
                 ], 422);
-            }
-
-            // Feature flag: a shared mode (Fixed / Shuttle) can only go live once an
-            // active route of that scope+mode exists — otherwise the rider would see
-            // an option they can't actually book into.
-            if ($turningOn && in_array($mode->mode, ['fixed', 'shuttle'], true)) {
-                $hasRoute = Route::query()
-                    ->where('city_id', $city->id)
-                    ->where('scope', $scope->scope)
-                    ->where('mode', $mode->mode)
-                    ->where('is_active', true)
-                    ->exists();
-                if (!$hasRoute) {
-                    return response()->json([
-                        'message' => "Add an active {$scope->scope} {$mode->mode} route before enabling this option.",
-                    ], 422);
-                }
             }
 
             if ($request->hasFile('image')) {

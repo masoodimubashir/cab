@@ -6,6 +6,7 @@ use App\Events\FareNegotiationLocked;
 use App\Events\FareNegotiationOfferAdded;
 use App\Jobs\DispatchHopJob;
 use App\Jobs\SendDispatchNotificationsJob;
+use App\Models\CitySetting;
 use App\Models\CityVehicleType;
 use App\Models\DispatcherSetting;
 use App\Models\Driver;
@@ -122,7 +123,7 @@ class FareNegotiationController extends Controller
             // Per-city toggle: hide the driver's make/model from the rider when off.
             'show_vehicle_make_model' => $showVehicleMakeModel,
             'driver_location' => $driverLocation,
-            // Floor + admin-configured +/- step amounts the apps render as buttons.
+            // City-level negotiation floor used by both customer and driver apps.
             'negotiation_config' => $this->negotiationConfig($trip),
         ]);
     }
@@ -138,9 +139,9 @@ class FareNegotiationController extends Controller
             return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
         }
 
-        // Fare floor: the route's minimum fare (min_fare on the pricing rule).
-        // Neither side may offer below it; the apps clamp the +/- buttons to the
-        // same value and this is the server backstop.
+        // City-level negotiation floor. Neither side may offer below it; the
+        // apps clamp the +/- buttons to the same value and this is the server
+        // backstop.
         $minAmount = $this->negotiationConfig($trip)['min_amount'];
 
         $data = $request->validate([
@@ -393,7 +394,7 @@ class FareNegotiationController extends Controller
 
         $amount = (float) $data['amount'];
 
-        // Floor: a driver's price can't drop below the route's minimum fare
+        // Floor: a driver's price can't drop below the negotiation floor
         // (the apps clamp their step buttons to the same value; this is the
         // server backstop).
         $minAmount = $this->negotiationConfig($trip)['min_amount'];
@@ -533,28 +534,26 @@ class FareNegotiationController extends Controller
     }
 
     /**
-     * The one knob the apps need: the minimum offer for this route (the pricing
-     * rule's min_fare). Neither side may offer below it; the apps disable their
-     * send button below it and this is the server backstop.
+     * The one knob the apps need: the minimum offer for this route. Neither
+     * side may offer below it; the apps disable their send button below it and
+     * this is the server backstop.
      *
-     * @return array{min_amount: float}
+     * @return array{min_amount: float, floor_percent: float, estimated_fare: float}
      */
     private function negotiationConfig(Trip $trip): array
     {
-        $minFare = 0.0;
-        if ($trip->city_vehicle_type_id) {
-            $rule = \App\Models\PricingRule::resolveFor((int) $trip->city_vehicle_type_id);
-            if ($rule && isset($rule['min_fare'])) {
-                $minFare = (float) $rule['min_fare'];
-            }
-        }
-        // If a city has no min_fare configured, fall back to a safe floor so a
-        // missing pricing row can't reopen ₹1 spam.
-        if ($minFare <= 0) {
-            $minFare = max(50.0, round(((float) ($trip->estimated_fare ?? 0)) * 0.4, 2));
-        }
+        $estimated = max(0.0, (float) ($trip->estimated_fare ?? 0));
+        $settings = $trip->city_id
+            ? CitySetting::query()->where('city_id', $trip->city_id)->first()
+            : null;
+        $floorPercent = min(100.0, max(0.0, (float) ($settings?->negotiation_floor_percent ?? 10.0)));
+        $minFare = round($estimated * (1 - ($floorPercent / 100)), 2);
 
-        return ['min_amount' => round($minFare, 2)];
+        return [
+            'min_amount' => $minFare,
+            'floor_percent' => round($floorPercent, 2),
+            'estimated_fare' => round($estimated, 2),
+        ];
     }
 }
 

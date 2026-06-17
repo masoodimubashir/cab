@@ -70,17 +70,14 @@
 
       <label class="pf-field">
         <span class="pf-field__label">Email <small>(optional)</small></span>
-        <div class="pf-input pf-input--locked">
-          <input
-            type="email"
-            [(ngModel)]="email"
-            [disabled]="true"
-            readonly
-            autocomplete="email"
-            placeholder="you@example.com"
-          />
-          <ion-icon name="lock-closed-outline"></ion-icon>
-        </div>
+        <input
+          class="pf-input"
+          type="email"
+          [(ngModel)]="email"
+          [disabled]="busy"
+          autocomplete="email"
+          placeholder="you@example.com"
+        />
       </label>
 
       <!-- Onboarding (editable): native date picker + Places autocomplete -->

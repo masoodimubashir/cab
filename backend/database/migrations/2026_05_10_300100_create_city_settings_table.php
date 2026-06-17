@@ -37,8 +37,9 @@ return new class extends Migration {
             $table->text('customer_login_otp_message')->nullable();
             $table->text('customer_login_otp_message_ios')->nullable();
 
-            // Payment / contacts / operator
+            // Payment / negotiation / contacts / operator
             $table->json('allowed_driver_payment_modes')->nullable();
+            $table->decimal('negotiation_floor_percent', 5, 2)->default(10);
             $table->string('emergency_no', 20)->nullable();
             $table->string('emergency_police_no', 20)->nullable();
             $table->string('driver_support_no', 20)->nullable();
