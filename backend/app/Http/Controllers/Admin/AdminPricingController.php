@@ -38,10 +38,7 @@ class AdminPricingController
     {
         $data = $request->validate([
             'base_fare' => ['nullable', 'numeric', 'min:0'],
-            'per_km' => ['nullable', 'numeric', 'min:0'],
-            'per_min' => ['nullable', 'numeric', 'min:0'],
             'surge_multiplier' => ['nullable', 'numeric', 'min:0'],
-            'min_fare' => ['nullable', 'numeric', 'min:0'],
             'threshold_distance_1_km' => ['nullable', 'numeric', 'min:0'],
             'fare_per_km_after_threshold_1' => ['nullable', 'numeric', 'min:0'],
             'threshold_distance_2_km' => ['nullable', 'numeric', 'min:0'],
@@ -67,13 +64,6 @@ class AdminPricingController
             'cancel_subsidy_threshold_minutes' => ['nullable', 'numeric', 'min:0'],
             'cancel_subsidy_threshold_distance_km' => ['nullable', 'numeric', 'min:0'],
         ]);
-
-        // per_min column is NOT NULL — keep 0 when blank.
-        foreach (['per_min'] as $col) {
-            if (array_key_exists($col, $data) && $data[$col] === null) {
-                $data[$col] = 0;
-            }
-        }
 
         $pricingRule->fill($data);
         $pricingRule->save();
@@ -106,10 +96,7 @@ class AdminPricingController
         $data = $request->validate([
             'city_vehicle_type_id' => ['required', 'integer', 'exists:city_vehicle_types,id'],
             'base_fare' => ['required', 'numeric', 'min:0'],
-            'per_km' => ['required', 'numeric', 'min:0'],
-            'per_min' => ['nullable', 'numeric', 'min:0'],
             'surge_multiplier' => ['required', 'numeric', 'min:0'],
-            'min_fare' => ['required', 'numeric', 'min:0'],
             'threshold_distance_1_km' => ['nullable', 'numeric', 'min:0'],
             'fare_per_km_after_threshold_1' => ['nullable', 'numeric', 'min:0'],
             'threshold_distance_2_km' => ['nullable', 'numeric', 'min:0'],
@@ -135,14 +122,6 @@ class AdminPricingController
             'cancel_subsidy_threshold_minutes' => ['nullable', 'numeric', 'min:0'],
             'cancel_subsidy_threshold_distance_km' => ['nullable', 'numeric', 'min:0'],
         ]);
-
-        // per_min is optional on the form, but its column is NOT NULL — fall back
-        // to 0 when the admin leaves it blank.
-        foreach (['per_min'] as $col) {
-            if (array_key_exists($col, $data) && $data[$col] === null) {
-                $data[$col] = 0;
-            }
-        }
 
         // Upsert by the single (city_vehicle_type_id) unique. Denormalise
         // city/ride/vehicle from the row for queries that lean on them.

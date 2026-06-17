@@ -594,7 +594,7 @@ export class RidesPage implements OnInit, OnDestroy {
       .get<{
         trip?: Record<string, unknown>;
         negotiation?: Record<string, unknown>;
-        negotiation_config?: { min_amount?: number };
+        negotiation_config?: { min_amount?: number; floor_percent?: number; estimated_fare?: number };
       }>(
         `/trips/${id}/negotiation`
       )
@@ -606,7 +606,7 @@ export class RidesPage implements OnInit, OnDestroy {
           this.allowCountering = this.readReverseBidding(this.lastTrip);
           this.maybeRefreshManifest();
 
-          // Pull the route's hard fare floor — offers below it are rejected.
+          // Pull the city-configured negotiation floor — offers below it are rejected.
           const cfg = res['negotiation_config'] || {};
           const floor = Number(cfg.min_amount);
           this.minAmount = Number.isFinite(floor) ? floor : 0;

@@ -24,9 +24,6 @@ const FARE_SECTIONS: FareSection[] = [
     title: 'Base fare',
     fields: [
       { key: 'base_fare', label: 'Base fare' },
-      { key: 'min_fare', label: 'Minimum fare' },
-      { key: 'per_km', label: 'Per km' },
-      { key: 'per_min', label: 'Per min' },
     ],
   },
   {
@@ -91,7 +88,7 @@ const FARE_SECTIONS: FareSection[] = [
             <span class="pkg__badge" [class.is-off]="!p.is_active">{{ p.is_active ? 'Active' : 'Inactive' }}</span>
           </div>
           <span class="pkg__summary">
-            Base {{ p.fare_config['base_fare'] ?? '—' }} · {{ p.fare_config['per_km'] ?? '—' }}/km · {{ p.fare_config['per_min'] ?? '—' }}/min
+            Base {{ p.fare_config['base_fare'] ?? '—' }} · after T1 {{ p.fare_config['fare_per_km_after_threshold_1'] ?? '—' }}/km
           </span>
           <div class="pkg__actions">
             <button class="icon-btn" (click)="openEdit(p)" aria-label="Edit"><tm-icon name="edit" [size]="14" /></button>

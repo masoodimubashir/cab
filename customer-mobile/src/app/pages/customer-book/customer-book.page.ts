@@ -142,6 +142,7 @@ export class CustomerBookPage implements OnDestroy {
 
   cities: City[] = [];
   selectedCity: City | null = null;
+  private productsCityId: number | null = null;
 
   /**
    * Ride products are loaded from the `city_ride_products` table — what the
@@ -205,11 +206,10 @@ export class CustomerBookPage implements OnDestroy {
 
   // "Name your own price" — the fare the customer types in for drivers on the
   // price step. Starts EMPTY; the customer types any amount at or above the
-  // route's minimum fare (minFare). The send button stays disabled until a
-  // valid amount is entered.
+  // configured negotiation floor (minFare). The send button stays disabled
+  // until a valid amount is entered.
   offerAmount: number | null = null;
-  // The route's minimum fare (the pricing rule's min_fare). Delivered with the
-  // negotiation config as min_amount; the backend rejects anything below it.
+  // Negotiation floor delivered as min_amount; the backend rejects anything below it.
   minFare = 0;
 
   // Review Ride modal — opened from the preview sheet so the customer can see
@@ -469,31 +469,73 @@ export class CustomerBookPage implements OnDestroy {
     this.api.get<{ data: City[] }>('/pricing/cities').subscribe({
       next: (res) => {
         this.cities = res.data || [];
-        if (!this.selectedCity && this.cities.length) {
-          // Pick the first city by default; we re-resolve once pickup lands
-          // so the right polygon is used for the outstation check.
-          this.selectedCity = this.cities[0];
-        }
+        // Do not pick an arbitrary first city. Ride options must follow the
+        // current pickup/live location, so wait until pickup is known and then
+        // resolve the city from that point.
         this.resolveCityForPickup();
-        if (this.selectedCity) {
-          this.loadRideProducts(this.selectedCity.id);
-        }
       },
-      error: () => (this.cities = []),
+      error: () => {
+        this.cities = [];
+        this.selectedCity = null;
+        this.clearRideProducts();
+        this.productsReady = true;
+        this.maybeFinishHome();
+      },
     });
   }
 
   private resolveCityForPickup(): void {
     if (!this.pickup || !this.cities.length) return;
-    // Prefer the city whose polygon contains the pickup; otherwise keep the
-    // first city. (Hand-edited polygons may be missing for some cities.)
-    const containing = this.cities.find(
-      (c) => c.boundary_polygon && this.pointInPolygon(this.pickup!.lat, this.pickup!.lng, c.boundary_polygon)
-    );
-    if (containing && containing.id !== this.selectedCity?.id) {
-      this.selectedCity = containing;
-      this.loadRideProducts(containing.id);
+
+    const containing = this.cities.find((c) => {
+      const polygon = c.boundary_polygon;
+      return Array.isArray(polygon) && polygon.length >= 3
+        ? this.pointInPolygon(this.pickup!.lat, this.pickup!.lng, polygon)
+        : false;
+    });
+
+    // If no city has a polygon, fall back to the nearest configured city centre.
+    // If at least one polygon exists and pickup is outside all of them, keep the
+    // city unresolved so products stay hidden for an unsupported pickup area.
+    const anyPolygon = this.cities.some((c) => Array.isArray(c.boundary_polygon) && c.boundary_polygon.length >= 3);
+    const resolved = containing ?? (!anyPolygon ? this.nearestCityToPickup() : null);
+
+    if (!resolved) {
+      this.selectedCity = null;
+      this.clearRideProducts();
+      this.productsReady = true;
+      this.maybeFinishHome();
+      return;
     }
+
+    if (resolved.id !== this.selectedCity?.id || resolved.id !== this.productsCityId) {
+      this.selectedCity = resolved;
+      this.productsReady = false;
+      this.clearRideProducts();
+      this.loadRideProducts(resolved.id);
+    }
+  }
+
+  private nearestCityToPickup(): City | null {
+    if (!this.pickup) return null;
+    let best: City | null = null;
+    let bestKm = Number.POSITIVE_INFINITY;
+    for (const city of this.cities) {
+      if (city.center_lat == null || city.center_lng == null) continue;
+      const km = this.distanceKm(this.pickup.lat, this.pickup.lng, Number(city.center_lat), Number(city.center_lng));
+      if (km < bestKm) {
+        bestKm = km;
+        best = city;
+      }
+    }
+    return best;
+  }
+
+  private clearRideProducts(): void {
+    this.productKinds = [];
+    this.scopeOptions = [];
+    this.selectedScope = null;
+    this.productsCityId = null;
   }
 
   /**
@@ -519,6 +561,7 @@ export class CustomerBookPage implements OnDestroy {
       .get<{ data: ApiProduct[]; scopes?: ApiScope[] }>(`/pricing/cities/${cityId}/products`)
       .subscribe({
       next: (res) => {
+        this.productsCityId = cityId;
         const rows = res?.data ?? [];
         this.productKinds = rows.map((p) => ({
           kind: p.kind,
@@ -561,8 +604,7 @@ export class CustomerBookPage implements OnDestroy {
         this.maybeFinishHome();
       },
       error: () => {
-        this.productKinds = [];
-        this.scopeOptions = [];
+        this.clearRideProducts();
         this.productsReady = true;
         this.maybeFinishHome();
       },
@@ -887,6 +929,16 @@ export class CustomerBookPage implements OnDestroy {
     return inside;
   }
 
+  private distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const earthKm = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
+      * Math.sin(dLng / 2) ** 2;
+    return earthKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   /**
    * Check whether the drop point lies inside the resolved city's polygon.
    * If a polygon isn't configured we conservatively treat the destination as
@@ -1014,40 +1066,40 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   // Step 3 → 4 (Ride → Fare). The customer types their own price. The text box
-  // starts EMPTY; minFare is the route's floor (shown near the box). (The route
-  // + estimate were already prepared on the ride step / goRideList.)
-  goOffer(): void {
-    // Seed minFare from the estimate so the floor shows immediately; the real
-    // route floor (min_amount) overwrites it once the negotiation config loads.
-    this.minFare = this.estimate?.estimated_fare
-      ? Math.round((this.estimate.estimated_fare ?? 0) / 5) * 5
-      : 0;
-    // Start with an EMPTY box — the customer names their own price.
+  // starts EMPTY; minFare is filled from the backend negotiation config once we
+  // have a trip id for this route.
+  async goOffer(): Promise<void> {
     this.offerAmount = null;
     this.error = null;
+    this.minFare = 0;
     this.state = 'offer';
-    // Pull the route's true floor (min_amount) so the minimum-fare hint + the
-    // below-floor validation match the backend before the first send.
-    void this.fetchNegotiationConfig();
+    this.loading = true;
+
+    try {
+      if (!this.tripId) {
+        await this.createTrip();
+      }
+      await this.fetchNegotiationConfig();
+    } catch (e: any) {
+      this.error = e?.error?.message || e?.message || null;
+    } finally {
+      this.loading = false;
+    }
   }
 
   /**
    * One-shot read of the route's negotiation config (min_amount) so the
-   * minimum-fare hint + the below-floor validation are correct as soon as the
-   * customer reaches the price step. Needs a trip; discovery creates one.
+   * below-floor validation is correct as soon as the customer reaches the price
+   * step. Needs a trip; discovery creates one.
    */
   private async fetchNegotiationConfig(): Promise<void> {
     if (!this.tripId) return;
-    try {
-      const res = await this.api
-        .get<{
-          negotiation_config?: { min_amount?: number };
-        }>(`/trips/${this.tripId}/negotiation`)
-        .toPromise();
-      this.captureNegotiationConfig(res?.negotiation_config);
-    } catch {
-      // Keep the estimate-derived minFare on failure.
-    }
+    const res = await this.api
+      .get<{
+        negotiation_config?: { min_amount?: number; floor_percent?: number; estimated_fare?: number };
+      }>(`/trips/${this.tripId}/negotiation`)
+      .toPromise();
+    this.captureNegotiationConfig(res?.negotiation_config);
   }
 
   // "Send to drivers" — fire the customer's typed price into the dispatch ring.
@@ -1056,7 +1108,7 @@ export class CustomerBookPage implements OnDestroy {
   async sendOffer(): Promise<void> {
     const amount = Number(this.offerAmount);
     if (!this.offerAmount || amount < this.minFare) {
-      this.error = `You can't offer below ₹${this.minFare} — the minimum fare for this route is ₹${this.minFare}.`;
+      this.error = `You can't offer below ₹${this.minFare} — the minimum allowed offer is ₹${this.minFare}.`;
       return;
     }
     if (!amount || amount <= 0) {
@@ -1153,6 +1205,7 @@ export class CustomerBookPage implements OnDestroy {
     
     this.toQuery = this.drop.address;
     this.pickupQuery = this.pickup.address;
+    this.resolveCityForPickup();
     
     void this.showRouteOnMap();
     if (this.state === 'find-driver') {
@@ -1174,6 +1227,7 @@ export class CustomerBookPage implements OnDestroy {
          };
          this.pickupQuery = detail.description;
          this.pickupError = null;
+         this.resolveCityForPickup();
       } else {
          this.drop = {
            lat: detail.lat,
@@ -1227,6 +1281,7 @@ export class CustomerBookPage implements OnDestroy {
       this.pickup = { lat: p.lat, lng: p.lng, address: p.address };
       this.pickupQuery = p.address;
       this.pickupError = null;
+      this.resolveCityForPickup();
     } else {
       this.drop = { lat: p.lat, lng: p.lng, address: p.address, place_id: undefined };
       this.toQuery = p.address;
@@ -1298,7 +1353,7 @@ export class CustomerBookPage implements OnDestroy {
   onSelectProduct(p: { kind: string; scope: 'local' | 'outstation' | null; mode: 'private' | 'fixed' | 'shuttle' | null }): void {
     const isShared = p.mode === 'fixed' || p.mode === 'shuttle' || p.kind === 'fixed' || p.kind === 'shuttle';
     if (isShared) {
-      const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
+      const cityId = this.selectedCity?.id;
       if (!cityId) return;
       void this.router.navigate(['/shared-book'], {
         queryParams: { city_id: cityId, scope: p.scope ?? '', mode: p.mode ?? p.kind },
@@ -1368,7 +1423,7 @@ export class CustomerBookPage implements OnDestroy {
 
   /** Loads the outstation packages for the current city + ride type. */
   private async loadOutstationPackages(): Promise<void> {
-    const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
+    const cityId = this.selectedCity?.id;
     if (!cityId || this.selectedRideTypeId == null) {
       this.outstationPackages = [];
       this.selectedPackageId = null;
@@ -1575,7 +1630,7 @@ export class CustomerBookPage implements OnDestroy {
 
   private async fetchEstimate(): Promise<void> {
     if (!this.pickup || !this.drop) return;
-    const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
+    const cityId = this.selectedCity?.id;
     if (!cityId) return;
 
     try {
@@ -1650,8 +1705,8 @@ export class CustomerBookPage implements OnDestroy {
 
   private async createTrip(): Promise<void> {
     if (!this.pickup || !this.drop) return;
-    const cityId = this.selectedCity?.id ?? this.cities[0]?.id;
-    if (!cityId) throw new Error('No city configured.');
+    const cityId = this.selectedCity?.id;
+    if (!cityId) throw new Error('Pickup is outside the service area.');
 
     const tripRes = await this.api
       .post<{ trip: { id: number } }>('/trips', {
@@ -2071,7 +2126,7 @@ export class CustomerBookPage implements OnDestroy {
       .get<{
         trip_id: number;
         negotiation: { status: string; final_amount: number; offers: DriverOffer[] };
-        negotiation_config?: { min_amount?: number };
+        negotiation_config?: { min_amount?: number; floor_percent?: number; estimated_fare?: number };
       }>(`/trips/${this.tripId}/negotiation`)
       .subscribe({
         next: (res) => {
@@ -2086,15 +2141,15 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   /**
-   * Pull the route's price floor out of the negotiation response. min_amount is
+   * Pull the negotiation floor out of the negotiation response. min_amount is
    * the true lowest the customer may offer, so it overrides minFare. The empty
    * text box is left untouched — the customer types their own price.
    */
   private captureNegotiationConfig(
-    cfg?: { min_amount?: number } | null
+    cfg?: { min_amount?: number; floor_percent?: number; estimated_fare?: number } | null
   ): void {
     if (!cfg) return;
-    if (typeof cfg.min_amount === 'number' && cfg.min_amount > 0) {
+    if (typeof cfg.min_amount === 'number' && Number.isFinite(cfg.min_amount) && cfg.min_amount >= 0) {
       this.minFare = cfg.min_amount;
     }
   }
@@ -2128,9 +2183,9 @@ export class CustomerBookPage implements OnDestroy {
       this.error = 'Enter a price to send.';
       return;
     }
-    // Backstop for the disabled send button: never send below the route's floor.
+    // Backstop for the disabled send button: never send below the negotiation floor.
     if (this.minFare && amount < this.minFare) {
-      this.error = `You can't offer below ₹${this.minFare} — the minimum fare for this route is ₹${this.minFare}.`;
+      this.error = `You can't offer below ₹${this.minFare} — the minimum allowed offer is ₹${this.minFare}.`;
       return;
     }
     this.counterOfferAmount = null;

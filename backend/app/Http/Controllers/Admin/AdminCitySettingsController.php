@@ -29,6 +29,7 @@ class AdminCitySettingsController
             'customer_login_otp_message_ios' => ['nullable', 'string', 'max:500'],
 
             'allowed_driver_payment_modes' => ['nullable'],
+            'negotiation_floor_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
 
             'emergency_no' => ['nullable', 'string', 'max:20'],
             'emergency_police_no' => ['nullable', 'string', 'max:20'],
@@ -99,6 +100,7 @@ class AdminCitySettingsController
             'customer_login_otp_message_ios' => $s->customer_login_otp_message_ios,
 
             'allowed_driver_payment_modes' => $s->allowed_driver_payment_modes ?? [],
+            'negotiation_floor_percent' => round((float) ($s->negotiation_floor_percent ?? 10), 2),
 
             'emergency_no' => $s->emergency_no,
             'emergency_police_no' => $s->emergency_police_no,

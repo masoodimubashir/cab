@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'customer_login_otp_message',
     'customer_login_otp_message_ios',
     'allowed_driver_payment_modes',
+    'negotiation_floor_percent',
     'emergency_no',
     'emergency_police_no',
     'driver_support_no',
@@ -32,6 +33,7 @@ class CitySetting extends Model
         'show_region_specific_fare' => 'boolean',
         'show_vehicle_make_model' => 'boolean',
         'allowed_driver_payment_modes' => 'array',
+        'negotiation_floor_percent' => 'float',
     ];
 
     protected static function booted(): void

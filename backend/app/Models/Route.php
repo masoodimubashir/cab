@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * A shared-ride route — a Fixed corridor or a Shuttle line — keyed on two axes:
  * scope ∈ {local, outstation} and mode ∈ {fixed, shuttle}. (Private has no
  * route.) Per-seat fare numbers live in the `fare_config` array (seat_fare,
- * min_fare, …).
+ * surge_multiplier, tax_percent, …).
  */
 #[Fillable([
     'city_id', 'origin_city_id', 'dest_city_id', 'scope', 'mode', 'name',

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\User;
 use App\Services\NotificationService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -39,9 +40,19 @@ class SendDispatchNotificationsJob implements ShouldQueue
     ) {
     }
 
-    public function handle(NotificationService $notificationService): void
+    public function handle(): void
     {
         if (empty($this->driverUserIds)) {
+            return;
+        }
+
+        try {
+            $notificationService = app(NotificationService::class);
+        } catch (\Throwable $e) {
+            Log::warning('Dispatch push skipped; Firebase is not configured', [
+                'trip_id' => $this->tripId,
+                'error' => $e->getMessage(),
+            ]);
             return;
         }
 
@@ -52,16 +63,25 @@ class SendDispatchNotificationsJob implements ShouldQueue
             if ($this->paymentMethod && !$driver->acceptsPaymentMethod($this->paymentMethod)) {
                 continue;
             }
-            $notificationService->sendToUser(
-                $driver,
-                'New ride request',
-                $body,
-                [
-                    'type' => 'new_trip',
+
+            try {
+                $notificationService->sendToUser(
+                    $driver,
+                    'New ride request',
+                    $body,
+                    [
+                        'type' => 'new_trip',
+                        'trip_id' => $this->tripId,
+                        'amount' => $this->amount,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Dispatch push failed', [
                     'trip_id' => $this->tripId,
-                    'amount' => $this->amount,
-                ]
-            );
+                    'driver_id' => $driver->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 }

@@ -64,8 +64,9 @@ class PricingController extends Controller
     /**
      * Public catalogue for a city as a two-step tree: scope (Local / Outstation)
      * → mode (Private / Fixed / Shuttle). The customer app shows the scopes first,
-     * then the modes within the chosen one. A scope is only returned if it's
-     * switched on AND has at least one active mode; inactive modes are dropped.
+     * then the modes within the chosen one. A scope is only returned if it's switched on and has at least one
+     * customer-bookable mode. Inactive modes are dropped; active Fixed/Shuttle
+     * modes are also hidden until a matching active route exists.
      *
      * `data` is the flat list of active modes (compat for the current app, which
      * reads scope/mode/kind off a flat list); `scopes` is the grouped tree the
@@ -73,6 +74,13 @@ class PricingController extends Controller
      */
     public function products(City $city)
     {
+        $activeSharedRouteKeys = Route::query()
+            ->where('city_id', $city->id)
+            ->where('is_active', true)
+            ->whereIn('mode', ['fixed', 'shuttle'])
+            ->get(['scope', 'mode'])
+            ->mapWithKeys(fn (Route $route) => [$route->scope . ':' . $route->mode => true]);
+
         $scopes = CityRideScope::query()
             ->where('city_id', $city->id)
             ->where('is_active', true)
@@ -80,6 +88,19 @@ class PricingController extends Controller
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
+            ->map(function (CityRideScope $s) use ($activeSharedRouteKeys) {
+                $s->setRelation('modes', $s->modes
+                    ->filter(function (CityRideMode $m) use ($activeSharedRouteKeys, $s) {
+                        if (!in_array($m->mode, ['fixed', 'shuttle'], true)) {
+                            return true;
+                        }
+
+                        return $activeSharedRouteKeys->has($s->scope . ':' . $m->mode);
+                    })
+                    ->values());
+
+                return $s;
+            })
             ->filter(fn (CityRideScope $s) => $s->modes->isNotEmpty())
             ->values();
 
@@ -249,8 +270,8 @@ class PricingController extends Controller
     /**
      * Per-seat fare quote for a shared (fixed/shuttle) route. The price is flat
      * from the route's fare_config — no metered distance/time — but still runs
-     * through the shared tail (min_fare, tax, commission) so it matches the rest
-     * of the platform.
+     * through the shared tail (tax, commission) so it matches the rest of the
+     * platform.
      */
     public function seatEstimate(
         Request $request,

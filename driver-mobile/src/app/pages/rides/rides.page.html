@@ -309,10 +309,10 @@
           ></ion-input>
         </div>
 
-        <p class="price-hint" *ngIf="allowCountering && minAmount > 0">Minimum for this route: ₹{{ minAmount }}</p>
+        <p class="price-hint" *ngIf="allowCountering && minAmount > 0">Minimum allowed offer: ₹{{ minAmount }}</p>
 
         <p class="price-error" *ngIf="allowCountering && minAmount > 0 && counterAmount != null && counterAmount < minAmount">
-          You can't go below ₹{{ minAmount }} — minimum fare for this route.
+          You can't go below ₹{{ minAmount }} — minimum allowed offer.
         </p>
 
         <p class="price-hint" *ngIf="!allowCountering">Countering isn't available for this vehicle — you can only accept or reject this offer.</p>

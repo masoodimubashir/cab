@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('pricing_rules', function (Blueprint $table) {
-            $table->decimal('threshold_distance_1_km', 10, 2)->nullable()->after('min_fare');
+            $table->decimal('threshold_distance_1_km', 10, 2)->nullable()->after('surge_multiplier');
             $table->decimal('fare_per_km_after_threshold_1', 10, 2)->nullable()->after('threshold_distance_1_km');
             $table->decimal('threshold_distance_2_km', 10, 2)->nullable()->after('fare_per_km_after_threshold_1');
             $table->decimal('fare_per_km_after_threshold_2', 10, 2)->nullable()->after('threshold_distance_2_km');

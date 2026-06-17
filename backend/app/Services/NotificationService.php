@@ -14,18 +14,27 @@ use Kreait\Firebase\Messaging\Notification;
 
 class NotificationService
 {
-    private Messaging $messaging;
+    private ?Messaging $messaging = null;
 
     public function __construct()
     {
         $credentialsPath = env('FIREBASE_CREDENTIALS_PATH');
-        if (!$credentialsPath) {
-            throw new \RuntimeException('Missing FIREBASE_CREDENTIALS_PATH env var.');
+        if (!$credentialsPath || !is_readable($credentialsPath)) {
+            Log::warning('FCM push disabled; FIREBASE_CREDENTIALS_PATH is missing or unreadable.', [
+                'path' => $credentialsPath,
+            ]);
+            return;
         }
 
-        $this->messaging = (new Factory())
-            ->withServiceAccount($credentialsPath)
-            ->createMessaging();
+        try {
+            $this->messaging = (new Factory())
+                ->withServiceAccount($credentialsPath)
+                ->createMessaging();
+        } catch (\Throwable $e) {
+            Log::warning('FCM push disabled; Firebase messaging could not be initialised.', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -36,6 +45,10 @@ class NotificationService
      */
     public function sendToUser(User $user, string $title, string $body, array $data = []): void
     {
+        if (!$this->messaging) {
+            return;
+        }
+
         $tokens = DeviceToken::query()
             ->where('user_id', $user->id)
             ->pluck('token', 'id')
