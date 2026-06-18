@@ -38,6 +38,11 @@ const routes: Routes = [
           import('../pages/scheduled-rides/scheduled-rides.module').then((m) => m.ScheduledRidesPageModule),
       },
       {
+        path: 'fixed',
+        loadChildren: () =>
+          import('../pages/fixed-driver/fixed-driver.module').then((m) => m.FixedDriverPageModule),
+      },
+      {
         path: 'more',
         loadChildren: () => import('../pages/more/more.module').then((m) => m.MorePageModule),
       },

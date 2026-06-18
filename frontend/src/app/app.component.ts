@@ -41,6 +41,7 @@ export class AppComponent implements OnInit {
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
     [/^\/routes/,                   'Routes'],
+    [/^\/fixed-departures/,         'Live Fixed Vehicles'],
     [/^\/departures/,               'Departures'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
@@ -75,6 +76,8 @@ export class AppComponent implements OnInit {
     /^\/subscriptions\b/,
     /^\/routes\b/,
     /^\/departures\b/,
+    /^\/fixed-routes\b/,
+    /^\/fixed-departures\b/,
     /^\/settings\/(city|fleets|vehicle-types)\b/,
   ];
 
@@ -145,6 +148,7 @@ export class AppComponent implements OnInit {
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
     if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Fares', icon: 'car', route: '/vehicle-fares' });
     if (can('routes.manage'))          citySetup.push({ label: 'Routes',        icon: 'road', route: '/routes' });
+    if (can('routes.manage'))          citySetup.push({ label: 'Fixed Routes',  icon: 'road', route: '/fixed-routes' });
     if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (can('coupons.manage')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
@@ -158,6 +162,8 @@ export class AppComponent implements OnInit {
     if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
 
     if (can('reservations.view')) operations.push({ label: 'Departures', icon: 'calendar', route: '/departures' });
+
+    if (can('reservations.view')) operations.push({ label: 'Live Fixed Vehicles', icon: 'calendar', route: '/fixed-departures' });
 
     if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 

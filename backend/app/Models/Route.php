@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'city_id', 'origin_city_id', 'dest_city_id', 'scope', 'mode', 'name',
     'origin_name', 'dest_name', 'origin_lat', 'origin_lng', 'dest_lat', 'dest_lng',
     'path_polyline', 'corridor_buffer_m', 'city_vehicle_type_id', 'fare_config',
+    'booking_window_hours', 'max_seats_per_booking', 'waiting_time_per_stop_minutes',
+    'luggage_surcharge_amount', 'max_luggage_per_vehicle', 'requires_prepaid', 'fixed_settings_json',
     'advance_required', 'board_anywhere', 'is_active', 'sort_order',
 ])]
 class Route extends Model
@@ -31,7 +33,14 @@ class Route extends Model
         'dest_lng' => 'float',
         'path_polyline' => 'array',
         'fare_config' => 'array',
+        'fixed_settings_json' => 'array',
         'corridor_buffer_m' => 'integer',
+        'booking_window_hours' => 'integer',
+        'max_seats_per_booking' => 'integer',
+        'waiting_time_per_stop_minutes' => 'integer',
+        'luggage_surcharge_amount' => 'float',
+        'max_luggage_per_vehicle' => 'integer',
+        'requires_prepaid' => 'boolean',
         'advance_required' => 'boolean',
         'board_anywhere' => 'boolean',
         'is_active' => 'boolean',

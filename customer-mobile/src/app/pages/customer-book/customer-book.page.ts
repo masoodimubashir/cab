@@ -1351,11 +1351,12 @@ export class CustomerBookPage implements OnDestroy {
    * existing metered flow here, untouched.
    */
   onSelectProduct(p: { kind: string; scope: 'local' | 'outstation' | null; mode: 'private' | 'fixed' | 'shuttle' | null }): void {
-    const isShared = p.mode === 'fixed' || p.mode === 'shuttle' || p.kind === 'fixed' || p.kind === 'shuttle';
-    if (isShared) {
+    const isFixed = p.mode === 'fixed' || p.kind === 'fixed';
+    const isShuttle = p.mode === 'shuttle' || p.kind === 'shuttle';
+    if (isFixed || isShuttle) {
       const cityId = this.selectedCity?.id;
       if (!cityId) return;
-      void this.router.navigate(['/shared-book'], {
+      void this.router.navigate([isFixed ? '/fixed-book' : '/shared-book'], {
         queryParams: { city_id: cityId, scope: p.scope ?? '', mode: p.mode ?? p.kind },
       });
       return;

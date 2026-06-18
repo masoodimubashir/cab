@@ -42,6 +42,18 @@
       </ion-card-content>
     </ion-card>
 
+    <ion-card *ngIf="driver && driver['approval_status'] === 'approved'">
+      <ion-card-header>
+        <ion-card-title>Fixed vehicles</ion-card-title>
+      </ion-card-header>
+      <ion-card-content>
+        <ion-button expand="block" routerLink="/fixed-driver">
+          <ion-icon slot="start" name="git-branch-outline"></ion-icon>
+          Open fixed vehicle
+        </ion-button>
+      </ion-card-content>
+    </ion-card>
+
     <div class="online-actions" *ngIf="driver && driver['approval_status'] === 'approved'">
       <ion-button expand="block" color="success" (click)="setOnline(true)" [disabled]="toggling || !!driver['is_online']">
         Go online

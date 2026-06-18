@@ -1,0 +1,154 @@
+<ion-header class="fixed-header">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/dashboard" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Fixed vehicle</ion-title>
+    <ion-buttons slot="end">
+      <ion-button class="refresh-btn" fill="clear" (click)="refresh()" [disabled]="loading || busy">
+        <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="fixed-content">
+  <main class="fixed-shell">
+    <section class="drv-hero fixed-hero">
+      <span class="drv-badge">Live boarding</span>
+      <h1>Open fixed vehicle</h1>
+      <p>Choose the route and start boarding when the car is ready.</p>
+    </section>
+
+    <ion-spinner *ngIf="loading" name="crescent" class="fixed-spinner"></ion-spinner>
+
+    <div class="fixed-alert fixed-alert--error" *ngIf="error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>{{ error }}</span>
+    </div>
+    <div class="fixed-alert fixed-alert--success" *ngIf="message">
+      <ion-icon name="checkmark-circle-outline"></ion-icon>
+      <span>{{ message }}</span>
+    </div>
+
+    <section class="fixed-panel open-panel">
+      <div class="panel-head">
+        <div>
+          <p>Step 1</p>
+          <h2>Boarding setup</h2>
+        </div>
+        <ion-icon name="car-outline"></ion-icon>
+      </div>
+
+      <label class="fixed-field">
+        <span>Fixed route</span>
+        <ion-select [(ngModel)]="selectedRouteId" interface="action-sheet" placeholder="Select route">
+          <ion-select-option *ngFor="let route of routes" [value]="route.id">{{ route.name }}</ion-select-option>
+        </ion-select>
+      </label>
+
+      <div class="route-summary" *ngIf="selectedRoute as route">
+        <div class="route-points">
+          <strong>{{ route.origin_name }}</strong>
+          <ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon>
+          <strong>{{ route.dest_name }}</strong>
+        </div>
+        <div class="route-meta">
+          <span>{{ route.scope }}</span>
+          <span>{{ route.flat_fare != null ? ('INR ' + route.flat_fare) : 'Fare configured' }}</span>
+        </div>
+      </div>
+
+      <label class="fixed-field fixed-field--split is-disabled">
+        <span>Vehicle seats</span>
+        <ion-input type="number" min="1" max="60" inputmode="numeric" [(ngModel)]="capacity" [disabled]="true"></ion-input>
+      </label>
+
+      <button class="dc-cta fixed-primary dc-press" (click)="openVehicle()" [disabled]="busy || !routes.length">
+        <ion-icon name="add-circle-outline"></ion-icon>
+        <span>Open vehicle</span>
+      </button>
+    </section>
+
+    <section class="fixed-panel active-panel" *ngIf="activeVehicle as vehicle">
+      <div class="vehicle-top">
+        <div>
+          <p>{{ vehicle.visible_to_customers ? 'Visible to customers' : 'Hidden from customers' }}</p>
+          <h2>{{ vehicle.route_name }}</h2>
+        </div>
+        <span class="status-pill" [class.status-pill--started]="vehicle.status !== 'FORMING'">{{ vehicle.status }}</span>
+      </div>
+
+      <div class="capacity-row">
+        <div>
+          <strong>{{ vehicle.seats_taken }}</strong>
+          <span>filled</span>
+        </div>
+        <div>
+          <strong>{{ vehicle.seats_remaining }}</strong>
+          <span>left</span>
+        </div>
+        <div>
+          <strong>{{ vehicle.capacity }}</strong>
+          <span>total</span>
+        </div>
+      </div>
+
+      <div class="meter-wrap">
+        <div class="meter-copy">
+          <span>Seat fill</span>
+          <strong>{{ vehicle.seats_taken }} / {{ vehicle.capacity }}</strong>
+        </div>
+        <ion-progress-bar [value]="vehicle.capacity ? vehicle.seats_taken / vehicle.capacity : 0"></ion-progress-bar>
+      </div>
+
+      <div class="action-row">
+        <button class="dc-cta dc-cta--ghost dc-press" (click)="loadManifest(vehicle.id)" [disabled]="busy">
+          <ion-icon name="people-outline"></ion-icon>
+          <span>Passenger list</span>
+        </button>
+        <button class="dc-cta dc-press" (click)="startRide()" [disabled]="busy || !canStart(vehicle)">
+          <ion-icon name="play-outline"></ion-icon>
+          <span>Start ride</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="empty-panel" *ngIf="activeVehicle && !passengers.length && !loading">
+      <ion-icon name="people-outline"></ion-icon>
+      <p>No prepaid passengers in this vehicle yet.</p>
+    </section>
+
+    <section class="passenger-section" *ngIf="passengers.length">
+      <ng-container *ngFor="let group of groupedPassengers">
+        <h2 class="stop-title">{{ group.stop }}</h2>
+        <article class="passenger-card" *ngFor="let passenger of group.passengers">
+          <div class="passenger-head">
+            <div>
+              <strong>{{ passenger.customer_name || 'Passenger' }}</strong>
+              <p>{{ passenger.customer_phone || 'No phone' }}</p>
+            </div>
+            <ion-badge [color]="passenger.status === 'BOARDED' ? 'success' : passenger.status === 'NO_SHOW' ? 'danger' : 'warning'">{{ passenger.status }}</ion-badge>
+          </div>
+
+          <div class="trip-line">
+            <span>{{ passenger.board }}</span>
+            <ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon>
+            <span>{{ passenger.drop }}</span>
+          </div>
+
+          <div class="meta-line">
+            <span>{{ passenger.seats }} seat{{ passenger.seats > 1 ? 's' : '' }}</span>
+            <span>{{ passenger.payment_status || 'payment' }}</span>
+            <span *ngIf="passenger.fare_amount != null">INR {{ passenger.fare_amount }}</span>
+          </div>
+
+          <div class="passenger-actions">
+            <button class="dc-cta dc-press" (click)="board(passenger)" [disabled]="busy || !canMarkPassenger(passenger)">Board</button>
+            <button class="dc-cta dc-cta--ghost dc-press" (click)="noShow(passenger)" [disabled]="busy || !canMarkPassenger(passenger)">No-show</button>
+          </div>
+        </article>
+      </ng-container>
+    </section>
+  </main>
+</ion-content>

@@ -8,9 +8,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * An ordered named stop on a shuttle route.
+ * An ordered named stop on a shared route. Shuttle uses stops today; fixed will
+ * begin using the same structure as the new module rolls out.
  */
-#[Fillable(['route_id', 'seq', 'name', 'lat', 'lng', 'is_pickup', 'is_drop'])]
+#[Fillable([
+    'route_id', 'seq', 'name', 'lat', 'lng', 'is_pickup', 'is_drop',
+    'is_active', 'is_temporarily_unavailable', 'unavailable_reason',
+])]
 class RouteStop extends Model
 {
     use HasFactory;
@@ -21,6 +25,8 @@ class RouteStop extends Model
         'lng' => 'float',
         'is_pickup' => 'boolean',
         'is_drop' => 'boolean',
+        'is_active' => 'boolean',
+        'is_temporarily_unavailable' => 'boolean',
     ];
 
     public function route(): BelongsTo

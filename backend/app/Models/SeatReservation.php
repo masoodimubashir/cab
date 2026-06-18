@@ -17,7 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'board_stop_id', 'board_lat', 'board_lng', 'board_address',
     'drop_stop_id', 'drop_lat', 'drop_lng', 'drop_address',
     'fare_amount', 'commission_percent', 'commission_amount',
-    'payment_method', 'status', 'rating_score', 'rating_comment',
+    'payment_method', 'payment_status', 'has_extra_luggage', 'extra_luggage_count', 'luggage_surcharge_amount',
+    'refund_status', 'status', 'rating_score', 'rating_comment',
     'boarded_at', 'dropped_at', 'cancelled_at',
 ])]
 class SeatReservation extends Model
@@ -38,6 +39,9 @@ class SeatReservation extends Model
         'fare_amount' => 'float',
         'commission_percent' => 'float',
         'commission_amount' => 'float',
+        'has_extra_luggage' => 'boolean',
+        'extra_luggage_count' => 'integer',
+        'luggage_surcharge_amount' => 'float',
         'rating_score' => 'integer',
         'boarded_at' => 'datetime',
         'dropped_at' => 'datetime',

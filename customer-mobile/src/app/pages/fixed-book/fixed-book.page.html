@@ -1,0 +1,179 @@
+<ion-content class="fb-content" [scrollY]="false">
+  <div class="fb-backdrop">
+    <div class="fb-topbar">
+      <button type="button" class="fb-back dc-press" (click)="back()" aria-label="Back">
+        <ion-icon name="chevron-back-outline"></ion-icon>
+      </button>
+      <span class="fb-topbar__title">{{ selectedRoute?.name || title }}</span>
+    </div>
+
+    <div class="fb-route-hero" *ngIf="selectedRoute; else heroEmpty">
+      <span class="fb-badge">{{ scopeLabel }}</span>
+      <h1>{{ selectedRoute.origin_name }}</h1>
+      <div class="fb-line" aria-hidden="true">
+        <span></span><i></i><span></span>
+      </div>
+      <h2>{{ selectedRoute.dest_name }}</h2>
+      <p>Flat fare · ₹{{ selectedRoute.flat_fare | number: '1.0-0' }} per seat</p>
+    </div>
+
+    <ng-template #heroEmpty>
+      <div class="fb-hero">
+        <div class="fb-hero__badge"><ion-icon name="git-branch-outline"></ion-icon></div>
+        <div class="fb-hero__text">
+          <span class="fb-hero__title">{{ title }}</span>
+          <span class="fb-hero__sub">Prepaid shared routes with fixed stops</span>
+        </div>
+      </div>
+    </ng-template>
+  </div>
+
+  <div class="bottom-sheet">
+    <div class="sheet-pane" *ngIf="loading">
+      <div class="sheet-body center">
+        <ion-spinner name="crescent"></ion-spinner>
+      </div>
+    </div>
+
+    <div class="sheet-pane" *ngIf="step === 'routes' && !loading">
+      <div class="sheet-head">
+        <h3 class="sheet-title">Choose a fixed route</h3>
+      </div>
+      <div class="sheet-body">
+        <div class="fb-empty" *ngIf="!routes.length">
+          <ion-icon name="git-branch-outline"></ion-icon>
+          <p>{{ error || 'No ' + scopeLabel.toLowerCase() + ' fixed routes are available yet.' }}</p>
+        </div>
+
+        <button type="button" class="fb-card dc-press" *ngFor="let r of routes" (click)="pickRoute(r)">
+          <div class="fb-card__main">
+            <span class="fb-card__title">{{ r.name }}</span>
+            <span class="fb-card__sub">{{ r.origin_name }} → {{ r.dest_name }}</span>
+          </div>
+          <div class="fb-card__right">
+            <span class="fb-fare">₹{{ r.flat_fare | number: '1.0-0' }}<small>/seat</small></span>
+            <ion-icon name="chevron-forward-outline"></ion-icon>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div class="sheet-pane" *ngIf="step === 'vehicles' && !loading">
+      <div class="sheet-head">
+        <h3 class="sheet-title">Choose a boarding vehicle</h3>
+      </div>
+      <div class="sheet-body">
+        <div class="fb-empty" *ngIf="!departures.length">
+          <ion-icon name="car-outline"></ion-icon>
+          <p>No fixed vehicle is boarding right now.</p>
+        </div>
+
+        <div class="fb-full" *ngIf="fullStateText">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span>{{ fullStateText }}</span>
+        </div>
+
+        <button type="button" class="fb-card dc-press" *ngFor="let d of departures" [disabled]="d.seats_remaining <= 0" (click)="pickDeparture(d)">
+          <div class="fb-card__main">
+            <span class="fb-card__title">{{ departureTime(d) }}</span>
+            <span class="fb-card__sub">{{ d.seats_taken }} of {{ d.capacity }} seats filled · {{ d.luggage_remaining }} luggage left</span>
+          </div>
+          <div class="fb-card__right">
+            <span class="fb-seat" [class.full]="d.seats_remaining <= 0">{{ d.seats_remaining }} left</span>
+            <ion-icon name="chevron-forward-outline"></ion-icon>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div class="sheet-pane" *ngIf="step === 'details' && !loading">
+      <div class="sheet-head">
+        <h3 class="sheet-title">Stops &amp; seats</h3>
+      </div>
+      <div class="sheet-body">
+        <div class="fb-summary" *ngIf="selectedDeparture">
+          <ion-icon name="car-outline"></ion-icon>
+          <span>Vehicle boarding now</span>
+        </div>
+
+        <label class="fb-field">
+          <span class="fb-label">Board at</span>
+          <ion-select [(ngModel)]="boardStopId" interface="action-sheet" placeholder="Pick stop">
+            <ion-select-option *ngFor="let s of pickupStops" [value]="s.id">{{ s.name }}</ion-select-option>
+          </ion-select>
+        </label>
+
+        <label class="fb-field">
+          <span class="fb-label">Drop at</span>
+          <ion-select [(ngModel)]="dropStopId" interface="action-sheet" placeholder="Pick stop">
+            <ion-select-option *ngFor="let s of dropStops" [value]="s.id">{{ s.name }}</ion-select-option>
+          </ion-select>
+        </label>
+
+        <div class="fb-unavailable" *ngIf="unavailableStops.length">
+          <ion-icon name="remove-circle-outline"></ion-icon>
+          <span>{{ unavailableStops.length }} stop{{ unavailableStops.length > 1 ? 's are' : ' is' }} currently unavailable.</span>
+        </div>
+
+        <div class="fb-field fb-seats">
+          <span class="fb-label">Seats</span>
+          <div class="fb-stepper">
+            <ion-button fill="clear" size="small" (click)="setSeats(seats - 1)" [disabled]="seats <= 1">
+              <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
+            </ion-button>
+            <span class="fb-seats__n">{{ seats }}</span>
+            <ion-button fill="clear" size="small" (click)="setSeats(seats + 1)" [disabled]="seats >= maxSeats">
+              <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
+            </ion-button>
+          </div>
+        </div>
+
+        <div class="fb-field fb-luggage" [class.disabled]="!luggageAvailable">
+          <div class="fb-luggage__label">
+            <span class="fb-label">Extra luggage</span>
+            <small>{{ extraLuggageCount }} of {{ maxLuggage }} selected</small>
+          </div>
+          <div class="fb-stepper">
+            <ion-button fill="clear" size="small" (click)="setExtraLuggage(extraLuggageCount - 1)" [disabled]="extraLuggageCount <= 0">
+              <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
+            </ion-button>
+            <span class="fb-seats__n">{{ extraLuggageCount }}</span>
+            <ion-button fill="clear" size="small" (click)="setExtraLuggage(extraLuggageCount + 1)" [disabled]="extraLuggageCount >= maxLuggage">
+              <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
+            </ion-button>
+          </div>
+        </div>
+
+        <div class="fb-payments">
+          <button type="button" class="fb-pay dc-press" [class.on]="paymentMethod === 'wallet'" (click)="paymentMethod = 'wallet'">
+            <ion-icon name="wallet-outline"></ion-icon><span>Wallet</span>
+          </button>
+          <button type="button" class="fb-pay dc-press" [class.on]="paymentMethod === 'razorpay'" (click)="paymentMethod = 'razorpay'">
+            <ion-icon name="card-outline"></ion-icon><span>Razorpay</span>
+          </button>
+        </div>
+
+        <div class="fb-total"><span>Total prepaid</span><strong>₹{{ fareTotal | number: '1.0-2' }}</strong></div>
+      </div>
+
+      <div class="sheet-foot">
+        <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="confirm()">
+          {{ booking ? 'Confirming…' : 'Confirm & pay ₹' + (fareTotal | number: '1.0-2') }}
+        </button>
+      </div>
+    </div>
+
+    <div class="sheet-pane" *ngIf="step === 'done'">
+      <div class="sheet-body center">
+        <div class="fb-done">
+          <div class="fb-done__badge"><ion-icon name="checkmark-circle"></ion-icon></div>
+          <h2>Fixed booking confirmed</h2>
+          <p>{{ confirmation?.seats || seats }} seat{{ (confirmation?.seats || seats) > 1 ? 's' : '' }} on {{ selectedRoute?.name }} from {{ stopName(boardStopId) }} to {{ stopName(dropStopId) }}.</p>
+        </div>
+      </div>
+      <div class="sheet-foot">
+        <button type="button" class="fb-cta dc-press" (click)="done()">View trips</button>
+      </div>
+    </div>
+  </div>
+</ion-content>

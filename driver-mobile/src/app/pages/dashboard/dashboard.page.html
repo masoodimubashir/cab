@@ -123,6 +123,33 @@
             </div>
           </div>
 
+          <div class="drive-mode" *ngIf="!driveMode">
+            <div class="drive-mode__head">
+              <strong>Choose ride type</strong>
+              <span>Step 2 after going online</span>
+            </div>
+            <div class="drive-mode__grid">
+              <button class="drive-choice dc-press" (click)="choosePrivateRides()">
+                <ion-icon name="car-outline"></ion-icon>
+                <strong>Private rides</strong>
+                <span>Receive normal ride requests</span>
+              </button>
+              <button class="drive-choice dc-press" (click)="chooseFixedVehicle()">
+                <ion-icon name="git-branch-outline"></ion-icon>
+                <strong>Fixed vehicle</strong>
+                <span>Open a live fixed route car</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="drive-mode drive-mode--selected" *ngIf="driveMode === 'private'">
+            <div>
+              <strong>Private rides selected</strong>
+              <span>You are available for normal ride requests.</span>
+            </div>
+            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()">Change</button>
+          </div>
+
           <button class="dc-cta dc-cta--ghost sheet__stop dc-press" (click)="confirmGoOffline()" [disabled]="toggling">
             <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
             <ion-icon name="stop-circle-outline" *ngIf="!toggling"></ion-icon>
