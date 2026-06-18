@@ -14,6 +14,30 @@ The goal is to keep one clear reference that developers, product owners, and fut
 
 ---
 
+## Start Here - Current Resume Summary
+
+Last updated: 2026-06-18
+
+Use this section first when resuming work. The detailed history is kept below, but the current state is:
+
+- Phase 1 and Phase 2 are complete. Schema/model preparation and fixed backend skeleton are in place.
+- Phase 3 and Phase 4 have implementation work recorded, but they must be rechecked because payment, cancellation, refund handling, and inventory return are not yet reliable enough for QA.
+- Phase 5, Phase 6, and Phase 7 have core admin/customer/driver UI implemented, but build verification and device QA are still pending.
+- Phase 8 should not start as plain testing only. First fix the critical behavior listed in `Resume Note Before Starting Phase 8`, then test it.
+- Phase 9 is rollout and cleanup only. Do not disable the old corridor-style fixed flow until the new fixed flow is stable and verified.
+
+Critical next work:
+
+1. Fix the payment flow.
+2. Complete Razorpay and wallet cancellation/refund handling.
+3. Return seat and luggage availability correctly after cancelled, no-show, expired, or released bookings.
+4. Make started rides bookable from later admin-defined stops when seats are still available.
+5. Add stop-aware availability so passed stops are blocked but upcoming stops can still accept bookings.
+6. Run admin, customer mobile, and driver mobile build/device QA.
+7. Add backend, feature, and concurrency tests.
+
+---
+
 ## 1. Purpose
 
 The current `fixed` implementation in the project is corridor-based and does not match the final agreed business logic for the Fixed Route Module.
@@ -519,14 +543,17 @@ Driver:
 - [x] Implement fixed availability logic
 - [x] Implement fixed departure selection logic
 - [x] Implement seat hold logic
-- [x] Implement payment confirmation logic
+- [x] Implement initial payment confirmation logic
 - [x] Implement race-safe seat locking
+- [ ] Recheck and fix payment confirmation flow because payment is currently not working reliably
 
 ### Phase 4 - Refund and cancellation
 
 - [x] Implement 30-minute refund cutoff
 - [x] Implement no-show handling
-- [x] Implement full refund for route/driver/platform cancellation
+- [x] Implement initial full refund logic for route/driver/platform cancellation
+- [ ] Complete Razorpay and wallet cancellation/refund behavior end to end
+- [ ] Return seat and luggage availability correctly after cancellation, no-show, hold expiry, or released booking
 
 ### Phase 5 - Admin UI
 
@@ -557,6 +584,36 @@ Driver:
 - [ ] Build wait reminder handling
 - [ ] Complete driver mobile build/device QA
 
+### Resume Note Before Starting Phase 8
+
+Start from this point next time.
+
+Important confirmed behavior:
+
+- `Start Ride` must not globally stop all new fixed bookings.
+- A customer must still be able to book from any upcoming admin-defined stop after the ride has started, as long as seats are available.
+- Booking must only be blocked for stops that are already passed, unavailable, closed for pickup, or invalid for that live vehicle.
+- Pickup and drop must both be limited to admin-defined fixed stops. No ad-hoc map pins or random roadside pickup/drop for the final fixed module.
+- Availability must be stop-aware, not only vehicle-status-aware.
+- Driver `board`, `drop`, `no-show`, `cancel`, and stop-passed handling need to be designed together so seat inventory, customer visibility, refunds, and manifest state stay correct.
+- Payment is not working yet and must be fixed before this flow is considered ready.
+- Cancellation must be completed properly for both Razorpay and wallet payments.
+- When a booking is cancelled, no-showed, expired, or otherwise released, the seat and luggage counts must be returned correctly to the live vehicle so the driver/manifest and later customers see accurate availability.
+- Refund, cancellation, seat release, and driver-visible seat count updates must be handled as one flow, not as separate disconnected updates.
+
+Parameters and policies to review before coding/testing this part:
+
+- how the system knows the current stop or last passed stop
+- whether the driver manually marks stop arrival/departure or GPS assists it
+- when a later stop should close for new bookings
+- how no-show is marked per customer and whether no-show seats remain chargeable
+- how customer cancellation behaves after the vehicle has started but before the customer pickup stop
+- how platform/driver cancellation works for one customer vs the whole live vehicle
+- whether a dropped/no-show/cancelled passenger frees a seat for later stops
+- how luggage capacity is counted when passengers board/drop at different stops
+
+This must be verified in Phase 8 with at least one case where the driver starts the ride, the first stop is passed, and a second customer can still book from a later stop if seats are available.
+
 ### Phase 8 - Testing and QA
 
 - [ ] Add backend unit tests
@@ -582,6 +639,7 @@ Driver:
 - `IN PROGRESS`
 - `PENDING`
 - `BLOCKED`
+- `RECHECK REQUIRED`
 
 ### Current status
 
@@ -594,8 +652,8 @@ Driver:
 | Tracker document | DONE | This file created |
 | Database implementation | DONE | Phase 1 schema and route-side model updates completed on 2026-06-17 |
 | Backend services | DONE | Phase 2 fixed backend skeleton created on 2026-06-17 |
-| Core booking engine | DONE | Phase 3 fixed hold and booking confirmation logic completed on 2026-06-17 |
-| Refund and cancellation | DONE | Phase 4 fixed cancellation and refund policy logic completed on 2026-06-17 |
+| Core booking engine | RECHECK REQUIRED | Phase 3 implementation exists, but payment confirmation must be rechecked/fixed before QA |
+| Refund and cancellation | RECHECK REQUIRED | Phase 4 implementation exists, but Razorpay/wallet cancellation, refunds, and inventory return must be verified/fixed |
 | Admin UI | IN PROGRESS | Phase 5 fixed routes and departures admin UI is functionally implemented; optional assignment/cancel controls and final UI QA remain |
 | Customer UI | IN PROGRESS | Phase 6 route, live vehicle, stop, seat, luggage, and prepaid booking flow implemented on 2026-06-18; mobile build/device QA remains |
 | Driver UI | IN PROGRESS | Core open vehicle, live status, passenger list, start ride, board, and no-show flow implemented on 2026-06-18; wait reminder handling and device QA remain |
@@ -785,8 +843,6 @@ Area:
 Work done:
 - Implemented customer cancellation flow for fixed bookings
 - Implemented 30-minute refund cutoff handling
-- Implemented wallet refund processing for refundable fixed cancellations
-- Implemented Razorpay refund state handling as approved/pending manual processing
 - Implemented fixed no-show handling with no refund
 
 Files touched:
@@ -796,7 +852,6 @@ Files touched:
 - FIXED_MODULE_TRACKER.md
 
 Notes / blockers:
-- Automated Razorpay refund execution is not implemented yet; refundable Razorpay cancellations are marked approved and pending processing
 - Driver boarding/start-departure flows still belong to later phases
 
 ---
@@ -805,7 +860,17 @@ Notes / blockers:
 
 These items remain after the latest admin, customer, and driver fixed-module implementation pass.
 
-- implement automated Razorpay refund execution for refundable fixed cancellations
+Critical correctness items:
+
+- fix payment flow before treating fixed booking as ready
+- complete Razorpay and wallet cancellation/refund handling
+- return seat and luggage counts correctly after cancellation, no-show, hold expiry, or released booking
+- keep driver manifest, live vehicle seat count, and later customer availability in sync
+- allow booking from upcoming admin-defined stops after `Start Ride` when seats are still available
+- block booking only for passed, unavailable, closed, or invalid stops
+
+Admin/customer/driver completion items:
+
 - add optional driver assignment to admin live fixed vehicle create/edit flow
 - add optional vehicle assignment to admin live fixed vehicle create/edit flow
 - add optional admin cancel/close/delete controls for fixed routes and live fixed vehicles where product requires them
@@ -820,13 +885,11 @@ These items remain after the latest admin, customer, and driver fixed-module imp
 - complete rollout and client-ready switchover
 
 Notes:
-- wallet refund logic is already implemented
 - no-show backend handling is already implemented
 - driver open/start/board/no-show flow is already implemented
 - admin fixed route/departure UI is already implemented
 - customer fixed route/live vehicle/seat/luggage booking UI is already implemented
-- Razorpay refundable cancellations are currently marked approved/pending, but not auto-refunded through the gateway
-
+- payment and cancellation flows are not ready until the critical correctness items above are fixed and verified
 
 ---
 
