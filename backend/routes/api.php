@@ -14,6 +14,9 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
 use App\Http\Controllers\SharedRidesController;
+use App\Http\Controllers\FixedRoutesController;
+use App\Http\Controllers\FixedBookingsController;
+use App\Http\Controllers\FixedDriverController;
 use App\Http\Controllers\DriverManifestController;
 use App\Http\Controllers\FareNegotiationController;
 use App\Http\Controllers\DriversController;
@@ -52,6 +55,8 @@ use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminOutstationPackagesController;
 use App\Http\Controllers\Admin\AdminRoutesController;
 use App\Http\Controllers\Admin\AdminRouteDeparturesController;
+use App\Http\Controllers\Admin\AdminFixedRoutesController;
+use App\Http\Controllers\Admin\AdminFixedDeparturesController;
 use App\Http\Controllers\Admin\AdminCouponsController;
 use App\Http\Controllers\Admin\AdminPermissionsController;
 use App\Http\Controllers\Admin\AdminManagerRolesController;
@@ -470,3 +475,32 @@ Route::middleware('auth:sanctum')->get('/operator/driver-payment-modes', [Operat
 
 Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayWebhook'])->middleware('throttle:webhooks');
 
+
+// Fixed Route Module — dedicated endpoints, kept separate from legacy shared routes.
+Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
+    Route::get('/fixed/routes', [FixedRoutesController::class, 'index']);
+    Route::get('/fixed/routes/{route}/departures', [FixedRoutesController::class, 'departures']);
+    Route::post('/fixed/seat-holds', [FixedBookingsController::class, 'storeSeatHold'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/fixed/seat-holds/{fixedSeatHold}/confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldPayment'])->middleware(['throttle:booking', 'idempotent']);
+    Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
+    Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
+});
+
+Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
+    Route::get('/fixed/driver/routes', [FixedDriverController::class, 'routes']);
+    Route::get('/fixed/driver/vehicles', [FixedDriverController::class, 'vehicles']);
+    Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
+    Route::get('/fixed/departures/{departure}/manifest', [FixedDriverController::class, 'manifest']);
+    Route::post('/fixed/departures/{departure}/start', [FixedDriverController::class, 'start']);
+    Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
+    Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin', 'manager.city'])->group(function () {
+    Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
+    Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
+    Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
+    Route::get('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'index']);
+    Route::post('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'store']);
+    Route::patch('/admin/cities/{city}/fixed-departures/{departure}', [AdminFixedDeparturesController::class, 'update']);
+});

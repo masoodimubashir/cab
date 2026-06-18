@@ -14,12 +14,18 @@ export class SplashPage implements OnInit {
     private router: Router
   ) {}
 
+  private homeRouteForCurrentUser(): string {
+    const user = this.auth.getUser();
+    const roles = new Set([user?.role, ...(user?.roles ?? [])].filter(Boolean));
+    return roles.has('driver') ? '/tabs/dashboard' : '/customer-tabs/book';
+  }
+
   ngOnInit() {
     // Beautiful immersive delay to show the cinematic entrance animation,
     // and then route the session securely.
     setTimeout(() => {
       if (this.auth.isLoggedIn()) {
-        void this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+        void this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
       } else {
         void this.router.navigateByUrl('/welcome', { replaceUrl: true });
       }

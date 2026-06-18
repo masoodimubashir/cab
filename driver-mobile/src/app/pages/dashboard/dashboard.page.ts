@@ -105,6 +105,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   onlineElapsed = '00:00';
   private onlineSince: number | null = null;
   private onlineTimer: ReturnType<typeof setInterval> | null = null;
+  driveMode: 'private' | 'fixed' | null = null;
 
   /** Destinations the drawer exposes — everything the tab bar used to reach. */
   readonly navGroups: NavGroup[] = [
@@ -336,6 +337,19 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.router.navigateByUrl(path);
   }
 
+  choosePrivateRides(): void {
+    this.driveMode = 'private';
+  }
+
+  chooseFixedVehicle(): void {
+    this.driveMode = 'fixed';
+    this.navTo('/tabs/fixed');
+  }
+
+  resetDriveMode(): void {
+    this.driveMode = null;
+  }
+
   async confirmGoOffline(): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: 'Go offline?',
@@ -434,7 +448,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           } else {
             void this.stopVisualWatch();
           }
-          this.startOnlineTimer();
+          this.driveMode = null;
+      this.startOnlineTimer();
         } else {
           this.stopOnlineTimer();
         }
@@ -724,7 +739,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
       await new Promise<void>((resolve, reject) => {
         this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-online', {}).subscribe({
-          next: (res) => { this.driver = res.driver; resolve(); },
+          next: (res) => { this.driver = res.driver; this.driveMode = null; resolve(); },
           // Hand the raw HttpErrorResponse through so the catch can read the
           // structured low-wallet-balance payload, not just a message string.
           error: (err) => reject(err),
@@ -790,6 +805,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         });
       });
       await this.presence.stop();
+      this.driveMode = null;
       this.stopOnlineTimer();
       // Keep showing the driver where they are — take the watch back ourselves.
       await this.startVisualWatch();

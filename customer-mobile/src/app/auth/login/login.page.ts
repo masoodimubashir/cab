@@ -169,7 +169,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
 
   ionViewWillEnter(): void {
     if (this.auth.isLoggedIn()) {
-      this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+      this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
     }
   }
 
@@ -355,7 +355,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     } else if (this.step === 'info') {
       void this.submitInfo();
     } else if (this.step === 'success') {
-      void this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+      void this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
     }
   }
 
@@ -523,7 +523,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         // taps the address field, the SDK is usually already in memory.
         void this.places.ensureLoaded().catch(() => {});
       } else {
-        this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+        this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
       }
     } catch (e) {
       this.error = mapFirebaseAuthError(e) || 'Invalid code. Try again or request a new OTP.';
@@ -646,6 +646,15 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
+
+  private homeRouteForCurrentUser(): string {
+    return this.homeRouteForUser(this.auth.getUser());
+  }
+
+  private homeRouteForUser(user: AuthUser | null | undefined): string {
+    const roles = new Set([user?.role, ...(user?.roles ?? [])].filter(Boolean));
+    return roles.has('driver') ? '/tabs/dashboard' : '/customer-tabs/book';
+  }
 
   private isSyntheticEmail(email?: string | null): boolean {
     return !email || email.endsWith('@otp.local');

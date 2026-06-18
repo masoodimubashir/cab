@@ -15,7 +15,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 #[Fillable([
     'route_id', 'route_schedule_id', 'trip_id', 'driver_id', 'city_vehicle_type_id',
-    'service_date', 'depart_at', 'capacity', 'seats_taken', 'status',
+    'service_date', 'departure_kind', 'depart_at', 'announced_depart_at',
+    'actual_depart_at', 'boarding_opened_at', 'boarding_closed_at',
+    'visible_to_customers', 'wait_reminder_sent_at', 'capacity', 'seats_taken',
+    'luggage_capacity', 'luggage_taken', 'status',
 ])]
 class RouteDeparture extends Model
 {
@@ -24,8 +27,16 @@ class RouteDeparture extends Model
     protected $casts = [
         'service_date' => 'date',
         'depart_at' => 'datetime',
+        'announced_depart_at' => 'datetime',
+        'actual_depart_at' => 'datetime',
+        'boarding_opened_at' => 'datetime',
+        'boarding_closed_at' => 'datetime',
+        'visible_to_customers' => 'boolean',
+        'wait_reminder_sent_at' => 'datetime',
         'capacity' => 'integer',
         'seats_taken' => 'integer',
+        'luggage_capacity' => 'integer',
+        'luggage_taken' => 'integer',
     ];
 
     public function route(): BelongsTo
@@ -56,6 +67,11 @@ class RouteDeparture extends Model
     public function seatReservations(): HasMany
     {
         return $this->hasMany(SeatReservation::class);
+    }
+
+    public function fixedSeatHolds(): HasMany
+    {
+        return $this->hasMany(FixedSeatHold::class);
     }
 
     /** Seats still available on this run. */

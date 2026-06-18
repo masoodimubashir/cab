@@ -1,0 +1,62 @@
+ion-card {
+  margin-bottom: 1rem;
+}
+
+.route-summary,
+.seat-meter,
+.passenger-head,
+.trip-line,
+.meta-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.route-summary {
+  flex-wrap: wrap;
+  padding: 0.85rem 0.25rem 0.35rem;
+  color: var(--ion-color-medium-shade, #555);
+}
+
+.route-summary span,
+.meta-line,
+.passenger-head p,
+.hint {
+  color: var(--ion-color-medium-shade, #666);
+}
+
+.seat-meter {
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.manifest-list {
+  background: transparent;
+}
+
+.passenger-card {
+  margin: 0 0 0.85rem;
+}
+
+.passenger-head {
+  justify-content: space-between;
+}
+
+.passenger-head p {
+  margin: 0.25rem 0 0;
+}
+
+.trip-line {
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.meta-line {
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+ion-button {
+  margin-inline: 0;
+}
