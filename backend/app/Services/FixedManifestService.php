@@ -7,7 +7,10 @@ use App\Models\SeatReservation;
 
 class FixedManifestService
 {
-    public function __construct(private readonly FixedAvailabilityService $availability) {}
+    public function __construct(
+        private readonly FixedAvailabilityService $availability,
+        private readonly FixedBookingService $bookings,
+    ) {}
 
     public function manifest(RouteDeparture $departure): array
     {
@@ -26,6 +29,9 @@ class FixedManifestService
                 'customer_phone' => $reservation->customer?->phone,
                 'seats' => (int) $reservation->seats,
                 'status' => $reservation->status,
+                'fixed_live_status' => $this->bookings->fixedLiveStatus($reservation),
+                'refund_status' => $reservation->refund_status,
+                'fixed_auto_outcome' => $reservation->fixed_auto_outcome,
                 'payment_status' => $reservation->payment_status,
                 'fare_amount' => $reservation->fare_amount !== null ? (float) $reservation->fare_amount : null,
                 'board' => $reservation->board_stop_id ? $reservation->boardStop?->name : $reservation->board_address,

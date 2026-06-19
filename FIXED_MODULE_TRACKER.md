@@ -21,16 +21,16 @@ Last updated: 2026-06-18
 Use this section first when resuming work. The detailed history is kept below, but the current state is:
 
 - Phase 1 and Phase 2 are complete. Schema/model preparation and fixed backend skeleton are in place.
-- Phase 3 and Phase 4 have implementation work recorded, but they must be rechecked because payment, cancellation, refund handling, and inventory return are not yet reliable enough for QA.
+- Phase 3 and Phase 4 are implemented and covered by focused backend feature tests. Phase 3 still needs one manual Razorpay test-key checkout from the customer app before QA sign-off.
 - Phase 5, Phase 6, and Phase 7 have core admin/customer/driver UI implemented, but build verification and device QA are still pending.
 - Phase 8 should not start as plain testing only. First fix the critical behavior listed in `Resume Note Before Starting Phase 8`, then test it.
 - Phase 9 is rollout and cleanup only. Do not disable the old corridor-style fixed flow until the new fixed flow is stable and verified.
 
 Critical next work:
 
-1. Fix the payment flow.
-2. Complete Razorpay and wallet cancellation/refund handling.
-3. Return seat and luggage availability correctly after cancelled, no-show, expired, or released bookings.
+1. Perform one manual Razorpay test-key checkout from the customer fixed booking screen.
+2. Start stop-aware live booking work so started rides can accept customers from upcoming admin-defined stops while blocking passed stops.
+3. Run admin, customer mobile, and driver mobile build/device QA.
 4. Make started rides bookable from later admin-defined stops when seats are still available.
 5. Add stop-aware availability so passed stops are blocked but upcoming stops can still accept bookings.
 6. Run admin, customer mobile, and driver mobile build/device QA.
@@ -545,15 +545,18 @@ Driver:
 - [x] Implement seat hold logic
 - [x] Implement initial payment confirmation logic
 - [x] Implement race-safe seat locking
-- [ ] Recheck and fix payment confirmation flow because payment is currently not working reliably
+- [x] Recheck and fix payment confirmation flow because payment is currently not working reliably
+  - 2026-06-19: Fixed booking payment was changed to Razorpay-only. Wallet payment during fixed booking was removed. Backend now creates a Razorpay order for the fixed seat hold and confirms booking only after Razorpay signature verification. Added Phase 3 feature tests for successful confirmation, invalid signature rejection, expired hold rejection, and active-hold capacity locking. Phase 3 feature tests now run against a separate MySQL `cab_test` database and pass. Still needs one real test-key checkout verification from the app.
 
 ### Phase 4 - Refund and cancellation
 
 - [x] Implement 30-minute refund cutoff
 - [x] Implement no-show handling
 - [x] Implement initial full refund logic for route/driver/platform cancellation
-- [ ] Complete Razorpay and wallet cancellation/refund behavior end to end
-- [ ] Return seat and luggage availability correctly after cancellation, no-show, hold expiry, or released booking
+- [x] Complete Razorpay cancellation/refund behavior end to end
+- [x] Keep legacy wallet refund handling so old fixed bookings do not break
+- [x] Return seat and luggage availability correctly after cancellation, no-show, hold expiry, or released booking
+  - 2026-06-19: New fixed bookings are Razorpay-only. Eligible customer cancellations now create a Razorpay refund from the stored booking payment reference. Late customer cancellation and driver no-show reject refunds. Cancellation and no-show release seat/luggage capacity once. Razorpay refund failures leave the booking cancelled with refund approved/pending for manual follow-up. Added Phase 4 feature tests on MySQL `cab_test` for early refund, late cancellation, refund failure, no-show, and double-cancel protection.
 
 ### Phase 5 - Admin UI
 
@@ -652,12 +655,12 @@ This must be verified in Phase 8 with at least one case where the driver starts 
 | Tracker document | DONE | This file created |
 | Database implementation | DONE | Phase 1 schema and route-side model updates completed on 2026-06-17 |
 | Backend services | DONE | Phase 2 fixed backend skeleton created on 2026-06-17 |
-| Core booking engine | RECHECK REQUIRED | Phase 3 implementation exists, but payment confirmation must be rechecked/fixed before QA |
-| Refund and cancellation | RECHECK REQUIRED | Phase 4 implementation exists, but Razorpay/wallet cancellation, refunds, and inventory return must be verified/fixed |
+| Core booking engine | DONE | Phase 3 Razorpay-only booking flow is implemented and covered by feature tests; one manual test-key checkout remains before QA sign-off |
+| Refund and cancellation | DONE | Phase 4 Razorpay refund, late cancellation, no-show, capacity return, and double-cancel protection are implemented and covered by feature tests |
 | Admin UI | IN PROGRESS | Phase 5 fixed routes and departures admin UI is functionally implemented; optional assignment/cancel controls and final UI QA remain |
 | Customer UI | IN PROGRESS | Phase 6 route, live vehicle, stop, seat, luggage, and prepaid booking flow implemented on 2026-06-18; mobile build/device QA remains |
 | Driver UI | IN PROGRESS | Core open vehicle, live status, passenger list, start ride, board, and no-show flow implemented on 2026-06-18; wait reminder handling and device QA remain |
-| Tests | PENDING | Not started |
+| Tests | IN PROGRESS | Focused Phase 3 and Phase 4 backend feature tests pass on separate MySQL `cab_test`; broader module/device QA remains |
 
 ---
 
@@ -1081,3 +1084,114 @@ Work done:
 Notes / blockers:
 
 - Builds were attempted during implementation but were interrupted, so final build verification is still pending.
+
+#### 2026-06-19 - Phase 3 Payment Recheck
+
+Area:
+- Fixed booking payment flow
+
+Work done:
+- Confirmed the previous fixed booking Razorpay flow did not actually open Razorpay Checkout. It accepted a client-made `mobile-*` payment reference and could mark the booking paid without a real Razorpay payment.
+- Removed wallet payment from the fixed customer booking flow.
+- Added fixed seat hold Razorpay order creation.
+- Added Razorpay signature verification before fixed booking confirmation.
+- Customer fixed booking now creates a seat hold, opens Razorpay Checkout, then confirms the hold using the real Razorpay payment id, order id, and signature.
+
+Files touched:
+- backend/app/Http/Controllers/FixedBookingsController.php
+- backend/app/Services/FixedSeatHoldService.php
+- backend/app/Models/FixedSeatHold.php
+- backend/routes/api.php
+- backend/database/migrations/2026_06_19_100000_add_razorpay_fields_to_fixed_seat_holds_table.php
+- customer-mobile/src/app/pages/fixed-book/fixed-book.page.ts
+- customer-mobile/src/app/pages/fixed-book/fixed-book.page.html
+- FIXED_MODULE_TRACKER.md
+
+Verification:
+- PHP syntax checks passed for changed backend files.
+- Laravel fixed routes loaded and the new fixed Razorpay order endpoint is registered.
+- Customer mobile `npm run build` passed.
+
+Still left:
+- Migration status shows the new fixed Razorpay fields migration has already run locally.
+- Perform one real Razorpay test-key checkout from the customer fixed booking screen.
+- Confirm the booking is created only after successful Razorpay payment verification.
+
+#### 2026-06-19 - Phase 3 Core Booking Test Coverage
+
+Area:
+- Fixed booking engine verification
+
+Work done:
+- Added `FixedBookingPhase3Test` for the fixed seat hold and Razorpay confirmation flow.
+- Covered successful Razorpay order + signature confirmation creating a paid fixed reservation.
+- Covered invalid Razorpay signature rejection without creating a booking or taking inventory.
+- Covered expired hold rejection before Razorpay order/booking confirmation.
+- Covered active seat holds reserving capacity until expiry.
+
+Files touched:
+- backend/tests/Feature/FixedBookingPhase3Test.php
+- FIXED_MODULE_TRACKER.md
+
+Verification:
+- New test file PHP syntax check passed.
+- Phase 3 service PHP syntax check passed.
+- Switched PHPUnit from SQLite `:memory:` to a separate MySQL `cab_test` database so tests do not touch the real `cab_db` database.
+- Ran `php artisan test --filter=FixedBookingPhase3Test`: 4 tests passed, 38 assertions.
+
+Still left:
+- Perform one real Razorpay test-key checkout from the customer fixed booking screen.
+
+#### 2026-06-19 - Phase 3 MySQL Test Run
+
+Area:
+- Fixed booking Phase 3 verification
+
+Work done:
+- Created/used separate MySQL test database `cab_test` so test refreshes do not wipe the real `cab_db` database.
+- Updated `phpunit.xml` to use MySQL `cab_test` instead of SQLite `:memory:` because this PHP install does not have `pdo_sqlite` enabled.
+- Fixed expired fixed seat holds so expiry status persists before the order/confirmation request is rejected.
+- Updated Phase 3 tests to use the required Sanctum `act-as:customer` token ability.
+
+Verification:
+- `php artisan test --filter=FixedBookingPhase3Test` passed.
+- Result: 4 tests, 38 assertions.
+
+Still left:
+- Perform one manual Razorpay test-key checkout from the customer fixed booking screen.
+
+#### 2026-06-19 - Phase 4 Refund and Cancellation
+
+Area:
+- Fixed booking cancellation, refund, no-show, and inventory return
+
+Work done:
+- Added payment and refund reference fields on `seat_reservations` so fixed bookings keep their Razorpay payment/refund audit data on the booking record.
+- Copied the Razorpay payment id from fixed seat hold confirmation into the created reservation.
+- Added Razorpay refund creation for eligible fixed cancellations more than 30 minutes before departure.
+- Kept legacy wallet refund handling for older fixed bookings, but new fixed customer booking remains Razorpay-only.
+- Late customer cancellation now rejects refund but still releases seat/luggage capacity.
+- Driver no-show now rejects refund and releases seat/luggage capacity.
+- Refund API failure now cancels the booking, releases capacity, and leaves refund status approved/pending for manual follow-up.
+- Prevented cancelled bookings from being cancelled again and releasing capacity twice.
+
+Files touched:
+- backend/app/Services/FixedRefundService.php
+- backend/app/Services/RazorpayService.php
+- backend/app/Services/FixedSeatHoldService.php
+- backend/app/Models/SeatReservation.php
+- backend/database/migrations/2026_06_19_110000_add_fixed_payment_references_to_seat_reservations_table.php
+- backend/tests/Feature/FixedBookingPhase4Test.php
+- FIXED_MODULE_TRACKER.md
+
+Verification:
+- PHP syntax checks passed for changed backend files and the new Phase 4 test file.
+- `php artisan test --filter=FixedBookingPhase4Test` passed on MySQL `cab_test`.
+- Result: 5 tests, 38 assertions.
+- Re-ran `php artisan test --filter=FixedBookingPhase3Test` after the Phase 4 changes.
+- Result: 4 tests, 38 assertions.
+
+Still left:
+- Run one manual Razorpay test-key checkout from the customer app.
+- Start stop-aware live booking work for started fixed rides and upcoming admin-defined stops.
+

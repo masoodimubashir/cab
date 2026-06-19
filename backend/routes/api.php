@@ -481,7 +481,9 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/routes', [FixedRoutesController::class, 'index']);
     Route::get('/fixed/routes/{route}/departures', [FixedRoutesController::class, 'departures']);
     Route::post('/fixed/seat-holds', [FixedBookingsController::class, 'storeSeatHold'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/fixed/seat-holds/{fixedSeatHold}/razorpay-order', [FixedBookingsController::class, 'createSeatHoldRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldPayment'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/fixed/seat-holds/{fixedSeatHold}/test-confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldTestPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
 });
@@ -492,7 +494,9 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
     Route::get('/fixed/departures/{departure}/manifest', [FixedDriverController::class, 'manifest']);
     Route::post('/fixed/departures/{departure}/start', [FixedDriverController::class, 'start']);
+    Route::post('/fixed/departures/{departure}/complete', [FixedDriverController::class, 'complete']);
     Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
+    Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
 });
 
@@ -501,6 +505,9 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city'])->group(functio
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
     Route::get('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'index']);
+    Route::get('/admin/cities/{city}/fixed-bookings', [AdminFixedDeparturesController::class, 'bookings']);
+    Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
+    Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-departures/{departure}', [AdminFixedDeparturesController::class, 'update']);
 });

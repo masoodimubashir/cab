@@ -7,11 +7,13 @@ use App\Models\City;
 use App\Models\FixedSeatHold;
 use App\Models\Route;
 use App\Models\RouteDeparture;
+use App\Models\RouteStop;
+use App\Models\SeatReservation;
 use Illuminate\Database\Eloquent\Builder;
 
 class FixedAvailabilityService
 {
-    private const CLOSED_DEPARTURE_STATUSES = ['DISPATCHED', 'DEPARTED', 'COMPLETED', 'CANCELLED'];
+    private const CLOSED_DEPARTURE_STATUSES = ['COMPLETED', 'CANCELLED'];
 
     public function assertFixedRoute(Route $route): void
     {
@@ -63,7 +65,9 @@ class FixedAvailabilityService
             ->whereNotIn('status', self::CLOSED_DEPARTURE_STATUSES)
             ->whereDate('service_date', now()->toDateString())
             ->where(function ($q) {
-                $q->whereNull('depart_at')->orWhere('depart_at', '>=', now());
+                $q->whereNull('depart_at')
+                  ->orWhere('depart_at', '>=', now())
+                  ->orWhereIn('status', ['DISPATCHED', 'DEPARTED']);
             })
             ->orderBy('service_date')
             ->orderBy('depart_at')
@@ -96,6 +100,35 @@ class FixedAvailabilityService
         return max(0, (int) $departure->capacity - (int) $departure->seats_taken - $this->seatsHeld($departure, $excludeHoldId));
     }
 
+
+    public function firstBookableStopSeq(RouteDeparture $departure): int
+    {
+        return max(1, ((int) ($departure->fixed_last_reached_stop_seq ?? 0)) + 1);
+    }
+
+    public function assertFutureBoardingStop(RouteDeparture $departure, RouteStop $boardStop): void
+    {
+        if ((int) $boardStop->seq < $this->firstBookableStopSeq($departure)) {
+            throw new ReservationException("This pickup stop has already been passed by the vehicle.", 422);
+        }
+    }
+
+    public function seatsRemainingForSegment(RouteDeparture $departure, RouteStop $boardStop, RouteStop $dropStop, ?int $excludeHoldId = null): int
+    {
+        $occupied = $this->reservedSeatsForSegment($departure, $boardStop, $dropStop)
+            + $this->heldSeatsForSegment($departure, $boardStop, $dropStop, $excludeHoldId);
+
+        return max(0, (int) $departure->capacity - $occupied);
+    }
+
+    public function luggageRemainingForSegment(RouteDeparture $departure, RouteStop $boardStop, RouteStop $dropStop, ?int $excludeHoldId = null): int
+    {
+        $occupied = $this->reservedLuggageForSegment($departure, $boardStop, $dropStop)
+            + $this->heldLuggageForSegment($departure, $boardStop, $dropStop, $excludeHoldId);
+
+        return max(0, (int) $departure->luggage_capacity - $occupied);
+    }
+
     public function luggageHeld(RouteDeparture $departure, ?int $excludeHoldId = null): int
     {
         $query = FixedSeatHold::query()
@@ -113,6 +146,67 @@ class FixedAvailabilityService
     public function luggageRemaining(RouteDeparture $departure, ?int $excludeHoldId = null): int
     {
         return max(0, (int) $departure->luggage_capacity - (int) $departure->luggage_taken - $this->luggageHeld($departure, $excludeHoldId));
+    }
+
+
+    private function reservedSeatsForSegment(RouteDeparture $departure, RouteStop $boardStop, RouteStop $dropStop): int
+    {
+        return (int) SeatReservation::query()
+            ->join("route_stops as board_stops", "board_stops.id", "=", "seat_reservations.board_stop_id")
+            ->join("route_stops as drop_stops", "drop_stops.id", "=", "seat_reservations.drop_stop_id")
+            ->where("seat_reservations.route_departure_id", $departure->id)
+            ->whereIn("seat_reservations.status", SeatReservation::ACTIVE_STATUSES)
+            ->where("board_stops.seq", "<", (int) $dropStop->seq)
+            ->where("drop_stops.seq", ">", (int) $boardStop->seq)
+            ->sum("seat_reservations.seats");
+    }
+
+    private function reservedLuggageForSegment(RouteDeparture $departure, RouteStop $boardStop, RouteStop $dropStop): int
+    {
+        return (int) SeatReservation::query()
+            ->join("route_stops as board_stops", "board_stops.id", "=", "seat_reservations.board_stop_id")
+            ->join("route_stops as drop_stops", "drop_stops.id", "=", "seat_reservations.drop_stop_id")
+            ->where("seat_reservations.route_departure_id", $departure->id)
+            ->whereIn("seat_reservations.status", SeatReservation::ACTIVE_STATUSES)
+            ->where("board_stops.seq", "<", (int) $dropStop->seq)
+            ->where("drop_stops.seq", ">", (int) $boardStop->seq)
+            ->sum("seat_reservations.extra_luggage_count");
+    }
+
+    private function heldSeatsForSegment(RouteDeparture $departure, RouteStop $boardStop, RouteStop $dropStop, ?int $excludeHoldId = null): int
+    {
+        $query = FixedSeatHold::query()
+            ->join("route_stops as board_stops", "board_stops.id", "=", "fixed_seat_holds.board_stop_id")
+            ->join("route_stops as drop_stops", "drop_stops.id", "=", "fixed_seat_holds.drop_stop_id")
+            ->where("fixed_seat_holds.route_departure_id", $departure->id)
+            ->where("fixed_seat_holds.status", "HELD")
+            ->where("fixed_seat_holds.expires_at", ">", now())
+            ->where("board_stops.seq", "<", (int) $dropStop->seq)
+            ->where("drop_stops.seq", ">", (int) $boardStop->seq);
+
+        if ($excludeHoldId !== null) {
+            $query->where("fixed_seat_holds.id", "!=", $excludeHoldId);
+        }
+
+        return (int) $query->sum("fixed_seat_holds.seats");
+    }
+
+    private function heldLuggageForSegment(RouteDeparture $departure, RouteStop $boardStop, RouteStop $dropStop, ?int $excludeHoldId = null): int
+    {
+        $query = FixedSeatHold::query()
+            ->join("route_stops as board_stops", "board_stops.id", "=", "fixed_seat_holds.board_stop_id")
+            ->join("route_stops as drop_stops", "drop_stops.id", "=", "fixed_seat_holds.drop_stop_id")
+            ->where("fixed_seat_holds.route_departure_id", $departure->id)
+            ->where("fixed_seat_holds.status", "HELD")
+            ->where("fixed_seat_holds.expires_at", ">", now())
+            ->where("board_stops.seq", "<", (int) $dropStop->seq)
+            ->where("drop_stops.seq", ">", (int) $boardStop->seq);
+
+        if ($excludeHoldId !== null) {
+            $query->where("fixed_seat_holds.id", "!=", $excludeHoldId);
+        }
+
+        return (int) $query->sum("fixed_seat_holds.extra_luggage_count");
     }
 
     public function expireHoldIfNeeded(FixedSeatHold $hold): FixedSeatHold

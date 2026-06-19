@@ -35,6 +35,13 @@ return [
         ],
     ],
 
+    'razorpay' => [
+        'key_id' => env('RAZORPAY_KEY_ID'),
+        'key_secret' => env('RAZORPAY_KEY_SECRET'),
+        'webhook_secret' => env('RAZORPAY_WEBHOOK_SECRET', ''),
+        'currency' => env('RAZORPAY_CURRENCY', 'INR'),
+    ],
+
     // MSG91 SMS gateway (login OTP). Leave MSG91_AUTH_KEY blank to run in MOCK
     // mode: no SMS is sent — the code is logged + returned in the API response
     // so you can test the whole flow. Fill the keys to send real SMS.

@@ -47,6 +47,15 @@ interface DepartureRow {
   visible_to_customers: boolean;
 }
 
+interface PassengerLiveStatus {
+  key: string;
+  label: string;
+  detail: string;
+  tone: string;
+  refund_status?: string | null;
+  auto_outcome?: string | null;
+}
+
 interface Passenger {
   id: number;
   customer_name: string | null;
@@ -54,9 +63,58 @@ interface Passenger {
   seats: number;
   booking_channel: string;
   status: string;
+  fixed_live_status?: PassengerLiveStatus | null;
+  refund_status?: string | null;
+  fixed_auto_outcome?: string | null;
   fare_amount: number | null;
   board: string | null;
   drop: string | null;
+}
+
+interface FixedSupportBooking {
+  id: number;
+  route_name?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  driver_name?: string | null;
+  driver_phone?: string | null;
+  board?: string | null;
+  drop?: string | null;
+  seats: number;
+  status: string;
+  departure_status?: string | null;
+  payment_method?: string | null;
+  payment_status?: string | null;
+  payment_reference?: string | null;
+  refund_status?: string | null;
+  refund_reference?: string | null;
+  refund_amount?: number | null;
+  fixed_auto_outcome?: string | null;
+  fixed_live_status?: PassengerLiveStatus | null;
+  fare_amount?: number | null;
+  created_at?: string | null;
+}
+
+interface FixedSupportEvent {
+  id: number;
+  event_type: string;
+  title: string;
+  detail?: string | null;
+  actor_name?: string | null;
+  created_at?: string | null;
+}
+
+interface FixedSupportNote {
+  id: number;
+  note: string;
+  admin_name?: string | null;
+  created_at?: string | null;
+}
+
+interface FixedSupportTimeline {
+  booking: FixedSupportBooking;
+  events: FixedSupportEvent[];
+  notes: FixedSupportNote[];
 }
 
 const STATUS_OPTIONS = [
@@ -65,6 +123,29 @@ const STATUS_OPTIONS = [
   { label: 'Departed', value: 'DEPARTED' },
   { label: 'Completed', value: 'COMPLETED' },
   { label: 'Cancelled', value: 'CANCELLED' },
+];
+
+const BOOKING_STATUS_OPTIONS = [
+  { label: 'Booked', value: 'BOOKED' },
+  { label: 'Confirmed', value: 'CONFIRMED' },
+  { label: 'Boarded', value: 'BOARDED' },
+  { label: 'Dropped', value: 'DROPPED' },
+  { label: 'No-show', value: 'NO_SHOW' },
+  { label: 'Cancelled', value: 'CANCELLED' },
+];
+
+const PAYMENT_STATUS_OPTIONS = [
+  { label: 'Paid', value: 'PAID' },
+  { label: 'Refunded', value: 'REFUNDED' },
+  { label: 'Pending', value: 'PENDING' },
+  { label: 'Failed', value: 'FAILED' },
+];
+
+const REFUND_STATUS_OPTIONS = [
+  { label: 'None', value: 'NONE' },
+  { label: 'Approved', value: 'APPROVED' },
+  { label: 'Refunded', value: 'REFUNDED' },
+  { label: 'Rejected', value: 'REJECTED' },
 ];
 
 @Component({
@@ -160,6 +241,72 @@ const STATUS_OPTIONS = [
             </ng-template>
           </tm-column>
         </tm-data-table>
+
+        <section class="support-panel">
+          <div class="support-head">
+            <div>
+              <h2>Fixed booking support</h2>
+              <p>Search customer bookings by customer, phone, route, stop, payment, refund or live status.</p>
+            </div>
+            <tm-button variant="ghost" icon="refresh" (clicked)="fetchBookings()">Refresh</tm-button>
+          </div>
+
+          <div class="support-filters">
+            <label class="support-search">
+              <span>Search</span>
+              <input [(ngModel)]="supportQuery" type="search" placeholder="Customer, phone, stop, route or payment ref" (keyup.enter)="onSupportFilterChange()" />
+            </label>
+            <tm-filter-select icon="road" ariaLabel="Support route filter" allLabel="All routes" [options]="routeFilterOptions" [value]="supportRouteId" (valueChange)="supportRouteId = $event; onSupportFilterChange()" />
+            <tm-filter-select icon="shield" ariaLabel="Booking status filter" allLabel="All booking statuses" [options]="bookingStatusOptions" [value]="supportStatus" (valueChange)="supportStatus = $event; onSupportFilterChange()" />
+            <tm-filter-select icon="tag" ariaLabel="Payment status filter" allLabel="All payments" [options]="paymentStatusOptions" [value]="supportPaymentStatus" (valueChange)="supportPaymentStatus = $event; onSupportFilterChange()" />
+            <tm-filter-select icon="check" ariaLabel="Refund status filter" allLabel="All refunds" [options]="refundStatusOptions" [value]="supportRefundStatus" (valueChange)="supportRefundStatus = $event; onSupportFilterChange()" />
+            <tm-button variant="ghost" (clicked)="onSupportFilterChange()">Search</tm-button>
+            <tm-button variant="ghost" (clicked)="resetSupportFilters()">Reset</tm-button>
+          </div>
+
+          <div class="cue support-cue" *ngIf="supportLoading">
+            <tm-icon name="refresh" [size]="20" />
+            <p class="cue__text">Loading fixed bookings...</p>
+          </div>
+
+          <p class="muted" *ngIf="!supportLoading && !supportBookings.length">No fixed bookings match these filters.</p>
+
+          <div class="support-list" *ngIf="!supportLoading && supportBookings.length">
+            <article class="support-card" *ngFor="let row of supportBookings">
+              <div class="support-card__main">
+                <div>
+                  <span class="support-title">#{{ row.id }} · {{ row.customer_name || 'Customer' }}</span>
+                  <span class="support-sub">{{ row.customer_phone || 'No phone' }} · {{ row.route_name || 'Fixed route' }} · {{ bookingDate(row) }}</span>
+                </div>
+                <div class="support-card__actions">
+                  <span class="status-pill" [attr.data-s]="row.status">{{ row.status }}</span>
+                  <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openSupportTimeline(row)">Timeline</tm-button>
+                </div>
+              </div>
+              <div class="support-route">
+                <span>{{ row.board || 'Pickup' }}</span>
+                <tm-icon name="chevron-right" [size]="13" />
+                <span>{{ row.drop || 'Drop' }}</span>
+              </div>
+              <div class="support-meta">
+                <span>{{ row.seats }} seat{{ row.seats > 1 ? 's' : '' }}</span>
+                <span>{{ row.fare_amount != null ? ('INR ' + row.fare_amount) : 'Fare -' }}</span>
+                <span>{{ supportPayment(row) }}</span>
+                <span>{{ supportRefund(row) }}</span>
+                <span *ngIf="row.departure_status">Vehicle {{ row.departure_status }}</span>
+                <span *ngIf="row.fixed_auto_outcome">Reason {{ row.fixed_auto_outcome }}</span>
+              </div>
+              <p class="support-note" *ngIf="row.fixed_live_status">{{ row.fixed_live_status.label }} · {{ row.fixed_live_status.detail }}</p>
+              <p class="support-note" *ngIf="row.driver_name">Driver {{ row.driver_name }}{{ row.driver_phone ? ' · ' + row.driver_phone : '' }}</p>
+            </article>
+          </div>
+
+          <div class="support-pages" *ngIf="supportTotal > supportPageSize">
+            <tm-button variant="ghost" [disabled]="supportPage <= 1" (clicked)="onSupportPageChange(-1)">Previous</tm-button>
+            <span>Page {{ supportPage }} · {{ supportTotal }} bookings</span>
+            <tm-button variant="ghost" [disabled]="supportPage * supportPageSize >= supportTotal" (clicked)="onSupportPageChange(1)">Next</tm-button>
+          </div>
+        </section>
       </ng-container>
     </div>
 
@@ -223,6 +370,8 @@ const STATUS_OPTIONS = [
           <div class="pax__main">
             <span class="pax__name">{{ p.customer_name || 'Guest' }}</span>
             <span class="pax__sub">{{ p.board || '—' }} → {{ p.drop || '—' }}</span>
+            <span class="pax__note" *ngIf="p.fixed_live_status">{{ p.fixed_live_status.label }} · {{ p.fixed_live_status.detail }}</span>
+            <span class="pax__note" *ngIf="p.refund_status && p.refund_status !== 'NONE'">Refund: {{ p.refund_status }}</span>
           </div>
           <div class="pax__meta">
             <span class="pax__seats">{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }}</span>
@@ -232,6 +381,63 @@ const STATUS_OPTIONS = [
         </div>
       </div>
     </tm-drawer>
+
+    <tm-drawer
+      [open]="supportTimelineOpen"
+      [title]="supportTimeline?.booking ? ('Fixed booking #' + supportTimeline?.booking?.id) : 'Fixed booking timeline'"
+      [subtitle]="supportTimeline?.booking ? ((supportTimeline?.booking?.customer_name || 'Customer') + ' · ' + (supportTimeline?.booking?.route_name || 'Fixed route')) : ''"
+      [width]="560"
+      (closed)="closeSupportTimeline()"
+    >
+      <div slot="body" class="timeline-drawer">
+        <div class="cue" *ngIf="supportTimelineLoading">
+          <tm-icon name="refresh" [size]="20" />
+          <p class="cue__text">Loading booking timeline...</p>
+        </div>
+
+        <ng-container *ngIf="!supportTimelineLoading && supportTimeline as timeline">
+          <section class="timeline-summary">
+            <div>
+              <span class="support-title">{{ timeline.booking.board || 'Pickup' }} → {{ timeline.booking.drop || 'Drop' }}</span>
+              <span class="support-sub">{{ supportPayment(timeline.booking) }} · {{ supportRefund(timeline.booking) }}</span>
+            </div>
+            <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ timeline.booking.status }}</span>
+          </section>
+
+          <section class="timeline-section">
+            <h3>Timeline</h3>
+            <p class="muted" *ngIf="!timeline.events.length">No timeline events have been recorded yet.</p>
+            <div class="timeline-list" *ngIf="timeline.events.length">
+              <article class="timeline-event" *ngFor="let event of timeline.events">
+                <span class="timeline-event__dot"></span>
+                <div>
+                  <span class="timeline-event__time">{{ eventDate(event.created_at) }}{{ event.actor_name ? ' · ' + event.actor_name : '' }}</span>
+                  <span class="timeline-event__title">{{ event.title }}</span>
+                  <p *ngIf="event.detail">{{ event.detail }}</p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="timeline-section">
+            <h3>Support notes</h3>
+            <label class="note-box">
+              <span>Add internal note</span>
+              <textarea [(ngModel)]="supportNoteText" rows="3" placeholder="Refund follow-up, customer call result, dispute decision..."></textarea>
+            </label>
+            <div class="note-actions">
+              <tm-button variant="green" [disabled]="supportNoteSaving || supportNoteText.trim().length < 2" (clicked)="addSupportNote()">Add note</tm-button>
+            </div>
+            <p class="muted" *ngIf="!timeline.notes.length">No support notes yet.</p>
+            <article class="support-note-card" *ngFor="let note of timeline.notes">
+              <span>{{ eventDate(note.created_at) }}{{ note.admin_name ? ' · ' + note.admin_name : '' }}</span>
+              <p>{{ note.note }}</p>
+            </article>
+          </section>
+        </ng-container>
+      </div>
+    </tm-drawer>
+
   `,
   styles: [`
     .page { display: flex; flex-direction: column; gap: 16px; }
@@ -269,9 +475,49 @@ const STATUS_OPTIONS = [
     .pax__main { display: flex; flex-direction: column; min-width: 0; }
     .pax__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .pax__sub { font-size: 11px; color: var(--tm-text-muted); }
+    .pax__note { max-width: 310px; font-size: 11px; line-height: 1.35; color: var(--tm-warning-fg, #92400e); overflow-wrap: anywhere; }
     .pax__meta { display: inline-flex; align-items: center; gap: 8px; flex: none; }
     .pax__seats { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
     .pax__fare { font-family: var(--tm-font-mono); font-weight: 700; font-size: 12px; color: var(--tm-text); }
+    .support-panel { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); }
+    .support-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .support-head h2 { margin: 0; font-size: 17px; font-weight: 850; color: var(--tm-text); }
+    .support-head p { margin: 3px 0 0; font-size: 12px; color: var(--tm-text-muted); }
+    .support-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+    .support-search { display: flex; flex-direction: column; gap: 5px; min-width: min(280px, 100%); }
+    .support-search span { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .support-search input { min-height: 38px; padding: 8px 11px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-family: inherit; font-size: 13px; }
+    .support-list { display: flex; flex-direction: column; gap: 10px; }
+    .support-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
+    .support-card__main { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .support-card__actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+    .support-title { display: block; font-size: 13px; font-weight: 850; color: var(--tm-text); overflow-wrap: anywhere; }
+    .support-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--tm-text-muted); overflow-wrap: anywhere; }
+    .support-route { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 750; color: var(--tm-text); overflow-wrap: anywhere; }
+    .support-meta { display: flex; flex-wrap: wrap; gap: 7px; }
+    .support-meta span { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text-muted); font-size: 11px; font-weight: 750; }
+    .support-note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--tm-warning-fg, #92400e); overflow-wrap: anywhere; }
+    .support-pages { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 12px; color: var(--tm-text-muted); }
+    .support-cue { min-height: 120px; }
+    .timeline-drawer { display: flex; flex-direction: column; gap: 16px; }
+    .timeline-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
+    .timeline-section { display: flex; flex-direction: column; gap: 10px; }
+    .timeline-section h3 { margin: 0; font-size: 14px; font-weight: 850; color: var(--tm-text); }
+    .timeline-list { display: flex; flex-direction: column; gap: 0; }
+    .timeline-event { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 0 0 14px; }
+    .timeline-event::before { content: ''; position: absolute; left: 6px; top: 12px; bottom: 0; width: 1px; background: var(--tm-line); }
+    .timeline-event:last-child::before { display: none; }
+    .timeline-event__dot { position: relative; z-index: 1; width: 13px; height: 13px; margin-top: 3px; border-radius: 50%; background: var(--tm-green); box-shadow: 0 0 0 3px var(--tm-success-bg); }
+    .timeline-event__time { display: block; font-size: 11px; color: var(--tm-text-muted); }
+    .timeline-event__title { display: block; margin-top: 2px; font-size: 13px; font-weight: 850; color: var(--tm-text); }
+    .timeline-event p { margin: 3px 0 0; font-size: 12px; line-height: 1.45; color: var(--tm-text-muted); overflow-wrap: anywhere; }
+    .note-box { display: flex; flex-direction: column; gap: 6px; }
+    .note-box span { font-size: 12px; font-weight: 750; color: var(--tm-text); }
+    .note-box textarea { width: 100%; resize: vertical; min-height: 84px; padding: 10px 11px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-family: inherit; font-size: 13px; }
+    .note-actions { display: flex; justify-content: flex-end; }
+    .support-note-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
+    .support-note-card span { font-size: 11px; color: var(--tm-text-muted); }
+    .support-note-card p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--tm-text); overflow-wrap: anywhere; }
     @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .modal-body { min-width: auto; } }
   `],
 })
@@ -298,6 +544,26 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
   passengers: Passenger[] = [];
   loadingManifest = false;
 
+  supportBookings: FixedSupportBooking[] = [];
+  supportTotal = 0;
+  supportPage = 1;
+  supportPageSize = 20;
+  supportLoading = false;
+  supportQuery = '';
+  supportRouteId = 'all';
+  supportStatus = 'all';
+  supportPaymentStatus = 'all';
+  supportRefundStatus = 'all';
+  supportTimelineOpen = false;
+  supportTimelineLoading = false;
+  supportTimeline: FixedSupportTimeline | null = null;
+  supportTimelineBookingId: number | null = null;
+  supportNoteText = '';
+  supportNoteSaving = false;
+  bookingStatusOptions = BOOKING_STATUS_OPTIONS;
+  paymentStatusOptions = PAYMENT_STATUS_OPTIONS;
+  refundStatusOptions = REFUND_STATUS_OPTIONS;
+
   private subs: Subscription[] = [];
 
   constructor(
@@ -314,6 +580,7 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
         this.page = 1;
         this.loadRoutes();
         this.fetch();
+        this.fetchBookings();
       }),
     );
   }
@@ -376,6 +643,94 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
     this.status = value || 'all';
     this.page = 1;
     this.fetch();
+  }
+
+
+  openSupportTimeline(row: FixedSupportBooking): void {
+    if (this.cityId == null) return;
+    this.supportTimelineOpen = true;
+    this.supportTimelineBookingId = row.id;
+    this.supportTimeline = null;
+    this.supportNoteText = '';
+    this.fetchSupportTimeline(row.id);
+  }
+
+  closeSupportTimeline(): void {
+    this.supportTimelineOpen = false;
+    this.supportTimelineLoading = false;
+    this.supportNoteSaving = false;
+    this.supportTimelineBookingId = null;
+    this.supportTimeline = null;
+    this.supportNoteText = '';
+  }
+
+  addSupportNote(): void {
+    if (this.cityId == null || this.supportTimelineBookingId == null || this.supportNoteSaving) return;
+    const note = this.supportNoteText.trim();
+    if (note.length < 2) return;
+
+    this.supportNoteSaving = true;
+    this.api.post<{ note: FixedSupportNote; message: string }>(`/admin/cities/${this.cityId}/fixed-bookings/${this.supportTimelineBookingId}/notes`, { note }).subscribe({
+      next: (res) => {
+        if (this.supportTimeline) {
+          this.supportTimeline = {
+            ...this.supportTimeline,
+            notes: [res.note, ...this.supportTimeline.notes],
+          };
+        }
+        this.supportNoteText = '';
+        this.supportNoteSaving = false;
+        this.toast.success(res.message || 'Support note added');
+      },
+      error: (err) => {
+        this.supportNoteSaving = false;
+        this.toast.error(err?.error?.message || 'Failed to add support note');
+      },
+    });
+  }
+
+  eventDate(iso?: string | null): string {
+    if (!iso) return '-';
+    const date = new Date(iso);
+    return isNaN(date.getTime()) ? iso : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  onSupportFilterChange(): void {
+    this.supportPage = 1;
+    this.fetchBookings();
+  }
+
+  onSupportPageChange(delta: number): void {
+    const maxPage = Math.max(1, Math.ceil(this.supportTotal / this.supportPageSize));
+    this.supportPage = Math.min(maxPage, Math.max(1, this.supportPage + delta));
+    this.fetchBookings();
+  }
+
+  resetSupportFilters(): void {
+    this.supportQuery = '';
+    this.supportRouteId = 'all';
+    this.supportStatus = 'all';
+    this.supportPaymentStatus = 'all';
+    this.supportRefundStatus = 'all';
+    this.supportPage = 1;
+    this.fetchBookings();
+  }
+
+  bookingDate(row: FixedSupportBooking): string {
+    if (!row.created_at) return '-';
+    const date = new Date(row.created_at);
+    return isNaN(date.getTime()) ? row.created_at : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  supportPayment(row: FixedSupportBooking): string {
+    const method = row.payment_method ? row.payment_method.toUpperCase() : 'PAYMENT';
+    return method + ' · ' + (row.payment_status || 'UNKNOWN');
+  }
+
+  supportRefund(row: FixedSupportBooking): string {
+    if (!row.refund_status || row.refund_status === 'NONE') return 'Refund none';
+    const amount = row.refund_amount != null ? ' · INR ' + Number(row.refund_amount).toFixed(2) : '';
+    return 'Refund ' + row.refund_status + amount;
   }
 
   onFormRouteChange(routeId: number | null): void {
@@ -461,6 +816,52 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.routes = [];
+      },
+    });
+  }
+
+  fetchBookings(): void {
+    if (this.cityId == null) {
+      this.supportBookings = [];
+      this.supportTotal = 0;
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('page', String(this.supportPage));
+    params.set('per_page', String(this.supportPageSize));
+    if (this.supportQuery.trim()) params.set('q', this.supportQuery.trim());
+    if (this.supportRouteId !== 'all') params.set('route_id', this.supportRouteId);
+    if (this.supportStatus !== 'all') params.set('status', this.supportStatus);
+    if (this.supportPaymentStatus !== 'all') params.set('payment_status', this.supportPaymentStatus);
+    if (this.supportRefundStatus !== 'all') params.set('refund_status', this.supportRefundStatus);
+
+    this.supportLoading = true;
+    this.api.get<{ data: { data: FixedSupportBooking[]; total: number } }>('/admin/cities/' + this.cityId + '/fixed-bookings?' + params.toString()).subscribe({
+      next: (res) => {
+        this.supportBookings = res?.data?.data || [];
+        this.supportTotal = res?.data?.total || 0;
+        this.supportLoading = false;
+      },
+      error: (err) => {
+        this.supportLoading = false;
+        this.toast.error(err?.error?.message || 'Failed to load fixed booking support rows');
+      },
+    });
+  }
+
+
+  private fetchSupportTimeline(bookingId: number): void {
+    if (this.cityId == null) return;
+    this.supportTimelineLoading = true;
+    this.api.get<{ data: FixedSupportTimeline }>(`/admin/cities/${this.cityId}/fixed-bookings/${bookingId}/timeline`).subscribe({
+      next: (res) => {
+        this.supportTimeline = res.data;
+        this.supportTimelineLoading = false;
+      },
+      error: (err) => {
+        this.supportTimelineLoading = false;
+        this.toast.error(err?.error?.message || 'Failed to load booking timeline');
       },
     });
   }

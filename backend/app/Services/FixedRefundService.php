@@ -6,10 +6,15 @@ use App\Exceptions\ReservationException;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class FixedRefundService
 {
-    public function __construct(private readonly WalletService $wallet) {}
+    public function __construct(
+        private readonly WalletService $wallet,
+        private readonly RazorpayService $razorpay,
+        private readonly FixedBookingEventService $events,
+    ) {}
 
     public function cancelByCustomer(SeatReservation $reservation): array
     {
@@ -41,6 +46,21 @@ class FixedRefundService
                 'payment_status' => $refundOutcome['payment_status'],
             ]);
 
+            $this->events->record(
+                $res,
+                'customer_cancelled',
+                'Customer cancelled booking',
+                $refundOutcome['refund_status'] === 'REFUNDED'
+                    ? 'Customer cancelled before the cutoff and the Razorpay refund was processed.'
+                    : 'Customer cancelled the fixed booking. Refund status: ' . strtolower((string) $refundOutcome['refund_status']) . '.',
+                [
+                    'refund_status' => $refundOutcome['refund_status'],
+                    'payment_status' => $refundOutcome['payment_status'],
+                    'refund_pending' => $refundOutcome['refund_pending'],
+                ],
+                $res->customer,
+            );
+
             return [
                 'reservation' => $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']),
                 'refunded' => $refundOutcome['refunded'],
@@ -54,7 +74,10 @@ class FixedRefundService
     {
         return DB::transaction(function () use ($reservation) {
             /** @var SeatReservation|null $res */
-            $res = SeatReservation::query()->lockForUpdate()->find($reservation->id);
+            $res = SeatReservation::query()
+                ->with(['route:id,mode,name', 'routeDeparture:id,seats_taken,luggage_taken'])
+                ->lockForUpdate()
+                ->find($reservation->id);
             if (!$res || $res->route?->mode !== 'fixed') {
                 throw new ReservationException('This fixed booking could not be found.', 404);
             }
@@ -62,10 +85,22 @@ class FixedRefundService
                 throw new ReservationException('This fixed booking cannot be marked no-show.', 422);
             }
 
+            /** @var RouteDeparture|null $dep */
+            $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
+            $this->releaseVehicleCapacity($dep, $res);
+
             $res->update([
                 'status' => 'NO_SHOW',
                 'refund_status' => 'REJECTED',
             ]);
+
+            $this->events->record(
+                $res,
+                'customer_no_show',
+                'Customer marked no-show',
+                'The vehicle reached the pickup stop and the customer did not board inside the allowed waiting time.',
+                ['refund_status' => 'REJECTED'],
+            );
 
             return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
         });
@@ -100,6 +135,21 @@ class FixedRefundService
                 'payment_status' => $refundOutcome['payment_status'],
                 'rating_comment' => $reason,
             ]);
+
+            $this->events->record(
+                $res,
+                $reason === 'driver_missed_stop' ? 'driver_missed_stop' : 'system_cancelled',
+                $reason === 'driver_missed_stop' ? 'Driver missed pickup stop' : 'System cancelled booking',
+                $reason === 'driver_missed_stop'
+                    ? 'Customer was near the pickup stop, but the vehicle moved past it. The booking was cancelled by the system.'
+                    : 'The fixed booking was cancelled by the system.',
+                [
+                    'reason' => $reason,
+                    'refund_status' => $refundOutcome['refund_status'],
+                    'payment_status' => $refundOutcome['payment_status'],
+                    'refund_pending' => $refundOutcome['refund_pending'],
+                ],
+            );
 
             return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
         });
@@ -163,12 +213,49 @@ class FixedRefundService
         }
 
         if ($reservation->payment_method === 'razorpay') {
-            return [
-                'refunded' => false,
-                'refund_pending' => true,
-                'refund_status' => 'APPROVED',
-                'payment_status' => $reservation->payment_status ?: 'PAID',
-            ];
+            $paymentReference = trim((string) $reservation->payment_reference);
+            if ($paymentReference === '') {
+                return [
+                    'refunded' => false,
+                    'refund_pending' => true,
+                    'refund_status' => 'APPROVED',
+                    'payment_status' => $reservation->payment_status ?: 'PAID',
+                ];
+            }
+
+            try {
+                $amountPaise = max(1, (int) round(((float) $reservation->fare_amount) * 100));
+                $refund = $this->razorpay->refundPayment($paymentReference, $amountPaise, [
+                    'module' => 'fixed',
+                    'reservation_id' => (string) $reservation->id,
+                ]);
+                $processed = strtolower((string) $refund['status']) === 'processed';
+
+                $reservation->forceFill([
+                    'refund_reference' => $refund['id'],
+                    'refund_amount' => ((int) $refund['amount']) / 100,
+                ])->save();
+
+                return [
+                    'refunded' => $processed,
+                    'refund_pending' => !$processed,
+                    'refund_status' => $processed ? 'REFUNDED' : 'APPROVED',
+                    'payment_status' => $processed ? 'REFUNDED' : ($reservation->payment_status ?: 'PAID'),
+                ];
+            } catch (\Throwable $e) {
+                Log::warning('Fixed booking Razorpay refund could not be created', [
+                    'seat_reservation_id' => $reservation->id,
+                    'payment_reference' => $paymentReference,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return [
+                    'refunded' => false,
+                    'refund_pending' => true,
+                    'refund_status' => 'APPROVED',
+                    'payment_status' => $reservation->payment_status ?: 'PAID',
+                ];
+            }
         }
 
         return [

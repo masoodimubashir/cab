@@ -7,6 +7,7 @@ use App\Models\SeatReservation;
 use App\Services\FixedBookingService;
 use App\Services\FixedRefundService;
 use App\Services\FixedSeatHoldService;
+use App\Services\RazorpayService;
 use Illuminate\Http\Request;
 
 class FixedBookingsController extends Controller
@@ -26,6 +27,8 @@ class FixedBookingsController extends Controller
     {
         $data = $request->validate([
             'route_departure_id' => ['required', 'integer', 'exists:route_departures,id'],
+            'board_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
+            'drop_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
             'seats' => ['nullable', 'integer', 'min:1'],
             'has_extra_luggage' => ['nullable', 'boolean'],
             'extra_luggage_count' => ['nullable', 'integer', 'min:0', 'max:200'],
@@ -39,7 +42,7 @@ class FixedBookingsController extends Controller
         ], 201);
     }
 
-    public function confirmSeatHoldPayment(Request $request, FixedSeatHold $fixedSeatHold)
+    public function confirmSeatHoldPayment(Request $request, FixedSeatHold $fixedSeatHold, RazorpayService $razorpayService)
     {
         if ($fixedSeatHold->customer_id !== $request->user()->id) {
             abort(404);
@@ -49,11 +52,12 @@ class FixedBookingsController extends Controller
             'board_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
             'drop_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
             'booking_channel' => ['required', 'in:advance,on_spot'],
-            'payment_method' => ['required', 'in:wallet,razorpay'],
-            'payment_reference' => ['nullable', 'string', 'max:191'],
+            'razorpay_payment_id' => ['required', 'string', 'max:191'],
+            'razorpay_order_id' => ['required', 'string', 'max:191'],
+            'razorpay_signature' => ['required', 'string', 'max:255'],
         ]);
 
-        $reservation = $this->seatHolds->confirmHold($request->user(), $fixedSeatHold, $data);
+        $reservation = $this->seatHolds->confirmHold($request->user(), $fixedSeatHold, $data, $razorpayService);
 
         return response()->json([
             'reservation' => $this->bookings->shapeBooking($reservation->fresh([
@@ -64,6 +68,51 @@ class FixedBookingsController extends Controller
             ])),
             'message' => 'Fixed booking confirmed.',
         ], 201);
+    }
+
+
+    public function confirmSeatHoldTestPayment(Request $request, FixedSeatHold $fixedSeatHold)
+    {
+        if ($fixedSeatHold->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $key = (string) config("services.razorpay.key_id");
+        if (app()->environment("production") && !str_starts_with($key, "rzp_test_")) {
+            abort(403, "Test payment is disabled for live Razorpay keys.");
+        }
+
+        $data = $request->validate([
+            "booking_channel" => ["nullable", "in:advance,on_spot"],
+        ]);
+
+        $reservation = $this->seatHolds->confirmTestHold($request->user(), $fixedSeatHold, $data["booking_channel"] ?? "advance");
+
+        return response()->json([
+            "reservation" => $this->bookings->shapeBooking($reservation->fresh([
+                "route:id,name,scope,mode",
+                "routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status",
+                "boardStop:id,name",
+                "dropStop:id,name",
+            ])),
+            "message" => "Fixed booking confirmed with test payment.",
+        ], 201);
+    }
+
+
+
+    public function createSeatHoldRazorpayOrder(Request $request, FixedSeatHold $fixedSeatHold, RazorpayService $razorpayService)
+    {
+        if ($fixedSeatHold->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $order = $this->seatHolds->createRazorpayOrder($request->user(), $fixedSeatHold, $razorpayService);
+
+        return response()->json([
+            'hold' => $this->bookings->shapeSeatHold($fixedSeatHold->fresh('routeDeparture.route')),
+            'razorpay' => $order,
+        ]);
     }
 
     public function cancel(Request $request, SeatReservation $reservation)

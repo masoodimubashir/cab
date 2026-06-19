@@ -40,6 +40,18 @@
         <h3 class="sheet-title">Choose a fixed route</h3>
       </div>
       <div class="sheet-body">
+        <div class="fb-live-list" *ngIf="activeBookings.length">
+          <div class="fb-live-head">Your fixed rides</div>
+          <div class="fb-live" *ngFor="let booking of activeBookings" [ngClass]="liveStatusClass(booking)">
+            <div class="fb-live__icon"><ion-icon name="notifications-outline"></ion-icon></div>
+            <div class="fb-live__main">
+              <span class="fb-live__route">{{ fixedBookingRoute(booking) }}</span>
+              <span class="fb-live__status">{{ liveStatus(booking).label }}</span>
+              <span class="fb-live__detail">{{ liveStatus(booking).detail }}</span>
+              <span class="fb-live__stops">{{ fixedBookingStops(booking) }}</span>
+            </div>
+          </div>
+        </div>
         <div class="fb-empty" *ngIf="!routes.length">
           <ion-icon name="git-branch-outline"></ion-icon>
           <p>{{ error || 'No ' + scopeLabel.toLowerCase() + ' fixed routes are available yet.' }}</p>
@@ -98,7 +110,7 @@
 
         <label class="fb-field">
           <span class="fb-label">Board at</span>
-          <ion-select [(ngModel)]="boardStopId" interface="action-sheet" placeholder="Pick stop">
+          <ion-select [(ngModel)]="boardStopId" (ngModelChange)="onBoardStopChange()" interface="action-sheet" placeholder="Pick stop">
             <ion-select-option *ngFor="let s of pickupStops" [value]="s.id">{{ s.name }}</ion-select-option>
           </ion-select>
         </label>
@@ -144,19 +156,14 @@
           </div>
         </div>
 
-        <div class="fb-payments">
-          <button type="button" class="fb-pay dc-press" [class.on]="paymentMethod === 'wallet'" (click)="paymentMethod = 'wallet'">
-            <ion-icon name="wallet-outline"></ion-icon><span>Wallet</span>
-          </button>
-          <button type="button" class="fb-pay dc-press" [class.on]="paymentMethod === 'razorpay'" (click)="paymentMethod = 'razorpay'">
-            <ion-icon name="card-outline"></ion-icon><span>Razorpay</span>
-          </button>
-        </div>
 
         <div class="fb-total"><span>Total prepaid</span><strong>₹{{ fareTotal | number: '1.0-2' }}</strong></div>
       </div>
 
       <div class="sheet-foot">
+        <button type="button" class="fb-cta fb-cta--test dc-press" [disabled]="!canConfirm" (click)="testPay()">
+          {{ booking ? 'Confirming…' : 'Pay test' }}
+        </button>
         <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="confirm()">
           {{ booking ? 'Confirming…' : 'Confirm & pay ₹' + (fareTotal | number: '1.0-2') }}
         </button>
@@ -172,6 +179,7 @@
         </div>
       </div>
       <div class="sheet-foot">
+        <button type="button" class="fb-cta fb-cta--test dc-press" routerLink="/customer-tabs/fixed-rides">Fixed ride details</button>
         <button type="button" class="fb-cta dc-press" (click)="done()">View trips</button>
       </div>
     </div>

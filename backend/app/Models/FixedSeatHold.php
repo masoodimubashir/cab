@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'route_departure_id',
     'customer_id',
+    'board_stop_id',
+    'drop_stop_id',
     'seats',
     'amount',
     'has_extra_luggage',
@@ -18,12 +20,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'status',
     'expires_at',
     'payment_reference',
+    'razorpay_order_id',
+    'razorpay_payment_id',
+    'razorpay_signature',
 ])]
 class FixedSeatHold extends Model
 {
     use HasFactory;
 
     protected $casts = [
+        'board_stop_id' => 'integer',
+        'drop_stop_id' => 'integer',
         'seats' => 'integer',
         'amount' => 'float',
         'has_extra_luggage' => 'boolean',

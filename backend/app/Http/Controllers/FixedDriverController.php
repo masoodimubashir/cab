@@ -8,6 +8,7 @@ use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Services\FixedAvailabilityService;
+use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
 use App\Services\FixedManifestService;
 use App\Services\FixedRouteService;
@@ -23,6 +24,7 @@ class FixedDriverController extends Controller
         private readonly FixedDepartureService $departures,
         private readonly FixedRouteService $routes,
         private readonly FixedRefundService $refunds,
+        private readonly FixedBookingEventService $events,
     ) {}
 
     public function routes(Request $request)
@@ -169,7 +171,7 @@ class FixedDriverController extends Controller
                 'driver_id' => $request->user()->id,
                 'actual_depart_at' => $dep->actual_depart_at ?? now(),
                 'boarding_closed_at' => $dep->boarding_closed_at ?? now(),
-                'visible_to_customers' => false,
+                'visible_to_customers' => true,
                 'status' => 'DEPARTED',
             ]);
 
@@ -195,6 +197,15 @@ class FixedDriverController extends Controller
             'boarded_at' => now(),
         ]);
 
+        $this->events->record(
+            $reservation->fresh(),
+            'passenger_boarded',
+            'Passenger boarded',
+            'Driver marked this customer as boarded on the fixed ride.',
+            ['driver_id' => $request->user()->id],
+            $request->user(),
+        );
+
         return response()->json([
             'reservation' => [
                 'id' => $reservation->id,
@@ -202,6 +213,100 @@ class FixedDriverController extends Controller
                 'boarded_at' => optional($reservation->fresh()->boarded_at)->toIso8601String(),
             ],
             'message' => 'Passenger marked as boarded.',
+        ]);
+    }
+
+    public function drop(Request $request, SeatReservation $reservation)
+    {
+        $this->guardDriverReservation($request, $reservation);
+
+        if ($reservation->status !== 'BOARDED') {
+            abort(422, 'This passenger must be boarded before drop-off.');
+        }
+
+        DB::transaction(function () use ($reservation) {
+            $locked = SeatReservation::query()->lockForUpdate()->findOrFail($reservation->id);
+            if ($locked->status !== 'BOARDED') {
+                abort(422, 'This passenger must be boarded before drop-off.');
+            }
+
+            $locked->update([
+                'status' => 'DROPPED',
+                'dropped_at' => now(),
+            ]);
+
+            $this->events->record(
+                $locked->fresh(),
+                'passenger_dropped',
+                'Passenger dropped off',
+                'Driver marked this customer as dropped off at the destination stop.',
+                [],
+            );
+
+            $departure = RouteDeparture::query()->lockForUpdate()->find($locked->route_departure_id);
+            if ($departure) {
+                $departure->update([
+                    'seats_taken' => max(0, (int) $departure->seats_taken - (int) $locked->seats),
+                    'luggage_taken' => max(0, (int) $departure->luggage_taken - (int) $locked->extra_luggage_count),
+                ]);
+            }
+        });
+
+        return response()->json([
+            'reservation' => [
+                'id' => $reservation->id,
+                'status' => 'DROPPED',
+                'dropped_at' => optional($reservation->fresh()->dropped_at)->toIso8601String(),
+            ],
+            'message' => 'Passenger marked as dropped off.',
+        ]);
+    }
+
+    public function complete(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+
+        $departure = DB::transaction(function () use ($request, $departure) {
+            /**  RouteDeparture  */
+            $dep = RouteDeparture::query()->with('trip')->lockForUpdate()->findOrFail($departure->id);
+            $this->guardDriverDeparture($request, $dep);
+
+            if (in_array($dep->status, ['COMPLETED', 'CANCELLED'], true)) {
+                abort(422, 'This fixed vehicle is already closed.');
+            }
+
+            $activePassengers = SeatReservation::query()
+                ->where('route_departure_id', $dep->id)
+                ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+                ->count();
+
+            if ($activePassengers > 0) {
+                abort(422, 'Complete boarding, drop-off, cancellation or no-show for all active passengers before closing this ride.');
+            }
+
+            $now = now();
+            if ($dep->trip && !in_array($dep->trip->status, ['COMPLETED', 'CANCELLED'], true)) {
+                $dep->trip->update([
+                    'status' => 'COMPLETED',
+                    'completed_at' => $dep->trip->completed_at ?? $now,
+                    'final_fare' => $dep->trip->final_fare ?? $dep->trip->estimated_fare,
+                ]);
+            }
+
+            $dep->update([
+                'boarding_closed_at' => $dep->boarding_closed_at ?? $now,
+                'visible_to_customers' => false,
+                'seats_taken' => 0,
+                'luggage_taken' => 0,
+                'status' => 'COMPLETED',
+            ]);
+
+            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+        });
+
+        return response()->json([
+            'vehicle' => $this->departures->shapeAdminDeparture($departure),
+            'message' => 'Fixed ride completed.',
         ]);
     }
 

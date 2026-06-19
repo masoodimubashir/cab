@@ -18,6 +18,11 @@ const routes: Routes = [
           import('../pages/customer-trips/customer-trips.module').then((m) => m.CustomerTripsPageModule),
       },
       {
+        path: 'fixed-rides',
+        loadChildren: () =>
+          import('../pages/fixed-bookings/fixed-bookings.module').then((m) => m.FixedBookingsPageModule),
+      },
+      {
         path: 'profile',
         loadChildren: () =>
           import('../pages/profile/profile.module').then((m) => m.CustomerProfilePageModule),

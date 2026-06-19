@@ -189,6 +189,53 @@
 }
 .fb-seat.full { color: var(--dc-danger, #E53935); }
 
+.fb-live-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.fb-live-head {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--dc-ink-soft, #6C757D);
+  padding: 0 2px;
+}
+
+.fb-live {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  background: var(--dc-surface-2, #FAFBFC);
+}
+
+.fb-live__icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #E7F8EF;
+  color: var(--dc-green, #12B35B);
+}
+
+.fb-live__main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fb-live__route { font-size: 13px; font-weight: 850; color: var(--dc-ink, #0D1B2A); overflow-wrap: anywhere; }
+.fb-live__status { font-size: 12px; font-weight: 850; color: var(--dc-green, #12B35B); }
+.fb-live__detail, .fb-live__stops { font-size: 11.5px; line-height: 1.35; color: var(--dc-ink-soft, #6C757D); overflow-wrap: anywhere; }
+.fb-live--warning .fb-live__icon { background: #FFF7ED; color: #C2410C; }
+.fb-live--warning .fb-live__status { color: #C2410C; }
+.fb-live--danger .fb-live__icon { background: #FEF2F2; color: var(--dc-danger, #E53935); }
+.fb-live--danger .fb-live__status { color: var(--dc-danger, #E53935); }
+.fb-live--success .fb-live__icon { background: #E7F8EF; color: var(--dc-green, #12B35B); }
+.fb-live--medium .fb-live__icon { background: #F1F5F9; color: #64748B; }
+.fb-live--medium .fb-live__status { color: #64748B; }
+
 .fb-empty {
   display: flex;
   flex-direction: column;
@@ -287,6 +334,14 @@
   box-shadow: 0 10px 24px rgba(18, 179, 91, 0.25);
   cursor: pointer;
   &:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+}
+
+.fb-cta--test {
+  margin-bottom: 8px;
+  background: var(--dc-surface-2, #FAFBFC);
+  color: var(--dc-ink, #0D1B2A);
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  box-shadow: none;
 }
 
 .fb-done {

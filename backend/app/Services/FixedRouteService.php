@@ -125,6 +125,7 @@ class FixedRouteService
     private function routeAttributes(City $city, array $data): array
     {
         $fareConfig = is_array($data['fare_config'] ?? null) ? $data['fare_config'] : [];
+        $fixedSettings = $this->fixedSettings($data['fixed_settings_json'] ?? null);
 
         return [
             'city_id' => $city->id,
@@ -154,11 +155,29 @@ class FixedRouteService
             'luggage_surcharge_amount' => (float) ($data['luggage_surcharge_amount'] ?? 0),
             'max_luggage_per_vehicle' => (int) ($data['max_luggage_per_vehicle'] ?? 0),
             'requires_prepaid' => (bool) ($data['requires_prepaid'] ?? true),
-            'fixed_settings_json' => is_array($data['fixed_settings_json'] ?? null) ? $data['fixed_settings_json'] : null,
+            'fixed_settings_json' => $fixedSettings,
             'advance_required' => false,
             'board_anywhere' => false,
             'is_active' => (bool) ($data['is_active'] ?? true),
             'sort_order' => (int) ($data['sort_order'] ?? 0),
+        ];
+    }
+
+
+    private function fixedSettings(mixed $settings): array
+    {
+        $settings = is_array($settings) ? $settings : [];
+
+        return [
+            'auto_no_show_enabled' => true,
+            'stop_arrival_radius_m' => max(25, min(1000, (int) ($settings['stop_arrival_radius_m'] ?? 150))),
+            'driver_missed_stop_grace_minutes' => max(0, min(180, (int) ($settings['driver_missed_stop_grace_minutes'] ?? 3))),
+            'customer_pickup_radius_m' => max(25, min(1000, (int) ($settings['customer_pickup_radius_m'] ?? 150))),
+            'vehicle_approaching_alert_radius_m' => max(50, min(5000, (int) ($settings['vehicle_approaching_alert_radius_m'] ?? 500))),
+            'customer_grace_minutes' => max(0, min(180, (int) ($settings['customer_grace_minutes'] ?? 2))),
+            'boarding_confirmation_mode' => in_array(($settings['boarding_confirmation_mode'] ?? 'driver_only'), ['driver_only', 'customer_otp', 'qr_scan', 'driver_customer'], true)
+                ? $settings['boarding_confirmation_mode']
+                : 'driver_only',
         ];
     }
 

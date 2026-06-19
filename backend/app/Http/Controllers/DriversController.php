@@ -9,6 +9,7 @@ use App\Models\DriverLocation;
 use App\Models\OperatorSetting;
 use App\Models\Trip;
 use App\Services\WalletService;
+use App\Services\FixedStopAutomationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -679,7 +680,7 @@ class DriversController extends Controller
      * has a fresh ping for "Free" classification. Trip-time pings still go
      * through TripTrackingController@updateLocation.
      */
-    public function pingLocation(Request $request)
+    public function pingLocation(Request $request, FixedStopAutomationService $fixedStops)
     {
         $data = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
@@ -735,6 +736,8 @@ class DriversController extends Controller
             'is_online' => true,
             'last_online_at' => now(),
         ])->save();
+
+        $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
 
         return response()->json(['location' => $location]);
     }

@@ -6,6 +6,7 @@ use App\Models\City;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
+use App\Services\FixedBookingService;
 use App\Services\RouteDepartureMaterializer;
 use Illuminate\Http\Request;
 
@@ -49,7 +50,7 @@ class AdminRouteDeparturesController
         ]);
     }
 
-    public function manifest(City $city, RouteDeparture $departure)
+    public function manifest(City $city, RouteDeparture $departure, FixedBookingService $bookings)
     {
         $this->guard($city, $departure);
 
@@ -67,6 +68,9 @@ class AdminRouteDeparturesController
                 'seats' => (int) $r->seats,
                 'booking_channel' => $r->booking_channel,
                 'status' => $r->status,
+                'fixed_live_status' => $bookings->fixedLiveStatus($r),
+                'refund_status' => $r->refund_status,
+                'fixed_auto_outcome' => $r->fixed_auto_outcome,
                 'fare_amount' => $r->fare_amount !== null ? (float) $r->fare_amount : null,
                 'board' => $r->board_stop_id ? ($r->boardStop?->name) : $r->board_address,
                 'drop' => $r->drop_stop_id ? ($r->dropStop?->name) : $r->drop_address,
