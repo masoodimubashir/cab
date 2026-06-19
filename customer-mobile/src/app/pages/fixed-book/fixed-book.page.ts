@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 
 interface FixedStop {
   id: number;
@@ -46,6 +47,7 @@ interface FixedDeparture {
   capacity: number;
   seats_taken: number;
   seats_remaining: number;
+  first_bookable_stop_seq?: number | null;
   status: string;
   departure_kind: 'driver_opened' | 'scheduled';
   visible_to_customers: boolean;
@@ -63,12 +65,35 @@ interface SeatHold {
   expires_at: string | null;
 }
 
+interface FixedRazorpayOrder {
+  hold: SeatHold;
+  razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
+}
+
+declare const Razorpay: any;
+
+interface FixedLiveStatus {
+  key: string;
+  label: string;
+  detail: string;
+  tone: 'primary' | 'success' | 'warning' | 'danger' | 'medium' | string;
+  arrived_at?: string | null;
+  no_show_after_at?: string | null;
+  auto_outcome?: string | null;
+  refund_status?: string | null;
+}
+
 interface FixedReservation {
   id: number;
   seats: number;
   fare_amount: number | null;
   status: string;
+  fixed_live_status?: FixedLiveStatus | null;
   payment_status: string | null;
+  refund_status?: string | null;
+  route_name?: string | null;
+  board?: string | null;
+  drop?: string | null;
   route?: { id: number; name: string; scope: string; mode: string } | null;
   route_departure?: { id: number; service_date: string | null; depart_at: string | null; announced_depart_at: string | null; status: string } | null;
   board_stop?: { id: number; name: string } | null;
@@ -76,7 +101,6 @@ interface FixedReservation {
 }
 
 type Step = 'routes' | 'vehicles' | 'details' | 'done';
-type PaymentMethod = 'wallet' | 'razorpay';
 
 @Component({
   selector: 'app-fixed-book',
@@ -102,9 +126,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   dropStopId: number | null = null;
   seats = 1;
   extraLuggageCount = 0;
-  paymentMethod: PaymentMethod = 'wallet';
   hold: SeatHold | null = null;
   confirmation: FixedReservation | null = null;
+  activeBookings: FixedReservation[] = [];
 
   private entered = false;
 
@@ -112,6 +136,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
     private api: ApiService,
+    private auth: AuthService,
     private toast: ToastController,
   ) {}
 
@@ -132,11 +157,13 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   get pickupStops(): FixedStop[] {
-    return (this.selectedRoute?.stops || []).filter((s) => s.is_active && !s.is_temporarily_unavailable && s.is_pickup);
+    const firstSeq = this.selectedDeparture?.first_bookable_stop_seq ?? 1;
+    return (this.selectedRoute?.stops || []).filter((s) => s.is_active && !s.is_temporarily_unavailable && s.is_pickup && s.seq >= firstSeq);
   }
 
   get dropStops(): FixedStop[] {
-    return (this.selectedRoute?.stops || []).filter((s) => s.is_active && !s.is_temporarily_unavailable && s.is_drop);
+    const boardSeq = this.selectedRoute?.stops.find((s) => s.id === this.boardStopId)?.seq ?? 0;
+    return (this.selectedRoute?.stops || []).filter((s) => s.is_active && !s.is_temporarily_unavailable && s.is_drop && s.seq > boardSeq);
   }
 
   get unavailableStops(): FixedStop[] {
@@ -194,6 +221,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.confirmation = null;
     this.resetDetails();
     this.loadRoutes();
+    this.loadMyBookings();
   }
 
   loadRoutes(): void {
@@ -211,6 +239,19 @@ export class FixedBookPage implements OnInit, OnDestroy {
         this.routes = [];
         this.loading = false;
         this.error = 'Could not load fixed routes for this city.';
+      },
+    });
+  }
+
+
+  loadMyBookings(): void {
+    this.api.get<{ data: FixedReservation[] }>("/fixed/bookings").subscribe({
+      next: (res) => {
+        const rows = res?.data || [];
+        this.activeBookings = rows.filter((booking) => !["DROPPED", "COMPLETED"].includes(booking.status)).slice(0, 5);
+      },
+      error: () => {
+        this.activeBookings = [];
       },
     });
   }
@@ -241,10 +282,21 @@ export class FixedBookPage implements OnInit, OnDestroy {
   pickDeparture(dep: FixedDeparture): void {
     if (dep.seats_remaining <= 0) return;
     this.selectedDeparture = dep;
+    if (!this.pickupStops.some((stop) => stop.id === this.boardStopId)) {
+      this.boardStopId = null;
+      this.dropStopId = null;
+    }
     this.setExtraLuggage(Math.min(this.extraLuggageCount, this.maxLuggage));
     this.seats = Math.min(this.seats, this.maxSeats);
     if (!this.seats || this.seats < 1) this.seats = 1;
     this.step = 'details';
+  }
+
+
+  onBoardStopChange(): void {
+    if (!this.dropStops.some((stop) => stop.id === this.dropStopId)) {
+      this.dropStopId = null;
+    }
   }
 
   setSeats(next: number): void {
@@ -255,12 +307,18 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.extraLuggageCount = Math.max(0, Math.min(this.maxLuggage, next));
   }
 
-  confirm(): void {
+  testPay(): void {
+    this.confirm(true);
+  }
+
+  confirm(testPayment = false): void {
     if (!this.canConfirm || !this.selectedDeparture) return;
     this.booking = true;
     this.hold = null;
     this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', {
       route_departure_id: this.selectedDeparture.id,
+      board_stop_id: this.boardStopId,
+      drop_stop_id: this.dropStopId,
       seats: this.seats,
       has_extra_luggage: this.extraLuggageCount > 0,
       extra_luggage_count: this.extraLuggageCount,
@@ -272,7 +330,11 @@ export class FixedBookPage implements OnInit, OnDestroy {
           void this.showToast('Could not hold seats. Please try again.');
           return;
         }
-        this.confirmHoldPayment(this.hold);
+        if (testPayment) {
+          this.confirmHoldTestPayment(this.hold);
+        } else {
+          void this.startRazorpayPayment(this.hold);
+        }
       },
       error: async (err) => {
         this.booking = false;
@@ -281,18 +343,95 @@ export class FixedBookPage implements OnInit, OnDestroy {
     });
   }
 
-  private confirmHoldPayment(hold: SeatHold): void {
+  private async startRazorpayPayment(hold: SeatHold): Promise<void> {
+    if (typeof Razorpay === 'undefined') {
+      this.booking = false;
+      await this.showToast('Payment library not loaded. Check your connection.');
+      return;
+    }
+
+    let order: FixedRazorpayOrder;
+    try {
+      order = (await this.api
+        .post<FixedRazorpayOrder>(`/fixed/seat-holds/${hold.id}/razorpay-order`, {}, { 'Idempotency-Key': this.uuid() })
+        .toPromise()) as FixedRazorpayOrder;
+    } catch (err: any) {
+      this.booking = false;
+      await this.showToast(err?.error?.message || 'Could not start Razorpay payment.');
+      return;
+    }
+
+    const user = this.auth.getUser();
+    const rzp = new Razorpay({
+      key: order.razorpay.key_id,
+      order_id: order.razorpay.order_id,
+      amount: order.razorpay.amount_paise,
+      currency: order.razorpay.currency,
+      name: 'DreamCabs',
+      description: `Fixed booking #${hold.id}`,
+      prefill: {
+        name: user?.name || '',
+        email: user?.email || '',
+        contact: user?.phone || '',
+      },
+      theme: { color: '#000000' },
+      handler: (resp: {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+      }) => {
+        this.confirmHoldPayment(hold, resp);
+      },
+      modal: {
+        ondismiss: async () => {
+          this.booking = false;
+          await this.showToast('Payment cancelled. Your seat hold will expire automatically.');
+        },
+      },
+    });
+
+    rzp.on('payment.failed', async (resp: any) => {
+      this.booking = false;
+      await this.showToast(resp?.error?.description || 'Payment failed.');
+    });
+
+    rzp.open();
+  }
+
+
+  private confirmHoldTestPayment(hold: SeatHold): void {
+    this.api.post<{ reservation: FixedReservation }>(`/fixed/seat-holds/${hold.id}/test-confirm-payment`, {
+      booking_channel: "advance",
+    }, { "Idempotency-Key": this.uuid() }).subscribe({
+      next: (res) => {
+        this.booking = false;
+        this.confirmation = res?.reservation ?? null;
+        this.step = "done";
+        this.loadMyBookings();
+      },
+      error: async (err) => {
+        this.booking = false;
+        await this.showToast(err?.error?.message || "Test payment confirmation failed.");
+      },
+    });
+  }
+
+  private confirmHoldPayment(hold: SeatHold, payment: {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+  }): void {
     this.api.post<{ reservation: FixedReservation }>(`/fixed/seat-holds/${hold.id}/confirm-payment`, {
       board_stop_id: this.boardStopId,
       drop_stop_id: this.dropStopId,
       booking_channel: 'advance',
-      payment_method: this.paymentMethod,
-      payment_reference: this.paymentMethod === 'razorpay' ? `mobile-${Date.now()}` : null,
+      ...payment,
     }, { 'Idempotency-Key': this.uuid() }).subscribe({
       next: (res) => {
         this.booking = false;
         this.confirmation = res?.reservation ?? null;
         this.step = 'done';
+        this.loadMyBookings();
       },
       error: async (err) => {
         this.booking = false;
@@ -338,12 +477,36 @@ export class FixedBookPage implements OnInit, OnDestroy {
     return this.selectedRoute?.stops.find((s) => s.id === id)?.name || '';
   }
 
+
+  liveStatus(booking: FixedReservation): FixedLiveStatus {
+    return booking.fixed_live_status || {
+      key: booking.status,
+      label: booking.status,
+      detail: "Fixed booking status is " + booking.status + ".",
+      tone: "primary",
+    };
+  }
+
+  liveStatusClass(booking: FixedReservation): string {
+    const tone = this.liveStatus(booking).tone || "primary";
+    return "fb-live--" + tone;
+  }
+
+  fixedBookingRoute(booking: FixedReservation): string {
+    return booking.route_name || booking.route?.name || "Fixed ride";
+  }
+
+  fixedBookingStops(booking: FixedReservation): string {
+    const board = booking.board || booking.board_stop?.name || "Pickup stop";
+    const drop = booking.drop || booking.drop_stop?.name || "Drop stop";
+    return `${board} → ${drop}`;
+  }
+
   private resetDetails(): void {
     this.boardStopId = null;
     this.dropStopId = null;
     this.seats = 1;
     this.extraLuggageCount = 0;
-    this.paymentMethod = 'wallet';
   }
 
   private uuid(): string {

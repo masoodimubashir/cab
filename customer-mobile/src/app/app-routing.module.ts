@@ -53,12 +53,6 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
-    path: 'fixed-driver',
-    loadChildren: () =>
-      import('./pages/fixed-driver/fixed-driver.module').then((m) => m.FixedDriverPageModule),
-    canActivate: [AuthGuard],
-  },
-  {
     path: 'fixed-book',
     loadChildren: () =>
       import('./pages/fixed-book/fixed-book.module').then((m) => m.FixedBookPageModule),

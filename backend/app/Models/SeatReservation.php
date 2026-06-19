@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One passenger's booking on a shared-ride departure. Ownership (customer_id),
@@ -17,9 +18,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'board_stop_id', 'board_lat', 'board_lng', 'board_address',
     'drop_stop_id', 'drop_lat', 'drop_lng', 'drop_address',
     'fare_amount', 'commission_percent', 'commission_amount',
-    'payment_method', 'payment_status', 'has_extra_luggage', 'extra_luggage_count', 'luggage_surcharge_amount',
-    'refund_status', 'status', 'rating_score', 'rating_comment',
+    'payment_method', 'payment_status', 'payment_reference', 'has_extra_luggage', 'extra_luggage_count', 'luggage_surcharge_amount',
+    'refund_status', 'refund_reference', 'refund_amount', 'status', 'rating_score', 'rating_comment',
     'boarded_at', 'dropped_at', 'cancelled_at',
+    'fixed_stop_arrived_at', 'fixed_no_show_after_at', 'fixed_driver_missed_after_at',
+    'fixed_approaching_notified_at', 'fixed_arrived_notified_at', 'fixed_leaving_soon_notified_at',
+    'fixed_auto_processed_at', 'fixed_auto_outcome',
 ])]
 class SeatReservation extends Model
 {
@@ -42,10 +46,18 @@ class SeatReservation extends Model
         'has_extra_luggage' => 'boolean',
         'extra_luggage_count' => 'integer',
         'luggage_surcharge_amount' => 'float',
+        'refund_amount' => 'float',
         'rating_score' => 'integer',
         'boarded_at' => 'datetime',
         'dropped_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'fixed_stop_arrived_at' => 'datetime',
+        'fixed_no_show_after_at' => 'datetime',
+        'fixed_driver_missed_after_at' => 'datetime',
+        'fixed_approaching_notified_at' => 'datetime',
+        'fixed_arrived_notified_at' => 'datetime',
+        'fixed_leaving_soon_notified_at' => 'datetime',
+        'fixed_auto_processed_at' => 'datetime',
     ];
 
     public function routeDeparture(): BelongsTo
@@ -76,5 +88,15 @@ class SeatReservation extends Model
     public function dropStop(): BelongsTo
     {
         return $this->belongsTo(RouteStop::class, 'drop_stop_id');
+    }
+
+    public function fixedEvents(): HasMany
+    {
+        return $this->hasMany(FixedBookingEvent::class, 'seat_reservation_id');
+    }
+
+    public function fixedSupportNotes(): HasMany
+    {
+        return $this->hasMany(FixedBookingSupportNote::class, 'seat_reservation_id');
     }
 }

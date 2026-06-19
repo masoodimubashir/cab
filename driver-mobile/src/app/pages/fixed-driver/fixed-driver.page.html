@@ -111,6 +111,10 @@
           <ion-icon name="play-outline"></ion-icon>
           <span>Start ride</span>
         </button>
+        <button class="dc-cta dc-cta--ghost dc-press" (click)="completeRide()" [disabled]="busy || !canComplete(vehicle)">
+          <ion-icon name="checkmark-done-outline"></ion-icon>
+          <span>Complete ride</span>
+        </button>
       </div>
     </section>
 
@@ -144,8 +148,8 @@
           </div>
 
           <div class="passenger-actions">
-            <button class="dc-cta dc-press" (click)="board(passenger)" [disabled]="busy || !canMarkPassenger(passenger)">Board</button>
-            <button class="dc-cta dc-cta--ghost dc-press" (click)="noShow(passenger)" [disabled]="busy || !canMarkPassenger(passenger)">No-show</button>
+            <button class="dc-cta dc-press" (click)="board(passenger)" [disabled]="busy || !canBoardPassenger(passenger)">Board</button>
+            <button class="dc-cta dc-cta--ghost dc-press" (click)="drop(passenger)" [disabled]="busy || !canDropPassenger(passenger)">Drop off</button>
           </div>
         </article>
       </ng-container>

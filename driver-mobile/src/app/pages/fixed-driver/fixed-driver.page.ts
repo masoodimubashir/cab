@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { AlertController, ToastController } from '@ionic/angular';
+import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 
@@ -60,6 +61,7 @@ export class FixedDriverPage {
 
   activeVehicle: FixedVehicle | null = null;
   passengers: FixedPassenger[] = [];
+  private manifestPoll?: Subscription;
 
   constructor(
     private api: ApiService,
@@ -69,6 +71,10 @@ export class FixedDriverPage {
 
   ionViewWillEnter(): void {
     this.refresh();
+  }
+
+  ionViewWillLeave(): void {
+    this.stopManifestPolling();
   }
 
   refresh(): void {
@@ -94,7 +100,12 @@ export class FixedDriverPage {
       next: (res) => {
         this.vehicles = res.data ?? [];
         this.activeVehicle = this.pickActiveVehicle();
-        if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
+        if (this.activeVehicle) {
+          this.loadManifest(this.activeVehicle.id, false);
+          this.startManifestPolling();
+        } else {
+          this.stopManifestPolling();
+        }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed vehicles.',
       complete: done,
@@ -143,7 +154,7 @@ export class FixedDriverPage {
     if (!this.activeVehicle) return;
     const alert = await this.alerts.create({
       header: 'Start fixed ride?',
-      message: 'Customers can no longer book this vehicle once it starts.',
+      message: 'Customers can still book from upcoming stops while seats are available.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: 'Start ride', role: 'confirm' },
@@ -167,13 +178,43 @@ export class FixedDriverPage {
       });
   }
 
+  async completeRide(): Promise<void> {
+    if (!this.activeVehicle || !this.canComplete(this.activeVehicle)) return;
+    const alert = await this.alerts.create({
+      header: 'Complete fixed ride?',
+      message: 'This closes the vehicle and stops new fixed bookings. All active passengers must already be dropped, cancelled or no-show.',
+      buttons: [
+        { text: 'Keep open', role: 'cancel' },
+        { text: 'Complete ride', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const result = await alert.onDidDismiss();
+    if (result.role !== 'confirm') return;
+
+    this.busy = true;
+    this.error = null;
+    this.api.post<{ vehicle: FixedVehicle; message: string }>("/fixed/departures/" + this.activeVehicle.id + "/complete", {})
+      .pipe(finalize(() => this.busy = false))
+      .subscribe({
+        next: async (res) => {
+          this.activeVehicle = res.vehicle;
+          this.stopManifestPolling();
+          await this.showToast(res.message || 'Fixed ride completed.');
+          this.refresh();
+        },
+        error: (err) => this.error = err?.error?.message || 'Could not complete fixed ride.',
+      });
+  }
+
   board(passenger: FixedPassenger): void {
     this.updatePassenger(passenger, 'board');
   }
 
-  noShow(passenger: FixedPassenger): void {
-    this.updatePassenger(passenger, 'no-show');
+  drop(passenger: FixedPassenger): void {
+    this.updatePassenger(passenger, 'drop');
   }
+
 
   get groupedPassengers(): Array<{ stop: string; passengers: FixedPassenger[] }> {
     const groups = new Map<string, FixedPassenger[]>();
@@ -192,11 +233,21 @@ export class FixedDriverPage {
     return !!vehicle && !['DEPARTED', 'COMPLETED', 'CANCELLED'].includes(vehicle.status);
   }
 
-  canMarkPassenger(passenger: FixedPassenger): boolean {
+  canComplete(vehicle: FixedVehicle | null): boolean {
+    return !!vehicle
+      && !['COMPLETED', 'CANCELLED'].includes(vehicle.status)
+      && !this.passengers.some((passenger) => ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(passenger.status));
+  }
+
+  canBoardPassenger(passenger: FixedPassenger): boolean {
     return ['BOOKED', 'CONFIRMED'].includes(passenger.status);
   }
 
-  private updatePassenger(passenger: FixedPassenger, action: 'board' | 'no-show'): void {
+  canDropPassenger(passenger: FixedPassenger): boolean {
+    return passenger.status === 'BOARDED';
+  }
+
+  private updatePassenger(passenger: FixedPassenger, action: 'board' | 'drop'): void {
     this.busy = true;
     this.error = null;
     this.api.post<{ message: string }>(`/fixed/bookings/${passenger.id}/${action}`, {})
@@ -208,6 +259,22 @@ export class FixedDriverPage {
         },
         error: (err) => this.error = err?.error?.message || 'Could not update passenger.',
       });
+  }
+
+
+  private startManifestPolling(): void {
+    this.stopManifestPolling();
+    if (!this.activeVehicle || ["COMPLETED", "CANCELLED"].includes(this.activeVehicle.status)) return;
+
+    this.manifestPoll = interval(8000).subscribe(() => {
+      if (!this.activeVehicle || this.busy || this.loading) return;
+      this.loadManifest(this.activeVehicle.id, false);
+    });
+  }
+
+  private stopManifestPolling(): void {
+    this.manifestPoll?.unsubscribe();
+    this.manifestPoll = undefined;
   }
 
   private pickActiveVehicle(): FixedVehicle | null {

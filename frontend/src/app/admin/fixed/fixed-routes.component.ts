@@ -41,6 +41,15 @@ interface FareConfig {
 
 interface LatLng { lat: number; lng: number; }
 
+interface FixedNoShowSettings {
+  stop_arrival_radius_m: number;
+  driver_missed_stop_grace_minutes: number;
+  customer_pickup_radius_m: number;
+  vehicle_approaching_alert_radius_m: number;
+  customer_grace_minutes: number;
+  boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'qr_scan' | 'driver_customer';
+}
+
 interface FixedRouteRow {
   id: number;
   city_id: number;
@@ -65,6 +74,7 @@ interface FixedRouteRow {
   luggage_surcharge_amount: number;
   max_luggage_per_vehicle: number;
   requires_prepaid: boolean;
+  fixed_settings_json?: Partial<FixedNoShowSettings> | null;
   is_active: boolean;
   sort_order: number;
   stops: RouteStopRow[];
@@ -295,7 +305,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <input *ngIf="s.is_temporarily_unavailable" type="text" class="stop-reason" [(ngModel)]="s.unavailable_reason" placeholder="Unavailable reason" />
           </div>
 
-          <div class="section-lbl">Fare and booking rules</div>
+          <div class="section-lbl">Fare, seats and luggage</div>
           <div class="grid3">
             <label class="field">
               <span class="field__lbl">Flat fare (₹) <i>*</i></span>
@@ -312,7 +322,6 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             </label>
             <label class="field"><span class="field__lbl">Booking window (hours)</span><input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" /></label>
             <label class="field"><span class="field__lbl">Max seats per booking</span><input type="number" min="1" max="20" step="1" [(ngModel)]="form.max_seats_per_booking" /></label>
-            <label class="field"><span class="field__lbl">Wait time per stop (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.waiting_time_per_stop_minutes" /></label>
             <label class="field"><span class="field__lbl">Luggage surcharge (₹)</span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
             <label class="field"><span class="field__lbl">Max luggage per vehicle</span><input type="number" min="0" max="200" step="1" [(ngModel)]="form.max_luggage_per_vehicle" /></label>
           </div>
@@ -321,6 +330,29 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <label class="toggle"><input type="checkbox" [(ngModel)]="form.requires_prepaid" /><span>Prepaid required</span></label>
             <label class="toggle"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active</span></label>
           </div>
+
+          <div class="section-lbl">Driver no-show settings</div>
+          <div class="grid3">
+            <label class="field"><span class="field__lbl">Wait time per stop (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.waiting_time_per_stop_minutes" /></label>
+            <label class="field"><span class="field__lbl">Stop arrival radius (m)</span><input type="number" min="25" max="1000" step="5" [(ngModel)]="form.stop_arrival_radius_m" /></label>
+            <label class="field"><span class="field__lbl">Missed stop grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.driver_missed_stop_grace_minutes" /></label>
+          </div>
+
+          <div class="section-lbl">Customer no-show settings</div>
+          <div class="grid3">
+            <label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" min="25" max="1000" step="5" [(ngModel)]="form.customer_pickup_radius_m" /></label>
+            <label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" min="50" max="5000" step="50" [(ngModel)]="form.vehicle_approaching_alert_radius_m" /></label>
+            <label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.customer_grace_minutes" /></label>
+            <label class="field"><span class="field__lbl">Boarding confirmation</span>
+              <select [(ngModel)]="form.boarding_confirmation_mode">
+                <option value="driver_only">Driver marks boarded</option>
+                <option value="customer_otp">Customer OTP</option>
+                <option value="qr_scan">QR scan</option>
+                <option value="driver_customer">Driver + customer</option>
+              </select>
+            </label>
+          </div>
+
         </div>
 
         <footer class="rt-panel__foot">
@@ -571,6 +603,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       waiting_time_per_stop_minutes: 5,
       luggage_surcharge_amount: 0,
       max_luggage_per_vehicle: 0,
+      stop_arrival_radius_m: 150,
+      driver_missed_stop_grace_minutes: 3,
+      customer_pickup_radius_m: 150,
+      vehicle_approaching_alert_radius_m: 500,
+      customer_grace_minutes: 2,
+      boarding_confirmation_mode: 'driver_only' as FixedNoShowSettings['boarding_confirmation_mode'],
       requires_prepaid: true,
       is_active: true,
       sort_order: 0,
@@ -625,6 +663,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   openEdit(r: FixedRouteRow): void {
     this.editingId = r.id;
     const fc = r.fare_config || ({ seat_fare: null, surge_multiplier: null, commission_percent: null, tax_percent: null } as FareConfig);
+    const ns = r.fixed_settings_json || {};
     this.form = {
       scope: r.scope,
       origin_city_id: r.origin_city_id,
@@ -646,6 +685,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       waiting_time_per_stop_minutes: r.waiting_time_per_stop_minutes,
       luggage_surcharge_amount: r.luggage_surcharge_amount,
       max_luggage_per_vehicle: r.max_luggage_per_vehicle ?? 0,
+      stop_arrival_radius_m: Number(ns.stop_arrival_radius_m ?? 150),
+      driver_missed_stop_grace_minutes: Number(ns.driver_missed_stop_grace_minutes ?? 3),
+      customer_pickup_radius_m: Number(ns.customer_pickup_radius_m ?? 150),
+      vehicle_approaching_alert_radius_m: Number(ns.vehicle_approaching_alert_radius_m ?? 500),
+      customer_grace_minutes: Number(ns.customer_grace_minutes ?? 2),
+      boarding_confirmation_mode: (ns.boarding_confirmation_mode ?? 'driver_only') as FixedNoShowSettings['boarding_confirmation_mode'],
       requires_prepaid: r.requires_prepaid,
       is_active: r.is_active,
       sort_order: r.sort_order,
@@ -1102,6 +1147,15 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       luggage_surcharge_amount: f.luggage_surcharge_amount,
       max_luggage_per_vehicle: f.max_luggage_per_vehicle ?? 0,
       requires_prepaid: f.requires_prepaid,
+      fixed_settings_json: {
+        auto_no_show_enabled: true,
+        stop_arrival_radius_m: Number(f.stop_arrival_radius_m ?? 150),
+        driver_missed_stop_grace_minutes: Number(f.driver_missed_stop_grace_minutes ?? 3),
+        customer_pickup_radius_m: Number(f.customer_pickup_radius_m ?? 150),
+        vehicle_approaching_alert_radius_m: Number(f.vehicle_approaching_alert_radius_m ?? 500),
+        customer_grace_minutes: Number(f.customer_grace_minutes ?? 2),
+        boarding_confirmation_mode: f.boarding_confirmation_mode ?? 'driver_only',
+      },
       is_active: f.is_active,
       sort_order: f.sort_order ?? 0,
       fare_config: {

@@ -28,11 +28,6 @@ const routes: Routes = [
           import('../pages/trip-history/trip-history.module').then((m) => m.TripHistoryPageModule),
       },
       {
-        path: 'fixed',
-        loadChildren: () =>
-          import('../pages/fixed-driver/fixed-driver.module').then((m) => m.FixedDriverPageModule),
-      },
-      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full',

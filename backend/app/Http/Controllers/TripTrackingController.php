@@ -10,10 +10,11 @@ use App\Models\Trip;
 use App\Models\TripShareLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\Services\FixedStopAutomationService;
 
 class TripTrackingController extends Controller
 {
-    public function updateLocation(Request $request, Trip $trip)
+    public function updateLocation(Request $request, Trip $trip, FixedStopAutomationService $fixedStops)
     {
         $data = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
@@ -73,6 +74,8 @@ class TripTrackingController extends Controller
             tripId: $trip->id,
             location: $location->fresh(),
         ))->toOthers();
+
+        $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
 
         return response()->json(['location' => $location]);
     }

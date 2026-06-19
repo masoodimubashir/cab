@@ -11,9 +11,9 @@ class RazorpayService
 
     public function __construct()
     {
-        $keyId = env('RAZORPAY_KEY_ID');
-        $keySecret = env('RAZORPAY_KEY_SECRET');
-        $this->webhookSecret = (string) env('RAZORPAY_WEBHOOK_SECRET', '');
+        $keyId = config('services.razorpay.key_id');
+        $keySecret = config('services.razorpay.key_secret');
+        $this->webhookSecret = (string) config('services.razorpay.webhook_secret', '');
 
         if (!$keyId || !$keySecret) {
             throw new \RuntimeException('Missing Razorpay credentials in env.');
@@ -29,7 +29,7 @@ class RazorpayService
      */
     public function createOrder(int $amountPaise, string $receipt): array
     {
-        $currency = (string) env('RAZORPAY_CURRENCY', 'INR');
+        $currency = (string) config('services.razorpay.currency', 'INR');
 
         $order = $this->api->order->create([
             'amount' => $amountPaise,
@@ -61,6 +61,27 @@ class RazorpayService
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * Creates a refund against a captured Razorpay payment.
+     *
+     * @return array{id:string,status:string,amount:int}
+     */
+    public function refundPayment(string $paymentId, int $amountPaise, array $notes = []): array
+    {
+        $payload = ['amount' => $amountPaise];
+        if ($notes !== []) {
+            $payload['notes'] = $notes;
+        }
+
+        $refund = $this->api->payment->fetch($paymentId)->refund($payload);
+
+        return [
+            'id' => (string) $refund->id,
+            'status' => (string) ($refund->status ?? 'pending'),
+            'amount' => (int) ($refund->amount ?? $amountPaise),
+        ];
     }
 
     /**
