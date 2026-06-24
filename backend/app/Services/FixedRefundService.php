@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ReservationException;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -106,9 +107,9 @@ class FixedRefundService
         });
     }
 
-    public function cancelBySystem(SeatReservation $reservation, string $reason = 'operator_cancelled'): SeatReservation
+    public function cancelBySystem(SeatReservation $reservation, string $reason = 'operator_cancelled', ?User $actor = null, ?string $detail = null): SeatReservation
     {
-        return DB::transaction(function () use ($reservation, $reason) {
+        return DB::transaction(function () use ($reservation, $reason, $actor, $detail) {
             /** @var SeatReservation|null $res */
             $res = SeatReservation::query()
                 ->with(['route:id,mode,name', 'customer:id', 'routeDeparture:id,seats_taken,trip_id'])
@@ -118,7 +119,7 @@ class FixedRefundService
             if (!$res || $res->route?->mode !== 'fixed') {
                 throw new ReservationException('This fixed booking could not be found.', 404);
             }
-            if (!in_array($res->status, ['BOOKED', 'CONFIRMED'], true)) {
+            if (!in_array($res->status, ['BOOKED', 'CONFIRMED', 'BOARDED'], true)) {
                 throw new ReservationException('This fixed booking can no longer be cancelled by the system.', 422);
             }
 
@@ -136,19 +137,29 @@ class FixedRefundService
                 'rating_comment' => $reason,
             ]);
 
+            $eventType = $reason === 'driver_missed_stop' ? 'driver_missed_stop' : 'system_cancelled';
+            $eventTitle = match ($reason) {
+                'driver_missed_stop' => 'Driver missed pickup stop',
+                'admin_passenger_cancelled' => 'Admin cancelled passenger booking',
+                'admin_vehicle_cancelled' => 'Admin cancelled vehicle booking',
+                default => 'System cancelled booking',
+            };
+            $eventDetail = $detail ?: ($reason === 'driver_missed_stop'
+                ? 'Customer was near the pickup stop, but the vehicle moved past it. The booking was cancelled by the system.'
+                : 'The fixed booking was cancelled by the system.');
+
             $this->events->record(
                 $res,
-                $reason === 'driver_missed_stop' ? 'driver_missed_stop' : 'system_cancelled',
-                $reason === 'driver_missed_stop' ? 'Driver missed pickup stop' : 'System cancelled booking',
-                $reason === 'driver_missed_stop'
-                    ? 'Customer was near the pickup stop, but the vehicle moved past it. The booking was cancelled by the system.'
-                    : 'The fixed booking was cancelled by the system.',
+                $eventType,
+                $eventTitle,
+                $eventDetail,
                 [
                     'reason' => $reason,
                     'refund_status' => $refundOutcome['refund_status'],
                     'payment_status' => $refundOutcome['payment_status'],
                     'refund_pending' => $refundOutcome['refund_pending'],
                 ],
+                $actor,
             );
 
             return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);

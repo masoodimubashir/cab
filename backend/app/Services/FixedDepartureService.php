@@ -2,16 +2,23 @@
 
 namespace App\Services;
 
+use App\Exceptions\ReservationException;
 use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\Route;
 use App\Models\RouteDeparture;
+use App\Models\SeatReservation;
+use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class FixedDepartureService
 {
-    public function __construct(private readonly FixedAvailabilityService $availability) {}
+    public function __construct(
+        private readonly FixedAvailabilityService $availability,
+        private readonly FixedRefundService $refunds,
+        private readonly FixedBookingEventService $events,
+    ) {}
 
     public function customerDepartures(Route $route): Collection
     {
@@ -30,6 +37,14 @@ class FixedDepartureService
             ->when(isset($filters['status']), fn ($q) => $q->where('status', $filters['status']))
             ->when(isset($filters['date_from']), fn ($q) => $q->whereDate('service_date', '>=', $filters['date_from']))
             ->when(isset($filters['date_to']), fn ($q) => $q->whereDate('service_date', '<=', $filters['date_to']))
+            ->when(!empty($filters['q']), function ($q) use ($filters) {
+                $term = '%' . str_replace(['%', '_'], ['\\%', '\\_'], trim((string) $filters['q'])) . '%';
+                $q->where(function ($inner) use ($term) {
+                    $inner->where('id', 'like', $term)
+                        ->orWhereHas('route', fn ($route) => $route->where('name', 'like', $term))
+                        ->orWhereHas('driver', fn ($driver) => $driver->where('name', 'like', $term));
+                });
+            })
             ->orderByDesc('service_date')
             ->orderBy('depart_at')
             ->orderBy('id');
@@ -70,6 +85,102 @@ class FixedDepartureService
 
             return $departure->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
         });
+    }
+
+    public function closeBookings(City $city, RouteDeparture $departure, ?User $actor = null, ?string $reason = null): RouteDeparture
+    {
+        $this->availability->assertFixedDeparture($departure);
+        if ($departure->route?->city_id !== $city->id) {
+            abort(404);
+        }
+        if (in_array($departure->status, ['COMPLETED', 'CANCELLED'], true)) {
+            throw new ReservationException('This vehicle is already closed.', 422);
+        }
+
+        return DB::transaction(function () use ($departure, $actor, $reason) {
+            /** @var RouteDeparture $dep */
+            $dep = RouteDeparture::query()
+                ->with(['route:id,city_id,name,scope,mode'])
+                ->lockForUpdate()
+                ->findOrFail($departure->id);
+
+            $dep->update([
+                'visible_to_customers' => false,
+                'boarding_closed_at' => $dep->boarding_closed_at ?: now(),
+            ]);
+
+            SeatReservation::query()
+                ->where('route_departure_id', $dep->id)
+                ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+                ->get()
+                ->each(function (SeatReservation $reservation) use ($actor, $reason) {
+                    $this->events->record(
+                        $reservation,
+                        'admin_closed_vehicle_bookings',
+                        'Admin closed vehicle bookings',
+                        'Admin stopped new bookings for this fixed vehicle. Existing passengers remain active and the ride can continue.',
+                        ['reason' => $reason],
+                        $actor,
+                    );
+                });
+
+            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+        });
+    }
+
+    public function cancelAdminDeparture(City $city, RouteDeparture $departure, ?User $actor = null, ?string $reason = null): array
+    {
+        $this->availability->assertFixedDeparture($departure);
+        if ($departure->route?->city_id !== $city->id) {
+            abort(404);
+        }
+        if (in_array($departure->status, ['COMPLETED', 'CANCELLED'], true)) {
+            throw new ReservationException('This vehicle is already completed or cancelled.', 422);
+        }
+
+        $activeReservations = SeatReservation::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->orderBy('id')
+            ->get();
+
+        $cancelled = 0;
+        $refundPending = 0;
+        foreach ($activeReservations as $reservation) {
+            $detail = 'Admin cancelled the whole fixed vehicle. This passenger booking was cancelled and full-refund handling was started.';
+            if ($reason) {
+                $detail .= ' Reason: ' . trim($reason);
+            }
+
+            $updated = $this->refunds->cancelBySystem(
+                $reservation,
+                'admin_vehicle_cancelled',
+                $actor,
+                $detail,
+            );
+            $cancelled++;
+            if ($updated->refund_status === 'APPROVED') {
+                $refundPending++;
+            }
+        }
+
+        $dep = DB::transaction(function () use ($departure) {
+            /** @var RouteDeparture $dep */
+            $dep = RouteDeparture::query()->lockForUpdate()->findOrFail($departure->id);
+            $dep->update([
+                'status' => 'CANCELLED',
+                'visible_to_customers' => false,
+                'boarding_closed_at' => $dep->boarding_closed_at ?: now(),
+            ]);
+
+            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+        });
+
+        return [
+            'departure' => $dep,
+            'cancelled_passengers' => $cancelled,
+            'refund_pending' => $refundPending,
+        ];
     }
 
     public function shapeCustomerDeparture(RouteDeparture $departure): array

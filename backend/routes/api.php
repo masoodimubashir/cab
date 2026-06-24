@@ -209,6 +209,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
         ->name('driver.me.documents.file');
     Route::post('/drivers/go-online', [DriversController::class, 'goOnline']);
     Route::post('/drivers/go-offline', [DriversController::class, 'goOffline']);
+    Route::post('/drivers/service-mode', [DriversController::class, 'setServiceMode']);
     Route::post('/drivers/location', [DriversController::class, 'pingLocation'])->middleware('throttle:location');
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
     Route::get('/drivers/me/earnings', [DriversController::class, 'earnings']);
@@ -508,6 +509,10 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city'])->group(functio
     Route::get('/admin/cities/{city}/fixed-bookings', [AdminFixedDeparturesController::class, 'bookings']);
     Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
+    Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);
+    Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/support-action', [AdminFixedDeparturesController::class, 'storeSupportAction']);
     Route::post('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-departures/{departure}', [AdminFixedDeparturesController::class, 'update']);
+    Route::post('/admin/cities/{city}/fixed-departures/{departure}/close-bookings', [AdminFixedDeparturesController::class, 'closeBookings']);
+    Route::post('/admin/cities/{city}/fixed-departures/{departure}/cancel', [AdminFixedDeparturesController::class, 'cancelDeparture']);
 });

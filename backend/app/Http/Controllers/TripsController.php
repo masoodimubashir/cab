@@ -280,6 +280,9 @@ class TripsController extends Controller
         if ($driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['data' => [], 'reason' => 'Driver must be approved and online.']);
         }
+        if ($driverProfile->active_service_mode !== Driver::SERVICE_MODE_PRIVATE) {
+            return response()->json(['data' => [], 'reason' => 'Choose private ride mode to receive private ride requests.']);
+        }
 
         // A driver already mid-trip cannot accept a second one. Hide the available
         // queue from busy drivers so they don't even see the trips.
@@ -907,6 +910,7 @@ class TripsController extends Controller
         $candidates = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
+            ->where('active_service_mode', Driver::SERVICE_MODE_PRIVATE)
             ->whereNotIn('user_id', $busyDriverIds)
             ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
                 // Customer asked for a specific global vehicle_type — drivers
@@ -1044,6 +1048,9 @@ class TripsController extends Controller
         $driverProfile = Driver::query()->where('user_id', $driverUserId)->first();
         if (!$driverProfile || $driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['message' => 'Driver is no longer available.'], 409);
+        }
+        if ($driverProfile->active_service_mode !== Driver::SERVICE_MODE_PRIVATE) {
+            return response()->json(['message' => 'Driver is not accepting private rides right now.'], 409);
         }
         $driverBusy = Trip::query()
             ->where('driver_id', $driverUserId)

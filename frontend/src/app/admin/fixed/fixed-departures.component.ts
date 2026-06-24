@@ -1,7 +1,10 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
+import $ from 'jquery';
+import moment from 'moment';
+import 'daterangepicker';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -10,6 +13,7 @@ import {
   ColumnComponent,
   DataTableComponent,
   DrawerComponent,
+  FilterPillComponent,
   FilterSelectComponent,
   IconComponent,
   ModalComponent,
@@ -117,6 +121,28 @@ interface FixedSupportTimeline {
   notes: FixedSupportNote[];
 }
 
+type RecoveryActionType = 'close_vehicle' | 'cancel_vehicle' | 'cancel_booking';
+type ManualSupportActionType = 'refund_pending' | 'refund_resolved_manual' | 'payment_resolved_manual';
+
+interface RecoveryAction {
+  type: RecoveryActionType;
+  id: number;
+  title: string;
+  intro: string;
+  effects: string[];
+  confirmLabel: string;
+  danger: boolean;
+}
+
+interface ManualSupportAction {
+  type: ManualSupportActionType;
+  bookingId: number;
+  title: string;
+  intro: string;
+  confirmLabel: string;
+  showAmount: boolean;
+}
+
 const STATUS_OPTIONS = [
   { label: 'Boarding', value: 'FORMING' },
   { label: 'Started', value: 'DISPATCHED' },
@@ -158,6 +184,7 @@ const REFUND_STATUS_OPTIONS = [
     ColumnComponent,
     DataTableComponent,
     DrawerComponent,
+    FilterPillComponent,
     FilterSelectComponent,
     IconComponent,
     ModalComponent,
@@ -189,40 +216,79 @@ const REFUND_STATUS_OPTIONS = [
           emptyHint="Open a vehicle after setting up a fixed route."
           (pageChange)="onPageChange($event)"
         >
+          <div slot="search" class="table-search">
+            <tm-icon name="search" [size]="15" />
+            <input [(ngModel)]="query" type="search" placeholder="Search route, driver or vehicle ID" (ngModelChange)="onSearchChange()" />
+          </div>
+
           <ng-container slot="filters">
             <tm-filter-select icon="road" ariaLabel="Route filter" allLabel="All routes"
               [options]="routeFilterOptions" [value]="routeId" (valueChange)="onRouteChange($event)" />
             <tm-filter-select icon="shield" ariaLabel="Status filter" allLabel="All statuses"
               [options]="statusOptions" [value]="status" (valueChange)="onStatusChange($event)" />
+            <div class="date-range" [class.has-value]="dateFrom || dateTo">
+              <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
+              <input
+                #rangeInput
+                type="text"
+                readonly
+                class="date-range__input"
+                placeholder="Ride date · any date"
+                [value]="rangeLabel"
+                aria-label="Filter by fixed ride date range"
+              />
+              <button
+                *ngIf="dateFrom || dateTo"
+                type="button"
+                class="date-range__clear"
+                (click)="clearDateRange(); $event.stopPropagation()"
+                aria-label="Clear ride date range"
+              >
+                <tm-icon name="x" [size]="12" />
+              </button>
+            </div>
+          </ng-container>
+
+          <ng-container slot="banner">
+            <tm-filter-pill *ngIf="query.trim()" icon="search" label="Search" [value]="query" (clear)="clearSearch()" />
+            <tm-filter-pill *ngIf="routeId !== 'all'" icon="road" label="Route" [value]="routeLabel()" (clear)="clearRouteFilter()" />
+            <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatusFilter()" />
+            <tm-filter-pill *ngIf="dateFrom || dateTo" icon="calendar" label="Ride date" [value]="dateRangeLabel()" (clear)="clearDateRange()" />
           </ng-container>
 
           <tm-column key="route" label="Route">
             <ng-template let-row>
               <div class="cell-id">
                 <span class="cell-name">{{ row.route_name }}</span>
-                <span class="cell-sub">{{ row.scope }} · driver leaves when ready</span>
+                <span class="cell-sub">{{ row.scope }} · {{ row.driver || 'Driver not assigned' }}</span>
               </div>
             </ng-template>
           </tm-column>
 
-          <tm-column key="opened" label="Opened" width="160">
+          <tm-column key="opened" label="Booking window" width="170">
             <ng-template let-row>
               <div class="cell-id">
                 <span class="cell-name">{{ openedLabel(row) }}</span>
-                <span class="cell-sub">{{ row.visible_to_customers ? 'Boarding now' : 'Hidden' }}</span>
+                <span class="cell-sub">{{ row.visible_to_customers ? 'Customers can book' : 'Closed for booking' }}</span>
               </div>
             </ng-template>
           </tm-column>
 
-          <tm-column key="seats" label="Seats" width="110">
+          <tm-column key="inventory" label="Inventory" width="150">
             <ng-template let-row>
-              <span class="seats" [class.full]="row.seats_remaining === 0">{{ row.seats_taken }} / {{ row.capacity }}</span>
+              <div class="cell-id">
+                <span class="cell-name seats" [class.full]="row.seats_remaining === 0">{{ row.seats_taken }} / {{ row.capacity }} seats</span>
+                <span class="cell-sub">{{ row.luggage_taken || 0 }} / {{ row.luggage_capacity || 0 }} luggage</span>
+              </div>
             </ng-template>
           </tm-column>
 
-          <tm-column key="visible" label="Visible" width="90">
+          <tm-column key="intent" label="What admin should know" width="210">
             <ng-template let-row>
-              <span class="status-pill" [attr.data-s]="row.visible_to_customers ? 'published' : 'hidden'">{{ row.visible_to_customers ? 'live' : 'hidden' }}</span>
+              <div class="intent-cell">
+                <span class="status-pill" [attr.data-s]="row.visible_to_customers ? 'published' : 'hidden'">{{ row.visible_to_customers ? 'live booking' : 'booking closed' }}</span>
+                <span class="intent-text">{{ vehicleIntent(row) }}</span>
+              </div>
             </ng-template>
           </tm-column>
 
@@ -232,86 +298,23 @@ const REFUND_STATUS_OPTIONS = [
             </ng-template>
           </tm-column>
 
-          <tm-column key="actions" label="" width="170" align="right">
+          <tm-column key="actions" label="" width="320" align="right">
             <ng-template let-row>
               <div class="cell-actions">
                 <tm-button variant="ghost" size="sm" icon="user" (clicked)="openManifest(row)">Manifest</tm-button>
+                <tm-button variant="ghost" size="sm" [disabled]="!canCloseVehicle(row)" (clicked)="openCloseBookings(row)">Close bookings</tm-button>
+                <tm-button variant="danger" size="sm" [disabled]="!canCancelVehicle(row)" (clicked)="openCancelVehicle(row)">Cancel vehicle</tm-button>
                 <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit vehicle"><tm-icon name="edit" [size]="14" /></button>
               </div>
             </ng-template>
           </tm-column>
         </tm-data-table>
 
-        <section class="support-panel">
-          <div class="support-head">
-            <div>
-              <h2>Fixed booking support</h2>
-              <p>Search customer bookings by customer, phone, route, stop, payment, refund or live status.</p>
-            </div>
-            <tm-button variant="ghost" icon="refresh" (clicked)="fetchBookings()">Refresh</tm-button>
-          </div>
-
-          <div class="support-filters">
-            <label class="support-search">
-              <span>Search</span>
-              <input [(ngModel)]="supportQuery" type="search" placeholder="Customer, phone, stop, route or payment ref" (keyup.enter)="onSupportFilterChange()" />
-            </label>
-            <tm-filter-select icon="road" ariaLabel="Support route filter" allLabel="All routes" [options]="routeFilterOptions" [value]="supportRouteId" (valueChange)="supportRouteId = $event; onSupportFilterChange()" />
-            <tm-filter-select icon="shield" ariaLabel="Booking status filter" allLabel="All booking statuses" [options]="bookingStatusOptions" [value]="supportStatus" (valueChange)="supportStatus = $event; onSupportFilterChange()" />
-            <tm-filter-select icon="tag" ariaLabel="Payment status filter" allLabel="All payments" [options]="paymentStatusOptions" [value]="supportPaymentStatus" (valueChange)="supportPaymentStatus = $event; onSupportFilterChange()" />
-            <tm-filter-select icon="check" ariaLabel="Refund status filter" allLabel="All refunds" [options]="refundStatusOptions" [value]="supportRefundStatus" (valueChange)="supportRefundStatus = $event; onSupportFilterChange()" />
-            <tm-button variant="ghost" (clicked)="onSupportFilterChange()">Search</tm-button>
-            <tm-button variant="ghost" (clicked)="resetSupportFilters()">Reset</tm-button>
-          </div>
-
-          <div class="cue support-cue" *ngIf="supportLoading">
-            <tm-icon name="refresh" [size]="20" />
-            <p class="cue__text">Loading fixed bookings...</p>
-          </div>
-
-          <p class="muted" *ngIf="!supportLoading && !supportBookings.length">No fixed bookings match these filters.</p>
-
-          <div class="support-list" *ngIf="!supportLoading && supportBookings.length">
-            <article class="support-card" *ngFor="let row of supportBookings">
-              <div class="support-card__main">
-                <div>
-                  <span class="support-title">#{{ row.id }} · {{ row.customer_name || 'Customer' }}</span>
-                  <span class="support-sub">{{ row.customer_phone || 'No phone' }} · {{ row.route_name || 'Fixed route' }} · {{ bookingDate(row) }}</span>
-                </div>
-                <div class="support-card__actions">
-                  <span class="status-pill" [attr.data-s]="row.status">{{ row.status }}</span>
-                  <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openSupportTimeline(row)">Timeline</tm-button>
-                </div>
-              </div>
-              <div class="support-route">
-                <span>{{ row.board || 'Pickup' }}</span>
-                <tm-icon name="chevron-right" [size]="13" />
-                <span>{{ row.drop || 'Drop' }}</span>
-              </div>
-              <div class="support-meta">
-                <span>{{ row.seats }} seat{{ row.seats > 1 ? 's' : '' }}</span>
-                <span>{{ row.fare_amount != null ? ('INR ' + row.fare_amount) : 'Fare -' }}</span>
-                <span>{{ supportPayment(row) }}</span>
-                <span>{{ supportRefund(row) }}</span>
-                <span *ngIf="row.departure_status">Vehicle {{ row.departure_status }}</span>
-                <span *ngIf="row.fixed_auto_outcome">Reason {{ row.fixed_auto_outcome }}</span>
-              </div>
-              <p class="support-note" *ngIf="row.fixed_live_status">{{ row.fixed_live_status.label }} · {{ row.fixed_live_status.detail }}</p>
-              <p class="support-note" *ngIf="row.driver_name">Driver {{ row.driver_name }}{{ row.driver_phone ? ' · ' + row.driver_phone : '' }}</p>
-            </article>
-          </div>
-
-          <div class="support-pages" *ngIf="supportTotal > supportPageSize">
-            <tm-button variant="ghost" [disabled]="supportPage <= 1" (clicked)="onSupportPageChange(-1)">Previous</tm-button>
-            <span>Page {{ supportPage }} · {{ supportTotal }} bookings</span>
-            <tm-button variant="ghost" [disabled]="supportPage * supportPageSize >= supportTotal" (clicked)="onSupportPageChange(1)">Next</tm-button>
-          </div>
-        </section>
       </ng-container>
     </div>
 
     <tm-modal [open]="editorOpen" [title]="editingId ? 'Edit live fixed vehicle' : 'Open fixed vehicle'" (closed)="closeEditor()">
-      <div slot="body" class="modal-body">
+      <div slot="body" class="modal-body vehicle-modal">
         <div class="grid2">
           <label class="field">
             <span class="field__lbl">Route</span>
@@ -344,7 +347,7 @@ const REFUND_STATUS_OPTIONS = [
           </label>
         </div>
 
-        <div class="toggles">
+        <div class="toggles modal-toggle-row">
           <label class="toggle"><input type="checkbox" [(ngModel)]="form.visible_to_customers" /> <span>Visible to customers</span></label>
         </div>
       </div>
@@ -361,7 +364,7 @@ const REFUND_STATUS_OPTIONS = [
       [width]="520"
       (closed)="manifestOpen = false"
     >
-      <div slot="body">
+      <div slot="body" class="manifest-body">
         <div class="cue" *ngIf="loadingManifest">
           <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading manifest…</p>
         </div>
@@ -377,6 +380,7 @@ const REFUND_STATUS_OPTIONS = [
             <span class="pax__seats">{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }}</span>
             <span class="status-pill" [attr.data-s]="p.status">{{ p.status }}</span>
             <span class="pax__fare" *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
+            <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openPassengerTimeline(p)">Timeline</tm-button>
           </div>
         </div>
       </div>
@@ -401,7 +405,20 @@ const REFUND_STATUS_OPTIONS = [
               <span class="support-title">{{ timeline.booking.board || 'Pickup' }} → {{ timeline.booking.drop || 'Drop' }}</span>
               <span class="support-sub">{{ supportPayment(timeline.booking) }} · {{ supportRefund(timeline.booking) }}</span>
             </div>
-            <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ timeline.booking.status }}</span>
+            <div class="timeline-summary__actions">
+              <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ timeline.booking.status }}</span>
+              <tm-button variant="danger" size="sm" [disabled]="!canCancelBooking(timeline.booking)" (clicked)="openCancelBooking(timeline.booking)">Cancel passenger</tm-button>
+            </div>
+          </section>
+
+          <section class="timeline-section support-actions-section">
+            <h3>Support actions</h3>
+            <p class="muted">Record manual payment or refund handling done outside the app. These actions do not call Razorpay or send money automatically.</p>
+            <div class="manual-actions action-grid">
+              <tm-button variant="ghost" size="sm" (clicked)="openManualSupportAction(timeline.booking, 'refund_pending')">Mark refund pending</tm-button>
+              <tm-button variant="green" size="sm" (clicked)="openManualSupportAction(timeline.booking, 'refund_resolved_manual')">Mark refund resolved manually</tm-button>
+              <tm-button variant="ghost" size="sm" (clicked)="openManualSupportAction(timeline.booking, 'payment_resolved_manual')">Mark payment resolved manually</tm-button>
+            </div>
           </section>
 
           <section class="timeline-section">
@@ -438,6 +455,60 @@ const REFUND_STATUS_OPTIONS = [
       </div>
     </tm-drawer>
 
+
+
+    <tm-modal [open]="!!manualSupportAction" [title]="manualSupportAction?.title || 'Support action'" (closed)="closeManualSupportAction()">
+      <div slot="body" class="modal-body support-modal" *ngIf="manualSupportAction as action">
+        <p class="recovery-intro">{{ action.intro }}</p>
+        <div class="grid2">
+          <label class="field">
+            <span class="field__lbl">Manual method</span>
+            <select [(ngModel)]="manualSupportMethod">
+              <option value="">Not specified</option>
+              <option value="Bank transfer">Bank transfer</option>
+              <option value="GPay">GPay</option>
+              <option value="Cash">Cash</option>
+              <option value="Razorpay dashboard">Razorpay dashboard</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field__lbl">Reference</span>
+            <input [(ngModel)]="manualSupportReference" type="text" placeholder="UTR / transaction ID / note ref" />
+          </label>
+          <label class="field" *ngIf="action.showAmount">
+            <span class="field__lbl">Amount</span>
+            <input [(ngModel)]="manualSupportAmount" type="number" min="0" step="0.01" />
+          </label>
+        </div>
+        <label class="field">
+          <span class="field__lbl">Internal note</span>
+          <textarea [(ngModel)]="manualSupportNote" rows="3" placeholder="What admin checked, what was sent, or what customer confirmed"></textarea>
+        </label>
+      </div>
+      <div slot="footer" class="modal-foot">
+        <tm-button variant="ghost" [disabled]="manualSupportSaving" (clicked)="closeManualSupportAction()">Cancel</tm-button>
+        <tm-button variant="green" [loading]="manualSupportSaving" (clicked)="confirmManualSupportAction()">{{ manualSupportAction?.confirmLabel || 'Save action' }}</tm-button>
+      </div>
+    </tm-modal>
+
+    <tm-modal [open]="!!recoveryAction" [title]="recoveryAction?.title || 'Confirm action'" (closed)="closeRecoveryAction()">
+      <div slot="body" class="modal-body recovery-body" *ngIf="recoveryAction as action">
+        <p class="recovery-intro">{{ action.intro }}</p>
+        <ul class="recovery-list">
+          <li *ngFor="let effect of action.effects">{{ effect }}</li>
+        </ul>
+        <label class="field">
+          <span class="field__lbl">Internal reason</span>
+          <textarea [(ngModel)]="recoveryReason" rows="3" placeholder="Optional note for support timeline"></textarea>
+        </label>
+      </div>
+      <div slot="footer" class="modal-foot">
+        <tm-button variant="ghost" [disabled]="recoverySaving" (clicked)="closeRecoveryAction()">Cancel</tm-button>
+        <tm-button [variant]="recoveryAction?.danger ? 'danger' : 'green'" [loading]="recoverySaving" (clicked)="confirmRecoveryAction()">{{ recoveryAction?.confirmLabel || 'Confirm' }}</tm-button>
+      </div>
+    </tm-modal>
+
   `,
   styles: [`
     .page { display: flex; flex-direction: column; gap: 16px; }
@@ -458,25 +529,52 @@ const REFUND_STATUS_OPTIONS = [
     .status-pill[data-s="FORMING"], .status-pill[data-s="CONFIRMED"] { background: #ecfeff; color: #0f766e; }
     .status-pill[data-s="DISPATCHED"], .status-pill[data-s="DEPARTED"], .status-pill[data-s="BOARDED"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
     .status-pill[data-s="CANCELLED"], .status-pill[data-s="NO_SHOW"], .status-pill[data-s="hidden"] { background: #fef2f2; color: #b91c1c; }
-    .cell-actions { display: inline-flex; align-items: center; gap: 8px; }
-    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer; border: 0; }
-    .modal-body { display: flex; flex-direction: column; gap: 14px; min-width: min(760px, 92vw); }
-    .modal-foot { display: flex; justify-content: flex-end; gap: 10px; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .table-search { display: inline-flex; align-items: center; gap: 8px; width: min(360px, 100%); height: 38px; padding: 0 11px; border: 1px solid var(--tm-line-2, var(--tm-line)); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text-muted); }
+    .table-search:focus-within { border-color: var(--tm-green); }
+    .table-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--tm-text); font: inherit; font-size: 13px; }
+    .table-search input::placeholder { color: var(--tm-text-muted); }
+    .date-range { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 4px 6px 4px 10px; border: 1px solid var(--tm-line-2, var(--tm-line)); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text-muted); cursor: pointer; transition: border-color var(--tm-duration-fast) var(--tm-ease), background var(--tm-duration-fast) var(--tm-ease); }
+    .date-range:focus-within { border-color: var(--tm-ink, var(--tm-green)); }
+    .date-range.has-value { background: var(--tm-green-tint, var(--tm-success-bg)); border-color: var(--tm-green-deep, var(--tm-green)); }
+    .date-range__icon { display: inline-flex; color: var(--tm-text-muted); }
+    .date-range.has-value .date-range__icon { color: var(--tm-green-deep, var(--tm-green)); }
+    .date-range__input { appearance: none; -webkit-appearance: none; width: 190px; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--tm-text); font-family: var(--tm-font-mono); font-size: 12px; font-weight: 600; padding: 4px 0; cursor: pointer; }
+    .date-range__input::placeholder { color: var(--tm-text-soft, var(--tm-text-muted)); }
+    .date-range__clear { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: 50%; background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer; }
+    .date-range__clear:hover { background: var(--tm-ink); color: #fff; }
+    :host ::ng-deep .daterangepicker { font-family: var(--tm-font-body) !important; border-radius: var(--tm-radius-md); border: 1px solid var(--tm-line-2); box-shadow: var(--tm-shadow-pop); }
+    :host ::ng-deep .daterangepicker .btn-primary,
+    :host ::ng-deep .daterangepicker .btn-success { background: var(--tm-ink); border-color: var(--tm-ink); border-radius: var(--tm-radius-sm); font-weight: 700; }
+    :host ::ng-deep .daterangepicker .ranges li.active,
+    :host ::ng-deep .daterangepicker td.active,
+    :host ::ng-deep .daterangepicker td.active:hover { background: var(--tm-ink); color: #fff; }
+    :host ::ng-deep .daterangepicker td.in-range { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .intent-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+    .intent-text { display: block; max-width: 220px; font-size: 11px; line-height: 1.35; color: var(--tm-text-muted); overflow-wrap: anywhere; }
+    .cell-actions { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; max-width: 320px; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer; border: 0; flex: 0 0 auto; }
+    .modal-body { display: flex; flex-direction: column; gap: 14px; width: min(760px, calc(100vw - 32px)); min-width: 0; max-width: 100%; }
+    .vehicle-modal { width: min(680px, calc(100vw - 32px)); }
+    .support-modal, .recovery-body { width: min(560px, calc(100vw - 32px)); }
+    .modal-foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
     .field { display: flex; flex-direction: column; gap: 5px; }
     .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
-    .field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; outline: none; font-family: inherit; }
-    .field input:focus, .field select:focus { border-color: var(--tm-green); }
-    .live-note { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--tm-success-bg); color: var(--tm-success-fg); font-size: 12px; font-weight: 700; }
+    .field input, .field select, .field textarea { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; outline: none; font-family: inherit; }
+    .field textarea { resize: vertical; min-height: 84px; line-height: 1.45; }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--tm-green); }
+    .live-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--tm-success-bg); color: var(--tm-success-fg); font-size: 12px; font-weight: 700; line-height: 1.4; }
+    .modal-toggle-row { padding-top: 2px; }
     .toggles { display: flex; flex-wrap: wrap; gap: 14px; }
     .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
-    .pax { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--tm-line); }
-    .pax__main { display: flex; flex-direction: column; min-width: 0; }
+    .manifest-body { display: flex; flex-direction: column; gap: 8px; }
+    .pax { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--tm-line); }
+    .pax__main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
     .pax__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .pax__sub { font-size: 11px; color: var(--tm-text-muted); }
     .pax__note { max-width: 310px; font-size: 11px; line-height: 1.35; color: var(--tm-warning-fg, #92400e); overflow-wrap: anywhere; }
-    .pax__meta { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+    .pax__meta { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; max-width: 220px; }
     .pax__seats { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
     .pax__fare { font-family: var(--tm-font-mono); font-weight: 700; font-size: 12px; color: var(--tm-text); }
     .support-panel { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); }
@@ -498,9 +596,13 @@ const REFUND_STATUS_OPTIONS = [
     .support-meta span { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text-muted); font-size: 11px; font-weight: 750; }
     .support-note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--tm-warning-fg, #92400e); overflow-wrap: anywhere; }
     .support-pages { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 12px; color: var(--tm-text-muted); }
+    .manual-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .support-actions-section { padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
     .support-cue { min-height: 120px; }
     .timeline-drawer { display: flex; flex-direction: column; gap: 16px; }
     .timeline-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
+    .timeline-summary__actions { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
     .timeline-section { display: flex; flex-direction: column; gap: 10px; }
     .timeline-section h3 { margin: 0; font-size: 14px; font-weight: 850; color: var(--tm-text); }
     .timeline-list { display: flex; flex-direction: column; gap: 0; }
@@ -518,10 +620,32 @@ const REFUND_STATUS_OPTIONS = [
     .support-note-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
     .support-note-card span { font-size: 11px; color: var(--tm-text-muted); }
     .support-note-card p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--tm-text); overflow-wrap: anywhere; }
-    @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .modal-body { min-width: auto; } }
+    .recovery-body { gap: 12px; }
+    .recovery-intro { margin: 0; font-size: 13px; line-height: 1.45; color: var(--tm-text); }
+    .recovery-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; color: var(--tm-text-muted); font-size: 12px; line-height: 1.45; }
+    .recovery-list li { margin: 0; padding: 9px 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
+    @media (max-width: 900px) {
+      .page__hero { flex-direction: column; align-items: stretch; }
+      .cell-actions { justify-content: flex-start; max-width: none; }
+      .action-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 760px) {
+      .grid2 { grid-template-columns: 1fr; }
+      .modal-body, .vehicle-modal, .support-modal, .recovery-body { width: calc(100vw - 28px); }
+      .modal-foot { justify-content: stretch; }
+      .modal-foot tm-button { flex: 1 1 140px; }
+      .pax { flex-direction: column; }
+      .pax__meta { justify-content: flex-start; max-width: none; }
+      .timeline-summary { flex-direction: column; }
+      .timeline-summary__actions { justify-content: flex-start; }
+      .table-search { width: min(100%, 320px); }
+      .date-range { width: 100%; }
+      .date-range__input { flex: 1 1 auto; width: auto; }
+    }
   `],
 })
-export class FixedDeparturesComponent implements OnInit, OnDestroy {
+export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('rangeInput', { static: false }) rangeInput!: ElementRef<HTMLInputElement>;
   departures: DepartureRow[] = [];
   routes: FixedRouteOption[] = [];
   total = 0;
@@ -533,7 +657,11 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
 
   routeId = 'all';
   status = 'all';
+  query = '';
+  dateFrom = '';
+  dateTo = '';
   statusOptions = STATUS_OPTIONS;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   editorOpen = false;
   editingId: number | null = null;
@@ -560,6 +688,15 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
   supportTimelineBookingId: number | null = null;
   supportNoteText = '';
   supportNoteSaving = false;
+  recoveryAction: RecoveryAction | null = null;
+  recoveryReason = '';
+  recoverySaving = false;
+  manualSupportAction: ManualSupportAction | null = null;
+  manualSupportMethod = '';
+  manualSupportReference = '';
+  manualSupportAmount: number | null = null;
+  manualSupportNote = '';
+  manualSupportSaving = false;
   bookingStatusOptions = BOOKING_STATUS_OPTIONS;
   paymentStatusOptions = PAYMENT_STATUS_OPTIONS;
   refundStatusOptions = REFUND_STATUS_OPTIONS;
@@ -570,6 +707,7 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
     private api: ApiService,
     private cityCtx: CityContextService,
     private toast: ToastService,
+    private zone: NgZone,
   ) {}
 
   ngOnInit(): void {
@@ -580,12 +718,17 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
         this.page = 1;
         this.loadRoutes();
         this.fetch();
-        this.fetchBookings();
       }),
     );
   }
 
+  ngAfterViewInit(): void {
+    this.initDateRangePicker();
+  }
+
   ngOnDestroy(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.destroyDateRangePicker();
     this.subs.forEach((s) => s.unsubscribe());
   }
 
@@ -596,6 +739,11 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
   get formValid(): boolean {
     return !!this.form.route_id
       && (this.form.capacity ?? 0) > 0;
+  }
+
+  get rangeLabel(): string {
+    if (!this.dateFrom && !this.dateTo) return '';
+    return this.formatDate(this.dateFrom) + ' -> ' + this.formatDate(this.dateTo);
   }
 
   openCreate(): void {
@@ -643,6 +791,252 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
     this.status = value || 'all';
     this.page = 1;
     this.fetch();
+  }
+
+  onSearchChange(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.page = 1;
+      this.fetch();
+    }, 300);
+  }
+
+  clearSearch(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.query = '';
+    this.page = 1;
+    this.fetch();
+  }
+
+  clearRouteFilter(): void {
+    this.routeId = 'all';
+    this.page = 1;
+    this.fetch();
+  }
+
+  clearStatusFilter(): void {
+    this.status = 'all';
+    this.page = 1;
+    this.fetch();
+  }
+
+  onDateRangeChange(): void {
+    this.page = 1;
+    this.fetch();
+  }
+
+  clearDateRange(): void {
+    this.dateFrom = '';
+    this.dateTo = '';
+    this.syncDateRangePicker();
+    this.page = 1;
+    this.fetch();
+  }
+
+  dateRangeLabel(): string {
+    return this.rangeLabel;
+  }
+
+  routeLabel(): string {
+    return this.routeFilterOptions.find((route) => route.value === this.routeId)?.label || 'Selected route';
+  }
+
+  statusLabel(): string {
+    return this.statusOptions.find((option) => option.value === this.status)?.label || this.status;
+  }
+
+
+  canCloseVehicle(row: DepartureRow): boolean {
+    return row.visible_to_customers && !['COMPLETED', 'CANCELLED'].includes(row.status);
+  }
+
+  canCancelVehicle(row: DepartureRow): boolean {
+    return !['COMPLETED', 'CANCELLED'].includes(row.status);
+  }
+
+  canCancelBooking(row: FixedSupportBooking): boolean {
+    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(row.status);
+  }
+
+  vehicleIntent(row: DepartureRow): string {
+    if (row.status === 'CANCELLED') return 'Vehicle cancelled. Customers cannot book or travel on this vehicle.';
+    if (row.status === 'COMPLETED') return 'Ride completed. Keep this row only for final review.';
+    if (!row.visible_to_customers) return 'New bookings are stopped. Existing passengers can still be managed.';
+    if (row.seats_remaining <= 0) return 'Vehicle is full. Check manifest before taking action.';
+    if (row.status === 'FORMING') return 'Vehicle is open and waiting for passengers.';
+    return 'Ride has started. Manage passengers from manifest.';
+  }
+
+  openPassengerTimeline(row: Passenger): void {
+    this.openSupportTimeline({
+      id: row.id,
+      customer_name: row.customer_name,
+      customer_phone: row.customer_phone,
+      seats: row.seats,
+      status: row.status,
+      fixed_live_status: row.fixed_live_status,
+      refund_status: row.refund_status,
+      fixed_auto_outcome: row.fixed_auto_outcome,
+      fare_amount: row.fare_amount,
+      board: row.board,
+      drop: row.drop,
+    });
+  }
+
+  openCloseBookings(row: DepartureRow): void {
+    this.recoveryAction = {
+      type: 'close_vehicle',
+      id: row.id,
+      title: 'Close bookings for this vehicle',
+      intro: 'This stops new customers from booking this live fixed vehicle, but the ride itself continues.',
+      effects: [
+        'New bookings are blocked for this vehicle immediately.',
+        'Existing passenger bookings stay active.',
+        'Driver can still continue, board, drop and complete the ride.',
+        'No passenger is cancelled and no refund is created.',
+      ],
+      confirmLabel: 'Close bookings',
+      danger: false,
+    };
+    this.recoveryReason = '';
+  }
+
+  openCancelVehicle(row: DepartureRow): void {
+    this.recoveryAction = {
+      type: 'cancel_vehicle',
+      id: row.id,
+      title: 'Cancel whole fixed vehicle',
+      intro: 'This cancels the live fixed vehicle and cancels every active passenger booking on it.',
+      effects: [
+        'The vehicle status becomes cancelled and disappears from customer booking availability.',
+        'All active passenger bookings on this vehicle are cancelled.',
+        'Full-refund handling starts for those active passenger bookings.',
+        'Completed, already cancelled, no-show or dropped passenger records are not changed.',
+      ],
+      confirmLabel: 'Cancel vehicle',
+      danger: true,
+    };
+    this.recoveryReason = '';
+  }
+
+  openCancelBooking(row: FixedSupportBooking): void {
+    this.recoveryAction = {
+      type: 'cancel_booking',
+      id: row.id,
+      title: 'Cancel one passenger booking',
+      intro: 'This cancels only this passenger booking. The fixed vehicle and other passengers continue normally.',
+      effects: [
+        'Only this passenger booking is cancelled.',
+        'Seat and luggage inventory are released for this vehicle.',
+        'Full-refund handling starts for this passenger booking.',
+        'Other passengers and the vehicle status are not changed.',
+      ],
+      confirmLabel: 'Cancel passenger',
+      danger: true,
+    };
+    this.recoveryReason = '';
+  }
+
+  closeRecoveryAction(): void {
+    if (this.recoverySaving) return;
+    this.recoveryAction = null;
+    this.recoveryReason = '';
+  }
+
+  confirmRecoveryAction(): void {
+    if (!this.cityId || !this.recoveryAction || this.recoverySaving) return;
+    const action = this.recoveryAction;
+    const body = { reason: this.recoveryReason.trim() || null };
+    let req;
+    if (action.type === 'close_vehicle') {
+      req = this.api.post<{ message: string }>(`/admin/cities/${this.cityId}/fixed-departures/${action.id}/close-bookings`, body);
+    } else if (action.type === 'cancel_vehicle') {
+      req = this.api.post<{ message: string; cancelled_passengers: number; refund_pending: number }>(`/admin/cities/${this.cityId}/fixed-departures/${action.id}/cancel`, body);
+    } else {
+      req = this.api.post<{ message: string }>(`/admin/cities/${this.cityId}/fixed-bookings/${action.id}/cancel`, body);
+    }
+
+    this.recoverySaving = true;
+    req.subscribe({
+      next: (res: any) => {
+        this.toast.success(res?.message || 'Fixed recovery action completed');
+        this.recoverySaving = false;
+        this.recoveryAction = null;
+        this.recoveryReason = '';
+        this.fetch();
+        this.fetchBookings();
+        if (this.supportTimelineBookingId) this.fetchSupportTimeline(this.supportTimelineBookingId);
+      },
+      error: (err: any) => {
+        this.recoverySaving = false;
+        this.toast.error(err?.error?.message || 'Fixed recovery action failed');
+      },
+    });
+  }
+
+
+  openManualSupportAction(row: FixedSupportBooking, type: ManualSupportActionType): void {
+    const config: Record<ManualSupportActionType, Omit<ManualSupportAction, 'type' | 'bookingId'>> = {
+      refund_pending: {
+        title: 'Mark refund pending',
+        intro: 'Use this when admin has identified that a refund needs manual follow-up. This only updates the support record; it does not send money.',
+        confirmLabel: 'Mark pending',
+        showAmount: false,
+      },
+      refund_resolved_manual: {
+        title: 'Mark refund resolved manually',
+        intro: 'Use this after admin has sent or confirmed the refund outside the app, such as bank transfer, GPay, or Razorpay dashboard.',
+        confirmLabel: 'Mark refund resolved',
+        showAmount: true,
+      },
+      payment_resolved_manual: {
+        title: 'Mark payment resolved manually',
+        intro: 'Use this when admin has confirmed the customer payment outside the app and wants the booking support record to show payment as resolved.',
+        confirmLabel: 'Mark payment resolved',
+        showAmount: false,
+      },
+    };
+    this.manualSupportAction = { ...config[type], type, bookingId: row.id };
+    this.manualSupportMethod = '';
+    this.manualSupportReference = '';
+    this.manualSupportAmount = row.fare_amount ?? null;
+    this.manualSupportNote = '';
+  }
+
+  closeManualSupportAction(): void {
+    if (this.manualSupportSaving) return;
+    this.manualSupportAction = null;
+    this.manualSupportMethod = '';
+    this.manualSupportReference = '';
+    this.manualSupportAmount = null;
+    this.manualSupportNote = '';
+  }
+
+  confirmManualSupportAction(): void {
+    if (!this.cityId || !this.manualSupportAction || this.manualSupportSaving) return;
+    const action = this.manualSupportAction;
+    const body = {
+      action: action.type,
+      method: this.manualSupportMethod || null,
+      reference: this.manualSupportReference.trim() || null,
+      amount: action.showAmount ? this.manualSupportAmount : null,
+      note: this.manualSupportNote.trim() || null,
+    };
+
+    this.manualSupportSaving = true;
+    this.api.post<{ message: string }>(`/admin/cities/${this.cityId}/fixed-bookings/${action.bookingId}/support-action`, body).subscribe({
+      next: (res) => {
+        this.toast.success(res?.message || 'Support action saved');
+        this.manualSupportSaving = false;
+        this.closeManualSupportAction();
+        this.fetchBookings();
+        this.fetchSupportTimeline(action.bookingId);
+      },
+      error: (err) => {
+        this.manualSupportSaving = false;
+        this.toast.error(err?.error?.message || 'Failed to save support action');
+      },
+    });
   }
 
 
@@ -805,6 +1199,59 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
     return isNaN(date.getTime()) ? '—' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  private initDateRangePicker(): void {
+    if (!this.rangeInput?.nativeElement) return;
+    const $el = $(this.rangeInput.nativeElement);
+    $el.daterangepicker(
+      {
+        autoApply: true,
+        autoUpdateInput: false,
+        opens: 'left',
+        alwaysShowCalendars: true,
+        locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
+        ranges: {
+          Today: [moment(), moment()],
+          Yesterday: [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+          'Last 7 days': [moment().subtract(6, 'days'), moment()],
+          'Last 30 days': [moment().subtract(29, 'days'), moment()],
+          'This month': [moment().startOf('month'), moment().endOf('month')],
+          'Last month': [
+            moment().subtract(1, 'month').startOf('month'),
+            moment().subtract(1, 'month').endOf('month'),
+          ],
+        },
+      } as any,
+      (start: moment.Moment, end: moment.Moment) => {
+        this.zone.run(() => {
+          this.dateFrom = start.format('YYYY-MM-DD');
+          this.dateTo = end.format('YYYY-MM-DD');
+          this.onDateRangeChange();
+        });
+      },
+    );
+    $el.on('cancel.daterangepicker', () => {
+      this.zone.run(() => this.clearDateRange());
+    });
+  }
+
+  private syncDateRangePicker(): void {
+    if (!this.rangeInput?.nativeElement) return;
+    const picker = ($(this.rangeInput.nativeElement) as any).data('daterangepicker');
+    if (!picker) return;
+    picker.setStartDate(this.dateFrom || moment());
+    picker.setEndDate(this.dateTo || moment());
+  }
+
+  private destroyDateRangePicker(): void {
+    if (!this.rangeInput?.nativeElement) return;
+    const picker = ($(this.rangeInput.nativeElement) as any).data('daterangepicker');
+    if (picker) picker.remove();
+  }
+
+  private formatDate(value: string): string {
+    return value ? moment(value, 'YYYY-MM-DD').format('DD MMM YYYY') : 'Any date';
+  }
+
   private loadRoutes(): void {
     if (this.cityId == null) {
       this.routes = [];
@@ -875,8 +1322,11 @@ export class FixedDeparturesComponent implements OnInit, OnDestroy {
     const params = new URLSearchParams();
     params.set('page', String(this.page));
     params.set('per_page', String(this.pageSize));
+    if (this.query.trim()) params.set('q', this.query.trim());
     if (this.routeId !== 'all') params.set('route_id', this.routeId);
     if (this.status !== 'all') params.set('status', this.status);
+    if (this.dateFrom) params.set('date_from', this.dateFrom);
+    if (this.dateTo) params.set('date_to', this.dateTo);
 
     this.loading = true;
     this.api.get<{ data: { data: DepartureRow[]; total: number } }>(`/admin/cities/${this.cityId}/fixed-departures?${params.toString()}`).subscribe({

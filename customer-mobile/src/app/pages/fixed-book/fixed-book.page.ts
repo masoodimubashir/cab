@@ -198,14 +198,30 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   get canConfirm(): boolean {
-    return !!this.selectedRoute
-      && !!this.selectedDeparture
-      && this.boardStopId != null
-      && this.dropStopId != null
-      && this.boardStopId !== this.dropStopId
-      && this.seats >= 1
-      && this.seats <= this.maxSeats
-      && !this.booking;
+    return !this.bookingBlockReason && !this.booking;
+  }
+
+  get bookingBlockReason(): string | null {
+    if (!this.selectedRoute) return 'Choose a fixed route first.';
+    if (!this.selectedDeparture) return 'Choose a live boarding vehicle first.';
+    if (!this.pickupStops.length) return 'No pickup stops are currently available for this vehicle. The driver may have already passed them.';
+    if (!this.boardStopId) return 'Choose your boarding stop.';
+    if (!this.dropStops.length) return 'No drop stops are available after the selected boarding stop.';
+    if (!this.dropStopId) return 'Choose your drop stop.';
+    if (this.boardStopId === this.dropStopId) return 'Boarding and drop stop must be different.';
+    if (this.seats < 1) return 'Select at least one seat.';
+    if (this.seats > this.maxSeats) return 'Only ' + this.maxSeats + ' seat' + (this.maxSeats > 1 ? 's are' : ' is') + ' available for this vehicle.';
+    return null;
+  }
+
+  get pickupStopHelp(): string | null {
+    if (!this.selectedDeparture || this.pickupStops.length) return null;
+    return 'Pickup is closed for all remaining stops on this vehicle.';
+  }
+
+  get dropStopHelp(): string | null {
+    if (!this.boardStopId || this.dropStops.length) return null;
+    return 'No later drop stop is available from this boarding stop.';
   }
 
   private enter(): void {

@@ -8,6 +8,7 @@ use App\Models\DriverDocument;
 use App\Models\DriverLocation;
 use App\Models\OperatorSetting;
 use App\Models\Trip;
+use App\Services\DriverServiceModeService;
 use App\Services\WalletService;
 use App\Services\FixedStopAutomationService;
 use Illuminate\Http\Request;
@@ -668,10 +669,27 @@ class DriversController extends Controller
         }
 
         $driver->is_online = false;
+        $driver->active_service_mode = null;
         $driver->last_offline_at = now();
         $driver->save();
 
         return response()->json(['driver' => $driver->fresh()]);
+    }
+
+    public function setServiceMode(Request $request, DriverServiceModeService $modes)
+    {
+        $data = $request->validate([
+            'mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
+        ]);
+
+        $driver = Driver::query()->where('user_id', $request->user()->id)->first();
+        if (!$driver) {
+            return response()->json(['message' => 'Driver profile not found.'], 404);
+        }
+
+        return response()->json([
+            'driver' => $modes->setMode($driver, $data['mode'] ?? null),
+        ]);
     }
 
     /**

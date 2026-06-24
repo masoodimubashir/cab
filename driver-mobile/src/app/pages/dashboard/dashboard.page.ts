@@ -337,17 +337,38 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.router.navigateByUrl(path);
   }
 
-  choosePrivateRides(): void {
-    this.driveMode = 'private';
+  async choosePrivateRides(): Promise<void> {
+    await this.setDriveMode('private');
   }
 
-  chooseFixedVehicle(): void {
-    this.driveMode = 'fixed';
-    this.navTo('/tabs/fixed');
+  async chooseFixedVehicle(): Promise<void> {
+    const ok = await this.setDriveMode('fixed');
+    if (ok) this.navTo('/tabs/fixed');
   }
 
-  resetDriveMode(): void {
-    this.driveMode = null;
+  async resetDriveMode(): Promise<void> {
+    await this.setDriveMode(null);
+  }
+
+  private async setDriveMode(mode: 'private' | 'fixed' | null): Promise<boolean> {
+    if (this.toggling) return false;
+    this.toggling = true;
+    this.error = null;
+
+    try {
+      const res = await firstValueFrom(
+        this.api.post<{ driver: Record<string, unknown> }>('/drivers/service-mode', { mode })
+      );
+      this.driver = res.driver;
+      this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | null) ?? null;
+      return true;
+    } catch (e) {
+      const body = (e as { error?: Record<string, unknown> })?.error;
+      this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not change service mode';
+      return false;
+    } finally {
+      this.toggling = false;
+    }
   }
 
   async confirmGoOffline(): Promise<void> {
@@ -448,8 +469,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           } else {
             void this.stopVisualWatch();
           }
-          this.driveMode = null;
-      this.startOnlineTimer();
+          this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | null) ?? null;
+          this.startOnlineTimer();
         } else {
           this.stopOnlineTimer();
         }

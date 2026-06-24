@@ -16,25 +16,28 @@ The goal is to keep one clear reference that developers, product owners, and fut
 
 ## Start Here - Current Resume Summary
 
-Last updated: 2026-06-18
+Last updated: 2026-06-20
 
 Use this section first when resuming work. The detailed history is kept below, but the current state is:
 
 - Phase 1 and Phase 2 are complete. Schema/model preparation and fixed backend skeleton are in place.
-- Phase 3 and Phase 4 are implemented and covered by focused backend feature tests. Phase 3 still needs one manual Razorpay test-key checkout from the customer app before QA sign-off.
-- Phase 5, Phase 6, and Phase 7 have core admin/customer/driver UI implemented, but build verification and device QA are still pending.
-- Phase 8 should not start as plain testing only. First fix the critical behavior listed in `Resume Note Before Starting Phase 8`, then test it.
-- Phase 9 is rollout and cleanup only. Do not disable the old corridor-style fixed flow until the new fixed flow is stable and verified.
+- Phase 3 and Phase 4 are implemented and covered by focused backend feature tests. Fixed booking is now Razorpay-only for new bookings; wallet payment is removed from the fixed customer booking flow.
+- Started fixed rides can still accept new customers from upcoming admin-defined stops when segment seats/luggage are available. Passed stops are blocked.
+- Automatic fixed stop handling is implemented: approaching, arrived, leaving-soon warning, customer no-show, and driver-missed-stop processing are handled by driver/customer location rules, not manual customer buttons.
+- Customer fixed booking, Pay test, booking history/detail, and customer cancellation are implemented. The duplicate customer fixed-driver page was removed.
+- Driver fixed flow supports open/start, live manifest refresh, board, drop off, and complete ride.
+- Admin fixed support now includes searchable fixed bookings plus a production dispute timeline drawer and internal support notes.
+- Admin TypeScript check passes. Backend focused fixed tests pass. Driver mobile build passes after service-mode changes. Admin/customer builds and device QA are still pending.
+- Phase 9 is rollout and cleanup only. Do not disable old corridor-style fixed behavior until the new fixed flow is stable and verified in the apps.
 
 Critical next work:
 
-1. Perform one manual Razorpay test-key checkout from the customer fixed booking screen.
-2. Start stop-aware live booking work so started rides can accept customers from upcoming admin-defined stops while blocking passed stops.
-3. Run admin, customer mobile, and driver mobile build/device QA.
-4. Make started rides bookable from later admin-defined stops when seats are still available.
-5. Add stop-aware availability so passed stops are blocked but upcoming stops can still accept bookings.
-6. Run admin, customer mobile, and driver mobile build/device QA.
-7. Add backend, feature, and concurrency tests.
+1. Perform one manual Razorpay test-key checkout from the customer fixed booking screen and confirm the booking is created only after Razorpay success.
+2. Run remaining full builds for admin frontend and customer mobile. Driver mobile build passed on 2026-06-20 after service-mode changes.
+3. Do one complete app walkthrough: customer books with Pay test or Razorpay test, driver starts, boards, drops, completes, and admin checks the timeline.
+4. Polish customer and driver UI wording/empty states after the walkthrough.
+5. Decide whether to add admin dispute actions such as retry refund, mark resolved, or escalate. Timeline and notes already exist.
+6. Add map/location proof later if production disputes need visual evidence beyond timestamps and status history.
 
 ---
 
@@ -564,8 +567,13 @@ Driver:
 - [x] Build fixed departure board
 - [x] Build stop availability controls
 - [x] Build fixed settings fields
+- [x] Build fixed booking support search
+- [x] Build fixed booking dispute timeline and internal support notes
 - [ ] Add optional driver/vehicle assignment to live fixed vehicle flow
-- [ ] Add optional admin cancellation/close controls
+- [x] Add optional admin cancellation/close controls
+  - 2026-06-20: Admin Live Fixed Vehicles now supports closing bookings for one vehicle, cancelling one passenger booking, and cancelling a whole fixed vehicle. Backend feature tests pass for all three recovery actions.
+- [x] Add optional admin support actions such as retry refund, mark resolved, or escalate
+  - 2026-06-20: Added manual fixed booking support actions in admin timeline: mark refund pending, mark refund resolved manually, and mark payment issue resolved manually. These record method/reference/note and do not call Razorpay automatically.
 
 ### Phase 6 - Customer UI
 
@@ -574,7 +582,11 @@ Driver:
 - [x] Build stop picker flow
 - [x] Build seats and luggage selection flow
 - [x] Build prepaid confirmation flow
+- [x] Add Pay test button for local fixed booking testing without Razorpay popup
+- [x] Build customer fixed booking history/detail screen
+- [x] Build customer fixed booking cancellation action
 - [x] Remove customer dependency on scheduled fixed departures
+- [x] Remove duplicate fixed-driver page from customer app
 - [ ] Complete customer mobile build/device QA
 
 ### Phase 7 - Driver UI
@@ -583,47 +595,49 @@ Driver:
 - [x] Build live fixed vehicle view
 - [x] Build passenger list UI
 - [x] Build start vehicle/ride action
-- [x] Build board/no-show actions
-- [ ] Build wait reminder handling
+- [x] Build board action
+- [x] Build drop-off action
+- [x] Build complete ride action
+- [x] Auto-refresh live manifest while viewing fixed passengers
+- [x] Remove manual no-show dependency from driver flow; automatic no-show is handled by location automation
 - [ ] Complete driver mobile build/device QA
 
-### Resume Note Before Starting Phase 8
+### Phase 8 Verification Note
 
-Start from this point next time.
+Start from this point when doing QA. The critical behavior below is implemented, but still needs app-level verification.
 
-Important confirmed behavior:
+Important behavior to verify:
 
 - `Start Ride` must not globally stop all new fixed bookings.
-- A customer must still be able to book from any upcoming admin-defined stop after the ride has started, as long as seats are available.
-- Booking must only be blocked for stops that are already passed, unavailable, closed for pickup, or invalid for that live vehicle.
-- Pickup and drop must both be limited to admin-defined fixed stops. No ad-hoc map pins or random roadside pickup/drop for the final fixed module.
-- Availability must be stop-aware, not only vehicle-status-aware.
-- Driver `board`, `drop`, `no-show`, `cancel`, and stop-passed handling need to be designed together so seat inventory, customer visibility, refunds, and manifest state stay correct.
-- Payment is not working yet and must be fixed before this flow is considered ready.
-- Cancellation must be completed properly for both Razorpay and wallet payments.
-- When a booking is cancelled, no-showed, expired, or otherwise released, the seat and luggage counts must be returned correctly to the live vehicle so the driver/manifest and later customers see accurate availability.
-- Refund, cancellation, seat release, and driver-visible seat count updates must be handled as one flow, not as separate disconnected updates.
+- A customer can still book from any upcoming admin-defined stop after the ride has started, as long as segment seats/luggage are available.
+- Booking is blocked for stops that are already passed, unavailable, closed for pickup, or invalid for that live vehicle.
+- Pickup and drop are both limited to admin-defined fixed stops. No ad-hoc map pins or random roadside pickup/drop for the final fixed module.
+- Availability is stop-aware and segment-aware, not only vehicle-status-aware.
+- Customer cancellation, automatic customer no-show, automatic driver missed pickup, hold expiry, drop-off, and driver complete all keep inventory and manifest state consistent.
+- New fixed booking payment is Razorpay-only with signature verification. Wallet payment is not shown during fixed booking.
+- Legacy wallet refund handling remains only so old fixed bookings do not break.
+- Razorpay cancellation/refund is implemented, but one manual Razorpay test-key checkout/refund walkthrough is still required.
+- Admin support timeline should show the important dispute events for the booking.
 
-Parameters and policies to review before coding/testing this part:
-
-- how the system knows the current stop or last passed stop
-- whether the driver manually marks stop arrival/departure or GPS assists it
-- when a later stop should close for new bookings
-- how no-show is marked per customer and whether no-show seats remain chargeable
-- how customer cancellation behaves after the vehicle has started but before the customer pickup stop
-- how platform/driver cancellation works for one customer vs the whole live vehicle
-- whether a dropped/no-show/cancelled passenger frees a seat for later stops
-- how luggage capacity is counted when passengers board/drop at different stops
-
-This must be verified in Phase 8 with at least one case where the driver starts the ride, the first stop is passed, and a second customer can still book from a later stop if seats are available.
+QA must include at least one case where the driver starts the ride, the first stop is passed, and a second customer can still book from a later stop if seats are available.
 
 ### Phase 8 - Testing and QA
 
-- [ ] Add backend unit tests
-- [ ] Add backend feature tests
-- [ ] Add concurrency tests
-- [ ] Validate local fixed flow
-- [ ] Validate outstation fixed flow
+- [x] Add focused backend feature tests for Phase 3 payment/seat holds
+- [x] Add focused backend feature tests for Phase 4 refund/cancellation/no-show/drop/complete
+- [x] Add focused backend feature tests for automatic fixed stop no-show and driver-missed-stop handling
+- [x] Run focused fixed backend feature tests sequentially after service-mode changes on 2026-06-20
+- [ ] Add broader backend unit tests where useful
+- [ ] Add deeper concurrency tests beyond current active-hold capacity coverage
+- [x] Add automated local fixed flow walkthrough covering admin setup, customer booking, driver actions, and admin timeline
+- [x] Manual driver service-mode app check: no mode, private mode, fixed mode, and blocked switching verified by user on 2026-06-20
+- [x] Validate local fixed flow in the actual apps: customer booking, driver fixed flow, and admin timeline verified by user on 2026-06-20
+- [x] Real Razorpay test-key checkout from customer fixed booking screen verified by user on 2026-06-20
+- [ ] Validate outstation fixed flow in the actual apps
+- [x] Run full admin/customer/driver builds
+  - [x] Driver mobile `npm run build` passed on 2026-06-20
+  - [x] Customer mobile `npm run build` passed on 2026-06-20
+  - [x] Admin frontend build verified by user on 2026-06-20
 
 ### Phase 9 - Rollout and cleanup
 
@@ -657,10 +671,10 @@ This must be verified in Phase 8 with at least one case where the driver starts 
 | Backend services | DONE | Phase 2 fixed backend skeleton created on 2026-06-17 |
 | Core booking engine | DONE | Phase 3 Razorpay-only booking flow is implemented and covered by feature tests; one manual test-key checkout remains before QA sign-off |
 | Refund and cancellation | DONE | Phase 4 Razorpay refund, late cancellation, no-show, capacity return, and double-cancel protection are implemented and covered by feature tests |
-| Admin UI | IN PROGRESS | Phase 5 fixed routes and departures admin UI is functionally implemented; optional assignment/cancel controls and final UI QA remain |
-| Customer UI | IN PROGRESS | Phase 6 route, live vehicle, stop, seat, luggage, and prepaid booking flow implemented on 2026-06-18; mobile build/device QA remains |
-| Driver UI | IN PROGRESS | Core open vehicle, live status, passenger list, start ride, board, and no-show flow implemented on 2026-06-18; wait reminder handling and device QA remain |
-| Tests | IN PROGRESS | Focused Phase 3 and Phase 4 backend feature tests pass on separate MySQL `cab_test`; broader module/device QA remains |
+| Admin UI | IN PROGRESS | Phase 5 fixed routes, live vehicles, manifest, support search, dispute timeline, and internal notes are implemented; optional assignment/cancel/support actions and final UI QA remain |
+| Customer UI | IN PROGRESS | Phase 6 route, live vehicle, stop, seat, luggage, Pay test, booking history/detail, and cancellation are implemented; mobile build/device QA remains |
+| Driver UI | IN PROGRESS | Core open vehicle, live status, passenger list, start ride, board, drop off, complete ride, and manifest refresh are implemented; device QA remains |
+| Tests | IN PROGRESS | Focused Phase 3, Phase 4, and fixed stop automation backend feature tests pass on separate MySQL `cab_test`; broader builds/device QA remain |
 
 ---
 
@@ -732,6 +746,104 @@ Files touched:
 Notes / blockers:
 - Booking logic, admin UI, customer UI, and driver UI are not part of Phase 1
 
+#### 2026-06-19 - Live Stop-Aware Fixed Booking After Ride Start
+
+Area:
+- Started fixed ride booking and segment availability
+
+Work done:
+- Changed fixed availability so `Start Ride` does not globally close new customer bookings.
+- Customers can still book from upcoming admin-defined pickup stops after the driver has started, as long as seats and luggage are available for that route segment.
+- Passed stops, unavailable stops, invalid stops, and closed pickup points are blocked.
+- Seat and luggage availability is segment-aware, so a dropped/cancelled/no-show passenger can free capacity for later stops where appropriate.
+- Driver-facing copy now explains that customers can still book from upcoming stops while seats are available.
+
+Verification:
+- Covered by focused backend feature tests in `FixedBookingPhase3Test`.
+
+Still left:
+- Validate this behavior in the actual customer and driver apps during end-to-end QA.
+
+#### 2026-06-19 - Automatic No-Show and Driver Missed Stop Handling
+
+Area:
+- Fixed stop automation
+
+Work done:
+- Added automatic fixed stop processing from driver/customer location state.
+- Records vehicle approaching, driver arrived, leaving-soon warning, customer no-show, and driver-missed-stop outcomes.
+- Customer no-show rejects refund and releases capacity.
+- Driver missed pickup cancels the booking, attempts eligible Razorpay refund, and releases capacity.
+- No manual no-show button is required for customer or driver in the fixed flow.
+
+Verification:
+- `php artisan test --filter=FixedStopAutomationTest` passed on MySQL `cab_test`.
+
+Still left:
+- Device QA with real location updates.
+- Optional map/location proof display for support disputes later.
+
+#### 2026-06-19 - Customer and Driver Fixed Completion Polish
+
+Area:
+- Customer history/cancel and driver finish flow
+
+Work done:
+- Added customer fixed rides/history/detail screen.
+- Added customer cancel action for cancellable fixed bookings.
+- Added Pay test button on fixed booking confirmation for easier local testing without Razorpay popup.
+- Removed duplicate fixed-driver page from the customer app.
+- Added driver manifest auto-refresh.
+- Added driver drop-off action.
+- Added driver complete ride action after all active passengers are dropped, cancelled, or no-showed.
+
+Verification:
+- Customer and driver TypeScript checks passed during implementation.
+- Customer full build still needs a final uninterrupted run.
+
+Still left:
+- Customer and driver device QA.
+- UI wording and empty-state polish after walkthrough.
+
+#### 2026-06-19 - Admin Fixed Booking Dispute Tool
+
+Area:
+- Production support and dispute handling
+
+Work done:
+- Added `fixed_booking_events` table for fixed booking timeline events.
+- Added `fixed_booking_support_notes` table for internal admin notes.
+- Added automatic event logging for booking confirmation, customer cancellation, refund outcomes, customer no-show, driver missed pickup, vehicle approaching, driver arrived, leaving-soon warning, passenger boarded, and passenger dropped.
+- Added admin APIs to load a fixed booking timeline and add support notes.
+- Added Timeline button inside `Operations -> Live Fixed Vehicles -> Fixed booking support`.
+- Added admin drawer with booking summary, timeline, and internal support notes.
+- Fixed admin build error by changing unsupported `list` icon to supported `eye` icon.
+
+Files touched:
+- backend/database/migrations/2026_06_19_150000_create_fixed_booking_support_tables.php
+- backend/app/Models/FixedBookingEvent.php
+- backend/app/Models/FixedBookingSupportNote.php
+- backend/app/Services/FixedBookingEventService.php
+- backend/app/Http/Controllers/Admin/AdminFixedDeparturesController.php
+- backend/app/Services/FixedSeatHoldService.php
+- backend/app/Services/FixedRefundService.php
+- backend/app/Services/FixedStopAutomationService.php
+- backend/app/Http/Controllers/FixedDriverController.php
+- frontend/src/app/admin/fixed/fixed-departures.component.ts
+- backend/routes/api.php
+
+Verification:
+- Migration ran successfully on the local development database.
+- `npx tsc --noEmit --pretty false` passed in `frontend`.
+- `php artisan test --filter=FixedBookingPhase3Test` passed on MySQL `cab_test`.
+- `php artisan test --filter=FixedBookingPhase4Test` passed on MySQL `cab_test`.
+- `php artisan test --filter=FixedStopAutomationTest` passed on MySQL `cab_test`.
+
+Still left:
+- Optional admin support actions: retry refund, mark resolved, escalate.
+- Optional map/location proof display.
+- Full production builds and UI QA.
+
 ---
 
 ## 16. Important Guardrails
@@ -766,17 +878,18 @@ The fixed module is considered complete only when:
 
 ## 18. Next Immediate Step
 
-Recommended next implementation step:
+Recommended next step before more feature work:
 
-- run migrations and perform full fixed-flow QA
+- perform full fixed-flow verification and production-build checks
 
 Specifically:
 
-1. run the latest backend migrations for fixed luggage capacity/count fields
-2. verify admin route setup and live vehicle opening
-3. verify driver fixed vehicle open/start/passenger actions on device
-4. verify customer local and outstation fixed booking with seats and luggage
-5. add automated tests for booking, capacity, luggage, and refund behavior
+1. run one real Razorpay test-key checkout from the customer fixed booking screen
+2. run full admin frontend build
+3. run full customer mobile build
+4. run full driver mobile build
+5. verify one complete app walkthrough: customer books, driver starts, boards, drops, completes, and admin checks the dispute timeline
+6. decide whether optional admin dispute actions are needed now or can wait
 
 
 #### 2026-06-17
@@ -863,38 +976,48 @@ Notes / blockers:
 
 These items remain after the latest admin, customer, and driver fixed-module implementation pass.
 
-Critical correctness items:
+Critical verification items:
 
-- fix payment flow before treating fixed booking as ready
-- complete Razorpay and wallet cancellation/refund handling
-- return seat and luggage counts correctly after cancellation, no-show, hold expiry, or released booking
-- keep driver manifest, live vehicle seat count, and later customer availability in sync
-- allow booking from upcoming admin-defined stops after `Start Ride` when seats are still available
-- block booking only for passed, unavailable, closed, or invalid stops
+- perform one real Razorpay test-key checkout from the customer fixed booking screen
+- confirm booking is created only after successful Razorpay payment verification
+- confirm Razorpay refund behavior manually from the app/admin data after a paid test booking
+- run full admin frontend build
+- run full customer mobile build and device UI verification
+- run full driver mobile build and device UI verification
+- do one complete end-to-end app walkthrough: customer books, driver starts, customer boards, customer drops, driver completes, admin checks support timeline
 
-Admin/customer/driver completion items:
+Production polish items:
 
-- add optional driver assignment to admin live fixed vehicle create/edit flow
-- add optional vehicle assignment to admin live fixed vehicle create/edit flow
+- polish customer fixed booking wording, empty states, and booking history/detail presentation
+- polish driver fixed ride active-state wording and button states
+- add optional driver assignment to admin live fixed vehicle create/edit flow, if needed for operations
+- add optional vehicle assignment to admin live fixed vehicle create/edit flow, if needed for operations
 - add optional admin cancel/close/delete controls for fixed routes and live fixed vehicles where product requires them
-- implement wait reminder handling after the driver waits longer than configured policy
-- expose complete operator/platform cancellation flows where needed
-- run the latest backend migrations in the target environments
-- run admin frontend build and UI verification
-- run customer mobile build and device UI verification
-- run driver mobile build and device UI verification
+- add optional admin support actions inside the dispute drawer, such as retry refund, mark resolved, or escalate
+- add map/location proof later if production disputes need visual evidence beyond timeline timestamps
+- add and run deeper integration and concurrency testing for the fixed module
 - disable old corridor-style fixed flow only after the new fixed flow is stable
-- add and run integration and concurrency testing for the fixed module
 - complete rollout and client-ready switchover
 
-Notes:
-- no-show backend handling is already implemented
-- driver open/start/board/no-show flow is already implemented
-- admin fixed route/departure UI is already implemented
-- customer fixed route/live vehicle/seat/luggage booking UI is already implemented
-- payment and cancellation flows are not ready until the critical correctness items above are fixed and verified
+Already completed and should not be re-added as pending:
 
----
+- Razorpay-only fixed booking backend flow for new bookings
+- fixed Pay test button for customer testing without Razorpay popup
+- customer fixed booking history/detail screen
+- customer fixed booking cancellation action
+- automatic customer no-show handling
+- automatic driver missed pickup handling
+- stop-aware booking after ride start from upcoming admin-defined stops
+- segment-aware seat/luggage availability
+- driver board, drop off, and complete ride actions
+- admin fixed booking support search
+- admin fixed booking dispute timeline and internal support notes
+
+Notes:
+
+- Backend focused tests pass when run sequentially. Do not run `RefreshDatabase` MySQL suites in parallel because `cab_test` table refreshes can race each other.
+- Customer full build was previously interrupted, so it must be completed before marking mobile QA done.
+
 
 ## 20. Phase 5 Remaining Admin UI Items
 
@@ -910,11 +1033,12 @@ Current Phase 5 status:
 - departure seat inventory and manifest drawer are implemented
 
 Still left in Phase 5:
-- add vehicle assignment to fixed departure create and edit flow
-- add driver assignment to fixed departure create and edit flow
+- add vehicle assignment to fixed departure create and edit flow, if operations need explicit vehicle selection
+- add driver assignment to fixed departure create and edit flow, if operations need admin assignment instead of driver-opened vehicles
 - add departure-board workflow to mark a stop unavailable for a specific departure, if departure-level stop overrides are required
 - add explicit admin cancellation or delete controls for fixed routes and fixed departures, if these are part of Phase 5 scope
-- run frontend build and UI verification for the fixed admin screens after the latest changes
+- add optional dispute actions in the support drawer, such as retry refund, mark resolved, or escalate
+- run full frontend build and UI verification for the fixed admin screens after the latest changes
 
 Notes:
 - route-level stop availability controls already exist in the fixed route editor
@@ -1048,8 +1172,8 @@ Work done:
 
 Still left:
 
-- Wait reminder handling after the driver has waited longer than the configured stop/boarding wait policy.
 - Full mobile build QA and device UI pass.
+- Final wording/button-state polish after one complete app walkthrough.
 
 ### 2026-06-18 - Phase 6 Customer UI and Luggage Update
 
@@ -1067,9 +1191,9 @@ Work done:
 
 Still left:
 
-- Run latest migrations before testing luggage fields in the database.
 - Complete customer mobile build QA and device UI pass.
 - Validate local and outstation fixed bookings end to end.
+- Run one real Razorpay test-key checkout from the customer fixed booking screen.
 
 ### 2026-06-18 - Tracker Refresh
 
@@ -1193,5 +1317,130 @@ Verification:
 
 Still left:
 - Run one manual Razorpay test-key checkout from the customer app.
-- Start stop-aware live booking work for started fixed rides and upcoming admin-defined stops.
+- Run full admin/customer/driver builds and app walkthrough QA.
 
+
+#### 2026-06-20 - Focused Backend Fixed Test Run
+
+Area:
+- Fixed module backend verification after driver service-mode changes
+
+Work done:
+- Re-ran the focused fixed backend feature tests sequentially.
+- Confirmed Phase 3 payment and seat-hold tests still pass.
+- Confirmed Phase 4 refund, cancellation, no-show, drop, and complete tests still pass.
+- Confirmed fixed stop automation tests still pass.
+
+Verification:
+- Command: `php artisan test tests/Feature/FixedBookingPhase3Test.php tests/Feature/FixedBookingPhase4Test.php tests/Feature/FixedStopAutomationTest.php`
+- Result: 17 tests passed, 122 assertions.
+
+Still left:
+- Run backend migration for `drivers.active_service_mode` in the target environment.
+- Run full admin, customer mobile, and driver mobile builds.
+- Complete manual app walkthrough and device QA.
+
+#### 2026-06-20 - Driver Service Mode Verification
+
+Area:
+- Driver private/fixed service mode rollout check
+
+Work done:
+- Confirmed backend migration state with `php artisan migrate`; no pending migrations remained in this environment.
+- Ran the driver mobile production build after the dashboard service-mode and recenter button changes.
+
+Verification:
+- `php artisan migrate`: completed with `Nothing to migrate`.
+- `npm run build` in `driver-mobile`: passed.
+
+Verification note:
+- Manual driver app check passed on 2026-06-20: online with no mode, private mode, fixed mode, and blocked switching during active work.
+
+Status update:
+- Admin frontend build verified by user on 2026-06-20.
+
+#### 2026-06-20 - Fixed Customer And Driver QA Polish
+
+Area:
+- Small fixed-flow UI clarity improvements before manual walkthrough
+
+Work done:
+- Added customer booking helper messages for unavailable pickup stops, invalid drop-stop choices, and disabled payment actions.
+- Added driver fixed setup guidance when no active fixed vehicle is open.
+- Added readable fixed vehicle status labels on the driver fixed page.
+- Added a clear driver message explaining why complete ride is blocked while active passengers remain.
+- Improved the no-passenger empty state to explain that the manifest refreshes automatically.
+
+Verification:
+- `npm run build` in `customer-mobile`: passed.
+- `npm run build` in `driver-mobile`: passed.
+
+Still left:
+- Manual app walkthrough for customer booking, driver fixed flow, and admin timeline.
+- Admin frontend build.
+
+#### 2026-06-20 - Automated Fixed Flow Walkthrough
+
+Area:
+- End-to-end fixed API walkthrough for steps 1-5
+
+Work done:
+- Added `FixedFullWalkthroughTest`.
+- Covered admin fixed route setup with active stops and fare.
+- Covered driver fixed mode selection and live fixed vehicle opening.
+- Covered customer route/vehicle discovery, seat hold, and Pay test confirmation.
+- Covered driver manifest, start ride, board passenger, drop passenger, and complete ride.
+- Covered admin fixed booking timeline after completion.
+- Fixed route creation now safely defaults `boarding_confirmation_mode` when `fixed_settings_json` is omitted.
+
+Verification:
+- `php artisan test tests/Feature/FixedFullWalkthroughTest.php`: 1 test passed, 40 assertions.
+- Focused fixed suite with Phase 3, Phase 4, stop automation, and full walkthrough: 18 tests passed, 162 assertions.
+
+Verification note:
+- Manual device/browser app walkthrough passed on 2026-06-20.
+- Real Razorpay test-key checkout from the customer fixed booking screen passed on 2026-06-20.
+
+Status update:
+- Admin frontend build verified by user on 2026-06-20.
+
+#### 2026-06-20 - Manual Driver Service Mode Check
+
+Area:
+- Driver service-mode behavior in the app
+
+Verification:
+- User verified the driver app behavior manually.
+- Online with no selected mode works as expected.
+- Private mode works.
+- Fixed mode works.
+- Switching is blocked while active fixed/private work is in progress.
+
+Status:
+- Done.
+
+#### 2026-06-20 - Manual Fixed App Walkthrough And Razorpay Check
+
+Area:
+- Manual fixed app verification
+
+Verification:
+- User verified the local fixed app flow manually.
+- Customer fixed booking worked.
+- Driver fixed open/start/board/drop/complete flow worked.
+- Admin timeline/support view worked.
+- Real Razorpay test-key checkout from the customer fixed booking screen worked.
+
+Status:
+- Done.
+
+#### 2026-06-20 - Admin Frontend Build Check
+
+Area:
+- Admin frontend build verification
+
+Verification:
+- User confirmed admin frontend build is done.
+
+Status:
+- Done.

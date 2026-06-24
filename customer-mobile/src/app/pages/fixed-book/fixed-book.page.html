@@ -115,12 +115,22 @@
           </ion-select>
         </label>
 
+        <div class="fb-unavailable" *ngIf="pickupStopHelp">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span>{{ pickupStopHelp }}</span>
+        </div>
+
         <label class="fb-field">
           <span class="fb-label">Drop at</span>
           <ion-select [(ngModel)]="dropStopId" interface="action-sheet" placeholder="Pick stop">
             <ion-select-option *ngFor="let s of dropStops" [value]="s.id">{{ s.name }}</ion-select-option>
           </ion-select>
         </label>
+
+        <div class="fb-unavailable" *ngIf="dropStopHelp">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span>{{ dropStopHelp }}</span>
+        </div>
 
         <div class="fb-unavailable" *ngIf="unavailableStops.length">
           <ion-icon name="remove-circle-outline"></ion-icon>
@@ -156,6 +166,11 @@
           </div>
         </div>
 
+
+        <div class="fb-unavailable" *ngIf="bookingBlockReason">
+          <ion-icon name="information-circle-outline"></ion-icon>
+          <span>{{ bookingBlockReason }}</span>
+        </div>
 
         <div class="fb-total"><span>Total prepaid</span><strong>₹{{ fareTotal | number: '1.0-2' }}</strong></div>
       </div>
