@@ -70,13 +70,18 @@
       </button>
     </section>
 
+    <section class="empty-panel" *ngIf="!loading && !activeVehicle">
+      <ion-icon name="information-circle-outline"></ion-icon>
+      <p>{{ setupHelp }}</p>
+    </section>
+
     <section class="fixed-panel active-panel" *ngIf="activeVehicle as vehicle">
       <div class="vehicle-top">
         <div>
           <p>{{ vehicle.visible_to_customers ? 'Visible to customers' : 'Hidden from customers' }}</p>
           <h2>{{ vehicle.route_name }}</h2>
         </div>
-        <span class="status-pill" [class.status-pill--started]="vehicle.status !== 'FORMING'">{{ vehicle.status }}</span>
+        <span class="status-pill" [class.status-pill--started]="vehicle.status !== 'FORMING'">{{ statusLabel(vehicle) }}</span>
       </div>
 
       <div class="capacity-row">
@@ -116,11 +121,16 @@
           <span>Complete ride</span>
         </button>
       </div>
+
+      <div class="fixed-alert fixed-alert--error" *ngIf="completeBlockReason(vehicle)">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        <span>{{ completeBlockReason(vehicle) }}</span>
+      </div>
     </section>
 
     <section class="empty-panel" *ngIf="activeVehicle && !passengers.length && !loading">
       <ion-icon name="people-outline"></ion-icon>
-      <p>No prepaid passengers in this vehicle yet.</p>
+      <p>No prepaid passengers in this vehicle yet. Keep this screen open; the list refreshes automatically as customers book.</p>
     </section>
 
     <section class="passenger-section" *ngIf="passengers.length">

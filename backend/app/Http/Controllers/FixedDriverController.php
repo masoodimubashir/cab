@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Driver;
 use App\Models\RideType;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
 use App\Models\Trip;
+use App\Services\DriverServiceModeService;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
@@ -25,6 +27,7 @@ class FixedDriverController extends Controller
         private readonly FixedRouteService $routes,
         private readonly FixedRefundService $refunds,
         private readonly FixedBookingEventService $events,
+        private readonly DriverServiceModeService $serviceModes,
     ) {}
 
     public function routes(Request $request)
@@ -70,6 +73,7 @@ class FixedDriverController extends Controller
 
         $route = Route::query()->whereKey((int) $data['route_id'])->firstOrFail();
         $this->availability->assertFixedRoute($route);
+        $this->serviceModes->assertFixedMode($this->driverProfile($request));
 
         $departure = RouteDeparture::query()->create([
             'route_id' => $route->id,
@@ -107,6 +111,7 @@ class FixedDriverController extends Controller
     public function start(Request $request, RouteDeparture $departure)
     {
         $this->guardDriverDeparture($request, $departure);
+        $this->serviceModes->assertFixedMode($this->driverProfile($request));
 
         $departure = DB::transaction(function () use ($request, $departure) {
             /** @var RouteDeparture $dep */
@@ -351,6 +356,16 @@ class FixedDriverController extends Controller
         if ((int) $departureDriverId !== (int) $request->user()->id && (int) $tripDriverId !== (int) $request->user()->id) {
             abort(404);
         }
+    }
+
+    private function driverProfile(Request $request): Driver
+    {
+        $driver = Driver::query()->where('user_id', $request->user()->id)->first();
+        if (!$driver) {
+            abort(404, 'Driver profile not found.');
+        }
+
+        return $driver;
     }
 
     private function resolveRideTypeId(Route $route): int

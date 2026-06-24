@@ -229,6 +229,31 @@ export class FixedDriverPage {
     return this.routes.find((route) => route.id === Number(this.selectedRouteId)) ?? null;
   }
 
+  get setupHelp(): string {
+    if (!this.routes.length) return 'No active fixed routes are available for your city. Ask admin to create or enable a fixed route.';
+    return 'You must be online in Fixed vehicle mode before opening a live fixed vehicle.';
+  }
+
+  statusLabel(vehicle: FixedVehicle | null): string {
+    if (!vehicle) return '';
+    switch (vehicle.status) {
+      case 'FORMING': return 'Boarding';
+      case 'DISPATCHED': return 'Assigned';
+      case 'DEPARTED': return 'Started';
+      case 'COMPLETED': return 'Completed';
+      case 'CANCELLED': return 'Cancelled';
+      default: return vehicle.status;
+    }
+  }
+
+  completeBlockReason(vehicle: FixedVehicle | null): string | null {
+    if (!vehicle) return null;
+    if (['COMPLETED', 'CANCELLED'].includes(vehicle.status)) return 'This fixed vehicle is already closed.';
+    const active = this.passengers.filter((passenger) => ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(passenger.status)).length;
+    if (active > 0) return 'Drop, cancel, or no-show all active passengers before completing the ride.';
+    return null;
+  }
+
   canStart(vehicle: FixedVehicle | null): boolean {
     return !!vehicle && !['DEPARTED', 'COMPLETED', 'CANCELLED'].includes(vehicle.status);
   }

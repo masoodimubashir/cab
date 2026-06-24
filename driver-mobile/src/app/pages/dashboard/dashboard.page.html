@@ -129,12 +129,12 @@
               <span>Step 2 after going online</span>
             </div>
             <div class="drive-mode__grid">
-              <button class="drive-choice dc-press" (click)="choosePrivateRides()">
+              <button class="drive-choice dc-press" (click)="choosePrivateRides()" [disabled]="toggling">
                 <ion-icon name="car-outline"></ion-icon>
                 <strong>Private rides</strong>
                 <span>Receive normal ride requests</span>
               </button>
-              <button class="drive-choice dc-press" (click)="chooseFixedVehicle()">
+              <button class="drive-choice dc-press" (click)="chooseFixedVehicle()" [disabled]="toggling">
                 <ion-icon name="git-branch-outline"></ion-icon>
                 <strong>Fixed vehicle</strong>
                 <span>Open a live fixed route car</span>
@@ -147,7 +147,15 @@
               <strong>Private rides selected</strong>
               <span>You are available for normal ride requests.</span>
             </div>
-            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()">Change</button>
+            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
+          </div>
+
+          <div class="drive-mode drive-mode--selected" *ngIf="driveMode === 'fixed'">
+            <div>
+              <strong>Fixed vehicle selected</strong>
+              <span>You are available for fixed route boarding.</span>
+            </div>
+            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
           </div>
 
           <button class="dc-cta dc-cta--ghost sheet__stop dc-press" (click)="confirmGoOffline()" [disabled]="toggling">

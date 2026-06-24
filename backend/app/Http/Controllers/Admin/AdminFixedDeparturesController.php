@@ -8,7 +8,9 @@ use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedBookingService;
+use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
+use App\Services\FixedRefundService;
 use Illuminate\Http\Request;
 
 class AdminFixedDeparturesController
@@ -17,11 +19,14 @@ class AdminFixedDeparturesController
         private readonly FixedDepartureService $departures,
         private readonly FixedAvailabilityService $availability,
         private readonly FixedBookingService $bookings,
+        private readonly FixedBookingEventService $events,
+        private readonly FixedRefundService $refunds,
     ) {}
 
     public function index(Request $request, City $city)
     {
         $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
             'route_id' => ['nullable', 'integer'],
             'status' => ['nullable', 'string', 'max:20'],
             'date_from' => ['nullable', 'date'],
@@ -168,6 +173,144 @@ class AdminFixedDeparturesController
         return response()->json([
             'departure' => $this->departures->shapeAdminDeparture($departure),
             'message' => 'Live fixed vehicle updated.',
+        ]);
+    }
+
+    public function closeBookings(Request $request, City $city, RouteDeparture $departure)
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $departure = $this->departures->closeBookings($city, $departure, $request->user(), $data['reason'] ?? null);
+
+        return response()->json([
+            'departure' => $this->departures->shapeAdminDeparture($departure),
+            'message' => 'Bookings closed for this vehicle. Existing passengers remain active.',
+        ]);
+    }
+
+    public function cancelDeparture(Request $request, City $city, RouteDeparture $departure)
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $result = $this->departures->cancelAdminDeparture($city, $departure, $request->user(), $data['reason'] ?? null);
+
+        return response()->json([
+            'departure' => $this->departures->shapeAdminDeparture($result['departure']),
+            'cancelled_passengers' => $result['cancelled_passengers'],
+            'refund_pending' => $result['refund_pending'],
+            'message' => 'Vehicle cancelled. Active passenger bookings were cancelled with full-refund handling.',
+        ]);
+    }
+
+    public function cancelBooking(Request $request, City $city, SeatReservation $reservation)
+    {
+        $reservation = $this->cityScopedReservation($city, $reservation);
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $detail = 'Admin cancelled this passenger booking only. Other passengers and the vehicle continue normally.';
+        if (!empty($data['reason'])) {
+            $detail .= ' Reason: ' . trim($data['reason']);
+        }
+
+        $updated = $this->refunds->cancelBySystem($reservation, 'admin_passenger_cancelled', $request->user(), $detail);
+        $updated = $this->cityScopedReservation($city, $updated);
+
+        return response()->json([
+            'booking' => $this->shapeSupportBooking($updated),
+            'refund_status' => $updated->refund_status,
+            'message' => 'Passenger booking cancelled. Other passengers were not affected.',
+        ]);
+    }
+
+    public function storeSupportAction(Request $request, City $city, SeatReservation $reservation)
+    {
+        $reservation = $this->cityScopedReservation($city, $reservation);
+        $data = $request->validate([
+            'action' => ['required', 'in:refund_pending,refund_resolved_manual,payment_resolved_manual'],
+            'method' => ['nullable', 'string', 'max:80'],
+            'reference' => ['nullable', 'string', 'max:191'],
+            'amount' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $action = $data['action'];
+        $method = trim((string) ($data['method'] ?? ''));
+        $reference = trim((string) ($data['reference'] ?? ''));
+        $note = trim((string) ($data['note'] ?? ''));
+        $amount = array_key_exists('amount', $data) && $data['amount'] !== null ? (float) $data['amount'] : null;
+
+        $updates = [];
+        $title = 'Manual support action recorded';
+        $detail = 'Admin recorded a manual support action for this fixed booking.';
+
+        if ($action === 'refund_pending') {
+            $updates['refund_status'] = 'APPROVED';
+            $title = 'Refund marked pending';
+            $detail = 'Admin marked this booking refund as pending for manual follow-up. No automatic payment action was triggered.';
+        } elseif ($action === 'refund_resolved_manual') {
+            $updates['refund_status'] = 'REFUNDED';
+            $updates['payment_status'] = 'REFUNDED';
+            if ($reference !== '') {
+                $updates['refund_reference'] = $reference;
+            }
+            if ($amount !== null) {
+                $updates['refund_amount'] = $amount;
+            }
+            $title = 'Refund resolved manually';
+            $detail = 'Admin marked this refund as resolved manually. No automatic Razorpay refund was triggered.';
+        } elseif ($action === 'payment_resolved_manual') {
+            $updates['payment_status'] = 'PAID';
+            if ($reference !== '') {
+                $updates['payment_reference'] = $reference;
+            }
+            $title = 'Payment issue resolved manually';
+            $detail = 'Admin marked this payment issue as resolved manually. No automatic payment capture was triggered.';
+        }
+
+        if ($method !== '') {
+            $detail .= ' Method: ' . $method . '.';
+        }
+        if ($reference !== '') {
+            $detail .= ' Reference: ' . $reference . '.';
+        }
+        if ($note !== '') {
+            $detail .= ' Note: ' . $note;
+        }
+
+        $reservation->forceFill($updates)->save();
+        $reservation = $this->cityScopedReservation($city, $reservation);
+
+        $this->events->record(
+            $reservation,
+            'admin_manual_support_action',
+            $title,
+            $detail,
+            [
+                'action' => $action,
+                'method' => $method ?: null,
+                'reference' => $reference ?: null,
+                'amount' => $amount,
+            ],
+            $request->user(),
+        );
+
+        if ($note !== '') {
+            FixedBookingSupportNote::query()->create([
+                'seat_reservation_id' => $reservation->id,
+                'admin_id' => $request->user()?->id,
+                'note' => $title . ': ' . $note,
+            ]);
+        }
+
+        return response()->json([
+            'booking' => $this->shapeSupportBooking($reservation),
+            'message' => $title . '.',
         ]);
     }
 

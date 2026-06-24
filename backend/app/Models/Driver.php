@@ -27,12 +27,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'rating_avg',
     'rating_count',
     'is_online',
+    'active_service_mode',
     'last_online_at',
     'last_offline_at',
 ])]
 class Driver extends Model
 {
     use HasFactory;
+
+    public const SERVICE_MODE_PRIVATE = 'private';
+    public const SERVICE_MODE_FIXED = 'fixed';
+    public const SERVICE_MODE_SHUTTLE = 'shuttle';
+    public const SERVICE_MODES = [
+        self::SERVICE_MODE_PRIVATE,
+        self::SERVICE_MODE_FIXED,
+        self::SERVICE_MODE_SHUTTLE,
+    ];
 
     // Drivers go "Online" by tapping a button in the app, but the only signal
     // that they are still *reachable* is the periodic ping. After this many
@@ -47,6 +57,7 @@ class Driver extends Model
         'last_online_at' => 'datetime',
         'last_offline_at' => 'datetime',
         'rating_avg' => 'float',
+        'is_online' => 'boolean',
     ];
 
     public function isOnlineFresh(): bool
