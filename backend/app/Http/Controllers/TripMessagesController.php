@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\TripMessageSent;
+use App\Models\CitySetting;
 use App\Models\Trip;
 use App\Models\TripMessage;
 use Illuminate\Http\Request;
@@ -38,6 +39,13 @@ class TripMessagesController extends Controller
 
         if (in_array($trip->status, ['CANCELLED', 'COMPLETED'], true)) {
             return response()->json(['message' => 'Trip chat is closed.'], 409);
+        }
+
+        $chatEnabled = $trip->city_id
+            ? CitySetting::query()->where('city_id', $trip->city_id)->value('chat_enabled')
+            : true;
+        if ($chatEnabled === false || $chatEnabled === 0) {
+            return response()->json(['message' => 'Trip chat is disabled for this city.'], 409);
         }
 
         $message = TripMessage::query()->create([

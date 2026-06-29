@@ -36,13 +36,13 @@ export class AppComponent implements OnInit {
     [/^\/drivers\/documents/,       'Document Catalog'],
     [/^\/contact-drivers/,          'Contact Drivers'],
     [/^\/pricing/,                  'Pricing'],
-    [/^\/vehicle-fares/,            'Vehicle Fares'],
+    [/^\/vehicle-fares/,            'Vehicle Setup'],
+    [/^\/vehicle-setup-new/,        'Vehicle Setup'],
+    [/^\/fare-settings/,            'Fare Settings'],
     [/^\/vehicles/,                 'Vehicles'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
-    [/^\/routes/,                   'Routes'],
     [/^\/fixed-departures/,         'Live Fixed Vehicles'],
-    [/^\/departures/,               'Departures'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -72,10 +72,10 @@ export class AppComponent implements OnInit {
     /^\/city\b/,
     /^\/pricing\b/,
     /^\/vehicle-fares\b/,
+    /^\/vehicle-setup-new\b/,
+    /^\/fare-settings\b/,
     /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
-    /^\/routes\b/,
-    /^\/departures\b/,
     /^\/fixed-routes\b/,
     /^\/fixed-departures\b/,
     /^\/settings\/(city|fleets|vehicle-types)\b/,
@@ -146,8 +146,9 @@ export class AppComponent implements OnInit {
     if (can('vehicles.view'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
     if (canAny(['pricing.view','dynamic_pricing.manage']))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
-    if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Fares', icon: 'car', route: '/vehicle-fares' });
-    if (can('routes.manage'))          citySetup.push({ label: 'Routes',        icon: 'road', route: '/routes' });
+    if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Setup New', icon: 'car', route: '/vehicle-setup-new' });
+    if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Setup', icon: 'car', route: '/vehicle-fares' });
+    if (can('settings.manage'))        citySetup.push({ label: 'Fare Settings',  icon: 'rupee', route: '/fare-settings' });
     if (can('routes.manage'))          citySetup.push({ label: 'Fixed Routes',  icon: 'road', route: '/fixed-routes' });
     if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
@@ -160,8 +161,6 @@ export class AppComponent implements OnInit {
 
     // --- Operations ---
     if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
-
-    if (can('reservations.view')) operations.push({ label: 'Departures', icon: 'calendar', route: '/departures' });
 
     if (can('reservations.view')) operations.push({ label: 'Live Fixed Vehicles', icon: 'calendar', route: '/fixed-departures' });
 

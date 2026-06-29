@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CitySetting;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
@@ -35,21 +36,23 @@ class FixedStopAutomationService
     private function processDeparture(RouteDeparture $departure, float $driverLat, float $driverLng, Carbon $now): void
     {
         $route = $departure->route;
-        if (!$route || !is_array($route->fixed_settings_json)) {
+        if (!$route) {
             return;
         }
 
-        $settings = $route->fixed_settings_json;
-        if (($settings['auto_no_show_enabled'] ?? true) !== true) {
+        $legacySettings = is_array($route->fixed_settings_json) ? $route->fixed_settings_json : [];
+        if (($legacySettings['auto_no_show_enabled'] ?? true) !== true) {
             return;
         }
 
-        $driverRadius = (int) ($settings['stop_arrival_radius_m'] ?? 150);
-        $approachingRadius = max($driverRadius, (int) ($settings['vehicle_approaching_alert_radius_m'] ?? 500));
-        $customerRadius = (int) ($settings['customer_pickup_radius_m'] ?? 150);
-        $waitMinutes = max(0, (int) ($route->waiting_time_per_stop_minutes ?? 0));
-        $customerGraceMinutes = max(0, (int) ($settings['customer_grace_minutes'] ?? 2));
-        $driverMissedGraceMinutes = max(0, (int) ($settings['driver_missed_stop_grace_minutes'] ?? 3));
+        $citySettings = CitySetting::query()->where('city_id', $route->city_id)->first();
+
+        $driverRadius = (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacySettings['stop_arrival_radius_m'] ?? 150));
+        $approachingRadius = max($driverRadius, (int) ($citySettings?->fixed_vehicle_approaching_alert_radius_m ?? ($legacySettings['vehicle_approaching_alert_radius_m'] ?? 500)));
+        $customerRadius = (int) ($citySettings?->fixed_customer_pickup_radius_m ?? ($legacySettings['customer_pickup_radius_m'] ?? 150));
+        $waitMinutes = max(0, (int) ($citySettings?->fixed_waiting_time_per_stop_minutes ?? ($route->waiting_time_per_stop_minutes ?? 0)));
+        $customerGraceMinutes = max(0, (int) ($citySettings?->fixed_customer_grace_minutes ?? ($legacySettings['customer_grace_minutes'] ?? 2)));
+        $driverMissedGraceMinutes = max(0, (int) ($citySettings?->fixed_driver_missed_stop_grace_minutes ?? ($legacySettings['driver_missed_stop_grace_minutes'] ?? 3)));
 
         $stops = $route->stops->keyBy('id');
         $this->updateReachedStop($departure, $stops, $driverLat, $driverLng, $driverRadius, $now);

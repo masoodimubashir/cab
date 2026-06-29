@@ -78,58 +78,63 @@ Example:
 Before development starts, confirm these values:
 
 ```text
-Maximum passengers per vehicle
-Maximum pickup distance from active route
-Maximum drop distance from active route
-Maximum delay allowed for existing passengers
-Maximum driver waiting time at pickup
-Whether passengers can join after ride has started
-Cancellation refund rule
+Passenger capacity per vehicle
+Pickup match distance
+Drop match distance
+Passenger delay limit
+Driver waiting time
+Driver payout share
+Cancellation payment rule
 No-show charge rule
-Driver payout rule
 Customer privacy rule
 ```
 
 Recommended starting values:
 
 ```text
-Maximum pickup distance: 1-2 km
-Maximum drop distance: 1-2 km
-Maximum extra delay: 10-15 minutes
-Maximum waiting time: 3-5 minutes
+Pickup match distance: 1-2 km
+Drop match distance: 1-2 km
+Passenger delay limit: 10-15 minutes
+Driver waiting time: 3-5 minutes
 Joining after ride start: allowed until route cutoff or capacity full
-Fare lock: yes, fare does not change after booking
+Fare lock: yes, use the vehicle's base pricing snapshot once booked
+Cancellation payment rule: passenger can cancel only before driver reaches pickup area; after that cancellation is locked; cancelled passenger payment stays with the company.
+
+Fixed cancellation rule:
+
+Passenger can cancel only before the driver reaches the passenger pickup area.
+Once the driver reaches the pickup area, cancellation is no longer available.
+If the passenger cancels before pickup arrival, the passenger payment is kept by the company account.
+The Shuttle ride continues for other passengers.
+Do not show cancellation refund options in Admin UI.
+```
+
+Implementation note:
+
+```text
+Before implementing capacity-safe joining, privacy-safe passenger views,
+cancellation payment handling, or no-show charging, explicitly decide and add the
+city-level Shuttle controls for:
+
+Passenger capacity source
+Customer privacy rule
+Cancellation payment rule
+No-show charge rule
+
+Do not expose these controls in Admin UI until the backend behavior is wired.
+
+Also do not expose advanced boarding confirmation modes (customer OTP, QR scan,
+or driver + customer confirmation) or cancellation-policy selectors until the
+backend, customer app, and driver app flows are implemented end to end.
 ```
 
 ---
 
 ## 5. Shuttle Fare Setup
 
-Shuttle must have its own fare settings.
+Shuttle fare uses the existing vehicle Base Pricing setup. We do not keep a separate Shuttle fare sheet in the UI.
 
-Each passenger fare is calculated from that passenger pickup and drop. Fares are not split equally between passengers.
-
-Required fare settings:
-
-```text
-Base fare
-Minimum fare
-Distance threshold 1
-Per km fare after threshold 1
-Distance threshold 2
-Per km fare after threshold 2
-Time threshold 1
-Per minute fare after threshold 1
-Time threshold 2
-Per minute fare after threshold 2
-Free waiting minutes
-Waiting charge per minute
-Cancellation charge
-No-show charge
-Tax percentage
-Commission type
-Commission value
-```
+City settings control the Shuttle matching rules, and Vehicle Details controls the vehicle capacity plus the base pricing card used for the Shuttle quote.
 
 Fare rule:
 
@@ -145,6 +150,17 @@ Driver payout rule:
 Total Shuttle passenger collection - platform commission = driver payout
 ```
 
+
+Current fare-system safety note:
+
+```text
+Private/local/outstation fare calculation is already working and must not be changed while adding Shuttle.
+Admin Fare Settings is a UI relocation over the existing pricing APIs and pricing_rules data.
+Customer private booking continues to use /pricing/estimate and TripsController with FareEstimationService.
+Driver app continues to receive estimated_fare/final_fare from the existing trip flow.
+Shuttle fare work must add separate Shuttle quote/booking behavior without changing the tested private fare path.
+```
+
 ---
 
 ## 6. Development Roadmap
@@ -155,14 +171,14 @@ Goal: finalize the operational rules before complex coding starts.
 
 Work to be done:
 
-- Define vehicle capacity rule.
-- Define route matching limits.
-- Define Shuttle fare fields.
+- Define passenger capacity per vehicle.
+- Define pickup and drop match limits.
+- Define driver waiting time.
 - Define cancellation policy.
 - Define no-show policy.
 - Define driver payout policy.
 - Define customer privacy rules.
-- Define admin settings.
+- Define city-level Shuttle settings.
 
 Deliverable:
 
@@ -174,21 +190,19 @@ Confirmed Shuttle business rules and settings list.
 
 ### Phase 2: Shuttle Pricing
 
-Goal: calculate Shuttle fare separately.
+Goal: calculate Shuttle fare from the vehicle's existing base pricing.
 
 Work to be done:
 
-- Create Shuttle fare configuration.
-- Add Shuttle fare quote API.
-- Calculate fare from pickup/drop distance and time.
-- Apply minimum fare.
-- Apply tax.
-- Store locked fare on passenger booking.
+- Reuse the selected vehicle's Base Pricing card.
+- Read map distance / time for the quote.
+- Apply the city Shuttle matching rules.
+- Store the locked fare on the passenger booking.
 
 Deliverable:
 
 ```text
-Customer can get a Shuttle fare quote before booking.
+Customer can get a Shuttle fare quote before booking, and the quote is tied to the selected vehicle's base pricing.
 ```
 
 ---
@@ -301,7 +315,7 @@ Goal: handle passenger-level problems without stopping the whole ride.
 Work to be done:
 
 - Allow passenger cancellation.
-- Apply refund policy.
+- Apply the cancellation payment rule: passenger can cancel only before driver reaches pickup area, and cancelled passenger payment is kept by the company.
 - Allow driver to mark passenger no-show.
 - Apply no-show charge.
 - Continue ride for other passengers.
@@ -397,7 +411,7 @@ Dynamic Shuttle is stable enough for controlled launch.
 - Confirm other passengers remain active.
 - Mark one passenger no-show.
 - Confirm ride continues.
-- Confirm correct charge/refund.
+- Confirm cancellation payment stays with the company and no-show charge is applied correctly.
 
 ### Privacy
 
@@ -427,7 +441,7 @@ Backend tests should cover:
 - Passenger dropped status.
 - Passenger cancellation.
 - Passenger no-show.
-- Refund/no-show charge rules.
+- Cancellation payment/no-show charge rules.
 - Admin settings affecting matching.
 
 Frontend tests should cover:

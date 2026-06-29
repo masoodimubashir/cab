@@ -19,11 +19,12 @@ import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { VehicleTypesComponent } from './admin/settings/vehicle-types.component';
+import { FareSettingsComponent } from './admin/settings/fare-settings.component';
+import { VehicleSetupNewComponent } from './admin/settings/vehicle-setup-new.component';
+import { VehicleFareSetupComponent } from './admin/settings/vehicle-fare-setup.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
-import { RoutesComponent } from './admin/routes/routes.component';
-import { DeparturesComponent } from './admin/routes/departures.component';
 import { FixedRoutesComponent } from './admin/fixed/fixed-routes.component';
 import { FixedDeparturesComponent } from './admin/fixed/fixed-departures.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
@@ -41,6 +42,9 @@ export const routes: Routes = [
   { path: 'dashboard', component: AdminDashboardComponent, canActivate: [adminAuthGuard] },
   { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard] },
   { path: 'vehicle-fares', component: VehicleTypesComponent, canActivate: [adminAuthGuard] },
+  { path: 'vehicle-setup-new', component: VehicleSetupNewComponent, canActivate: [adminAuthGuard] },
+  { path: 'vehicle-setup-new/:vehicleRowId/fares', component: VehicleFareSetupComponent, canActivate: [adminAuthGuard] },
+  { path: 'fare-settings', component: FareSettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard] },
   { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard] },
   { path: 'customers/:id', component: CustomerDetailComponent, canActivate: [adminAuthGuard] },
@@ -101,8 +105,6 @@ export const routes: Routes = [
 
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'routes', component: RoutesComponent, canActivate: [adminAuthGuard] },
-  { path: 'departures', component: DeparturesComponent, canActivate: [adminAuthGuard] },
   { path: 'fixed-routes', component: FixedRoutesComponent, canActivate: [adminAuthGuard] },
   { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard] },
 

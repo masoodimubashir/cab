@@ -95,8 +95,8 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
     <div class="bp">
       <div class="bp__head">
         <div>
-          <h3 class="bp__title">Base Pricing</h3>
-          <p class="bp__sub">The fare rate card for this vehicle. Used for normal rides.</p>
+          <h3 class="bp__title">{{ title }}</h3>
+          <p class="bp__sub">{{ subtitle }}</p>
         </div>
         <tm-button variant="green" size="sm" [disabled]="saving || !canSave" (clicked)="save()">
           {{ saving ? 'Saving…' : 'Save rate card' }}
@@ -154,6 +154,8 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
 export class VehicleBasePricingComponent implements OnChanges {
   @Input() cityId: number | null = null;
   @Input() cityVehicleTypeId: number | null = null;
+  @Input() title = 'Base Pricing';
+  @Input() subtitle = 'The fare rate card for this vehicle.';
 
   readonly sections = FARE_SECTIONS;
 

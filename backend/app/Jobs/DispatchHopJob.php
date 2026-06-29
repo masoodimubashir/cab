@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Events\DispatchRingExpanded;
 use App\Models\City;
-use App\Models\CityVehicleType;
 use App\Models\DispatcherSetting;
 use App\Models\Driver;
 use App\Models\Trip;
@@ -112,44 +111,18 @@ class DispatchHopJob implements ShouldQueue
             return; // operator dispatches manually for this product/city
         }
 
-        // Per-vehicle dispatcher overrides — the trip is bound to the exact
-        // city_vehicle_types row now. Fall back to the (city, ride_type) tuple
-        // for legacy trips that pre-date the city_vehicle_type_id column.
-        $vehicleType = $trip->city_vehicle_type_id
-            ? CityVehicleType::query()->find($trip->city_vehicle_type_id)
-            : ($trip->city_id && $trip->ride_type_id
-                ? CityVehicleType::query()
-                    ->where('city_id', $trip->city_id)
-                    ->where('ride_type_id', $trip->ride_type_id)
-                    ->first()
-                : null);
-
-        // Two dispatch modes:
-        //  • RING (any per-vehicle override set) — expanding-radius search using
-        //    the entered numbers, with built-in fallbacks for any blank field
-        //    (NO city-default inheritance).
-        //  • GEOFENCE (all overrides blank) — offer to every eligible driver
-        //    inside the city's boundary polygon, nearest-first in widening waves
-        //    until the whole geofence is covered. No radius cap.
-        $geofenceMode = !$this->hasRingOverride($vehicleType);
-
-        if ($geofenceMode) {
-            if ($this->hop > self::GEOFENCE_MAX_WAVES) {
-                return;
-            }
-            $intervalSec = self::GEOFENCE_WAVE_INTERVAL_SEC;
-            $emptyRequeueCap = self::GEOFENCE_MAX_WAVES;
-        } else {
-            $hopIntervalSec = (int) ($vehicleType?->override_hop_interval_sec ?? self::RING_HOP_INTERVAL_SEC);
-            $hopRadiusM = (int) ($vehicleType?->override_hop_radius_m ?? self::RING_HOP_RADIUS_M);
-            $requestRadiusM = (int) ($vehicleType?->override_request_radius_m ?? 0);
-            $maxHops = (int) ($vehicleType?->override_max_hops ?? self::RING_MAX_HOPS);
-            if ($this->hop > $maxHops) {
-                return;
-            }
-            $intervalSec = $hopIntervalSec;
-            $emptyRequeueCap = $maxHops;
+        // Private dispatcher tuning now comes only from the city-level
+        // DispatcherSetting row (managed inside City Settings > Private Rides).
+        $geofenceMode = false;
+        $hopIntervalSec = (int) ($settings->dispatcher_hop_interval_sec ?: self::RING_HOP_INTERVAL_SEC);
+        $hopRadiusM = (int) ($settings->dispatcher_hop_radius_m ?: self::RING_HOP_RADIUS_M);
+        $requestRadiusM = (int) ($settings->request_radius_m ?? 0);
+        $maxHops = (int) ($settings->max_hops ?: self::RING_MAX_HOPS);
+        if ($this->hop > $maxHops) {
+            return;
         }
+        $intervalSec = $hopIntervalSec;
+        $emptyRequeueCap = $maxHops;
 
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
@@ -336,17 +309,6 @@ class DispatchHopJob implements ShouldQueue
         }
         self::dispatch($this->tripId, $this->amount, $this->hop + 1, $this->discoveryMode, $this->genToken)
             ->delay(now()->addSeconds($hopIntervalSec));
-    }
-
-    /** True when the vehicle sets any per-vehicle dispatch override (→ ring mode). */
-    private function hasRingOverride(?CityVehicleType $vt): bool
-    {
-        return $vt !== null && (
-            $vt->override_request_radius_m !== null
-            || $vt->override_hop_interval_sec !== null
-            || $vt->override_hop_radius_m !== null
-            || $vt->override_max_hops !== null
-        );
     }
 
     /**

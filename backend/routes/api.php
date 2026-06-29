@@ -13,7 +13,6 @@ use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TripsController;
-use App\Http\Controllers\SharedRidesController;
 use App\Http\Controllers\FixedRoutesController;
 use App\Http\Controllers\FixedBookingsController;
 use App\Http\Controllers\FixedDriverController;
@@ -53,8 +52,6 @@ use App\Http\Controllers\Admin\AdminVehicleSetsController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminOutstationPackagesController;
-use App\Http\Controllers\Admin\AdminRoutesController;
-use App\Http\Controllers\Admin\AdminRouteDeparturesController;
 use App\Http\Controllers\Admin\AdminFixedRoutesController;
 use App\Http\Controllers\Admin\AdminFixedDeparturesController;
 use App\Http\Controllers\Admin\AdminCouponsController;
@@ -146,13 +143,6 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/select-driver', [TripsController::class, 'selectDriver']);
     Route::post('/trips/{trip}/search-drivers', [TripsController::class, 'searchDrivers'])->middleware('throttle:booking');
 
-    // Shared-ride (Fixed / Shuttle) seat booking.
-    Route::get('/shared/routes', [SharedRidesController::class, 'routes']);
-    Route::get('/shared/routes/{route}/departures', [SharedRidesController::class, 'departures']);
-    Route::post('/shared/seat-reservations', [SharedRidesController::class, 'book'])->middleware(['throttle:booking', 'idempotent']);
-    Route::get('/shared/seat-reservations', [SharedRidesController::class, 'myReservations']);
-    Route::post('/shared/seat-reservations/{reservation}/cancel', [SharedRidesController::class, 'cancel'])->middleware('throttle:booking');
-    Route::post('/shared/seat-reservations/{reservation}/rating', [SharedRidesController::class, 'rate']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -329,23 +319,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'update']);
         Route::delete('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'destroy']);
 
-        // Shared-ride routes (fixed corridors / shuttle lines) + their stops + timetable.
-        Route::middleware('permission:routes.manage')->group(function () {
-            Route::get('/admin/cities/{city}/routes', [AdminRoutesController::class, 'index']);
-            Route::post('/admin/cities/{city}/routes', [AdminRoutesController::class, 'store']);
-            Route::patch('/admin/cities/{city}/routes/{route}', [AdminRoutesController::class, 'update']);
-            Route::post('/admin/cities/{city}/routes/{route}', [AdminRoutesController::class, 'update']);
-            Route::delete('/admin/cities/{city}/routes/{route}', [AdminRoutesController::class, 'destroy']);
-        });
-        // Manually (re)generate a shuttle route's upcoming departures.
-        Route::middleware('permission:schedules.manage')
-            ->post('/admin/cities/{city}/routes/{route}/generate-departures', [AdminRouteDeparturesController::class, 'generate']);
-
-        // Departures board + per-departure passenger manifest.
-        Route::middleware('permission:reservations.view')->group(function () {
-            Route::get('/admin/cities/{city}/departures', [AdminRouteDeparturesController::class, 'index']);
-            Route::get('/admin/cities/{city}/departures/{departure}/manifest', [AdminRouteDeparturesController::class, 'manifest']);
-        });
     });
     Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
     Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);

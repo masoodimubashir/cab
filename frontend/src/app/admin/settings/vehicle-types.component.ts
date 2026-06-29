@@ -39,7 +39,7 @@ const STATUS_OPTIONS = [
 ];
 
 /**
- * Vehicle Fares — the city's vehicle catalogue, scoped to the city chosen in
+ * Vehicle Setup — the city's vehicle catalogue, scoped to the city chosen in
  * the topbar switcher. Standard data-table layout: search + filter dropdowns +
  * dismissable pills, "Details" opens the deep per-kind editor, "Add vehicle
  * type" uses the shared drawer.
@@ -57,8 +57,8 @@ const STATUS_OPTIONS = [
     <div class="page">
       <header class="page__hero">
         <div>
-          <h1 class="page__title">Vehicle Fares</h1>
-          <p class="page__sub">The city's vehicle catalogue — open Details to tune identity, fare, images and dispatcher settings.</p>
+          <h1 class="page__title">Vehicle Setup</h1>
+          <p class="page__sub">The city's vehicle catalogue — open Details to tune identity, capacity and images.</p>
         </div>
         <tm-button *ngIf="cityId != null" variant="green" icon="plus" (clicked)="openCreate()">
           Add vehicle type
@@ -69,7 +69,7 @@ const STATUS_OPTIONS = [
       <div class="cue" *ngIf="cityId == null">
         <tm-icon name="map-marker" [size]="24" />
         <p class="cue__title">No city selected</p>
-        <p class="cue__text">Pick a city from the switcher in the top bar to manage vehicle fares.</p>
+        <p class="cue__text">Pick a city from the switcher in the top bar to manage vehicle setup.</p>
       </div>
 
       <tm-data-table

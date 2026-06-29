@@ -2,7 +2,6 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GeneralSettingsComponent } from './general-settings.component';
 import { CitySettingsComponent } from './city-settings.component';
-import { DispatcherSettingsComponent } from './dispatcher-settings.component';
 import { IconComponent, IconName } from '../../ui';
 
 /**
@@ -18,7 +17,6 @@ import { IconComponent, IconName } from '../../ui';
     IconComponent,
     GeneralSettingsComponent,
     CitySettingsComponent,
-    DispatcherSettingsComponent,
   ],
   template: `
     <div class="stg">
@@ -40,7 +38,6 @@ import { IconComponent, IconName } from '../../ui';
       <div class="stg__panel">
         <app-general-settings *ngIf="activeIndex === 0"></app-general-settings>
         <app-city-settings *ngIf="activeIndex === 1"></app-city-settings>
-        <app-dispatcher-settings *ngIf="activeIndex === 2"></app-dispatcher-settings>
       </div>
     </div>
   `,
@@ -86,6 +83,5 @@ export class SettingsComponent {
   tabs: { label: string; icon: IconName }[] = [
     { label: 'Ride Products', icon: 'car' },
     { label: 'City Settings', icon: 'cog' },
-    { label: 'Dispatcher', icon: 'send' },
   ];
 }

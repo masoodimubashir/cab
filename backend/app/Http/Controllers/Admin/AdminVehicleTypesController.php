@@ -72,6 +72,11 @@ class AdminVehicleTypesController
             'reverse_bidding_enabled' => ['nullable', 'boolean'],
         ]);
 
+        $rideType = RideType::query()->find((int) $data['ride_type_id']);
+        if (!$this->isPrivateRideType($rideType?->name)) {
+            $data['reverse_bidding_enabled'] = false;
+        }
+
         // Commission is one mode or the other — zero out the field the chosen
         // mode doesn't use so the trip-settlement math can read either column
         // unconditionally.
@@ -146,6 +151,14 @@ class AdminVehicleTypesController
             'is_active' => ['nullable', 'boolean'],
         ]);
 
+        $targetRideTypeId = $data['ride_type_id'] ?? $vehicleType->ride_type_id;
+        $targetRideType = $targetRideTypeId === $vehicleType->ride_type_id
+            ? $vehicleType->rideType
+            : RideType::query()->find((int) $targetRideTypeId);
+        if (!$this->isPrivateRideType($targetRideType?->name)) {
+            $data['reverse_bidding_enabled'] = false;
+        }
+
         // Commission is one mode or the other. When the admin sets the mode,
         // force the unused amount column to 0 so settlement can read either side
         // safely. (When commission_type isn't in this payload we leave both
@@ -174,7 +187,6 @@ class AdminVehicleTypesController
         // Re-check the (city, ride_type, display_name) uniqueness when either
         // key changes, so a rename / ride-type change returns a friendly 409
         // instead of a raw DB integrity 500.
-        $targetRideTypeId = $data['ride_type_id'] ?? $vehicleType->ride_type_id;
         $targetName = $data['display_name'] ?? $vehicleType->display_name;
         $clash = CityVehicleType::query()
             ->where('city_id', $city->id)
@@ -212,6 +224,12 @@ class AdminVehicleTypesController
         if ($vehicleType->city_id !== $city->id) {
             abort(404);
         }
+    }
+
+    private function isPrivateRideType(?string $name): bool
+    {
+        $name = strtolower((string) $name);
+        return !str_contains($name, 'fixed') && !str_contains($name, 'shuttle');
     }
 
     private function shape(CityVehicleType $v): array

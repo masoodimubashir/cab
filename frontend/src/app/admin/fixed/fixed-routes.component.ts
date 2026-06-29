@@ -331,27 +331,6 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <label class="toggle"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active</span></label>
           </div>
 
-          <div class="section-lbl">Driver no-show settings</div>
-          <div class="grid3">
-            <label class="field"><span class="field__lbl">Wait time per stop (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.waiting_time_per_stop_minutes" /></label>
-            <label class="field"><span class="field__lbl">Stop arrival radius (m)</span><input type="number" min="25" max="1000" step="5" [(ngModel)]="form.stop_arrival_radius_m" /></label>
-            <label class="field"><span class="field__lbl">Missed stop grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.driver_missed_stop_grace_minutes" /></label>
-          </div>
-
-          <div class="section-lbl">Customer no-show settings</div>
-          <div class="grid3">
-            <label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" min="25" max="1000" step="5" [(ngModel)]="form.customer_pickup_radius_m" /></label>
-            <label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" min="50" max="5000" step="50" [(ngModel)]="form.vehicle_approaching_alert_radius_m" /></label>
-            <label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.customer_grace_minutes" /></label>
-            <label class="field"><span class="field__lbl">Boarding confirmation</span>
-              <select [(ngModel)]="form.boarding_confirmation_mode">
-                <option value="driver_only">Driver marks boarded</option>
-                <option value="customer_otp">Customer OTP</option>
-                <option value="qr_scan">QR scan</option>
-                <option value="driver_customer">Driver + customer</option>
-              </select>
-            </label>
-          </div>
 
         </div>
 
