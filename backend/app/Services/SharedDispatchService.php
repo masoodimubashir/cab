@@ -14,13 +14,12 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Turns a shared-ride departure (a SCHEDULED shuttle run or a FORMING fixed
- * vehicle) into a real `trips` row — the vehicle journey — links its booked
+ * Turns a fixed FORMING departure into a real `trips` row — the vehicle journey — links its booked
  * seats to that trip, and pre-assigns the nearest eligible driver. The driver
  * then sees it via /drivers/me/active-trip (CONFIRMED) and accepts it through
  * the existing /driver-accept flow, running it with the manifest (Phase 7).
  *
- * Shared rides are pre-priced (sum of seat fares) and not negotiated, so this
+ * Fixed rides are pre-priced (sum of seat fares) and not negotiated, so this
  * deliberately bypasses the private negotiation/expanding-ring dispatcher — it
  * is simpler and leaves the private hot path untouched.
  */
@@ -46,7 +45,7 @@ class SharedDispatchService
         return DB::transaction(function () use ($departure) {
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($departure->id);
-            if (!$dep || $dep->trip_id !== null || !in_array($dep->status, ['SCHEDULED', 'FORMING'], true)) {
+            if (!$dep || $dep->trip_id !== null || $dep->status !== 'FORMING') {
                 return null; // already dispatched or not dispatchable
             }
 
@@ -109,11 +108,8 @@ class SharedDispatchService
     }
 
     /**
-     * Refund + close shared departures that are too overdue to ever dispatch — a
-     * scheduled shuttle whose time long passed, or a fixed vehicle that's been
-     * forming past the hard window — when no driver could be found. Riders paid
-     * up front, so each active seat is refunded and the rider is notified. This
-     * is the safety net (mirrors the private WakeScheduledTrips::expireOverdue).
+     * Refund + close fixed forming vehicles that are too overdue to dispatch.
+     * Riders paid up front, so each active seat is refunded and notified.
      *
      * @return int  number of departures expired
      */
@@ -123,10 +119,9 @@ class SharedDispatchService
 
         $stuck = RouteDeparture::query()
             ->whereNull('trip_id')
-            ->where(function ($q) use ($cutoff) {
-                $q->where(fn ($s) => $s->where('status', 'SCHEDULED')->whereNotNull('depart_at')->where('depart_at', '<=', $cutoff))
-                  ->orWhere(fn ($s) => $s->where('status', 'FORMING')->where('created_at', '<=', $cutoff));
-            })
+            ->where('status', 'FORMING')
+            ->where('created_at', '<=', $cutoff)
+            ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->limit(200)
             ->get();
 
@@ -145,7 +140,7 @@ class SharedDispatchService
         return DB::transaction(function () use ($departure) {
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($departure->id);
-            if (!$dep || $dep->trip_id !== null || !in_array($dep->status, ['SCHEDULED', 'FORMING'], true)) {
+            if (!$dep || $dep->trip_id !== null || $dep->status !== 'FORMING') {
                 return false;
             }
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\FareNegotiationOfferAdded;
 use App\Jobs\DispatchHopJob;
 use App\Models\City;
+use App\Models\CitySetting;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\DriverLocation;
@@ -590,7 +591,7 @@ class TripsController extends Controller
     /**
      * Mark a trip as a no-show (driver waited at pickup, customer never arrived; or
      * mirror for the customer if the driver never arrived). Cancels the trip and
-     * computes a cancellation fee from the trip's PricingRule.
+     * computes a cancellation fee from the city's private no-show settings.
      */
     public function markNoShow(Request $request, Trip $trip, TripStateMachineService $tripStateMachineService)
     {
@@ -619,11 +620,16 @@ class TripsController extends Controller
             }
         }
 
-        // Threshold check — based on PricingRule.no_show_threshold_minutes against
-        // the relevant timestamp. Falls back to 5 minutes if the rule is missing the field.
+        // City Settings are now the primary private-ride source. PricingRule
+        // remains as a legacy fallback so old city data keeps working.
+        $citySettings = $trip->city_id
+            ? CitySetting::query()->where('city_id', $trip->city_id)->first()
+            : null;
         $pricingRule = $trip->pricing_rule_id ? PricingRule::query()->find($trip->pricing_rule_id) : null;
-        $thresholdMinutes = (float) ($pricingRule?->no_show_threshold_minutes ?? 5);
-        $perMinuteFee = (float) ($pricingRule?->no_show_charges_per_minute ?? 0);
+        $thresholdMinutes = $role === 'driver'
+            ? (float) ($citySettings?->private_driver_no_show_grace_minutes ?? $pricingRule?->no_show_threshold_minutes ?? 5)
+            : (float) ($citySettings?->private_no_show_threshold_minutes ?? $pricingRule?->no_show_threshold_minutes ?? 5);
+        $perMinuteFee = (float) ($citySettings?->private_no_show_charge_per_minute ?? $pricingRule?->no_show_charges_per_minute ?? 0);
 
         $waitStartedAt = $role === 'customer'
             ? $trip->arrived_pickup_at

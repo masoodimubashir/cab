@@ -1346,22 +1346,35 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   /**
-   * Product card tap. A shared product (Fixed/Shuttle) opens the dedicated
-   * seat-booking page; Private products (local/outstation/rental) stay in the
-   * existing metered flow here, untouched.
+   * Product card tap. Fixed opens the dedicated fixed-booking flow. Dynamic
+   * Shuttle stays disabled until its roadmap API/app flow is implemented.
+   * Private products (local/outstation/rental) stay in this metered flow.
    */
   onSelectProduct(p: { kind: string; scope: 'local' | 'outstation' | null; mode: 'private' | 'fixed' | 'shuttle' | null }): void {
     const isFixed = p.mode === 'fixed' || p.kind === 'fixed';
     const isShuttle = p.mode === 'shuttle' || p.kind === 'shuttle';
-    if (isFixed || isShuttle) {
+    if (isFixed) {
       const cityId = this.selectedCity?.id;
       if (!cityId) return;
-      void this.router.navigate([isFixed ? '/fixed-book' : '/shared-book'], {
+      void this.router.navigate(['/fixed-book'], {
         queryParams: { city_id: cityId, scope: p.scope ?? '', mode: p.mode ?? p.kind },
       });
       return;
     }
+    if (isShuttle) {
+      void this.showPlannedShuttleToast();
+      return;
+    }
     this.selectProductKind(p.kind as 'local' | 'outstation' | 'rental');
+  }
+
+  private async showPlannedShuttleToast(): Promise<void> {
+    const toast = await this.toastCtrl.create({
+      message: 'Dynamic Shuttle is planned and not active yet.',
+      duration: 2200,
+      position: 'bottom',
+    });
+    await toast.present();
   }
 
   /** The modes available under the scope the customer picked in step 1. */

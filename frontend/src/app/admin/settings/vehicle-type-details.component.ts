@@ -7,12 +7,10 @@ import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, IconComponent, IconName, ModalComponent } from '../../ui';
-import { OutstationPackagesComponent } from './outstation-packages.component';
-import { VehicleBasePricingComponent } from './vehicle-base-pricing.component';
 
 type TollMode = 'no' | 'yes';
 type Platform = 'android' | 'ios';
-type TabKey = 'overview' | 'fares' | 'images' | 'dispatch';
+type TabKey = 'overview' | 'images';
 
 interface VehicleType {
   id: number;
@@ -34,10 +32,6 @@ interface VehicleType {
   commission_percent: number;
   fixed_commission: number;
   min_driver_balance: number;
-  override_request_radius_m: number | null;
-  override_hop_interval_sec: number | null;
-  override_hop_radius_m: number | null;
-  override_max_hops: number | null;
   is_active: boolean;
 }
 
@@ -61,7 +55,7 @@ interface VehicleTypeImage {
 /**
  * Vehicle Details — a tabbed workspace for a single CityVehicleType. A rich hero
  * header carries identity + status + the enable/disable action; the body is split
- * into Overview / Fares / Images / Dispatch tabs, and core edits are committed
+ * into Overview / Images tabs, and core edits are committed
  * from one sticky save bar (shown only on the tabs that edit core fields).
  */
 @Component({
@@ -73,8 +67,6 @@ interface VehicleTypeImage {
     ButtonComponent,
     IconComponent,
     ModalComponent,
-    OutstationPackagesComponent,
-    VehicleBasePricingComponent,
   ],
   template: `
     <div *ngIf="loading" class="cue">
@@ -244,23 +236,6 @@ interface VehicleTypeImage {
           </section>
         </ng-container>
 
-        <!-- ===== FARES ===== -->
-        <ng-container *ngIf="activeTab === 'fares'">
-          <section class="vcard">
-            <header class="vcard__head">
-              <tm-icon name="rupee" [size]="14" /><h3>Fare Structure</h3>
-              <span class="vcard__hint" *ngIf="!isOutstation()">Set the base rate card for this vehicle.</span>
-              <span class="vcard__hint" *ngIf="isOutstation()">Outstation vehicles use named fare packages instead of a base rate.</span>
-            </header>
-            <div class="vcard__body" *ngIf="!isOutstation()">
-              <app-vehicle-base-pricing [cityId]="cityId" [cityVehicleTypeId]="form.id"></app-vehicle-base-pricing>
-            </div>
-            <div class="vcard__body" *ngIf="isOutstation()">
-              <app-outstation-packages [cityId]="cityId" [vehicleTypeId]="form.id"></app-outstation-packages>
-            </div>
-          </section>
-        </ng-container>
-
         <!-- ===== IMAGES ===== -->
         <ng-container *ngIf="activeTab === 'images'">
           <section class="vcard">
@@ -305,36 +280,6 @@ interface VehicleTypeImage {
           </section>
         </ng-container>
 
-        <!-- ===== DISPATCH ===== -->
-        <ng-container *ngIf="activeTab === 'dispatch'">
-          <section class="vcard">
-            <header class="vcard__head">
-              <tm-icon name="map-marker" [size]="14" /><h3>Dispatcher Overrides</h3>
-              <span class="vcard__hint" *ngIf="!dispatchPartial">Leave all four blank to offer the ride to every free, online driver inside the city geofence — nearest first. Fill them in to use a fixed expanding-radius search instead.</span>
-              <span class="vcard__hint vcard__hint--err" *ngIf="dispatchPartial">All four are required together — fill them all, or clear all four to use the city geofence.</span>
-            </header>
-            <div class="vcard__body">
-              <div class="pgrid">
-                <label class="pfield">
-                  <span class="pfield__lbl">Request radius (m) <i class="req" *ngIf="dispatchPartial">*</i></span>
-                  <input type="number" min="0" max="50000" [(ngModel)]="form.override_request_radius_m" />
-                </label>
-                <label class="pfield">
-                  <span class="pfield__lbl">Hop interval (sec) <i class="req" *ngIf="dispatchPartial">*</i></span>
-                  <input type="number" min="1" max="600" [(ngModel)]="form.override_hop_interval_sec" />
-                </label>
-                <label class="pfield">
-                  <span class="pfield__lbl">Hop radius (m) <i class="req" *ngIf="dispatchPartial">*</i></span>
-                  <input type="number" min="0" max="50000" [(ngModel)]="form.override_hop_radius_m" />
-                </label>
-                <label class="pfield">
-                  <span class="pfield__lbl">Max hops <i class="req" *ngIf="dispatchPartial">*</i></span>
-                  <input type="number" min="1" max="50" [(ngModel)]="form.override_max_hops" />
-                </label>
-              </div>
-            </div>
-          </section>
-        </ng-container>
       </div>
 
       <!-- ── Sticky save bar (core-field tabs only) ── -->
@@ -667,9 +612,7 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
   activeTab: TabKey = 'overview';
   readonly tabs: { key: TabKey; label: string; icon: IconName }[] = [
     { key: 'overview', label: 'Overview', icon: 'car' },
-    { key: 'fares',    label: 'Fares',    icon: 'rupee' },
     { key: 'images',   label: 'Images',   icon: 'upload' },
-    { key: 'dispatch', label: 'Dispatch', icon: 'map-marker' },
   ];
 
   images: VehicleTypeImage[] = [];
@@ -734,7 +677,7 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
 
   /** The sticky save bar only applies to tabs that edit core vehicle fields. */
   get canSave(): boolean {
-    return this.activeTab === 'overview' || this.activeTab === 'dispatch';
+    return this.activeTab === 'overview';
   }
 
   isOutstation(): boolean {
@@ -843,25 +786,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
       .map((m) => m.display_name);
   }
 
-  /** The four dispatcher-override fields — edited and validated as one group. */
-  private readonly dispatchKeys = [
-    'override_request_radius_m',
-    'override_hop_interval_sec',
-    'override_hop_radius_m',
-    'override_max_hops',
-  ] as const;
-
-  /** True when SOME but not all dispatcher fields are filled — an invalid mix. */
-  get dispatchPartial(): boolean {
-    const f = this.form;
-    if (!f) return false;
-    const filled = this.dispatchKeys.filter((k) => {
-      const v = f[k];
-      return v !== null && v !== undefined && (v as unknown) !== '';
-    }).length;
-    return filled > 0 && filled < this.dispatchKeys.length;
-  }
-
   /** Switch commission mode and zero the now-inactive field. */
   setCommissionType(mode: 'percent' | 'fixed'): void {
     if (!this.form || this.form.commission_type === mode) return;
@@ -874,12 +798,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
     if (!this.form || this.cityId == null) return;
     const f = this.form;
 
-    // Dispatcher overrides are all-or-nothing: all four set (ring search) or all
-    // blank (city-geofence dispatch). Block a partial mix.
-    if (this.dispatchPartial) {
-      this.toast.error('Set all four dispatcher fields, or leave all four blank.');
-      return;
-    }
 
     this.saving = true;
     const fd = new FormData();
@@ -907,12 +825,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
     // vehicle_set_id is nullable — send empty string to clear it server-side.
     fd.append('vehicle_set_id', f.vehicle_set_id == null ? '' : String(f.vehicle_set_id));
 
-    // Dispatcher overrides — always send all four (empty as '') so clearing them
-    // persists server-side and the vehicle falls back to city-geofence dispatch.
-    for (const k of this.dispatchKeys) {
-      const v = f[k];
-      fd.append(k, v === null || v === undefined ? '' : String(v));
-    }
 
     this.api
       .postMultipart<{ vehicle_type: VehicleType }>(
