@@ -91,7 +91,14 @@ class PricingController extends Controller
             ->map(function (CityRideScope $s) use ($activeSharedRouteKeys) {
                 $s->setRelation('modes', $s->modes
                     ->filter(function (CityRideMode $m) use ($activeSharedRouteKeys, $s) {
-                        if (!in_array($m->mode, ['fixed', 'shuttle'], true)) {
+                        // Dynamic Shuttle can be configured in Admin, but it is
+                        // not customer-bookable until its quote/booking flow is
+                        // implemented end to end.
+                        if ($m->mode === 'shuttle') {
+                            return false;
+                        }
+
+                        if ($m->mode !== 'fixed') {
                             return true;
                         }
 
@@ -263,6 +270,119 @@ class PricingController extends Controller
 
         return response()->json([
             'currency' => 'INR',
+            ...$estimate,
+        ]);
+    }
+
+
+    public function shuttleQuote(
+        Request $request,
+        FareEstimationService $fareEstimationService,
+        DynamicPricingService $dynamicPricingService,
+    ) {
+        $data = $request->validate([
+            'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
+            'city_id' => ['required_without:city_vehicle_type_id', 'integer', 'exists:cities,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
+            'drop_lat' => ['required', 'numeric', 'between:-90,90'],
+            'drop_lng' => ['required', 'numeric', 'between:-180,180'],
+            'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
+            'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+        ]);
+
+        $query = CityVehicleType::query()
+            ->with(['rideType:id,name', 'vehicleType:id,name'])
+            ->where('is_active', true)
+            ->whereHas('rideType', fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+
+        if (isset($data['city_vehicle_type_id'])) {
+            $query->where('id', (int) $data['city_vehicle_type_id']);
+        } else {
+            $query->where('city_id', (int) $data['city_id']);
+            if (isset($data['vehicle_type_id'])) {
+                $query->where('vehicle_type_id', (int) $data['vehicle_type_id']);
+            }
+        }
+
+        $cvt = $query->orderBy('display_order')->orderBy('id')->first();
+        if (!$cvt) {
+            return response()->json([
+                'available' => false,
+                'message' => 'Shuttle is not available for this vehicle in this city yet.',
+            ], 404);
+        }
+
+        $pricingRule = PricingRule::resolveFor((int) $cvt->id);
+        if (!$pricingRule) {
+            return response()->json([
+                'available' => false,
+                'message' => 'Shuttle fare is not configured for this vehicle yet.',
+                'city_vehicle_type_id' => $cvt->id,
+            ], 404);
+        }
+
+        if (OperatorSetting::instance()->check_destination_outside_geofence) {
+            $city = City::query()->find($pricingRule->city_id);
+            if (
+                $city
+                && !empty($city->boundary_polygon)
+                && !$dynamicPricingService->pointInPolygon(
+                    (float) $data['drop_lat'],
+                    (float) $data['drop_lng'],
+                    $city->boundary_polygon,
+                )
+            ) {
+                return response()->json([
+                    'available' => false,
+                    'message' => 'Destination is outside the service area for ' . $city->name . '.',
+                ], 422);
+            }
+        }
+
+        $dynamicRule = $dynamicPricingService->findApplicable(
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (int) $cvt->id,
+        );
+
+        $dynamicFactors = $dynamicRule ? [
+            'customer_factor' => (float) $dynamicRule->customer_fare_factor,
+            'driver_factor' => (float) $dynamicRule->driver_fare_factor,
+            'rule_id' => $dynamicRule->id,
+            'fare_type' => $dynamicRule->fare_type,
+            'name' => $dynamicRule->name,
+            'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
+        ] : null;
+
+        $tollCharge = $cvt->toll_mode === 'yes'
+            ? (float) ($data['toll_amount'] ?? 0)
+            : 0.0;
+
+        $estimate = $fareEstimationService->estimateFare(
+            $pricingRule->toArray(),
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (float) $data['drop_lat'],
+            (float) $data['drop_lng'],
+            $dynamicFactors,
+            null,
+            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
+            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            $tollCharge,
+        );
+
+        return response()->json([
+            'available' => true,
+            'booking_enabled' => false,
+            'mode' => 'shuttle',
+            'currency' => 'INR',
+            'city_vehicle_type_id' => $cvt->id,
+            'vehicle_type_id' => $cvt->vehicle_type_id,
+            'vehicle_name' => $cvt->display_name,
+            'vehicle_type_name' => $cvt->vehicleType?->name,
             ...$estimate,
         ]);
     }

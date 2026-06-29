@@ -12,6 +12,7 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
+use App\Http\Controllers\ShuttleBookingsController;
 use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FixedRoutesController;
 use App\Http\Controllers\FixedBookingsController;
@@ -125,6 +126,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::post('/pricing/estimate', [PricingController::class, 'estimate'])->middleware('throttle:booking');
 Route::post('/pricing/seat-estimate', [PricingController::class, 'seatEstimate'])->middleware('throttle:booking');
+Route::post('/shuttle/quote', [PricingController::class, 'shuttleQuote'])->middleware('throttle:booking');
 
 // Public lookup endpoints for the mobile booking UI.
 Route::get('/pricing/cities', [PricingController::class, 'cities']);
@@ -460,6 +462,8 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/fixed/seat-holds/{fixedSeatHold}/test-confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldTestPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
+    Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/shuttle/bookings/{booking}/razorpay-order', [ShuttleBookingsController::class, 'createRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {

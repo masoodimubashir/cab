@@ -2,7 +2,7 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -41,6 +41,7 @@ interface VehicleRow {
   toll_mode: 'yes' | 'no';
   is_active: boolean;
   is_outstation?: boolean;
+  fare_modes?: ServiceMode[];
 }
 
 interface RideTypeRef { id: number; name: string; }
@@ -72,7 +73,7 @@ const STATUS_OPTIONS = [
       <header class="page__hero">
         <div>
           <h1 class="page__title">Vehicle Setup</h1>
-          <p class="page__sub">Vehicle catalogue only. Use the eye to edit common vehicle fields, and the rupee icon to manage fares.</p>
+          <p class="page__sub">Create the vehicle once, edit common fields from the eye, and use Configure fare to add Normal, Fixed and Shuttle fare settings.</p>
         </div>
         <tm-button *ngIf="cityId != null" variant="green" icon="plus" (clicked)="openCreate()">Add vehicle</tm-button>
       </header>
@@ -105,13 +106,11 @@ const STATUS_OPTIONS = [
 
         <ng-container slot="filters">
           <tm-filter-select icon="bolt" ariaLabel="Status filter" allLabel="All statuses" [options]="statusOptions" [value]="status" (valueChange)="onStatusChange($event)" />
-          <tm-filter-select icon="car" ariaLabel="Service filter" allLabel="All services" [options]="serviceOptions" [value]="service" (valueChange)="onServiceChange($event)" />
         </ng-container>
 
         <ng-container slot="banner">
           <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
           <tm-filter-pill *ngIf="status !== 'all'" icon="bolt" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
-          <tm-filter-pill *ngIf="service !== 'all'" icon="car" label="Service" [value]="serviceLabel()" (clear)="clearService()" />
         </ng-container>
 
         <tm-column key="display_name" label="Vehicle">
@@ -126,15 +125,15 @@ const STATUS_OPTIONS = [
           </ng-template>
         </tm-column>
 
-        <tm-column key="service" label="Service" width="140">
-          <ng-template let-row>
-            <span class="service">{{ serviceFor(row) }}</span>
-          </ng-template>
-        </tm-column>
-
         <tm-column key="capacity" label="Capacity" width="150">
           <ng-template let-row>
             <span>{{ row.max_people }} seats · {{ row.luggage_capacity }} bags</span>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="fare_modes" label="Fare setup" width="190">
+          <ng-template let-row>
+            <span class="service">{{ fareModesLabel(row) }}</span>
           </ng-template>
         </tm-column>
 
@@ -150,11 +149,11 @@ const STATUS_OPTIONS = [
           </ng-template>
         </tm-column>
 
-        <tm-column key="actions" label="" width="140" align="right">
+        <tm-column key="actions" label="" width="170" align="right">
           <ng-template let-row>
             <div class="actionsInline">
               <button type="button" class="iconAction" title="Common setup" (click)="openCommon(row)"><tm-icon name="eye" [size]="15" /></button>
-              <button type="button" class="iconAction" title="Fare settings" (click)="openFare(row)"><tm-icon name="rupee" [size]="15" /></button>
+              <button type="button" class="fareAction" title="Configure fare" (click)="openFare(row)"><span>Configure fare</span></button>
             </div>
           </ng-template>
         </tm-column>
@@ -167,7 +166,7 @@ const STATUS_OPTIONS = [
           <span class="cell-icon"><tm-icon name="car" [size]="16" /></span>
           <div>
             <strong>{{ selected.display_name }}</strong>
-            <small>{{ serviceFor(selected) }} · {{ selected.vehicle_type_name || selected.ride_type_name }}</small>
+            <small>{{ selected.vehicle_type_name || 'Vehicle type not set' }}</small>
           </div>
         </div>
 
@@ -205,56 +204,41 @@ const STATUS_OPTIONS = [
 
     <tm-drawer [open]="createOpen" title="Add vehicle" [width]="620" (closed)="createOpen = false">
       <div slot="body" class="create">
-        <div class="steps"><span [class.is-on]="createStep === 1">1 Service</span><span [class.is-on]="createStep === 2">2 Vehicle</span></div>
+        <div class="setupNote">Create the common vehicle first. Normal, Fixed and Shuttle fare setup is added from Configure fare after the vehicle appears in this table.</div>
 
-        <ng-container *ngIf="createStep === 1">
-          <button *ngFor="let mode of modes" type="button" class="choice" [class.is-on]="create.service === mode.key" (click)="chooseCreateService(mode.key)">
-            <tm-icon [name]="mode.icon" [size]="18" />
-            <span><strong>{{ mode.label }}</strong><small>{{ mode.hint }}</small></span>
-          </button>
-        </ng-container>
+        <label class="field field--wide"><span>Vehicle type</span>
+          <select [(ngModel)]="create.vehicle_type_id">
+            <option [ngValue]="null" disabled>Select vehicle type</option>
+            <option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option>
+          </select>
+        </label>
 
-        <ng-container *ngIf="createStep === 2">
-          <div class="choiceGrid">
-            <button *ngFor="let rt of createRideTypes" type="button" class="miniChoice" [class.is-on]="create.ride_type_id === rt.id" (click)="create.ride_type_id = rt.id">{{ rt.name }}</button>
-          </div>
+        <div class="grid">
+          <label class="field field--wide"><span>Vehicle name</span><input [(ngModel)]="create.display_name" placeholder="Sedan L / SUV / Traveller" /></label>
+          <label class="field"><span>Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
+          <label class="field"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="create.luggage_capacity" /></label>
+          <label class="field"><span>Display order</span><input type="number" min="0" [(ngModel)]="create.display_order" /></label>
+        </div>
 
-          <label class="field field--wide"><span>Vehicle type</span>
-            <select [(ngModel)]="create.vehicle_type_id">
-              <option [ngValue]="null" disabled>Select vehicle type</option>
-              <option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option>
-            </select>
-          </label>
+        <div class="segGroup">
+          <span>Commission mode</span>
+          <button type="button" [class.is-on]="create.commission_type === 'percent'" (click)="create.commission_type = 'percent'">Percent</button>
+          <button type="button" [class.is-on]="create.commission_type === 'fixed'" (click)="create.commission_type = 'fixed'">Fixed</button>
+        </div>
 
-          <div class="grid">
-            <label class="field field--wide"><span>Vehicle name</span><input [(ngModel)]="create.display_name" placeholder="Sedan / SUV / Shuttle Van" /></label>
-            <label class="field"><span>Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
-            <label class="field"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="create.luggage_capacity" /></label>
-            <label class="field"><span>Display order</span><input type="number" min="0" [(ngModel)]="create.display_order" /></label>
-          </div>
+        <div class="grid">
+          <label class="field" *ngIf="create.commission_type === 'percent'"><span>Commission %</span><input type="number" min="0" max="100" [(ngModel)]="create.commission_percent" /></label>
+          <label class="field" *ngIf="create.commission_type === 'fixed'"><span>Commission</span><input type="number" min="0" [(ngModel)]="create.fixed_commission" /></label>
+        </div>
 
-          <div class="segGroup">
-            <span>Commission mode</span>
-            <button type="button" [class.is-on]="create.commission_type === 'percent'" (click)="create.commission_type = 'percent'">Percent</button>
-            <button type="button" [class.is-on]="create.commission_type === 'fixed'" (click)="create.commission_type = 'fixed'">Fixed</button>
-          </div>
-
-          <div class="grid">
-            <label class="field" *ngIf="create.commission_type === 'percent'"><span>Commission %</span><input type="number" min="0" max="100" [(ngModel)]="create.commission_percent" /></label>
-            <label class="field" *ngIf="create.commission_type === 'fixed'"><span>Commission</span><input type="number" min="0" [(ngModel)]="create.fixed_commission" /></label>
-          </div>
-
-          <div class="toggles">
-            <label><input type="checkbox" [(ngModel)]="create.toll_applicable" /> Toll applicable</label>
-            <label><input type="checkbox" [(ngModel)]="create.show_low_wallet_alert" /> Low wallet alert</label>
-            <label *ngIf="create.service === 'private'"><input type="checkbox" [(ngModel)]="create.reverse_bidding_enabled" /> Reverse bidding</label>
-          </div>
-        </ng-container>
+        <div class="toggles">
+          <label><input type="checkbox" [(ngModel)]="create.toll_applicable" /> Toll applicable</label>
+          <label><input type="checkbox" [(ngModel)]="create.show_low_wallet_alert" /> Low wallet alert</label>
+        </div>
       </div>
       <div slot="footer">
-        <tm-button variant="ghost" (clicked)="createStep === 1 ? createOpen = false : createStep = 1">{{ createStep === 1 ? 'Cancel' : 'Back' }}</tm-button>
-        <tm-button *ngIf="createStep === 1" variant="green" [disabled]="!create.service" (clicked)="createStep = 2">Continue</tm-button>
-        <tm-button *ngIf="createStep === 2" variant="green" [disabled]="creating || !createValid" (clicked)="submitCreate()">{{ creating ? 'Creating...' : 'Create vehicle' }}</tm-button>
+        <tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button>
+        <tm-button variant="green" [disabled]="creating || !createValid" (clicked)="submitCreate()">{{ creating ? 'Creating...' : 'Create vehicle' }}</tm-button>
       </div>
     </tm-drawer>
   `,
@@ -274,7 +258,8 @@ const STATUS_OPTIONS = [
     .service { font-size: 12px; font-weight: 800; color: var(--tm-text); }
     .actionsInline { display: inline-flex; justify-content: flex-end; gap: 6px; }
     .iconAction { width: 32px; height: 32px; border: 1px solid var(--tm-line); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--tm-surface); color: var(--tm-text-muted); cursor: pointer; }
-    .iconAction:hover { border-color: var(--tm-green); color: var(--tm-green); background: var(--tm-green-tint, #e0f7fa); }
+    .fareAction { height: 32px; padding: 0 10px; border: 1px solid var(--tm-line); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--tm-surface); color: var(--tm-text-muted); cursor: pointer; font: inherit; font-size: 12px; font-weight: 800; white-space: nowrap; }
+    .iconAction:hover, .fareAction:hover { border-color: var(--tm-green); color: var(--tm-green); background: var(--tm-green-tint, #e0f7fa); }
     .form, .create { display: flex; flex-direction: column; gap: 14px; }
     .drawerTitle { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); }
     .drawerTitle div { display: flex; flex-direction: column; gap: 2px; }
@@ -292,6 +277,7 @@ const STATUS_OPTIONS = [
     .toggles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
     .toggles label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--tm-text); }
     .toggles input { width: 16px; height: 16px; accent-color: var(--tm-green); }
+    .setupNote { padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 700; }
     .steps { display: flex; gap: 8px; }
     .steps span { padding: 5px 10px; border-radius: 999px; background: var(--tm-canvas-2); color: var(--tm-text-muted); font-size: 11px; font-weight: 800; }
     .steps span.is-on { background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green); }
@@ -324,14 +310,8 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
   selected: VehicleRow | null = null;
   edit = this.blankEdit();
   createOpen = false;
-  createStep = 1;
   create = this.blankCreate();
   readonly statusOptions = STATUS_OPTIONS;
-  readonly serviceOptions = [
-    { label: 'Normal', value: 'private' },
-    { label: 'Fixed', value: 'fixed' },
-    { label: 'Shuttle', value: 'shuttle' },
-  ];
   readonly modes = [
     { key: 'private' as const, label: 'Normal', icon: 'car' as const, hint: 'Normal, local, outstation and rental vehicles' },
     { key: 'fixed' as const, label: 'Fixed', icon: 'road' as const, hint: 'Fixed ride vehicles' },
@@ -387,19 +367,17 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
 
   private applyView(): void {
     const q = this.search.trim().toLowerCase();
-    let list = this.rows;
+    let list = this.groupVehicleRows(this.rows);
     if (this.status !== 'all') {
       const active = this.status === 'enabled';
       list = list.filter((r) => r.is_active === active);
-    }
-    if (this.service !== 'all') {
-      list = list.filter((r) => this.modeFor(r) === this.service);
     }
     if (q) {
       list = list.filter((r) =>
         r.display_name.toLowerCase().includes(q) ||
         (r.ride_type_name ?? '').toLowerCase().includes(q) ||
-        (r.vehicle_type_name ?? '').toLowerCase().includes(q),
+        (r.vehicle_type_name ?? '').toLowerCase().includes(q) ||
+        this.fareModesLabel(r).toLowerCase().includes(q),
       );
     }
     this.total = list.length;
@@ -420,9 +398,6 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
   onStatusChange(value: string): void { this.status = value as StatusFilter; this.page = 1; this.applyView(); }
   clearStatus(): void { this.status = 'all'; this.page = 1; this.applyView(); }
   statusLabel(): string { return this.statusOptions.find((o) => o.value === this.status)?.label ?? 'All statuses'; }
-  onServiceChange(value: string): void { this.service = value as ServiceMode | 'all'; this.page = 1; this.applyView(); }
-  clearService(): void { this.service = 'all'; this.page = 1; this.applyView(); }
-  serviceLabel(): string { return this.serviceOptions.find((o) => o.value === this.service)?.label ?? 'All services'; }
   onPage(p: number): void { this.page = p; this.applyView(); }
   onPageSize(s: number): void { this.pageSize = s; this.page = 1; this.applyView(); }
 
@@ -447,7 +422,6 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
       commission_percent: r.commission_percent ?? 0,
       fixed_commission: r.fixed_commission ?? 0,
       min_driver_balance: r.min_driver_balance ?? 0,
-      reverse_bidding_enabled: !!r.reverse_bidding_enabled,
       show_low_wallet_alert: !!r.show_low_wallet_alert,
       toll_mode: r.toll_mode ?? 'no',
       is_active: !!r.is_active,
@@ -466,12 +440,12 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
       fixed_commission: this.edit.commission_type === 'fixed' ? this.edit.fixed_commission : 0,
       min_driver_balance: this.edit.min_driver_balance,
       show_low_wallet_alert: this.edit.show_low_wallet_alert,
-      reverse_bidding_enabled: this.modeFor(this.selected) === 'private' ? this.edit.reverse_bidding_enabled : false,
       toll_mode: this.edit.toll_mode,
       is_active: this.edit.is_active,
     };
     this.saving = true;
-    this.api.patch<{ vehicle_type: VehicleRow; message?: string }>(`/admin/cities/${this.cityId}/vehicle-types/${this.selected.id}`, payload).subscribe({
+    const group = this.groupRowsFor(this.selected);
+    forkJoin(group.map((row) => this.api.patch<{ vehicle_type: VehicleRow; message?: string }>(`/admin/cities/${this.cityId}/vehicle-types/${row.id}`, payload))).subscribe({
       next: () => {
         this.saving = false;
         this.commonOpen = false;
@@ -488,19 +462,13 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.create = this.blankCreate();
     this.createOpen = true;
-    this.createStep = 1;
-  }
-
-  chooseCreateService(service: ServiceMode): void {
-    this.create.service = service;
-    this.create.ride_type_id = this.createRideTypes[0]?.id ?? null;
   }
 
   submitCreate(): void {
     if (!this.createValid || this.creating || this.cityId == null) return;
     const f = this.create;
     const payload = {
-      ride_type_id: f.ride_type_id,
+      ride_type_id: this.defaultPrivateRideTypeId,
       vehicle_type_id: f.vehicle_type_id,
       display_name: f.display_name.trim(),
       display_order: f.display_order,
@@ -511,7 +479,6 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
       fixed_commission: f.commission_type === 'fixed' ? (f.fixed_commission ?? 0) : 0,
       min_driver_balance: 0,
       show_low_wallet_alert: f.show_low_wallet_alert,
-      reverse_bidding_enabled: f.service === 'private' ? f.reverse_bidding_enabled : false,
       toll_mode: f.toll_applicable ? 'yes' : 'no',
     };
     this.creating = true;
@@ -529,19 +496,44 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
     });
   }
 
-  get createRideTypes(): RideTypeRef[] {
-    return this.rideTypes.filter((rt) => this.modeForName(rt.name) === this.create.service);
-  }
-
   get createValid(): boolean {
     const f = this.create;
     const commissionValid = f.commission_type === 'percent' ? f.commission_percent != null : f.fixed_commission != null;
-    return !!f.service && f.ride_type_id != null && f.vehicle_type_id != null && !!f.display_name.trim() && f.display_order != null && f.max_people != null && f.luggage_capacity != null && commissionValid;
+    return this.defaultPrivateRideTypeId != null && f.vehicle_type_id != null && !!f.display_name.trim() && f.display_order != null && f.max_people != null && f.luggage_capacity != null && commissionValid;
+  }
+
+  get defaultPrivateRideTypeId(): number | null {
+    return this.rideTypes.find((rt) => this.modeForName(rt.name) === 'private')?.id ?? null;
+  }
+
+  fareModesLabel(row: VehicleRow): string {
+    const modes = row.fare_modes ?? [this.modeFor(row)];
+    const labels = modes.map((m) => m === 'private' ? 'Normal' : m === 'fixed' ? 'Fixed' : 'Shuttle');
+    return labels.length ? labels.join(', ') : 'Not configured';
   }
 
   serviceFor(row: VehicleRow): string {
     const mode = this.modeFor(row);
     return mode === 'private' ? 'Normal' : mode === 'fixed' ? 'Fixed' : 'Shuttle';
+  }
+
+  private groupRowsFor(row: VehicleRow): VehicleRow[] {
+    const key = `${row.vehicle_type_id ?? 'none'}:${row.display_name.trim().toLowerCase()}`;
+    return this.rows.filter((r) => `${r.vehicle_type_id ?? 'none'}:${r.display_name.trim().toLowerCase()}` === key);
+  }
+
+  private groupVehicleRows(rows: VehicleRow[]): VehicleRow[] {
+    const groups = new Map<string, VehicleRow[]>();
+    rows.forEach((row) => {
+      const key = `${row.vehicle_type_id ?? 'none'}:${row.display_name.trim().toLowerCase()}`;
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    });
+    return Array.from(groups.values()).map((group) => {
+      const rep = group.find((r) => this.modeFor(r) === 'private') ?? group[0];
+      const order: ServiceMode[] = ['private', 'fixed', 'shuttle'];
+      const modes = order.filter((mode) => group.some((row) => this.modeFor(row) === mode));
+      return { ...rep, fare_modes: modes };
+    });
   }
 
   private modeFor(row: VehicleRow): ServiceMode {
@@ -565,7 +557,6 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
       commission_percent: 0,
       fixed_commission: 0,
       min_driver_balance: 0,
-      reverse_bidding_enabled: true,
       show_low_wallet_alert: true,
       toll_mode: 'no' as 'yes' | 'no',
       is_active: true,
@@ -574,8 +565,6 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
 
   private blankCreate() {
     return {
-      service: 'private' as ServiceMode,
-      ride_type_id: null as number | null,
       vehicle_type_id: null as number | null,
       display_name: '',
       display_order: 0 as number | null,
@@ -586,7 +575,6 @@ export class VehicleSetupNewComponent implements OnInit, OnDestroy {
       fixed_commission: 0 as number | null,
       toll_applicable: false,
       show_low_wallet_alert: true,
-      reverse_bidding_enabled: true,
     };
   }
 }

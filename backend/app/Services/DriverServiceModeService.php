@@ -23,6 +23,12 @@ class DriverServiceModeService
             ]);
         }
 
+        if ($mode === Driver::SERVICE_MODE_SHUTTLE) {
+            throw ValidationException::withMessages([
+                'mode' => 'Dynamic Shuttle driver mode is planned and not active yet.',
+            ]);
+        }
+
         if ($mode === Driver::SERVICE_MODE_PRIVATE) {
             $this->assertNoActiveFixedVehicle($driver);
         }

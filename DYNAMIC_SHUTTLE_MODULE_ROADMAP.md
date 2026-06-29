@@ -161,6 +161,21 @@ Driver app continues to receive estimated_fare/final_fare from the existing trip
 Shuttle fare work must add separate Shuttle quote/booking behavior without changing the tested private fare path.
 ```
 
+Current Shuttle activation state:
+
+```text
+Shuttle is setup-only in Admin.
+Admin can create Shuttle vehicles and prepare their fare cards from Vehicle Setup New.
+Customer product catalogue must not expose Shuttle as a bookable mode yet.
+Driver service mode must not allow Shuttle yet.
+Shuttle quote API exists at POST /api/shuttle/quote and returns booking_enabled=false.
+If Shuttle fare is missing, the quote API returns Shuttle unavailable instead of falling back to Normal fare.
+Controlled Shuttle booking backend exists at POST /api/shuttle/bookings.
+Shuttle Razorpay order creation exists at POST /api/shuttle/bookings/{booking}/razorpay-order.
+These endpoints create backend records only; they do not expose Shuttle in the customer catalogue or send jobs to drivers.
+Do not enable live Shuttle booking until matching logic and driver/passenger workflows are implemented end to end.
+```
+
 ---
 
 ## 6. Development Roadmap

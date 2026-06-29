@@ -20,8 +20,15 @@ interface VehicleRow {
   vehicle_type_name?: string | null;
   ride_type_name: string;
   display_name: string;
+  display_order: number;
   max_people: number;
   luggage_capacity: number;
+  commission_type: 'percent' | 'fixed';
+  commission_percent: number;
+  fixed_commission: number;
+  min_driver_balance: number;
+  show_low_wallet_alert: boolean;
+  toll_mode: 'yes' | 'no';
   reverse_bidding_enabled: boolean;
   is_active: boolean;
   is_outstation?: boolean;
@@ -33,6 +40,8 @@ interface ModeOption {
   icon: IconName;
   hint: string;
 }
+
+interface RideTypeRef { id: number; name: string; }
 
 @Component({
   selector: 'app-vehicle-fare-setup',
@@ -47,7 +56,7 @@ interface ModeOption {
             <span class="heroVehicle__icon"><tm-icon name="car" [size]="15" /></span>
             <span class="heroVehicle__text">
               <strong>{{ selectedVehicle.display_name }}</strong>
-              <small>{{ serviceFor(selectedVehicle) }} · {{ selectedVehicle.vehicle_type_name || selectedVehicle.ride_type_name }}</small>
+              <small>{{ selectedVehicle.vehicle_type_name || 'Vehicle type not set' }}</small>
             </span>
             <tm-status-pill [tone]="selectedVehicle.is_active ? 'success' : 'neutral'">{{ selectedVehicle.is_active ? 'Active' : 'Off' }}</tm-status-pill>
           </div>
@@ -79,8 +88,9 @@ interface ModeOption {
 
             <div class="empty editorEmpty" *ngIf="selectedVehicle && !selected">
               <tm-icon name="rupee" [size]="24" />
-              <strong>{{ activeModeLabel }} does not apply to this vehicle</strong>
-              <span>This fare page is locked to {{ selectedVehicle.display_name }}, which belongs to {{ serviceFor(selectedVehicle) }}.</span>
+              <strong>{{ activeModeLabel }} fare is not configured yet</strong>
+              <span>Create {{ activeModeLabel }} fare setup for {{ selectedVehicle.display_name }}. It will copy the common vehicle fields and then open the fare card.</span>
+              <tm-button variant="green" icon="plus" [disabled]="creatingMode === activeMode" (clicked)="createFareSetup(activeMode)">{{ creatingMode === activeMode ? 'Creating...' : 'Create ' + activeModeLabel + ' fare setup' }}</tm-button>
             </div>
 
             <ng-container *ngIf="selected">
@@ -178,8 +188,10 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
   cityId: number | null = null;
   vehicleRowId: number | null = null;
   rows: VehicleRow[] = [];
+  rideTypes: RideTypeRef[] = [];
   loading = false;
   savingUnique = false;
+  creatingMode: ServiceMode | null = null;
   uniqueForm = { reverse_bidding_enabled: false };
   activeMode: ServiceMode = 'private';
   selectedVehicle: VehicleRow | null = null;
@@ -221,9 +233,10 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
   fetch(): void {
     if (this.cityId == null) return;
     this.loading = true;
-    this.api.get<{ data: VehicleRow[] }>(`/admin/cities/${this.cityId}/vehicle-types`).subscribe({
+    this.api.get<{ data: VehicleRow[]; available_ride_types?: RideTypeRef[] }>(`/admin/cities/${this.cityId}/vehicle-types`).subscribe({
       next: (res) => {
         this.rows = res.data ?? [];
+        this.rideTypes = res.available_ride_types ?? [];
         this.loading = false;
         this.pickInitialVehicle();
       },
@@ -236,8 +249,48 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
 
   setMode(mode: ServiceMode): void {
     this.activeMode = mode;
-    this.selected = this.selectedVehicle && this.modeFor(this.selectedVehicle) === mode ? this.selectedVehicle : null;
+    this.selected = this.rowForMode(mode);
     this.syncUniqueForm();
+  }
+
+  createFareSetup(mode: ServiceMode): void {
+    if (!this.selectedVehicle || this.cityId == null || this.creatingMode) return;
+    const rideTypeId = this.rideTypeIdForMode(mode);
+    if (rideTypeId == null) {
+      this.toast.error(`${this.labelForMode(mode)} ride type is not available`);
+      return;
+    }
+
+    const base = this.selectedVehicle;
+    this.creatingMode = mode;
+    this.api.post<{ vehicle_type: VehicleRow; message?: string }>(`/admin/cities/${this.cityId}/vehicle-types`, {
+      ride_type_id: rideTypeId,
+      vehicle_type_id: base.vehicle_type_id,
+      display_name: base.display_name,
+      display_order: base.display_order,
+      max_people: base.max_people,
+      luggage_capacity: base.luggage_capacity,
+      commission_type: base.commission_type ?? 'percent',
+      commission_percent: base.commission_type === 'fixed' ? 0 : (base.commission_percent ?? 0),
+      fixed_commission: base.commission_type === 'fixed' ? (base.fixed_commission ?? 0) : 0,
+      min_driver_balance: base.min_driver_balance ?? 0,
+      show_low_wallet_alert: base.show_low_wallet_alert,
+      reverse_bidding_enabled: mode === 'private' ? !!base.reverse_bidding_enabled : false,
+      toll_mode: base.toll_mode ?? 'no',
+    }).subscribe({
+      next: (res) => {
+        this.creatingMode = null;
+        this.rows = [...this.rows, res.vehicle_type];
+        this.vehicleRowId = res.vehicle_type.id;
+        this.activeMode = mode;
+        this.pickInitialVehicle();
+        this.toast.success(res.message || `${this.labelForMode(mode)} fare setup created`);
+      },
+      error: (err) => {
+        this.creatingMode = null;
+        this.toast.error(err?.error?.message || `Failed to create ${this.labelForMode(mode)} fare setup`);
+      },
+    });
   }
 
   saveUniqueFields(): void {
@@ -250,8 +303,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
         this.savingUnique = false;
         const updated = res.vehicle_type;
         this.rows = this.rows.map((r) => r.id === updated.id ? { ...r, ...updated } : r);
-        this.selectedVehicle = this.rows.find((r) => r.id === updated.id) ?? updated;
-        this.selected = this.selectedVehicle && this.modeFor(this.selectedVehicle) === this.activeMode ? this.selectedVehicle : null;
+        this.pickInitialVehicle();
         this.syncUniqueForm();
         this.toast.success(res.message || 'Unique fields saved');
       },
@@ -282,7 +334,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
   }
 
   countFor(mode: ServiceMode): number {
-    return this.selectedVehicle && this.modeFor(this.selectedVehicle) === mode ? 1 : 0;
+    return this.rowForMode(mode) ? 1 : 0;
   }
 
   serviceFor(row: VehicleRow): string {
@@ -295,26 +347,63 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
   }
 
   private pickInitialVehicle(): void {
-    if (!this.rows.length) return;
-    const byId = this.vehicleRowId ? this.rows.find((r) => r.id === this.vehicleRowId) ?? null : null;
-    this.selectedVehicle = byId;
-    if (byId) {
-      this.activeMode = this.modeFor(byId);
-      this.selected = byId;
-    } else {
+    if (!this.rows.length) {
+      this.selectedVehicle = null;
       this.selected = null;
+      return;
     }
+    const byId = this.vehicleRowId ? this.rows.find((r) => r.id === this.vehicleRowId) ?? null : null;
+    if (!byId) {
+      this.selectedVehicle = null;
+      this.selected = null;
+      this.syncUniqueForm();
+      return;
+    }
+
+    const group = this.groupFor(byId);
+    this.selectedVehicle = group.find((r) => this.modeFor(r) === 'private') ?? group[0];
+    if (!this.selected || !group.some((r) => r.id === this.selected?.id)) {
+      this.activeMode = this.modeFor(byId);
+    }
+    this.selected = this.rowForMode(this.activeMode);
     this.syncUniqueForm();
   }
 
+  private rowForMode(mode: ServiceMode): VehicleRow | null {
+    if (!this.selectedVehicle) return null;
+    return this.groupFor(this.selectedVehicle).find((r) => this.modeFor(r) === mode) ?? null;
+  }
+
+  private groupFor(row: VehicleRow): VehicleRow[] {
+    const key = this.groupKey(row);
+    return this.rows.filter((r) => this.groupKey(r) === key);
+  }
+
+  private groupKey(row: VehicleRow): string {
+    return `${row.vehicle_type_id ?? 'none'}:${row.display_name.trim().toLowerCase()}`;
+  }
+
+  private rideTypeIdForMode(mode: ServiceMode): number | null {
+    return this.rideTypes.find((rt) => this.modeForName(rt.name) === mode)?.id ?? null;
+  }
+
+  private labelForMode(mode: ServiceMode): string {
+    return mode === 'private' ? 'Normal' : mode === 'fixed' ? 'Fixed' : 'Shuttle';
+  }
+
   private syncUniqueForm(): void {
+
     this.uniqueForm = {
       reverse_bidding_enabled: !!this.selected?.reverse_bidding_enabled,
     };
   }
 
   private modeFor(row: VehicleRow): ServiceMode {
-    const lower = (row.ride_type_name ?? '').toLowerCase();
+    return this.modeForName(row.ride_type_name);
+  }
+
+  private modeForName(name: string): ServiceMode {
+    const lower = (name ?? '').toLowerCase();
     if (lower.includes('shuttle')) return 'shuttle';
     if (lower.includes('fixed')) return 'fixed';
     return 'private';
