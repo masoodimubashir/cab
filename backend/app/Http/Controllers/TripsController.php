@@ -281,8 +281,8 @@ class TripsController extends Controller
         if ($driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['data' => [], 'reason' => 'Driver must be approved and online.']);
         }
-        if ($driverProfile->active_service_mode !== Driver::SERVICE_MODE_PRIVATE) {
-            return response()->json(['data' => [], 'reason' => 'Choose private ride mode to receive private ride requests.']);
+        if (!in_array($driverProfile->active_service_mode, [Driver::SERVICE_MODE_PRIVATE, Driver::SERVICE_MODE_SHUTTLE], true)) {
+            return response()->json(['data' => [], 'reason' => 'Choose Private or Shuttle ride mode to receive ride requests.']);
         }
 
         // A driver already mid-trip cannot accept a second one. Hide the available
@@ -309,6 +309,14 @@ class TripsController extends Controller
         // /select-driver. Drivers should only see live, biddable requests.
         $trips = Trip::query()
             ->where('status', 'NEGOTIATION')
+            ->where(function ($q) use ($driverProfile) {
+                if ($driverProfile->active_service_mode === Driver::SERVICE_MODE_SHUTTLE) {
+                    $q->whereHas('cityVehicleType.rideType', fn ($rt) => $rt->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+                } else {
+                    $q->whereNull('city_vehicle_type_id')
+                        ->orWhereDoesntHave('cityVehicleType.rideType', fn ($rt) => $rt->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+                }
+            })
             ->where(function ($q) use ($user) {
                 $q->whereNull('driver_id')
                   ->orWhere('driver_id', $user->id);
@@ -908,6 +916,11 @@ class TripsController extends Controller
         $radiusKm = (float) ($data['radius_km'] ?? 8.0);
         $limit = (int) ($data['limit'] ?? 20);
 
+        $trip->loadMissing("cityVehicleType.rideType:id,name");
+        $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
+            ? Driver::SERVICE_MODE_SHUTTLE
+            : Driver::SERVICE_MODE_PRIVATE;
+
         $busyDriverIds = Trip::query()
             ->whereNotNull('driver_id')
             ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
@@ -916,7 +929,7 @@ class TripsController extends Controller
         $candidates = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
-            ->where('active_service_mode', Driver::SERVICE_MODE_PRIVATE)
+            ->where('active_service_mode', $serviceMode)
             ->whereNotIn('user_id', $busyDriverIds)
             ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
                 // Customer asked for a specific global vehicle_type — drivers
@@ -1051,12 +1064,18 @@ class TripsController extends Controller
         // Verify the chosen driver is still serviceable (online, approved,
         // not busy, matching vehicle type). Cheaper to re-check here than to
         // race the list endpoint.
+        $trip->loadMissing("cityVehicleType.rideType:id,name");
+        $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
+            ? Driver::SERVICE_MODE_SHUTTLE
+            : Driver::SERVICE_MODE_PRIVATE;
+
         $driverProfile = Driver::query()->where('user_id', $driverUserId)->first();
         if (!$driverProfile || $driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['message' => 'Driver is no longer available.'], 409);
         }
-        if ($driverProfile->active_service_mode !== Driver::SERVICE_MODE_PRIVATE) {
-            return response()->json(['message' => 'Driver is not accepting private rides right now.'], 409);
+        if ($driverProfile->active_service_mode !== $serviceMode) {
+            $label = $serviceMode === Driver::SERVICE_MODE_SHUTTLE ? 'Shuttle' : 'private';
+            return response()->json(['message' => "Driver is not accepting " . $label . " rides right now."], 409);
         }
         $driverBusy = Trip::query()
             ->where('driver_id', $driverUserId)

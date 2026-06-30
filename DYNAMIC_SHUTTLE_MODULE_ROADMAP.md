@@ -164,15 +164,17 @@ Shuttle fare work must add separate Shuttle quote/booking behavior without chang
 Current Shuttle activation state:
 
 ```text
-Shuttle is setup-only in Admin.
+Shuttle is Admin-configured and customer fare-preview only.
 Admin can create Shuttle vehicles and prepare their fare cards from Vehicle Setup New.
-Customer product catalogue must not expose Shuttle as a bookable mode yet.
+Customer product catalogue can expose Shuttle as fare-preview only; booking stays disabled.
 Driver service mode must not allow Shuttle yet.
+Customer app calls POST /api/shuttle/quote for Shuttle fare preview and stops before booking.
 Shuttle quote API exists at POST /api/shuttle/quote and returns booking_enabled=false.
 If Shuttle fare is missing, the quote API returns Shuttle unavailable instead of falling back to Normal fare.
 Controlled Shuttle booking backend exists at POST /api/shuttle/bookings.
+Admin can view Shuttle booking records from the read-only Shuttle Bookings page.
 Shuttle Razorpay order creation exists at POST /api/shuttle/bookings/{booking}/razorpay-order.
-These endpoints create backend records only; they do not expose Shuttle in the customer catalogue or send jobs to drivers.
+These endpoints create backend records only; customer Shuttle remains fare-preview only and does not send jobs to drivers.
 Do not enable live Shuttle booking until matching logic and driver/passenger workflows are implemented end to end.
 ```
 

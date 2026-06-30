@@ -170,7 +170,7 @@
                 *ngFor="let p of currentModes"
                 type="button"
                 class="product-card dc-press"
-                [class.active]="p.mode === 'private' && p.scope === selectedProductKind"
+                [class.active]="isSelectedMode(p)"
                 (click)="onSelectProduct(p)"
               >
                 <span class="pc-img" [class.is-empty]="!p.image_url">
@@ -345,11 +345,26 @@
             (click)="selectRideVehicle(v.id)"
           >{{ v.name }}</button>
         </div>
+
+        <div class="shuttle-preview" *ngIf="isShuttleSelected">
+          <div class="sp-head">
+            <span class="sp-icon"><ion-icon name="bus-outline" aria-hidden="true"></ion-icon></span>
+            <div>
+              <strong>{{ estimate?.vehicle_name || 'Shuttle fare preview' }}</strong>
+              <small>{{ estimate?.vehicle_type_name || 'Select a vehicle type above' }}</small>
+            </div>
+          </div>
+          <div class="sp-fare" *ngIf="estimate?.available !== false && estimate?.estimated_fare">
+            <span>Estimated fare</span>
+            <strong>&#8377;{{ estimate?.estimated_fare }}</strong>
+          </div>
+          <p class="sp-note">{{ shuttleQuoteNotice }}</p>
+        </div>
       </div>
 
       <div class="sheet-foot action-footer">
         <button class="action-btn-back dc-press" (click)="goDrop()">Back</button>
-        <button class="action-btn-continue dc-press" (click)="goOffer()">Set your fare</button>
+        <button class="action-btn-continue dc-press" (click)="goOffer()" [disabled]="loading || (isShuttleSelected && estimate?.available === false)">{{ loading ? 'Working...' : rideListContinueLabel }}</button>
       </div>
     </div>
 

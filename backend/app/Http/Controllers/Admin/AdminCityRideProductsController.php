@@ -15,11 +15,11 @@ use Illuminate\Support\Facades\Storage;
  * per scope with the three mode switches underneath, and the customer app books
  * in the same two steps.
  *
- * Private is on by default (the existing metered ride). Shared modes can be
- * enabled during setup; the customer product API only exposes them once a
- * matching active route exists. The city must always keep at least one
- * bookable option (an active mode under an active scope), or the booking
- * screen would render nothing.
+ * All three modes are on by default under both Local and Outstation. The
+ * customer product API still applies runtime readiness checks, for example a
+ * Fixed mode needs a matching active route before it is shown to riders. The
+ * city must always keep at least one bookable option (an active mode under an
+ * active scope), or the booking screen would render nothing.
  */
 class AdminCityRideProductsController
 {
@@ -32,8 +32,8 @@ class AdminCityRideProductsController
     /** Mode defaults per scope: [mode, name, is_active, sort_order]. */
     private const MODE_DEFAULTS = [
         ['private', 'Private', true, 1],
-        ['fixed', 'Fixed', false, 2],
-        ['shuttle', 'Shuttle', false, 3],
+        ['fixed', 'Fixed', true, 2],
+        ['shuttle', 'Shuttle', true, 3],
     ];
 
     /**

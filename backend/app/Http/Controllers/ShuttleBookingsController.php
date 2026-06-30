@@ -36,6 +36,26 @@ class ShuttleBookingsController extends Controller
         ], 201);
     }
 
+    public function confirmPayment(Request $request, ShuttlePassengerBooking $booking, RazorpayService $razorpay)
+    {
+        if ($booking->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            "razorpay_payment_id" => ["required", "string", "max:191"],
+            "razorpay_order_id" => ["required", "string", "max:191"],
+            "razorpay_signature" => ["required", "string", "max:255"],
+        ]);
+
+        $updated = $this->bookings->confirmPayment($request->user(), $booking, $data, $razorpay);
+
+        return response()->json([
+            "booking" => $this->bookings->shapeBooking($updated),
+            "message" => "Shuttle booking payment confirmed.",
+        ]);
+    }
+
     public function createRazorpayOrder(Request $request, ShuttlePassengerBooking $booking, RazorpayService $razorpay)
     {
         if ($booking->customer_id !== $request->user()->id) {

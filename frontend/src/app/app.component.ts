@@ -163,6 +163,7 @@ export class AppComponent implements OnInit {
     if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
 
     if (can('reservations.view')) operations.push({ label: 'Live Fixed Vehicles', icon: 'calendar', route: '/fixed-departures' });
+    if (can('reservations.view')) operations.push({ label: 'Shuttle Bookings', icon: 'send', route: '/shuttle-bookings' });
 
     if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 

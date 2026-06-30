@@ -105,7 +105,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   onlineElapsed = '00:00';
   private onlineSince: number | null = null;
   private onlineTimer: ReturnType<typeof setInterval> | null = null;
-  driveMode: 'private' | 'fixed' | null = null;
+  driveMode: 'private' | 'fixed' | 'shuttle' | null = null;
 
   /** Destinations the drawer exposes — everything the tab bar used to reach. */
   readonly navGroups: NavGroup[] = [
@@ -346,11 +346,15 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     if (ok) this.navTo('/tabs/fixed');
   }
 
+  async chooseShuttleRides(): Promise<void> {
+    await this.setDriveMode('shuttle');
+  }
+
   async resetDriveMode(): Promise<void> {
     await this.setDriveMode(null);
   }
 
-  private async setDriveMode(mode: 'private' | 'fixed' | null): Promise<boolean> {
+  private async setDriveMode(mode: 'private' | 'fixed' | 'shuttle' | null): Promise<boolean> {
     if (this.toggling) return false;
     this.toggling = true;
     this.error = null;
@@ -360,7 +364,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         this.api.post<{ driver: Record<string, unknown> }>('/drivers/service-mode', { mode })
       );
       this.driver = res.driver;
-      this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | null) ?? null;
+      this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
       return true;
     } catch (e) {
       const body = (e as { error?: Record<string, unknown> })?.error;
@@ -469,7 +473,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           } else {
             void this.stopVisualWatch();
           }
-          this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | null) ?? null;
+          this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
           this.startOnlineTimer();
         } else {
           this.stopOnlineTimer();

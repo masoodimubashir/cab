@@ -12,6 +12,7 @@ import { environment } from '../../../environments/environment';
 import { Contacts } from '@capacitor-community/contacts';
 
 declare const google: any;
+declare const Razorpay: any;
 
 type SavedPlace = {
   id: number;
@@ -37,6 +38,14 @@ type City = {
 };
 
 type EstimateResponse = {
+  available?: boolean;
+  booking_enabled?: boolean;
+  mode?: string;
+  message?: string;
+  city_vehicle_type_id?: number;
+  vehicle_type_id?: number;
+  vehicle_name?: string;
+  vehicle_type_name?: string;
   currency?: string;
   distance_km?: number;
   time_min?: number;
@@ -59,6 +68,24 @@ type EstimateResponse = {
     // Toll passed through from Google; 0 when the route has none.
     toll_amount?: number;
   };
+};
+
+type ShuttleBooking = {
+  id: number;
+  fare_amount?: number;
+  currency?: string;
+  status?: string;
+  payment_status?: string;
+};
+
+type ShuttleBookingResponse = {
+  booking?: ShuttleBooking;
+  message?: string;
+};
+
+type ShuttleRazorpayOrder = {
+  booking?: ShuttleBooking;
+  razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
 };
 
 type NearbyDriver = {
@@ -159,6 +186,7 @@ export class CustomerBookPage implements OnDestroy {
     icon: string;
   }[] = [];
   selectedProductKind: 'local' | 'outstation' | 'rental' = 'local';
+  selectedServiceMode: 'private' | 'shuttle' = 'private';
 
   /**
    * Two-step picker: the customer first chooses a scope (Local / Outstation),
@@ -1069,6 +1097,10 @@ export class CustomerBookPage implements OnDestroy {
   // starts EMPTY; minFare is filled from the backend negotiation config once we
   // have a trip id for this route.
   async goOffer(): Promise<void> {
+    if (this.isShuttleSelected) {
+      await this.createShuttleBooking();
+      return;
+    }
     this.offerAmount = null;
     this.error = null;
     this.minFare = 0;
@@ -1362,7 +1394,7 @@ export class CustomerBookPage implements OnDestroy {
       return;
     }
     if (isShuttle) {
-      void this.showPlannedShuttleToast();
+      this.selectShuttleProduct(p.scope === 'outstation' ? 'outstation' : 'local');
       return;
     }
     this.selectProductKind(p.kind as 'local' | 'outstation' | 'rental');
@@ -1383,6 +1415,28 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   /** Step 1: pick a scope (Local / Outstation); preselect its private mode if any. */
+  isSelectedMode(p: { kind: string; scope: 'local' | 'outstation' | null; mode: 'private' | 'fixed' | 'shuttle' | null }): boolean {
+    if (p.mode === 'shuttle' || p.kind === 'shuttle') {
+      return this.selectedServiceMode === 'shuttle' && p.scope === this.selectedScope;
+    }
+    return this.selectedServiceMode === 'private' && p.mode === 'private' && p.scope === this.selectedProductKind;
+  }
+
+  get isShuttleSelected(): boolean {
+    return this.selectedServiceMode === 'shuttle';
+  }
+
+  get shuttleQuoteNotice(): string {
+    if (!this.isShuttleSelected) return '';
+    if (!this.estimate) return 'Select a Shuttle vehicle to preview the fare.';
+    if (this.estimate.available === false) return this.estimate.message || 'Shuttle is not available for this vehicle yet.';
+    return 'Confirm to create a Shuttle booking and pay with Razorpay.';
+  }
+
+  get rideListContinueLabel(): string {
+    return this.isShuttleSelected ? 'Confirm Shuttle' : 'Set your fare';
+  }
+
   pickScope(scope: 'local' | 'outstation'): void {
     this.selectedScope = scope;
     const opt = this.scopeOptions.find((o) => o.scope === scope);
@@ -1397,6 +1451,7 @@ export class CustomerBookPage implements OnDestroy {
   }
 
   selectProductKind(kind: 'local' | 'outstation' | 'rental'): void {
+    this.selectedServiceMode = 'private';
     this.selectedProductKind = kind;
     // Keep the two-step picker in sync when the kind changes programmatically
     // (e.g. the auto-switch to Outstation when a drop falls outside the area).
@@ -1413,6 +1468,17 @@ export class CustomerBookPage implements OnDestroy {
       this.selectedPackageId = null;
       void this.fetchEstimate();
     }
+  }
+
+  selectShuttleProduct(scope: 'local' | 'outstation'): void {
+    this.selectedServiceMode = 'shuttle';
+    this.selectedScope = scope;
+    this.selectedProductKind = scope;
+    this.outstationPackages = [];
+    this.selectedPackageId = null;
+    this.tripId = null;
+    this.drivers = [];
+    void this.fetchEstimate();
   }
 
   selectRideType(id: number): void {
@@ -1648,6 +1714,24 @@ export class CustomerBookPage implements OnDestroy {
     if (!cityId) return;
 
     try {
+      if (this.isShuttleSelected) {
+        const res = await this.api
+          .post<EstimateResponse>('/shuttle/quote', {
+            city_id: cityId,
+            vehicle_type_id: this.selectedVehicleTypeId,
+            pickup_lat: this.pickup.lat,
+            pickup_lng: this.pickup.lng,
+            drop_lat: this.drop.lat,
+            drop_lng: this.drop.lng,
+            route_distance_km: this.routeDistanceKm,
+            route_time_min: this.routeTimeMin,
+            toll_amount: this.tollAmount,
+          })
+          .toPromise();
+        this.estimate = res ?? null;
+        return;
+      }
+
       // The customer no longer picks a vehicle — the server resolves the
       // city's default vehicle for the fare baseline. ride_type_id is only
       // sent for outstation/rental so an outstation rate card is used.
@@ -1670,8 +1754,140 @@ export class CustomerBookPage implements OnDestroy {
         })
         .toPromise();
       this.estimate = res ?? null;
-    } catch {
-      this.estimate = null;
+    } catch (e: any) {
+      this.estimate = this.isShuttleSelected && e?.error ? e.error : null;
+    }
+  }
+
+  private async createShuttleBooking(): Promise<void> {
+    if (!this.pickup || !this.drop) {
+      this.state = "ride-list";
+      return;
+    }
+    const cityId = this.selectedCity?.id;
+    if (!cityId) {
+      this.error = "Pickup is outside the service area.";
+      return;
+    }
+    if (this.estimate?.available === false) {
+      this.error = this.estimate.message || "Shuttle is not available for this vehicle yet.";
+      return;
+    }
+
+    this.loading = true;
+    this.error = null;
+    try {
+      const res = await this.api
+        .post<ShuttleBookingResponse>("/shuttle/bookings", {
+          city_vehicle_type_id: this.estimate?.city_vehicle_type_id ?? null,
+          city_id: cityId,
+          vehicle_type_id: this.selectedVehicleTypeId,
+          pickup_address: this.pickup.address,
+          pickup_lat: this.pickup.lat,
+          pickup_lng: this.pickup.lng,
+          drop_address: this.drop.address,
+          drop_lat: this.drop.lat,
+          drop_lng: this.drop.lng,
+          route_distance_km: this.routeDistanceKm,
+          route_time_min: this.routeTimeMin,
+          toll_amount: this.tollAmount,
+        }, { "Idempotency-Key": this.uuid("shuttle") })
+        .toPromise();
+
+      if (!res?.booking?.id) {
+        throw new Error("Shuttle booking was created but the booking id was missing.");
+      }
+      await this.startShuttleRazorpayPayment(res.booking);
+    } catch (e: any) {
+      this.error = e?.error?.message || e?.message || "Could not create Shuttle booking.";
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private async startShuttleRazorpayPayment(booking: ShuttleBooking): Promise<void> {
+    if (typeof Razorpay === "undefined") {
+      this.error = "Payment library not loaded. Check your connection.";
+      return;
+    }
+
+    let order: ShuttleRazorpayOrder;
+    try {
+      order = (await this.api
+        .post<ShuttleRazorpayOrder>("/shuttle/bookings/" + booking.id + "/razorpay-order", {}, { "Idempotency-Key": this.uuid("shuttle-pay") })
+        .toPromise()) as ShuttleRazorpayOrder;
+    } catch (e: any) {
+      this.error = e?.error?.message || "Could not start Shuttle payment.";
+      return;
+    }
+
+    const user = this.auth.getUser();
+    const rzp = new Razorpay({
+      key: order.razorpay.key_id,
+      order_id: order.razorpay.order_id,
+      amount: order.razorpay.amount_paise,
+      currency: order.razorpay.currency,
+      name: "DreamCabs",
+      description: "Shuttle booking " + booking.id,
+      prefill: {
+        name: user?.name || "",
+        email: user?.email || "",
+        contact: user?.phone || "",
+      },
+      theme: { color: "#000000" },
+      handler: (resp: {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+      }) => {
+        void this.confirmShuttlePayment(booking, resp);
+      },
+      modal: {
+        ondismiss: async () => {
+          const toast = await this.toastCtrl.create({
+            message: "Payment cancelled. Your Shuttle booking is still pending payment.",
+            duration: 3000,
+            color: "warning",
+          });
+          await toast.present();
+        },
+      },
+    });
+
+    rzp.on("payment.failed", async (resp: any) => {
+      const toast = await this.toastCtrl.create({
+        message: resp?.error?.description || "Payment failed.",
+        duration: 3000,
+        color: "danger",
+      });
+      await toast.present();
+    });
+
+    rzp.open();
+  }
+
+  private async confirmShuttlePayment(booking: ShuttleBooking, payment: {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+  }): Promise<void> {
+    this.loading = true;
+    this.error = null;
+    try {
+      const res = await this.api
+        .post<ShuttleBookingResponse>("/shuttle/bookings/" + booking.id + "/confirm-payment", payment, { "Idempotency-Key": this.uuid("shuttle-confirm") })
+        .toPromise();
+      const toast = await this.toastCtrl.create({
+        message: res?.message || "Shuttle booking payment confirmed.",
+        duration: 2600,
+        color: "success",
+      });
+      await toast.present();
+      this.resetToIdle();
+    } catch (e: any) {
+      this.error = e?.error?.message || "Payment verification failed.";
+    } finally {
+      this.loading = false;
     }
   }
 
@@ -2292,5 +2508,13 @@ export class CustomerBookPage implements OnDestroy {
     this.bookedForCountryCode = '91';
     this.bookedForPhone = '';
     this.state = 'idle';
+  }
+
+  private uuid(prefix: string): string {
+    try {
+      return (crypto as unknown as { randomUUID: () => string }).randomUUID();
+    } catch {
+      return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
+    }
   }
 }

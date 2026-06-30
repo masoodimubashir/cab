@@ -7,6 +7,7 @@ import { BackgroundLocationService } from '../../core/background-location.servic
 interface ActiveTrip {
   id: number;
   status: string;
+  route_departure_id?: number | null;
 }
 
 @Component({
@@ -32,7 +33,8 @@ export class SplashPage implements OnInit {
   /**
    * Decide the first screen after the splash:
    *   - Not logged in            → /welcome
-   *   - Logged in, driver on trip → resume /tabs/rides (and restart bg location)
+   *   - Logged in, driver on private trip → resume /tabs/rides (and restart bg location)
+   *   - Logged in, driver on fixed trip   → resume /tabs/fixed
    *   - Logged in otherwise       → /tabs/dashboard (ApprovedDriverGuard takes it
    *                                 from there to registration/pending if needed)
    */
@@ -52,8 +54,12 @@ export class SplashPage implements OnInit {
       next: (res) => {
         const trip = res?.trip;
         if (trip) {
-          void this.bgLocation.start(trip.id);
-          void this.router.navigateByUrl('/tabs/rides', { replaceUrl: true });
+          if (trip.route_departure_id != null) {
+            void this.router.navigateByUrl('/tabs/fixed', { replaceUrl: true });
+          } else {
+            void this.bgLocation.start(trip.id);
+            void this.router.navigateByUrl('/tabs/rides', { replaceUrl: true });
+          }
         } else {
           void this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
         }

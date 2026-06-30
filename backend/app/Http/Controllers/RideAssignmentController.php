@@ -31,8 +31,15 @@ class RideAssignmentController extends Controller
             return response()->json(['message' => 'Driver must be approved and online.'], 422);
         }
 
-        if ($trip->route_departure_id === null && $driverProfile->active_service_mode !== Driver::SERVICE_MODE_PRIVATE) {
-            return response()->json(['message' => 'Choose private ride mode before accepting private rides.'], 422);
+        if ($trip->route_departure_id === null) {
+            $trip->loadMissing("cityVehicleType.rideType:id,name");
+            $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
+                ? Driver::SERVICE_MODE_SHUTTLE
+                : Driver::SERVICE_MODE_PRIVATE;
+            if ($driverProfile->active_service_mode !== $serviceMode) {
+                $label = $serviceMode === Driver::SERVICE_MODE_SHUTTLE ? "Shuttle" : "private";
+                return response()->json(['message' => "Choose " . $label . " ride mode before accepting this ride."], 422);
+            }
         }
 
         if ($trip->driver_id && $trip->driver_id !== $user->id) {
