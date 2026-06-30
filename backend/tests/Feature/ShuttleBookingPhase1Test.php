@@ -120,6 +120,54 @@ class ShuttleBookingPhase1Test extends TestCase
             ]);
     }
 
+    public function test_customer_can_confirm_razorpay_payment_for_shuttle_booking(): void
+    {
+        Sanctum::actingAs($this->customer, ["act-as:customer"]);
+        [$cityId, $vehicleTypeId, $cityVehicleTypeId, $rideTypeId] = $this->seedVehicle("Shuttle");
+        $this->seedPricing($cityId, $vehicleTypeId, $cityVehicleTypeId, $rideTypeId);
+
+        $bookingResponse = $this->postJson("/api/shuttle/bookings", $this->payload($cityVehicleTypeId));
+        $bookingId = $bookingResponse->json("booking.id");
+        $booking = ShuttlePassengerBooking::query()->findOrFail($bookingId);
+        $amountPaise = max(100, (int) round($booking->fare_amount * 100));
+
+        $razorpay = Mockery::mock(RazorpayService::class);
+        $razorpay->shouldReceive("createOrder")
+            ->once()
+            ->andReturn(["order_id" => "order_shuttle_confirm", "amount" => $amountPaise, "currency" => "INR"]);
+        $razorpay->shouldReceive("verifyPaymentSignature")
+            ->once()
+            ->with("order_shuttle_confirm", "pay_shuttle_123", "sig_shuttle_123")
+            ->andReturn(true);
+        $this->instance(RazorpayService::class, $razorpay);
+
+        $this->postJson("/api/shuttle/bookings/{$bookingId}/razorpay-order", [])->assertOk();
+
+        $response = $this->postJson("/api/shuttle/bookings/{$bookingId}/confirm-payment", [
+            "razorpay_order_id" => "order_shuttle_confirm",
+            "razorpay_payment_id" => "pay_shuttle_123",
+            "razorpay_signature" => "sig_shuttle_123",
+        ]);
+
+        $response->assertOk()
+            ->assertJson([
+                "booking" => [
+                    "id" => $bookingId,
+                    "payment_method" => "razorpay",
+                    "payment_status" => "PAID",
+                    "status" => "CONFIRMED",
+                ],
+                "message" => "Shuttle booking payment confirmed.",
+            ]);
+
+        $this->assertDatabaseHas("shuttle_passenger_bookings", [
+            "id" => $bookingId,
+            "payment_status" => "PAID",
+            "payment_reference" => "pay_shuttle_123",
+            "status" => "CONFIRMED",
+        ]);
+    }
+
     private function payload(int $cityVehicleTypeId): array
     {
         return [

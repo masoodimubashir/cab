@@ -65,8 +65,8 @@ class PricingController extends Controller
      * Public catalogue for a city as a two-step tree: scope (Local / Outstation)
      * → mode (Private / Fixed / Shuttle). The customer app shows the scopes first,
      * then the modes within the chosen one. A scope is only returned if it's switched on and has at least one
-     * customer-bookable mode. Inactive modes are dropped; active Fixed/Shuttle
-     * modes are also hidden until a matching active route exists.
+     * customer-visible mode. Inactive modes are dropped; active Fixed
+     * modes stay route-gated, while Shuttle can appear as quote-preview only.
      *
      * `data` is the flat list of active modes (compat for the current app, which
      * reads scope/mode/kind off a flat list); `scopes` is the grouped tree the
@@ -91,11 +91,8 @@ class PricingController extends Controller
             ->map(function (CityRideScope $s) use ($activeSharedRouteKeys) {
                 $s->setRelation('modes', $s->modes
                     ->filter(function (CityRideMode $m) use ($activeSharedRouteKeys, $s) {
-                        // Dynamic Shuttle can be configured in Admin, but it is
-                        // not customer-bookable until its quote/booking flow is
-                        // implemented end to end.
                         if ($m->mode === 'shuttle') {
-                            return false;
+                            return true;
                         }
 
                         if ($m->mode !== 'fixed') {

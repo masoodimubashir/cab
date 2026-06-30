@@ -104,6 +104,43 @@ class ShuttleBookingService
         });
     }
 
+    public function confirmPayment(User $customer, ShuttlePassengerBooking $booking, array $data, RazorpayService $razorpay): ShuttlePassengerBooking
+    {
+        return DB::transaction(function () use ($customer, $booking, $data, $razorpay) {
+            $locked = ShuttlePassengerBooking::query()->lockForUpdate()->find($booking->id);
+            if (!$locked || $locked->customer_id !== $customer->id) {
+                throw new ReservationException("This Shuttle booking could not be found.", 404);
+            }
+            if (!in_array($locked->status, ["PAYMENT_PENDING", "CONFIRMED"], true)) {
+                throw new ReservationException("This Shuttle booking is not waiting for payment.", 422);
+            }
+
+            $razorpayOrderId = trim((string) $data["razorpay_order_id"]);
+            $razorpayPaymentId = trim((string) $data["razorpay_payment_id"]);
+            $razorpaySignature = trim((string) $data["razorpay_signature"]);
+            if (!$locked->razorpay_order_id || $locked->razorpay_order_id !== $razorpayOrderId) {
+                throw new ReservationException("Payment order does not match this Shuttle booking.", 422);
+            }
+            if ($locked->razorpay_payment_id && $locked->razorpay_payment_id !== $razorpayPaymentId) {
+                throw new ReservationException("This Shuttle booking is already linked to another payment.", 422);
+            }
+            if (!$razorpay->verifyPaymentSignature($razorpayOrderId, $razorpayPaymentId, $razorpaySignature)) {
+                throw new ReservationException("Payment verification failed.", 422);
+            }
+
+            $locked->update([
+                "payment_method" => "razorpay",
+                "payment_status" => "PAID",
+                "payment_reference" => $razorpayPaymentId,
+                "razorpay_payment_id" => $razorpayPaymentId,
+                "razorpay_signature" => $razorpaySignature,
+                "status" => "CONFIRMED",
+            ]);
+
+            return $locked->fresh();
+        });
+    }
+
     public function shapeBooking(ShuttlePassengerBooking $booking): array
     {
         $booking->loadMissing(['journey:id,status,capacity,seats_taken', 'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id']);

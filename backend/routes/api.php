@@ -55,6 +55,7 @@ use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminOutstationPackagesController;
 use App\Http\Controllers\Admin\AdminFixedRoutesController;
 use App\Http\Controllers\Admin\AdminFixedDeparturesController;
+use App\Http\Controllers\Admin\AdminShuttleBookingsController;
 use App\Http\Controllers\Admin\AdminCouponsController;
 use App\Http\Controllers\Admin\AdminPermissionsController;
 use App\Http\Controllers\Admin\AdminManagerRolesController;
@@ -464,6 +465,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/razorpay-order', [ShuttleBookingsController::class, 'createRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/shuttle/bookings/{booking}/confirm-payment', [ShuttleBookingsController::class, 'confirmPayment'])->middleware(['throttle:booking', 'idempotent']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -484,6 +486,7 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city'])->group(functio
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
     Route::get('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'index']);
     Route::get('/admin/cities/{city}/fixed-bookings', [AdminFixedDeparturesController::class, 'bookings']);
+    Route::get('/admin/cities/{city}/shuttle-bookings', [AdminShuttleBookingsController::class, 'index']);
     Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);

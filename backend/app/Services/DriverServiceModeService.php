@@ -23,13 +23,7 @@ class DriverServiceModeService
             ]);
         }
 
-        if ($mode === Driver::SERVICE_MODE_SHUTTLE) {
-            throw ValidationException::withMessages([
-                'mode' => 'Dynamic Shuttle driver mode is planned and not active yet.',
-            ]);
-        }
-
-        if ($mode === Driver::SERVICE_MODE_PRIVATE) {
+        if ($mode === Driver::SERVICE_MODE_PRIVATE || $mode === Driver::SERVICE_MODE_SHUTTLE) {
             $this->assertNoActiveFixedVehicle($driver);
         }
 
@@ -92,7 +86,7 @@ class DriverServiceModeService
     private function assertNoActiveFixedVehicle(Driver $driver): void
     {
         if ($this->hasActiveFixedVehicle($driver)) {
-            abort(422, 'Complete or close your fixed vehicle before taking private rides.');
+            abort(422, 'Complete or close your fixed vehicle before changing ride mode.');
         }
     }
 

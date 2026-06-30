@@ -27,6 +27,7 @@ import { CouponsComponent } from './admin/promotions/coupons.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
 import { FixedRoutesComponent } from './admin/fixed/fixed-routes.component';
 import { FixedDeparturesComponent } from './admin/fixed/fixed-departures.component';
+import { ShuttleBookingsComponent } from './admin/shuttle/shuttle-bookings.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
 import { ManagersComponent } from './admin/rbac/managers.component';
 import { AnalyticsRealTimeComponent } from './admin/analytics/analytics-real-time.component';
@@ -107,6 +108,7 @@ export const routes: Routes = [
 
   { path: 'fixed-routes', component: FixedRoutesComponent, canActivate: [adminAuthGuard] },
   { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard] },
+  { path: 'shuttle-bookings', component: ShuttleBookingsComponent, canActivate: [adminAuthGuard] },
 
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard] },
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard] },

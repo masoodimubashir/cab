@@ -139,6 +139,11 @@
                 <strong>Fixed vehicle</strong>
                 <span>Open a live fixed route car</span>
               </button>
+              <button class="drive-choice dc-press" (click)="chooseShuttleRides()" [disabled]="toggling">
+                <ion-icon name="bus-outline"></ion-icon>
+                <strong>Shuttle rides</strong>
+                <span>Receive Shuttle ride requests</span>
+              </button>
             </div>
           </div>
 
@@ -154,6 +159,14 @@
             <div>
               <strong>Fixed vehicle selected</strong>
               <span>You are available for fixed route boarding.</span>
+            </div>
+            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
+          </div>
+
+          <div class="drive-mode drive-mode--selected" *ngIf="driveMode === 'shuttle'">
+            <div>
+              <strong>Shuttle rides selected</strong>
+              <span>You are available for Shuttle ride requests.</span>
             </div>
             <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
           </div>

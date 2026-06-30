@@ -11,7 +11,8 @@ use Illuminate\Support\Facades\Storage;
 /**
  * The child tier of the catalogue: one row per (scope, mode) under a
  * CityRideScope. mode ∈ {private, fixed, shuttle}. `is_active` is the per-mode
- * feature flag (private on by default; fixed/shuttle gated on a configured route).
+ * feature flag. All modes can be active under Local and Outstation; customer
+ * visibility still depends on runtime readiness checks.
  */
 #[Fillable(['city_ride_scope_id', 'mode', 'name', 'image_path', 'is_active', 'sort_order'])]
 class CityRideMode extends Model

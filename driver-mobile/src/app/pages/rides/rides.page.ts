@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
+import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
@@ -141,6 +142,7 @@ export class RidesPage implements OnInit, OnDestroy {
     private mapsLoader: MapsLoaderService,
     private modalCtrl: ModalController,
     private geo: GeolocationService,
+    private router: Router,
   ) {}
 
   canSOS(): boolean {
@@ -252,6 +254,11 @@ export class RidesPage implements OnInit, OnDestroy {
         next: (res) => {
           const trip = res?.trip ?? null;
           if (!trip) return;
+          if (trip['route_departure_id'] != null) {
+            void this.bgLocation.stop();
+            void this.router.navigateByUrl('/tabs/fixed', { replaceUrl: true });
+            return;
+          }
           const id = Number(trip['id']);
           if (!Number.isFinite(id) || id < 1) return;
           this.tripId = id;
