@@ -4,16 +4,20 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\City;
 use App\Models\ShuttlePassengerBooking;
+use App\Services\ShuttleRefundService;
 use Illuminate\Http\Request;
 
 class AdminShuttleBookingsController
 {
+    public function __construct(private readonly ShuttleRefundService $refunds) {}
+
     public function index(Request $request, City $city)
     {
         $data = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', 'max:30'],
             'payment_status' => ['nullable', 'string', 'max:30'],
+            'refund_status' => ['nullable', 'string', 'max:30'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -30,11 +34,14 @@ class AdminShuttleBookingsController
                 'cityVehicleType.vehicleType:id,name',
                 'cityVehicleType.rideType:id,name',
                 'pricingRule:id,base_fare',
-                'journey:id,status,capacity,seats_taken,driver_id,created_at',
+                'journey:id,status,capacity,seats_taken,driver_id,trip_id,created_at',
                 'journey.driver:id,name,phone',
+                'journey.trip:id,status,driver_id,scope,created_at,assigned_at,completed_at',
+                'journey.trip.driver:id,name,phone',
             ])
             ->when(isset($data['status']), fn ($q) => $q->where('status', $data['status']))
             ->when(isset($data['payment_status']), fn ($q) => $q->where('payment_status', $data['payment_status']))
+            ->when(isset($data['refund_status']), fn ($q) => $q->where('refund_status', $data['refund_status']))
             ->when(isset($data['date_from']), fn ($q) => $q->whereDate('created_at', '>=', $data['date_from']))
             ->when(isset($data['date_to']), fn ($q) => $q->whereDate('created_at', '<=', $data['date_to']));
 
@@ -66,6 +73,41 @@ class AdminShuttleBookingsController
         ]]);
     }
 
+    public function resolveRefund(Request $request, City $city, ShuttlePassengerBooking $booking)
+    {
+        if ((int) $booking->city_id !== (int) $city->id) {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            'reference' => ['nullable', 'string', 'max:191'],
+            'amount' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $updated = $this->refunds->resolveManualRefund(
+            $booking,
+            $request->user(),
+            $data['reference'] ?? null,
+            array_key_exists('amount', $data) && $data['amount'] !== null ? (float) $data['amount'] : null,
+            $data['note'] ?? null,
+        );
+
+        return response()->json([
+            'booking' => $this->shapeBooking($updated->fresh([
+                'customer:id,name,phone',
+                'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id',
+                'cityVehicleType.vehicleType:id,name',
+                'cityVehicleType.rideType:id,name',
+                'journey:id,status,capacity,seats_taken,driver_id,trip_id,created_at',
+                'journey.driver:id,name,phone',
+                'journey.trip:id,status,driver_id,scope,created_at,assigned_at,completed_at',
+                'journey.trip.driver:id,name,phone',
+            ])),
+            'message' => 'Shuttle refund marked resolved manually.',
+        ]);
+    }
+
     private function shapeBooking(ShuttlePassengerBooking $booking): array
     {
         $journey = $booking->journey;
@@ -74,10 +116,13 @@ class AdminShuttleBookingsController
         return [
             'id' => $booking->id,
             'shuttle_journey_id' => $booking->shuttle_journey_id,
+            'trip_id' => $journey?->trip_id,
+            'trip_status' => $journey?->trip?->status,
+            'scope' => $booking->scope ?? $journey?->trip?->scope ?? 'local',
             'customer_name' => $booking->customer?->name,
             'customer_phone' => $booking->customer?->phone,
-            'driver_name' => $journey?->driver?->name,
-            'driver_phone' => $journey?->driver?->phone,
+            'driver_name' => $journey?->driver?->name ?? $journey?->trip?->driver?->name,
+            'driver_phone' => $journey?->driver?->phone ?? $journey?->trip?->driver?->phone,
             'vehicle_name' => $vehicle?->display_name,
             'vehicle_type_name' => $vehicle?->vehicleType?->name,
             'ride_type_name' => $vehicle?->rideType?->name,
@@ -96,6 +141,15 @@ class AdminShuttleBookingsController
             'currency' => $booking->currency,
             'payment_method' => $booking->payment_method,
             'payment_status' => $booking->payment_status,
+            'refund_status' => $booking->refund_status,
+            'refund_reference' => $booking->refund_reference,
+            'refund_amount' => $booking->refund_amount,
+            'cancelled_reason' => $booking->cancelled_reason,
+            'shuttle_pickup_arrived_at' => optional($booking->shuttle_pickup_arrived_at)->toIso8601String(),
+            'shuttle_no_show_after_at' => optional($booking->shuttle_no_show_after_at)->toIso8601String(),
+            'shuttle_driver_missed_after_at' => optional($booking->shuttle_driver_missed_after_at)->toIso8601String(),
+            'shuttle_auto_processed_at' => optional($booking->shuttle_auto_processed_at)->toIso8601String(),
+            'shuttle_auto_outcome' => $booking->shuttle_auto_outcome,
             'payment_reference' => $booking->payment_reference,
             'razorpay_order_id' => $booking->razorpay_order_id,
             'razorpay_payment_id' => $booking->razorpay_payment_id,

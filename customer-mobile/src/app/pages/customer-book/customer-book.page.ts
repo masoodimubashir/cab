@@ -72,6 +72,7 @@ type EstimateResponse = {
 
 type ShuttleBooking = {
   id: number;
+  trip_id?: number | null;
   fare_amount?: number;
   currency?: string;
   status?: string;
@@ -1719,6 +1720,7 @@ export class CustomerBookPage implements OnDestroy {
           .post<EstimateResponse>('/shuttle/quote', {
             city_id: cityId,
             vehicle_type_id: this.selectedVehicleTypeId,
+            scope: this.selectedScope || (this.selectedProductKind === 'outstation' ? 'outstation' : 'local'),
             pickup_lat: this.pickup.lat,
             pickup_lng: this.pickup.lng,
             drop_lat: this.drop.lat,
@@ -1782,6 +1784,7 @@ export class CustomerBookPage implements OnDestroy {
           city_vehicle_type_id: this.estimate?.city_vehicle_type_id ?? null,
           city_id: cityId,
           vehicle_type_id: this.selectedVehicleTypeId,
+          scope: this.selectedScope || (this.selectedProductKind === 'outstation' ? 'outstation' : 'local'),
           pickup_address: this.pickup.address,
           pickup_lat: this.pickup.lat,
           pickup_lng: this.pickup.lng,
@@ -1879,10 +1882,17 @@ export class CustomerBookPage implements OnDestroy {
         .toPromise();
       const toast = await this.toastCtrl.create({
         message: res?.message || "Shuttle booking payment confirmed.",
-        duration: 2600,
+        duration: 2200,
         color: "success",
       });
       await toast.present();
+
+      const tripId = res?.booking?.trip_id;
+      if (tripId) {
+        await this.router.navigateByUrl(`/customer-tabs/trip/${tripId}`, { replaceUrl: true });
+        return;
+      }
+
       this.resetToIdle();
     } catch (e: any) {
       this.error = e?.error?.message || "Payment verification failed.";

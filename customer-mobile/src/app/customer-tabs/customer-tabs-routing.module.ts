@@ -23,6 +23,11 @@ const routes: Routes = [
           import('../pages/fixed-bookings/fixed-bookings.module').then((m) => m.FixedBookingsPageModule),
       },
       {
+        path: 'shuttle-rides',
+        loadChildren: () =>
+          import('../pages/shuttle-bookings/shuttle-bookings.module').then((m) => m.ShuttleBookingsPageModule),
+      },
+      {
         path: 'profile',
         loadChildren: () =>
           import('../pages/profile/profile.module').then((m) => m.CustomerProfilePageModule),

@@ -49,6 +49,15 @@
       </div>
     </div>
 
+    <div class="pg-card pf-service" *ngIf="!onboarding">
+      <div class="pf-service__icon"><ion-icon name="briefcase-outline"></ion-icon></div>
+      <div class="pf-service__text">
+        <strong>Registered service</strong>
+        <small>{{ registeredServiceLoading ? 'Loading…' : registeredServiceLabel }}</small>
+      </div>
+      <ion-icon class="pf-service__lock" name="lock-closed-outline"></ion-icon>
+    </div>
+
     <!-- Personal details -->
     <div class="pg-card pf-form">
       <div class="pg-card__head">

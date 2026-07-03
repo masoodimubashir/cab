@@ -11,10 +11,11 @@ use App\Models\TripShareLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Services\FixedStopAutomationService;
+use App\Services\ShuttleStopAutomationService;
 
 class TripTrackingController extends Controller
 {
-    public function updateLocation(Request $request, Trip $trip, FixedStopAutomationService $fixedStops)
+    public function updateLocation(Request $request, Trip $trip, FixedStopAutomationService $fixedStops, ShuttleStopAutomationService $shuttleStops)
     {
         $data = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
@@ -76,6 +77,7 @@ class TripTrackingController extends Controller
         ))->toOthers();
 
         $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
+        $shuttleStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
 
         return response()->json(['location' => $location]);
     }
@@ -132,14 +134,21 @@ class TripTrackingController extends Controller
             }
         }
 
+        $recordedAt = now();
         $location = CustomerLocation::query()->create([
             'trip_id' => $trip->id,
             'customer_id' => $user->id,
             'lat' => (float) $data['lat'],
             'lng' => (float) $data['lng'],
             'accuracy_m' => $data['accuracy_m'] ?? null,
-            'recorded_at' => now(),
+            'recorded_at' => $recordedAt,
         ]);
+
+        $user->forceFill([
+            'current_lat' => (float) $data['lat'],
+            'current_lng' => (float) $data['lng'],
+            'current_location_updated_at' => $recordedAt,
+        ])->save();
 
         broadcast(new TripCustomerLocationUpdated(
             tripId: $trip->id,

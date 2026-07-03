@@ -192,6 +192,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/catalog/ride-types', [CatalogController::class, 'rideTypes']);
     Route::get('/catalog/vehicle-types', [CatalogController::class, 'vehicleTypes']);
     Route::get('/catalog/cities', [CatalogController::class, 'cities']);
+    Route::get('/catalog/cities/{city}/driver-ride-products', [CatalogController::class, 'driverRideProducts']);
     Route::get('/catalog/fleets', [CatalogController::class, 'fleets']);
     Route::get('/catalog/documents', [CatalogController::class, 'documents']);
 });
@@ -463,9 +464,11 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/fixed/seat-holds/{fixedSeatHold}/test-confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldTestPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
+    Route::get('/shuttle/bookings', [ShuttleBookingsController::class, 'index']);
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/razorpay-order', [ShuttleBookingsController::class, 'createRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/confirm-payment', [ShuttleBookingsController::class, 'confirmPayment'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/shuttle/bookings/{booking}/cancel', [ShuttleBookingsController::class, 'cancel'])->middleware('throttle:booking');
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -487,6 +490,7 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city'])->group(functio
     Route::get('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'index']);
     Route::get('/admin/cities/{city}/fixed-bookings', [AdminFixedDeparturesController::class, 'bookings']);
     Route::get('/admin/cities/{city}/shuttle-bookings', [AdminShuttleBookingsController::class, 'index']);
+    Route::post('/admin/cities/{city}/shuttle-bookings/{booking}/resolve-refund', [AdminShuttleBookingsController::class, 'resolveRefund']);
     Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);

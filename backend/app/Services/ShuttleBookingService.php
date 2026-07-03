@@ -3,10 +3,13 @@
 namespace App\Services;
 
 use App\Exceptions\ReservationException;
+use App\Jobs\DispatchHopJob;
 use App\Models\CityVehicleType;
+use App\Models\FareNegotiation;
 use App\Models\PricingRule;
 use App\Models\ShuttleJourney;
 use App\Models\ShuttlePassengerBooking;
+use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -48,6 +51,7 @@ class ShuttleBookingService
                 'shuttle_journey_id' => $journey->id,
                 'city_id' => $cvt->city_id,
                 'city_vehicle_type_id' => $cvt->id,
+                'scope' => $data['scope'] ?? 'local',
                 'pricing_rule_id' => $pricingRule->id,
                 'customer_id' => $customer->id,
                 'seats' => 1,
@@ -106,7 +110,9 @@ class ShuttleBookingService
 
     public function confirmPayment(User $customer, ShuttlePassengerBooking $booking, array $data, RazorpayService $razorpay): ShuttlePassengerBooking
     {
-        return DB::transaction(function () use ($customer, $booking, $data, $razorpay) {
+        $dispatch = null;
+
+        $confirmed = DB::transaction(function () use ($customer, $booking, $data, $razorpay, &$dispatch) {
             $locked = ShuttlePassengerBooking::query()->lockForUpdate()->find($booking->id);
             if (!$locked || $locked->customer_id !== $customer->id) {
                 throw new ReservationException("This Shuttle booking could not be found.", 404);
@@ -137,20 +143,33 @@ class ShuttleBookingService
                 "status" => "CONFIRMED",
             ]);
 
+            $trip = $this->ensureDispatchTrip($locked);
+            if ($trip->wasRecentlyCreated) {
+                $dispatch = [$trip->id, (float) $locked->fare_amount];
+            }
+
             return $locked->fresh();
         });
+
+        if ($dispatch) {
+            DispatchHopJob::startChain($dispatch[0], $dispatch[1]);
+        }
+
+        return $confirmed;
     }
 
     public function shapeBooking(ShuttlePassengerBooking $booking): array
     {
-        $booking->loadMissing(['journey:id,status,capacity,seats_taken', 'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id']);
+        $booking->loadMissing(['journey:id,status,capacity,seats_taken,trip_id', 'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id']);
 
         return [
             'id' => $booking->id,
             'shuttle_journey_id' => $booking->shuttle_journey_id,
+            'trip_id' => $booking->journey?->trip_id,
             'journey_status' => $booking->journey?->status,
             'city_id' => $booking->city_id,
             'city_vehicle_type_id' => $booking->city_vehicle_type_id,
+            'scope' => $booking->scope ?? 'local',
             'vehicle_name' => $booking->cityVehicleType?->display_name,
             'pickup' => [
                 'lat' => (float) $booking->pickup_lat,
@@ -166,10 +185,83 @@ class ShuttleBookingService
             'currency' => $booking->currency,
             'payment_method' => $booking->payment_method,
             'payment_status' => $booking->payment_status,
+            'refund_status' => $booking->refund_status,
+            'refund_reference' => $booking->refund_reference,
+            'refund_amount' => $booking->refund_amount,
             'status' => $booking->status,
+            'cancelled_reason' => $booking->cancelled_reason,
+            'shuttle_pickup_arrived_at' => optional($booking->shuttle_pickup_arrived_at)->toIso8601String(),
+            'shuttle_no_show_after_at' => optional($booking->shuttle_no_show_after_at)->toIso8601String(),
+            'shuttle_driver_missed_after_at' => optional($booking->shuttle_driver_missed_after_at)->toIso8601String(),
+            'shuttle_auto_processed_at' => optional($booking->shuttle_auto_processed_at)->toIso8601String(),
+            'shuttle_auto_outcome' => $booking->shuttle_auto_outcome,
             'booking_enabled_for_driver' => false,
             'created_at' => optional($booking->created_at)->toIso8601String(),
         ];
+    }
+
+    private function ensureDispatchTrip(ShuttlePassengerBooking $booking): Trip
+    {
+        $journey = ShuttleJourney::query()
+            ->where('id', $booking->shuttle_journey_id)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$journey) {
+            throw new ReservationException("This Shuttle journey could not be found.", 404);
+        }
+
+        if ($journey->trip_id) {
+            return Trip::query()->findOrFail($journey->trip_id);
+        }
+
+        $cvt = CityVehicleType::query()->findOrFail($booking->city_vehicle_type_id);
+        $fare = (float) $booking->fare_amount;
+
+        $trip = Trip::query()->create([
+            'customer_id' => $booking->customer_id,
+            'driver_id' => null,
+            'city_id' => $booking->city_id,
+            'scope' => $booking->scope ?? 'local',
+            'ride_type_id' => $cvt->ride_type_id,
+            'vehicle_type_id' => $cvt->vehicle_type_id,
+            'requested_vehicle_type_id' => $cvt->vehicle_type_id,
+            'city_vehicle_type_id' => $booking->city_vehicle_type_id,
+            'pricing_rule_id' => $booking->pricing_rule_id,
+            'status' => 'NEGOTIATION',
+            'estimated_fare' => $fare,
+            'final_fare' => null,
+            'currency' => $booking->currency ?: 'INR',
+            'payment_method' => null,
+            'pickup_address' => $booking->pickup_address,
+            'pickup_lat' => (float) $booking->pickup_lat,
+            'pickup_lng' => (float) $booking->pickup_lng,
+            'drop_address' => $booking->drop_address,
+            'drop_lat' => (float) $booking->drop_lat,
+            'drop_lng' => (float) $booking->drop_lng,
+            'is_manual_dispatch' => true,
+            'negotiation_started_at' => now(),
+        ]);
+
+        $negotiation = FareNegotiation::query()->create([
+            'trip_id' => $trip->id,
+            'customer_id' => $booking->customer_id,
+            'status' => 'NEGOTIATING',
+        ]);
+
+        $negotiation->offers()->create([
+            'from_user_id' => $booking->customer_id,
+            'from_role' => 'customer',
+            'amount' => $fare,
+            'status' => 'PENDING',
+        ]);
+
+        $journey->update([
+            'trip_id' => $trip->id,
+            'status' => 'FORMING',
+        ]);
+
+        return $trip;
     }
 
     private function resolveShuttleVehicle(array $data): CityVehicleType

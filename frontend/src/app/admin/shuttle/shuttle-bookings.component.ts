@@ -3,13 +3,16 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
+import { ToastService } from '../../core/toast.service';
 import { CityContextService } from '../../core/city-context.service';
 import {
+  ButtonComponent,
   ColumnComponent,
   DataTableComponent,
   FilterPillComponent,
   FilterSelectComponent,
   IconComponent,
+  ModalComponent,
   InputComponent,
   StatusPillComponent,
 } from '../../ui';
@@ -17,6 +20,9 @@ import {
 interface ShuttleBookingRow {
   id: number;
   shuttle_journey_id: number;
+  trip_id?: number | null;
+  trip_status?: string | null;
+  scope?: 'local' | 'outstation' | string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   driver_name?: string | null;
@@ -35,6 +41,15 @@ interface ShuttleBookingRow {
   payment_method?: string | null;
   payment_status?: string | null;
   payment_reference?: string | null;
+  refund_status?: string | null;
+  refund_reference?: string | null;
+  refund_amount?: number | null;
+  cancelled_reason?: string | null;
+  shuttle_pickup_arrived_at?: string | null;
+  shuttle_no_show_after_at?: string | null;
+  shuttle_driver_missed_after_at?: string | null;
+  shuttle_auto_processed_at?: string | null;
+  shuttle_auto_outcome?: string | null;
   razorpay_order_id?: string | null;
   status: string;
   journey_status?: string | null;
@@ -48,6 +63,14 @@ const STATUS_OPTIONS = [
   { label: 'Dropped', value: 'DROPPED' },
   { label: 'No-show', value: 'NO_SHOW' },
   { label: 'Cancelled', value: 'CANCELLED' },
+];
+
+const REFUND_STATUS_OPTIONS = [
+  { label: 'None', value: 'NONE' },
+  { label: 'Requested', value: 'REQUESTED' },
+  { label: 'Approved', value: 'APPROVED' },
+  { label: 'Rejected', value: 'REJECTED' },
+  { label: 'Refunded', value: 'REFUNDED' },
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
@@ -64,11 +87,13 @@ const PAYMENT_STATUS_OPTIONS = [
   imports: [
     CommonModule,
     FormsModule,
+    ButtonComponent,
     ColumnComponent,
     DataTableComponent,
     FilterPillComponent,
     FilterSelectComponent,
     IconComponent,
+    ModalComponent,
     InputComponent,
     StatusPillComponent,
   ],
@@ -77,7 +102,7 @@ const PAYMENT_STATUS_OPTIONS = [
       <header class="page__hero">
         <div>
           <h1 class="page__title">Shuttle Bookings</h1>
-          <p class="page__sub">Read-only booking records created by the controlled Shuttle backend. Customer and driver Shuttle flows are still disabled.</p>
+          <p class="page__sub">Read-only booking records with linked dispatch trip, driver, payment, and journey status.</p>
         </div>
       </header>
 
@@ -110,6 +135,7 @@ const PAYMENT_STATUS_OPTIONS = [
         <ng-container slot="filters">
           <tm-filter-select icon="bolt" ariaLabel="Booking status" allLabel="All booking statuses" [options]="statusOptions" [value]="status" (valueChange)="onStatusChange($event)" />
           <tm-filter-select icon="rupee" ariaLabel="Payment status" allLabel="All payment statuses" [options]="paymentStatusOptions" [value]="paymentStatus" (valueChange)="onPaymentStatusChange($event)" />
+          <tm-filter-select icon="refresh" ariaLabel="Refund status" allLabel="All refund statuses" [options]="refundStatusOptions" [value]="refundStatus" (valueChange)="onRefundStatusChange($event)" />
           <label class="dateField">
             <span>From</span>
             <input type="date" [(ngModel)]="dateFrom" (ngModelChange)="onDateChange()" />
@@ -124,6 +150,7 @@ const PAYMENT_STATUS_OPTIONS = [
           <tm-filter-pill *ngIf="query.trim()" icon="search" label="Search" [value]="query" (clear)="clearSearch()" />
           <tm-filter-pill *ngIf="status !== 'all'" icon="bolt" label="Booking" [value]="labelFor(statusOptions, status)" (clear)="clearStatus()" />
           <tm-filter-pill *ngIf="paymentStatus !== 'all'" icon="rupee" label="Payment" [value]="labelFor(paymentStatusOptions, paymentStatus)" (clear)="clearPaymentStatus()" />
+          <tm-filter-pill *ngIf="refundStatus !== 'all'" icon="refresh" label="Refund" [value]="labelFor(refundStatusOptions, refundStatus)" (clear)="clearRefundStatus()" />
           <tm-filter-pill *ngIf="dateFrom || dateTo" icon="calendar" label="Date" [value]="dateLabel()" (clear)="clearDates()" />
         </ng-container>
 
@@ -132,6 +159,7 @@ const PAYMENT_STATUS_OPTIONS = [
             <div class="cellStack">
               <span class="strong">#{{ row.id }}</span>
               <span class="muted">Journey #{{ row.shuttle_journey_id }}</span>
+              <span class="muted" *ngIf="row.trip_id">Trip #{{ row.trip_id }}</span>
             </div>
           </ng-template>
         </tm-column>
@@ -150,6 +178,7 @@ const PAYMENT_STATUS_OPTIONS = [
             <div class="cellStack">
               <span class="strong">{{ row.vehicle_name || 'Shuttle vehicle' }}</span>
               <span class="muted">{{ row.vehicle_type_name || 'Vehicle type not set' }}</span>
+              <span class="muted">{{ pretty(row.scope) }}</span>
             </div>
           </ng-template>
         </tm-column>
@@ -181,11 +210,34 @@ const PAYMENT_STATUS_OPTIONS = [
           </ng-template>
         </tm-column>
 
-        <tm-column key="status" label="Status" width="150">
+        <tm-column key="refund_status" label="Refund" width="180">
+          <ng-template let-row>
+            <div class="cellStack">
+              <tm-status-pill [tone]="refundTone(row.refund_status)">{{ pretty(row.refund_status || 'NONE') }}</tm-status-pill>
+              <span class="muted" *ngIf="row.refund_amount != null">INR {{ row.refund_amount | number: '1.0-2' }}</span>
+              <span class="muted" *ngIf="row.refund_reference">{{ row.refund_reference }}</span>
+              <button *ngIf="canResolveRefund(row)" class="linkBtn" type="button" (click)="openResolveRefund(row)">Resolve</button>
+            </div>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="driver" label="Driver" width="170">
+          <ng-template let-row>
+            <div class="cellStack">
+              <span class="strong">{{ row.driver_name || 'Not assigned' }}</span>
+              <span class="muted">{{ row.driver_phone || 'Waiting for driver' }}</span>
+            </div>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="status" label="Status" width="160">
           <ng-template let-row>
             <div class="cellStack">
               <tm-status-pill [tone]="bookingTone(row.status)">{{ pretty(row.status) }}</tm-status-pill>
-              <span class="muted">{{ pretty(row.journey_status) }}</span>
+              <span class="muted">Journey {{ pretty(row.journey_status) }}</span>
+              <span class="muted" *ngIf="row.trip_status">Trip {{ pretty(row.trip_status) }}</span>
+              <span class="muted" *ngIf="row.shuttle_auto_outcome">Auto {{ pretty(row.shuttle_auto_outcome) }}</span>
+              <span class="muted" *ngIf="row.shuttle_pickup_arrived_at">Arrived {{ formatDate(row.shuttle_pickup_arrived_at) }}</span>
             </div>
           </ng-template>
         </tm-column>
@@ -196,6 +248,28 @@ const PAYMENT_STATUS_OPTIONS = [
           </ng-template>
         </tm-column>
       </tm-data-table>
+
+      <tm-modal [open]="!!refundActionRow" title="Resolve Shuttle refund" (closed)="closeResolveRefund()">
+        <div class="refundForm" *ngIf="refundActionRow">
+          <p class="muted">Mark this only after admin has issued or confirmed the refund in Razorpay dashboard.</p>
+          <label class="formField">
+            <span>Razorpay refund reference</span>
+            <input type="text" [(ngModel)]="refundReference" placeholder="rfnd_..." />
+          </label>
+          <label class="formField">
+            <span>Refund amount</span>
+            <input type="number" min="0" step="0.01" [(ngModel)]="refundAmount" />
+          </label>
+          <label class="formField">
+            <span>Note</span>
+            <textarea rows="3" [(ngModel)]="refundNote" placeholder="Optional admin note"></textarea>
+          </label>
+        </div>
+        <div modalFooter>
+          <tm-button variant="ghost" size="sm" (clicked)="closeResolveRefund()">Cancel</tm-button>
+          <tm-button variant="green" size="sm" (clicked)="submitResolveRefund()" [disabled]="refundSaving">{{ refundSaving ? 'Saving...' : 'Mark refunded' }}</tm-button>
+        </div>
+      </tm-modal>
     </div>
   `,
   styles: [`
@@ -215,6 +289,10 @@ const PAYMENT_STATUS_OPTIONS = [
     .routeCell strong { margin-right: 6px; color: var(--tm-text); }
     .dateField { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 10px; border: 1px solid var(--tm-line-2, var(--tm-line)); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 750; }
     .dateField input { border: 0; outline: 0; background: transparent; color: var(--tm-text); font: inherit; font-weight: 650; }
+    .linkBtn { width: fit-content; border: 0; background: transparent; color: var(--tm-accent, #2563eb); padding: 0; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+    .refundForm { display: flex; flex-direction: column; gap: 12px; min-width: 320px; }
+    .formField { display: flex; flex-direction: column; gap: 6px; color: var(--tm-text-muted); font-size: 12px; font-weight: 800; }
+    .formField input, .formField textarea { border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); padding: 9px 10px; font: inherit; font-weight: 650; }
     :host ::ng-deep tm-data-table .tm-dt__toolbar-right { align-items: center; }
     @media (max-width: 760px) {
       .page__hero { flex-direction: column; }
@@ -234,10 +312,18 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
   query = '';
   status = 'all';
   paymentStatus = 'all';
+  refundStatus = 'all';
   dateFrom = '';
   dateTo = '';
   statusOptions = STATUS_OPTIONS;
   paymentStatusOptions = PAYMENT_STATUS_OPTIONS;
+  refundStatusOptions = REFUND_STATUS_OPTIONS;
+
+  refundActionRow: ShuttleBookingRow | null = null;
+  refundReference = '';
+  refundAmount: number | null = null;
+  refundNote = '';
+  refundSaving = false;
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private subs: Subscription[] = [];
@@ -245,6 +331,7 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
   constructor(
     private api: ApiService,
     private cityCtx: CityContextService,
+    private toast: ToastService,
   ) {}
 
   ngOnInit(): void {
@@ -294,6 +381,12 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
     this.fetch();
   }
 
+  onRefundStatusChange(value: string): void {
+    this.refundStatus = value;
+    this.page = 1;
+    this.fetch();
+  }
+
   onDateChange(): void {
     this.page = 1;
     this.fetch();
@@ -313,6 +406,12 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
 
   clearPaymentStatus(): void {
     this.paymentStatus = 'all';
+    this.page = 1;
+    this.fetch();
+  }
+
+  clearRefundStatus(): void {
+    this.refundStatus = 'all';
     this.page = 1;
     this.fetch();
   }
@@ -363,6 +462,54 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
     return 'neutral';
   }
 
+  refundTone(status?: string | null): 'success' | 'warning' | 'danger' | 'neutral' {
+    if (status === 'REFUNDED') return 'success';
+    if (status === 'APPROVED' || status === 'REQUESTED') return 'warning';
+    if (status === 'REJECTED') return 'danger';
+    return 'neutral';
+  }
+
+  canResolveRefund(row: ShuttleBookingRow): boolean {
+    return row.payment_status === 'PAID' && row.refund_status === 'APPROVED';
+  }
+
+  openResolveRefund(row: ShuttleBookingRow): void {
+    this.refundActionRow = row;
+    this.refundReference = row.refund_reference || '';
+    this.refundAmount = row.refund_amount ?? row.fare_amount ?? null;
+    this.refundNote = '';
+  }
+
+  closeResolveRefund(): void {
+    if (this.refundSaving) return;
+    this.refundActionRow = null;
+    this.refundReference = '';
+    this.refundAmount = null;
+    this.refundNote = '';
+  }
+
+  submitResolveRefund(): void {
+    if (!this.refundActionRow || this.cityId == null || this.refundSaving) return;
+    const row = this.refundActionRow;
+    this.refundSaving = true;
+    this.api.post<{ booking: ShuttleBookingRow; message: string }>(`/admin/cities/${this.cityId}/shuttle-bookings/${row.id}/resolve-refund`, {
+      reference: this.refundReference || null,
+      amount: this.refundAmount,
+      note: this.refundNote || null,
+    }).subscribe({
+      next: (res) => {
+        this.refundSaving = false;
+        this.refundActionRow = null;
+        this.toast.success(res?.message || 'Shuttle refund marked resolved');
+        this.fetch();
+      },
+      error: (err) => {
+        this.refundSaving = false;
+        this.toast.error(err?.error?.message || 'Failed to resolve Shuttle refund');
+      },
+    });
+  }
+
   formatDate(value?: string | null): string {
     if (!value) return 'Not set';
     return new Date(value).toLocaleString();
@@ -380,6 +527,7 @@ export class ShuttleBookingsComponent implements OnInit, OnDestroy {
     if (this.query.trim()) params.set('q', this.query.trim());
     if (this.status !== 'all') params.set('status', this.status);
     if (this.paymentStatus !== 'all') params.set('payment_status', this.paymentStatus);
+    if (this.refundStatus !== 'all') params.set('refund_status', this.refundStatus);
     if (this.dateFrom) params.set('date_from', this.dateFrom);
     if (this.dateTo) params.set('date_to', this.dateTo);
 

@@ -32,6 +32,9 @@ type AvailableTrip = {
   estimated_fare?: number | null;
   customer_offer?: number | null;
   payment_method?: PaymentMethod | null;
+  service_mode?: 'private' | 'shuttle' | string | null;
+  ride_type_name?: string | null;
+  vehicle_name?: string | null;
   created_at?: string;
   // "Booked for a friend / family" — who the driver will actually pick up.
   is_for_other?: boolean;
@@ -39,6 +42,7 @@ type AvailableTrip = {
   // Per-vehicle reverse-bidding flag. When false the driver may only accept or
   // reject — countering ("Send ₹N") is disabled. Defaults to true when absent.
   reverse_bidding_enabled?: boolean;
+  is_prepaid?: boolean;
 };
 
 type ManifestPassenger = {
@@ -144,6 +148,31 @@ export class RidesPage implements OnInit, OnDestroy {
     private geo: GeolocationService,
     private router: Router,
   ) {}
+
+
+  isShuttleTrip(trip: AvailableTrip | Record<string, unknown> | null | undefined = this.lastTrip): boolean {
+    if (!trip) return false;
+    const service = (trip as any)['service_mode'];
+    const rideType = String((trip as any)['ride_type_name'] || '');
+    return service === 'shuttle' || rideType.toLowerCase().includes('shuttle');
+  }
+
+  get activeTripKindLabel(): string {
+    return this.isShuttleTrip(this.lastTrip) ? 'Shuttle' : 'Trip';
+  }
+
+  get activePaymentLabel(): string {
+    if (this.isShuttleTrip(this.lastTrip)) return 'PREPAID RAZORPAY';
+    return (this.tripPaymentMethod || '—').toUpperCase();
+  }
+
+  requestKindLabel(t: AvailableTrip): string {
+    return t.service_mode === 'shuttle' ? 'Shuttle request' : 'Ride request';
+  }
+
+  requestActionLabel(t: AvailableTrip): string {
+    return t.service_mode === 'shuttle' ? 'Accept paid fare' : 'OK';
+  }
 
   canSOS(): boolean {
     const status = this.lastTrip?.['status'] as string | undefined;
@@ -308,23 +337,26 @@ export class RidesPage implements OnInit, OnDestroy {
    */
   statusCopy(): { title: string; sub: string; tone: 'primary' | 'success' | 'warning' | 'medium' } {
     const status = (this.lastTrip?.['status'] as string | undefined) ?? '';
+    const shuttle = this.isShuttleTrip(this.lastTrip);
     switch (status) {
       case 'CONFIRMED':
-        return { title: 'Trip confirmed', sub: 'Get ready to drive to pickup', tone: 'primary' };
+        return shuttle
+          ? { title: 'Shuttle request confirmed', sub: 'Accept it to start pickup flow', tone: 'primary' }
+          : { title: 'Trip confirmed', sub: 'Get ready to drive to pickup', tone: 'primary' };
       case 'ASSIGNED':
-        return { title: 'Heading to pickup', sub: 'Tap below when you start moving', tone: 'primary' };
+        return { title: shuttle ? 'Shuttle assigned' : 'Heading to pickup', sub: 'Tap below when you start moving', tone: 'primary' };
       case 'EN_ROUTE_PICKUP':
-        return { title: 'On the way to pickup', sub: 'Customer is waiting', tone: 'primary' };
+        return { title: shuttle ? 'Driving to Shuttle pickup' : 'On the way to pickup', sub: 'Customer is waiting', tone: 'primary' };
       case 'ARRIVED_PICKUP':
-        return { title: 'At pickup', sub: 'Waiting for the customer to come out', tone: 'warning' };
+        return { title: 'At pickup', sub: shuttle ? 'Ask rider for the start code before leaving' : 'Waiting for the customer to come out', tone: 'warning' };
       case 'EN_ROUTE_DROP':
-        return { title: 'Trip in progress', sub: 'Driving to drop-off', tone: 'success' };
+        return { title: shuttle ? 'Shuttle ride in progress' : 'Trip in progress', sub: 'Driving to drop-off', tone: 'success' };
       case 'ARRIVED_DROP':
         return { title: "You've arrived at drop", sub: 'Tap below to end the ride', tone: 'success' };
       case 'COMPLETED':
-        return { title: 'Trip complete', sub: '', tone: 'medium' };
+        return { title: shuttle ? 'Shuttle trip complete' : 'Trip complete', sub: '', tone: 'medium' };
       case 'CANCELLED':
-        return { title: 'Trip cancelled', sub: '', tone: 'medium' };
+        return { title: shuttle ? 'Shuttle cancelled' : 'Trip cancelled', sub: '', tone: 'medium' };
       default:
         return { title: status || 'Loading…', sub: '', tone: 'medium' };
     }
@@ -388,9 +420,9 @@ export class RidesPage implements OnInit, OnDestroy {
     const status = (this.lastTrip?.['status'] as string | undefined) || null;
     switch (status) {
       case 'CONFIRMED':
-        return { label: 'Accept ride', nextStatus: 'ASSIGNED', kind: 'accept' };
+        return { label: this.isShuttleTrip(this.lastTrip) ? 'Accept Shuttle' : 'Accept ride', nextStatus: 'ASSIGNED', kind: 'accept' };
       case 'ASSIGNED':
-        return { label: 'Start to pickup', nextStatus: 'EN_ROUTE_PICKUP', kind: 'progress' };
+        return { label: this.isShuttleTrip(this.lastTrip) ? 'Start to Shuttle pickup' : 'Start to pickup', nextStatus: 'EN_ROUTE_PICKUP', kind: 'progress' };
       case 'EN_ROUTE_PICKUP':
         return { label: "I've arrived at pickup", nextStatus: 'ARRIVED_PICKUP', kind: 'progress' };
       case 'ARRIVED_PICKUP':
@@ -563,7 +595,7 @@ export class RidesPage implements OnInit, OnDestroy {
     this.error = null;
     this.message = null;
     // Latch the vehicle's reverse-bidding rule for the price panel.
-    this.allowCountering = t.reverse_bidding_enabled ?? true;
+    this.allowCountering = t.service_mode === 'shuttle' ? false : (t.reverse_bidding_enabled ?? true);
     if (action === 'accept') {
       // Accept the customer's offer at face value.
       this.priceOpen = false;
@@ -718,7 +750,7 @@ export class RidesPage implements OnInit, OnDestroy {
     this.api.post<{ trip?: Record<string, unknown> }>(`/trips/${id}/driver-accept`, {}).subscribe({
       next: (res) => {
         this.lastTrip = res.trip || null;
-        this.message = 'Ride accepted';
+        this.message = this.isShuttleTrip(this.lastTrip) ? 'Shuttle accepted' : 'Ride accepted';
         this.startTripStreams(id);
       },
       error: (err) => {
@@ -1056,7 +1088,7 @@ export class RidesPage implements OnInit, OnDestroy {
     }).subscribe({
       next: (res) => {
         this.negotiation = res.negotiation || null;
-        this.message = 'Offer accepted';
+        this.message = this.isShuttleTrip(this.lastTrip) ? 'Shuttle fare accepted' : 'Offer accepted';
       },
       error: (err) => {
         this.error = err?.error?.message || 'Accept failed';

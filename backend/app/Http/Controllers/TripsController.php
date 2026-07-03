@@ -20,6 +20,7 @@ use App\Services\FareEstimationService;
 use App\Services\NotificationService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
+use App\Services\ShuttleRefundService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -282,7 +283,10 @@ class TripsController extends Controller
             return response()->json(['data' => [], 'reason' => 'Driver must be approved and online.']);
         }
         if (!in_array($driverProfile->active_service_mode, [Driver::SERVICE_MODE_PRIVATE, Driver::SERVICE_MODE_SHUTTLE], true)) {
-            return response()->json(['data' => [], 'reason' => 'Choose Private or Shuttle ride mode to receive ride requests.']);
+            return response()->json(['data' => [], 'reason' => 'Your registered service does not receive direct ride requests.']);
+        }
+        if (!$driverProfile->active_service_scope) {
+            return response()->json(['data' => [], 'reason' => 'Go online again to activate your registered service.']);
         }
 
         // A driver already mid-trip cannot accept a second one. Hide the available
@@ -309,6 +313,7 @@ class TripsController extends Controller
         // /select-driver. Drivers should only see live, biddable requests.
         $trips = Trip::query()
             ->where('status', 'NEGOTIATION')
+            ->where('scope', $driverProfile->active_service_scope)
             ->where(function ($q) use ($driverProfile) {
                 if ($driverProfile->active_service_mode === Driver::SERVICE_MODE_SHUTTLE) {
                     $q->whereHas('cityVehicleType.rideType', fn ($rt) => $rt->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
@@ -346,7 +351,7 @@ class TripsController extends Controller
                 'city_vehicle_type_id',
             ]);
 
-        $trips->load('cityVehicleType:id,reverse_bidding_enabled');
+        $trips->load('cityVehicleType:id,display_name,reverse_bidding_enabled,ride_type_id', 'cityVehicleType.rideType:id,name');
 
         $tripIds = $trips->pluck('id')->all();
 
@@ -362,6 +367,7 @@ class TripsController extends Controller
         $payload = $trips->map(function (Trip $t) use ($latestOffers, $user) {
             $negotiation = $latestOffers->get($t->id);
             $latestAmount = $negotiation?->offers?->first()?->amount;
+            $serviceMode = str_contains(strtolower((string) $t->cityVehicleType?->rideType?->name), 'shuttle') ? 'shuttle' : 'private';
 
             return [
                 'id' => $t->id,
@@ -382,7 +388,11 @@ class TripsController extends Controller
                 // actually picking up before they accept.
                 'is_for_other' => (bool) $t->is_for_other,
                 'booked_for_name' => $t->is_for_other ? $t->booked_for_name : null,
-                'reverse_bidding_enabled' => $t->cityVehicleType?->reverse_bidding_enabled ?? true,
+                'reverse_bidding_enabled' => $serviceMode === 'shuttle' ? false : ($t->cityVehicleType?->reverse_bidding_enabled ?? true),
+                'vehicle_name' => $t->cityVehicleType?->display_name,
+                'ride_type_name' => $t->cityVehicleType?->rideType?->name,
+                'service_mode' => $serviceMode,
+                'is_prepaid' => $serviceMode === 'shuttle',
             ];
         });
 
@@ -396,6 +406,7 @@ class TripsController extends Controller
         SchedulingPolicyService $schedulingPolicy,
         \App\Services\NotificationCenter $notifier,
         \App\Services\GeoService $geo,
+        ShuttleRefundService $shuttleRefunds,
     ) {
         $request->validate([
             'reason' => ['nullable', 'string', 'max:1000'],
@@ -441,6 +452,7 @@ class TripsController extends Controller
         $tripStateMachineService->transition($trip, 'CANCELLED', [
             'cancelled_reason' => $request->input('reason'),
         ]);
+        $shuttleRefunds->markCancelledForTrip($trip->fresh(), $request->input('reason'));
 
         // For a scheduled ride, let an already-assigned driver + the admins know
         // the customer called it off (the customer initiated, so they don't need
@@ -929,6 +941,7 @@ class TripsController extends Controller
         $candidates = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
+            ->where('active_service_scope', $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL)
             ->where('active_service_mode', $serviceMode)
             ->whereNotIn('user_id', $busyDriverIds)
             ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
@@ -1073,7 +1086,7 @@ class TripsController extends Controller
         if (!$driverProfile || $driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['message' => 'Driver is no longer available.'], 409);
         }
-        if ($driverProfile->active_service_mode !== $serviceMode) {
+        if ($driverProfile->active_service_scope !== ($trip->scope ?: Driver::SERVICE_SCOPE_LOCAL) || $driverProfile->active_service_mode !== $serviceMode) {
             $label = $serviceMode === Driver::SERVICE_MODE_SHUTTLE ? 'Shuttle' : 'private';
             return response()->json(['message' => "Driver is not accepting " . $label . " rides right now."], 409);
         }

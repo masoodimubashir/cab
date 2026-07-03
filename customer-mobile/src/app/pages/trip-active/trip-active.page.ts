@@ -26,6 +26,9 @@ type TripDetail = {
   final_fare: number | null;
   tip_amount?: number | null;
   payment_method?: PaymentMethod | null;
+  service_mode?: 'private' | 'shuttle' | string | null;
+  ride_type_name?: string | null;
+  vehicle_name?: string | null;
   is_for_other?: boolean;
   booked_for_name?: string | null;
   booked_for_phone?: string | null;
@@ -212,6 +215,15 @@ export class TripActivePage implements OnInit, OnDestroy {
     return s !== 'COMPLETED' && s !== 'CANCELLED';
   }
 
+  get isShuttleTrip(): boolean {
+    return this.trip?.service_mode === 'shuttle'
+      || (this.trip?.ride_type_name ?? '').toLowerCase().includes('shuttle');
+  }
+
+  get tripKindLabel(): string {
+    return this.isShuttleTrip ? 'Shuttle' : 'Trip';
+  }
+
   /** Open the details modal. Safe to call from a Google Maps event (which
    *  fires outside Angular) — re-enters the zone so the binding updates. */
   openDriverDetails(): void {
@@ -245,28 +257,41 @@ export class TripActivePage implements OnInit, OnDestroy {
    */
   statusCopy(): { title: string; sub: string } {
     const status = this.trip?.status ?? '';
+    const shuttle = this.isShuttleTrip;
     switch (status) {
+      case 'NEGOTIATION':
+        return shuttle
+          ? { title: 'Finding Shuttle driver', sub: 'We are sending your paid Shuttle request to nearby drivers.' }
+          : { title: 'Finding driver', sub: 'We are sending your request to nearby drivers.' };
       case 'CONFIRMED':
-        return { title: 'Driver confirmed', sub: 'Connecting…' };
+        return shuttle
+          ? { title: 'Shuttle driver confirmed', sub: 'Connecting…' }
+          : { title: 'Driver confirmed', sub: 'Connecting…' };
       case 'ASSIGNED':
       case 'EN_ROUTE_PICKUP':
         return {
-          title: 'Driver is on the way',
+          title: shuttle ? 'Shuttle driver is on the way' : 'Driver is on the way',
           sub: this.etaMinutes != null ? `Arriving in ${this.etaMinutes} min` : 'Heading to pickup',
         };
       case 'ARRIVED_PICKUP':
-        return { title: 'Driver has arrived', sub: 'Please come to the curb' };
+        return { title: shuttle ? 'Shuttle has arrived' : 'Driver has arrived', sub: 'Please come to the pickup point' };
       case 'EN_ROUTE_DROP':
         return {
-          title: 'Ride in progress',
+          title: shuttle ? 'Shuttle ride in progress' : 'Ride in progress',
           sub: this.etaMinutes != null ? `Arriving in ${this.etaMinutes} min` : "Sit back — you're on your way",
         };
       case 'ARRIVED_DROP':
-        return { title: "You've arrived", sub: 'Please complete payment' };
+        return shuttle
+          ? { title: "You've arrived", sub: 'Your Shuttle was prepaid.' }
+          : { title: "You've arrived", sub: 'Please complete payment' };
       case 'COMPLETED':
-        return { title: 'Trip complete', sub: 'Tap to pay & rate' };
+        return shuttle
+          ? { title: 'Shuttle trip complete', sub: 'Thanks for riding.' }
+          : { title: 'Trip complete', sub: 'Tap to pay & rate' };
       case 'CANCELLED':
-        return { title: 'Trip cancelled', sub: '' };
+        return shuttle
+          ? { title: 'Shuttle cancelled', sub: 'Refund is pending manual Razorpay processing.' }
+          : { title: 'Trip cancelled', sub: '' };
       default:
         return { title: status || 'Loading…', sub: '' };
     }
@@ -1213,8 +1238,8 @@ export class TripActivePage implements OnInit, OnDestroy {
       await this.api.post(`/trips/${this.tripId}/cancel`, { reason: reasonStr }).toPromise();
       this.showCancelModal = false;
       const t = await this.toastCtrl.create({
-        message: 'Trip cancelled successfully.',
-        duration: 2000,
+        message: this.isShuttleTrip ? 'Shuttle cancelled. Refund is pending manual Razorpay processing.' : 'Trip cancelled successfully.',
+        duration: 2400,
         color: 'success'
       });
       await t.present();

@@ -1,18 +1,24 @@
-import { Component, OnInit } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Location } from '@angular/common';
 import { Router } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
+import { forkJoin, interval, of, Subscription } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
+import { Gesture, GestureController, NavController, Platform } from '@ionic/angular';
 
 type DocStatus = 'idle' | 'uploading' | 'done' | 'error';
+type ServiceScope = 'local' | 'outstation';
+type ServiceMode = 'private' | 'fixed' | 'shuttle';
 type LabelType = 'text' | 'number' | 'date' | 'url';
 
 interface CityOpt { id: number; name: string; country_code: string | null; }
 interface VehicleTypeOpt { id: number; name: string; description: string | null; image_url: string | null; }
 interface FleetOpt { id: number; name: string; city_id: number | null; }
 interface DocumentLabelDef { id: number; label: string; label_type: LabelType; mandatory: boolean; sort_order: number; }
+interface RideModeOption { id: number; scope: ServiceScope; mode: ServiceMode; name: string; image_url: string | null; sort_order: number; }
+interface RideScopeOption { id: number; scope: ServiceScope; name: string; sort_order: number; modes: RideModeOption[]; }
 interface CatalogDoc {
   id: number;
   name: string;
@@ -42,9 +48,11 @@ interface DocUploadState {
 /**
  * Driver onboarding wizard (after phone OTP signup).
  *
- *   Step 1 — Profile + Vehicle: photo, name, email (optional), city, vehicle type, fleet.
- *            Saves profile (POST /me/profile) and driver row (POST /drivers/register).
- *   Step 2 — Documents: catalog of required docs, each with an upload button.
+ *   Step 1 — Scope: city + permanent Local/Outstation choice.
+ *   Step 2 — Mode: Private/Fixed/Shuttle under the selected scope.
+ *   Step 3 — Profile + Vehicle: vehicle type, fleet, vehicle details.
+ *            Saves the locked service and driver row (POST /drivers/register).
+ *   Step 4 — Documents: catalog of required docs, each with an upload button.
  *            Driver cannot reach the dashboard until at least the mandatory
  *            docs are uploaded (status: uploaded/approved counts).
  *
@@ -57,16 +65,23 @@ interface DocUploadState {
   styleUrls: ['./driver-registration.page.scss'],
   standalone: false,
 })
-export class DriverRegistrationPage implements OnInit {
-  step: 1 | 2 = 1;
+export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('content', { read: ElementRef }) content?: ElementRef<HTMLElement>;
+
+  step: 1 | 2 | 3 | 4 = 1;
 
   // Catalog data
   cities: CityOpt[] = [];
   vehicleTypes: VehicleTypeOpt[] = [];
   fleets: FleetOpt[] = [];
   docs: DocUploadState[] = [];
+  rideScopes: RideScopeOption[] = [];
+  loadingRideProducts = false;
 
-  // Step 1 fields — Driver info
+  service_scope: ServiceScope | null = null;
+  service_mode: ServiceMode | null = null;
+
+  // Step 2 fields — Driver info
   city_id: number | null = null;
   vehicle_type_id: number | null = null;
   vehicle_brand = '';
@@ -82,11 +97,19 @@ export class DriverRegistrationPage implements OnInit {
   initLoading = true;
   message: string | null = null;
   error: string | null = null;
+  private edgeBackGesture?: Gesture;
+  private hardwareBackSub?: Subscription;
+  private documentsPollSub?: Subscription;
+  private documentsRefreshInFlight = false;
 
   constructor(
     private api: ApiService,
     private auth: AuthService,
     private router: Router,
+    private nav: NavController,
+    private location: Location,
+    private gestures: GestureController,
+    private platform: Platform,
   ) {}
 
   ngOnInit(): void {
@@ -112,17 +135,7 @@ export class DriverRegistrationPage implements OnInit {
         this.vehicleTypes = vehicleTypes.data ?? [];
         this.fleets = fleets.data ?? [];
 
-        const existingByDocId = new Map<number, ExistingUpload>();
-        for (const u of (driver as { documents?: ExistingUpload[] }).documents ?? []) {
-          if (u.document_id != null) existingByDocId.set(u.document_id, u);
-        }
-        this.docs = (docs.data ?? []).map((d) => ({
-          doc: d,
-          file: null,
-          status: 'idle' as DocStatus,
-          labelValues: this.blankLabelValues(d),
-          existing: existingByDocId.get(d.id) ?? null,
-        }));
+        this.mergeDocumentStep(docs.data ?? [], (driver as { documents?: ExistingUpload[] }).documents ?? []);
 
         const d = driver.driver as Record<string, string | number | null> | null;
         if (d) {
@@ -132,6 +145,8 @@ export class DriverRegistrationPage implements OnInit {
           this.vehicle_brand = (d['vehicle_brand'] as string | null) ?? '';
           this.vehicle_model = (d['vehicle_model'] as string | null) ?? '';
           this.vehicle_color = (d['vehicle_color'] as string | null) ?? '';
+          this.service_scope = (d['service_scope'] as ServiceScope | null) ?? null;
+          this.service_mode = (d['service_mode'] as ServiceMode | null) ?? null;
           this.driverApproved = (d['approval_status'] as string | null) === 'approved';
 
           // Keep the guard cache fresh so /tabs navigation stays snappy, but
@@ -144,13 +159,76 @@ export class DriverRegistrationPage implements OnInit {
             ApprovedDriverGuard.setStateApproved();
           }
 
-          // Always land on Step 1 (vehicle). The driver can Continue to docs
-          // from there. Skipping ahead surprised users who came in to edit
-          // their vehicle and immediately saw the docs view instead.
+          if (this.city_id) this.loadRideProducts();
+
+          // Always land on Step 1 so approved drivers can review their locked service.
+        }
+        if (!d && this.cities.length === 1) {
+          this.city_id = this.cities[0].id;
+          this.loadRideProducts();
         }
         this.initLoading = false;
+        this.startDocumentsLiveRefresh();
       },
     });
+  }
+
+
+  ngAfterViewInit(): void {
+    queueMicrotask(() => this.attachEdgeBackGesture());
+    this.hardwareBackSub = this.platform.backButton.subscribeWithPriority(20, () => {
+      this.handleBack();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.edgeBackGesture?.destroy();
+    this.hardwareBackSub?.unsubscribe();
+    this.documentsPollSub?.unsubscribe();
+  }
+
+  private attachEdgeBackGesture(): void {
+    const el = this.content?.nativeElement;
+    if (!el) return;
+
+    this.edgeBackGesture = this.gestures.create({
+      el,
+      gestureName: 'driver-registration-edge-back',
+      threshold: 12,
+      canStart: (detail) => detail.startX <= 36,
+      onEnd: (detail) => {
+        if (detail.deltaX > 72 && Math.abs(detail.deltaY) < 60 && detail.velocityX > 0.15) {
+          this.handleBack();
+        }
+      },
+    });
+    this.edgeBackGesture.enable(true);
+  }
+
+  get canNavigateBack(): boolean {
+    return this.step > 1 || this.driverApproved;
+  }
+
+  handleBack(): void {
+    this.error = null;
+    this.message = null;
+
+    if (this.step > 1) {
+      this.step = (this.step - 1) as 1 | 2 | 3 | 4;
+      return;
+    }
+
+    if (this.driverApproved) {
+      this.router.navigateByUrl('/tabs/dashboard');
+      return;
+    }
+
+    if (window.history.length > 1) {
+      this.location.back();
+      return;
+    }
+
+    this.nav.navigateBack('/auth/login');
   }
 
   private blankLabelValues(d: CatalogDoc): Record<string, string> {
@@ -171,16 +249,94 @@ export class DriverRegistrationPage implements OnInit {
     this.vehicle_type_id = v.id;
   }
 
-  // ── Step 1: vehicle + city + fleet ───────────────────────────────
+  // ── Step 1: city + permanent scope ──────────────────────────────
+
+  onCityChange(): void {
+    if (this.driverApproved) return;
+    this.service_scope = null;
+    this.service_mode = null;
+    this.rideScopes = [];
+    this.loadRideProducts();
+  }
+
+  loadRideProducts(): void {
+    if (!this.city_id) return;
+    this.loadingRideProducts = true;
+    this.api.get<{ scopes: RideScopeOption[] }>(`/catalog/cities/${this.city_id}/driver-ride-products`).pipe(
+      catchError(() => of({ scopes: [] as RideScopeOption[] })),
+    ).subscribe({
+      next: (res) => {
+        this.rideScopes = (res.scopes ?? []).map((scope) => ({
+          ...scope,
+          modes: scope.modes ?? [],
+        }));
+      },
+      complete: () => { this.loadingRideProducts = false; },
+    });
+  }
+
+  pickScope(scope: RideScopeOption): void {
+    if (this.busy || this.driverApproved) return;
+    this.service_scope = scope.scope;
+    this.service_mode = null;
+  }
+
+  get selectedScope(): RideScopeOption | undefined {
+    return this.rideScopes.find((scope) => scope.scope === this.service_scope);
+  }
+
+  get modeOptions(): RideModeOption[] {
+    return this.selectedScope?.modes ?? [];
+  }
+
+  pickMode(option: RideModeOption): void {
+    if (this.busy || this.driverApproved) return;
+    this.service_mode = option.mode;
+  }
+
+  iconForMode(mode: ServiceMode): string {
+    if (mode === 'fixed') return 'git-branch-outline';
+    if (mode === 'shuttle') return 'bus-outline';
+    return 'car-outline';
+  }
+
+  get selectedServiceLabel(): string {
+    const scope = this.rideScopes.find((row) => row.scope === this.service_scope);
+    const mode = scope?.modes.find((row) => row.mode === this.service_mode);
+    if (scope && mode) return `${scope.name} ${mode.name}`;
+    if (scope) return scope.name;
+    return 'Not selected';
+  }
+
+  continueToMode(): void {
+    this.error = null;
+    if (!this.city_id) { this.error = 'Please pick your city.'; return; }
+    if (!this.service_scope) { this.error = 'Please choose Local or Outstation.'; return; }
+    if (!this.modeOptions.length) { this.error = 'No service types are active for this selection.'; return; }
+    this.step = 2;
+  }
+
+  continueToVehicle(): void {
+    this.error = null;
+    if (!this.service_scope) { this.error = 'Please choose Local or Outstation.'; this.step = 1; return; }
+    if (!this.service_mode) { this.error = 'Please choose the service type you will provide.'; return; }
+    this.step = 3;
+  }
+
+  // ── Step 3: vehicle + fleet ──────────────────────────────────────
 
   submitStep1(): void {
     this.error = null;
+    if (!this.service_scope) { this.error = 'Please choose Local or Outstation.'; this.step = 1; return; }
+    if (!this.service_mode) { this.error = 'Please choose the service type you will provide.'; this.step = 2; return; }
     if (!this.city_id) { this.error = 'Please pick your city.'; return; }
     if (!this.vehicle_type_id) { this.error = 'Please pick your vehicle type.'; return; }
     // Brand / model / color and fleet are all optional ("None" for fleet).
 
     this.busy = true;
     this.api.post<{ user?: { roles?: string[] }; driver?: unknown }>('/drivers/register', {
+      service_scope: this.service_scope,
+      service_mode: this.service_mode,
       vehicle_type_id: this.vehicle_type_id,
       city_id: this.city_id,
       fleet_id: this.fleet_id,
@@ -192,8 +348,9 @@ export class DriverRegistrationPage implements OnInit {
         const roles = regRes?.user?.roles;
         if (roles?.length) this.auth.updateUser({ roles });
         this.message = 'Vehicle saved. Now upload your documents.';
-        this.step = 2;
+        this.step = 4;
         this.busy = false;
+        this.refreshDocumentStep(true);
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not save vehicle details.';
@@ -202,7 +359,92 @@ export class DriverRegistrationPage implements OnInit {
     });
   }
 
-  // ── Step 2: documents ────────────────────────────────────────────
+  // ── Step 4: documents ────────────────────────────────────────────
+
+  private startDocumentsLiveRefresh(): void {
+    this.documentsPollSub?.unsubscribe();
+    this.documentsPollSub = interval(5000).subscribe(() => {
+      if (this.step !== 4 || this.uploadBusy || this.documentsRefreshInFlight) return;
+      this.refreshDocumentStep(false);
+    });
+  }
+
+  private refreshDocumentStep(showErrors: boolean): void {
+    if (this.documentsRefreshInFlight) return;
+    this.documentsRefreshInFlight = true;
+
+    forkJoin({
+      docs: this.api.get<{ data: CatalogDoc[] }>('/catalog/documents').pipe(
+        catchError((err) => {
+          if (showErrors) this.error = err?.error?.message || 'Could not refresh required documents.';
+          return of({ data: this.docs.map((slot) => slot.doc) });
+        }),
+      ),
+      driver: this.api
+        .get<{ driver: Record<string, unknown> | null; documents: ExistingUpload[] }>('/drivers/me')
+        .pipe(catchError((err) => {
+          if (showErrors) this.error = err?.error?.message || 'Could not refresh your verification status.';
+          return of({ driver: null, documents: this.docs.map((slot) => slot.existing).filter(Boolean) as ExistingUpload[] });
+        })),
+    }).subscribe({
+      next: ({ docs, driver }) => {
+        this.mergeDocumentStep(docs.data ?? [], driver.documents ?? []);
+        this.applyDriverApprovalRefresh(driver.driver);
+      },
+      complete: () => { this.documentsRefreshInFlight = false; },
+    });
+  }
+
+  private mergeDocumentStep(catalogDocs: CatalogDoc[], uploads: ExistingUpload[]): void {
+    const previousByDocId = new Map<number, DocUploadState>();
+    for (const slot of this.docs) previousByDocId.set(slot.doc.id, slot);
+
+    const existingByDocId = new Map<number, ExistingUpload>();
+    for (const upload of uploads) {
+      if (upload.document_id != null) existingByDocId.set(upload.document_id, upload);
+    }
+
+    this.docs = catalogDocs.map((doc) => {
+      const previous = previousByDocId.get(doc.id);
+      return {
+        doc,
+        file: previous?.file ?? null,
+        status: previous?.status ?? 'idle',
+        error: previous?.error,
+        labelValues: this.mergeLabelValues(doc, previous?.labelValues),
+        existing: existingByDocId.get(doc.id) ?? null,
+      };
+    });
+  }
+
+  private mergeLabelValues(doc: CatalogDoc, current: Record<string, string> | undefined): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const label of doc.labels) out[label.label] = current?.[label.label] ?? '';
+    return out;
+  }
+
+  private applyDriverApprovalRefresh(driver: Record<string, unknown> | null): void {
+    if (!driver) return;
+    const status = driver?.['approval_status'] as string | null | undefined;
+
+    if (status === 'approved') {
+      this.driverApproved = true;
+      ApprovedDriverGuard.setStateApproved();
+      this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
+      return;
+    }
+
+    this.driverApproved = false;
+    if (status === 'rejected') {
+      ApprovedDriverGuard.setStatePending();
+      this.error = 'Your verification was rejected. Check the rejected document below and upload it again.';
+      return;
+    }
+
+    if (status === 'pending' && this.error?.startsWith('Your verification was rejected.')) {
+      this.error = null;
+    }
+  }
 
   onDocFileChange(slot: DocUploadState, ev: Event): void {
     const input = ev.target as HTMLInputElement;
@@ -367,7 +609,10 @@ export class DriverRegistrationPage implements OnInit {
           this.message = `${okCount} uploaded, ${failCount} failed. Retry the failed ones.`;
         }
       },
-      complete: () => { this.uploadBusy = false; },
+      complete: () => {
+        this.uploadBusy = false;
+        this.refreshDocumentStep(false);
+      },
     });
   }
 
@@ -386,7 +631,17 @@ export class DriverRegistrationPage implements OnInit {
     }
   }
 
-  goToStep(s: 1 | 2): void {
+  goToStep(s: 1 | 2 | 3 | 4): void {
+    if (s > 1 && !this.service_scope) {
+      this.error = 'Please choose Local or Outstation.';
+      this.step = 1;
+      return;
+    }
+    if (s > 2 && !this.service_mode) {
+      this.error = 'Please choose the service type you will provide.';
+      this.step = 2;
+      return;
+    }
     this.step = s;
     this.error = null;
     this.message = null;

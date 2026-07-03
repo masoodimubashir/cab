@@ -1,0 +1,102 @@
+<ion-content class="shuttle-rides-page" [fullscreen]="true">
+  <div class="page-header">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
+    <h1>Shuttle rides</h1>
+    <p>Your Shuttle bookings, Razorpay payment and manual refund status.</p>
+  </div>
+
+  <div class="page-body">
+    <div class="state" *ngIf="loading">
+      <ion-spinner name="crescent"></ion-spinner>
+    </div>
+
+    <p class="error" *ngIf="!loading && error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>{{ error }}</span>
+    </p>
+
+    <div class="state" *ngIf="!loading && !error && !bookings.length">
+      <ion-icon name="bus-outline"></ion-icon>
+      <strong>No Shuttle rides yet</strong>
+      <span>Your Shuttle bookings will appear here.</span>
+    </div>
+
+    <section class="booking-list" *ngIf="!loading && bookings.length">
+      <article class="booking-card" *ngFor="let booking of bookings" (click)="toggle(booking)">
+        <div class="booking-head">
+          <div>
+            <strong>{{ title(booking) }}</strong>
+            <span>#{{ booking.id }} · {{ dateLine(booking) }}</span>
+          </div>
+          <span class="status-pill" [ngClass]="statusClass(booking)">{{ booking.status }}</span>
+        </div>
+
+        <div class="route-line">
+          <ion-icon name="navigate-outline"></ion-icon>
+          <span>{{ routeLine(booking) }}</span>
+        </div>
+
+        <p class="live-detail">{{ detailLine(booking) }}</p>
+
+        <div class="quick-meta">
+          <span>{{ fareLine(booking) }}</span>
+          <span>{{ paymentLine(booking) }}</span>
+          <span>{{ refundLine(booking) }}</span>
+        </div>
+
+        <div class="details" *ngIf="expandedId === booking.id">
+          <div class="detail-row">
+            <span>Booking status</span>
+            <strong>{{ booking.status }}</strong>
+          </div>
+          <div class="detail-row">
+            <span>Journey status</span>
+            <strong>{{ booking.journey_status || '-' }}</strong>
+          </div>
+          <div class="detail-row">
+            <span>Payment</span>
+            <strong>{{ paymentLine(booking) }}</strong>
+          </div>
+          <div class="detail-row">
+            <span>Refund</span>
+            <strong>{{ refundLine(booking) }}</strong>
+          </div>
+          <div class="detail-row" *ngIf="booking.refund_reference">
+            <span>Refund reference</span>
+            <strong>{{ booking.refund_reference }}</strong>
+          </div>
+          <div class="detail-row" *ngIf="booking.refund_amount != null">
+            <span>Refund amount</span>
+            <strong>{{ booking.currency || 'INR' }} {{ booking.refund_amount | number: '1.0-2' }}</strong>
+          </div>
+          <div class="detail-row" *ngIf="booking.shuttle_auto_outcome">
+            <span>Auto outcome</span>
+            <strong>{{ booking.shuttle_auto_outcome }}</strong>
+          </div>
+          <div class="detail-row" *ngIf="booking.shuttle_auto_processed_at">
+            <span>Processed at</span>
+            <strong>{{ formatDate(booking.shuttle_auto_processed_at) }}</strong>
+          </div>
+          <div class="detail-row" *ngIf="booking.cancelled_reason">
+            <span>Cancel reason</span>
+            <strong>{{ booking.cancelled_reason }}</strong>
+          </div>
+          <div class="detail-note" [ngClass]="statusClass(booking)">
+            {{ detailLine(booking) }}
+          </div>
+          <div class="booking-actions" *ngIf="booking.trip_id && booking.status !== 'CANCELLED' && booking.status !== 'DROPPED'">
+            <button class="open-btn" type="button" (click)="openTrip($event, booking)">
+              <ion-icon name="map-outline"></ion-icon>
+              <span>Open ride</span>
+            </button>
+          </div>
+        </div>
+      </article>
+    </section>
+  </div>
+</ion-content>

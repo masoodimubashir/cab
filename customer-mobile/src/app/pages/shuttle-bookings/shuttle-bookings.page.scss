@@ -1,0 +1,226 @@
+:host { display: block; }
+
+.shuttle-rides-page {
+  --background: var(--dc-canvas, #F4F6F8);
+}
+
+.page-header {
+  position: relative;
+  padding: max(18px, env(safe-area-inset-top)) 18px 18px;
+  background: var(--dc-ink, #0D1B2A);
+  color: #fff;
+
+  h1 {
+    margin: 44px 0 4px;
+    font-size: 25px;
+    font-weight: 850;
+  }
+
+  p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 13px;
+    line-height: 1.35;
+  }
+}
+
+.header-back,
+.header-refresh {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.header-back { left: 14px; }
+.header-refresh { right: 14px; }
+
+.page-body {
+  padding: 16px;
+}
+
+.state,
+.error {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--dc-ink-soft, #6C757D);
+}
+
+.state ion-icon {
+  font-size: 34px;
+  color: var(--dc-green, #12B35B);
+}
+
+.error {
+  min-height: auto;
+  padding: 14px;
+  border-radius: 14px;
+  background: #EFF8FF;
+  color: #075985;
+  flex-direction: row;
+}
+
+.booking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.booking-card {
+  border: 1px solid var(--dc-hairline, #EEF0F2);
+  border-radius: 16px;
+  background: var(--dc-surface, #fff);
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(13, 27, 42, 0.06);
+}
+
+.booking-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+
+  div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  strong {
+    font-size: 15px;
+    font-weight: 850;
+    color: var(--dc-ink, #0D1B2A);
+    overflow-wrap: anywhere;
+  }
+
+  span {
+    font-size: 11px;
+    color: var(--dc-ink-soft, #6C757D);
+  }
+}
+
+.status-pill {
+  flex: none;
+  max-width: 130px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 850;
+  text-align: center;
+  overflow-wrap: anywhere;
+  background: #E7F8EF;
+  color: #087F3E;
+}
+
+.status--warning { background: #FFF7ED; color: #C2410C; }
+.status--danger { background: #EFF8FF; color: #075985; }
+.status--success { background: #E7F8EF; color: #087F3E; }
+.status--medium { background: #F1F5F9; color: #64748B; }
+
+.route-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--dc-ink, #0D1B2A);
+  overflow-wrap: anywhere;
+
+  ion-icon {
+    flex: none;
+    color: var(--dc-green, #12B35B);
+  }
+}
+
+.live-detail {
+  margin: 9px 0 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--dc-ink-soft, #6C757D);
+}
+
+.quick-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+
+  span {
+    min-height: 26px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--dc-surface-2, #FAFBFC);
+    color: var(--dc-ink-soft, #6C757D);
+    font-size: 11px;
+    font-weight: 800;
+  }
+}
+
+.details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dc-hairline, #EEF0F2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+
+  span { color: var(--dc-ink-soft, #6C757D); }
+  strong { color: var(--dc-ink, #0D1B2A); text-align: right; }
+}
+
+.detail-note {
+  margin-top: 3px;
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.booking-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.open-btn {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #BFE4FF;
+  border-radius: 12px;
+  background: #EFF8FF;
+  color: #075985;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.open-btn:disabled {
+  opacity: 0.65;
+}
+
+.open-btn ion-spinner {
+  width: 16px;
+  height: 16px;
+}

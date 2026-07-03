@@ -223,6 +223,7 @@ class SharedDispatchService
         $eligible = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
+            ->where('active_service_scope', $route->scope ?: Driver::SERVICE_SCOPE_LOCAL)
             ->where('active_service_mode', $route->mode)
             ->whereNotIn('user_id', $busy)
             ->when($excludeDriverIds, fn ($q) => $q->whereNotIn('user_id', $excludeDriverIds))

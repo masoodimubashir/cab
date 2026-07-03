@@ -36,7 +36,7 @@ class RideAssignmentController extends Controller
             $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
                 ? Driver::SERVICE_MODE_SHUTTLE
                 : Driver::SERVICE_MODE_PRIVATE;
-            if ($driverProfile->active_service_mode !== $serviceMode) {
+            if ($driverProfile->active_service_scope !== ($trip->scope ?: Driver::SERVICE_SCOPE_LOCAL) || $driverProfile->active_service_mode !== $serviceMode) {
                 $label = $serviceMode === Driver::SERVICE_MODE_SHUTTLE ? "Shuttle" : "private";
                 return response()->json(['message' => "Choose " . $label . " ride mode before accepting this ride."], 422);
             }

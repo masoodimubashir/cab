@@ -114,61 +114,23 @@
               <span class="stat__label">Trips</span>
             </div>
             <div class="stat">
-              <span class="stat__value">₹0</span>
-              <span class="stat__label">Earnings</span>
-            </div>
-            <div class="stat">
               <span class="stat__value">{{ onlineElapsed }}</span>
               <span class="stat__label">Online</span>
             </div>
           </div>
 
+          <div class="drive-mode drive-mode--selected" *ngIf="driveMode">
+            <div>
+              <strong>Ready to receive rides</strong>
+              <span>{{ activeServiceLabel() }}</span>
+            </div>
+          </div>
+
           <div class="drive-mode" *ngIf="!driveMode">
             <div class="drive-mode__head">
-              <strong>Choose ride type</strong>
-              <span>Step 2 after going online</span>
+              <strong>Registered service not active</strong>
+              <span>Go offline and online again to activate your locked service.</span>
             </div>
-            <div class="drive-mode__grid">
-              <button class="drive-choice dc-press" (click)="choosePrivateRides()" [disabled]="toggling">
-                <ion-icon name="car-outline"></ion-icon>
-                <strong>Private rides</strong>
-                <span>Receive normal ride requests</span>
-              </button>
-              <button class="drive-choice dc-press" (click)="chooseFixedVehicle()" [disabled]="toggling">
-                <ion-icon name="git-branch-outline"></ion-icon>
-                <strong>Fixed vehicle</strong>
-                <span>Open a live fixed route car</span>
-              </button>
-              <button class="drive-choice dc-press" (click)="chooseShuttleRides()" [disabled]="toggling">
-                <ion-icon name="bus-outline"></ion-icon>
-                <strong>Shuttle rides</strong>
-                <span>Receive Shuttle ride requests</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="drive-mode drive-mode--selected" *ngIf="driveMode === 'private'">
-            <div>
-              <strong>Private rides selected</strong>
-              <span>You are available for normal ride requests.</span>
-            </div>
-            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
-          </div>
-
-          <div class="drive-mode drive-mode--selected" *ngIf="driveMode === 'fixed'">
-            <div>
-              <strong>Fixed vehicle selected</strong>
-              <span>You are available for fixed route boarding.</span>
-            </div>
-            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
-          </div>
-
-          <div class="drive-mode drive-mode--selected" *ngIf="driveMode === 'shuttle'">
-            <div>
-              <strong>Shuttle rides selected</strong>
-              <span>You are available for Shuttle ride requests.</span>
-            </div>
-            <button type="button" class="mode-change dc-press" (click)="resetDriveMode()" [disabled]="toggling">Change</button>
           </div>
 
           <button class="dc-cta dc-cta--ghost sheet__stop dc-press" (click)="confirmGoOffline()" [disabled]="toggling">

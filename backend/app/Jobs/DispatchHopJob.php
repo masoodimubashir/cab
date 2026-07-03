@@ -137,6 +137,7 @@ class DispatchHopJob implements ShouldQueue
         $eligible = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
+            ->where('active_service_scope', $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL)
             ->where('active_service_mode', $serviceMode)
             ->whereNotIn('user_id', $busyDriverIds)
             // When the customer picked a specific vehicle type, only drivers

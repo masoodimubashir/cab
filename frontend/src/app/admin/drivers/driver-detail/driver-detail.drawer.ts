@@ -496,6 +496,8 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   closing = false;
   private generation = 0;
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshInFlight = false;
 
   loading = false;
   driver: DriverProfile | null = null;
@@ -529,6 +531,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.closeTimer) clearTimeout(this.closeTimer);
+    this.stopLiveRefresh();
     if (this.mounted) document.body.style.overflow = '';
   }
 
@@ -546,6 +549,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     this.documents = [];
     this.fetch(id);
     this.fetchCatalog();
+    this.startLiveRefresh();
   }
 
   close(): void {
@@ -555,6 +559,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   }
 
   private runCloseAnimation(): void {
+    this.stopLiveRefresh();
     this.closing = true;
     const gen = this.generation;
     this.closeTimer = setTimeout(() => {
@@ -578,19 +583,38 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   // Fetch
   // ------------------------------------------------------------------------
 
-  private fetch(id: number): void {
-    this.loading = true;
+  private startLiveRefresh(): void {
+    this.stopLiveRefresh();
+    this.refreshTimer = setInterval(() => {
+      if (this.driverId == null || this.refreshInFlight || this.rejectOpen || this.uploadOpen || this.busyApproval || this.savingVehicle) return;
+      this.fetch(this.driverId, true);
+      this.fetchCatalog();
+    }, 5000);
+  }
+
+  private stopLiveRefresh(): void {
+    if (!this.refreshTimer) return;
+    clearInterval(this.refreshTimer);
+    this.refreshTimer = null;
+  }
+
+  private fetch(id: number, silent = false): void {
+    if (this.refreshInFlight) return;
+    this.refreshInFlight = true;
+    if (!silent) this.loading = true;
     this.api.get<FullProfileResponse>(`/admin/drivers/${id}/full`).subscribe({
       next: (res) => {
         this.driver = res.driver;
         this.documents = res.documents || [];
-        this.vehicleForm = { vehicle_reg_no: res.driver.vehicle_reg_no || '' };
+        if (!this.savingVehicle) this.vehicleForm = { vehicle_reg_no: res.driver.vehicle_reg_no || '' };
         this.loading = false;
+        this.refreshInFlight = false;
         this.cdr.markForCheck();
       },
       error: (err) => {
         this.loading = false;
-        this.toast.error(err?.error?.message || 'Failed to load driver', { title: 'Load failed' });
+        this.refreshInFlight = false;
+        if (!silent) this.toast.error(err?.error?.message || 'Failed to load driver', { title: 'Load failed' });
         this.cdr.markForCheck();
       },
     });
