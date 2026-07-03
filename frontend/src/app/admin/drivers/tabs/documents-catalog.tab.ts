@@ -580,22 +580,43 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
   assignStatus: string | null = null;
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshInFlight = false;
 
-  ngOnInit(): void { this.fetch(); }
-  ngOnDestroy(): void { if (this.searchTimer) clearTimeout(this.searchTimer); }
+  ngOnInit(): void {
+    this.fetch();
+    this.startLiveRefresh();
+  }
+
+  ngOnDestroy(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+  }
+
+  private startLiveRefresh(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    this.refreshTimer = setInterval(() => {
+      if (this.refreshInFlight || this.formOpen || this.assignOpen || this.saving || this.assignSaving) return;
+      this.fetch(true);
+    }, 5000);
+  }
 
   // ------------ Listing ------------
-  fetch(): void {
-    this.loading = true;
+  fetch(silent = false): void {
+    if (this.refreshInFlight) return;
+    this.refreshInFlight = true;
+    if (!silent) this.loading = true;
     this.api.get<{ data: DocumentRow[] }>('/admin/documents').subscribe({
       next: (res) => {
         this.documents = res?.data ?? [];
         this.loading = false;
+        this.refreshInFlight = false;
         this.cdr.markForCheck();
       },
       error: () => {
         this.loading = false;
-        this.toast.error('Failed to load documents', { title: 'Load failed' });
+        this.refreshInFlight = false;
+        if (!silent) this.toast.error('Failed to load documents', { title: 'Load failed' });
         this.cdr.markForCheck();
       },
     });

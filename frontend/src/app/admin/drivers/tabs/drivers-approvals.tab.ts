@@ -361,17 +361,31 @@ export class DriversApprovalsTabComponent implements OnInit, OnDestroy {
   pageSize = 25;
 
   private searchDebounce: ReturnType<typeof setTimeout> | null = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshInFlight = false;
 
   ngOnInit(): void {
     this.reload();
+    this.startLiveRefresh();
   }
 
   ngOnDestroy(): void {
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
   }
 
-  reload(): void {
-    this.loading = true;
+  private startLiveRefresh(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    this.refreshTimer = setInterval(() => {
+      if (this.refreshInFlight) return;
+      this.reload(true);
+    }, 5000);
+  }
+
+  reload(silent = false): void {
+    if (this.refreshInFlight) return;
+    this.refreshInFlight = true;
+    if (!silent) this.loading = true;
     const params = new URLSearchParams({
       page: String(this.page),
       per_page: String(this.pageSize),
@@ -387,11 +401,13 @@ export class DriversApprovalsTabComponent implements OnInit, OnDestroy {
           this.rows = res?.data?.data ?? [];
           this.total = res?.data?.total ?? 0;
           this.loading = false;
+          this.refreshInFlight = false;
           this.cdr.markForCheck();
         },
         error: (err) => {
           this.loading = false;
-          this.toast.error(err?.error?.message || 'Could not load drivers', { title: 'Load failed' });
+          this.refreshInFlight = false;
+          if (!silent) this.toast.error(err?.error?.message || 'Could not load drivers', { title: 'Load failed' });
           this.cdr.markForCheck();
         },
       });

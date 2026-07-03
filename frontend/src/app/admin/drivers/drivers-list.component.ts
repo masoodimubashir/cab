@@ -1928,6 +1928,8 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private searchDebounce: any = null;
   private insightsCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshInFlight = false;
 
   constructor(
     private api: ApiService,
@@ -1939,6 +1941,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit(): void {
     this.reload();
+    this.startLiveRefresh();
     // Deep-link support: /drivers?insights=leaderboard|performance opens the
     // drawer pre-selected (used by the sidebar nav and redirected legacy URLs).
     this.route.queryParamMap.subscribe((q) => {
@@ -1955,6 +1958,7 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyDateRangePicker();
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
     if (this.insightsCloseTimer) clearTimeout(this.insightsCloseTimer);
     if (this.insightsOpen) document.body.style.overflow = '';
   }
@@ -2006,7 +2010,15 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
     if (picker) picker.remove();
   }
 
-  reload(): void {
+  private startLiveRefresh(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    this.refreshTimer = setInterval(() => {
+      if (this.refreshInFlight || this.busyId !== null || this.deactivateOpen) return;
+      this.reload(true);
+    }, 5000);
+  }
+
+  reload(silent = false): void {
     const params = new URLSearchParams({
       page: String(this.page),
       per_page: String(this.pageSize),
@@ -2018,7 +2030,9 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.online !== 'all') params.set('is_online', this.online === 'online' ? '1' : '0');
     if (this.approval !== 'all') params.set('approval_status', this.approval);
 
-    this.loading = true;
+    if (this.refreshInFlight) return;
+    this.refreshInFlight = true;
+    if (!silent) this.loading = true;
     this.api.get<{ data: { data: DriverRow[]; total: number } }>(
       `/admin/drivers?${params.toString()}`,
     ).subscribe({
@@ -2026,13 +2040,17 @@ export class DriversListComponent implements OnInit, AfterViewInit, OnDestroy {
         this.rows = res?.data?.data ?? [];
         this.total = res?.data?.total ?? 0;
         this.loading = false;
+        this.refreshInFlight = false;
       },
       error: (err) => {
-        this.toast.error(
-          err?.error?.message || 'Could not load drivers',
-          { title: 'Load failed' },
-        );
+        if (!silent) {
+          this.toast.error(
+            err?.error?.message || 'Could not load drivers',
+            { title: 'Load failed' },
+          );
+        }
         this.loading = false;
+        this.refreshInFlight = false;
       },
     });
   }

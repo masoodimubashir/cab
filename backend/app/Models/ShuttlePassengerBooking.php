@@ -8,11 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'shuttle_journey_id', 'city_id', 'city_vehicle_type_id', 'pricing_rule_id', 'customer_id', 'seats',
+    'shuttle_journey_id', 'city_id', 'city_vehicle_type_id', 'scope', 'pricing_rule_id', 'customer_id', 'seats',
     'pickup_lat', 'pickup_lng', 'pickup_address', 'drop_lat', 'drop_lng', 'drop_address',
     'quote_distance_km', 'quote_time_min', 'fare_amount', 'fare_breakdown', 'currency',
     'payment_method', 'payment_status', 'payment_reference', 'razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature',
-    'status', 'boarded_at', 'dropped_at', 'cancelled_at',
+    'refund_status', 'refund_reference', 'refund_amount', 'status', 'boarded_at', 'dropped_at', 'cancelled_at', 'cancelled_reason',
+    'shuttle_pickup_arrived_at', 'shuttle_no_show_after_at', 'shuttle_driver_missed_after_at',
+    'shuttle_approaching_notified_at', 'shuttle_arrived_notified_at', 'shuttle_leaving_soon_notified_at',
+    'shuttle_auto_processed_at', 'shuttle_auto_outcome',
 ])]
 class ShuttlePassengerBooking extends Model
 {
@@ -28,9 +31,17 @@ class ShuttlePassengerBooking extends Model
         'quote_time_min' => 'float',
         'fare_amount' => 'float',
         'fare_breakdown' => 'array',
+        'refund_amount' => 'float',
         'boarded_at' => 'datetime',
         'dropped_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'shuttle_pickup_arrived_at' => 'datetime',
+        'shuttle_no_show_after_at' => 'datetime',
+        'shuttle_driver_missed_after_at' => 'datetime',
+        'shuttle_approaching_notified_at' => 'datetime',
+        'shuttle_arrived_notified_at' => 'datetime',
+        'shuttle_leaving_soon_notified_at' => 'datetime',
+        'shuttle_auto_processed_at' => 'datetime',
     ];
 
     public function journey(): BelongsTo

@@ -66,8 +66,14 @@ class FareNegotiationController extends Controller
         $tripWithDriver = $trip->fresh()->load([
             'driver:id,name,phone,avatar_path,accepted_payment_methods,current_lat,current_lng',
             'driver.driver:id,user_id,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
-            'cityVehicleType:id,reverse_bidding_enabled',
+            'cityVehicleType:id,display_name,reverse_bidding_enabled,ride_type_id',
+            'cityVehicleType.rideType:id,name',
         ]);
+        $rideTypeName = (string) $tripWithDriver->cityVehicleType?->rideType?->name;
+        $tripWithDriver->setAttribute('service_mode', str_contains(strtolower($rideTypeName), 'shuttle') ? 'shuttle' : 'private');
+        $tripWithDriver->setAttribute('vehicle_name', $tripWithDriver->cityVehicleType?->display_name);
+        $tripWithDriver->setAttribute('ride_type_name', $tripWithDriver->cityVehicleType?->rideType?->name);
+
         // So the driver sees + can call the actual rider (the friend on a
         // for-someone-else booking); the booker's relation stays hidden.
         $tripWithDriver->appendDriverRiderContact();
@@ -290,9 +296,16 @@ class FareNegotiationController extends Controller
             return response()->json(['message' => 'This request is no longer available.'], 409);
         }
 
-        // Reverse-bidding gate: when the trip's vehicle has reverse bidding OFF,
-        // the driver may only ACCEPT (or ignore) — never COUNTER with their own price.
+        // Shuttle is prepaid by the customer. Drivers can accept the fixed
+        // paid fare, but must not counter with a different price.
         if ($data['action'] === 'COUNTER') {
+            $trip->loadMissing('cityVehicleType.rideType:id,name');
+            if (str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), 'shuttle')) {
+                return response()->json([
+                    'message' => 'Shuttle bookings are prepaid. You can only accept this request.',
+                ], 422);
+            }
+
             $cvt = $trip->city_vehicle_type_id
                 ? CityVehicleType::query()->find($trip->city_vehicle_type_id)
                 : null;

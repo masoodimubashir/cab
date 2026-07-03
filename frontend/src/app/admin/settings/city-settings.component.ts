@@ -199,43 +199,38 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
           </div>
         </section>
         <section class="sec" id="sec-fixed"><header class="sec__head"><span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span><div><h3 class="sec__title">Fixed Ride Settings</h3><p class="sec__desc">City-level boarding and no-show rules for fixed shared rides.</p></div></header><div class="sec__body"><div class="subsec"><h4 class="subsec__title">Boarding & no-show</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Wait time per stop (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_waiting_time_per_stop_minutes" /></label><label class="field"><span class="field__lbl">Stop arrival radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_stop_arrival_radius_m" /></label><label class="field"><span class="field__lbl">Driver missed stop grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_driver_missed_stop_grace_minutes" /></label><label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_customer_pickup_radius_m" /></label><label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.fixed_vehicle_approaching_alert_radius_m" /></label><label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_customer_grace_minutes" /></label></div></div></div></section>
-        <section class="sec sec--planned" id="sec-shuttle">
+        <section class="sec" id="sec-shuttle">
           <header class="sec__head">
             <span class="sec__icon"><tm-icon name="send" [size]="16" /></span>
             <div>
               <div class="sec__title-row">
                 <h3 class="sec__title">Shuttle Ride Settings</h3>
-                <span class="badge badge--planned">Planned</span>
               </div>
-              <p class="sec__desc">Dynamic shuttle controls from the roadmap. These are not active in customer or driver apps yet.</p>
+              <p class="sec__desc">Dynamic Shuttle matching, boarding, and automatic no-show rules.</p>
             </div>
           </header>
           <div class="sec__body">
-            <div class="planned-note">
-              <tm-icon name="shield" [size]="16" />
-              <span>Keep this section as planning reference only. Enable editing after shuttle pricing, booking, matching, driver sequence, cancellation, and no-show flows are wired end to end.</span>
-            </div>
             <div class="subsec">
               <h4 class="subsec__title">Matching rules</h4>
               <div class="grid grid-4">
-                <label class="field"><span class="field__lbl">Pickup match distance (km)</span><input type="number" [disabled]="true" [value]="form.shuttle_pickup_match_distance_km" /></label>
-                <label class="field"><span class="field__lbl">Drop match distance (km)</span><input type="number" [disabled]="true" [value]="form.shuttle_drop_match_distance_km" /></label>
-                <label class="field"><span class="field__lbl">Max passenger delay (min)</span><input type="number" [disabled]="true" [value]="form.shuttle_max_passenger_delay_minutes" /></label>
+                <label class="field"><span class="field__lbl">Pickup match distance (km)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_pickup_match_distance_km" /></label>
+                <label class="field"><span class="field__lbl">Drop match distance (km)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_drop_match_distance_km" /></label>
+                <label class="field"><span class="field__lbl">Max passenger delay (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_max_passenger_delay_minutes" /></label>
               </div>
               <div class="toggles">
-                <label class="tgl tgl--disabled"><input type="checkbox" [disabled]="true" [checked]="form.shuttle_join_after_start_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Allow joining after ride start</span></span></label>
-                <label class="tgl tgl--disabled"><input type="checkbox" [disabled]="true" [checked]="form.shuttle_fare_lock_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Lock fare after booking</span></span></label>
+                <label class="tgl"><input type="checkbox" [(ngModel)]="form.shuttle_join_after_start_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Allow joining after ride start</span></span></label>
+                <label class="tgl"><input type="checkbox" [(ngModel)]="form.shuttle_fare_lock_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Lock fare after booking</span></span></label>
               </div>
             </div>
             <div class="subsec">
               <h4 class="subsec__title">Boarding & no-show</h4>
               <div class="grid grid-4">
-                <label class="field"><span class="field__lbl">Driver waiting time (min)</span><input type="number" [disabled]="true" [value]="form.shuttle_driver_waiting_time_minutes" /></label>
-                <label class="field"><span class="field__lbl">Pickup arrival radius (m)</span><input type="number" [disabled]="true" [value]="form.shuttle_pickup_arrival_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Driver missed pickup grace (min)</span><input type="number" [disabled]="true" [value]="form.shuttle_driver_missed_pickup_grace_minutes" /></label>
-                <label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" [disabled]="true" [value]="form.shuttle_customer_pickup_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" [disabled]="true" [value]="form.shuttle_approaching_alert_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" [disabled]="true" [value]="form.shuttle_customer_grace_minutes" /></label>
+                <label class="field"><span class="field__lbl">Driver waiting time (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_driver_waiting_time_minutes" /></label>
+                <label class="field"><span class="field__lbl">Pickup arrival radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_pickup_arrival_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Driver missed pickup grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_driver_missed_pickup_grace_minutes" /></label>
+                <label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_customer_pickup_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.shuttle_approaching_alert_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_customer_grace_minutes" /></label>
               </div>
             </div>
           </div>
@@ -618,6 +613,8 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     const cityRuleFields: (keyof CitySettings)[] = [
       'private_no_show_threshold_minutes', 'private_no_show_charge_per_minute', 'private_driver_no_show_grace_minutes',
       'fixed_waiting_time_per_stop_minutes', 'fixed_stop_arrival_radius_m', 'fixed_driver_missed_stop_grace_minutes', 'fixed_customer_pickup_radius_m', 'fixed_vehicle_approaching_alert_radius_m', 'fixed_customer_grace_minutes',
+      'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
+      'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes',
     ];
     cityRuleFields.forEach((key) => append(key, f[key]));
 

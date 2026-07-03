@@ -1,18 +1,22 @@
-<ion-content [fullscreen]="true" class="reg-content">
+<ion-content #content [fullscreen]="true" class="reg-content">
 
   <!-- ============ DRIVER GRADIENT HERO HEADER ============ -->
   <div class="drv-hero reg-hero">
     <div class="reg-hero__bar">
-      <button class="reg-back dc-press" *ngIf="driverApproved" (click)="goToDashboard()" aria-label="Back">
+      <button class="reg-back dc-press" *ngIf="canNavigateBack" (click)="handleBack()" aria-label="Back">
         <ion-icon name="arrow-back-outline"></ion-icon>
       </button>
     </div>
 
-    <h1 class="reg-title">{{ step === 1 ? 'Vehicle Details' : 'Upload Documents' }}</h1>
+    <h1 class="reg-title">{{ step === 1 ? 'Service Area' : (step === 2 ? 'Service Type' : (step === 3 ? 'Vehicle Details' : 'Upload Documents')) }}</h1>
     <p class="reg-subtitle">
       {{ step === 1
-          ? 'Tell us what you drive so we can match you with the right rides.'
-          : 'Upload the required documents to get verified and start earning.' }}
+          ? 'Choose where you will drive. This service is locked after approval.'
+          : (step === 2
+              ? 'Choose the ride service you will provide in that area.'
+              : (step === 3
+                  ? 'Tell us what you drive so we can match you with the right rides.'
+                  : 'Upload the required documents to get verified and start earning.')) }}
     </p>
 
     <!-- Stepper -->
@@ -22,12 +26,28 @@
           <ion-icon name="checkmark-outline" *ngIf="step > 1"></ion-icon>
           <span *ngIf="step === 1">1</span>
         </div>
-        <span class="reg-step__label">Vehicle</span>
+        <span class="reg-step__label">Area</span>
       </div>
       <div class="reg-step__line" [class.is-done]="step > 1"></div>
-      <div class="reg-step" [class.is-active]="step === 2">
-        <div class="reg-step__dot"><span>2</span></div>
-        <span class="reg-step__label">Documents</span>
+      <div class="reg-step" [class.is-active]="step === 2" [class.is-done]="step > 2">
+        <div class="reg-step__dot">
+          <ion-icon name="checkmark-outline" *ngIf="step > 2"></ion-icon>
+          <span *ngIf="step <= 2">2</span>
+        </div>
+        <span class="reg-step__label">Type</span>
+      </div>
+      <div class="reg-step__line" [class.is-done]="step > 2"></div>
+      <div class="reg-step" [class.is-active]="step === 3" [class.is-done]="step > 3">
+        <div class="reg-step__dot">
+          <ion-icon name="checkmark-outline" *ngIf="step > 3"></ion-icon>
+          <span *ngIf="step <= 3">3</span>
+        </div>
+        <span class="reg-step__label">Vehicle</span>
+      </div>
+      <div class="reg-step__line" [class.is-done]="step > 3"></div>
+      <div class="reg-step" [class.is-active]="step === 4">
+        <div class="reg-step__dot"><span>4</span></div>
+        <span class="reg-step__label">Docs</span>
       </div>
     </div>
   </div>
@@ -47,26 +67,95 @@
       <ion-icon name="checkmark-circle-outline"></ion-icon><span>{{ message }}</span>
     </div>
 
-    <!-- ===== STEP 1 — Vehicle + City + Fleet ===== -->
+    <!-- ===== STEP 1 — City + Scope ===== -->
     <ng-container *ngIf="!initLoading && step === 1">
       <div class="pg-anim-body">
-
-        <!-- Where you drive -->
         <div class="pg-card reg-card">
           <div class="pg-card__head">
             <div class="pg-card__icon"><ion-icon name="location-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Where you drive</h2>
+            <h2 class="pg-card__title">Where you drive <span class="req">*</span></h2>
           </div>
 
           <div class="field">
             <label class="field__label">City <span class="req">*</span></label>
             <div class="field__control" [class.is-disabled]="busy || driverApproved">
               <ion-select [(ngModel)]="city_id" [disabled]="busy || driverApproved"
-                          interface="action-sheet" placeholder="Pick your city" class="select">
+                          (ionChange)="onCityChange()" interface="action-sheet" placeholder="Pick your city" class="select">
                 <ion-select-option *ngFor="let c of cities" [value]="c.id">{{ c.name }}</ion-select-option>
               </ion-select>
             </div>
           </div>
+
+          <p class="card__hint" *ngIf="loadingRideProducts">Loading service areas…</p>
+          <p class="card__hint" *ngIf="city_id && !loadingRideProducts && !rideScopes.length">No active service areas are configured for this city.</p>
+
+          <div class="service-grid" *ngIf="rideScopes.length">
+            <button type="button" class="service-card"
+                    *ngFor="let scope of rideScopes"
+                    [class.is-selected]="service_scope === scope.scope"
+                    [class.is-disabled]="busy || driverApproved"
+                    (click)="pickScope(scope)">
+              <ion-icon [name]="scope.scope === 'outstation' ? 'trail-sign-outline' : 'navigate-outline'"></ion-icon>
+              <strong>{{ scope.name }}</strong>
+              <span>{{ scope.modes.length }} service type{{ scope.modes.length === 1 ? '' : 's' }}</span>
+            </button>
+          </div>
+
+          <p class="card__hint" *ngIf="driverApproved">Your approved service is locked: {{ selectedServiceLabel }}.</p>
+        </div>
+
+        <button class="dc-cta dc-cta--dark reg-cta" (click)="continueToMode()" [disabled]="busy || loadingRideProducts">
+          <span>Continue</span>
+          <ion-icon name="arrow-forward-outline"></ion-icon>
+        </button>
+      </div>
+    </ng-container>
+
+    <!-- ===== STEP 2 — Service Mode ===== -->
+    <ng-container *ngIf="!initLoading && step === 2">
+      <div class="pg-anim-body">
+        <div class="pg-card reg-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="briefcase-outline"></ion-icon></div>
+            <h2 class="pg-card__title">{{ selectedScope?.name || 'Service' }} type <span class="req">*</span></h2>
+          </div>
+
+          <div class="service-grid">
+            <button type="button" class="service-card"
+                    *ngFor="let option of modeOptions"
+                    [class.is-selected]="service_mode === option.mode"
+                    [class.is-disabled]="busy || driverApproved"
+                    (click)="pickMode(option)">
+              <ion-icon [name]="iconForMode(option.mode)"></ion-icon>
+              <strong>{{ option.name }}</strong>
+              <span>{{ selectedScope?.name }}</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="dc-cta dc-cta--dark reg-cta" (click)="continueToVehicle()" [disabled]="busy">
+          <span>Continue</span>
+          <ion-icon name="arrow-forward-outline"></ion-icon>
+        </button>
+
+        <button class="link-btn" (click)="goToStep(1)">
+          <ion-icon name="arrow-back-outline"></ion-icon> Back to area
+        </button>
+      </div>
+    </ng-container>
+
+    <!-- ===== STEP 3 — Vehicle + Fleet ===== -->
+    <ng-container *ngIf="!initLoading && step === 3">
+      <div class="pg-anim-body">
+
+        <!-- Where you drive -->
+        <div class="pg-card reg-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="briefcase-outline"></ion-icon></div>
+            <h2 class="pg-card__title">Selected service</h2>
+          </div>
+
+          <p class="card__hint">{{ selectedServiceLabel }}</p>
 
           <div class="field">
             <label class="field__label">Fleet</label>
@@ -143,11 +232,16 @@
           <span *ngIf="!busy">Continue</span>
           <ion-icon name="arrow-forward-outline" *ngIf="!busy"></ion-icon>
         </button>
+
+        <button class="link-btn" (click)="goToStep(2)">
+          <ion-icon name="arrow-back-outline"></ion-icon> Back to service type
+        </button>
       </div>
     </ng-container>
 
-    <!-- ===== STEP 2 — Documents ===== -->
-    <ng-container *ngIf="!initLoading && step === 2">
+    <!-- ===== STEP 4 — Documents ===== -->
+    <ng-container *ngIf="!initLoading && step === 4">
+
 
       <div class="doc-list pg-anim-body">
         <div class="pg-card doc-card" *ngFor="let slot of docs">
@@ -241,7 +335,7 @@
           <ion-icon name="arrow-forward-outline" *ngIf="canGoToDashboard"></ion-icon>
         </button>
 
-        <button class="link-btn" (click)="goToStep(1)">
+        <button class="link-btn" (click)="goToStep(3)">
           <ion-icon name="arrow-back-outline"></ion-icon> Back to vehicle
         </button>
       </div>

@@ -123,6 +123,8 @@
 /* Status */
 .status-block {
   .status-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.6px; color: var(--dc-ink-faint, #9AA3AE); }
+  .service-badge { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-top: 7px; padding: 5px 9px; border-radius: 999px; background: rgba(18, 179, 91, 0.1); color: var(--dc-green, #12B35B); font-size: 12px; font-weight: 800; }
+  .service-badge ion-icon { font-size: 14px; }
   .status-title { margin: 6px 0 0; font-size: 24px; font-weight: 800; color: var(--dc-ink, #0D1B2A); letter-spacing: -0.5px; }
   .status-sub { margin: 5px 0 0; font-size: 14px; font-weight: 500; color: var(--dc-ink-soft, #6C757D); }
   .locating-hint {

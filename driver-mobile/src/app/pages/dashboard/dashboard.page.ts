@@ -106,6 +106,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private onlineSince: number | null = null;
   private onlineTimer: ReturnType<typeof setInterval> | null = null;
   driveMode: 'private' | 'fixed' | 'shuttle' | null = null;
+  driveScope: 'local' | 'outstation' | null = null;
 
   /** Destinations the drawer exposes — everything the tab bar used to reach. */
   readonly navGroups: NavGroup[] = [
@@ -337,6 +338,22 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.router.navigateByUrl(path);
   }
 
+
+  serviceLabel(mode: 'private' | 'fixed' | 'shuttle' | string | null | undefined = this.driveMode): string {
+    if (mode === 'fixed') return 'Fixed vehicle';
+    if (mode === 'shuttle') return 'Shuttle rides';
+    if (mode === 'private') return 'Private rides';
+    return 'Service';
+  }
+
+  scopeLabel(scope: 'local' | 'outstation' | string | null | undefined = this.driveScope): string {
+    return scope === 'outstation' ? 'Outstation' : 'Local';
+  }
+
+  activeServiceLabel(): string {
+    return `${this.scopeLabel()} - ${this.serviceLabel().replace(' rides', '').replace(' vehicle', '')}`;
+  }
+
   async choosePrivateRides(): Promise<void> {
     await this.setDriveMode('private');
   }
@@ -365,6 +382,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       );
       this.driver = res.driver;
       this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
+      this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
       return true;
     } catch (e) {
       const body = (e as { error?: Record<string, unknown> })?.error;
@@ -474,6 +492,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
             void this.stopVisualWatch();
           }
           this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
+          this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
           this.startOnlineTimer();
         } else {
           this.stopOnlineTimer();
@@ -764,7 +783,12 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
       await new Promise<void>((resolve, reject) => {
         this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-online', {}).subscribe({
-          next: (res) => { this.driver = res.driver; this.driveMode = null; resolve(); },
+          next: (res) => {
+            this.driver = res.driver;
+            this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
+            this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
+            resolve();
+          },
           // Hand the raw HttpErrorResponse through so the catch can read the
           // structured low-wallet-balance payload, not just a message string.
           error: (err) => reject(err),
@@ -831,6 +855,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       });
       await this.presence.stop();
       this.driveMode = null;
+      this.driveScope = null;
       this.stopOnlineTimer();
       // Keep showing the driver where they are — take the watch back ourselves.
       await this.startVisualWatch();

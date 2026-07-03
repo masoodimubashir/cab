@@ -6,7 +6,7 @@
     <div class="pg-brandtitle" *ngIf="!hasActiveTrip">
       <span class="b-white">Dream</span><span class="b-green">Cabs</span>
     </div>
-    <ion-title *ngIf="hasActiveTrip">On a ride</ion-title>
+    <ion-title *ngIf="hasActiveTrip">On a {{ activeTripKindLabel }}</ion-title>
     <ion-buttons slot="end" *ngIf="!hasActiveTrip">
       <button class="pg-action" type="button" (click)="refreshAvailable()" aria-label="Reload">
         <ion-icon name="refresh-outline" aria-hidden="true"></ion-icon>
@@ -32,7 +32,7 @@
 
       <!-- Status hero -->
       <div class="status-hero" [attr.data-tone]="statusCopy().tone">
-        <div class="status-pill">{{ lastTrip?.['status'] }}</div>
+        <div class="status-pill">{{ activeTripKindLabel }} · {{ lastTrip?.['status'] }}</div>
         <h2>{{ statusCopy().title }}</h2>
         <p *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
       </div>
@@ -55,7 +55,7 @@
               <ion-icon name="person-circle-outline" aria-hidden="true"></ion-icon>
             </div>
             <div class="dc-row__text">
-              <small>{{ isForOther ? 'Rider · booked for a friend' : 'Customer' }}</small>
+              <small>{{ isShuttleTrip() ? 'Shuttle rider' : (isForOther ? 'Rider · booked for a friend' : 'Customer') }}</small>
               <strong>{{ customerName }}</strong>
             </div>
             <button type="button" class="rider-call dc-press" *ngIf="customerPhone" (click)="call(customerPhone)" aria-label="Call rider">
@@ -71,7 +71,7 @@
             </div>
             <div class="dc-row__text">
               <small>Payment</small>
-              <strong>{{ (tripPaymentMethod || '—') | uppercase }}</strong>
+              <strong>{{ activePaymentLabel }}</strong>
             </div>
             <div class="dc-row__value fare-value">
               ₹{{ lastTrip?.['final_fare'] ?? lastTrip?.['estimated_fare'] ?? '—' }}
@@ -241,6 +241,14 @@
               <ion-icon name="star" aria-hidden="true"></ion-icon>
               Requested for you
             </span>
+            <span class="dc-badge badge shuttle-badge" *ngIf="t.service_mode === 'shuttle'">
+              <ion-icon name="bus-outline" aria-hidden="true"></ion-icon>
+              Shuttle
+            </span>
+            <span class="dc-badge badge prepaid-badge" *ngIf="t.service_mode === 'shuttle'">
+              <ion-icon name="card-outline" aria-hidden="true"></ion-icon>
+              Prepaid
+            </span>
             <span class="dc-badge badge friend-badge" *ngIf="t.is_for_other">
               <ion-icon name="people-outline" aria-hidden="true"></ion-icon>
               For {{ t.booked_for_name || 'a friend' }}
@@ -250,7 +258,7 @@
                 ₹{{ t.customer_offer || t.estimated_fare || '-' }}
                 <small *ngIf="t.payment_method">· {{ t.payment_method | uppercase }}</small>
               </h2>
-              <small class="trip-id">Trip #{{ t.id }}</small>
+              <small class="trip-id">{{ requestKindLabel(t) }} · {{ t.vehicle_name || t.ride_type_name || 'Trip' }} #{{ t.id }}</small>
             </div>
           </div>
           <div class="ride-card__addr">
@@ -273,9 +281,10 @@
             >
               <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
               <span class="amt">₹{{ t.customer_offer || t.estimated_fare || 0 }}</span>
-              <span class="ok">OK</span>
+              <span class="ok">{{ requestActionLabel(t) }}</span>
             </button>
             <button
+              *ngIf="t.service_mode !== 'shuttle'"
               class="dc-cta dc-cta--ghost dc-press price-btn"
               type="button"
               [disabled]="busy"

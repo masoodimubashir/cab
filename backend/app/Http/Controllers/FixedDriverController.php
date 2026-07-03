@@ -73,7 +73,7 @@ class FixedDriverController extends Controller
 
         $route = Route::query()->whereKey((int) $data['route_id'])->firstOrFail();
         $this->availability->assertFixedRoute($route);
-        $this->serviceModes->assertFixedMode($this->driverProfile($request));
+        $this->serviceModes->assertFixedMode($this->driverProfile($request), $route->scope ?: Driver::SERVICE_SCOPE_LOCAL);
 
         $departure = RouteDeparture::query()->create([
             'route_id' => $route->id,
@@ -111,7 +111,8 @@ class FixedDriverController extends Controller
     public function start(Request $request, RouteDeparture $departure)
     {
         $this->guardDriverDeparture($request, $departure);
-        $this->serviceModes->assertFixedMode($this->driverProfile($request));
+        $departure->loadMissing('route');
+        $this->serviceModes->assertFixedMode($this->driverProfile($request), $departure->route?->scope ?: Driver::SERVICE_SCOPE_LOCAL);
 
         $departure = DB::transaction(function () use ($request, $departure) {
             /** @var RouteDeparture $dep */

@@ -6,6 +6,12 @@ import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 
+type ServiceScope = 'local' | 'outstation';
+type ServiceMode = 'private' | 'fixed' | 'shuttle';
+interface DriverProfile { city_id?: number | null; service_scope?: ServiceScope | null; service_mode?: ServiceMode | null; }
+interface RideModeOption { scope: ServiceScope; mode: ServiceMode; name: string; }
+interface RideScopeOption { scope: ServiceScope; name: string; modes: RideModeOption[]; }
+
 /**
  * Driver profile page — photo, name, email (optional).
  *
@@ -35,6 +41,8 @@ export class ProfilePage implements OnInit {
   /** Picked address (the Place's formatted_address) — used during onboarding,
    *  shown read-only on the edit screen. */
   address = '';
+  registeredServiceLabel = 'Not selected';
+  registeredServiceLoading = false;
 
   // Address autocomplete (Google Places) — onboarding only.
   addressQuery = '';
@@ -84,6 +92,9 @@ export class ProfilePage implements OnInit {
       this.address = me.address ?? '';
       this.addressQuery = this.address;
     }
+    if (!this.onboarding) {
+      this.loadRegisteredService();
+    }
     // Onboarding needs Places autocomplete — warm the SDK in the background.
     if (this.onboarding) {
       void this.places.ensureLoaded().catch(() => {});
@@ -103,8 +114,49 @@ export class ProfilePage implements OnInit {
       this.address = me.address ?? '';
       this.addressQuery = this.address;
     }
+    if (!this.onboarding) {
+      this.loadRegisteredService();
+    }
     this.photoFile = null;
     this.error = null;
+  }
+
+
+  private loadRegisteredService(): void {
+    this.registeredServiceLoading = true;
+    this.api.get<{ driver: DriverProfile | null }>('/drivers/me').subscribe({
+      next: (res) => {
+        const driver = res.driver;
+        if (!driver?.service_scope || !driver?.service_mode) {
+          this.registeredServiceLabel = 'Not selected';
+          return;
+        }
+
+        this.registeredServiceLabel = this.fallbackServiceLabel(driver.service_scope, driver.service_mode);
+        if (!driver.city_id) return;
+
+        this.api.get<{ scopes: RideScopeOption[] }>(`/catalog/cities/${driver.city_id}/driver-ride-products`).subscribe({
+          next: (catalog) => {
+            const scope = (catalog.scopes ?? []).find((row) => row.scope === driver.service_scope);
+            const mode = scope?.modes?.find((row) => row.mode === driver.service_mode);
+            if (scope && mode) {
+              this.registeredServiceLabel = `${scope.name} ${mode.name}`;
+            }
+          },
+        });
+      },
+      complete: () => { this.registeredServiceLoading = false; },
+      error: () => {
+        this.registeredServiceLabel = 'Not selected';
+        this.registeredServiceLoading = false;
+      },
+    });
+  }
+
+  private fallbackServiceLabel(scope: ServiceScope, mode: ServiceMode): string {
+    const scopeLabel = scope === 'outstation' ? 'Outstation' : 'Local';
+    const modeLabel = mode === 'fixed' ? 'Fixed' : mode === 'shuttle' ? 'Shuttle' : 'Private';
+    return `${scopeLabel} ${modeLabel}`;
   }
 
   /** Pretty form for the locked edit screen (e.g. "12 Apr 1997"). */

@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'vehicle_type_id',
     'city_id',
     'fleet_id',
+    'service_scope',
+    'service_mode',
     'approval_status',
     'approved_at',
     'rejected_at',
@@ -27,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'rating_avg',
     'rating_count',
     'is_online',
+    'active_service_scope',
     'active_service_mode',
     'last_online_at',
     'last_offline_at',
@@ -34,6 +37,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Driver extends Model
 {
     use HasFactory;
+
+    public const SERVICE_SCOPE_LOCAL = 'local';
+    public const SERVICE_SCOPE_OUTSTATION = 'outstation';
+    public const SERVICE_SCOPES = [
+        self::SERVICE_SCOPE_LOCAL,
+        self::SERVICE_SCOPE_OUTSTATION,
+    ];
 
     public const SERVICE_MODE_PRIVATE = 'private';
     public const SERVICE_MODE_FIXED = 'fixed';

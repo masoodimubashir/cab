@@ -281,6 +281,7 @@ class PricingController extends Controller
             'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
             'city_id' => ['required_without:city_vehicle_type_id', 'integer', 'exists:cities,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'scope' => ['nullable', 'in:local,outstation'],
             'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
             'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
             'drop_lat' => ['required', 'numeric', 'between:-90,90'],

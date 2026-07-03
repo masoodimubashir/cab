@@ -20,7 +20,7 @@
       </button>
       <div class="trip-top__right">
         <span class="live-pill" *ngIf="liveConnected"><span class="live-dot"></span> Live</span>
-        <span class="trip-chip">Trip #{{ tripId }}</span>
+        <span class="trip-chip">{{ tripKindLabel }} #{{ tripId }}</span>
       </div>
     </div>
 
@@ -38,7 +38,10 @@
       <!-- Always-visible head: status + details button -->
       <div class="sheet-head">
         <div class="status-block">
-          <span class="status-eyebrow">{{ t.status === 'SEARCHING' || t.status === 'MATCHED' ? 'CONNECTING' : 'LIVE STATUS' }}</span>
+          <span class="status-eyebrow">{{ isShuttleTrip ? 'SHUTTLE STATUS' : (t.status === 'SEARCHING' || t.status === 'MATCHED' ? 'CONNECTING' : 'LIVE STATUS') }}</span>
+          <span class="service-badge" *ngIf="isShuttleTrip">
+            <ion-icon name="bus-outline" aria-hidden="true"></ion-icon> Shuttle
+          </span>
           <h1 class="status-title">{{ statusCopy().title }}</h1>
           <p class="status-sub" *ngIf="statusCopy().sub">{{ statusCopy().sub }}</p>
           <span class="locating-hint" *ngIf="awaitingDriverLocation">

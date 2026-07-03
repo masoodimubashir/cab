@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\OperatorSetting;
+use App\Models\ShuttleJourney;
 use App\Models\Trip;
 use App\Models\User;
 use App\Events\TripStatusUpdated;
@@ -97,6 +98,7 @@ class TripStateMachineService
         }
 
         $trip->save();
+        $this->syncShuttleJourney($trip, $to);
 
         // On completion, settle the operator's commission (honouring any
         // active subscription) and draw down the driver's subscription usage.
@@ -154,6 +156,36 @@ class TripStateMachineService
         });
 
         return $trip->fresh();
+    }
+
+    private function syncShuttleJourney(Trip $trip, string $tripStatus): void
+    {
+        $journeyStatus = match ($tripStatus) {
+            'CONFIRMED', 'ASSIGNED' => 'ASSIGNED',
+            'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP', 'EN_ROUTE_DROP', 'ARRIVED_DROP' => 'IN_PROGRESS',
+            'COMPLETED' => 'COMPLETED',
+            'CANCELLED' => 'CANCELLED',
+            default => null,
+        };
+
+        if ($journeyStatus === null) {
+            return;
+        }
+
+        $updates = ['status' => $journeyStatus];
+        if ($trip->driver_id !== null) {
+            $updates['driver_id'] = $trip->driver_id;
+        }
+        if ($journeyStatus === 'IN_PROGRESS' && $trip->en_route_pickup_at) {
+            $updates['started_at'] = $trip->en_route_pickup_at;
+        }
+        if ($journeyStatus === 'COMPLETED') {
+            $updates['completed_at'] = $trip->completed_at ?? now();
+        }
+
+        ShuttleJourney::query()
+            ->where('trip_id', $trip->id)
+            ->update($updates);
     }
 
     /**

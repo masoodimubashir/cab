@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\City;
+use App\Models\CityRideMode;
+use App\Models\CityRideScope;
 use App\Models\Document;
 use App\Models\DocumentLabel;
 use App\Models\Fleet;
@@ -17,6 +19,17 @@ use Illuminate\Http\Request;
  */
 class CatalogController extends Controller
 {
+    private const SCOPE_DEFAULTS = [
+        ['local', 'Local', 1],
+        ['outstation', 'Outstation', 2],
+    ];
+
+    private const MODE_DEFAULTS = [
+        ['private', 'Private', true, 1],
+        ['fixed', 'Fixed', true, 2],
+        ['shuttle', 'Shuttle', true, 3],
+    ];
+
     public function rideTypes(Request $request)
     {
         $rows = RideType::query()
@@ -54,6 +67,38 @@ class CatalogController extends Controller
         return response()->json(['data' => $rows]);
     }
 
+
+    public function driverRideProducts(City $city)
+    {
+        $this->ensureDriverRideCatalogue($city);
+
+        $scopes = CityRideScope::query()
+            ->where('city_id', $city->id)
+            ->where('is_active', true)
+            ->with(['modes' => fn ($q) => $q->where('is_active', true)])
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->filter(fn (CityRideScope $scope) => $scope->modes->isNotEmpty())
+            ->values()
+            ->map(fn (CityRideScope $scope) => [
+                'id' => $scope->id,
+                'scope' => $scope->scope,
+                'name' => $scope->name,
+                'sort_order' => (int) $scope->sort_order,
+                'modes' => $scope->modes->map(fn (CityRideMode $mode) => [
+                    'id' => $mode->id,
+                    'scope' => $scope->scope,
+                    'mode' => $mode->mode,
+                    'name' => $mode->name,
+                    'image_url' => $mode->image_url,
+                    'sort_order' => (int) $mode->sort_order,
+                ])->values(),
+            ]);
+
+        return response()->json(['scopes' => $scopes]);
+    }
+
     public function fleets(Request $request)
     {
         $query = Fleet::query()->where('is_active', true);
@@ -67,6 +112,24 @@ class CatalogController extends Controller
             ->get();
 
         return response()->json(['data' => $rows]);
+    }
+
+
+    private function ensureDriverRideCatalogue(City $city): void
+    {
+        foreach (self::SCOPE_DEFAULTS as [$scope, $name, $sortOrder]) {
+            $scopeRow = CityRideScope::query()->firstOrCreate(
+                ['city_id' => $city->id, 'scope' => $scope],
+                ['name' => $name, 'is_active' => true, 'sort_order' => $sortOrder],
+            );
+
+            foreach (self::MODE_DEFAULTS as [$mode, $modeName, $isActive, $modeSort]) {
+                CityRideMode::query()->firstOrCreate(
+                    ['city_ride_scope_id' => $scopeRow->id, 'mode' => $mode],
+                    ['name' => $modeName, 'is_active' => $isActive, 'sort_order' => $modeSort],
+                );
+            }
+        }
     }
 
     public function documents(Request $request)

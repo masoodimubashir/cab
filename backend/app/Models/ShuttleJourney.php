@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'city_id', 'city_vehicle_type_id', 'driver_id', 'status', 'capacity', 'seats_taken', 'started_at', 'completed_at',
+    'city_id', 'city_vehicle_type_id', 'driver_id', 'trip_id', 'status', 'capacity', 'seats_taken', 'started_at', 'completed_at',
 ])]
 class ShuttleJourney extends Model
 {
@@ -35,6 +35,11 @@ class ShuttleJourney extends Model
     public function driver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'driver_id');
+    }
+
+    public function trip(): BelongsTo
+    {
+        return $this->belongsTo(Trip::class, 'trip_id');
     }
 
     public function passengerBookings(): HasMany

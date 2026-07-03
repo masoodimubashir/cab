@@ -11,6 +11,7 @@ use App\Models\Trip;
 use App\Services\DriverServiceModeService;
 use App\Services\WalletService;
 use App\Services\FixedStopAutomationService;
+use App\Services\ShuttleStopAutomationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -36,14 +37,22 @@ class DriversController extends Controller
             // nullable (fleet = "none" allowed; city set later by admin if missing).
             'city_id' => ['nullable', 'integer', 'exists:cities,id'],
             'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
+            'service_scope' => ['nullable', 'string', 'in:local,outstation'],
+            'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
         ]);
 
         $user = $request->user();
         $existing = Driver::query()->where('user_id', $user->id)->first();
 
-        // Locked fields once the driver is approved. Trying to change either
-        // ride_type_id or vehicle_type_id post-approval is a 422 — the
-        // operator owns those decisions from that point on.
+        if (!$existing && (empty($data['service_scope']) || empty($data['service_mode']))) {
+            return response()->json([
+                'message' => 'Choose the service you will provide before continuing.',
+            ], 422);
+        }
+
+        // Locked fields once the driver is approved. Trying to change ride,
+        // vehicle, or permanent service post-approval is a 422 — the operator
+        // owns those decisions from that point on.
         if ($existing && $existing->approval_status === 'approved') {
             $tryingToChangeRide = array_key_exists('ride_type_id', $data)
                 && $data['ride_type_id'] !== null
@@ -51,9 +60,15 @@ class DriversController extends Controller
             $tryingToChangeVehicle = array_key_exists('vehicle_type_id', $data)
                 && $data['vehicle_type_id'] !== null
                 && (int) $data['vehicle_type_id'] !== (int) $existing->vehicle_type_id;
-            if ($tryingToChangeRide || $tryingToChangeVehicle) {
+            $tryingToChangeServiceScope = array_key_exists('service_scope', $data)
+                && $data['service_scope'] !== null
+                && $data['service_scope'] !== $existing->service_scope;
+            $tryingToChangeServiceMode = array_key_exists('service_mode', $data)
+                && $data['service_mode'] !== null
+                && $data['service_mode'] !== $existing->service_mode;
+            if ($tryingToChangeRide || $tryingToChangeVehicle || $tryingToChangeServiceScope || $tryingToChangeServiceMode) {
                 return response()->json([
-                    'message' => 'Ride type and vehicle type are locked after approval. Contact the operator.',
+                    'message' => 'Ride type, vehicle type, and driver service are locked after approval. Contact the operator.',
                 ], 422);
             }
         }
@@ -82,6 +97,8 @@ class DriversController extends Controller
             $payload['approval_status'] = 'pending';
             $payload['ride_type_id'] = $data['ride_type_id'] ?? null;
             $payload['vehicle_type_id'] = $data['vehicle_type_id'] ?? null;
+            $payload['service_scope'] = $data['service_scope'] ?? null;
+            $payload['service_mode'] = $data['service_mode'] ?? null;
         } else {
             $payload['approval_status'] = $existing->approval_status; // preserve
             if ($existing->approval_status !== 'approved') {
@@ -92,10 +109,18 @@ class DriversController extends Controller
                 $payload['vehicle_type_id'] = array_key_exists('vehicle_type_id', $data)
                     ? $data['vehicle_type_id']
                     : $existing->vehicle_type_id;
+                $payload['service_scope'] = array_key_exists('service_scope', $data)
+                    ? $data['service_scope']
+                    : $existing->service_scope;
+                $payload['service_mode'] = array_key_exists('service_mode', $data)
+                    ? $data['service_mode']
+                    : $existing->service_mode;
             } else {
                 // Approved: ride/vehicle frozen regardless of payload.
                 $payload['ride_type_id'] = $existing->ride_type_id;
                 $payload['vehicle_type_id'] = $existing->vehicle_type_id;
+                $payload['service_scope'] = $existing->service_scope;
+                $payload['service_mode'] = $existing->service_mode;
             }
         }
 
@@ -335,8 +360,14 @@ class DriversController extends Controller
             return response()->json(['trip' => null]);
         }
 
+        $trip->loadMissing('cityVehicleType:id,display_name,ride_type_id', 'cityVehicleType.rideType:id,name');
         $payload = $trip->toArray();
+        $rideTypeName = (string) $trip->cityVehicleType?->rideType?->name;
         $payload['is_shared'] = $trip->route_departure_id !== null;
+        $payload['service_mode'] = str_contains(strtolower($rideTypeName), 'shuttle') ? 'shuttle' : 'private';
+        $payload['vehicle_name'] = $trip->cityVehicleType?->display_name;
+        $payload['ride_type_name'] = $trip->cityVehicleType?->rideType?->name;
+        $payload['is_prepaid'] = $payload['service_mode'] === 'shuttle';
 
         // Rider contact the driver should call to coordinate pickup. For a
         // "booked for a friend" trip that's the friend the booker named; for a
@@ -653,7 +684,15 @@ class DriversController extends Controller
             }
         }
 
+        if (!$driver->service_scope || !$driver->service_mode) {
+            return response()->json([
+                'message' => 'Choose your permanent driver service before going online.',
+            ], 422);
+        }
+
         $driver->is_online = true;
+        $driver->active_service_scope = $driver->service_scope;
+        $driver->active_service_mode = $driver->service_mode;
         $driver->last_online_at = now();
         $driver->save();
 
@@ -669,6 +708,7 @@ class DriversController extends Controller
         }
 
         $driver->is_online = false;
+        $driver->active_service_scope = null;
         $driver->active_service_mode = null;
         $driver->last_offline_at = now();
         $driver->save();
@@ -680,6 +720,7 @@ class DriversController extends Controller
     {
         $data = $request->validate([
             'mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
+            'scope' => ['nullable', 'string', 'in:local,outstation'],
         ]);
 
         $driver = Driver::query()->where('user_id', $request->user()->id)->first();
@@ -688,7 +729,7 @@ class DriversController extends Controller
         }
 
         return response()->json([
-            'driver' => $modes->setMode($driver, $data['mode'] ?? null),
+            'driver' => $modes->setMode($driver, $data['mode'] ?? null, $data['scope'] ?? null),
         ]);
     }
 
@@ -698,7 +739,7 @@ class DriversController extends Controller
      * has a fresh ping for "Free" classification. Trip-time pings still go
      * through TripTrackingController@updateLocation.
      */
-    public function pingLocation(Request $request, FixedStopAutomationService $fixedStops)
+    public function pingLocation(Request $request, FixedStopAutomationService $fixedStops, ShuttleStopAutomationService $shuttleStops)
     {
         $data = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
@@ -756,6 +797,7 @@ class DriversController extends Controller
         ])->save();
 
         $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
+        $shuttleStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
 
         return response()->json(['location' => $location]);
     }

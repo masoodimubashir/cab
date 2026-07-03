@@ -45,6 +45,8 @@ class FixedFullWalkthroughTest extends TestCase
         Driver::query()->create([
             'user_id' => $driver->id,
             'approval_status' => 'approved',
+            'service_scope' => 'local',
+            'service_mode' => 'fixed',
             'is_online' => true,
             'last_online_at' => now(),
         ]);
