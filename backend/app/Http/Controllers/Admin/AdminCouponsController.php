@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\City;
+use App\Models\CityVehicleType;
 use App\Models\Coupon;
 use App\Models\CouponAssignment;
 use App\Models\User;
@@ -26,13 +27,17 @@ class AdminCouponsController
             });
         }
 
-        // Vehicle filter — keep rows whose allowed_vehicle_type_ids is empty
-        // (means "all") OR contains the requested vehicle id.
-        if ($vehicleId = (int) $request->query('city_vehicle_type_id', 0)) {
-            $q->where(function ($w) use ($vehicleId) {
-                $w->whereNull('allowed_vehicle_type_ids')
-                  ->orWhere('allowed_vehicle_type_ids', '[]')
-                  ->orWhereJsonContains('allowed_vehicle_type_ids', $vehicleId);
+        $familyFilter = $this->normalizeFamilyName((string) $request->query('vehicle_display_name', ''));
+        if ($familyFilter === null && ($vehicleId = (int) $request->query('city_vehicle_type_id', 0))) {
+            $familyFilter = $this->normalizeFamilyName(
+                CityVehicleType::query()->where('city_id', $city->id)->where('id', $vehicleId)->value('display_name')
+            );
+        }
+        if ($familyFilter !== null) {
+            $q->where(function ($w) use ($familyFilter) {
+                $w->whereNull('allowed_vehicle_display_names')
+                  ->orWhere('allowed_vehicle_display_names', '[]')
+                  ->orWhereJsonContains('allowed_vehicle_display_names', $familyFilter);
             });
         }
 
@@ -41,7 +46,7 @@ class AdminCouponsController
 
         return response()->json([
             'city_id' => $city->id,
-            'data' => $paginator->getCollection()->map(fn ($r) => $this->shape($r))->all(),
+            'data' => $paginator->getCollection()->map(fn ($r) => $this->shape($city, $r))->all(),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'last_page' => $paginator->lastPage(),
@@ -53,12 +58,12 @@ class AdminCouponsController
 
     public function store(Request $request, City $city)
     {
-        $data = $this->validatePayload($request, partial: false);
+        $data = $this->validatePayload($request, partial: false, city: $city);
         $data['city_id'] = $city->id;
         $row = Coupon::query()->create($data);
 
         return response()->json([
-            'coupon' => $this->shape($row->fresh()),
+            'coupon' => $this->shape($city, $row->fresh()),
             'message' => 'Coupon created.',
         ], 201);
     }
@@ -66,17 +71,17 @@ class AdminCouponsController
     public function show(City $city, Coupon $coupon)
     {
         $this->guard($city, $coupon);
-        return response()->json(['coupon' => $this->shape($coupon)]);
+        return response()->json(['coupon' => $this->shape($city, $coupon)]);
     }
 
     public function update(Request $request, City $city, Coupon $coupon)
     {
         $this->guard($city, $coupon);
-        $data = $this->validatePayload($request, partial: true);
+        $data = $this->validatePayload($request, partial: true, city: $city);
         $coupon->fill($data)->save();
 
         return response()->json([
-            'coupon' => $this->shape($coupon->fresh()),
+            'coupon' => $this->shape($city, $coupon->fresh()),
             'message' => 'Coupon updated.',
         ]);
     }
@@ -88,10 +93,6 @@ class AdminCouponsController
         return response()->json(['message' => 'Coupon deleted.']);
     }
 
-    /**
-     * Paginated list of users this coupon has been issued to. Drives the
-     * "Eye / Details" modal on the coupons admin page.
-     */
     public function assignments(Request $request, City $city, Coupon $coupon)
     {
         $this->guard($city, $coupon);
@@ -135,15 +136,6 @@ class AdminCouponsController
         ]);
     }
 
-    /**
-     * Give this coupon to a list of customers. Accepts either:
-     *   - mode=customers + user_ids[]   (selected from the admin customer list)
-     *   - mode=csv      + csv file      (uploaded with a `user_id` column)
-     *
-     * Each assignment is unique per (coupon, user); duplicates are silently
-     * skipped via updateOrCreate so the operator can re-run the give flow
-     * to extend expiry or change push copy without erroring out.
-     */
     public function give(Request $request, City $city, Coupon $coupon)
     {
         $this->guard($city, $coupon);
@@ -172,7 +164,6 @@ class AdminCouponsController
             return response()->json(['message' => 'No users to assign the coupon to.'], 422);
         }
 
-        // Filter to only customer-role users that actually exist.
         $validUserIds = User::query()
             ->whereIn('id', $userIds)
             ->whereHas('roles', fn ($w) => $w->where('role', 'customer'))
@@ -212,12 +203,10 @@ class AdminCouponsController
         }
         $headers = null;
         while (($row = fgetcsv($handle)) !== false) {
-            // Skip empty rows.
             if ($row === [null] || empty(array_filter($row, fn ($v) => $v !== null && $v !== ''))) {
                 continue;
             }
             if ($headers === null) {
-                // First non-empty row is the header line.
                 $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $row);
                 continue;
             }
@@ -237,11 +226,10 @@ class AdminCouponsController
         abort_if($coupon->city_id !== $city->id, 404);
     }
 
-    private function validatePayload(Request $request, bool $partial): array
+    private function validatePayload(Request $request, bool $partial, City $city): array
     {
         $sometimes = $partial ? 'sometimes' : 'required';
-
-        return $request->validate([
+        $data = $request->validate([
             'title' => [$sometimes, 'string', 'max:200'],
             'subtitle' => ['nullable', 'string', 'max:200'],
             'benefit_type' => ['sometimes', 'string', 'in:discount'],
@@ -260,14 +248,33 @@ class AdminCouponsController
             'discount_value' => [$sometimes, 'numeric', 'min:0'],
             'discount_maximum' => ['nullable', 'numeric', 'min:0'],
 
+            'allowed_vehicle_display_names' => ['nullable', 'array'],
+            'allowed_vehicle_display_names.*' => ['string', 'max:120'],
             'allowed_vehicle_type_ids' => ['nullable', 'array'],
             'allowed_vehicle_type_ids.*' => ['integer', 'exists:city_vehicle_types,id'],
 
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        if (array_key_exists('allowed_vehicle_display_names', $data)) {
+            $data['allowed_vehicle_display_names'] = $data['allowed_vehicle_display_names'] === null
+                ? null
+                : $this->normalizeFamilies($data['allowed_vehicle_display_names']);
+            unset($data['allowed_vehicle_type_ids']);
+            return $data;
+        }
+
+        if (array_key_exists('allowed_vehicle_type_ids', $data)) {
+            $data['allowed_vehicle_display_names'] = $data['allowed_vehicle_type_ids'] === null
+                ? null
+                : $this->familiesFromIds($city, $data['allowed_vehicle_type_ids']);
+            unset($data['allowed_vehicle_type_ids']);
+        }
+
+        return $data;
     }
 
-    private function shape(Coupon $c): array
+    private function shape(City $city, Coupon $c): array
     {
         return [
             'id' => $c->id,
@@ -278,17 +285,63 @@ class AdminCouponsController
             'description' => $c->description,
             'promo_type' => $c->promo_type,
             'location_type' => $c->location_type,
-            'latitude' => $c->latitude !== null ? (float) $c->latitude : null,
-            'longitude' => $c->longitude !== null ? (float) $c->longitude : null,
-            'radius_meters' => $c->radius_meters !== null ? (int) $c->radius_meters : null,
+            'latitude' => $c->latitude === null ? null : (float) $c->latitude,
+            'longitude' => $c->longitude === null ? null : (float) $c->longitude,
+            'radius_meters' => $c->radius_meters,
             'location_name' => $c->location_name,
             'per_user_limit' => $c->per_user_limit,
             'discount_type' => $c->discount_type,
             'discount_value' => (float) $c->discount_value,
-            'discount_maximum' => $c->discount_maximum !== null ? (float) $c->discount_maximum : null,
+            'discount_maximum' => $c->discount_maximum === null ? null : (float) $c->discount_maximum,
+            'allowed_vehicle_display_names' => $this->allowedFamilies($city, $c),
             'allowed_vehicle_type_ids' => $c->allowed_vehicle_type_ids ?? [],
             'is_active' => (bool) $c->is_active,
-            'created_at' => optional($c->created_at)->toIso8601String(),
+            'updated_at' => optional($c->updated_at)->toIso8601String(),
         ];
+    }
+
+    private function allowedFamilies(City $city, Coupon $coupon): array
+    {
+        $names = $this->normalizeFamilies(is_array($coupon->allowed_vehicle_display_names) ? $coupon->allowed_vehicle_display_names : []);
+        if ($names) {
+            return $names;
+        }
+
+        return $this->familiesFromIds($city, is_array($coupon->allowed_vehicle_type_ids) ? $coupon->allowed_vehicle_type_ids : []);
+    }
+
+    private function familiesFromIds(City $city, array $ids): array
+    {
+        if (empty($ids)) {
+            return [];
+        }
+
+        $names = CityVehicleType::query()
+            ->where('city_id', $city->id)
+            ->whereIn('id', array_map('intval', $ids))
+            ->pluck('display_name')
+            ->map(fn ($name) => $this->normalizeFamilyName((string) $name))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return $names;
+    }
+
+    private function normalizeFamilies(array $names): array
+    {
+        return collect($names)
+            ->map(fn ($name) => $this->normalizeFamilyName((string) $name))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function normalizeFamilyName(string $name): ?string
+    {
+        $name = trim(preg_replace('/\s+/', ' ', $name));
+        return $name === '' ? null : $name;
     }
 }

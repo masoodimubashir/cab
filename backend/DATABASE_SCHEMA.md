@@ -942,7 +942,7 @@ _Discount coupons offered to customers, with optional location-based restriction
 | discount_type | varchar(255) | No | 'percentage' or 'flat'; default='percentage'. |
 | discount_value | decimal(10,2) | No | Discount amount/percentage; default=0.00. |
 | discount_maximum | decimal(10,2) | Yes | Absolute cap on discount value (when discount_type='percentage'). |
-| allowed_vehicle_type_ids | json | Yes | Array of city_vehicle_type IDs this coupon applies to (empty/null = all). |
+| allowed_vehicle_display_names | json | Yes | Array of vehicle family names this coupon applies to (empty/null = all). |
 | is_active | tinyint(1) | No | Whether the coupon is currently active; default=1. |
 | created_at | timestamp | Yes | Record creation timestamp. |
 | updated_at | timestamp | Yes | Record last update timestamp. |

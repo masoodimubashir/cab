@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CityVehicleType;
 use App\Models\CouponAssignment;
 use Illuminate\Support\Carbon;
 
@@ -59,12 +60,26 @@ class CouponService
         }
 
         $coupon = $assignment->coupon;
+        $tripVehicle = $cityVehicleTypeId ? CityVehicleType::query()->find($cityVehicleTypeId) : null;
+        $tripFamily = $this->normalizeFamilyName($tripVehicle?->display_name);
 
-        $allowedVehicleIds = is_array($coupon->allowed_vehicle_type_ids)
-            ? array_map('intval', $coupon->allowed_vehicle_type_ids)
+        $allowedFamilies = is_array($coupon->allowed_vehicle_display_names)
+            ? array_values(array_unique(array_filter(array_map(
+                fn ($name) => $this->normalizeFamilyName((string) $name),
+                $coupon->allowed_vehicle_display_names,
+            ))))
             : [];
-        if ($allowedVehicleIds && (!$cityVehicleTypeId || !in_array((int) $cityVehicleTypeId, $allowedVehicleIds, true))) {
-            return ['ok' => false, 'error' => 'This coupon does not apply to the selected vehicle.'];
+        if ($allowedFamilies) {
+            if ($tripFamily === null || !in_array($tripFamily, $allowedFamilies, true)) {
+                return ['ok' => false, 'error' => 'This coupon does not apply to the selected vehicle.'];
+            }
+        } else {
+            $allowedVehicleIds = is_array($coupon->allowed_vehicle_type_ids)
+                ? array_map('intval', $coupon->allowed_vehicle_type_ids)
+                : [];
+            if ($allowedVehicleIds && (!$cityVehicleTypeId || !in_array((int) $cityVehicleTypeId, $allowedVehicleIds, true))) {
+                return ['ok' => false, 'error' => 'This coupon does not apply to the selected vehicle.'];
+            }
         }
 
         if ($coupon->promo_type === 'location_sensitive') {
@@ -112,6 +127,12 @@ class CouponService
             'discount' => $discount,
             'final_amount' => round(max(0.0, $baseAmount - $discount), 2),
         ];
+    }
+
+    private function normalizeFamilyName(?string $name): ?string
+    {
+        $name = trim((string) $name);
+        return $name === '' ? null : mb_strtolower(preg_replace('/\s+/', ' ', $name));
     }
 
     private function haversineMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
