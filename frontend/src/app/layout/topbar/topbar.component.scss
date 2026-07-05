@@ -45,7 +45,15 @@
   margin-left: auto;
 }
 
-.tb__bell { cursor: pointer; }
+.tb__bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
 .tb__bell:hover { background: var(--tm-canvas-2); }
 
 .tb__fab {

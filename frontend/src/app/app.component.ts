@@ -39,11 +39,10 @@ export class AppComponent implements OnInit {
     [/^\/vehicles/,                 'Vehicles'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
-    [/^\/fixed-departures/,         'Live Fixed Vehicles'],
+    [/^\/operations/,             'Operations'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
-    [/^\/notifications/,            'Notifications'],
     [/^\/settings\/operator/,       'Operator Settings'],
     [/^\/settings\/app-assets/,     'App Assets'],
     [/^\/settings\/city/,           'City Settings'],
@@ -71,7 +70,7 @@ export class AppComponent implements OnInit {
     /^\/vehicles\b/,
     /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
-    /^\/fixed-departures\b/,
+    /^\/operations\b/,
     /^\/settings\/(city|app-assets|fleets|vehicle-types)\b/,
   ];
 
@@ -150,14 +149,11 @@ export class AppComponent implements OnInit {
     if (can('fleets.manage')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
 
     // --- Operations ---
-    if (can('trips.view')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
-
-    if (can('reservations.view')) operations.push({ label: 'Live Fixed Vehicles', icon: 'calendar', route: '/fixed-departures' });
-    if (can('reservations.view')) operations.push({ label: 'Shuttle Bookings', icon: 'send', route: '/shuttle-bookings' });
+    if (canAny(['trips.view', 'reservations.view', 'customers.view'])) {
+      operations.push({ label: 'Operations', icon: 'road', route: '/operations' });
+    }
 
     if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
-
-    operations.push({ label: 'Notifications', icon: 'bell', route: '/notifications' });
 
     if (canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])) {
       operations.push({
@@ -171,7 +167,7 @@ export class AppComponent implements OnInit {
     }
 
     if (can('contact_drivers.send')) operations.push({ label: 'Contact Drivers', icon: 'envelope',   route: '/contact-drivers' });
-    if (can('customers.view'))       operations.push({ label: 'Customers',       icon: 'user-plus',  route: '/customers' });
+
     if (can('maps.view'))            operations.push({ label: 'Maps',            icon: 'map',        route: '/maps' });
     if (can('safety.view'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
 
@@ -232,6 +228,10 @@ export class AppComponent implements OnInit {
 
   goProfile(): void {
     this.router.navigateByUrl('/profile');
+  }
+
+  goNotifications(): void {
+    this.router.navigateByUrl('/notifications');
   }
 
   openMobileNav(): void {

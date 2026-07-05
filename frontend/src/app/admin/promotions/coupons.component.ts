@@ -22,7 +22,7 @@ import {
 
 interface VehicleTypeOption {
   id: number;
-  display_name?: string;
+  display_name: string;
   name?: string;
 }
 
@@ -42,7 +42,7 @@ interface CouponRow {
   discount_type: string;
   discount_value: number;
   discount_maximum: number | null;
-  allowed_vehicle_type_ids: number[];
+  allowed_vehicle_display_names: string[];
   is_active: boolean;
 }
 
@@ -156,8 +156,8 @@ const PROMO_TYPES = [
         </tm-column>
         <tm-column key="vehicles" label="Vehicles" [wrap]="true">
           <ng-template let-row>
-            <span class="muted" *ngIf="!row.allowed_vehicle_type_ids?.length">All</span>
-            <span class="tagx" *ngFor="let id of row.allowed_vehicle_type_ids">{{ vehicleName(id) }}</span>
+            <span class="muted" *ngIf="!row.allowed_vehicle_display_names?.length">All</span>
+            <span class="tagx" *ngFor="let name of row.allowed_vehicle_display_names">{{ vehicleName(name) }}</span>
           </ng-template>
         </tm-column>
         <tm-column key="per_user_limit" label="Per-user" width="100">
@@ -275,10 +275,10 @@ const PROMO_TYPES = [
               *ngFor="let v of vehicleOptions"
               type="button"
               class="vchip"
-              [class.is-on]="form.allowed_vehicle_type_ids.includes(v.id)"
-              (click)="toggleVehicle(v.id)"
+              [class.is-on]="form.allowed_vehicle_display_names.includes(v.display_name)"
+              (click)="toggleVehicle(v.display_name)"
             >
-              <tm-icon [name]="form.allowed_vehicle_type_ids.includes(v.id) ? 'check' : 'plus'" [size]="12" />
+              <tm-icon [name]="form.allowed_vehicle_display_names.includes(v.display_name) ? 'check' : 'plus'" [size]="12" />
               {{ v.display_name }}
             </button>
           </div>
@@ -539,7 +539,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
   searchQuery = '';
   status: 'active' | 'inactive' = 'active';
   statusOptions = [{ label: 'Inactive', value: 'inactive' }];
-  vehicleFilter: number | null = null;
+  vehicleFilter: string | null = null;
   loading = false;
   currentPage = 1;
   lastPage = 1;
@@ -552,7 +552,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
     return this.vehicleFilter == null ? 'all' : String(this.vehicleFilter);
   }
   get vehicleFilterOptions(): { label: string; value: string }[] {
-    return this.vehicleOptions.map((v) => ({ label: v.display_name ?? `#${v.id}`, value: String(v.id) }));
+    return this.vehicleOptions.map((v) => ({ label: v.display_name, value: v.display_name }));
   }
 
   open = false;
@@ -658,7 +658,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
   }
 
   onVehicleFilterChange(value: string): void {
-    this.vehicleFilter = value === 'all' ? null : Number(value);
+    this.vehicleFilter = value === 'all' ? null : value;
     this.currentPage = 1;
     this.fetch();
   }
@@ -684,15 +684,15 @@ export class CouponsComponent implements OnInit, OnDestroy {
     return PROMO_TYPES.find((x) => x.value === p)?.label || p;
   }
 
-  vehicleName(id: number): string {
-    return this.vehicleOptions.find((v) => v.id === id)?.display_name || `#${id}`;
+  vehicleName(name: string): string {
+    return name;
   }
 
-  toggleVehicle(id: number): void {
-    const list = this.form.allowed_vehicle_type_ids;
-    this.form.allowed_vehicle_type_ids = list.includes(id)
-      ? list.filter((x) => x !== id)
-      : [...list, id];
+  toggleVehicle(name: string): void {
+    const list = this.form.allowed_vehicle_display_names;
+    this.form.allowed_vehicle_display_names = list.includes(name)
+      ? list.filter((x) => x !== name)
+      : [...list, name];
   }
 
   fetch(): void {
@@ -700,7 +700,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
     const params = new URLSearchParams();
     params.set('is_active', this.status === 'inactive' ? '0' : '1');
     if (this.searchQuery.trim()) params.set('q', this.searchQuery.trim());
-    if (this.vehicleFilter != null) params.set('city_vehicle_type_id', String(this.vehicleFilter));
+    if (this.vehicleFilter != null) params.set('vehicle_display_name', this.vehicleFilter);
     params.set('page', String(this.currentPage));
     params.set('per_page', String(this.perPage));
     this.loading = true;
@@ -732,10 +732,16 @@ export class CouponsComponent implements OnInit, OnDestroy {
     if (this.cityId == null) return;
     this.api.get<{ data: VehicleTypeOption[] }>(`/admin/cities/${this.cityId}/vehicle-types`)
       .subscribe({
-        next: (r) => (this.vehicleOptions = (r.data ?? []).map((v) => ({
-          id: v.id,
-          display_name: v.display_name || v.name || `#${v.id}`,
-        }))),
+        next: (r) => {
+          const map = new Map<string, VehicleTypeOption>();
+          for (const raw of r.data ?? []) {
+            const display = (raw.display_name || raw.name || `#${raw.id}`).trim();
+            if (!map.has(display)) {
+              map.set(display, { id: raw.id, display_name: display });
+            }
+          }
+          this.vehicleOptions = [...map.values()];
+        },
         error: () => (this.vehicleOptions = []),
       });
   }
@@ -757,7 +763,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
       discount_type: 'percentage',
       discount_value: 0,
       discount_maximum: 0 as number | null,
-      allowed_vehicle_type_ids: [] as number[],
+      allowed_vehicle_display_names: [] as string[],
       is_active: true,
     };
   }
@@ -788,7 +794,7 @@ export class CouponsComponent implements OnInit, OnDestroy {
       discount_type: r.discount_type,
       discount_value: r.discount_value,
       discount_maximum: r.discount_maximum,
-      allowed_vehicle_type_ids: r.allowed_vehicle_type_ids ?? [],
+      allowed_vehicle_display_names: r.allowed_vehicle_display_names ?? [],
       is_active: r.is_active,
     };
     this.open = true;

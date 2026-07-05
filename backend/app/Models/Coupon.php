@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'latitude', 'longitude', 'radius_meters', 'location_name',
     'per_user_limit',
     'discount_type', 'discount_value', 'discount_maximum',
-    'allowed_vehicle_type_ids', 'is_active',
+    'allowed_vehicle_type_ids', 'allowed_vehicle_display_names', 'is_active',
 ])]
 class Coupon extends Model
 {
@@ -25,6 +25,7 @@ class Coupon extends Model
         'discount_value' => 'decimal:2',
         'discount_maximum' => 'decimal:2',
         'allowed_vehicle_type_ids' => 'array',
+        'allowed_vehicle_display_names' => 'array',
         'is_active' => 'boolean',
     ];
 

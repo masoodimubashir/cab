@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { AdminDashboardComponent } from './admin/admin-dashboard.component';
 import { PricingComponent } from './admin/pricing/pricing.component';
 import { AdminTripsComponent } from './admin/admin-trips.component';
+import { OperationsComponent } from './admin/operations/operations.component';
 import { CustomersListComponent } from './admin/customers/customers-list.component';
 import { CustomerDetailComponent } from './admin/customers/customer-detail.component';
 import { AdminSafetyEventsComponent } from './admin/admin-safety-events.component';
@@ -39,6 +40,7 @@ export const routes: Routes = [
   { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard] },
   { path: 'vehicles/:vehicleRowId/fares', component: VehicleFareSetupComponent, canActivate: [adminAuthGuard] },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard] },
+  { path: 'operations', component: OperationsComponent, canActivate: [adminAuthGuard] },
   { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard] },
   { path: 'customers/:id', component: CustomerDetailComponent, canActivate: [adminAuthGuard] },
   { path: 'safety', component: AdminSafetyEventsComponent, canActivate: [adminAuthGuard] },

@@ -49,13 +49,20 @@ import {
 
       <div class="tb__actions">
         <ng-content></ng-content>
-        <tm-icon-tile
+        <button
           *ngIf="showNotifications"
-          icon="bell"
-          tone="surface"
-          size="md"
+          type="button"
           class="tb__bell"
-        />
+          (click)="notificationsClick.emit()"
+          aria-label="Open notifications"
+          title="Notifications"
+        >
+          <tm-icon-tile
+            icon="bell"
+            tone="surface"
+            size="md"
+          />
+        </button>
         <button
           type="button"
           class="tb__fab"
@@ -127,6 +134,7 @@ export class TopbarComponent {
   @Output() menuClick = new EventEmitter<void>();
   @Output() profile = new EventEmitter<void>();
   @Output() logout = new EventEmitter<void>();
+  @Output() notificationsClick = new EventEmitter<void>();
 
   menuOpen = false;
   isFullscreen = false;
