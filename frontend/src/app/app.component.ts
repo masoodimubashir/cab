@@ -36,9 +36,6 @@ export class AppComponent implements OnInit {
     [/^\/drivers\/documents/,       'Document Catalog'],
     [/^\/contact-drivers/,          'Contact Drivers'],
     [/^\/pricing/,                  'Pricing'],
-    [/^\/vehicle-fares/,            'Vehicle Setup'],
-    [/^\/vehicle-setup-new/,        'Vehicle Setup'],
-    [/^\/fare-settings/,            'Fare Settings'],
     [/^\/vehicles/,                 'Vehicles'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
@@ -48,6 +45,7 @@ export class AppComponent implements OnInit {
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
     [/^\/notifications/,            'Notifications'],
     [/^\/settings\/operator/,       'Operator Settings'],
+    [/^\/settings\/app-assets/,     'App Assets'],
     [/^\/settings\/city/,           'City Settings'],
     [/^\/settings\/fleets/,         'Fleets'],
     [/^\/settings\/vehicle-types/,  'Vehicle Type'],
@@ -69,16 +67,12 @@ export class AppComponent implements OnInit {
    * page's data is per-city. Keep in sync with app.routes.ts.
    */
   private static readonly CITY_SCOPED: RegExp[] = [
-    /^\/city\b/,
     /^\/pricing\b/,
-    /^\/vehicle-fares\b/,
-    /^\/vehicle-setup-new\b/,
-    /^\/fare-settings\b/,
+    /^\/vehicles\b/,
     /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
-    /^\/fixed-routes\b/,
     /^\/fixed-departures\b/,
-    /^\/settings\/(city|fleets|vehicle-types)\b/,
+    /^\/settings\/(city|app-assets|fleets|vehicle-types)\b/,
   ];
 
   private url = signal(this.router.url);
@@ -142,14 +136,10 @@ export class AppComponent implements OnInit {
     if (can('dashboard.view')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
     // --- City Setup (dependency order) ---
-    citySetup.push({ label: 'City Workspace', icon: 'map-marker', route: '/city' });
     if (can('vehicles.view'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
     if (canAny(['pricing.view','dynamic_pricing.manage']))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
-    if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Setup New', icon: 'car', route: '/vehicle-setup-new' });
-    if (can('settings.manage'))        citySetup.push({ label: 'Vehicle Setup', icon: 'car', route: '/vehicle-fares' });
-    if (can('settings.manage'))        citySetup.push({ label: 'Fare Settings',  icon: 'rupee', route: '/fare-settings' });
-    if (can('routes.manage'))          citySetup.push({ label: 'Fixed Routes',  icon: 'road', route: '/fixed-routes' });
+    if (can('settings.manage'))        citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
     if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (can('coupons.manage')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });

@@ -24,7 +24,6 @@ use App\Http\Controllers\Admin\AdminCitiesController;
 use App\Http\Controllers\Admin\AdminDocumentsController;
 use App\Http\Controllers\Admin\AdminGlobalVehicleTypesController;
 use App\Http\Controllers\Admin\AdminRideTypesController;
-use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
 use App\Http\Controllers\Admin\AdminOperatorSettingsController;
 use App\Http\Controllers\Admin\AdminContactDriversController;
@@ -286,9 +285,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update']);
         Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon']);
         Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy']);
-        Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
-        Route::match(['patch', 'post'], '/admin/cities/{city}/ride-scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope']);
-        Route::match(['patch', 'post'], '/admin/cities/{city}/ride-modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
         // Operator-wide (global, non-city) settings.
         Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show']);
         Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);

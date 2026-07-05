@@ -23,7 +23,6 @@ class DriverLockedServiceRegistrationTest extends TestCase
         ]);
         $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
             'name' => 'Sedan Locked Service',
-            'description' => 'Sedan',
             'sort_order' => 1,
             'is_active' => true,
             'created_at' => now(),

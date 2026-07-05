@@ -9,17 +9,16 @@ import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, IconComponent, IconName, ModalComponent } from '../../ui';
 
 type TollMode = 'no' | 'yes';
-type Platform = 'android' | 'ios';
-type TabKey = 'overview' | 'images';
+type TabKey = 'overview';
 
 interface VehicleType {
   id: number;
   city_id: number;
-  ride_type_id: number;
+  ride_type_id: number | null;
   vehicle_type_id: number | null;
   vehicle_set_id: number | null;
   vehicle_set_name: string | null;
-  ride_type_name: string;
+  ride_type_name: string | null;
   is_outstation: boolean;
   display_name: string;
   display_order: number;
@@ -31,7 +30,6 @@ interface VehicleType {
   commission_type: 'percent' | 'fixed';
   commission_percent: number;
   fixed_commission: number;
-  min_driver_balance: number;
   is_active: boolean;
 }
 
@@ -43,20 +41,10 @@ interface VehicleSetOption {
   members?: VehicleSetMember[];
 }
 
-interface VehicleTypeImage {
-  id: number;
-  city_vehicle_type_id: number;
-  platform: Platform;
-  key: string;
-  image_path: string | null;
-  image_url: string | null;
-}
-
 /**
- * Vehicle Details — a tabbed workspace for a single CityVehicleType. A rich hero
- * header carries identity + status + the enable/disable action; the body is split
- * into Overview / Images tabs, and core edits are committed
- * from one sticky save bar (shown only on the tabs that edit core fields).
+ * Vehicle Details — a workspace for a single CityVehicleType. A rich hero
+ * header carries identity + status + the enable/disable action; core edits are
+ * committed from one sticky save bar.
  */
 @Component({
   selector: 'app-vehicle-type-details',
@@ -131,10 +119,6 @@ interface VehicleTypeImage {
                   <input type="text" [(ngModel)]="form.display_name" />
                 </label>
                 <label class="pfield">
-                  <span class="pfield__lbl">Display Order</span>
-                  <input type="number" min="0" max="9999" [(ngModel)]="form.display_order" />
-                </label>
-                <label class="pfield">
                   <span class="pfield__lbl">Max People</span>
                   <input type="number" min="1" max="20" [(ngModel)]="form.max_people" />
                 </label>
@@ -175,10 +159,6 @@ interface VehicleTypeImage {
                 <label class="pfield" *ngIf="form.commission_type === 'fixed'">
                   <span class="pfield__lbl">Fixed commission (₹)</span>
                   <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" />
-                </label>
-                <label class="pfield" *ngIf="form.show_low_wallet_alert">
-                  <span class="pfield__lbl">Min driver balance</span>
-                  <input type="number" step="0.01" [(ngModel)]="form.min_driver_balance" />
                 </label>
               </div>
             </div>
@@ -229,53 +209,9 @@ interface VehicleTypeImage {
             <div class="vcard__danger">
               <div>
                 <div class="vcard__dtitle">Delete this vehicle</div>
-                <div class="vcard__dsub">Removes the vehicle row, its rate card and any uploaded images.</div>
+                <div class="vcard__dsub">Removes the vehicle row and its rate card.</div>
               </div>
               <tm-button variant="danger" size="sm" icon="trash" (clicked)="deleteOpen = true">Delete</tm-button>
-            </div>
-          </section>
-        </ng-container>
-
-        <!-- ===== IMAGES ===== -->
-        <ng-container *ngIf="activeTab === 'images'">
-          <section class="vcard">
-            <header class="vcard__head">
-              <tm-icon name="upload" [size]="14" /><h3>Vehicle Images</h3>
-              <tm-button class="vcard__action" variant="green" size="sm" icon="plus" (clicked)="openAddImage()">Add image</tm-button>
-            </header>
-            <div class="vcard__body vcard__body--flush">
-              <div *ngIf="imagesLoading" class="cue cue--inline">
-                <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading images…</p>
-              </div>
-              <ng-container *ngIf="!imagesLoading">
-                <div class="imgblock" *ngFor="let plat of platformOptions">
-                  <div class="imgblock__head">
-                    <span class="overline">{{ plat.label }} app</span>
-                    <span class="overline overline--mute" *ngIf="!imagesFor(plat.value).length">empty</span>
-                  </div>
-                  <div class="imggrid" *ngIf="imagesFor(plat.value).length">
-                    <div class="imgcard" *ngFor="let img of imagesFor(plat.value)">
-                      <div class="imgcard__media">
-                        <img *ngIf="img.image_url" [src]="img.image_url" />
-                      </div>
-                      <div class="imgcard__meta">
-                        <span class="imgcard__key">{{ img.key }}</span>
-                        <div class="imgcard__actions">
-                          <button type="button" class="iconact" (click)="replaceImage(img)" aria-label="Replace">
-                            <tm-icon name="edit" [size]="13" />
-                          </button>
-                          <button type="button" class="iconact iconact--danger" (click)="deleteImage(img)" aria-label="Delete">
-                            <tm-icon name="trash" [size]="13" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="imgblock__empty" *ngIf="!imagesFor(plat.value).length">
-                    No {{ plat.label }} images yet — add slots like <code>tab_normal</code> or <code>ride_now_highlighted</code>.
-                  </div>
-                </div>
-              </ng-container>
             </div>
           </section>
         </ng-container>
@@ -293,44 +229,6 @@ interface VehicleTypeImage {
         </div>
       </footer>
     </div>
-
-    <!-- Add / Replace image modal -->
-    <tm-modal
-      [open]="addImageOpen"
-      [title]="addImageMode === 'replace' ? 'Replace Image' : 'Add Image'"
-      (closed)="addImageOpen = false"
-    >
-      <div slot="body" class="form">
-        <label class="f">
-          <span class="f__lbl">Type <i class="req">*</i></span>
-          <select [(ngModel)]="addImageForm.platform" [disabled]="addImageMode === 'replace'">
-            <option [ngValue]="null" disabled>Select type</option>
-            <option *ngFor="let p of platformOptions" [ngValue]="p.value">{{ p.label }}</option>
-          </select>
-        </label>
-        <label class="f">
-          <span class="f__lbl">Key <i class="req">*</i></span>
-          <input
-            type="text"
-            [(ngModel)]="addImageForm.key"
-            placeholder="e.g. tab_normal, ride_now_highlighted"
-            [disabled]="addImageMode === 'replace'"
-          />
-        </label>
-        <label class="f">
-          <span class="f__lbl">Image <i class="req">*</i></span>
-          <input type="file" accept="image/*" (change)="onAddImageFile($event)" />
-        </label>
-        <img *ngIf="addImageForm.previewUrl" [src]="addImageForm.previewUrl" class="img-thumb" />
-      </div>
-      <div slot="footer">
-        <tm-button variant="ghost" (clicked)="addImageOpen = false">Cancel</tm-button>
-        <tm-button variant="green" [disabled]="addImageSaving" (clicked)="submitAddImage()">
-          {{ addImageSaving ? 'Saving…' : 'Save' }}
-        </tm-button>
-      </div>
-    </tm-modal>
-
     <!-- Delete vehicle confirm -->
     <tm-modal [open]="deleteOpen" title="Delete this vehicle" (closed)="deleteOpen = false">
       <div slot="body">
@@ -339,17 +237,6 @@ interface VehicleTypeImage {
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="deleteOpen = false">Cancel</tm-button>
         <tm-button variant="danger" (clicked)="doDelete()">Delete</tm-button>
-      </div>
-    </tm-modal>
-
-    <!-- Delete image confirm -->
-    <tm-modal [open]="!!imageToDelete" title="Delete image" (closed)="imageToDelete = null">
-      <div slot="body">
-        <p>Delete the <strong>{{ imageToDelete?.key }}</strong> {{ imageToDelete?.platform }} image?</p>
-      </div>
-      <div slot="footer">
-        <tm-button variant="ghost" (clicked)="imageToDelete = null">Cancel</tm-button>
-        <tm-button variant="danger" (clicked)="doDeleteImage()">Delete</tm-button>
       </div>
     </tm-modal>
   `,
@@ -512,58 +399,6 @@ interface VehicleTypeImage {
       background: var(--tm-green-tint, #e0f7fa);
       border-color: var(--tm-green); color: var(--tm-green);
     }
-
-    /* ── Images ───────────────────────────────────────────────── */
-    .imgblock { padding: 14px 16px; border-bottom: 1px solid var(--tm-line); }
-    .imgblock:last-child { border-bottom: 0; }
-    .imgblock__head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .overline {
-      font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
-      text-transform: uppercase; color: var(--tm-text-muted);
-    }
-    .overline--mute { color: var(--tm-text-muted); opacity: 0.7; }
-    .imggrid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 10px;
-    }
-    .imgcard {
-      background: var(--tm-canvas); border: 1px solid var(--tm-line);
-      border-radius: 10px; overflow: hidden;
-      display: flex; flex-direction: column;
-    }
-    .imgcard__media {
-      aspect-ratio: 4/3;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--tm-canvas-2);
-    }
-    .imgcard__media img { max-width: 100%; max-height: 100%; object-fit: contain; }
-    .imgcard__meta {
-      display: flex; align-items: center; justify-content: space-between; gap: 6px;
-      padding: 8px 10px;
-      border-top: 1px solid var(--tm-line);
-    }
-    .imgcard__key {
-      font-size: 12px; font-weight: 700; color: var(--tm-text);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .imgcard__actions { display: flex; gap: 4px; flex: none; }
-    .iconact {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 26px; height: 26px; border-radius: 7px; border: 0;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted); cursor: pointer;
-    }
-    .iconact:hover { background: var(--tm-ink, #111827); color: #fff; }
-    .iconact--danger:hover { background: var(--tm-danger, #ef4444); }
-    .imgblock__empty {
-      padding: 12px; font-size: 12px; color: var(--tm-text-muted);
-      background: var(--tm-canvas); border: 1px dashed var(--tm-line);
-      border-radius: 8px;
-    }
-    .imgblock__empty code {
-      font-size: 11px; padding: 1px 6px; border-radius: 4px;
-      background: var(--tm-canvas-2); color: var(--tm-text);
-    }
-
     /* ── Vehicle Set picker ───────────────────────────────────── */
     .newset { display: flex; gap: 8px; align-items: center; }
     .newset input {
@@ -575,26 +410,6 @@ interface VehicleTypeImage {
     .newset input:focus { border-color: var(--tm-green); }
     .siblings { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
     .siblings__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-
-    /* ── Modal form ───────────────────────────────────────────── */
-    .form { display: flex; flex-direction: column; gap: 12px; }
-    .f { display: flex; flex-direction: column; gap: 4px; }
-    .f__lbl {
-      font-size: 11px; font-weight: 700; color: var(--tm-text);
-      display: inline-flex; align-items: center; gap: 4px;
-    }
-    .f input, .f select {
-      width: 100%; height: 36px; padding: 0 10px;
-      border: 1px solid var(--tm-line); border-radius: 8px;
-      background: var(--tm-canvas); color: var(--tm-text);
-      font-size: 13px; outline: none; font-family: inherit;
-    }
-    .f input:focus, .f select:focus { border-color: var(--tm-green); }
-    .img-thumb {
-      max-width: 100%; max-height: 160px; border-radius: 8px;
-      border: 1px solid var(--tm-line); display: block;
-    }
-
     @media (max-width: 720px) {
       .pgrid { grid-template-columns: 1fr; }
       .toggles { grid-template-columns: 1fr; }
@@ -612,28 +427,8 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
   activeTab: TabKey = 'overview';
   readonly tabs: { key: TabKey; label: string; icon: IconName }[] = [
     { key: 'overview', label: 'Overview', icon: 'car' },
-    { key: 'images',   label: 'Images',   icon: 'upload' },
   ];
-
-  images: VehicleTypeImage[] = [];
-  imagesLoading = false;
-  platformOptions = [
-    { label: 'Android', value: 'android' as const },
-    { label: 'iOS', value: 'ios' as const },
-  ];
-  addImageOpen = false;
-  addImageSaving = false;
-  addImageMode: 'create' | 'replace' = 'create';
-  addImageTargetId: number | null = null;
-  addImageForm: {
-    platform: Platform | null;
-    key: string;
-    file: File | null;
-    previewUrl: string | null;
-  } = { platform: null, key: '', file: null, previewUrl: null };
-
   deleteOpen = false;
-  imageToDelete: VehicleTypeImage | null = null;
 
   // Vehicle Set picker state
   vehicleSets: VehicleSetOption[] = [];
@@ -688,7 +483,7 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
   }
 
   back(): void {
-    this.router.navigateByUrl('/vehicle-fares');
+    this.router.navigateByUrl('/vehicles');
   }
 
   fetchRow(): void {
@@ -706,7 +501,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
         next: (res) => {
           this.form = res.vehicle_type;
           this.loading = false;
-          this.loadImages();
         },
         error: () => {
           this.loading = false;
@@ -810,7 +604,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
     };
 
     append('display_name', f.display_name);
-    append('display_order', f.display_order);
     append('max_people', f.max_people);
     append('luggage_capacity', f.luggage_capacity);
     append('reverse_bidding_enabled', f.reverse_bidding_enabled);
@@ -821,7 +614,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
     fd.append('commission_type', f.commission_type);
     fd.append('commission_percent', f.commission_type === 'percent' ? String(f.commission_percent ?? 0) : '0');
     fd.append('fixed_commission', f.commission_type === 'fixed' ? String(f.fixed_commission ?? 0) : '0');
-    append('min_driver_balance', f.min_driver_balance);
     // vehicle_set_id is nullable — send empty string to clear it server-side.
     fd.append('vehicle_set_id', f.vehicle_set_id == null ? '' : String(f.vehicle_set_id));
 
@@ -874,124 +666,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
           this.back();
         },
         error: () => this.toast.error('Failed to delete'),
-      });
-  }
-
-  // ---- Images ----
-  imagesFor(platform: Platform): VehicleTypeImage[] {
-    return this.images.filter((i) => i.platform === platform);
-  }
-
-  loadImages(): void {
-    if (this.cityId == null || !this.form) {
-      this.images = [];
-      return;
-    }
-    this.images = [];
-    this.imagesLoading = true;
-    this.api
-      .get<{ data: VehicleTypeImage[] }>(
-        `/admin/cities/${this.cityId}/vehicle-types/${this.form.id}/images`,
-      )
-      .subscribe({
-        next: (res) => {
-          this.images = res.data ?? [];
-          this.imagesLoading = false;
-        },
-        error: () => {
-          this.imagesLoading = false;
-        },
-      });
-  }
-
-  openAddImage(): void {
-    this.addImageMode = 'create';
-    this.addImageTargetId = null;
-    this.addImageForm = { platform: null, key: '', file: null, previewUrl: null };
-    this.addImageOpen = true;
-  }
-
-  replaceImage(img: VehicleTypeImage): void {
-    this.addImageMode = 'replace';
-    this.addImageTargetId = img.id;
-    this.addImageForm = {
-      platform: img.platform,
-      key: img.key,
-      file: null,
-      previewUrl: img.image_url,
-    };
-    this.addImageOpen = true;
-  }
-
-  onAddImageFile(ev: Event): void {
-    const f = (ev.target as HTMLInputElement).files?.[0];
-    this.addImageForm.file = f ?? null;
-    if (f) {
-      const reader = new FileReader();
-      reader.onload = () => (this.addImageForm.previewUrl = reader.result as string);
-      reader.readAsDataURL(f);
-    }
-  }
-
-  submitAddImage(): void {
-    if (!this.form || this.cityId == null) return;
-    const f = this.addImageForm;
-    if (this.addImageMode === 'create' && (!f.platform || !f.key.trim() || !f.file)) {
-      this.toast.error('Type, key and image are all required');
-      return;
-    }
-    if (this.addImageMode === 'replace' && !f.file) {
-      this.toast.error('Pick a new image to replace');
-      return;
-    }
-
-    this.addImageSaving = true;
-    const fd = new FormData();
-    if (this.addImageMode === 'create') {
-      fd.append('platform', f.platform as string);
-      fd.append('key', f.key.trim());
-      fd.append('image', f.file as File);
-    } else {
-      fd.append('_method', 'PATCH');
-      fd.append('image', f.file as File);
-    }
-
-    const url = this.addImageMode === 'create'
-      ? `/admin/cities/${this.cityId}/vehicle-types/${this.form.id}/images`
-      : `/admin/cities/${this.cityId}/vehicle-types/${this.form.id}/images/${this.addImageTargetId}`;
-
-    this.api.postMultipart<{ image: VehicleTypeImage }>(url, fd).subscribe({
-      next: (res) => {
-        this.addImageSaving = false;
-        this.addImageOpen = false;
-        const idx = this.images.findIndex((x) => x.id === res.image.id);
-        if (idx >= 0) this.images[idx] = res.image;
-        else this.images = [...this.images, res.image];
-        this.toast.success('Image saved');
-      },
-      error: (err) => {
-        this.addImageSaving = false;
-        this.toast.error(err?.error?.message || 'Failed to save image');
-      },
-    });
-  }
-
-  deleteImage(img: VehicleTypeImage): void {
-    this.imageToDelete = img;
-  }
-
-  doDeleteImage(): void {
-    const img = this.imageToDelete;
-    if (!img || !this.form || this.cityId == null) return;
-    this.api
-      .delete(`/admin/cities/${this.cityId}/vehicle-types/${this.form.id}/images/${img.id}`)
-      .subscribe({
-        next: () => {
-          this.imageToDelete = null;
-          this.images = this.images.filter((x) => x.id !== img.id);
-          this.toast.success('Image deleted');
-        },
-        error: () => this.toast.error('Failed to delete image'),
       });
   }
 }

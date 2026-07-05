@@ -88,13 +88,7 @@
             <p class="sheet__hint">Go online to start receiving trip requests near you.</p>
           </div>
 
-          <!-- Low-wallet gate: blocks going online until the driver tops up. -->
-          <div class="wallet-warn" *ngIf="!canGoOnline()">
-            <ion-icon name="wallet-outline" aria-hidden="true"></ion-icon>
-            <span>Wallet below ₹{{ minDriverBalance }} — top up to go online.</span>
-          </div>
-
-          <button class="dc-cta sheet__go dc-press" (click)="goOnline()" [disabled]="toggling || !canGoOnline()">
+          <button class="dc-cta sheet__go dc-press" (click)="goOnline()" [disabled]="toggling">
             <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
             <ion-icon name="power" *ngIf="!toggling"></ion-icon>
             <span>{{ toggling ? 'Going online…' : 'Go Online' }}</span>

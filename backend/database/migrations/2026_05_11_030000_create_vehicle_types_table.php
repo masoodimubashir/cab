@@ -10,8 +10,6 @@ return new class extends Migration {
         Schema::create('vehicle_types', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique(); // Auto, Bike, Mini, Tuk-Tuk, etc.
-            $table->string('description')->nullable();
-            $table->string('image_path')->nullable();
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();

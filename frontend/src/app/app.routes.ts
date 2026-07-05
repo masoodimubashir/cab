@@ -1,6 +1,5 @@
 import { Routes } from '@angular/router';
 import { AdminDashboardComponent } from './admin/admin-dashboard.component';
-import { CityWorkspaceComponent } from './admin/city-workspace/city-workspace.component';
 import { PricingComponent } from './admin/pricing/pricing.component';
 import { AdminTripsComponent } from './admin/admin-trips.component';
 import { CustomersListComponent } from './admin/customers/customers-list.component';
@@ -17,15 +16,12 @@ import { MapsComponent } from './admin/maps/maps.component';
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
+import { AppAssetsComponent } from './admin/settings/app-assets.component';
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
-import { VehicleTypesComponent } from './admin/settings/vehicle-types.component';
-import { FareSettingsComponent } from './admin/settings/fare-settings.component';
-import { VehicleSetupNewComponent } from './admin/settings/vehicle-setup-new.component';
 import { VehicleFareSetupComponent } from './admin/settings/vehicle-fare-setup.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
-import { FixedRoutesComponent } from './admin/fixed/fixed-routes.component';
 import { FixedDeparturesComponent } from './admin/fixed/fixed-departures.component';
 import { ShuttleBookingsComponent } from './admin/shuttle/shuttle-bookings.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
@@ -39,13 +35,9 @@ import { adminAuthGuard } from './auth/admin-auth.guard';
 export const routes: Routes = [
   { path: '', redirectTo: 'signin', pathMatch: 'full' },
   { path: 'signin', component: SigninComponent },
-  { path: 'city', component: CityWorkspaceComponent, canActivate: [adminAuthGuard] },
   { path: 'dashboard', component: AdminDashboardComponent, canActivate: [adminAuthGuard] },
   { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard] },
-  { path: 'vehicle-fares', component: VehicleTypesComponent, canActivate: [adminAuthGuard] },
-  { path: 'vehicle-setup-new', component: VehicleSetupNewComponent, canActivate: [adminAuthGuard] },
-  { path: 'vehicle-setup-new/:vehicleRowId/fares', component: VehicleFareSetupComponent, canActivate: [adminAuthGuard] },
-  { path: 'fare-settings', component: FareSettingsComponent, canActivate: [adminAuthGuard] },
+  { path: 'vehicles/:vehicleRowId/fares', component: VehicleFareSetupComponent, canActivate: [adminAuthGuard] },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard] },
   { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard] },
   { path: 'customers/:id', component: CustomerDetailComponent, canActivate: [adminAuthGuard] },
@@ -106,7 +98,6 @@ export const routes: Routes = [
 
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard] },
 
-  { path: 'fixed-routes', component: FixedRoutesComponent, canActivate: [adminAuthGuard] },
   { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard] },
   { path: 'shuttle-bookings', component: ShuttleBookingsComponent, canActivate: [adminAuthGuard] },
 
@@ -116,8 +107,8 @@ export const routes: Routes = [
   { path: 'settings', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/operator', component: OperatorSettingsComponent, canActivate: [adminAuthGuard] },
+  { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
-  // Geofencing is now drawn inside the City Workspace map (no standalone page).
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard] },
   { path: 'settings/vehicle-types/:vehicleRowId', component: VehicleTypeDetailsComponent, canActivate: [adminAuthGuard] },
 

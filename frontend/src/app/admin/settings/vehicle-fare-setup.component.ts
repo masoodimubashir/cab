@@ -9,16 +9,17 @@ import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, IconComponent, IconName, StatusPillComponent } from '../../ui';
 import { OutstationPackagesComponent } from './outstation-packages.component';
 import { VehicleBasePricingComponent } from './vehicle-base-pricing.component';
+import { FixedRoutesComponent } from '../fixed/fixed-routes.component';
 
 type ServiceMode = 'private' | 'fixed' | 'shuttle';
 
 interface VehicleRow {
   id: number;
   city_id: number;
-  ride_type_id: number;
+  ride_type_id: number | null;
   vehicle_type_id: number | null;
   vehicle_type_name?: string | null;
-  ride_type_name: string;
+  ride_type_name: string | null;
   display_name: string;
   display_order: number;
   max_people: number;
@@ -26,7 +27,6 @@ interface VehicleRow {
   commission_type: 'percent' | 'fixed';
   commission_percent: number;
   fixed_commission: number;
-  min_driver_balance: number;
   show_low_wallet_alert: boolean;
   toll_mode: 'yes' | 'no';
   reverse_bidding_enabled: boolean;
@@ -46,7 +46,7 @@ interface RideTypeRef { id: number; name: string; }
 @Component({
   selector: 'app-vehicle-fare-setup',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, StatusPillComponent, OutstationPackagesComponent, VehicleBasePricingComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, StatusPillComponent, OutstationPackagesComponent, VehicleBasePricingComponent, FixedRoutesComponent],
   template: `
     <div class="page">
       <header class="hero">
@@ -86,14 +86,20 @@ interface RideTypeRef { id: number; name: string; }
               <span>Go back and choose a vehicle again.</span>
             </div>
 
-            <div class="empty editorEmpty" *ngIf="selectedVehicle && !selected">
+            <div class="empty editorEmpty" *ngIf="selectedVehicle && !selected && activeMode !== 'fixed'">
               <tm-icon name="rupee" [size]="24" />
               <strong>{{ activeModeLabel }} fare is not configured yet</strong>
               <span>Create {{ activeModeLabel }} fare setup for {{ selectedVehicle.display_name }}. It will copy the common vehicle fields and then open the fare card.</span>
               <tm-button variant="green" icon="plus" [disabled]="creatingMode === activeMode" (clicked)="createFareSetup(activeMode)">{{ creatingMode === activeMode ? 'Creating...' : 'Create ' + activeModeLabel + ' fare setup' }}</tm-button>
             </div>
 
-            <ng-container *ngIf="selected">
+            <ng-container *ngIf="activeMode === 'fixed' && selectedVehicle">
+              <section class="fareBox fareBox--fixed">
+                <app-fixed-routes [cityVehicleTypeId]="selectedVehicle.id"></app-fixed-routes>
+              </section>
+            </ng-container>
+
+            <ng-container *ngIf="selected && activeMode !== 'fixed'">
               <header class="editorHead">
                 <div>
                   <h2>{{ selected.display_name }}</h2>
@@ -109,7 +115,6 @@ interface RideTypeRef { id: number; name: string; }
                 <div class="uniqueBox__head">
                   <h3>{{ activeModeLabel }} unique fields</h3>
                   <span *ngIf="activeMode === 'private'">Reverse bidding belongs only to Normal/Private.</span>
-                  <span *ngIf="activeMode === 'fixed'">Fixed ride behavior remains route-driven where applicable.</span>
                   <span *ngIf="activeMode === 'shuttle'">Shuttle booking is still planned until quote/booking APIs are active.</span>
                 </div>
 
@@ -121,10 +126,6 @@ interface RideTypeRef { id: number; name: string; }
                   <tm-button variant="green" size="sm" icon="check" [disabled]="savingUnique" (clicked)="saveUniqueFields()">
                     {{ savingUnique ? 'Saving...' : 'Save unique fields' }}
                   </tm-button>
-                </div>
-                <div class="uniqueField" *ngIf="activeMode === 'fixed'">
-                  <tm-icon name="road" [size]="16" />
-                  <span>No extra live vehicle-level Fixed fields yet. Fixed route seat fare and route behavior remain in Fixed Routes.</span>
                 </div>
                 <div class="uniqueField" *ngIf="activeMode === 'shuttle'">
                   <tm-icon name="shield" [size]="16" />
@@ -267,13 +268,11 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
       ride_type_id: rideTypeId,
       vehicle_type_id: base.vehicle_type_id,
       display_name: base.display_name,
-      display_order: base.display_order,
       max_people: base.max_people,
       luggage_capacity: base.luggage_capacity,
       commission_type: base.commission_type ?? 'percent',
       commission_percent: base.commission_type === 'fixed' ? 0 : (base.commission_percent ?? 0),
       fixed_commission: base.commission_type === 'fixed' ? (base.fixed_commission ?? 0) : 0,
-      min_driver_balance: base.min_driver_balance ?? 0,
       show_low_wallet_alert: base.show_low_wallet_alert,
       reverse_bidding_enabled: mode === 'private' ? !!base.reverse_bidding_enabled : false,
       toll_mode: base.toll_mode ?? 'no',
@@ -319,7 +318,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
   }
 
   back(): void {
-    this.router.navigateByUrl('/vehicle-setup-new');
+    this.router.navigateByUrl('/vehicles');
   }
 
 
@@ -329,7 +328,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
 
   get fareSubtitle(): string {
     if (this.activeMode === 'shuttle') return 'Prepared Shuttle fare card. Customer and driver Shuttle booking is not active yet.';
-    if (this.activeMode === 'fixed') return 'Vehicle-level fixed fare card. Fixed route per-seat fare remains in Fixed Routes.';
+    if (this.activeMode === 'fixed') return 'Fixed route path, stops, seats and flat fare are managed below.';
     return 'Existing Normal/Private fare card used by the current customer and driver flow.';
   }
 
@@ -339,7 +338,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
 
   serviceFor(row: VehicleRow): string {
     const mode = this.modeFor(row);
-    return mode === 'private' ? 'Normal' : mode === 'fixed' ? 'Fixed' : 'Shuttle';
+    return mode === 'private' ? 'Normal' : mode === 'fixed' ? 'Fixed' : mode === 'shuttle' ? 'Shuttle' : 'Not configured';
   }
 
   isOutstation(row: VehicleRow): boolean {
@@ -363,7 +362,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
     const group = this.groupFor(byId);
     this.selectedVehicle = group.find((r) => this.modeFor(r) === 'private') ?? group[0];
     if (!this.selected || !group.some((r) => r.id === this.selected?.id)) {
-      this.activeMode = this.modeFor(byId);
+      this.activeMode = this.modeFor(byId) ?? 'private';
     }
     this.selected = this.rowForMode(this.activeMode);
     this.syncUniqueForm();
@@ -398,12 +397,13 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
     };
   }
 
-  private modeFor(row: VehicleRow): ServiceMode {
+  private modeFor(row: VehicleRow): ServiceMode | null {
     return this.modeForName(row.ride_type_name);
   }
 
-  private modeForName(name: string): ServiceMode {
+  private modeForName(name: string | null): ServiceMode | null {
     const lower = (name ?? '').toLowerCase();
+    if (!lower) return null;
     if (lower.includes('shuttle')) return 'shuttle';
     if (lower.includes('fixed')) return 'fixed';
     return 'private';

@@ -34,14 +34,9 @@ interface SubscriptionPrompt {
   button2: string | null;
 }
 
-/**
- * Per-(city, vehicle type) wallet gate, served on /drivers/me. When
- * show_low_wallet_alert is on, the driver must hold at least min_driver_balance
- * to go online. Null-safe: a missing config means "no gate".
- */
+/** Per-(city, vehicle type) wallet warning config served on /drivers/me. */
 interface CityVehicleTypeConfig {
   show_low_wallet_alert: boolean;
-  min_driver_balance: number;
 }
 
 /**
@@ -527,22 +522,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Go-online wallet gate. Blocked only when the operator turned the low-wallet
-   * alert on for this (city, vehicle type) AND the driver's balance is below the
-   * required minimum. No config = no gate.
-   */
-  canGoOnline(): boolean {
-    const cfg = this.cityVehicleTypeConfig;
-    if (!cfg || !cfg.show_low_wallet_alert) return true;
-    return this.walletBalance >= (cfg.min_driver_balance ?? 0);
-  }
-
-  /** The minimum balance the driver must hold to go online (₹). */
-  get minDriverBalance(): number {
-    return this.cityVehicleTypeConfig?.min_driver_balance ?? 0;
-  }
-
-  /**
    * The full-screen skeleton lifts only once BOTH the profile and the map are
    * ready, so the driver never sees a half-loaded dashboard.
    */
@@ -789,8 +768,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
             this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
             resolve();
           },
-          // Hand the raw HttpErrorResponse through so the catch can read the
-          // structured low-wallet-balance payload, not just a message string.
           error: (err) => reject(err),
         });
       });
@@ -807,38 +784,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       this.followMe = true;
     } catch (e) {
       const body = (e as { error?: Record<string, unknown> })?.error;
-      if (body?.['error_code'] === 'low_wallet_balance') {
-        await this.presentLowWalletAlert(body);
-      } else {
-        this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not go online';
-      }
+      this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not go online';
     } finally {
       this.toggling = false;
     }
-  }
-
-  /**
-   * The 422 go-online wallet gate: explain the shortfall and offer a one-tap
-   * route to top up. Falls back to a generic line if the server omitted figures.
-   */
-  private async presentLowWalletAlert(body: Record<string, unknown>): Promise<void> {
-    const required = Number(body['required_balance']);
-    const current = Number(body['current_balance']);
-    const message =
-      (body['message'] as string) ||
-      (Number.isFinite(required)
-        ? `Your wallet (₹${Number.isFinite(current) ? current : this.walletBalance}) is below the ₹${required} needed to go online. Add funds to start driving.`
-        : 'Your wallet balance is too low to go online. Add funds to start driving.');
-
-    const alert = await this.alertCtrl.create({
-      header: 'Top up to go online',
-      message,
-      buttons: [
-        { text: 'Not now', role: 'cancel' },
-        { text: 'Add funds', handler: () => { this.router.navigateByUrl('/tabs/wallet'); } },
-      ],
-    });
-    await alert.present();
   }
 
   async goOffline(): Promise<void> {

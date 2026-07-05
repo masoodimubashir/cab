@@ -1,6 +1,5 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { GeneralSettingsComponent } from './general-settings.component';
 import { CitySettingsComponent } from './city-settings.component';
 import { IconComponent, IconName } from '../../ui';
 
@@ -15,7 +14,6 @@ import { IconComponent, IconName } from '../../ui';
   imports: [
     CommonModule,
     IconComponent,
-    GeneralSettingsComponent,
     CitySettingsComponent,
   ],
   template: `
@@ -36,8 +34,7 @@ import { IconComponent, IconName } from '../../ui';
       </nav>
 
       <div class="stg__panel">
-        <app-general-settings *ngIf="activeIndex === 0"></app-general-settings>
-        <app-city-settings *ngIf="activeIndex === 1"></app-city-settings>
+        <app-city-settings></app-city-settings>
       </div>
     </div>
   `,
@@ -77,11 +74,9 @@ import { IconComponent, IconName } from '../../ui';
   `],
 })
 export class SettingsComponent {
-  // Open on the "City Settings" tab — it's what the sidebar item points to.
-  activeIndex = 1;
+  activeIndex = 0;
 
   tabs: { label: string; icon: IconName }[] = [
-    { label: 'Ride Products', icon: 'car' },
     { label: 'City Settings', icon: 'cog' },
   ];
 }

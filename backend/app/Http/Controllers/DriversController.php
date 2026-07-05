@@ -180,7 +180,7 @@ class DriversController extends Controller
                 : url('/storage/'.ltrim($user->avatar_path, '/')))
             : null;
 
-        // Per-vehicle wallet-gate config so the app can pre-disable "Go online".
+        // Per-vehicle wallet warning config.
         $cvt = $driver ? $this->resolveDriverCityVehicleType($driver) : null;
 
         return response()->json([
@@ -197,7 +197,6 @@ class DriversController extends Controller
             'documents' => $documents,
             'city_vehicle_type_config' => [
                 'show_low_wallet_alert' => (bool) ($cvt?->show_low_wallet_alert ?? false),
-                'min_driver_balance' => (float) ($cvt?->min_driver_balance ?? 0),
             ],
         ]);
     }
@@ -660,26 +659,6 @@ class DriversController extends Controller
                     'message' => 'Clear your outstanding balance of ₹' . number_format(abs($balance), 2) . ' before going online.',
                     'error_code' => 'driver_debt',
                     'balance' => $balance,
-                ], 422);
-            }
-        }
-
-        // Per-vehicle low-wallet gate: the driver's CityVehicleType can require a
-        // minimum prepaid float before going online (so commission can be taken
-        // ride-to-ride). Only enforced when that vehicle has the alert switched
-        // on; skipped entirely when no matching vehicle row is configured.
-        $cvt = $this->resolveDriverCityVehicleType($driver);
-        if ($cvt && $cvt->show_low_wallet_alert) {
-            $minBalance = (float) $cvt->min_driver_balance;
-            $current = $walletService->balance($user);
-            if ($current < $minBalance) {
-                return response()->json([
-                    'message' => 'Your wallet balance of ₹' . number_format($current, 2)
-                        . ' is below the ₹' . number_format($minBalance, 2)
-                        . ' required to go online. Please top up to continue.',
-                    'error_code' => 'low_wallet_balance',
-                    'required_balance' => round($minBalance, 2),
-                    'current_balance' => round($current, 2),
                 ], 422);
             }
         }

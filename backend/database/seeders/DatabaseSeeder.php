@@ -32,11 +32,11 @@ class DatabaseSeeder extends Seeder
         ];
 
         $vehicleTypes = [
-            ['name' => 'Sedan', 'description' => 'Standard sedan car', 'sort_order' => 10],
-            ['name' => 'SUV', 'description' => 'Sport Utility Vehicle', 'sort_order' => 20],
-            ['name' => 'Hatchback', 'description' => 'Compact hatchback car', 'sort_order' => 30],
-            ['name' => 'Van', 'description' => 'Spacious van for groups', 'sort_order' => 40],
-            ['name' => 'Motorcycle', 'description' => 'Two-wheeler motorcycle', 'sort_order' => 50],
+            ['name' => 'Sedan', 'sort_order' => 10],
+            ['name' => 'SUV', 'sort_order' => 20],
+            ['name' => 'Hatchback', 'sort_order' => 30],
+            ['name' => 'Van', 'sort_order' => 40],
+            ['name' => 'Motorcycle', 'sort_order' => 50],
         ];
 
         foreach ($rideTypes as $rt) {
@@ -49,7 +49,7 @@ class DatabaseSeeder extends Seeder
         foreach ($vehicleTypes as $vt) {
             VehicleType::updateOrCreate(
                 ['name' => $vt['name']],
-                ['description' => $vt['description'], 'sort_order' => $vt['sort_order']],
+                ['sort_order' => $vt['sort_order']],
             );
         }
 

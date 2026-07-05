@@ -57,23 +57,22 @@ class AdminVehicleTypesController
     public function store(Request $request, City $city)
     {
         $data = $request->validate([
-            'ride_type_id' => ['required', 'integer', 'exists:ride_types,id'],
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
             'display_name' => ['required', 'string', 'max:120'],
-            'display_order' => ['required', 'integer', 'min:0', 'max:9999'],
+            'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'max_people' => ['required', 'integer', 'min:1', 'max:99'],
             'luggage_capacity' => ['required', 'integer', 'min:0', 'max:99'],
             'toll_mode' => ['required', Rule::in(self::TOLL_MODES)],
             'commission_type' => ['required', Rule::in(['percent', 'fixed'])],
             'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
-            'min_driver_balance' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             'show_low_wallet_alert' => ['nullable', 'boolean'],
             'reverse_bidding_enabled' => ['nullable', 'boolean'],
         ]);
 
-        $rideType = RideType::query()->find((int) $data['ride_type_id']);
-        if (!$this->isPrivateRideType($rideType?->name)) {
+        $rideType = isset($data['ride_type_id']) ? RideType::query()->find((int) $data['ride_type_id']) : null;
+        if (!$rideType || !$this->isPrivateRideType($rideType?->name)) {
             $data['reverse_bidding_enabled'] = false;
         }
 
@@ -88,7 +87,10 @@ class AdminVehicleTypesController
 
         $existing = CityVehicleType::query()
             ->where('city_id', $city->id)
-            ->where('ride_type_id', $data['ride_type_id'])
+            ->when($data['ride_type_id'] ?? null,
+                fn ($q, $rideTypeId) => $q->where('ride_type_id', $rideTypeId),
+                fn ($q) => $q->whereNull('ride_type_id')
+            )
             ->where('display_name', $data['display_name'])
             ->first();
         if ($existing) {
@@ -97,13 +99,16 @@ class AdminVehicleTypesController
             ], 409);
         }
 
+        if (! array_key_exists('display_order', $data) || $data['display_order'] === null) {
+            $data['display_order'] = $this->nextDisplayOrder($city);
+        }
+
         $row = CityVehicleType::query()->create(array_merge(
             [
                 'city_id' => $city->id,
                 'is_active' => true,
                 'commission_type' => 'percent',
                 'show_low_wallet_alert' => true,
-                'min_driver_balance' => 0,
                 'reverse_bidding_enabled' => true,
             ],
             $data,
@@ -124,7 +129,7 @@ class AdminVehicleTypesController
         $this->guard($city, $vehicleType);
 
         $data = $request->validate([
-            'ride_type_id' => ['sometimes', 'integer', 'exists:ride_types,id'],
+            'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
             'vehicle_set_id' => ['nullable', 'integer', 'exists:vehicle_sets,id'],
 
@@ -141,7 +146,6 @@ class AdminVehicleTypesController
             'commission_type' => ['nullable', Rule::in(['percent', 'fixed'])],
             'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
-            'min_driver_balance' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
 
             'override_request_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
             'override_hop_interval_sec' => ['nullable', 'integer', 'min:1', 'max:600'],
@@ -151,10 +155,12 @@ class AdminVehicleTypesController
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $targetRideTypeId = $data['ride_type_id'] ?? $vehicleType->ride_type_id;
-        $targetRideType = $targetRideTypeId === $vehicleType->ride_type_id
-            ? $vehicleType->rideType
-            : RideType::query()->find((int) $targetRideTypeId);
+        $targetRideTypeId = array_key_exists('ride_type_id', $data) ? $data['ride_type_id'] : $vehicleType->ride_type_id;
+        $targetRideType = $targetRideTypeId === null
+            ? null
+            : ($targetRideTypeId === $vehicleType->ride_type_id
+                ? $vehicleType->rideType
+                : RideType::query()->find((int) $targetRideTypeId));
         if (!$this->isPrivateRideType($targetRideType?->name)) {
             $data['reverse_bidding_enabled'] = false;
         }
@@ -190,7 +196,10 @@ class AdminVehicleTypesController
         $targetName = $data['display_name'] ?? $vehicleType->display_name;
         $clash = CityVehicleType::query()
             ->where('city_id', $city->id)
-            ->where('ride_type_id', $targetRideTypeId)
+            ->when($targetRideTypeId,
+                fn ($q, $rideTypeId) => $q->where('ride_type_id', $rideTypeId),
+                fn ($q) => $q->whereNull('ride_type_id')
+            )
             ->where('display_name', $targetName)
             ->where('id', '!=', $vehicleType->id)
             ->exists();
@@ -232,6 +241,13 @@ class AdminVehicleTypesController
         return !str_contains($name, 'fixed') && !str_contains($name, 'shuttle');
     }
 
+    private function nextDisplayOrder(City $city): int
+    {
+        return ((int) CityVehicleType::query()
+            ->where('city_id', $city->id)
+            ->max('display_order')) + 1;
+    }
+
     private function shape(CityVehicleType $v): array
     {
         return [
@@ -256,7 +272,6 @@ class AdminVehicleTypesController
             'commission_type' => $v->commission_type ?? 'percent',
             'commission_percent' => (float) $v->commission_percent,
             'fixed_commission' => (float) $v->fixed_commission,
-            'min_driver_balance' => (float) $v->min_driver_balance,
 
             'override_request_radius_m' => $v->override_request_radius_m,
             'override_hop_interval_sec' => $v->override_hop_interval_sec,
