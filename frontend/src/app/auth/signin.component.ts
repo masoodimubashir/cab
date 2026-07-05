@@ -96,7 +96,7 @@ export class SigninComponent {
       next: (res) => {
         localStorage.setItem('dreamcabs_token', res?.token);
         if (res?.user) this.auth.setProfile(res.user);
-        this.router.navigateByUrl('/city').then((ok) => {
+        this.router.navigateByUrl('/dashboard').then((ok) => {
           if (ok) {
             const name = res?.user?.name?.split(' ')[0];
             this.toast.success(

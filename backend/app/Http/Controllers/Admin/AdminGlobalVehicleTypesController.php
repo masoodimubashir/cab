@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\VehicleType;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -34,13 +33,7 @@ class AdminGlobalVehicleTypesController
     public function store(Request $request)
     {
         $data = $this->validatePayload($request, partial: false);
-        $file = $request->file('image');
-
-        $row = VehicleType::query()->create($this->withoutImage($data));
-        if ($file) {
-            $row->image_path = $file->store('vehicle_types/global', 'public');
-            $row->save();
-        }
+        $row = VehicleType::query()->create($data);
 
         return response()->json([
             'vehicle_type' => $this->shape($row->fresh()),
@@ -51,16 +44,7 @@ class AdminGlobalVehicleTypesController
     public function update(Request $request, VehicleType $vehicleType)
     {
         $data = $this->validatePayload($request, partial: true, currentId: $vehicleType->id);
-        $file = $request->file('image');
-
-        $vehicleType->fill($this->withoutImage($data));
-        if ($file) {
-            if ($vehicleType->image_path && Storage::disk('public')->exists($vehicleType->image_path)) {
-                Storage::disk('public')->delete($vehicleType->image_path);
-            }
-            $vehicleType->image_path = $file->store('vehicle_types/global', 'public');
-        }
-        $vehicleType->save();
+        $vehicleType->fill($data)->save();
 
         return response()->json([
             'vehicle_type' => $this->shape($vehicleType->fresh()),
@@ -70,9 +54,6 @@ class AdminGlobalVehicleTypesController
 
     public function destroy(VehicleType $vehicleType)
     {
-        if ($vehicleType->image_path && Storage::disk('public')->exists($vehicleType->image_path)) {
-            Storage::disk('public')->delete($vehicleType->image_path);
-        }
         $vehicleType->delete();
         return response()->json(['message' => 'Vehicle type deleted.']);
     }
@@ -87,17 +68,9 @@ class AdminGlobalVehicleTypesController
 
         return $request->validate([
             'name' => [$sometimes, 'string', 'max:160', $unique],
-            'description' => ['nullable', 'string', 'max:500'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'is_active' => ['nullable', 'boolean'],
-            'image' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
-    }
-
-    private function withoutImage(array $data): array
-    {
-        unset($data['image']);
-        return $data;
     }
 
     private function shape(VehicleType $v): array
@@ -105,9 +78,6 @@ class AdminGlobalVehicleTypesController
         return [
             'id' => $v->id,
             'name' => $v->name,
-            'description' => $v->description,
-            'image_path' => $v->image_path,
-            'image_url' => $v->image_url,
             'sort_order' => (int) $v->sort_order,
             'is_active' => (bool) $v->is_active,
             'created_at' => optional($v->created_at)->toIso8601String(),

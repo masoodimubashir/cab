@@ -430,7 +430,6 @@ class ShuttleBookingPhase1Test extends TestCase
         ]);
         $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
             'name' => 'Sedan ' . $rideTypeName,
-            'description' => 'Sedan',
             'sort_order' => 1,
             'is_active' => true,
             'created_at' => $now,

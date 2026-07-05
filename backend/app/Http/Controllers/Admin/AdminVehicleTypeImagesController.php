@@ -3,17 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\City;
+use App\Models\CityVehicleFamilyImage;
 use App\Models\CityVehicleType;
-use App\Models\CityVehicleTypeImage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
- * Manages the multi-image gallery attached to each city vehicle type.
- * Each image is keyed by (platform, key) — e.g. ('android', 'tab_normal'),
- * ('ios', 'ride_now_highlighted'). Matches the Jugnoo-style "Add Image"
- * dialog with Type + Key + File.
+ * Manages the multi-image gallery attached to a vehicle family.
+ * The database key is (city_id, display_name, platform, key), so every
+ * ride-type variant that shares the same display_name reuses the same assets.
  */
 class AdminVehicleTypeImagesController
 {
@@ -21,20 +20,22 @@ class AdminVehicleTypeImagesController
 
     public function index(City $city, CityVehicleType $vehicleType)
     {
-        $this->guard($city, $vehicleType);
+        $scope = $this->scope($city, $vehicleType);
 
-        $rows = $vehicleType->images()
+        $rows = CityVehicleFamilyImage::query()
+            ->where('city_id', $scope['city_id'])
+            ->where('display_name', $scope['display_name'])
             ->orderBy('platform')
             ->orderBy('key')
             ->get()
-            ->map(fn (CityVehicleTypeImage $i) => $this->shape($i));
+            ->map(fn (CityVehicleFamilyImage $i) => $this->shape($i));
 
         return response()->json(['data' => $rows]);
     }
 
     public function store(Request $request, City $city, CityVehicleType $vehicleType)
     {
-        $this->guard($city, $vehicleType);
+        $scope = $this->scope($city, $vehicleType);
 
         $data = $request->validate([
             'platform' => ['required', Rule::in(self::PLATFORMS)],
@@ -44,8 +45,9 @@ class AdminVehicleTypeImagesController
 
         $key = $this->normalizeKey($data['key']);
 
-        // Don't allow two rows with the same (vehicle, platform, key) — replace instead.
-        $existing = $vehicleType->images()
+        $existing = CityVehicleFamilyImage::query()
+            ->where('city_id', $scope['city_id'])
+            ->where('display_name', $scope['display_name'])
             ->where('platform', $data['platform'])
             ->where('key', $key)
             ->first();
@@ -54,18 +56,21 @@ class AdminVehicleTypeImagesController
                 Storage::disk('public')->delete($existing->image_path);
             }
             $existing->image_path = $request->file('image')->store(
-                "vehicle_types/{$data['platform']}",
+                "vehicle_families/{$scope['city_id']}/{$data['platform']}",
                 'public',
             );
             $existing->save();
+
             return response()->json(['image' => $this->shape($existing->fresh()), 'message' => 'Image replaced.']);
         }
 
-        $image = $vehicleType->images()->create([
+        $image = CityVehicleFamilyImage::query()->create([
+            'city_id' => $scope['city_id'],
+            'display_name' => $scope['display_name'],
             'platform' => $data['platform'],
             'key' => $key,
             'image_path' => $request->file('image')->store(
-                "vehicle_types/{$data['platform']}",
+                "vehicle_families/{$scope['city_id']}/{$data['platform']}",
                 'public',
             ),
         ]);
@@ -73,9 +78,10 @@ class AdminVehicleTypeImagesController
         return response()->json(['image' => $this->shape($image->fresh()), 'message' => 'Image added.'], 201);
     }
 
-    public function update(Request $request, City $city, CityVehicleType $vehicleType, CityVehicleTypeImage $image)
+    public function update(Request $request, City $city, CityVehicleType $vehicleType, CityVehicleFamilyImage $image)
     {
-        $this->guard($city, $vehicleType, $image);
+        $scope = $this->scope($city, $vehicleType);
+        $this->guardFamily($scope, $image);
 
         $data = $request->validate([
             'platform' => ['sometimes', Rule::in(self::PLATFORMS)],
@@ -94,7 +100,7 @@ class AdminVehicleTypeImagesController
                 Storage::disk('public')->delete($image->image_path);
             }
             $image->image_path = $request->file('image')->store(
-                "vehicle_types/{$image->platform}",
+                "vehicle_families/{$scope['city_id']}/{$image->platform}",
                 'public',
             );
         }
@@ -103,9 +109,10 @@ class AdminVehicleTypeImagesController
         return response()->json(['image' => $this->shape($image->fresh()), 'message' => 'Image updated.']);
     }
 
-    public function destroy(City $city, CityVehicleType $vehicleType, CityVehicleTypeImage $image)
+    public function destroy(City $city, CityVehicleType $vehicleType, CityVehicleFamilyImage $image)
     {
-        $this->guard($city, $vehicleType, $image);
+        $scope = $this->scope($city, $vehicleType);
+        $this->guardFamily($scope, $image);
 
         if ($image->image_path && Storage::disk('public')->exists($image->image_path)) {
             Storage::disk('public')->delete($image->image_path);
@@ -115,12 +122,24 @@ class AdminVehicleTypeImagesController
         return response()->json(['message' => 'Image deleted.']);
     }
 
-    private function guard(City $city, CityVehicleType $vehicleType, ?CityVehicleTypeImage $image = null): void
+    private function scope(City $city, CityVehicleType $vehicleType): array
     {
         if ($vehicleType->city_id !== $city->id) {
             abort(404);
         }
-        if ($image && $image->city_vehicle_type_id !== $vehicleType->id) {
+
+        return [
+            'city_id' => $city->id,
+            'display_name' => trim($vehicleType->display_name),
+        ];
+    }
+
+    private function guardFamily(array $scope, CityVehicleFamilyImage $image): void
+    {
+        if ((int) $image->city_id !== (int) $scope['city_id']) {
+            abort(404);
+        }
+        if (trim((string) $image->display_name) !== $scope['display_name']) {
             abort(404);
         }
     }
@@ -130,11 +149,12 @@ class AdminVehicleTypeImagesController
         return strtolower(trim(preg_replace('/\s+/', '_', $raw)));
     }
 
-    private function shape(CityVehicleTypeImage $i): array
+    private function shape(CityVehicleFamilyImage $i): array
     {
         return [
             'id' => $i->id,
-            'city_vehicle_type_id' => $i->city_vehicle_type_id,
+            'city_id' => $i->city_id,
+            'display_name' => $i->display_name,
             'platform' => $i->platform,
             'key' => $i->key,
             'image_path' => $i->image_path,

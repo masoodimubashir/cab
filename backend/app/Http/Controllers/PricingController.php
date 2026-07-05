@@ -138,7 +138,7 @@ class PricingController extends Controller
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get(['id', 'name', 'description', 'image_path']);
+            ->get(['id', 'name']);
 
         return response()->json(['data' => $rows]);
     }

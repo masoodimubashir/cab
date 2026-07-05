@@ -46,13 +46,7 @@ class CatalogController extends Controller
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get()
-            ->map(fn (VehicleType $v) => [
-                'id' => $v->id,
-                'name' => $v->name,
-                'description' => $v->description,
-                'image_url' => $v->image_url,
-            ]);
+            ->get(['id', 'name']);
 
         return response()->json(['data' => $rows]);
     }

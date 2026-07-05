@@ -97,7 +97,6 @@ class ShuttleQuoteTest extends TestCase
         ]);
         $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
             'name' => 'Sedan',
-            'description' => 'Sedan',
             'sort_order' => 1,
             'is_active' => true,
             'created_at' => $now,

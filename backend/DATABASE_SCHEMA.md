@@ -364,7 +364,6 @@ _Per-city, per-ride-type vehicle configurations with fares, features (reverse bi
 | convenience_charge | decimal(10,2) | No | Convenience/platform fee charged to customer per trip (INR); defaults to 0.00 |
 | convenience_customer_waiver | decimal(10,2) | No | Maximum waiver amount for convenience fee per trip (INR); defaults to 0.00 |
 | convenience_driver_cut | decimal(10,2) | No | Driver's share of convenience fee (INR); defaults to 0.00 |
-| min_driver_balance | decimal(10,2) | No | Minimum wallet balance driver must maintain to accept trips (INR); defaults to 0.00 |
 | override_request_radius_m | int unsigned | Yes | Vehicle-specific override for dispatcher request radius (meters); null uses city default |
 | override_hop_interval_sec | smallint unsigned | Yes | Vehicle-specific override for hop interval between driver requests (seconds); null uses city default |
 | override_hop_radius_m | int unsigned | Yes | Vehicle-specific override for hop radius around pickup location (meters); null uses city default |

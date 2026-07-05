@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, Input, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -315,7 +315,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <label class="field"><span class="field__lbl">Commission (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" placeholder="20" /></label>
             <label class="field"><span class="field__lbl">Tax (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.tax_percent" placeholder="0" /></label>
             <label class="field"><span class="field__lbl">Vehicle</span>
-              <select [(ngModel)]="form.city_vehicle_type_id">
+              <select [(ngModel)]="form.city_vehicle_type_id" [disabled]="cityVehicleTypeId != null">
                 <option [ngValue]="null">Any</option>
                 <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.display_name }}</option>
               </select>
@@ -434,6 +434,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
   `],
 })
 export class FixedRoutesComponent implements OnInit, OnDestroy {
+  @Input() cityVehicleTypeId: number | null = null;
   routes: FixedRouteRow[] = [];
   vehicleTypes: VehicleTypeOption[] = [];
   cities: CityOption[] = [];
@@ -512,6 +513,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   get filteredRoutes(): FixedRouteRow[] {
     const q = this.search.trim().toLowerCase();
     return this.routes.filter((r) => {
+      if (this.cityVehicleTypeId != null && r.city_vehicle_type_id !== this.cityVehicleTypeId) return false;
       if (this.scope !== 'all' && r.scope !== this.scope) return false;
       if (this.status !== 'all' && r.is_active !== (this.status === 'active')) return false;
       if (q) {
@@ -576,7 +578,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       surge_multiplier: null as number | null,
       commission_percent: null as number | null,
       tax_percent: null as number | null,
-      city_vehicle_type_id: null as number | null,
+      city_vehicle_type_id: this.cityVehicleTypeId,
       booking_window_hours: 6,
       max_seats_per_booking: 4,
       waiting_time_per_stop_minutes: 5,
@@ -1119,7 +1121,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lat: f.dest_lat,
       dest_lng: f.dest_lng,
       path_polyline,
-      city_vehicle_type_id: f.city_vehicle_type_id,
+      city_vehicle_type_id: this.cityVehicleTypeId ?? f.city_vehicle_type_id,
       booking_window_hours: f.booking_window_hours,
       max_seats_per_booking: f.max_seats_per_booking,
       waiting_time_per_stop_minutes: f.waiting_time_per_stop_minutes,
