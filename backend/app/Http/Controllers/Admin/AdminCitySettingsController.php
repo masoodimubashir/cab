@@ -30,12 +30,18 @@ class AdminCitySettingsController
 
             'allowed_driver_payment_modes' => ['nullable'],
             'negotiation_floor_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'commission_type' => ['nullable', 'in:percent,fixed'],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+            'toll_mode' => ['nullable', 'in:no,yes'],
+            'show_low_wallet_alert' => ['nullable', 'boolean'],
             'private_no_show_threshold_minutes' => ['nullable', 'numeric', 'min:0', 'max:180'],
             'private_no_show_charge_per_minute' => ['nullable', 'numeric', 'min:0'],
             'private_driver_no_show_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'private_cancellation_rule' => ['nullable', 'string', 'max:32'],
             'fixed_waiting_time_per_stop_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'fixed_stop_arrival_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
+            'fixed_stop_arrival_dwell_seconds' => ['nullable', 'integer', 'min:0', 'max:600'],
             'fixed_driver_missed_stop_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'fixed_customer_pickup_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
             'fixed_vehicle_approaching_alert_radius_m' => ['nullable', 'integer', 'min:50', 'max:10000'],
@@ -66,6 +72,14 @@ class AdminCitySettingsController
         ]);
 
         $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
+
+        if (($data['commission_type'] ?? $settings->commission_type ?? 'percent') === 'fixed') {
+            if (array_key_exists('commission_type', $data) || array_key_exists('fixed_commission', $data)) {
+                $data['commission_percent'] = 0;
+            }
+        } elseif (array_key_exists('commission_type', $data) || array_key_exists('commission_percent', $data)) {
+            $data['fixed_commission'] = 0;
+        }
 
         // Normalize + LOCK allowed_driver_payment_modes to the two supported
         // values. Accept a JSON string, comma list, or array; upper-case each
@@ -128,12 +142,18 @@ class AdminCitySettingsController
 
             'allowed_driver_payment_modes' => $s->allowed_driver_payment_modes ?? [],
             'negotiation_floor_percent' => round((float) ($s->negotiation_floor_percent ?? 10), 2),
+            'commission_type' => $s->commission_type ?? 'percent',
+            'commission_percent' => round((float) ($s->commission_percent ?? 0), 2),
+            'fixed_commission' => round((float) ($s->fixed_commission ?? 0), 2),
+            'toll_mode' => $s->toll_mode ?? 'no',
+            'show_low_wallet_alert' => (bool) ($s->show_low_wallet_alert ?? true),
             'private_no_show_threshold_minutes' => $s->private_no_show_threshold_minutes !== null ? round((float) $s->private_no_show_threshold_minutes, 2) : null,
             'private_no_show_charge_per_minute' => $s->private_no_show_charge_per_minute !== null ? round((float) $s->private_no_show_charge_per_minute, 2) : null,
             'private_driver_no_show_grace_minutes' => (int) ($s->private_driver_no_show_grace_minutes ?? 5),
             'private_cancellation_rule' => $s->private_cancellation_rule ?? 'standard',
             'fixed_waiting_time_per_stop_minutes' => (int) ($s->fixed_waiting_time_per_stop_minutes ?? 5),
             'fixed_stop_arrival_radius_m' => (int) ($s->fixed_stop_arrival_radius_m ?? 150),
+            'fixed_stop_arrival_dwell_seconds' => (int) ($s->fixed_stop_arrival_dwell_seconds ?? 20),
             'fixed_driver_missed_stop_grace_minutes' => (int) ($s->fixed_driver_missed_stop_grace_minutes ?? 3),
             'fixed_customer_pickup_radius_m' => (int) ($s->fixed_customer_pickup_radius_m ?? 150),
             'fixed_vehicle_approaching_alert_radius_m' => (int) ($s->fixed_vehicle_approaching_alert_radius_m ?? 500),

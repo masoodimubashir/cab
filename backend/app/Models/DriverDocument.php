@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'driver_id',
     'document_id',
     'vehicle_type_id',
+    'image_index',
     'document_type',
     'file_path',
     'label_values',

@@ -5,9 +5,11 @@
   <tm-topbar
     [title]="pageTitle()"
     [user]="topbarUser"
+    [showLiveOperations]="showLiveOperations"
     (menuClick)="openMobileNav()"
     (profile)="goProfile()"
     (logout)="logout()"
+    (liveOperationsClick)="goLiveOperations()"
     (notificationsClick)="goNotifications()"
   >
     <tm-city-switcher slot="lead" *ngIf="showCitySwitcher()" />
@@ -19,7 +21,7 @@
 </tm-shell>
 
 <ng-template #bare>
-  <main class="bare">
+  <main class="bare" [class.bare--full]="isFullScreenRoute">
     <router-outlet />
   </main>
 </ng-template>

@@ -45,7 +45,7 @@
   margin-left: auto;
 }
 
-.tb__bell {
+.tb__icon-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -53,8 +53,9 @@
   border: 0;
   background: transparent;
   cursor: pointer;
+  border-radius: var(--tm-radius-md);
 }
-.tb__bell:hover { background: var(--tm-canvas-2); }
+.tb__icon-action:hover { background: var(--tm-canvas-2); }
 
 .tb__fab {
   display: inline-flex;

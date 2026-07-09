@@ -83,10 +83,36 @@ class SafetyController extends Controller
 
     public function adminIndex(Request $request)
     {
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:CREATED,SENT,RESOLVED'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+        ]);
+
         $events = SafetyEvent::query()
-            ->with('initiator')
+            ->with('initiator:id,name,phone,email')
+            ->when($data['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+            ->when($data['date_from'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '>=', $date))
+            ->when($data['date_to'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '<=', $date))
+            ->when($data['search'] ?? null, function ($q, $search) {
+                $term = trim($search);
+                $q->where(function ($inner) use ($term) {
+                    if (is_numeric($term)) {
+                        $inner->orWhere('id', (int) $term)
+                            ->orWhere('trip_id', (int) $term);
+                    }
+
+                    $inner->orWhereHas('initiator', function ($user) use ($term) {
+                        $user->where('name', 'like', "%{$term}%")
+                            ->orWhere('phone', 'like', "%{$term}%")
+                            ->orWhere('email', 'like', "%{$term}%");
+                    });
+                });
+            })
             ->orderByDesc('created_at')
-            ->paginate(20);
+            ->paginate((int) ($data['per_page'] ?? 20));
 
         return response()->json(['data' => $events]);
     }

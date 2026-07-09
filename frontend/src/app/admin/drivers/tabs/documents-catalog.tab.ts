@@ -146,7 +146,7 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
             <div class="cell-doc">
               <strong>{{ row.name }}</strong>
               <span class="cell-doc__sub muted small">
-                {{ categoryLabel(row.category) }} · {{ row.no_of_images }} image{{ row.no_of_images === 1 ? '' : 's' }}
+                {{ row.no_of_images }} image{{ row.no_of_images === 1 ? '' : 's' }}
               </span>
             </div>
           </ng-template>
@@ -197,19 +197,20 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
             <label class="lbl">Document Name *</label>
             <input class="input" type="text" [(ngModel)]="form.name" placeholder="Driver License" />
 
-            <label class="lbl">No. of Images Required *</label>
-            <input class="input" type="number" min="1" max="20"
-                   [(ngModel)]="form.no_of_images" />
-
-            <label class="lbl">Document Category *</label>
-            <tm-select [options]="categoryOptions" [(ngModel)]="form.category" />
+            <div class="count-row">
+              <div>
+                <label class="lbl">No. of Images Required *</label>
+                <p class="muted small" style="margin: 2px 0 0;">Drivers must upload this many images during registration.</p>
+              </div>
+              <div class="stepper" aria-label="No. of images required">
+                <button type="button" class="stepper__btn" (click)="adjustImages(-1)" [disabled]="form.no_of_images <= 1">−</button>
+                <span class="stepper__value">{{ form.no_of_images }}</span>
+                <button type="button" class="stepper__btn stepper__btn--plus" (click)="adjustImages(1)" [disabled]="form.no_of_images >= 20">+ </button>
+              </div>
+            </div>
 
             <label class="lbl">Required *</label>
             <tm-select [options]="requiredOptions" [(ngModel)]="form.required" />
-
-            <label class="lbl">Document Type *</label>
-            <tm-select [options]="documentTypeOptions" [(ngModel)]="form.document_type"
-                       placeholder="Select Document Type" />
 
             <div class="switch-row">
               <span class="lbl no-mt">Gallery Restricted</span>
@@ -394,6 +395,48 @@ const STATUS_OPTIONS: SelectOption<string>[] = [
       gap: 6px;
       align-items: center;
       justify-content: flex-end;
+    }
+
+    .count-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .stepper {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px;
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-sm);
+      background: var(--tm-surface);
+      flex-shrink: 0;
+    }
+    .stepper__btn {
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: calc(var(--tm-radius-sm) - 3px);
+      background: var(--tm-canvas-2);
+      color: var(--tm-text);
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .stepper__btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .stepper__btn--plus { font-size: 16px; }
+    .stepper__value {
+      min-width: 28px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--tm-text);
     }
 
     /* Form (inside modal) */
@@ -640,6 +683,11 @@ export class DocumentsCatalogTabComponent implements OnInit, OnDestroy {
 
   onPageChange(p: number): void { this.page = p; }
   onPageSizeChange(s: number): void { this.pageSize = s; this.page = 1; }
+
+  adjustImages(delta: number): void {
+    const next = Math.max(1, Math.min(20, (Number(this.form.no_of_images) || 1) + delta));
+    this.form.no_of_images = next;
+  }
 
   // ------------ Helpers ------------
   trackByIndex(i: number): number { return i; }

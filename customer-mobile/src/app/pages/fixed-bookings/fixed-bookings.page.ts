@@ -3,6 +3,7 @@ import { AlertController, ToastController } from "@ionic/angular";
 import { finalize } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 
 interface FixedLiveStatus {
   key: string;
@@ -45,6 +46,9 @@ interface FixedBooking {
   standalone: false,
 })
 export class FixedBookingsPage {
+  private locationWatchId: string | null = null;
+  private lastLocationPostAt = 0;
+  private readonly locationPostMinIntervalMs = 5000;
   loading = false;
   error: string | null = null;
   bookings: FixedBooking[] = [];
@@ -56,11 +60,16 @@ export class FixedBookingsPage {
     private router: Router,
     private alerts: AlertController,
     private toasts: ToastController,
+    private geo: GeolocationService,
   ) {}
 
   ionViewWillEnter(): void {
     this.refresh();
   }
+
+  ionViewWillLeave(): void { void this.stopFixedLocationStream(); }
+
+  ngOnDestroy(): void { void this.stopFixedLocationStream(); }
 
   refresh(): void {
     this.loading = true;
@@ -69,11 +78,13 @@ export class FixedBookingsPage {
       next: (res) => {
         this.bookings = res?.data || [];
         this.loading = false;
+        this.syncFixedLocationStream();
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not load fixed rides.';
         this.bookings = [];
         this.loading = false;
+        this.syncFixedLocationStream();
       },
     });
   }
@@ -161,6 +172,50 @@ export class FixedBookingsPage {
           this.error = err?.error?.message || 'Could not cancel fixed booking.';
         },
       });
+  }
+
+
+  private syncFixedLocationStream(): void {
+    const shouldStream = this.bookings.some((booking) => ['BOOKED', 'CONFIRMED'].includes(booking.status));
+    if (shouldStream) void this.startFixedLocationStream();
+    else void this.stopFixedLocationStream();
+  }
+
+  private async startFixedLocationStream(): Promise<void> {
+    if (this.locationWatchId !== null) return;
+    try {
+      await this.geo.requestPermissions();
+      this.locationWatchId = await this.geo.watchPosition(
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+        (fix, err) => {
+          if (err) {
+            void this.stopFixedLocationStream();
+            return;
+          }
+          if (fix) this.postFixedCustomerLocation(fix);
+        },
+      );
+    } catch {
+      this.locationWatchId = null;
+    }
+  }
+
+  private async stopFixedLocationStream(): Promise<void> {
+    if (this.locationWatchId !== null) {
+      await this.geo.clearWatch(this.locationWatchId);
+      this.locationWatchId = null;
+    }
+    this.lastLocationPostAt = 0;
+  }
+
+  private postFixedCustomerLocation(fix: GeoFix): void {
+    const now = Date.now();
+    if (now - this.lastLocationPostAt < this.locationPostMinIntervalMs) return;
+    this.lastLocationPostAt = now;
+
+    this.api.post('/me/location', { lat: fix.lat, lng: fix.lng }).subscribe({
+      error: () => {},
+    });
   }
 
   private async showToast(message: string): Promise<void> {

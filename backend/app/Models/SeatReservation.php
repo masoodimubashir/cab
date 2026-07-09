@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'payment_method', 'payment_status', 'payment_reference', 'has_extra_luggage', 'extra_luggage_count', 'luggage_surcharge_amount',
     'refund_status', 'refund_reference', 'refund_amount', 'status', 'rating_score', 'rating_comment',
     'boarded_at', 'dropped_at', 'cancelled_at',
-    'fixed_stop_arrived_at', 'fixed_no_show_after_at', 'fixed_driver_missed_after_at',
+    'fixed_stop_arrival_started_at', 'fixed_stop_arrived_at', 'fixed_no_show_after_at', 'fixed_driver_missed_after_at',
     'fixed_approaching_notified_at', 'fixed_arrived_notified_at', 'fixed_leaving_soon_notified_at',
     'fixed_auto_processed_at', 'fixed_auto_outcome',
 ])]
@@ -51,6 +51,7 @@ class SeatReservation extends Model
         'boarded_at' => 'datetime',
         'dropped_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'fixed_stop_arrival_started_at' => 'datetime',
         'fixed_stop_arrived_at' => 'datetime',
         'fixed_no_show_after_at' => 'datetime',
         'fixed_driver_missed_after_at' => 'datetime',

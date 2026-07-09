@@ -53,6 +53,8 @@ class AdminDocumentsController
     public function store(Request $request)
     {
         $data = $this->validatePayload($request, partial: false);
+        $data['category'] = 'driver_document';
+        $data['document_type'] = 'normal';
         $labels = $data['labels'] ?? [];
         unset($data['labels']);
 
@@ -71,6 +73,8 @@ class AdminDocumentsController
     public function update(Request $request, Document $document)
     {
         $data = $this->validatePayload($request, partial: true);
+        $data['category'] = 'driver_document';
+        $data['document_type'] = 'normal';
         $labels = $data['labels'] ?? null;
         unset($data['labels']);
 
@@ -121,7 +125,7 @@ class AdminDocumentsController
         $rules = [
             'name' => [$sometimes, 'string', 'max:160'],
             'no_of_images' => ['nullable', 'integer', 'min:1', 'max:20'],
-            'category' => [$sometimes, 'string', 'max:60'],
+            'category' => ['nullable', 'string', 'max:60'],
             'required' => ['nullable', 'string', 'max:40'],
             'document_type' => ['nullable', 'string', 'max:40'],
             'gallery_restricted' => ['nullable', 'boolean'],

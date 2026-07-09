@@ -31,10 +31,10 @@ class AdminDispatchController
      * }
      *
      * Each driver row: { id (driver pk), user_id, name, phone, vehicle_type, lat, lng,
-     *                    is_online, last_seen_at, status: free|busy|inactive }
+     *                    is_online, last_seen_at, status: free|busy|inactive, current_trip? }
      * Each task row:   { id, status, pickup_address, pickup_lat, pickup_lng,
      *                    drop_address, drop_lat, drop_lng, customer:{}, driver:{}, created_at,
-     *                    estimated_fare, ride_type }
+     *                    estimated_fare, final_fare, ride_type, ride_mode }
      */
     public function snapshot(Request $request, DynamicPricingService $dynamicPricingService)
     {
@@ -50,12 +50,14 @@ class AdminDispatchController
         // (otherwise they show as Free while their trip already sits in the
         // Assigned tasks panel, which looks inconsistent).
         $busyStatuses = array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES);
-        $busyDriverUserIds = Trip::query()
+        $activeTripsByDriver = Trip::query()
+            ->with(['customer', 'driver', 'rideType', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->whereNotNull('driver_id')
             ->whereIn('status', $busyStatuses)
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
-            ->pluck('driver_id')
-            ->all();
+            ->get()
+            ->keyBy('driver_id');
+        $busyDriverUserIds = $activeTripsByDriver->keys()->all();
 
         $latestLocations = DB::table('driver_locations as dl')
             ->select(['dl.driver_id', 'dl.lat', 'dl.lng', 'dl.recorded_at'])
@@ -113,6 +115,9 @@ class AdminDispatchController
 
             if ($isBusy) {
                 $row['status'] = 'busy';
+                if (isset($activeTripsByDriver[$driver->user_id])) {
+                    $row['current_trip'] = $this->shapeTask($activeTripsByDriver[$driver->user_id]);
+                }
                 $busy[] = $row;
                 continue;
             }
@@ -138,7 +143,7 @@ class AdminDispatchController
 
         // Unassigned tasks: in REQUESTED or NEGOTIATION (no driver bound yet).
         $unassigned = Trip::query()
-            ->with(['customer', 'rideType'])
+            ->with(['customer', 'rideType', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->whereIn('status', ['REQUESTED', 'NEGOTIATION'])
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
             ->orderByDesc('created_at')
@@ -148,7 +153,7 @@ class AdminDispatchController
 
         // Assigned tasks: anything with a driver and still active (CONFIRMED + ACTIVE_DRIVER_STATUSES).
         $assigned = Trip::query()
-            ->with(['customer', 'driver', 'rideType'])
+            ->with(['customer', 'driver', 'rideType', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->whereNotNull('driver_id')
             ->whereIn('status', array_merge(['CONFIRMED'], Trip::ACTIVE_DRIVER_STATUSES))
             ->when($cityId, fn ($q) => $q->where('city_id', $cityId))
@@ -204,6 +209,16 @@ class AdminDispatchController
                 'phone' => $trip->driver->phone,
             ] : null,
             'ride_type' => $trip->rideType?->name,
+            'ride_mode' => $this->tripMode($trip),
         ];
+    }
+
+    private function tripMode(Trip $trip): string
+    {
+        if ($trip->route_departure_id === null) {
+            return 'private';
+        }
+
+        return $trip->route?->mode === 'fixed' ? 'fixed' : 'shuttle';
     }
 }

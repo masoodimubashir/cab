@@ -100,33 +100,34 @@ class AdminDriversController
         ]);
 
         if ($data['approval_status'] === 'approved') {
-            // The check used to hard-code the legacy DL/RC/INSURANCE/ID enum.
             // The dynamic catalog (documents.required = 'mandatory_register')
-            // is the source of truth now. For each mandatory catalog entry
-            // the driver must have at least one driver_documents row with
-            // status='approved'. Catalog entries marked 'optional' don't gate
-            // approval.
-            $mandatoryDocIds = \App\Models\Document::query()
+            // is the source of truth now. Each mandatory document must have all
+            // of its required image slots approved before the driver can move
+            // to approved.
+            $mandatoryDocs = \App\Models\Document::query()
                 ->where('required', 'mandatory_register')
-                ->pluck('id')
-                ->all();
+                ->get(['id', 'name', 'no_of_images']);
 
             $missing = [];
-            if (!empty($mandatoryDocIds)) {
-                $approvedByDocId = DriverDocument::query()
+            if ($mandatoryDocs->isNotEmpty()) {
+                $approvedUploads = DriverDocument::query()
                     ->where('driver_id', $driver->id)
-                    ->whereIn('document_id', $mandatoryDocIds)
+                    ->whereIn('document_id', $mandatoryDocs->pluck('id'))
                     ->where('status', 'approved')
-                    ->pluck('document_id')
-                    ->unique()
-                    ->all();
+                    ->get(['id', 'document_id', 'image_index'])
+                    ->groupBy('document_id');
 
-                $missingIds = array_values(array_diff($mandatoryDocIds, $approvedByDocId));
-                if (!empty($missingIds)) {
-                    $missing = \App\Models\Document::query()
-                        ->whereIn('id', $missingIds)
-                        ->pluck('name')
-                        ->all();
+                foreach ($mandatoryDocs as $doc) {
+                    $requiredSlots = max(1, (int) ($doc->no_of_images ?? 1));
+                    $rows = $approvedUploads->get($doc->id, collect());
+                    $approvedSlots = $rows
+                        ->map(fn (DriverDocument $row) => $row->image_index !== null ? 'i:' . $row->image_index : 'r:' . $row->id)
+                        ->unique()
+                        ->count();
+
+                    if ($approvedSlots < $requiredSlots) {
+                        $missing[] = sprintf('%s (%d/%d)', $doc->name, $approvedSlots, $requiredSlots);
+                    }
                 }
             }
 
@@ -191,11 +192,22 @@ class AdminDriversController
             }
         }
 
-        $document->status = $data['status'];
-        $document->rejection_reason = $data['status'] === 'rejected'
-            ? trim($data['rejection_reason'])
-            : null;
-        $document->save();
+        $query = DriverDocument::query()
+            ->where('driver_id', $document->driver_id);
+
+        if ($document->document_id !== null) {
+            $query->where('document_id', $document->document_id);
+            $query->where('vehicle_type_id', $document->vehicle_type_id);
+        } else {
+            $query->whereKey($document->id);
+        }
+
+        $query->update([
+            'status' => $data['status'],
+            'rejection_reason' => $data['status'] === 'rejected'
+                ? trim($data['rejection_reason'])
+                : null,
+        ]);
 
         return response()->json(['document' => $document->fresh()]);
     }
@@ -219,6 +231,7 @@ class AdminDriversController
                 'document_id' => $d->document_id,
                 'document_name' => $d->document?->name,
                 'document_type' => $d->document_type, // legacy enum
+                'image_index' => $d->image_index,
                 'vehicle_type_id' => $d->vehicle_type_id,
                 'vehicle_type_name' => $d->vehicleType?->name,
                 'file_path' => $d->file_path,
@@ -266,13 +279,12 @@ class AdminDriversController
     /**
      * Driver dashboard profile for the admin detail page. Mirrors the customer
      * `show()` shape but with driver-specific fields (vehicle, rating, online,
-     * approval). Wallet, referrals and rides all hang off the driver's user
+     * approval). Wallet and rides all hang off the driver's user
      * account (trips.driver_id points to users.id).
      */
     public function profile(Driver $driver)
     {
         $driver->load([
-            'user.referrer:id,name,referral_code',
             'rideType:id,name',
             'vehicleTypeRef:id,name',
             'city:id,name',
@@ -316,12 +328,6 @@ class AdminDriversController
                 'deactivated_reason' => $driver->deactivated_reason,
                 'rating_avg' => $driver->rating_avg,
                 'rating_count' => $driver->rating_count,
-                'referral_code' => $user?->referral_code,
-                'referrer' => $user?->referrer ? [
-                    'id' => $user->referrer->id,
-                    'name' => $user->referrer->name,
-                    'referral_code' => $user->referrer->referral_code,
-                ] : null,
                 'wallet_balance' => $user ? $this->walletService->balance($user) : 0,
                 'total_rides' => $totalRides,
                 'current_lat' => $user?->current_lat,
@@ -336,7 +342,7 @@ class AdminDriversController
         $rows = Trip::query()
             ->where('driver_id', $driver->user_id)
             ->where('status', '!=', 'CANCELLED')
-            ->with(['customer:id,name', 'rideType:id,name'])
+            ->with(['customer:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->orderByDesc('created_at')
             ->paginate(50);
 
@@ -348,7 +354,7 @@ class AdminDriversController
         $rows = Trip::query()
             ->where('driver_id', $driver->user_id)
             ->where('status', 'CANCELLED')
-            ->with(['customer:id,name', 'rideType:id,name'])
+            ->with(['customer:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->orderByDesc('created_at')
             ->paginate(50);
 
@@ -360,51 +366,6 @@ class AdminDriversController
         $rows = WalletTransaction::query()
             ->where('user_id', $driver->user_id)
             ->with(['createdBy:id,name'])
-            ->orderByDesc('created_at')
-            ->paginate(50);
-
-        return response()->json(['data' => $rows]);
-    }
-
-    public function creditDebit(Request $request, Driver $driver)
-    {
-        $user = $driver->user;
-        if (!$user) {
-            return response()->json(['message' => 'Driver has no user account.'], 422);
-        }
-
-        $data = $request->validate([
-            'type' => ['required', 'in:credit,debit,cashback,driver_added_cash'],
-            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
-            'reason' => ['nullable', 'string', 'max:500'],
-            'engagement_id' => ['nullable', 'integer', 'exists:trips,id'],
-        ]);
-
-        // Admin add/remove respects the operator's wallet min/max caps.
-        if ($msg = $this->walletService->capViolation($user, $data['type'], (float) $data['amount'])) {
-            return response()->json(['message' => $msg], 422);
-        }
-
-        $txn = $this->walletService->recordTransaction(
-            user: $user,
-            type: $data['type'],
-            amount: (float) $data['amount'],
-            reason: $data['reason'] ?? null,
-            tripId: $data['engagement_id'] ?? null,
-            by: $request->user(),
-        );
-
-        return response()->json([
-            'transaction' => $txn,
-            'wallet_balance' => $this->walletService->balance($user),
-        ], 201);
-    }
-
-    public function referrals(Driver $driver)
-    {
-        $rows = User::query()
-            ->where('referred_by_user_id', $driver->user_id)
-            ->select(['id', 'name', 'phone', 'email', 'created_at'])
             ->orderByDesc('created_at')
             ->paginate(50);
 
@@ -456,6 +417,7 @@ class AdminDriversController
         $data = $request->validate([
             'document_id' => ['nullable', 'integer', 'exists:documents,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'image_index' => ['nullable', 'integer', 'min:1', 'max:20'],
             'document_type' => ['nullable', 'in:DL,RC,INSURANCE,ID'],
             'label_values' => ['nullable'],
             'file' => ['required', 'file', 'max:10240'],
@@ -465,6 +427,12 @@ class AdminDriversController
                 'message' => 'document_id or document_type is required.',
             ], 422);
         }
+
+        $imageIndex = isset($data['image_index']) ? max(1, (int) $data['image_index']) : null;
+        $imageIndex = $imageIndex ?? ((int) (DriverDocument::query()
+            ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', (int) $data['document_id']), fn ($q) => $q->where('document_type', $data['document_type']))
+            ->when(array_key_exists('vehicle_type_id', $data), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id'] ?? null))
+            ->max('image_index') ?: 0) + 1);
 
         $labelValues = null;
         if (isset($data['label_values'])) {
@@ -481,10 +449,12 @@ class AdminDriversController
                 'driver_id' => $driver->id,
                 'document_id' => $data['document_id'],
                 'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+                'image_index' => $imageIndex,
             ]
             : [
                 'driver_id' => $driver->id,
                 'document_type' => $data['document_type'],
+                'image_index' => $imageIndex,
             ];
 
         $doc = DriverDocument::query()->updateOrCreate(
@@ -492,6 +462,7 @@ class AdminDriversController
             [
                 'document_id' => $data['document_id'] ?? null,
                 'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+                'image_index' => $imageIndex,
                 'document_type' => $data['document_type'] ?? null,
                 'file_path' => $path,
                 'label_values' => $labelValues,

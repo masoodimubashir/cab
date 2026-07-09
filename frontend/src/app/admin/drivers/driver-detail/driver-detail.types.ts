@@ -35,6 +35,7 @@ export interface DriverDocumentRow {
   vehicle_type_name: string | null;
   file_path: string;
   file_url: string;
+  image_index: number | null;
   label_values: Record<string, string> | null;
   labels_meta: DocLabelMeta[];
   status: 'uploaded' | 'approved' | 'rejected';

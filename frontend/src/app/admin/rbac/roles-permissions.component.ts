@@ -7,11 +7,11 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputTextareaModule } from 'primeng/inputtextarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CheckboxModule } from 'primeng/checkbox';
-import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ApiService } from '../../core/api.service';
+import { IconComponent, StatusPillComponent } from '../../ui';
 
 interface PermissionRow {
   id: number;
@@ -43,321 +43,287 @@ interface RoleRow {
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonModule, DialogModule,
-    InputTextModule, InputTextareaModule, InputSwitchModule, CheckboxModule,
-    TagModule, ToastModule, ConfirmDialogModule,
+    ButtonModule, DialogModule, InputTextModule, InputTextareaModule, InputSwitchModule, CheckboxModule,
+    ToastModule, ConfirmDialogModule,
+    IconComponent, StatusPillComponent,
   ],
   providers: [MessageService, ConfirmationService],
   template: `
     <p-toast />
     <p-confirmDialog />
 
-    <div class="page-head">
-      <div>
-        <h2 class="page-title">Roles & Permissions</h2>
-        <p class="muted small">
-          Bundle permissions into roles, then assign managers to roles. Super Admin sees everything and can't be edited.
-        </p>
-      </div>
-      <button pButton type="button" icon="pi pi-plus" label="Add Role"
-              class="p-button-sm" (click)="openCreate()"></button>
-    </div>
-
-    <div class="layout">
-      <!-- ROLES LIST -->
-      <aside class="roles">
-        <div class="role"
-             *ngFor="let r of roles"
-             [class.role--active]="selected?.id === r.id"
-             (click)="selectRole(r)">
-          <div class="role__name">
-            {{ r.name }}
-            <span *ngIf="r.is_system" class="pill pill--sys">system</span>
-            <span *ngIf="r.requires_fleet" class="pill pill--fleet">franchise</span>
-          </div>
-          <div class="role__meta">
-            <span>{{ r.permission_slugs?.length || 0 }} permissions</span>
-            <span>·</span>
-            <span>{{ r.managers_count }} manager{{ r.managers_count === 1 ? '' : 's' }}</span>
-          </div>
+    <div class="rbac-page">
+      <header class="hero">
+        <div class="hero__copy">
+          <h1>Roles & Permissions</h1>
+          <p>Assign module access to admin roles. A module permission grants full access to that module.</p>
         </div>
-        <div *ngIf="!roles.length" class="empty">No roles yet.</div>
-      </aside>
+        <button type="button" class="primary-btn" (click)="openCreate()">
+          <tm-icon name="plus" [size]="16" /> Add Role
+        </button>
+      </header>
 
-      <!-- DETAIL -->
-      <section class="detail" *ngIf="selected; else nothingSelected">
-        <div class="detail__head">
-          <div>
-            <h3 class="detail__title">{{ selected.name }}</h3>
-            <p class="muted small">{{ selected.description || 'No description.' }}</p>
-          </div>
-          <div class="detail__actions" *ngIf="!selected.is_system">
-            <button pButton type="button" label="Edit" class="p-button-sm" icon="pi pi-pencil"
-                    (click)="openEdit(selected)"></button>
-            <button pButton type="button" label="Delete"
-                    class="p-button-sm p-button-text p-button-danger"
-                    [disabled]="selected.managers_count > 0"
-                    icon="pi pi-trash"
-                    (click)="remove(selected)"></button>
-          </div>
-          <div class="detail__actions" *ngIf="selected.is_system">
-            <p-tag value="System role — read-only" severity="info"></p-tag>
-          </div>
-        </div>
 
-        <div class="props">
-          <div class="prop">
-            <span class="prop__lbl">Slug</span>
-            <code>{{ selected.slug }}</code>
+      <div class="layout">
+        <aside class="roles-panel" aria-label="Roles">
+          <div class="panel-head">
+            <span>Roles</span>
+            <small>{{ roles.length }} total</small>
           </div>
-          <div class="prop">
-            <span class="prop__lbl">Suspendable</span>
-            <span>{{ selected.is_suspendable ? 'Yes' : 'No' }}</span>
-          </div>
-          <div class="prop">
-            <span class="prop__lbl">Requires franchise</span>
-            <span>{{ selected.requires_fleet ? 'Yes' : 'No' }}</span>
-          </div>
-        </div>
-
-        <h4 class="section-title">Permissions ({{ selected.permission_slugs?.length || 0 }})</h4>
-
-        <div class="groups">
-          <div class="group-card" *ngFor="let g of groups">
-            <div class="group-card__head">
-              <span>{{ g.group }}</span>
-              <span class="muted small">
-                {{ countSelectedInGroup(g) }} / {{ g.permissions.length }}
-              </span>
+          <button
+            type="button"
+            class="role-card"
+            *ngFor="let r of roles"
+            [class.is-active]="selected?.id === r.id"
+            (click)="selectRole(r)"
+          >
+            <div class="role-card__main">
+              <strong>{{ r.name }}</strong>
+              <span>{{ r.description || 'No description' }}</span>
             </div>
-            <ul class="perm-list">
-              <li *ngFor="let p of g.permissions" class="perm">
-                <p-checkbox
-                  [binary]="true"
-                  [ngModel]="hasPermission(p.slug)"
-                  [disabled]="true"
-                ></p-checkbox>
-                <div class="perm__body">
-                  <div class="perm__name">{{ p.name }}</div>
-                  <div class="perm__desc" *ngIf="p.description">{{ p.description }}</div>
-                </div>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
+            <div class="badges">
+              <span class="badge badge--system" *ngIf="r.is_system">System</span>
+              <span class="badge" *ngIf="r.requires_fleet">Franchise</span>
+            </div>
+          </button>
+          <div *ngIf="!roles.length" class="empty">No roles yet.</div>
+        </aside>
 
-      <ng-template #nothingSelected>
-        <section class="detail detail--empty">
-          <p class="muted">Select a role on the left to see its permissions.</p>
-        </section>
-      </ng-template>
+        <main class="detail" *ngIf="selected; else nothingSelected">
+          <section class="detail-head">
+            <div>
+              <div class="detail-title-row">
+                <h2>{{ selected.name }}</h2>
+                <tm-status-pill *ngIf="selected.is_system" tone="info">System</tm-status-pill>
+              </div>
+              <p>{{ selected.description || 'No description added.' }}</p>
+            </div>
+            <div class="actions" *ngIf="!selected.is_system">
+              <button type="button" class="secondary-btn" (click)="openEdit(selected)">
+                <tm-icon name="edit" [size]="15" /> Edit
+              </button>
+              <button type="button" class="danger-btn" [disabled]="selected.managers_count > 0" (click)="remove(selected)">
+                <tm-icon name="trash" [size]="15" /> Delete
+              </button>
+            </div>
+          </section>
+
+          <section class="facts">
+            <div class="fact">
+              <span>Slug</span>
+              <code>{{ selected.slug }}</code>
+            </div>
+            <div class="fact">
+              <span>Can be suspended</span>
+              <strong>{{ selected.is_suspendable ? 'Yes' : 'No' }}</strong>
+            </div>
+            <div class="fact">
+              <span>Franchise required</span>
+              <strong>{{ selected.requires_fleet ? 'Yes' : 'No' }}</strong>
+            </div>
+          </section>
+
+          <section class="modules-head">
+            <div>
+              <h3>Module Access</h3>
+            </div>
+          </section>
+
+          <section class="module-grid">
+            <div class="module-item" *ngFor="let p of modules" [class.is-on]="hasPermission(p.slug)">
+              <span class="module-item__check">
+                <tm-icon *ngIf="hasPermission(p.slug)" name="check" [size]="13" />
+              </span>
+              <div>
+                <strong>{{ p.name }}</strong>
+                <small>{{ p.description }}</small>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <ng-template #nothingSelected>
+          <main class="detail empty-detail">
+            <tm-icon name="shield" [size]="26" />
+            <p>Select a role to inspect module access.</p>
+          </main>
+        </ng-template>
+      </div>
     </div>
 
-    <!-- Add / Edit dialog -->
     <p-dialog
-      [header]="editingId ? 'Edit Role' : 'Add Role'"
       [(visible)]="dialogOpen"
       [modal]="true"
-      [style]="{ width: '880px' }"
       [draggable]="false"
+      [style]="{ width: 'min(1080px, 94vw)' }"
+      [contentStyle]="{ padding: '0' }"
+      styleClass="role-dialog"
     >
-      <div class="form">
-        <div class="form-grid">
-          <div class="col">
-            <label class="lbl">Name *</label>
-            <input pInputText [(ngModel)]="form.name" placeholder="e.g. City Manager" />
-
-            <label class="lbl">Slug * <span class="muted small">(letters, digits, underscore — locked after creation)</span></label>
-            <input pInputText [(ngModel)]="form.slug" [disabled]="!!editingId"
-                   placeholder="city_manager" (input)="normalizeSlug()" />
-          </div>
-          <div class="col">
-            <label class="lbl">Description</label>
-            <textarea pInputTextarea rows="3" [(ngModel)]="form.description"
-                      placeholder="Short summary of what this role can do."></textarea>
-
-            <div class="switch-row">
-              <span>Allow suspending users with this role</span>
-              <p-inputSwitch [(ngModel)]="form.is_suspendable"></p-inputSwitch>
-            </div>
-            <div class="switch-row">
-              <span>Require a franchise (fleet) assignment</span>
-              <p-inputSwitch [(ngModel)]="form.requires_fleet"></p-inputSwitch>
-            </div>
-          </div>
+      <ng-template pTemplate="header">
+        <div class="dialog-title">
+          <strong>{{ editingId ? 'Edit Role' : 'Create Role' }}</strong>
+          <span>{{ editingId ? 'Update module access and role settings.' : 'Create a role and choose the modules it can access.' }}</span>
         </div>
+      </ng-template>
 
-        <h4 class="section-title">Permissions</h4>
-        <div class="quick">
-          <button pButton type="button" class="p-button-sm p-button-text" label="Select all" (click)="selectAll()"></button>
-          <button pButton type="button" class="p-button-sm p-button-text p-button-secondary" label="Clear all" (click)="clearAll()"></button>
-        </div>
+      <div class="role-form">
+        <section class="form-section form-section--identity">
+          <div class="field-grid">
+            <label class="field">
+              <span>Name *</span>
+              <input pInputText [(ngModel)]="form.name" [disabled]="!!editingId" placeholder="e.g. City Manager" />
+            </label>
+            <label class="field">
+              <span>Slug *</span>
+              <input pInputText [(ngModel)]="form.slug" [disabled]="!!editingId" placeholder="city_manager" (input)="normalizeSlug()" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Description</span>
+            <textarea pInputTextarea rows="3" [(ngModel)]="form.description" placeholder="Short summary of this role."></textarea>
+          </label>
 
-        <div class="groups">
-          <div class="group-card" *ngFor="let g of groups">
-            <div class="group-card__head">
-              <label class="all-toggle">
-                <p-checkbox
-                  [binary]="true"
-                  [ngModel]="isGroupFullySelected(g)"
-                  (ngModelChange)="toggleGroup(g, $event)"
-                ></p-checkbox>
-                {{ g.group }}
-              </label>
-              <span class="muted small">
-                {{ countSelectedInForm(g) }} / {{ g.permissions.length }}
+          <div class="switch-grid">
+            <label class="switch-card">
+              <span>
+                <strong>Users with this role can be suspended</strong>
+                <small>Turn off for protected roles such as Super Admin.</small>
               </span>
-            </div>
-            <ul class="perm-list">
-              <li *ngFor="let p of g.permissions" class="perm">
-                <p-checkbox
-                  [binary]="true"
-                  [ngModel]="formHasPermission(p.slug)"
-                  (ngModelChange)="toggleFormPermission(p.slug, $event)"
-                ></p-checkbox>
-                <div class="perm__body">
-                  <div class="perm__name">{{ p.name }}</div>
-                  <div class="perm__desc" *ngIf="p.description">{{ p.description }}</div>
-                  <div class="perm__slug"><code>{{ p.slug }}</code></div>
-                </div>
-              </li>
-            </ul>
+              <p-inputSwitch [(ngModel)]="form.is_suspendable"></p-inputSwitch>
+            </label>
+            <label class="switch-card">
+              <span>
+                <strong>Requires franchise assignment</strong>
+                <small>Managers with this role must be tied to a fleet.</small>
+              </span>
+              <p-inputSwitch [(ngModel)]="form.requires_fleet"></p-inputSwitch>
+            </label>
           </div>
-        </div>
+        </section>
+
+        <section class="form-section">
+          <div class="module-picker-head">
+            <div>
+              <h3>Module Access</h3>
+              <p>{{ form.permission_slugs.length }} selected</p>
+            </div>
+            <div class="quick-actions">
+              <button type="button" (click)="selectAll()">Select all</button>
+              <button type="button" (click)="clearAll()">Clear</button>
+            </div>
+          </div>
+
+          <div class="module-picker">
+            <label class="module-option" *ngFor="let p of modules" [class.is-on]="formHasPermission(p.slug)">
+              <p-checkbox [binary]="true" [ngModel]="formHasPermission(p.slug)" (ngModelChange)="toggleFormPermission(p.slug, $event)"></p-checkbox>
+              <span>
+                <strong>{{ p.name }}</strong>
+                <small>{{ p.description }}</small>
+              </span>
+            </label>
+          </div>
+        </section>
       </div>
 
       <ng-template pTemplate="footer">
-        <button pButton type="button" label="Cancel" class="p-button-secondary" (click)="dialogOpen = false"></button>
-        <button pButton type="button"
-                [label]="editingId ? 'Update Role' : 'Create Role'"
-                (click)="submit()" [loading]="saving"></button>
+        <div class="dialog-footer">
+          <button type="button" class="secondary-btn" (click)="dialogOpen = false">Cancel</button>
+          <button type="button" class="primary-btn" (click)="submit()" [disabled]="saving">
+            {{ saving ? 'Saving...' : (editingId ? 'Update Role' : 'Create Role') }}
+          </button>
+        </div>
       </ng-template>
     </p-dialog>
   `,
   styles: [`
-    .page-head {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: 18px; gap: 16px;
-    }
-    .page-title { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
-    .muted { color: #64748b; }
-    .small { font-size: 12px; }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 18px;
-      align-items: start;
-    }
-    .roles {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 8px;
-      max-height: 75vh;
-      overflow-y: auto;
-    }
-    .role {
-      padding: 12px 14px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.15s ease;
-    }
-    .role:hover { background: #f1f5f9; }
-    .role--active {
-      background: #ecfeff;
-      box-shadow: inset 0 0 0 1px #06b6d4;
-    }
-    .role__name {
-      font-weight: 700;
-      font-size: 14px;
-      color: #0f172a;
-      display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-    }
-    .role__meta {
-      margin-top: 4px;
-      font-size: 12px;
-      color: #64748b;
-      display: flex; gap: 6px;
-    }
-    .pill {
-      display: inline-block; padding: 1px 8px; border-radius: 999px;
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
-    }
-    .pill--sys { background: #ddd6fe; color: #5b21b6; }
-    .pill--fleet { background: #fef3c7; color: #92400e; }
-    .empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; }
-
-    .detail {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 22px;
-      min-height: 60vh;
-    }
-    .detail--empty { display: flex; align-items: center; justify-content: center; }
-    .detail__head {
+    :host { display: block; }
+    .rbac-page { display: flex; flex-direction: column; gap: 18px; }
+    .hero {
       display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+      padding: 22px; border: 1px solid var(--tm-line); border-radius: 8px; background: #fff;
+      box-shadow: var(--tm-shadow-sm);
     }
-    .detail__title { margin: 0 0 4px; font-size: 18px; font-weight: 800; color: #0f172a; }
-    .detail__actions { display: flex; gap: 8px; }
-
-    .props {
-      display: flex; flex-wrap: wrap; gap: 22px;
-      padding: 12px 14px;
-      background: #f8fafc;
-      border-radius: 8px;
-      margin: 14px 0 18px;
+    .hero h1 { margin: 0; font-size: clamp(26px, 3vw, 38px); color: var(--tm-text); letter-spacing: 0; }
+    .hero p { margin: 6px 0 0; color: var(--tm-text-muted); font-size: 14px; }
+    .primary-btn, .secondary-btn, .danger-btn {
+      min-height: 38px; border-radius: 8px; border: 1px solid var(--tm-line); padding: 0 13px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      font: 800 13px var(--tm-font-body); cursor: pointer; white-space: nowrap;
     }
-    .prop { display: flex; flex-direction: column; gap: 2px; }
-    .prop__lbl { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.6px; }
-    .prop code, code { background: #eef2ff; padding: 1px 6px; border-radius: 4px; font-size: 12px; color: #4338ca; }
-
-    .section-title {
-      margin: 18px 0 12px;
-      font-size: 13px;
-      font-weight: 800;
-      color: #475569;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+    .primary-btn { background: var(--tm-green); border-color: var(--tm-green); color: #fff; }
+    .secondary-btn { background: #fff; color: var(--tm-text); }
+    .danger-btn { background: #fff; color: var(--tm-danger, #dc2626); border-color: color-mix(in srgb, var(--tm-danger, #dc2626) 24%, var(--tm-line)); }
+    .danger-btn:disabled, .primary-btn:disabled { opacity: .5; cursor: default; }
+    .layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .roles-panel, .detail { border: 1px solid var(--tm-line); border-radius: 8px; background: #fff; box-shadow: var(--tm-shadow-sm); }
+    .roles-panel { padding: 8px; max-height: calc(100vh - 220px); overflow: auto; }
+    .panel-head { display: flex; justify-content: space-between; padding: 10px 10px 12px; color: var(--tm-text); font-weight: 850; }
+    .panel-head small { color: var(--tm-text-muted); font-weight: 750; }
+    .role-card { width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
+    .role-card:hover { background: var(--tm-canvas-2); }
+    .role-card.is-active { background: var(--tm-green-tint); box-shadow: inset 0 0 0 1px var(--tm-green-deep); }
+    .role-card__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .role-card__main strong { color: var(--tm-text); font-size: 14px; }
+    .role-card__main span { color: var(--tm-text-muted); font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge { padding: 3px 8px; border-radius: var(--tm-radius-pill); background: var(--tm-warning-bg); color: var(--tm-warning-fg); font-size: 10px; font-weight: 850; text-transform: uppercase; }
+    .badge--system { background: var(--tm-info-bg); color: var(--tm-info-fg); }
+    .detail { padding: 20px; min-height: 520px; }
+    .detail-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+    .detail-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .detail h2 { margin: 0; color: var(--tm-text); font-size: 22px; }
+    .detail-head p, .modules-head p, .module-picker-head p { margin: 5px 0 0; color: var(--tm-text-muted); font-size: 13px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
+    .fact { padding: 12px; border-radius: 8px; background: var(--tm-canvas-2); display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .fact span { color: var(--tm-text-muted); font-size: 11px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
+    .fact strong, .fact code { color: var(--tm-text); font-weight: 850; overflow-wrap: anywhere; }
+    .fact code { font-family: var(--tm-font-mono); font-size: 12px; }
+    .modules-head, .module-picker-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+    .modules-head h3, .module-picker-head h3 { margin: 0; color: var(--tm-text); font-size: 16px; }
+    .module-grid, .module-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .module-item, .module-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--tm-line); border-radius: 8px; background: #fff; }
+    .module-item { opacity: .45; min-height: 72px; }
+    .module-item.is-on { opacity: 1; background: color-mix(in srgb, var(--tm-green-tint) 55%, #fff); }
+    .module-item__check { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--tm-line); display: inline-flex; align-items: center; justify-content: center; color: var(--tm-green-deep); flex: 0 0 auto; }
+    .module-item.is-on .module-item__check { border-color: var(--tm-green-deep); background: #fff; }
+    .module-item strong, .module-option strong { display: block; color: var(--tm-text); font-size: 13px; }
+    .module-item small, .module-option small { display: block; color: var(--tm-text-muted); font-size: 12px; line-height: 1.35; margin-top: 2px; }
+    .empty, .empty-detail { color: var(--tm-text-muted); text-align: center; }
+    .empty { padding: 22px; font-size: 13px; }
+    .empty-detail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+    .dialog-title { display: flex; flex-direction: column; gap: 2px; }
+    .dialog-title strong { color: var(--tm-text); font-size: 18px; }
+    .dialog-title span { color: var(--tm-text-muted); font-size: 12px; }
+    .role-form { display: flex; flex-direction: column; gap: 0; }
+    .form-section { padding: 18px; border-bottom: 1px solid var(--tm-line); }
+    .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 6px; color: var(--tm-text); font-size: 12px; font-weight: 850; }
+    .field input, .field textarea { width: 100%; border-radius: 8px; }
+    .switch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+    .switch-card { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas-2); }
+    .switch-card span { display: flex; flex-direction: column; gap: 2px; }
+    .switch-card strong { color: var(--tm-text); font-size: 13px; }
+    .switch-card small { color: var(--tm-text-muted); font-size: 12px; line-height: 1.35; }
+    .quick-actions { display: flex; gap: 6px; }
+    .quick-actions button { border: 1px solid var(--tm-line); background: #fff; border-radius: 8px; min-height: 32px; padding: 0 10px; font-weight: 800; color: var(--tm-text); cursor: pointer; }
+    .module-option { cursor: pointer; }
+    .module-option.is-on { background: color-mix(in srgb, var(--tm-green-tint) 55%, #fff); }
+    .dialog-footer { display: flex; justify-content: flex-end; gap: 8px; width: 100%; }
+    :host ::ng-deep .role-dialog .p-dialog-header { padding: 18px 18px 12px; }
+    :host ::ng-deep .role-dialog .p-dialog-footer { padding: 14px 18px; border-top: 1px solid var(--tm-line); }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .roles-panel { max-height: none; }
+      .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-    .quick { display: flex; gap: 6px; margin-bottom: 10px; }
-
-    .groups {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .group-card {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 12px 14px;
-    }
-    .group-card__head {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 8px;
-      font-weight: 800;
-      font-size: 13px;
-      color: #0f172a;
-    }
-    .all-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-    .perm-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-    .perm { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
-    .perm__body { display: flex; flex-direction: column; gap: 1px; }
-    .perm__name { font-size: 13px; font-weight: 700; color: #0f172a; }
-    .perm__desc { font-size: 11.5px; color: #64748b; }
-    .perm__slug { font-size: 11px; }
-
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .col { display: flex; flex-direction: column; gap: 6px; }
-    .lbl { font-size: 12px; font-weight: 700; color: #475569; margin-top: 6px; }
-    .col input[pInputText], .col textarea { width: 100%; }
-    .switch-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 12px; background: #f8fafc; border-radius: 8px; margin-top: 10px;
-      font-size: 13px; font-weight: 600; color: #0f172a;
+    @media (max-width: 760px) {
+      .hero { flex-direction: column; padding: 18px; }
+      .primary-btn { width: 100%; }
+      .module-grid, .module-picker, .field-grid, .switch-grid { grid-template-columns: 1fr; }
+      .detail-head, .modules-head, .module-picker-head { flex-direction: column; align-items: stretch; }
+      .actions { justify-content: flex-start; }
+      .facts { grid-template-columns: 1fr; }
     }
   `],
 })
@@ -380,6 +346,14 @@ export class RolesPermissionsComponent implements OnInit {
   ngOnInit(): void {
     this.loadPermissions();
     this.loadRoles();
+  }
+
+  get moduleCount(): number {
+    return this.groups.reduce((sum, group) => sum + group.permissions.length, 0);
+  }
+
+  get modules(): PermissionRow[] {
+    return this.groups.flatMap((group) => group.permissions);
   }
 
   blankForm() {
@@ -432,32 +406,8 @@ export class RolesPermissionsComponent implements OnInit {
     }
   }
 
-  countSelectedInGroup(g: PermissionGroup): number {
-    if (!this.selected?.permission_slugs) return 0;
-    return g.permissions.filter((p) => this.selected!.permission_slugs!.includes(p.slug)).length;
-  }
-
-  countSelectedInForm(g: PermissionGroup): number {
-    return g.permissions.filter((p) => this.form.permission_slugs.includes(p.slug)).length;
-  }
-
-  isGroupFullySelected(g: PermissionGroup): boolean {
-    return g.permissions.length > 0 &&
-      g.permissions.every((p) => this.form.permission_slugs.includes(p.slug));
-  }
-
-  toggleGroup(g: PermissionGroup, on: boolean): void {
-    const slugs = g.permissions.map((p) => p.slug);
-    if (on) {
-      this.form.permission_slugs = Array.from(new Set([...this.form.permission_slugs, ...slugs]));
-    } else {
-      this.form.permission_slugs = this.form.permission_slugs.filter((s) => !slugs.includes(s));
-    }
-  }
-
   selectAll(): void {
-    const all = this.groups.flatMap((g) => g.permissions.map((p) => p.slug));
-    this.form.permission_slugs = Array.from(new Set(all));
+    this.form.permission_slugs = Array.from(new Set(this.modules.map((p) => p.slug)));
   }
   clearAll(): void { this.form.permission_slugs = []; }
 
@@ -486,20 +436,22 @@ export class RolesPermissionsComponent implements OnInit {
   }
 
   submit(): void {
-    if (!this.form.name.trim()) { this.msg.add({ severity: 'warn', summary: 'Name is required' }); return; }
+    if (!this.editingId && !this.form.name.trim()) { this.msg.add({ severity: 'warn', summary: 'Name is required' }); return; }
     if (!this.editingId && !this.form.slug.trim()) {
       this.msg.add({ severity: 'warn', summary: 'Slug is required' });
       return;
     }
     const body: any = {
-      name: this.form.name.trim(),
       description: this.form.description?.trim() || null,
       is_suspendable: this.form.is_suspendable,
       requires_fleet: this.form.requires_fleet,
       sort_order: this.form.sort_order,
       permission_slugs: this.form.permission_slugs,
     };
-    if (!this.editingId) body.slug = this.form.slug.trim();
+    if (!this.editingId) {
+      body.name = this.form.name.trim();
+      body.slug = this.form.slug.trim();
+    }
 
     this.saving = true;
     const req$ = this.editingId

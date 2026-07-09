@@ -50,9 +50,23 @@ import {
       <div class="tb__actions">
         <ng-content></ng-content>
         <button
+          *ngIf="showLiveOperations"
+          type="button"
+          class="tb__icon-action"
+          (click)="liveOperationsClick.emit()"
+          aria-label="Open live operations"
+          title="Live Operations"
+        >
+          <tm-icon-tile
+            icon="map"
+            tone="surface"
+            size="md"
+          />
+        </button>
+        <button
           *ngIf="showNotifications"
           type="button"
-          class="tb__bell"
+          class="tb__icon-action"
           (click)="notificationsClick.emit()"
           aria-label="Open notifications"
           title="Notifications"
@@ -122,6 +136,7 @@ import {
 export class TopbarComponent {
   @Input({ required: true }) title!: string;
   @Input() subtitle?: string;
+  @Input() showLiveOperations = false;
   @Input() showNotifications = true;
   @Input() user?: {
     name: string;
@@ -134,6 +149,7 @@ export class TopbarComponent {
   @Output() menuClick = new EventEmitter<void>();
   @Output() profile = new EventEmitter<void>();
   @Output() logout = new EventEmitter<void>();
+  @Output() liveOperationsClick = new EventEmitter<void>();
   @Output() notificationsClick = new EventEmitter<void>();
 
   menuOpen = false;

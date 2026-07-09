@@ -89,22 +89,29 @@ class AdminManagerRolesController
 
     private function validatePayload(Request $request, bool $partial, ?int $currentId = null): array
     {
-        $sometimes = $partial ? 'sometimes' : 'required';
         $unique = Rule::unique('manager_roles', 'slug');
         if ($currentId) {
             $unique = $unique->ignore($currentId);
         }
 
-        return $request->validate([
-            'slug' => [$sometimes, 'string', 'max:80', 'regex:/^[a-z0-9_]+$/', $unique],
-            'name' => [$sometimes, 'string', 'max:160'],
+        $rules = [
             'description' => ['nullable', 'string', 'max:500'],
             'is_suspendable' => ['sometimes', 'boolean'],
             'requires_fleet' => ['sometimes', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'permission_slugs' => ['nullable', 'array'],
             'permission_slugs.*' => ['string', 'exists:permissions,slug'],
-        ]);
+        ];
+
+        if ($partial) {
+            $rules['slug'] = ['prohibited'];
+            $rules['name'] = ['prohibited'];
+        } else {
+            $rules['slug'] = ['required', 'string', 'max:80', 'regex:/^[a-z0-9_]+$/', $unique];
+            $rules['name'] = ['required', 'string', 'max:160'];
+        }
+
+        return $request->validate($rules);
     }
 
     private function shape(ManagerRole $r, bool $withPermissions): array

@@ -8,7 +8,6 @@ import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, IconComponent, IconName, ModalComponent } from '../../ui';
 
-type TollMode = 'no' | 'yes';
 type TabKey = 'overview';
 
 interface VehicleType {
@@ -25,11 +24,6 @@ interface VehicleType {
   max_people: number;
   luggage_capacity: number;
   reverse_bidding_enabled: boolean;
-  show_low_wallet_alert: boolean;
-  toll_mode: TollMode;
-  commission_type: 'percent' | 'fixed';
-  commission_percent: number;
-  fixed_commission: number;
   is_active: boolean;
 }
 
@@ -129,37 +123,8 @@ interface VehicleSetOption {
               </div>
 
               <div class="toggles">
-                <label class="toggle"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" />
-                  <span>Show low-wallet alert (driver)</span></label>
                 <label class="toggle"><input type="checkbox" [(ngModel)]="form.reverse_bidding_enabled" />
                   <span>Reverse bidding enabled</span></label>
-              </div>
-
-              <div class="pfield pfield--full">
-                <span class="pfield__lbl">Toll Applicable</span>
-                <div class="chips">
-                  <button type="button" class="chip" [class.is-on]="form.toll_mode === 'yes'" (click)="form.toll_mode = 'yes'">Yes</button>
-                  <button type="button" class="chip" [class.is-on]="form.toll_mode === 'no'" (click)="form.toll_mode = 'no'">No</button>
-                </div>
-              </div>
-
-              <div class="vcard__sub">Commercials</div>
-              <div class="pfield pfield--full">
-                <span class="pfield__lbl">Commission Mode</span>
-                <div class="chips">
-                  <button type="button" class="chip" [class.is-on]="form.commission_type === 'percent'" (click)="setCommissionType('percent')">Percentage (%)</button>
-                  <button type="button" class="chip" [class.is-on]="form.commission_type === 'fixed'" (click)="setCommissionType('fixed')">Fixed (₹)</button>
-                </div>
-              </div>
-              <div class="pgrid">
-                <label class="pfield" *ngIf="form.commission_type === 'percent'">
-                  <span class="pfield__lbl">Commission (%)</span>
-                  <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" />
-                </label>
-                <label class="pfield" *ngIf="form.commission_type === 'fixed'">
-                  <span class="pfield__lbl">Fixed commission (₹)</span>
-                  <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" />
-                </label>
               </div>
             </div>
           </section>
@@ -581,13 +546,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
   }
 
   /** Switch commission mode and zero the now-inactive field. */
-  setCommissionType(mode: 'percent' | 'fixed'): void {
-    if (!this.form || this.form.commission_type === mode) return;
-    this.form.commission_type = mode;
-    if (mode === 'percent') this.form.fixed_commission = 0;
-    else this.form.commission_percent = 0;
-  }
-
   saveCore(): void {
     if (!this.form || this.cityId == null) return;
     const f = this.form;
@@ -607,13 +565,6 @@ export class VehicleTypeDetailsComponent implements OnInit, OnDestroy {
     append('max_people', f.max_people);
     append('luggage_capacity', f.luggage_capacity);
     append('reverse_bidding_enabled', f.reverse_bidding_enabled);
-    append('show_low_wallet_alert', f.show_low_wallet_alert);
-    append('toll_mode', f.toll_mode);
-    // CityVehicleType is the single source of driver commission. Always send the
-    // mode and force the inactive field to 0 so only one rate is ever live.
-    fd.append('commission_type', f.commission_type);
-    fd.append('commission_percent', f.commission_type === 'percent' ? String(f.commission_percent ?? 0) : '0');
-    fd.append('fixed_commission', f.commission_type === 'fixed' ? String(f.fixed_commission ?? 0) : '0');
     // vehicle_set_id is nullable — send empty string to clear it server-side.
     fd.append('vehicle_set_id', f.vehicle_set_id == null ? '' : String(f.vehicle_set_id));
 

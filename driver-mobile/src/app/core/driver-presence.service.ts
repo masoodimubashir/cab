@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ApiService } from './api.service';
 import { GeoFix, GeolocationService } from './geolocation.service';
 
@@ -16,6 +17,31 @@ export interface PresenceFix {
   bearing: number | null;
 }
 
+type BackgroundLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  speed?: number | null;
+  bearing?: number | null;
+  time?: number;
+};
+
+type BackgroundGeolocationPlugin = {
+  addWatcher(
+    options: {
+      backgroundMessage?: string;
+      backgroundTitle?: string;
+      requestPermissions?: boolean;
+      stale?: boolean;
+      distanceFilter?: number;
+    },
+    callback: (location: BackgroundLocation | null, error: any) => void
+  ): Promise<string>;
+  removeWatcher(options: { id: string }): Promise<void>;
+};
+
+const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
+
 /**
  * Streams the driver's location to the backend whenever they're online,
  * outside of an active trip. Trip-time pings still go through
@@ -28,6 +54,7 @@ export interface PresenceFix {
 @Injectable({ providedIn: 'root' })
 export class DriverPresenceService {
   private watchId: string | null = null;
+  private nativeBackgroundWatch = false;
   private lastSentAt = 0;
   private readonly minIntervalMs = 10000;
   private highAccuracy = true;
@@ -76,14 +103,55 @@ export class DriverPresenceService {
 
   async stop(): Promise<void> {
     if (!this.watchId) return;
-    await this.geo.clearWatch(this.watchId);
+    if (this.nativeBackgroundWatch) {
+      try {
+        await BackgroundGeolocation.removeWatcher({ id: this.watchId });
+      } catch {
+        /* ignore */
+      }
+    } else {
+      await this.geo.clearWatch(this.watchId);
+    }
     this.watchId = null;
+    this.nativeBackgroundWatch = false;
     this.lastSentAt = 0;
     this.lastNotifiedErrorCode = null;
     this.consecutiveTimeouts = 0;
   }
 
   private async attachWatcher(): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      this.nativeBackgroundWatch = true;
+      this.watchId = await BackgroundGeolocation.addWatcher(
+        {
+          backgroundTitle: 'DreamCabs is using your location',
+          backgroundMessage: 'Your location is shared while you are online or working on an active ride.',
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 10,
+        },
+        (location, err) => {
+          if (err) {
+            this.handlePositionError(err, 'watch');
+            return;
+          }
+          if (!location) return;
+          const fix: GeoFix = {
+            lat: location.latitude,
+            lng: location.longitude,
+            accuracy: location.accuracy ?? null,
+            speed: location.speed ?? null,
+            bearing: location.bearing ?? null,
+            timestamp: location.time ?? Date.now(),
+          };
+          this.notifyLocated(fix);
+          this.postLocation(fix);
+        },
+      );
+      return;
+    }
+
+    this.nativeBackgroundWatch = false;
     this.watchId = await this.geo.watchPosition(
       { enableHighAccuracy: this.highAccuracy, maximumAge: 4000, timeout: 30000 },
       (fix, err) => {
@@ -147,8 +215,17 @@ export class DriverPresenceService {
 
   private async restartWatcher(): Promise<void> {
     if (this.watchId) {
-      await this.geo.clearWatch(this.watchId);
+      if (this.nativeBackgroundWatch) {
+        try {
+          await BackgroundGeolocation.removeWatcher({ id: this.watchId });
+        } catch {
+          /* ignore */
+        }
+      } else {
+        await this.geo.clearWatch(this.watchId);
+      }
       this.watchId = null;
+      this.nativeBackgroundWatch = false;
     }
     await this.attachWatcher();
   }

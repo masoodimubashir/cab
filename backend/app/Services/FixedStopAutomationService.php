@@ -50,6 +50,7 @@ class FixedStopAutomationService
         $driverRadius = (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacySettings['stop_arrival_radius_m'] ?? 150));
         $approachingRadius = max($driverRadius, (int) ($citySettings?->fixed_vehicle_approaching_alert_radius_m ?? ($legacySettings['vehicle_approaching_alert_radius_m'] ?? 500)));
         $customerRadius = (int) ($citySettings?->fixed_customer_pickup_radius_m ?? ($legacySettings['customer_pickup_radius_m'] ?? 150));
+        $arrivalDwellSeconds = max(0, (int) ($citySettings?->fixed_stop_arrival_dwell_seconds ?? ($legacySettings['stop_arrival_dwell_seconds'] ?? 20)));
         $waitMinutes = max(0, (int) ($citySettings?->fixed_waiting_time_per_stop_minutes ?? ($route->waiting_time_per_stop_minutes ?? 0)));
         $customerGraceMinutes = max(0, (int) ($citySettings?->fixed_customer_grace_minutes ?? ($legacySettings['customer_grace_minutes'] ?? 2)));
         $driverMissedGraceMinutes = max(0, (int) ($citySettings?->fixed_driver_missed_stop_grace_minutes ?? ($legacySettings['driver_missed_stop_grace_minutes'] ?? 3)));
@@ -71,9 +72,13 @@ class FixedStopAutomationService
                 $this->notifyApproaching($reservation, $now);
             }
             if ($driverDistance <= $driverRadius) {
-                $this->markDriverArrived($reservation, $now, $waitMinutes);
+                $this->markDriverArrived($reservation, $now, $waitMinutes, $arrivalDwellSeconds);
                 $this->maybeMarkCustomerNoShow($reservation->fresh(), $now, $customerRadius, $customerGraceMinutes);
                 continue;
+            }
+
+            if ($reservation->fixed_stop_arrival_started_at && !$reservation->fixed_stop_arrived_at) {
+                $reservation->forceFill(['fixed_stop_arrival_started_at' => null])->save();
             }
 
             $this->maybeMarkDriverMissedStop($reservation, $stops, $driverLat, $driverLng, $driverRadius, $customerRadius, $driverMissedGraceMinutes, $now);
@@ -100,10 +105,21 @@ class FixedStopAutomationService
         ])->save();
     }
 
-    private function markDriverArrived(SeatReservation $reservation, Carbon $now, int $waitMinutes): void
+    private function markDriverArrived(SeatReservation $reservation, Carbon $now, int $waitMinutes, int $arrivalDwellSeconds): void
     {
         if ($reservation->fixed_stop_arrived_at) {
             return;
+        }
+
+        if ($arrivalDwellSeconds > 0) {
+            if (!$reservation->fixed_stop_arrival_started_at) {
+                $reservation->forceFill(['fixed_stop_arrival_started_at' => $now])->save();
+                return;
+            }
+
+            if ($reservation->fixed_stop_arrival_started_at->copy()->addSeconds($arrivalDwellSeconds)->greaterThan($now)) {
+                return;
+            }
         }
 
         $reservation->forceFill([

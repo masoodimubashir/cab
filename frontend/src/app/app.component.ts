@@ -24,7 +24,7 @@ export class AppComponent implements OnInit {
   // Route → page title mapping. Keep in sync with app.routes.ts.
   private static readonly TITLES: Array<[RegExp, string]> = [
     [/^\/dashboard/,                'Dashboard'],
-    [/^\/maps/,                     'Maps'],
+    [/^\/maps/,                     'Live Operations'],
     [/^\/customers\/[^/]+$/,        'Customer Details'],
     [/^\/customers/,                'Customers'],
     [/^\/drivers\/active/,          'Active Drivers'],
@@ -39,7 +39,6 @@ export class AppComponent implements OnInit {
     [/^\/vehicles/,                 'Vehicles'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
-    [/^\/operations/,             'Operations'],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -54,7 +53,6 @@ export class AppComponent implements OnInit {
     [/^\/analytics\/graphs/,        'Analytics Graphs'],
     [/^\/analytics\/reports/,       'Reports'],
     [/^\/safety/,                   'Safety'],
-    [/^\/reports/,                  'Reports'],
   ];
 
   /**
@@ -70,7 +68,6 @@ export class AppComponent implements OnInit {
     /^\/vehicles\b/,
     /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
-    /^\/operations\b/,
     /^\/settings\/(city|app-assets|fleets|vehicle-types)\b/,
   ];
 
@@ -132,62 +129,59 @@ export class AppComponent implements OnInit {
     const platform: NavItem[] = [];
 
     // --- Home (top of nav, no section header) ---
-    if (can('dashboard.view')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
+    if (can('dashboard')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
     // --- City Setup (dependency order) ---
-    if (can('vehicles.view'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
-    if (canAny(['pricing.view','dynamic_pricing.manage']))
+    if (can('vehicles'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
+    if (can('pricing'))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
-    if (can('settings.manage'))        citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
-    if (can('settings.manage'))        citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
+    if (can('app_assets'))             citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
+    if (can('city_settings'))          citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
-    if (can('coupons.manage')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
+    if (can('coupons')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
 
-    if (canAny(['subscriptions.manage', 'settings.manage']))
+    if (can('subscriptions'))
                                        citySetup.push({ label: 'Subscriptions', icon: 'star', route: '/subscriptions' });
 
-    if (can('fleets.manage')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
+    if (can('fleets')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
 
     // --- Operations ---
-    if (canAny(['trips.view', 'reservations.view', 'customers.view'])) {
-      operations.push({ label: 'Operations', icon: 'road', route: '/operations' });
-    }
+    if (can('rides')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
+    if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
 
-    if (can('rides.dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
+    if (can('manual_dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 
-    if (canAny(['drivers.view', 'drivers.edit', 'drivers.approve', 'documents.manage'])) {
+    if (can('drivers')) {
       operations.push({
         label: 'Drivers', icon: 'id-card',
         children: filterTruthy([
-          can('drivers.view')     && { label: 'All Drivers',           icon: 'user',  route: '/drivers' },
-          can('drivers.approve')  && { label: 'Approvals & Documents',  icon: 'check', route: '/drivers', queryParams: { tab: 'approvals' } },
-          can('documents.manage') && { label: 'Documents Catalog',      icon: 'edit',  route: '/drivers', queryParams: { tab: 'documents' } },
+          can('drivers') && { label: 'All Drivers',           icon: 'user',  route: '/drivers' },
+          can('drivers') && { label: 'Approvals & Documents',  icon: 'check', route: '/drivers', queryParams: { tab: 'approvals' } },
+          can('drivers') && { label: 'Documents Catalog',      icon: 'edit',  route: '/drivers', queryParams: { tab: 'documents' } },
         ]),
       });
     }
 
-    if (can('contact_drivers.send')) operations.push({ label: 'Contact Drivers', icon: 'envelope',   route: '/contact-drivers' });
+    if (can('contact_drivers')) operations.push({ label: 'Contact Drivers', icon: 'envelope',   route: '/contact-drivers' });
 
-    if (can('maps.view'))            operations.push({ label: 'Maps',            icon: 'map',        route: '/maps' });
-    if (can('safety.view'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
+    if (can('safety'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
 
     // --- Insights ---
-    if (canAny(['analytics.view','reports.view'])) {
+    if (canAny(['analytics','reports'])) {
       insights.push({
         label: 'Analytics', icon: 'chart-bar',
         children: filterTruthy([
-          can('analytics.view') && { label: 'Real Time', icon: 'chart-line', route: '/analytics/real-time' },
-          can('analytics.view') && { label: 'Graphs',    icon: 'chart-bar',  route: '/analytics/graphs' },
-          can('reports.view')   && { label: 'Reports',   icon: 'chart-line', route: '/analytics/reports' },
+          can('analytics') && { label: 'Real Time', icon: 'chart-line', route: '/analytics/real-time' },
+          can('analytics') && { label: 'Graphs',    icon: 'chart-bar',  route: '/analytics/graphs' },
+          can('reports') && { label: 'Reports',   icon: 'chart-line', route: '/analytics/reports' },
         ]),
       });
     }
-    if (can('reports.view')) insights.push({ label: 'Reports', icon: 'chart-line', route: '/reports' });
 
     // --- Platform (global, not city-scoped) ---
-    if (can('settings.manage')) platform.push({ label: 'Operator Settings',  icon: 'cog',    route: '/settings/operator' });
-    if (can('managers.manage')) platform.push({ label: 'Managers',           icon: 'users',  route: '/managers' });
-    if (can('roles.manage'))    platform.push({ label: 'Roles & Permissions', icon: 'shield', route: '/roles-permissions' });
+    if (can('operator_settings')) platform.push({ label: 'Operator Settings',  icon: 'cog',    route: '/settings/operator' });
+    if (can('managers')) platform.push({ label: 'Managers',           icon: 'users',  route: '/managers' });
+    if (can('roles_permissions'))    platform.push({ label: 'Roles & Permissions', icon: 'shield', route: '/roles-permissions' });
 
     return [
       { items: home },                            // unlabeled — sits at the very top
@@ -230,6 +224,10 @@ export class AppComponent implements OnInit {
     this.router.navigateByUrl('/profile');
   }
 
+  goLiveOperations(): void {
+    this.router.navigateByUrl('/maps');
+  }
+
   goNotifications(): void {
     this.router.navigateByUrl('/notifications');
   }
@@ -246,8 +244,16 @@ export class AppComponent implements OnInit {
     return this.router.url.startsWith('/signin');
   }
 
+  get showLiveOperations(): boolean {
+    return this.auth.hasPermission('live_operations');
+  }
+
+  get isFullScreenRoute(): boolean {
+    return this.router.url.startsWith('/maps');
+  }
+
   get showShell(): boolean {
-    return this.isAuthorized && !this.isSigninRoute;
+    return this.isAuthorized && !this.isSigninRoute && !this.isFullScreenRoute;
   }
 
   get scopedCityName(): string | null {

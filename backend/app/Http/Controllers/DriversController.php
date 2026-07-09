@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DispatchDriverLocationUpdated;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\DriverDocument;
@@ -164,6 +165,7 @@ class DriversController extends Controller
                     'document_id' => $d->document_id,
                     'document_name' => $d->document?->name,
                     'document_type' => $d->document_type,
+                    'image_index' => $d->image_index,
                     'vehicle_type_id' => $d->vehicle_type_id,
                     'status' => $d->status,
                     'rejection_reason' => $d->rejection_reason,
@@ -180,8 +182,10 @@ class DriversController extends Controller
                 : url('/storage/'.ltrim($user->avatar_path, '/')))
             : null;
 
-        // Per-vehicle wallet warning config.
-        $cvt = $driver ? $this->resolveDriverCityVehicleType($driver) : null;
+        // City-level wallet warning config.
+        $citySettings = $driver?->city_id
+            ? CitySetting::query()->firstOrCreate(['city_id' => $driver->city_id])
+            : null;
 
         return response()->json([
             'user' => [
@@ -196,7 +200,7 @@ class DriversController extends Controller
             'driver' => $driver,
             'documents' => $documents,
             'city_vehicle_type_config' => [
-                'show_low_wallet_alert' => (bool) ($cvt?->show_low_wallet_alert ?? false),
+                'show_low_wallet_alert' => (bool) ($citySettings?->show_low_wallet_alert ?? true),
             ],
         ]);
     }
@@ -470,11 +474,12 @@ class DriversController extends Controller
     public function uploadDocument(Request $request)
     {
         // The driver wizard sends document_id (from the dynamic catalog) +
-        // vehicle_type_id + optional label_values. Legacy callers may still
-        // send the document_type enum — both are accepted.
+        // image_index so each required image can live in its own slot.
+        // Legacy callers may still send the document_type enum — both are accepted.
         $data = $request->validate([
             'document_id' => ['nullable', 'integer', 'exists:documents,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'image_index' => ['nullable', 'integer', 'min:1', 'max:20'],
             'document_type' => ['nullable', 'in:DL,RC,INSURANCE,ID'],
             'label_values' => ['nullable'],
             'file' => ['required', 'file', 'max:10240'],
@@ -500,25 +505,33 @@ class DriversController extends Controller
             ], 403);
         }
 
-        // Look up an existing row with the same identity. Re-upload is only
-        // allowed when that row was previously rejected — pending and
-        // approved rows are locked.
+        $imageIndex = isset($data['image_index']) ? max(1, (int) $data['image_index']) : null;
+        $imageIndex = $imageIndex ?? ((int) (DriverDocument::query()
+            ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', (int) $data['document_id']), fn ($q) => $q->where('document_type', $data['document_type']))
+            ->when(array_key_exists('vehicle_type_id', $data), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id'] ?? null))
+            ->max('image_index') ?: 0) + 1);
+
+        // Look up an existing row with the same identity + image slot.
+        // Re-upload is only allowed when that row was previously rejected —
+        // pending and approved rows are locked.
         $matcher = !empty($data['document_id'])
             ? [
                 'driver_id' => $driver->id,
                 'document_id' => $data['document_id'],
                 'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+                'image_index' => $imageIndex,
             ]
             : [
                 'driver_id' => $driver->id,
                 'document_type' => $data['document_type'],
+                'image_index' => $imageIndex,
             ];
 
         $existing = DriverDocument::query()->where($matcher)->first();
         if ($existing && $existing->status !== 'rejected') {
             $msg = $existing->status === 'approved'
-                ? 'This document is already approved and cannot be re-uploaded.'
-                : 'This document is already uploaded and awaiting review.';
+                ? 'This document image is already approved and cannot be re-uploaded.'
+                : 'This document image is already uploaded and awaiting review.';
             return response()->json(['message' => $msg], 409);
         }
 
@@ -548,6 +561,7 @@ class DriversController extends Controller
             [
                 'document_id' => $data['document_id'] ?? null,
                 'vehicle_type_id' => $data['vehicle_type_id'] ?? null,
+                'image_index' => $imageIndex,
                 'document_type' => $data['document_type'] ?? null,
                 'file_path' => $path,
                 'label_values' => $labelValues,
@@ -559,13 +573,6 @@ class DriversController extends Controller
         return response()->json(['document' => $doc->fresh()]);
     }
 
-    /**
-     * Resolve the CityVehicleType row that governs this driver: by
-     * (city_id + vehicle_type_id) first, then by (city_id + ride_type_id), then
-     * null when neither matches. Drives the per-vehicle wallet gate + the
-     * /drivers/me config block. Returns null when the driver isn't pinned to a
-     * city (no gate to apply).
-     */
     private function resolveDriverCityVehicleType(Driver $driver): ?CityVehicleType
     {
         if (!$driver->city_id) {
@@ -774,6 +781,11 @@ class DriversController extends Controller
             'is_online' => true,
             'last_online_at' => now(),
         ])->save();
+
+        broadcast(new DispatchDriverLocationUpdated(
+            location: $location->fresh(),
+            driver: $driver->fresh(['user', 'vehicleTypeRef']),
+        ))->toOthers();
 
         $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
         $shuttleStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);

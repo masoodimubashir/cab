@@ -262,8 +262,8 @@ interface FullProfileResponse {
     }
 
     .drawer__panel {
-      width: min(880px, 96vw);
-      max-width: 96vw;
+      width: min(1180px, 98vw);
+      max-width: 98vw;
       height: 100%;
       background: var(--tm-canvas);
       border-left: 1px solid var(--tm-line);
@@ -317,7 +317,7 @@ interface FullProfileResponse {
     .drawer__body {
       flex: 1;
       overflow: auto;
-      padding: var(--tm-space-5);
+      padding: var(--tm-space-5) var(--tm-space-6);
     }
 
     .empty { padding: 30px; text-align: center; color: var(--tm-text-muted); }
@@ -742,14 +742,10 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     this.api
       .patch<{ document: DriverDocumentRow }>(`/admin/drivers/documents/${d.id}/status`, { status })
       .subscribe({
-        next: (res) => {
-          this.documents = this.documents.map((row) =>
-            row.id === d.id
-              ? { ...row, status: res.document.status, rejection_reason: res.document.rejection_reason ?? null }
-              : row,
-          );
+        next: () => {
           this.toast.success(`Document ${status}`);
-          this.cdr.markForCheck();
+          if (this.driverId != null) this.fetch(this.driverId, true);
+          else this.cdr.markForCheck();
         },
         error: (err) => this.toast.error(err?.error?.message || 'Update failed'),
       });
@@ -775,16 +771,12 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
         rejection_reason: this.rejectReason.trim(),
       })
       .subscribe({
-        next: (res) => {
+        next: () => {
           this.rejectSaving = false;
           this.rejectOpen = false;
-          this.documents = this.documents.map((row) =>
-            row.id === target.id
-              ? { ...row, status: res.document.status, rejection_reason: res.document.rejection_reason ?? null }
-              : row,
-          );
           this.toast.success('Document rejected');
-          this.cdr.markForCheck();
+          if (this.driverId != null) this.fetch(this.driverId, true);
+          else this.cdr.markForCheck();
         },
         error: (err) => {
           this.rejectSaving = false;

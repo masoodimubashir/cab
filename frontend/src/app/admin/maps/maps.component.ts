@@ -9,7 +9,9 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { AdminRealtimeService, DispatchDriverLocationPayload } from '../../core/admin-realtime.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
 import {
   ButtonComponent,
@@ -31,6 +33,7 @@ interface DriverRow {
   last_seen_at: string | null;
   status: 'free' | 'busy' | 'inactive';
   inactive_reason?: 'offline' | 'no_location' | 'stale_location';
+  current_trip?: TaskRow | null;
 }
 
 interface TaskRow {
@@ -46,6 +49,7 @@ interface TaskRow {
   customer: { id: number; name: string | null; phone: string | null } | null;
   driver: { id: number; name: string | null; phone: string | null } | null;
   ride_type: string | null;
+  ride_mode: 'private' | 'fixed' | 'shuttle' | string | null;
   created_at: string | null;
 }
 
@@ -89,15 +93,20 @@ const COLORS = {
       <!-- ============================ TOPBAR ============================ -->
       <header class="hero">
         <div class="hero__left">
-          <div class="hero__eyebrow">
-            <span class="live-pill" [class.is-refreshing]="isRefreshing">
-              <span class="live-pill__dot"></span> LIVE
-            </span>
-            <span class="hero__updated" *ngIf="lastUpdated">
-              {{ isRefreshing ? 'Updating…' : 'Updated ' + formatTime(lastUpdated) }}
-            </span>
-          </div>
-          <div class="hero__meta" *ngIf="snapshot">
+          <button type="button" class="back-btn" (click)="goBack()" aria-label="Back">
+            <tm-icon name="chevron-left" [size]="16" />
+            <span>Back</span>
+          </button>
+          <div class="hero__status">
+            <div class="hero__eyebrow">
+              <span class="live-pill" [class.is-refreshing]="isRefreshing">
+                <span class="live-pill__dot"></span> LIVE
+              </span>
+              <span class="hero__updated" *ngIf="lastUpdated">
+                {{ isRefreshing ? 'Updating…' : 'Updated ' + formatTime(lastUpdated) }}
+              </span>
+            </div>
+            <div class="hero__meta" *ngIf="snapshot">
             <span class="hero__chip">
               <span class="dot" style="background:#22C55E"></span>
               {{ totalDrivers }} drivers
@@ -106,9 +115,10 @@ const COLORS = {
               <span class="dot" style="background:#0F1419"></span>
               {{ totalTasks }} tasks
             </span>
-            <span class="hero__chip hero__chip--soft" *ngIf="selectedCityName">
-              <tm-icon name="map-marker" [size]="11" /> {{ selectedCityName }}
-            </span>
+              <span class="hero__chip hero__chip--soft" *ngIf="selectedCityName">
+                <tm-icon name="map-marker" [size]="11" /> {{ selectedCityName }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -169,11 +179,11 @@ const COLORS = {
           <header class="panel__head">
             <div class="panel__overline">
               <tm-icon name="send" [size]="11" />
-              <span>Tasks</span>
+              <span>Rides</span>
             </div>
             <div class="panel__head-row">
               <div class="panel__big">{{ totalTasks }}</div>
-              <span class="panel__sub">pickups today</span>
+              <span class="panel__sub">waiting + active</span>
             </div>
           </header>
 
@@ -185,7 +195,7 @@ const COLORS = {
               (click)="taskTab = 'unassigned'"
               role="tab"
             >
-              <span class="tab__label">Unassigned</span>
+              <span class="tab__label">Waiting</span>
               <span class="tab__count">{{ snapshot?.counts?.unassigned || 0 }}</span>
             </button>
             <button
@@ -195,7 +205,7 @@ const COLORS = {
               (click)="taskTab = 'assigned'"
               role="tab"
             >
-              <span class="tab__label">Assigned</span>
+              <span class="tab__label">Active</span>
               <span class="tab__count">{{ snapshot?.counts?.assigned || 0 }}</span>
             </button>
           </div>
@@ -242,6 +252,7 @@ const COLORS = {
               </div>
 
               <div class="row-card__meta">
+                <span class="meta-chip meta-chip--mode">{{ rideModeLabel(t) }}</span>
                 <span class="meta-chip" *ngIf="t.ride_type">
                   <tm-icon name="car" [size]="11" /> {{ t.ride_type }}
                 </span>
@@ -348,7 +359,7 @@ const COLORS = {
           <div class="list-card">
             <header class="list-card__head">
               <div class="list-card__head-text">
-                <h3 class="tm-h3">All tasks</h3>
+                <h3 class="tm-h3">All rides</h3>
                 <span class="list-card__sub">
                   {{ allTasks.length }} total ·
                   {{ snapshot?.counts?.unassigned || 0 }} unassigned ·
@@ -365,7 +376,7 @@ const COLORS = {
               </div>
               <div class="list-empty__title">No tasks yet</div>
               <div class="list-empty__hint">
-                When trips are created or assigned today, they will appear here.
+                When rides are created or assigned today, they will appear here.
               </div>
               <tm-button
                 variant="outline"
@@ -385,6 +396,7 @@ const COLORS = {
                   <tr>
                     <th class="th-id">ID</th>
                     <th>Status</th>
+                    <th>Mode</th>
                     <th>Customer</th>
                     <th>Driver</th>
                     <th>Pickup</th>
@@ -399,6 +411,9 @@ const COLORS = {
                     </td>
                     <td>
                       <tm-status-pill [tone]="tripTone(t.status)">{{ t.status }}</tm-status-pill>
+                    </td>
+                    <td>
+                      <span class="meta-chip meta-chip--mode">{{ rideModeLabel(t) }}</span>
                     </td>
                     <td>
                       <div class="cell-stack">
@@ -444,11 +459,11 @@ const COLORS = {
           <header class="panel__head">
             <div class="panel__overline">
               <tm-icon name="driver-helmet" [size]="11" />
-              <span>Drivers</span>
+              <span>Active drivers</span>
             </div>
             <div class="panel__head-row">
               <div class="panel__big">{{ totalDrivers }}</div>
-              <span class="panel__sub">on platform</span>
+              <span class="panel__sub">live on the map</span>
             </div>
           </header>
 
@@ -536,6 +551,13 @@ const COLORS = {
                   <tm-icon name="calendar" [size]="11" /> {{ timeAgo(d.last_seen_at) }}
                 </span>
               </div>
+              <div class="row-card__trip" *ngIf="d.current_trip">
+                <span class="row-card__trip-pill">{{ rideModeLabel(d.current_trip) }}</span>
+                <div class="row-card__trip-copy">
+                  <strong>{{ d.current_trip.customer?.name || 'Active ride' }}</strong>
+                  <span>{{ d.current_trip.pickup_address || pretty(d.current_trip.pickup_lat, d.current_trip.pickup_lng) }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -551,38 +573,79 @@ const COLORS = {
     `
       :host {
         display: block;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
         font-family: var(--tm-font-body);
         color: var(--tm-text);
       }
 
       .dispatch-shell {
-        display: flex;
-        flex-direction: column;
-        gap: var(--tm-space-3);
-        height: calc(100vh - 130px);
-        min-height: 620px;
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        min-height: 100vh;
+        overflow: hidden;
+        background: var(--tm-canvas);
       }
 
       /* ============================ HERO ============================ */
       .hero {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        gap: var(--tm-space-6);
-        padding: var(--tm-space-2) var(--tm-space-2) var(--tm-space-4);
-        flex-wrap: wrap;
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        right: 14px;
+        z-index: 8;
+        display: grid;
+        grid-template-columns: minmax(300px, 420px) minmax(360px, 1fr) minmax(360px, 460px);
+        align-items: start;
+        gap: var(--tm-space-4);
+        pointer-events: none;
       }
       .hero__left {
         display: flex;
-        flex-direction: column;
+        align-items: flex-start;
         gap: var(--tm-space-2);
         min-width: 0;
+        pointer-events: auto;
       }
+      .hero__status {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tm-space-2);
+        padding: 8px 12px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: var(--tm-radius-lg);
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: var(--tm-shadow-pop);
+      }
+      .back-btn {
+        height: 40px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 13px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: var(--tm-radius-pill);
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--tm-text);
+        box-shadow: var(--tm-shadow-pop);
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .back-btn:hover { background: var(--tm-ink); color: #fff; }
       .hero__right {
+        grid-column: 3;
         display: flex;
         gap: var(--tm-space-2);
         align-items: center;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        min-width: 0;
+        pointer-events: auto;
       }
 
       .hero__eyebrow {
@@ -725,22 +788,32 @@ const COLORS = {
 
       /* ============================ GRID ============================ */
       .dispatch-grid {
-        display: grid;
-        grid-template-columns: 320px 1fr 320px;
-        gap: var(--tm-space-3);
-        flex: 1;
+        position: absolute;
+        inset: 0;
         min-height: 0;
       }
 
       .panel {
+        position: absolute;
+        top: 104px;
+        bottom: var(--tm-space-3);
+        width: clamp(300px, 23vw, 360px);
         display: flex;
         flex-direction: column;
         min-height: 0;
-        background: transparent;
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: var(--tm-radius-lg);
+        box-shadow: var(--tm-shadow-pop);
+        z-index: 4;
       }
+      .panel:first-child { left: var(--tm-space-3); }
+      .panel:last-child { right: var(--tm-space-3); }
 
       .panel__head {
-        padding: 0 var(--tm-space-2) var(--tm-space-3);
+        padding: var(--tm-space-4) var(--tm-space-4) var(--tm-space-3);
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -779,11 +852,11 @@ const COLORS = {
       .tabs {
         display: flex;
         background: var(--tm-surface);
-        border: 1px solid var(--tm-line);
-        padding: 3px;
-        border-radius: var(--tm-radius-md);
-        margin: 0 var(--tm-space-2) var(--tm-space-2);
-        gap: 2px;
+        border-top: 1px solid var(--tm-line);
+        border-bottom: 1px solid var(--tm-line);
+        padding: 10px var(--tm-space-4);
+        gap: 8px;
+        margin: 0;
       }
       .tab {
         flex: 1;
@@ -826,14 +899,14 @@ const COLORS = {
       }
 
       .panel__filter {
-        padding: 0 var(--tm-space-2) var(--tm-space-3);
+        padding: var(--tm-space-3) var(--tm-space-4);
       }
 
       .panel__body {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        padding: 0 var(--tm-space-2) var(--tm-space-3);
+        padding: 0 var(--tm-space-4) var(--tm-space-4);
         display: flex;
         flex-direction: column;
         gap: var(--tm-space-2);
@@ -1076,6 +1149,10 @@ const COLORS = {
         color: var(--tm-text-soft);
         padding: 3px 0;
       }
+      .meta-chip--mode {
+        background: var(--tm-ink);
+        color: #fff;
+      }
       .meta-chip--warn {
         background: var(--tm-warning-bg);
         color: var(--tm-warning-fg);
@@ -1091,24 +1168,61 @@ const COLORS = {
         padding-top: 8px;
         border-top: 1px dashed var(--tm-line);
       }
+      .row-card__trip {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: var(--tm-radius-md);
+        background: var(--tm-canvas);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .row-card__trip-pill {
+        align-self: flex-start;
+        padding: 3px 8px;
+        border-radius: var(--tm-radius-pill);
+        background: var(--tm-ink);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .row-card__trip-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .row-card__trip-copy strong {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--tm-text);
+      }
+      .row-card__trip-copy span {
+        font-size: 11px;
+        color: var(--tm-text-muted);
+        line-height: 1.35;
+      }
 
       /* ============================ MAP ============================ */
       .map-area {
+        position: absolute;
+        inset: 0;
         min-height: 0;
-        position: relative;
+        z-index: 1;
       }
       .map-card {
         position: relative;
         height: 100%;
         overflow: hidden;
-        border-radius: var(--tm-radius-lg);
+        border-radius: 0;
         background: var(--tm-surface);
-        border: 1px solid var(--tm-line);
+        border: 0;
       }
       .map-shell {
         width: 100%;
         height: 100%;
-        min-height: 420px;
+        min-height: 520px;
         background: var(--tm-canvas-2);
       }
       .map-loading {
@@ -1134,8 +1248,9 @@ const COLORS = {
       /* ---------- Map info overlay (top-left, glass) ---------- */
       .map-info {
         position: absolute;
-        top: var(--tm-space-3);
-        left: var(--tm-space-3);
+        top: 78px;
+        left: 50%;
+        transform: translateX(-50%);
         display: inline-flex;
         align-items: center;
         gap: 14px;
@@ -1189,11 +1304,11 @@ const COLORS = {
       /* ---------- Floating action group (top-right) ---------- */
       .map-actions {
         position: absolute;
-        top: var(--tm-space-3);
-        right: var(--tm-space-3);
+        top: 78px;
+        right: calc(clamp(300px, 23vw, 360px) + 28px);
         display: inline-flex;
         gap: 6px;
-        z-index: 2;
+        z-index: 3;
       }
       .map-action {
         display: inline-flex;
@@ -1468,22 +1583,64 @@ const COLORS = {
 
       /* ============================ RESPONSIVE ============================ */
       @media (max-width: 1280px) {
-        .dispatch-grid {
-          grid-template-columns: 280px 1fr 280px;
-        }
+        .hero { grid-template-columns: minmax(280px, 380px) 1fr minmax(340px, 430px); }
+        .panel { width: clamp(280px, 27vw, 340px); }
+        .map-actions { right: calc(clamp(280px, 27vw, 340px) + 24px); }
         .hero__title { font-size: 24px; }
       }
       @media (max-width: 1100px) {
-        .dispatch-shell { height: auto; }
-        .dispatch-grid {
-          grid-template-columns: 1fr;
-          height: auto;
+        :host,
+        .dispatch-shell { height: 100vh; min-height: 100vh; }
+        .hero {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          right: 10px;
+          left: 10px;
         }
-        .hero { flex-direction: column; align-items: flex-start; }
-        .hero__right { width: 100%; }
-        .panel { max-height: 420px; }
-        .map-shell { height: 480px; }
-        .map-info { top: auto; bottom: 60px; }
+        .hero__left { width: 100%; }
+        .hero__right { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+        .hero__status { flex: 1; }
+        .panel {
+          top: auto;
+          bottom: 12px;
+          width: calc(50vw - 18px);
+          max-height: 38vh;
+        }
+        .panel:first-child { left: 12px; }
+        .panel:last-child { right: 12px; }
+        .map-info { display: none; }
+        .map-actions { top: auto; bottom: calc(38vh + 24px); right: 12px; }
+      }
+      @media (max-width: 720px) {
+        .hero__left { flex-direction: column; }
+        .hero__right { gap: 8px; }
+        .city-select { width: 100%; }
+        .city-select__input { width: 100%; }
+        .panel {
+          position: relative;
+          inset: auto;
+          width: auto;
+          max-height: 320px;
+          margin: 0 10px 10px;
+        }
+        .dispatch-grid {
+          position: static;
+          display: flex;
+          flex-direction: column;
+          padding-top: 150px;
+          height: auto;
+          min-height: 100vh;
+          overflow-y: auto;
+        }
+        .map-area {
+          position: relative;
+          min-height: 58vh;
+          order: 0;
+        }
+        .panel:first-child,
+        .panel:last-child { left: auto; right: auto; }
+        .map-actions { top: 220px; bottom: auto; }
       }
     `,
   ],
@@ -1495,7 +1652,7 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
   cityId: number | null = null;
   cityOptions: CityRow[] = [];
 
-  taskTab: 'unassigned' | 'assigned' = 'unassigned';
+  taskTab: 'unassigned' | 'assigned' = 'assigned';
   driverTab: 'free' | 'busy' | 'inactive' = 'free';
 
   taskFilter = '';
@@ -1517,12 +1674,16 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
   private infoWindow: google.maps.InfoWindow | null = null;
   private pendingSnapshot: Snapshot | null = null;
   private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeDispatchLive: (() => void) | null = null;
+  private driverAnimations = new Map<number, number>();
   private hasFitBounds = false;
 
   constructor(
     private api: ApiService,
     private zone: NgZone,
     private mapsLoader: GoogleMapsLoaderService,
+    private realtime: AdminRealtimeService,
+    private router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -1532,11 +1693,17 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     void this.initMap();
     this.fetch(true);
+    this.unsubscribeDispatchLive = this.realtime.subscribeDispatchLocations((payload) => {
+      this.zone.run(() => this.onDispatchDriverLocation(payload));
+    });
     this.pollHandle = setInterval(() => this.fetch(false), 15000);
   }
 
   ngOnDestroy(): void {
     if (this.pollHandle) clearInterval(this.pollHandle);
+    this.unsubscribeDispatchLive?.();
+    this.driverAnimations.forEach((frame) => cancelAnimationFrame(frame));
+    this.driverAnimations.clear();
     this.clearAllMarkers();
     this.infoWindow?.close();
   }
@@ -1606,6 +1773,21 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
     return 'neutral';
   }
 
+  rideModeOf(row: TaskRow | DriverRow['current_trip'] | any): 'private' | 'fixed' | 'shuttle' {
+    const mode = row?.ride_mode || row?.route_departure?.route?.mode || row?.route?.mode;
+    if (mode === 'private' || mode === 'fixed' || mode === 'shuttle') return mode;
+    return row?.route_departure_id ? 'shuttle' : 'private';
+  }
+
+  rideModeLabel(row: TaskRow | DriverRow['current_trip'] | any): string {
+    switch (this.rideModeOf(row)) {
+      case 'private': return 'Private';
+      case 'fixed': return 'Fixed';
+      case 'shuttle': return 'Shuttle';
+      default: return 'Private';
+    }
+  }
+
   pretty(lat: number | null, lng: number | null): string {
     if (lat == null || lng == null) return 'No location';
     return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -1640,6 +1822,14 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   fitAll(): void {
     this.fitToAllMarkers();
+  }
+
+  goBack(): void {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    void this.router.navigateByUrl('/dashboard');
   }
 
   /**
@@ -1795,11 +1985,11 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
     const presentDriverIds = new Set<number>();
     const upsertDriver = (d: DriverRow, color: string) => {
       if (d.lat == null || d.lng == null) return;
-      presentDriverIds.add(d.id);
+      presentDriverIds.add(d.user_id);
       const position = { lat: d.lat, lng: d.lng };
-      let marker = this.driverMarkerMap.get(d.id);
+      let marker = this.driverMarkerMap.get(d.user_id);
       if (marker) {
-        marker.setPosition(position);
+        this.animateDriverMarker(d.user_id, marker, position);
         marker.setIcon(driverIcon(color));
         marker.setTitle(d.name || 'Driver');
       } else {
@@ -1821,7 +2011,7 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
           );
           this.infoWindow?.open({ map: this.map!, anchor: marker! });
         });
-        this.driverMarkerMap.set(d.id, marker);
+        this.driverMarkerMap.set(d.user_id, marker);
       }
     };
 
@@ -1885,6 +2075,101 @@ export class MapsComponent implements OnInit, AfterViewInit, OnDestroy {
       this.fitToAllMarkers();
       this.hasFitBounds = true;
     }
+  }
+
+  private onDispatchDriverLocation(payload: DispatchDriverLocationPayload): void {
+    const lat = Number(payload.location?.lat);
+    const lng = Number(payload.location?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const userId = Number(payload.driver_id || payload.location.driver_id);
+    if (!Number.isFinite(userId)) return;
+
+    const position = { lat, lng };
+    const seenAt = payload.location.recorded_at || new Date().toISOString();
+    const updated = this.updateDriverRowFromRealtime(userId, position, seenAt, payload);
+
+    const marker = this.driverMarkerMap.get(userId);
+    if (marker) {
+      this.animateDriverMarker(userId, marker, position);
+    }
+
+    if (updated || marker) {
+      this.lastUpdated = new Date();
+    }
+  }
+
+  private updateDriverRowFromRealtime(
+    userId: number,
+    position: { lat: number; lng: number },
+    seenAt: string,
+    payload: DispatchDriverLocationPayload,
+  ): boolean {
+    if (!this.snapshot) return false;
+
+    let updated = false;
+    const buckets: Array<DriverRow[]> = [
+      this.snapshot.drivers.free,
+      this.snapshot.drivers.busy,
+      this.snapshot.drivers.inactive,
+    ];
+
+    for (const bucket of buckets) {
+      const row = bucket.find((d) => d.user_id === userId);
+      if (!row) continue;
+
+      row.lat = position.lat;
+      row.lng = position.lng;
+      row.last_seen_at = seenAt;
+      row.is_online = true;
+      if (payload.driver) {
+        row.name = payload.driver.name ?? row.name;
+        row.phone = payload.driver.phone ?? row.phone;
+        row.vehicle_type = payload.driver.vehicle_type ?? row.vehicle_type;
+        row.vehicle_reg_no = payload.driver.vehicle_reg_no ?? row.vehicle_reg_no;
+      }
+      updated = true;
+    }
+
+    return updated;
+  }
+
+  private animateDriverMarker(
+    driverUserId: number,
+    marker: google.maps.Marker,
+    to: { lat: number; lng: number },
+    durationMs = 900,
+  ): void {
+    const current = marker.getPosition();
+    if (!current) {
+      marker.setPosition(to);
+      return;
+    }
+
+    const from = { lat: current.lat(), lng: current.lng() };
+    if (Math.abs(from.lat - to.lat) < 0.000001 && Math.abs(from.lng - to.lng) < 0.000001) return;
+
+    const previous = this.driverAnimations.get(driverUserId);
+    if (previous) cancelAnimationFrame(previous);
+
+    const startedAt = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startedAt) / durationMs);
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      marker.setPosition({
+        lat: from.lat + (to.lat - from.lat) * eased,
+        lng: from.lng + (to.lng - from.lng) * eased,
+      });
+
+      if (t < 1) {
+        this.driverAnimations.set(driverUserId, requestAnimationFrame(step));
+      } else {
+        this.driverAnimations.delete(driverUserId);
+        marker.setPosition(to);
+      }
+    };
+
+    this.driverAnimations.set(driverUserId, requestAnimationFrame(step));
   }
 
   private fitToAllMarkers(): void {
