@@ -145,9 +145,9 @@ class FixedRouteService
             'city_vehicle_type_id' => $data['city_vehicle_type_id'] ?? null,
             'fare_config' => [
                 'seat_fare' => isset($fareConfig['seat_fare']) ? (float) $fareConfig['seat_fare'] : null,
-                'surge_multiplier' => isset($fareConfig['surge_multiplier']) ? (float) $fareConfig['surge_multiplier'] : null,
+                'commission_type' => ($fareConfig['commission_type'] ?? 'percent') === 'fixed' ? 'fixed' : 'percent',
                 'commission_percent' => isset($fareConfig['commission_percent']) ? (float) $fareConfig['commission_percent'] : null,
-                'tax_percent' => isset($fareConfig['tax_percent']) ? (float) $fareConfig['tax_percent'] : null,
+                'fixed_commission' => isset($fareConfig['fixed_commission']) ? (float) $fareConfig['fixed_commission'] : null,
             ],
             'booking_window_hours' => (int) ($data['booking_window_hours'] ?? 6),
             'max_seats_per_booking' => (int) ($data['max_seats_per_booking'] ?? 4),

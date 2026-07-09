@@ -16,9 +16,10 @@ use App\Models\WalletTransaction;
  *     fixed_commission (₹) — UNLESS an active subscription overrides the rate
  *     (its percent wins, usually 0% = commission-free). The subscription then
  *     consumes one ride against its allowance.
- *   - Shared (fixed/shuttle) journeys: NO commission. Riders paid the platform
- *     at booking, so the driver is CREDITED the full fares of the seats they
- *     actually carried.
+ *   - Fixed journeys: riders paid the platform at booking, so the driver is
+ *     credited carried fares minus the platform commission snapshotted on each
+ *     seat reservation.
+ *   - Shuttle journeys: unchanged for now; the driver is credited full carried fares.
  */
 class CommissionSettlementService
 {
@@ -107,23 +108,32 @@ class CommissionSettlementService
     }
 
     /**
-     * Per-seat settlement for a shared journey. Each carried seat (not cancelled,
-     * not no-show) contributes its full fare to the driver's earnings. No-show
-     * seats are forfeit (the rider paid, the driver didn't carry them), so the
-     * driver earns nothing on them.
+     * Per-seat settlement for a shared journey. Fixed routes subtract the
+     * platform commission snapshotted on each carried seat; shuttle routes keep
+     * the previous full-fare driver credit until shuttle commission is enabled.
      */
     private function settleShared(Trip $trip): void
     {
+        $trip->loadMissing('route');
+        $isFixed = $trip->route?->mode === 'fixed';
+
         $seats = SeatReservation::query()
             ->where('trip_id', $trip->id)
             ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
             ->get();
 
         $gross = 0.0;
+        $commission = 0.0;
         foreach ($seats as $seat) {
-            $gross += (float) ($seat->fare_amount ?? 0);
+            $fare = (float) ($seat->fare_amount ?? 0);
+            $gross += $fare;
 
-            $seat->commission_amount = 0.0;
+            if ($isFixed) {
+                $commission += min($fare, max(0.0, (float) ($seat->commission_amount ?? 0)));
+            } else {
+                $seat->commission_amount = 0.0;
+            }
+
             if (in_array($seat->status, ['BOOKED', 'CONFIRMED', 'BOARDED'], true)) {
                 $seat->status = 'COMPLETED';
                 $seat->dropped_at = $seat->dropped_at ?? now();
@@ -132,18 +142,20 @@ class CommissionSettlementService
         }
 
         $gross = round($gross, 2);
+        $commission = $isFixed ? min(round($commission, 2), $gross) : 0.0;
+        $driverCredit = max(0.0, round($gross - $commission, 2));
 
         $trip->final_fare = $gross;
-        $trip->commission_amount = 0.0;
+        $trip->commission_amount = $commission;
         $trip->commission_percent = 0.0;
         $trip->save();
 
-        if ($gross > 0 && $trip->driver) {
+        if ($driverCredit > 0 && $trip->driver) {
             $this->wallet->recordTransaction(
                 $trip->driver,
                 WalletTransaction::TYPE_CREDIT,
-                $gross,
-                'Shared ride earnings',
+                $driverCredit,
+                $isFixed ? 'Fixed ride earnings' : 'Shared ride earnings',
                 $trip->id,
                 null,
             );

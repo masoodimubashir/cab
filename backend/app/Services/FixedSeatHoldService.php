@@ -149,6 +149,8 @@ class FixedSeatHoldService
                 throw new ReservationException('The hold amount is no longer valid. Please create a new hold.', 409);
             }
 
+            $commission = $this->pricing->bookingCommission($route, (float) $lockedHold->amount, (int) $lockedHold->seats);
+
             $reservation = SeatReservation::query()->create([
                 'route_departure_id' => $dep->id,
                 'trip_id' => $dep->trip_id,
@@ -165,6 +167,8 @@ class FixedSeatHoldService
                 'drop_lng' => (float) $dropStop->lng,
                 'drop_address' => $dropStop->name,
                 'fare_amount' => (float) $lockedHold->amount,
+                'commission_percent' => (float) $commission['percent'],
+                'commission_amount' => (float) $commission['amount'],
                 'payment_method' => 'razorpay',
                 'payment_status' => 'PAID',
                 'payment_reference' => $razorpayPaymentId,
@@ -254,6 +258,8 @@ class FixedSeatHoldService
             }
 
             $paymentReference = "test_fixed_" . $lockedHold->id . "_" . now()->format("YmdHis");
+            $commission = $this->pricing->bookingCommission($route, (float) $lockedHold->amount, (int) $lockedHold->seats);
+
             $reservation = SeatReservation::query()->create([
                 "route_departure_id" => $dep->id,
                 "trip_id" => $dep->trip_id,
@@ -270,6 +276,8 @@ class FixedSeatHoldService
                 "drop_lng" => (float) $dropStop->lng,
                 "drop_address" => $dropStop->name,
                 "fare_amount" => (float) $lockedHold->amount,
+                "commission_percent" => (float) $commission['percent'],
+                "commission_amount" => (float) $commission['amount'],
                 "payment_method" => "razorpay",
                 "payment_status" => "PAID",
                 "payment_reference" => $paymentReference,
