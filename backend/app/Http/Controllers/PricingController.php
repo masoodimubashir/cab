@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\City;
+use App\Models\CitySetting;
 use App\Models\CityRideMode;
 use App\Models\CityRideScope;
 use App\Models\CityVehicleType;
@@ -201,11 +202,11 @@ class PricingController extends Controller
             return response()->json(['message' => 'No matching vehicle for this booking.'], 404);
         }
 
-        // Toll is gated by the vehicle: only an outstation vehicle with the toll
-        // toggle ON carries it. We never invent a number — it's whatever Google
-        // gave the client, or 0.
+        // Toll is gated by the city setting. We never invent a number — it's
+        // whatever Google gave the client, or 0.
         $cvt = CityVehicleType::query()->find($cityVehicleTypeId);
-        $tollCharge = ($cvt && $cvt->toll_mode === 'yes')
+        $citySettings = $cvt ? CitySetting::query()->firstOrCreate(['city_id' => $cvt->city_id]) : null;
+        $tollCharge = ($citySettings && $citySettings->toll_mode === 'yes')
             ? (float) ($data['toll_amount'] ?? 0)
             : 0.0;
 
@@ -355,7 +356,8 @@ class PricingController extends Controller
             'region_visible' => $dynamicPricingService->isFareVisibleToRider($dynamicRule),
         ] : null;
 
-        $tollCharge = $cvt->toll_mode === 'yes'
+        $citySettings = CitySetting::query()->firstOrCreate(['city_id' => $cvt->city_id]);
+        $tollCharge = $citySettings->toll_mode === 'yes'
             ? (float) ($data['toll_amount'] ?? 0)
             : 0.0;
 

@@ -13,8 +13,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'display_name', 'display_order',
     'max_people', 'luggage_capacity',
     'reverse_bidding_enabled',
-    'show_low_wallet_alert', 'toll_mode',
-    'commission_type', 'commission_percent', 'fixed_commission',
     'override_request_radius_m', 'override_hop_interval_sec',
     'override_hop_radius_m', 'override_max_hops',
     'is_active',
@@ -25,14 +23,10 @@ class CityVehicleType extends Model
 
     protected $casts = [
         'reverse_bidding_enabled' => 'boolean',
-        'show_low_wallet_alert' => 'boolean',
         'is_active' => 'boolean',
         'max_people' => 'integer',
         'luggage_capacity' => 'integer',
         'display_order' => 'integer',
-        'commission_type' => 'string',
-        'commission_percent' => 'decimal:2',
-        'fixed_commission' => 'decimal:2',
         'override_request_radius_m' => 'integer',
         'override_hop_interval_sec' => 'integer',
         'override_hop_radius_m' => 'integer',

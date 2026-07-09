@@ -228,37 +228,36 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/me', [AdminAuthController::class, 'me']);
-    Route::get('/admin/drivers', [AdminDriversController::class, 'index']);
-    Route::get('/admin/drivers/export', [AdminDriversController::class, 'exportCsv']);
-    Route::get('/admin/drivers/leaderboard', [AdminDriversController::class, 'leaderboard']);
-    Route::get('/admin/drivers/performance', [AdminDriversController::class, 'performance']);
-    Route::patch('/admin/drivers/{driver}/approval', [AdminDriversController::class, 'setApproval']);
-    Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation']);
-    Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus']);
-    Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile']);
-    Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver']);
-    Route::post('/admin/drivers/{driver}/documents', [AdminDriversController::class, 'uploadDocument']);
+    Route::get('/admin/drivers', [AdminDriversController::class, 'index'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/export', [AdminDriversController::class, 'exportCsv'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/leaderboard', [AdminDriversController::class, 'leaderboard'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/performance', [AdminDriversController::class, 'performance'])->middleware('permission:drivers');
+    Route::patch('/admin/drivers/{driver}/approval', [AdminDriversController::class, 'setApproval'])->middleware('permission:drivers');
+    Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation'])->middleware('permission:drivers');
+    Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile'])->middleware('permission:drivers');
+    Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/documents', [AdminDriversController::class, 'uploadDocument'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/documents/{document}/file', [AdminDriversController::class, 'documentFile'])
+        ->middleware('permission:drivers')
         ->name('admin.drivers.documents.file');
-    // Driver detail page (admin) — profile + rides/wallet/referrals dashboard.
-    Route::get('/admin/drivers/{driver}/profile', [AdminDriversController::class, 'profile']);
-    Route::get('/admin/drivers/{driver}/rides', [AdminDriversController::class, 'rides']);
-    Route::get('/admin/drivers/{driver}/cancelled-rides', [AdminDriversController::class, 'cancelledRides']);
-    Route::get('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'walletTransactions']);
-    Route::post('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'creditDebit']);
-    Route::get('/admin/drivers/{driver}/referrals', [AdminDriversController::class, 'referrals']);
-    Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience']);
-    Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv']);
-    Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send']);
-    Route::get('/admin/dispatch/snapshot', [AdminDispatchController::class, 'snapshot']);
-    Route::get('/admin/safety-events', [SafetyController::class, 'adminIndex']);
-    Route::get('/admin/dashboard', [AdminDashboardController::class, 'index']);
-    Route::get('/admin/reports', [AdminReportsController::class, 'index']);
-    Route::get('/admin/users', [AdminUsersController::class, 'index']);
-    Route::patch('/admin/users/{user}/role', [AdminUsersController::class, 'updateRole']);
+    // Driver detail page (admin) — profile + rides/wallet dashboard.
+    Route::get('/admin/drivers/{driver}/profile', [AdminDriversController::class, 'profile'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/rides', [AdminDriversController::class, 'rides'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/cancelled-rides', [AdminDriversController::class, 'cancelledRides'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'walletTransactions'])->middleware('permission:drivers');
+    Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience'])->middleware('permission:contact_drivers');
+    Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv'])->middleware('permission:contact_drivers');
+    Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send'])->middleware('permission:contact_drivers');
+    Route::get('/admin/dispatch/snapshot', [AdminDispatchController::class, 'snapshot'])->middleware('permission:live_operations');
+    Route::get('/admin/safety-events', [SafetyController::class, 'adminIndex'])->middleware('permission:safety');
+    Route::get('/admin/dashboard', [AdminDashboardController::class, 'index'])->middleware('permission:dashboard');
+    Route::get('/admin/reports', [AdminReportsController::class, 'index'])->middleware('permission:reports');
+    Route::get('/admin/users', [AdminUsersController::class, 'index'])->middleware('permission:managers');
+    Route::patch('/admin/users/{user}/role', [AdminUsersController::class, 'updateRole'])->middleware('permission:managers');
 
     // ── Customer Management ─────────────────────────────────────────
-    Route::prefix('admin/customers')->group(function () {
+    Route::prefix('admin/customers')->middleware('permission:customers')->group(function () {
         Route::get('/', [AdminCustomersController::class, 'index']);
         Route::post('/import', [AdminCustomersController::class, 'importCsv']);
         Route::get('/lookup/driver', [AdminCustomersController::class, 'lookupByDriver']);
@@ -270,141 +269,139 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::post('/{user}/unsubscribe', [AdminCustomersController::class, 'unsubscribe']);
         Route::post('/{user}/send-otp', [AdminCustomersController::class, 'sendOtp'])
             ->middleware('throttle:otp');
-        Route::post('/{user}/wallet/transactions', [AdminCustomersController::class, 'creditDebit']);
         Route::get('/{user}/wallet/transactions', [AdminCustomersController::class, 'walletTransactions']);
         Route::get('/{user}/rides', [AdminCustomersController::class, 'rides']);
         Route::get('/{user}/cancelled-rides', [AdminCustomersController::class, 'cancelledRides']);
-        Route::get('/{user}/referrals', [AdminCustomersController::class, 'referrals']);
     });
     Route::get('/admin/cities', [AdminCitiesController::class, 'index']);
-    Route::post('/admin/cities', [AdminCitiesController::class, 'store']);
+    Route::post('/admin/cities', [AdminCitiesController::class, 'store'])->middleware('permission:city_settings');
     // City-scoped admin routes — `manager.city` middleware rejects requests
     // when the caller's scoped to a different city.
     Route::middleware('manager.city')->group(function () {
         Route::get('/admin/cities/{city}', [AdminCitiesController::class, 'show']);
-        Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update']);
-        Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon']);
-        Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy']);
+        Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update'])->middleware('permission:city_settings');
+        Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon'])->middleware('permission:city_settings');
+        Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy'])->middleware('permission:city_settings');
         // Operator-wide (global, non-city) settings.
-        Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show']);
-        Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
-        Route::post('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update']);
+        Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show'])->middleware('permission:operator_settings');
+        Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update'])->middleware('permission:operator_settings');
+        Route::post('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update'])->middleware('permission:operator_settings');
 
-        Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show']);
-        Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
-        Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update']);
-        Route::get('/admin/cities/{city}/dispatcher-settings', [AdminDispatcherSettingsController::class, 'index']);
-        Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update']);
-        Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index']);
-        Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store']);
-        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show']);
-        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
-        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update']);
-        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy']);
-        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'index']);
-        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'store']);
-        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
-        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update']);
-        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'show'])->middleware('permission:city_settings');
+        Route::patch('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update'])->middleware('permission:city_settings');
+        Route::post('/admin/cities/{city}/settings', [AdminCitySettingsController::class, 'update'])->middleware('permission:city_settings');
+        Route::get('/admin/cities/{city}/dispatcher-settings', [AdminDispatcherSettingsController::class, 'index'])->middleware('permission:city_settings');
+        Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update'])->middleware('permission:city_settings');
+        Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index'])->middleware('permission:vehicles|pricing|manual_dispatch|rides');
+        Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store'])->middleware('permission:vehicles');
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show'])->middleware('permission:vehicles|pricing');
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
+        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'destroy'])->middleware('permission:vehicles');
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'index'])->middleware('permission:app_assets|vehicles');
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images', [AdminVehicleTypeImagesController::class, 'store'])->middleware('permission:app_assets');
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update'])->middleware('permission:app_assets');
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'update'])->middleware('permission:app_assets');
+        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/images/{image}', [AdminVehicleTypeImagesController::class, 'destroy'])->middleware('permission:app_assets');
 
         // Outstation fare packages (One Way / Round Trip / …) per vehicle.
-        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'index']);
-        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'store']);
-        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'update']);
-        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'index'])->middleware('permission:vehicles|pricing');
+        Route::post('/admin/cities/{city}/vehicle-types/{vehicleType}/packages', [AdminOutstationPackagesController::class, 'store'])->middleware('permission:vehicles');
+        Route::patch('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'update'])->middleware('permission:vehicles');
+        Route::delete('/admin/cities/{city}/vehicle-types/{vehicleType}/packages/{package}', [AdminOutstationPackagesController::class, 'destroy'])->middleware('permission:vehicles');
 
         // Vehicle Sets — per-city bundles of related vehicles.
-        Route::get('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'index']);
-        Route::post('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'store']);
-        Route::patch('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'update']);
-        Route::delete('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'index'])->middleware('permission:vehicles');
+        Route::post('/admin/cities/{city}/vehicle-sets', [AdminVehicleSetsController::class, 'store'])->middleware('permission:vehicles');
+        Route::patch('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'update'])->middleware('permission:vehicles');
+        Route::delete('/admin/cities/{city}/vehicle-sets/{vehicleSet}', [AdminVehicleSetsController::class, 'destroy'])->middleware('permission:vehicles');
 
     });
-    Route::get('/admin/documents', [AdminDocumentsController::class, 'index']);
-    Route::post('/admin/documents', [AdminDocumentsController::class, 'store']);
-    Route::get('/admin/documents/{document}', [AdminDocumentsController::class, 'show']);
-    Route::patch('/admin/documents/{document}', [AdminDocumentsController::class, 'update']);
-    Route::post('/admin/documents/{document}/assign', [AdminDocumentsController::class, 'assign']);
-    Route::delete('/admin/documents/{document}', [AdminDocumentsController::class, 'destroy']);
+    Route::get('/admin/documents', [AdminDocumentsController::class, 'index'])->middleware('permission:drivers');
+    Route::post('/admin/documents', [AdminDocumentsController::class, 'store'])->middleware('permission:drivers');
+    Route::get('/admin/documents/{document}', [AdminDocumentsController::class, 'show'])->middleware('permission:drivers');
+    Route::patch('/admin/documents/{document}', [AdminDocumentsController::class, 'update'])->middleware('permission:drivers');
+    Route::post('/admin/documents/{document}/assign', [AdminDocumentsController::class, 'assign'])->middleware('permission:drivers');
+    Route::delete('/admin/documents/{document}', [AdminDocumentsController::class, 'destroy'])->middleware('permission:drivers');
 
-    Route::get('/admin/ride-types-crud', [AdminRideTypesController::class, 'index']);
-    Route::post('/admin/ride-types-crud', [AdminRideTypesController::class, 'store']);
-    Route::get('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'show']);
-    Route::patch('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'update']);
-    Route::delete('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'destroy']);
+    Route::get('/admin/ride-types-crud', [AdminRideTypesController::class, 'index'])->middleware('permission:vehicles');
+    Route::post('/admin/ride-types-crud', [AdminRideTypesController::class, 'store'])->middleware('permission:vehicles');
+    Route::get('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'show'])->middleware('permission:vehicles');
+    Route::patch('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'update'])->middleware('permission:vehicles');
+    Route::delete('/admin/ride-types-crud/{rideType}', [AdminRideTypesController::class, 'destroy'])->middleware('permission:vehicles');
 
-    Route::get('/admin/vehicle-types-global', [AdminGlobalVehicleTypesController::class, 'index']);
-    Route::post('/admin/vehicle-types-global', [AdminGlobalVehicleTypesController::class, 'store']);
-    Route::get('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'show']);
-    Route::post('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'update']);
-    Route::patch('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'update']);
-    Route::delete('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'destroy']);
-    Route::get('/admin/fleets', [AdminFleetsController::class, 'index']);
-    Route::post('/admin/fleets', [AdminFleetsController::class, 'store']);
-    Route::get('/admin/fleets/{fleet}', [AdminFleetsController::class, 'show']);
-    Route::patch('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);
-    Route::post('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update']);
-    Route::delete('/admin/fleets/{fleet}', [AdminFleetsController::class, 'destroy']);
-    Route::post('/admin/manual-dispatch/lookup-user', [AdminManualDispatchController::class, 'lookupUser']);
-    Route::post('/admin/manual-dispatch/fare-estimate', [AdminManualDispatchController::class, 'fareEstimate']);
-    Route::post('/admin/manual-dispatch/book', [AdminManualDispatchController::class, 'book']);
-    Route::get('/admin/analytics/real-time', [AdminAnalyticsController::class, 'realTime']);
-    Route::get('/admin/analytics/graphs', [AdminAnalyticsController::class, 'graphs']);
-    Route::get('/admin/analytics/reports', [AdminAnalyticsController::class, 'reports']);
-    Route::get('/admin/analytics/reports/{key}', [AdminAnalyticsController::class, 'executeReport']);
-    Route::get('/admin/analytics/reports/{key}/export', [AdminAnalyticsController::class, 'exportReport']);
-    Route::get('/admin/ride-types', [AdminPricingController::class, 'rideTypes']);
-    Route::get('/admin/pricing-rules', [AdminPricingController::class, 'index']);
-    Route::get('/admin/pricing-rules/resolve', [AdminPricingController::class, 'resolve']);
-    Route::post('/admin/pricing-rules', [AdminPricingController::class, 'store']);
-    Route::patch('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'update']);
-    Route::delete('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'destroy']);
-    Route::get('/admin/dynamic-pricing-rules', [AdminDynamicPricingController::class, 'index']);
-    Route::post('/admin/dynamic-pricing-rules', [AdminDynamicPricingController::class, 'store']);
-    Route::get('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'show']);
-    Route::patch('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'update']);
-    Route::delete('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'destroy']);
-    Route::get('/admin/trips', [AdminTripsController::class, 'index']);
-    Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show']);
-    Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation']);
-    Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate']);
+    Route::get('/admin/vehicle-types-global', [AdminGlobalVehicleTypesController::class, 'index'])->middleware('permission:vehicles');
+    Route::post('/admin/vehicle-types-global', [AdminGlobalVehicleTypesController::class, 'store'])->middleware('permission:vehicles');
+    Route::get('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'show'])->middleware('permission:vehicles');
+    Route::post('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
+    Route::patch('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'update'])->middleware('permission:vehicles');
+    Route::delete('/admin/vehicle-types-global/{vehicleType}', [AdminGlobalVehicleTypesController::class, 'destroy'])->middleware('permission:vehicles');
+    Route::get('/admin/fleets', [AdminFleetsController::class, 'index'])->middleware('permission:fleets');
+    Route::post('/admin/fleets', [AdminFleetsController::class, 'store'])->middleware('permission:fleets');
+    Route::get('/admin/fleets/{fleet}', [AdminFleetsController::class, 'show'])->middleware('permission:fleets');
+    Route::patch('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update'])->middleware('permission:fleets');
+    Route::post('/admin/fleets/{fleet}', [AdminFleetsController::class, 'update'])->middleware('permission:fleets');
+    Route::delete('/admin/fleets/{fleet}', [AdminFleetsController::class, 'destroy'])->middleware('permission:fleets');
+    Route::post('/admin/manual-dispatch/lookup-user', [AdminManualDispatchController::class, 'lookupUser'])->middleware('permission:manual_dispatch');
+    Route::post('/admin/manual-dispatch/fare-estimate', [AdminManualDispatchController::class, 'fareEstimate'])->middleware('permission:manual_dispatch');
+    Route::post('/admin/manual-dispatch/book', [AdminManualDispatchController::class, 'book'])->middleware('permission:manual_dispatch');
+    Route::get('/admin/analytics/real-time', [AdminAnalyticsController::class, 'realTime'])->middleware('permission:analytics');
+    Route::get('/admin/analytics/graphs', [AdminAnalyticsController::class, 'graphs'])->middleware('permission:analytics');
+    Route::get('/admin/analytics/reports', [AdminAnalyticsController::class, 'reports'])->middleware('permission:reports');
+    Route::get('/admin/analytics/reports/{key}', [AdminAnalyticsController::class, 'executeReport'])->middleware('permission:reports');
+    Route::get('/admin/analytics/reports/{key}/export', [AdminAnalyticsController::class, 'exportReport'])->middleware('permission:reports');
+    Route::get('/admin/ride-types', [AdminPricingController::class, 'rideTypes'])->middleware('permission:pricing|rides|manual_dispatch|vehicles');
+    Route::get('/admin/pricing-rules', [AdminPricingController::class, 'index'])->middleware('permission:pricing');
+    Route::get('/admin/pricing-rules/resolve', [AdminPricingController::class, 'resolve'])->middleware('permission:pricing|manual_dispatch');
+    Route::post('/admin/pricing-rules', [AdminPricingController::class, 'store'])->middleware('permission:pricing');
+    Route::patch('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'update'])->middleware('permission:pricing');
+    Route::delete('/admin/pricing-rules/{pricingRule}', [AdminPricingController::class, 'destroy'])->middleware('permission:pricing');
+    Route::get('/admin/dynamic-pricing-rules', [AdminDynamicPricingController::class, 'index'])->middleware('permission:pricing');
+    Route::post('/admin/dynamic-pricing-rules', [AdminDynamicPricingController::class, 'store'])->middleware('permission:pricing');
+    Route::get('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'show'])->middleware('permission:pricing');
+    Route::patch('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'update'])->middleware('permission:pricing');
+    Route::delete('/admin/dynamic-pricing-rules/{dynamicPricingRule}', [AdminDynamicPricingController::class, 'destroy'])->middleware('permission:pricing');
+    Route::get('/admin/trips', [AdminTripsController::class, 'index'])->middleware('permission:rides');
+    Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show'])->middleware('permission:rides');
+    Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation'])->middleware('permission:rides|live_operations');
+    Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate'])->middleware('permission:rides');
 
     Route::middleware('manager.city')->group(function () {
         // ── Promotions: coupons ─────────────────────────────────────────
-        Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index']);
-        Route::post('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'store']);
-        Route::get('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'show']);
-        Route::patch('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'update']);
-        Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy']);
-        Route::get('/admin/cities/{city}/coupons/{coupon}/assignments', [AdminCouponsController::class, 'assignments']);
-        Route::post('/admin/cities/{city}/coupons/{coupon}/give', [AdminCouponsController::class, 'give']);
+        Route::get('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'index'])->middleware('permission:coupons');
+        Route::post('/admin/cities/{city}/coupons', [AdminCouponsController::class, 'store'])->middleware('permission:coupons');
+        Route::get('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'show'])->middleware('permission:coupons');
+        Route::patch('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'update'])->middleware('permission:coupons');
+        Route::delete('/admin/cities/{city}/coupons/{coupon}', [AdminCouponsController::class, 'destroy'])->middleware('permission:coupons');
+        Route::get('/admin/cities/{city}/coupons/{coupon}/assignments', [AdminCouponsController::class, 'assignments'])->middleware('permission:coupons');
+        Route::post('/admin/cities/{city}/coupons/{coupon}/give', [AdminCouponsController::class, 'give'])->middleware('permission:coupons');
 
         // ── Driver subscription plans ───────────────────────────────────
-        Route::get('/admin/cities/{city}/subscription-plans', [AdminSubscriptionsController::class, 'index']);
-        Route::post('/admin/cities/{city}/subscription-plans', [AdminSubscriptionsController::class, 'store']);
-        Route::get('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'show']);
-        Route::patch('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'update']);
-        Route::delete('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'destroy']);
+        Route::get('/admin/cities/{city}/subscription-plans', [AdminSubscriptionsController::class, 'index'])->middleware('permission:subscriptions');
+        Route::post('/admin/cities/{city}/subscription-plans', [AdminSubscriptionsController::class, 'store'])->middleware('permission:subscriptions');
+        Route::get('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'show'])->middleware('permission:subscriptions');
+        Route::patch('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'update'])->middleware('permission:subscriptions');
+        Route::delete('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'destroy'])->middleware('permission:subscriptions');
     });
 
     // ── RBAC: permissions catalog (read-only) ───────────────────────
-    Route::get('/admin/permissions', [AdminPermissionsController::class, 'index']);
+    Route::get('/admin/permissions', [AdminPermissionsController::class, 'index'])->middleware('permission:roles_permissions');
 
     // ── RBAC: manager roles ─────────────────────────────────────────
-    Route::get('/admin/manager-roles', [AdminManagerRolesController::class, 'index']);
-    Route::post('/admin/manager-roles', [AdminManagerRolesController::class, 'store']);
-    Route::get('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'show']);
-    Route::patch('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'update']);
-    Route::delete('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'destroy']);
+    Route::get('/admin/manager-roles', [AdminManagerRolesController::class, 'index'])->middleware('permission:roles_permissions|managers');
+    Route::post('/admin/manager-roles', [AdminManagerRolesController::class, 'store'])->middleware('permission:roles_permissions');
+    Route::get('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'show'])->middleware('permission:roles_permissions|managers');
+    Route::patch('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'update'])->middleware('permission:roles_permissions');
+    Route::delete('/admin/manager-roles/{managerRole}', [AdminManagerRolesController::class, 'destroy'])->middleware('permission:roles_permissions');
 
     // ── RBAC: managers (admin-side users) ───────────────────────────
-    Route::get('/admin/managers', [AdminManagersController::class, 'index']);
-    Route::post('/admin/managers', [AdminManagersController::class, 'store']);
-    Route::get('/admin/managers/{user}', [AdminManagersController::class, 'show']);
-    Route::patch('/admin/managers/{user}', [AdminManagersController::class, 'update']);
-    Route::post('/admin/managers/{user}/suspend', [AdminManagersController::class, 'suspend']);
-    Route::post('/admin/managers/{user}/unsuspend', [AdminManagersController::class, 'unsuspend']);
-    Route::delete('/admin/managers/{user}', [AdminManagersController::class, 'destroy']);
+    Route::get('/admin/managers', [AdminManagersController::class, 'index'])->middleware('permission:managers');
+    Route::post('/admin/managers', [AdminManagersController::class, 'store'])->middleware('permission:managers');
+    Route::get('/admin/managers/{user}', [AdminManagersController::class, 'show'])->middleware('permission:managers');
+    Route::patch('/admin/managers/{user}', [AdminManagersController::class, 'update'])->middleware('permission:managers');
+    Route::post('/admin/managers/{user}/suspend', [AdminManagersController::class, 'suspend'])->middleware('permission:managers');
+    Route::post('/admin/managers/{user}/unsuspend', [AdminManagersController::class, 'unsuspend'])->middleware('permission:managers');
+    Route::delete('/admin/managers/{user}', [AdminManagersController::class, 'destroy'])->middleware('permission:managers');
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
@@ -479,7 +476,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
 });
 
-Route::middleware(['auth:sanctum', 'role:admin', 'manager.city'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rides'])->group(function () {
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);

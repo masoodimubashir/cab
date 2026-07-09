@@ -24,11 +24,6 @@ interface VehicleRow {
   display_order: number;
   max_people: number;
   luggage_capacity: number;
-  commission_type: 'percent' | 'fixed';
-  commission_percent: number;
-  fixed_commission: number;
-  show_low_wallet_alert: boolean;
-  toll_mode: 'yes' | 'no';
   reverse_bidding_enabled: boolean;
   is_active: boolean;
   is_outstation?: boolean;
@@ -270,12 +265,7 @@ export class VehicleFareSetupComponent implements OnInit, OnDestroy {
       display_name: base.display_name,
       max_people: base.max_people,
       luggage_capacity: base.luggage_capacity,
-      commission_type: base.commission_type ?? 'percent',
-      commission_percent: base.commission_type === 'fixed' ? 0 : (base.commission_percent ?? 0),
-      fixed_commission: base.commission_type === 'fixed' ? (base.fixed_commission ?? 0) : 0,
-      show_low_wallet_alert: base.show_low_wallet_alert,
       reverse_bidding_enabled: mode === 'private' ? !!base.reverse_bidding_enabled : false,
-      toll_mode: base.toll_mode ?? 'no',
     }).subscribe({
       next: (res) => {
         this.creatingMode = null;

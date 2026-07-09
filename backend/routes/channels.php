@@ -27,3 +27,11 @@ Broadcast::channel('trip.{tripId}.{kind}', function ($user, int $tripId, string 
     return $user->id === $trip->customer_id
         || ($trip->driver_id !== null && $user->id === $trip->driver_id);
 });
+
+/*
+ * Admin live operations channel. Only authenticated admin managers with the
+ * live_operations permission can subscribe to the global driver-location stream.
+ */
+Broadcast::channel('dispatch.live', function ($user) {
+    return $user->hasRole('admin') && $user->hasPermission('live_operations');
+});

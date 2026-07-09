@@ -41,12 +41,7 @@ interface CityVehicleRow {
   display_order: number;
   max_people: number;
   luggage_capacity: number;
-  commission_type: 'percent' | 'fixed';
-  commission_percent: number;
-  fixed_commission: number;
   reverse_bidding_enabled: boolean;
-  show_low_wallet_alert: boolean;
-  toll_mode: 'yes' | 'no';
   is_active: boolean;
   is_outstation?: boolean;
   fare_modes?: ServiceMode[];
@@ -219,7 +214,6 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
           </tm-column>
           <tm-column key="capacity" label="Capacity" width="150"><ng-template let-row><span>{{ row.max_people }} seats · {{ row.luggage_capacity }} bags</span></ng-template></tm-column>
           <tm-column key="fare_modes" label="Fare setup" width="190"><ng-template let-row><span class="service">{{ fareModesLabel(row) }}</span></ng-template></tm-column>
-          <tm-column key="commercials" label="Commercials" width="180"><ng-template let-row><span>{{ row.toll_mode === 'yes' ? 'Toll on' : 'Toll off' }} · {{ row.commission_type === 'fixed' ? 'Fixed' : 'Percent' }}</span></ng-template></tm-column>
           <tm-column key="status" label="Status" width="120"><ng-template let-row><tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">{{ row.is_active ? 'Enabled' : 'Disabled' }}</tm-status-pill></ng-template></tm-column>
           <tm-column key="actions" label="" width="170" align="right">
             <ng-template let-row>
@@ -253,9 +247,7 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
           <label class="field"><span class="field__lbl">Max people</span><input type="number" min="1" [(ngModel)]="edit.max_people" /></label>
           <label class="field"><span class="field__lbl">Luggage capacity</span><input type="number" min="0" [(ngModel)]="edit.luggage_capacity" /></label>
         </div>
-        <div class="segGroup"><span>Commission mode</span><button type="button" [class.is-on]="edit.commission_type === 'percent'" (click)="edit.commission_type = 'percent'">Percent</button><button type="button" [class.is-on]="edit.commission_type === 'fixed'" (click)="edit.commission_type = 'fixed'">Fixed</button></div>
-        <div class="grid"><label class="field" *ngIf="edit.commission_type === 'percent'"><span class="field__lbl">Commission %</span><input type="number" min="0" max="100" [(ngModel)]="edit.commission_percent" /></label><label class="field" *ngIf="edit.commission_type === 'fixed'"><span class="field__lbl">Commission</span><input type="number" min="0" [(ngModel)]="edit.fixed_commission" /></label></div>
-        <div class="toggles"><label><input type="checkbox" [ngModel]="edit.toll_mode === 'yes'" (ngModelChange)="edit.toll_mode = $event ? 'yes' : 'no'" /> Toll applicable</label><label><input type="checkbox" [(ngModel)]="edit.show_low_wallet_alert" /> Low wallet alert</label><label><input type="checkbox" [ngModel]="edit.is_active" (ngModelChange)="edit.is_active = $event" /> Active</label></div>
+        <div class="toggles"><label><input type="checkbox" [ngModel]="edit.is_active" (ngModelChange)="edit.is_active = $event" /> Active</label></div>
       </div>
       <div slot="footer"><tm-button variant="ghost" (clicked)="commonOpen = false">Cancel</tm-button><tm-button variant="green" icon="check" [disabled]="saving" (clicked)="saveCommon()">{{ saving ? 'Saving...' : 'Save common setup' }}</tm-button></div>
     </tm-drawer>
@@ -263,14 +255,13 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
     <tm-drawer [open]="createOpen" title="Add city vehicle" [width]="620" (closed)="createOpen = false">
       <div slot="body" class="create">
         <div class="setupNote"><strong>Vehicle type is required.</strong> Create the type in Step 1 first, then choose it here to create the city vehicle.</div>
-        <label class="field field--wide"><span class="field__lbl">Vehicle type <i>*</i></span><select [(ngModel)]="create.vehicle_type_id"><option [ngValue]="null" disabled>Select from Vehicle Types</option><option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option></select></label>
+        <label class="field field--wide"><span class="field__lbl">Vehicle type <i>*</i></span><select [(ngModel)]="create.vehicle_type_id" (ngModelChange)="onCreateVehicleTypeChange($event)"><option [ngValue]="null" disabled>Select from Vehicle Types</option><option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option></select></label>
+        <label class="field field--wide"><span class="field__lbl">Vehicle name <i>*</i></span><input type="text" [(ngModel)]="create.display_name" placeholder="Display name shown in fare setup and apps" /></label>
         <div class="grid">
           <label class="field"><span class="field__lbl">Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
           <label class="field"><span class="field__lbl">Luggage capacity</span><input type="number" min="0" [(ngModel)]="create.luggage_capacity" /></label>
         </div>
-        <div class="segGroup"><span>Commission mode</span><button type="button" [class.is-on]="create.commission_type === 'percent'" (click)="create.commission_type = 'percent'">Percent</button><button type="button" [class.is-on]="create.commission_type === 'fixed'" (click)="create.commission_type = 'fixed'">Fixed</button></div>
-        <div class="grid"><label class="field" *ngIf="create.commission_type === 'percent'"><span class="field__lbl">Commission %</span><input type="number" min="0" max="100" [(ngModel)]="create.commission_percent" /></label><label class="field" *ngIf="create.commission_type === 'fixed'"><span class="field__lbl">Commission</span><input type="number" min="0" [(ngModel)]="create.fixed_commission" /></label></div>
-        <div class="toggles"><label><input type="checkbox" [(ngModel)]="create.toll_applicable" /> Toll applicable</label><label><input type="checkbox" [(ngModel)]="create.show_low_wallet_alert" /> Low wallet alert</label></div>
+        <div class="toggles"><label><input type="checkbox" [(ngModel)]="create.is_active" /> Active</label></div>
       </div>
       <div slot="footer"><tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button><tm-button variant="green" [disabled]="creating || !createValid" (clicked)="submitCreateCityVehicle()">{{ creating ? 'Creating...' : 'Create city vehicle' }}</tm-button></div>
     </tm-drawer>
@@ -537,11 +528,6 @@ export class VehiclesComponent implements OnInit, OnDestroy {
       display_name: r.display_name,
       max_people: r.max_people,
       luggage_capacity: r.luggage_capacity,
-      commission_type: r.commission_type ?? 'percent',
-      commission_percent: r.commission_percent ?? 0,
-      fixed_commission: r.fixed_commission ?? 0,
-      show_low_wallet_alert: !!r.show_low_wallet_alert,
-      toll_mode: r.toll_mode ?? 'no',
       is_active: !!r.is_active,
     } : this.blankEdit();
   }
@@ -552,11 +538,6 @@ export class VehiclesComponent implements OnInit, OnDestroy {
       display_name: this.edit.display_name.trim(),
       max_people: this.edit.max_people,
       luggage_capacity: this.edit.luggage_capacity,
-      commission_type: this.edit.commission_type,
-      commission_percent: this.edit.commission_type === 'percent' ? this.edit.commission_percent : 0,
-      fixed_commission: this.edit.commission_type === 'fixed' ? this.edit.fixed_commission : 0,
-      show_low_wallet_alert: this.edit.show_low_wallet_alert,
-      toll_mode: this.edit.toll_mode,
       is_active: this.edit.is_active,
     };
     this.saving = true;
@@ -574,14 +555,10 @@ export class VehiclesComponent implements OnInit, OnDestroy {
     const f = this.create;
     const payload = {
       vehicle_type_id: f.vehicle_type_id,
-      display_name: this.vehicleTypeName(f.vehicle_type_id),
+      display_name: f.display_name.trim(),
       max_people: f.max_people,
       luggage_capacity: f.luggage_capacity,
-      commission_type: f.commission_type,
-      commission_percent: f.commission_type === 'percent' ? (f.commission_percent ?? 0) : 0,
-      fixed_commission: f.commission_type === 'fixed' ? (f.fixed_commission ?? 0) : 0,
-      show_low_wallet_alert: f.show_low_wallet_alert,
-      toll_mode: f.toll_applicable ? 'yes' : 'no',
+      is_active: f.is_active,
     };
     this.creating = true;
     this.api.post<{ vehicle_type: CityVehicleRow; message?: string }>(`/admin/cities/${this.cityId}/vehicle-types`, payload).subscribe({
@@ -592,8 +569,13 @@ export class VehiclesComponent implements OnInit, OnDestroy {
 
   get createValid(): boolean {
     const f = this.create;
-    const commissionValid = f.commission_type === 'percent' ? f.commission_percent != null : f.fixed_commission != null;
-    return f.vehicle_type_id != null && f.max_people != null && f.luggage_capacity != null && commissionValid;
+    return f.vehicle_type_id != null && f.display_name.trim().length > 0 && f.max_people != null && f.luggage_capacity != null;
+  }
+
+  onCreateVehicleTypeChange(id: number | null): void {
+    if (!this.create.display_name.trim()) {
+      this.create.display_name = this.vehicleTypeName(id);
+    }
   }
 
   private vehicleTypeName(id: number | null): string {
@@ -629,10 +611,10 @@ export class VehiclesComponent implements OnInit, OnDestroy {
   private modeForName(name: string | null): VehicleMode { const lower = (name ?? '').toLowerCase(); if (!lower) return 'unassigned'; if (lower.includes('shuttle')) return 'shuttle'; if (lower.includes('fixed')) return 'fixed'; return 'private'; }
 
   private blankEdit() {
-    return { display_name: '', max_people: 1, luggage_capacity: 0, commission_type: 'percent' as 'percent' | 'fixed', commission_percent: 0, fixed_commission: 0, show_low_wallet_alert: true, toll_mode: 'no' as 'yes' | 'no', is_active: true };
+    return { display_name: '', max_people: 1, luggage_capacity: 0, is_active: true };
   }
 
   private blankCreate() {
-    return { vehicle_type_id: null as number | null, max_people: 4 as number | null, luggage_capacity: 0 as number | null, commission_type: 'percent' as 'percent' | 'fixed', commission_percent: 0 as number | null, fixed_commission: 0 as number | null, toll_applicable: false, show_low_wallet_alert: true };
+    return { vehicle_type_id: null as number | null, display_name: '', max_people: 4 as number | null, luggage_capacity: 0 as number | null, is_active: true };
   }
 }

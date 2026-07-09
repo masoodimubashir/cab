@@ -22,3 +22,13 @@
   padding: var(--tm-space-6);
   background: var(--tm-canvas);
 }
+
+
+.bare--full {
+  display: block;
+  align-items: initial;
+  justify-content: initial;
+  min-height: 100vh;
+  padding: 0;
+  background: var(--tm-canvas);
+}

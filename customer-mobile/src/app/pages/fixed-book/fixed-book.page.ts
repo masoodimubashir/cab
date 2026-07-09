@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 
 interface FixedStop {
   id: number;
@@ -131,6 +132,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   activeBookings: FixedReservation[] = [];
 
   private entered = false;
+  private locationWatchId: string | null = null;
+  private lastLocationPostAt = 0;
+  private readonly locationPostMinIntervalMs = 5000;
 
   constructor(
     private route: ActivatedRoute,
@@ -138,10 +142,13 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private api: ApiService,
     private auth: AuthService,
     private toast: ToastController,
+    private geo: GeolocationService,
   ) {}
 
   ngOnInit(): void { this.enter(); }
-  ngOnDestroy(): void {}
+  ngOnDestroy(): void { void this.stopFixedLocationStream(); }
+
+  ionViewWillLeave(): void { void this.stopFixedLocationStream(); }
 
   ionViewWillEnter(): void {
     if (this.entered) this.enter();
@@ -264,10 +271,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.api.get<{ data: FixedReservation[] }>("/fixed/bookings").subscribe({
       next: (res) => {
         const rows = res?.data || [];
-        this.activeBookings = rows.filter((booking) => !["DROPPED", "COMPLETED"].includes(booking.status)).slice(0, 5);
+        this.activeBookings = rows.filter((booking) => !["DROPPED", "COMPLETED", "CANCELLED", "NO_SHOW"].includes(booking.status)).slice(0, 5);
+        this.syncFixedLocationStream();
       },
       error: () => {
         this.activeBookings = [];
+        this.syncFixedLocationStream();
       },
     });
   }
@@ -516,6 +525,50 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const board = booking.board || booking.board_stop?.name || "Pickup stop";
     const drop = booking.drop || booking.drop_stop?.name || "Drop stop";
     return `${board} → ${drop}`;
+  }
+
+
+  private syncFixedLocationStream(): void {
+    const shouldStream = this.activeBookings.some((booking) => ['BOOKED', 'CONFIRMED'].includes(booking.status));
+    if (shouldStream) void this.startFixedLocationStream();
+    else void this.stopFixedLocationStream();
+  }
+
+  private async startFixedLocationStream(): Promise<void> {
+    if (this.locationWatchId !== null) return;
+    try {
+      await this.geo.requestPermissions();
+      this.locationWatchId = await this.geo.watchPosition(
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+        (fix, err) => {
+          if (err) {
+            void this.stopFixedLocationStream();
+            return;
+          }
+          if (fix) this.postFixedCustomerLocation(fix);
+        },
+      );
+    } catch {
+      this.locationWatchId = null;
+    }
+  }
+
+  private async stopFixedLocationStream(): Promise<void> {
+    if (this.locationWatchId !== null) {
+      await this.geo.clearWatch(this.locationWatchId);
+      this.locationWatchId = null;
+    }
+    this.lastLocationPostAt = 0;
+  }
+
+  private postFixedCustomerLocation(fix: GeoFix): void {
+    const now = Date.now();
+    if (now - this.lastLocationPostAt < this.locationPostMinIntervalMs) return;
+    this.lastLocationPostAt = now;
+
+    this.api.post('/me/location', { lat: fix.lat, lng: fix.lng }).subscribe({
+      error: () => {},
+    });
   }
 
   private resetDetails(): void {

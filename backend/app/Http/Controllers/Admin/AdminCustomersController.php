@@ -41,7 +41,7 @@ class AdminCustomersController
             ->whereHas('roles', fn ($q) => $q->where('role', 'customer'))
             ->select([
                 'id', 'name', 'email', 'phone', 'last_login_at',
-                'address', 'created_at', 'is_suspended', 'referral_code',
+                'address', 'created_at', 'is_suspended',
                 'avatar_path',
             ])
             ->withCount(['tripsAsCustomer as total_rides'])
@@ -92,7 +92,7 @@ class AdminCustomersController
     {
         $this->ensureCustomer($user);
 
-        $user->load(['roles', 'referrer:id,name,referral_code']);
+        $user->load(['roles']);
 
         return response()->json([
             'customer' => [
@@ -117,12 +117,6 @@ class AdminCustomersController
                 'email_unsubscribed' => (bool) $user->email_unsubscribed,
                 'sms_unsubscribed' => (bool) $user->sms_unsubscribed,
                 'push_unsubscribed' => (bool) $user->push_unsubscribed,
-                'referral_code' => $user->referral_code,
-                'referrer' => $user->referrer ? [
-                    'id' => $user->referrer->id,
-                    'name' => $user->referrer->name,
-                    'referral_code' => $user->referrer->referral_code,
-                ] : null,
                 'wallet_balance' => $this->walletService->balance($user),
                 'remaining_coupons' => 0, // placeholder until coupon redemption table exists
                 'used_subscribed' => false, // placeholder until subscription module exists
@@ -272,9 +266,6 @@ class AdminCustomersController
         if (!$user->phone) {
             return response()->json(['message' => 'Customer has no phone on file.'], 422);
         }
-        if ($user->sms_unsubscribed) {
-            return response()->json(['message' => 'Customer has unsubscribed from SMS.'], 422);
-        }
 
         // Generate a 6-digit code and SMS it. We do NOT verify it here — the
         // actual app login still uses Firebase. This is an admin convenience
@@ -293,36 +284,6 @@ class AdminCustomersController
         ]);
 
         return response()->json(['message' => 'OTP sent.']);
-    }
-
-    public function creditDebit(Request $request, User $user)
-    {
-        $this->ensureCustomer($user);
-        $data = $request->validate([
-            'type' => ['required', 'in:credit,debit,cashback,driver_added_cash'],
-            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
-            'reason' => ['nullable', 'string', 'max:500'],
-            'engagement_id' => ['nullable', 'integer', 'exists:trips,id'],
-        ]);
-
-        // Admin add/remove respects the operator's wallet min/max caps.
-        if ($msg = $this->walletService->capViolation($user, $data['type'], (float) $data['amount'])) {
-            return response()->json(['message' => $msg], 422);
-        }
-
-        $txn = $this->walletService->recordTransaction(
-            user: $user,
-            type: $data['type'],
-            amount: (float) $data['amount'],
-            reason: $data['reason'] ?? null,
-            tripId: $data['engagement_id'] ?? null,
-            by: $request->user(),
-        );
-
-        return response()->json([
-            'transaction' => $txn,
-            'wallet_balance' => $this->walletService->balance($user),
-        ], 201);
     }
 
     public function walletTransactions(User $user)
@@ -345,7 +306,7 @@ class AdminCustomersController
         $rows = Trip::query()
             ->where('customer_id', $user->id)
             ->where('status', '!=', 'CANCELLED')
-            ->with(['driver:id,name', 'rideType:id,name'])
+            ->with(['driver:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->orderByDesc('created_at')
             ->paginate(50);
 
@@ -359,20 +320,7 @@ class AdminCustomersController
         $rows = Trip::query()
             ->where('customer_id', $user->id)
             ->where('status', 'CANCELLED')
-            ->with(['driver:id,name', 'rideType:id,name'])
-            ->orderByDesc('created_at')
-            ->paginate(50);
-
-        return response()->json(['data' => $rows]);
-    }
-
-    public function referrals(User $user)
-    {
-        $this->ensureCustomer($user);
-
-        $rows = User::query()
-            ->where('referred_by_user_id', $user->id)
-            ->select(['id', 'name', 'phone', 'email', 'created_at'])
+            ->with(['driver:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->orderByDesc('created_at')
             ->paginate(50);
 

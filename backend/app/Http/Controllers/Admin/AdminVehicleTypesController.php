@@ -6,12 +6,9 @@ use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\RideType;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class AdminVehicleTypesController
 {
-    private const TOLL_MODES = ['no', 'yes'];
-
     /**
      * List all vehicle types for a city. The Enabled/Disabled split in the
      * Jugnoo UI is just is_active=true|false; the frontend filters client-side.
@@ -63,26 +60,12 @@ class AdminVehicleTypesController
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'max_people' => ['required', 'integer', 'min:1', 'max:99'],
             'luggage_capacity' => ['required', 'integer', 'min:0', 'max:99'],
-            'toll_mode' => ['required', Rule::in(self::TOLL_MODES)],
-            'commission_type' => ['required', Rule::in(['percent', 'fixed'])],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
-            'show_low_wallet_alert' => ['nullable', 'boolean'],
             'reverse_bidding_enabled' => ['nullable', 'boolean'],
         ]);
 
         $rideType = isset($data['ride_type_id']) ? RideType::query()->find((int) $data['ride_type_id']) : null;
         if (!$rideType || !$this->isPrivateRideType($rideType?->name)) {
             $data['reverse_bidding_enabled'] = false;
-        }
-
-        // Commission is one mode or the other — zero out the field the chosen
-        // mode doesn't use so the trip-settlement math can read either column
-        // unconditionally.
-        if (($data['commission_type'] ?? 'percent') === 'fixed') {
-            $data['commission_percent'] = 0;
-        } else {
-            $data['fixed_commission'] = 0;
         }
 
         $existing = CityVehicleType::query()
@@ -107,8 +90,6 @@ class AdminVehicleTypesController
             [
                 'city_id' => $city->id,
                 'is_active' => true,
-                'commission_type' => 'percent',
-                'show_low_wallet_alert' => true,
                 'reverse_bidding_enabled' => true,
             ],
             $data,
@@ -140,12 +121,6 @@ class AdminVehicleTypesController
             'luggage_capacity' => ['nullable', 'integer', 'min:0', 'max:99'],
 
             'reverse_bidding_enabled' => ['nullable', 'boolean'],
-            'show_low_wallet_alert' => ['nullable', 'boolean'],
-            'toll_mode' => ['nullable', Rule::in(self::TOLL_MODES)],
-
-            'commission_type' => ['nullable', Rule::in(['percent', 'fixed'])],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
 
             'override_request_radius_m' => ['nullable', 'integer', 'min:0', 'max:50000'],
             'override_hop_interval_sec' => ['nullable', 'integer', 'min:1', 'max:600'],
@@ -163,18 +138,6 @@ class AdminVehicleTypesController
                 : RideType::query()->find((int) $targetRideTypeId));
         if (!$this->isPrivateRideType($targetRideType?->name)) {
             $data['reverse_bidding_enabled'] = false;
-        }
-
-        // Commission is one mode or the other. When the admin sets the mode,
-        // force the unused amount column to 0 so settlement can read either side
-        // safely. (When commission_type isn't in this payload we leave both
-        // amount columns as the request set them.)
-        if (array_key_exists('commission_type', $data) && $data['commission_type'] !== null) {
-            if ($data['commission_type'] === 'fixed') {
-                $data['commission_percent'] = 0;
-            } else {
-                $data['fixed_commission'] = 0;
-            }
         }
 
         // Dispatcher overrides are all-or-nothing: either all four set (per-vehicle
@@ -266,12 +229,6 @@ class AdminVehicleTypesController
             'luggage_capacity' => (int) $v->luggage_capacity,
 
             'reverse_bidding_enabled' => (bool) $v->reverse_bidding_enabled,
-            'show_low_wallet_alert' => (bool) $v->show_low_wallet_alert,
-            'toll_mode' => $v->toll_mode,
-
-            'commission_type' => $v->commission_type ?? 'percent',
-            'commission_percent' => (float) $v->commission_percent,
-            'fixed_commission' => (float) $v->fixed_commission,
 
             'override_request_radius_m' => $v->override_request_radius_m,
             'override_hop_interval_sec' => $v->override_hop_interval_sec,

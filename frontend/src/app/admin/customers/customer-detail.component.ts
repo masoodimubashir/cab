@@ -8,6 +8,8 @@ import {
   ButtonComponent,
   ColumnComponent,
   DataTableComponent,
+  FilterPillComponent,
+  FilterSelectComponent,
   IconComponent,
   InputComponent,
   ModalComponent,
@@ -34,8 +36,6 @@ interface CustomerProfile {
   email_unsubscribed: boolean;
   sms_unsubscribed: boolean;
   push_unsubscribed: boolean;
-  referral_code: string | null;
-  referrer: { id: number; name: string; referral_code: string } | null;
   wallet_balance: number;
   remaining_coupons: number;
   used_subscribed: boolean;
@@ -45,12 +45,7 @@ interface CustomerProfile {
   current_location_updated_at?: string | null;
 }
 
-type TabKey = 'rides' | 'wallet' | 'cancelled' | 'referrals';
-
-const WALLET_TYPES = [
-  { value: 'credit', label: 'Credit', icon: 'plus' as const,  desc: 'Add to balance' },
-  { value: 'debit',  label: 'Debit',  icon: 'trash' as const, desc: 'Deduct from balance' },
-];
+type TabKey = 'rides' | 'wallet' | 'cancelled';
 
 const BLOCK_REASONS = [
   'Spam / fraud',
@@ -70,6 +65,8 @@ const BLOCK_REASONS = [
     ButtonComponent,
     ColumnComponent,
     DataTableComponent,
+    FilterPillComponent,
+    FilterSelectComponent,
     IconComponent,
     InputComponent,
     ModalComponent,
@@ -105,85 +102,11 @@ const BLOCK_REASONS = [
               <span class="cover__handle-sep">·</span>
               <span>Member since {{ profile.date_registered | date:'MMMM y' }}</span>
             </div>
-            <div class="cover__contacts">
-              <!-- Phone -->
-              <ng-container *ngIf="profile.phone; else phoneEmpty">
-                <a [href]="'tel:' + profile.phone" class="contact">
-                  <span class="contact__icon"><tm-icon name="phone" [size]="13" /></span>
-                  <span class="contact__k">Phone</span>
-                  <span class="contact__text mono">{{ profile.phone }}</span>
-                </a>
-              </ng-container>
-              <ng-template #phoneEmpty>
-                <span class="contact contact--static contact--empty">
-                  <span class="contact__icon"><tm-icon name="phone" [size]="13" /></span>
-                  <span class="contact__k">Phone</span>
-                  <span class="contact__text mono">—</span>
-                </span>
-              </ng-template>
-
-              <!-- Email -->
-              <ng-container *ngIf="profile.email; else emailEmpty">
-                <a [href]="'mailto:' + profile.email" class="contact">
-                  <span class="contact__icon"><tm-icon name="envelope" [size]="13" /></span>
-                  <span class="contact__k">Email</span>
-                  <span class="contact__text">{{ profile.email }}</span>
-                </a>
-              </ng-container>
-              <ng-template #emailEmpty>
-                <span class="contact contact--static contact--empty">
-                  <span class="contact__icon"><tm-icon name="envelope" [size]="13" /></span>
-                  <span class="contact__k">Email</span>
-                  <span class="contact__text">—</span>
-                </span>
-              </ng-template>
-
-              <!-- Address -->
-              <span class="contact contact--static" [class.contact--empty]="!profile.address">
-                <span class="contact__icon"><tm-icon name="map-marker" [size]="13" /></span>
-                <span class="contact__k">Address</span>
-                <span class="contact__text">{{ profile.address || '—' }}</span>
-              </span>
-
-              <!-- Current latitude / longitude pinged by the mobile app -->
-              <ng-container *ngIf="profile.current_lat != null && profile.current_lng != null; else liveLocEmpty">
-                <a
-                  class="contact contact--live"
-                  [href]="'https://www.google.com/maps?q=' + profile.current_lat + ',' + profile.current_lng"
-                  target="_blank"
-                  rel="noopener"
-                  title="Open in Google Maps"
-                >
-                  <span class="contact__icon"><tm-icon name="pin" [size]="13" /></span>
-                  <span class="contact__k">Location</span>
-                  <span class="contact__text mono">
-                    {{ profile.current_lat | number:'1.4-4' }}, {{ profile.current_lng | number:'1.4-4' }}
-                  </span>
-                  <span
-                    *ngIf="profile.current_location_updated_at"
-                    class="contact__age"
-                    [class.is-stale]="isLocationStale"
-                  >
-                    {{ timeAgo(profile.current_location_updated_at) }}
-                  </span>
-                </a>
-              </ng-container>
-              <ng-template #liveLocEmpty>
-                <span class="contact contact--static contact--empty">
-                  <span class="contact__icon"><tm-icon name="pin" [size]="13" /></span>
-                  <span class="contact__k">Location</span>
-                  <span class="contact__text mono">—</span>
-                </span>
-              </ng-template>
-            </div>
           </div>
 
           <div class="cover__actions">
-            <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending">
+            <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
               Send OTP
-            </tm-button>
-            <tm-button variant="ink" size="sm" icon="tag" (clicked)="openWallet()">
-              Wallet
             </tm-button>
             <button
               type="button"
@@ -241,155 +164,103 @@ const BLOCK_REASONS = [
         </div>
       </section>
 
-      <!-- ============= About + meta cards ============= -->
-      <section class="about">
-        <article class="about__main">
-          <h2 class="about__heading">About</h2>
-          <p class="about__text">
-            <strong>{{ profile.name || 'This customer' }}</strong>
-            joined TaxiMode on
-            <strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong>
-            and lives at <strong>{{ profile.address || '—' }}</strong>.
-            They use the app version <span class="mono">{{ profile.app_version || '—' }}</span>
-            on a {{ profile.device_type || '—' }} running {{ profile.os_version || '—' }}.
-            Referred by
-            <strong>{{ profile.referrer?.name || '—' }}</strong>
-            (<span class="mono">{{ profile.referrer?.referral_code || '—' }}</span>).
-            <ng-container *ngIf="profile.is_suspended">
-              <br />
-              <span class="about__warn">⚠ Blocked: {{ profile.suspended_reason || '—' }}</span>
-            </ng-container>
-          </p>
+      <!-- ============= Overview ============= -->
+      <section class="overview">
+        <article class="overview__main">
+          <header class="section-head">
+            <div class="section-head__copy">
+              <h2 class="section-head__title">Overview</h2>
+              <p class="section-head__sub">Customer identity, app profile, and account state in a single view.</p>
+            </div>
+            <div class="section-head__meta">
+              <span class="meta-chip meta-chip--strong">#{{ profile.id }}</span>
+              <span class="meta-chip">{{ profile.date_registered | date:'MMMM d, y' }}</span>
+              <tm-status-pill *ngIf="profile.is_suspended" tone="danger">Blocked</tm-status-pill>
+              <tm-status-pill *ngIf="!profile.is_suspended" tone="success">Active</tm-status-pill>
+              <tm-status-pill *ngIf="profile.duplicate_registration" tone="warning">Duplicate</tm-status-pill>
+            </div>
+          </header>
 
-          <div class="about__tags">
-            <span class="tag-pill tag-pill--ink">
-              <tm-icon name="user" [size]="11" />
-              <span class="tag-pill__k">User ID</span>
-              <span class="tag-pill__v mono">#{{ profile.id }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="calendar" [size]="11" />
-              <span class="tag-pill__k">DOB</span>
-              <span class="tag-pill__v">{{ profile.dob || '—' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="gift" [size]="11" />
-              <span class="tag-pill__k">Referral</span>
-              <span class="tag-pill__v mono">{{ profile.referral_code || '—' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon [name]="profile.used_subscribed ? 'check' : 'x'" [size]="11" />
-              <span class="tag-pill__k">Subscription</span>
-              <span class="tag-pill__v">{{ profile.used_subscribed ? 'Active' : 'Free' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="shield" [size]="11" />
-              <span class="tag-pill__k">Policy</span>
-              <span class="tag-pill__v">{{ profile.cancellation_charge_policy || '—' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="phone" [size]="11" />
-              <span class="tag-pill__k">App ver</span>
-              <span class="tag-pill__v mono">{{ profile.app_version || '—' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="phone" [size]="11" />
-              <span class="tag-pill__k">OS</span>
-              <span class="tag-pill__v mono">{{ profile.os_version || '—' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="phone" [size]="11" />
-              <span class="tag-pill__k">Device</span>
-              <span class="tag-pill__v">{{ profile.device_type || '—' }}</span>
-            </span>
-            <ng-container *ngIf="profile.current_lat != null && profile.current_lng != null; else locEmpty">
-              <a
-                class="tag-pill tag-pill--link"
-                [href]="'https://www.google.com/maps?q=' + profile.current_lat + ',' + profile.current_lng"
-                target="_blank"
-                rel="noopener"
-              >
-                <tm-icon name="pin" [size]="11" />
-                <span class="tag-pill__k">Location</span>
-                <span class="tag-pill__v mono">
-                  {{ profile.current_lat | number:'1.4-4' }}, {{ profile.current_lng | number:'1.4-4' }}
-                </span>
-                <span
-                  *ngIf="profile.current_location_updated_at"
-                  class="tag-pill__age"
-                  [class.is-stale]="isLocationStale"
-                  [title]="profile.current_location_updated_at"
-                >
-                  {{ timeAgo(profile.current_location_updated_at) }}
-                </span>
-              </a>
-            </ng-container>
-            <ng-template #locEmpty>
-              <span class="tag-pill">
-                <tm-icon name="pin" [size]="11" />
-                <span class="tag-pill__k">Location</span>
-                <span class="tag-pill__v mono">—</span>
-              </span>
-            </ng-template>
-            <span class="tag-pill">
-              <tm-icon [name]="profile.duplicate_registration ? 'x' : 'check'" [size]="11" />
-              <span class="tag-pill__k">Duplicate reg</span>
-              <span class="tag-pill__v">{{ profile.duplicate_registration ? 'Yes' : 'No' }}</span>
-            </span>
-            <span class="tag-pill">
-              <tm-icon name="gift" [size]="11" />
-              <span class="tag-pill__k">Referrer code</span>
-              <span class="tag-pill__v mono">
-                {{ profile.referrer?.referral_code || '—' }}
-              </span>
-            </span>
+          <div class="overview-grid">
+            <section class="detail-card detail-card--wide">
+              <div class="detail-card__head">
+                <h3 class="detail-card__title">Identity</h3>
+                <span class="detail-card__hint">Core person data</span>
+              </div>
+              <div class="kv-list">
+                <div class="kv-row"><span>Name</span><strong>{{ profile.name || 'Unnamed customer' }}</strong></div>
+                <div class="kv-row"><span>Phone</span><strong class="mono">{{ profile.phone || '—' }}</strong></div>
+                <div class="kv-row"><span>Email</span><strong>{{ profile.email || '—' }}</strong></div>
+                <div class="kv-row"><span>DOB</span><strong>{{ profile.dob || '—' }}</strong></div>
+                <div class="kv-row"><span>Address</span><strong>{{ profile.address || '—' }}</strong></div>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <div class="detail-card__head">
+                <h3 class="detail-card__title">Account</h3>
+                <span class="detail-card__hint">Loyalty and usage</span>
+              </div>
+              <div class="kv-list">
+                <div class="kv-row"><span>Coupons</span><strong>{{ profile.remaining_coupons || 0 }}</strong></div>
+                <div class="kv-row"><span>Rides</span><strong>{{ totalRidesAggregate }}</strong></div>
+                <div class="kv-row"><span>Subscription</span><strong>{{ profile.used_subscribed ? 'Active' : 'Free' }}</strong></div>
+                <div class="kv-row"><span>Duplicate</span><strong>{{ profile.duplicate_registration ? 'Yes' : 'No' }}</strong></div>
+                <div class="kv-row"><span>Cancellation policy</span><strong>{{ profile.cancellation_charge_policy || '—' }}</strong></div>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <div class="detail-card__head">
+                <h3 class="detail-card__title">System</h3>
+                <span class="detail-card__hint">App and live state</span>
+              </div>
+              <div class="kv-list">
+                <div class="kv-row"><span>App version</span><strong class="mono">{{ profile.app_version || '—' }}</strong></div>
+                <div class="kv-row"><span>OS version</span><strong class="mono">{{ profile.os_version || '—' }}</strong></div>
+                <div class="kv-row"><span>Device</span><strong>{{ profile.device_type || '—' }}</strong></div>
+                <div class="kv-row"><span>Last login</span><strong>{{ profile.last_login_at ? timeAgo(profile.last_login_at) : '—' }}</strong></div>
+                <div class="kv-row"><span>Location</span><strong *ngIf="profile.current_lat != null && profile.current_lng != null; else customerLocEmpty">{{ profile.current_lat | number:'1.4-4' }}, {{ profile.current_lng | number:'1.4-4' }}</strong></div>
+                <ng-template #customerLocEmpty><div class="kv-row"><span>Location</span><strong>—</strong></div></ng-template>
+                <div class="kv-row"><span>Ping</span><strong [class.is-stale]="isLocationStale">{{ profile.current_location_updated_at ? timeAgo(profile.current_location_updated_at) : '—' }}</strong></div>
+              </div>
+            </section>
           </div>
         </article>
 
-        <article class="about__side">
-          <h3 class="about__side-heading">Notifications</h3>
-          <p class="about__side-sub">Channels this customer accepts</p>
-          <div class="channels">
-            <div class="channel" [class.is-off]="profile.email_unsubscribed">
-              <span class="channel__icon"><tm-icon name="envelope" [size]="14" /></span>
-              <div class="channel__body">
-                <span class="channel__title">Email</span>
-                <span class="channel__sub">
-                  {{ profile.email_unsubscribed ? 'Opted out' : 'Subscribed' }}
-                </span>
-              </div>
-              <span class="channel__led"></span>
+        <aside class="overview__side">
+          <section class="detail-card">
+            <div class="detail-card__head">
+              <h3 class="detail-card__title">Status</h3>
+              <span class="detail-card__hint">Access and compliance</span>
             </div>
-            <div class="channel" [class.is-off]="profile.sms_unsubscribed">
-              <span class="channel__icon"><tm-icon name="phone" [size]="14" /></span>
-              <div class="channel__body">
-                <span class="channel__title">SMS</span>
-                <span class="channel__sub">
-                  {{ profile.sms_unsubscribed ? 'Opted out' : 'Subscribed' }}
-                </span>
-              </div>
-              <span class="channel__led"></span>
+            <div class="kv-list">
+              <div class="kv-row"><span>User ID</span><strong class="mono">#{{ profile.id }}</strong></div>
+              <div class="kv-row"><span>Access</span><strong>{{ profile.is_suspended ? 'Blocked' : 'Active' }}</strong></div>
+              <div class="kv-row" *ngIf="profile.is_suspended"><span>Reason</span><strong>{{ profile.suspended_reason || '—' }}</strong></div>
+              <div class="kv-row"><span>Registered</span><strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong></div>
             </div>
-            <div class="channel" [class.is-off]="profile.push_unsubscribed">
-              <span class="channel__icon"><tm-icon name="bell" [size]="14" /></span>
-              <div class="channel__body">
-                <span class="channel__title">Push</span>
-                <span class="channel__sub">
-                  {{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}
-                </span>
-              </div>
-              <span class="channel__led"></span>
+          </section>
+
+          <section class="detail-card">
+            <div class="detail-card__head">
+              <h3 class="detail-card__title">Notification preferences</h3>
+              <span class="detail-card__hint">App channels</span>
             </div>
-          </div>
-        </article>
+            <div class="kv-list">
+              <div class="kv-row"><span>Email</span><strong>{{ profile.email_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
+              <div class="kv-row"><span>SMS</span><strong>{{ profile.sms_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
+              <div class="kv-row"><span>Push</span><strong>{{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
+            </div>
+          </section>
+        </aside>
       </section>
-
       <!-- ============= Activity feed ============= -->
       <section class="feed">
         <header class="feed__head">
           <div class="feed__title">
             <h2 class="feed__heading">Activity</h2>
-            <p class="feed__sub">Recent rides, wallet changes and invites.</p>
+            <p class="feed__sub">Recent rides, wallet activity and cancellations in one timeline.</p>
           </div>
 
           <div class="feed__nav-wrap">
@@ -422,12 +293,41 @@ const BLOCK_REASONS = [
           </div>
         </header>
 
-        <div class="feed__search">
-          <tm-input
-            icon="search"
-            [placeholder]="searchPlaceholder"
-            [(ngModel)]="tabSearch"
-          />
+        <div class="feed__toolbar">
+          <div class="feed__toolbar-main">
+            <div class="feed__search">
+              <tm-input icon="search" [placeholder]="searchPlaceholder" [(ngModel)]="tabSearch" />
+            </div>
+
+            <div *ngIf="activeTab === 'rides'" class="feed__filters">
+              <div class="feed__filters-main">
+                <tm-filter-select
+                  icon="car"
+                  ariaLabel="Ride mode filter"
+                  allLabel="All rides"
+                  [includeAll]="true"
+                  [options]="rideModeOptions"
+                  [value]="rideMode"
+                  (valueChange)="rideMode = $event"
+                />
+                <label class="date-range">
+                  <span>From</span>
+                  <input type="date" [(ngModel)]="rideDateFrom" />
+                </label>
+                <label class="date-range">
+                  <span>To</span>
+                  <input type="date" [(ngModel)]="rideDateTo" />
+                </label>
+              </div>
+              <tm-button variant="ghost" size="sm" icon="x" (clicked)="clearRideFilters()">Clear rides</tm-button>
+            </div>
+          </div>
+
+          <div class="feed__pills">
+            <tm-filter-pill *ngIf="tabSearch.trim()" icon="search" label="Search" [value]="tabSearch" (clear)="tabSearch = ''" />
+            <tm-filter-pill *ngIf="activeTab === 'rides' && rideMode !== 'all'" icon="car" label="Ride mode" [value]="rideModeText(rideMode)" (clear)="rideMode = 'all'" />
+            <tm-filter-pill *ngIf="activeTab === 'rides' && (rideDateFrom || rideDateTo)" icon="calendar" label="Ride date" [value]="(rideDateFrom || '…') + ' → ' + (rideDateTo || '…')" (clear)="clearRideFilters()" />
+          </div>
         </div>
 
         <!-- Loading skeleton -->
@@ -467,6 +367,7 @@ const BLOCK_REASONS = [
                 </div>
               </div>
               <div class="ride-meta">
+                <span class="ride-meta__item ride-meta__item--mode">{{ rideModeLabel(r) }}</span>
                 <span class="ride-meta__item" *ngIf="r.ride_type?.name"><tm-icon name="road" [size]="11" /> {{ r.ride_type.name }}</span>
                 <span class="ride-meta__item" *ngIf="r.distance_km"><tm-icon name="pin" [size]="11" /> {{ r.distance_km }} km</span>
                 <span class="ride-meta__item" *ngIf="r.duration_min"><tm-icon name="calendar" [size]="11" /> {{ r.duration_min }} min</span>
@@ -545,27 +446,8 @@ const BLOCK_REASONS = [
             </div>
           </article>
         </div>
-
-        <!-- ============= REFERRALS feed ============= -->
-        <div *ngIf="!loadingTab && activeTab === 'referrals'" class="feed__list">
-          <article *ngFor="let p of currentActivity" class="post">
-            <div class="post__leading">
-              <span class="post__avatar">{{ initials(p.name) }}</span>
-            </div>
-            <div class="post__body">
-              <header class="post__head">
-                <strong class="post__title">{{ p.name || 'Unnamed user' }}</strong>
-                <span class="post__time">joined {{ p.created_at | date:'MMM d, y' }}</span>
-              </header>
-              <footer class="post__foot">
-                <span class="post__meta mono" *ngIf="p.phone">{{ p.phone }}</span>
-                <span class="post__meta" *ngIf="p.email">{{ p.email }}</span>
-                <span class="post__meta mono">#{{ p.id }}</span>
-              </footer>
-            </div>
-          </article>
-        </div>
       </section>
+
     </div>
 
     <ng-template #loading>
@@ -730,66 +612,6 @@ const BLOCK_REASONS = [
       </ng-container>
     </tm-modal>
 
-    <!-- =================== Wallet modal =================== -->
-    <tm-modal
-      [open]="walletOpen"
-      title="Adjust wallet balance"
-      (closed)="walletOpen = false"
-    >
-      <div slot="body">
-        <div class="balance-row">
-          <span class="balance-row__lbl">Current balance</span>
-          <span class="balance-row__val">₹ {{ (profile?.wallet_balance || 0) | number:'1.2-2' }}</span>
-        </div>
-
-        <div class="action-toggle">
-          <button
-            *ngFor="let t of walletTypes"
-            type="button"
-            class="action-toggle__btn"
-            [class.is-active]="walletType === t.value"
-            [class.is-credit]="t.value === 'credit'"
-            [class.is-debit]="t.value === 'debit'"
-            (click)="walletType = t.value"
-          >
-            <span class="action-toggle__icon">
-              <tm-icon [name]="t.icon" [size]="14" />
-            </span>
-            <span class="action-toggle__title">{{ t.label }}</span>
-            <span class="action-toggle__sub">{{ t.desc }}</span>
-          </button>
-        </div>
-
-        <label class="lbl">Amount (₹)</label>
-        <input
-          class="form-input"
-          type="number"
-          min="1"
-          [(ngModel)]="walletAmount"
-          placeholder="e.g. 250"
-        />
-
-        <label class="lbl">Reason</label>
-        <textarea
-          class="form-input form-textarea"
-          rows="3"
-          [(ngModel)]="walletReason"
-          placeholder="Internal note for this adjustment"
-        ></textarea>
-      </div>
-      <ng-container slot="footer">
-        <tm-button variant="ghost" (clicked)="walletOpen = false">Cancel</tm-button>
-        <tm-button
-          [variant]="walletType === 'debit' ? 'danger' : 'green'"
-          icon="check"
-          [loading]="walletSaving"
-          [disabled]="!walletAmount || walletAmount <= 0"
-          (clicked)="submitWallet()"
-        >
-          {{ walletType === 'debit' ? 'Debit wallet' : 'Credit wallet' }}
-        </tm-button>
-      </ng-container>
-    </tm-modal>
   `,
   styles: [`
     :host { display: block; }
@@ -825,7 +647,7 @@ const BLOCK_REASONS = [
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);
       border-radius: var(--tm-radius-lg);
-      overflow: hidden;
+      overflow: visible;
     }
     .cover__banner {
       height: 120px;
@@ -836,9 +658,9 @@ const BLOCK_REASONS = [
     }
     .cover__inner {
       display: grid;
-      grid-template-columns: auto 1fr auto;
+      grid-template-columns: auto minmax(0, 1fr) auto;
       gap: var(--tm-space-4);
-      align-items: flex-start;
+      align-items: stretch;
       padding: 0 var(--tm-space-5) var(--tm-space-5);
       margin-top: -48px;
     }
@@ -865,12 +687,17 @@ const BLOCK_REASONS = [
     .cover__body {
       display: flex;
       flex-direction: column;
+      justify-content: center;
       gap: 8px;
       min-width: 0;
       padding-top: 56px;
     }
     .cover__title-row {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      row-gap: 8px;
     }
     .cover__name {
       margin: 0;
@@ -897,13 +724,17 @@ const BLOCK_REASONS = [
     .cover__handle-sep { color: var(--tm-text-soft); }
 
     .cover__contacts {
-      display: flex; flex-wrap: wrap; gap: 6px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
       margin-top: 4px;
     }
     .contact {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 5px 10px;
-      border-radius: var(--tm-radius-pill);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: var(--tm-radius-md);
       background: var(--tm-canvas);
       border: 1px solid var(--tm-line);
       color: var(--tm-text);
@@ -911,12 +742,16 @@ const BLOCK_REASONS = [
       font-weight: 600;
       text-decoration: none;
       transition: background var(--tm-duration-fast) var(--tm-ease),
-                  border-color var(--tm-duration-fast) var(--tm-ease);
+                  border-color var(--tm-duration-fast) var(--tm-ease),
+                  box-shadow var(--tm-duration-fast) var(--tm-ease),
+                  transform var(--tm-duration-fast) var(--tm-ease);
     }
     .contact:not(.contact--static):hover {
       background: var(--tm-ink);
       color: #fff;
       border-color: var(--tm-ink);
+      box-shadow: var(--tm-shadow-sm);
+      transform: translateY(-1px);
     }
     .contact--static { cursor: default; }
     .contact--empty {
@@ -979,6 +814,7 @@ const BLOCK_REASONS = [
       display: flex; align-items: center; gap: 8px;
       padding-top: 56px;
       position: relative;
+      z-index: 30;
     }
     .more-btn {
       display: inline-flex; align-items: center; justify-content: center;
@@ -996,7 +832,7 @@ const BLOCK_REASONS = [
 
     .more-menu {
       position: absolute;
-      top: calc(100% + 6px);
+      top: calc(100% + 8px);
       right: 0;
       background: var(--tm-surface);
       border: 1px solid var(--tm-line-2);
@@ -1004,7 +840,7 @@ const BLOCK_REASONS = [
       box-shadow: var(--tm-shadow-pop);
       min-width: 220px;
       padding: 4px;
-      z-index: 60;
+      z-index: 80;
       animation: mm-in 160ms var(--tm-ease) both;
     }
     @keyframes mm-in {
@@ -1070,155 +906,142 @@ const BLOCK_REASONS = [
       color: var(--tm-text-muted);
     }
 
-    /* -------------------- About section -------------------- */
-    .about {
+    /* -------------------- Overview section -------------------- */
+    .overview {
       display: grid;
-      grid-template-columns: 1.8fr 1fr;
+      grid-template-columns: minmax(0, 1fr) 340px;
       gap: var(--tm-space-3);
+      align-items: start;
     }
-    .about__main,
-    .about__side {
+    .overview__main,
+    .overview__side {
+      min-width: 0;
+    }
+    .section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--tm-space-3);
+      flex-wrap: wrap;
+      margin-bottom: var(--tm-space-3);
+    }
+    .section-head__copy { min-width: 0; }
+    .section-head__title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--tm-text-muted);
+    }
+    .section-head__sub {
+      margin: 4px 0 0;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.55;
+      color: var(--tm-text-muted);
+      max-width: 68ch;
+    }
+    .section-head__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .meta-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: var(--tm-radius-md);
+      border: 1px solid var(--tm-line);
+      background: var(--tm-canvas);
+      color: var(--tm-text);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .meta-chip--strong {
+      background: var(--tm-ink);
+      border-color: var(--tm-ink);
+      color: #fff;
+    }
+    .detail-card {
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);
       border-radius: var(--tm-radius-lg);
-      padding: var(--tm-space-5);
+      padding: var(--tm-space-4);
+      box-shadow: var(--tm-shadow-sm);
+      min-width: 0;
     }
-    .about__heading,
-    .about__side-heading {
-      margin: 0 0 8px;
-      font-size: 14px;
+    .detail-card--wide { grid-column: 1 / -1; }
+    .detail-card__head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+    .detail-card__title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--tm-text);
+    }
+    .detail-card__hint {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--tm-text-muted);
+      white-space: nowrap;
+    }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--tm-space-3);
+    }
+    .kv-list {
+      display: grid;
+      gap: 8px;
+    }
+    .kv-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 12px;
+      border-radius: var(--tm-radius-md);
+      background: var(--tm-canvas);
+      border: 1px solid var(--tm-line);
+    }
+    .kv-row span {
+      flex: 0 0 auto;
+      font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--tm-text-muted);
     }
-    .about__text {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 500;
-      line-height: 1.7;
-      color: var(--tm-text);
-    }
-    .about__text strong { font-weight: 700; }
-    .about__warn { color: var(--tm-danger-fg); font-weight: 700; }
-
-    .about__tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: var(--tm-space-4);
-    }
-    .tag-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      background: var(--tm-canvas);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-pill);
-      font-size: 11px;
+    .kv-row strong {
+      flex: 1 1 auto;
+      text-align: right;
+      min-width: 0;
+      font-size: 13px;
       font-weight: 700;
       color: var(--tm-text);
+      overflow-wrap: anywhere;
     }
-    .tag-pill__k {
-      color: var(--tm-text-muted);
-      font-size: 10px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+    .kv-row strong.mono { font-family: var(--tm-font-mono); }
+    .overview__side {
+      display: grid;
+      gap: var(--tm-space-3);
     }
-    .tag-pill__v { color: var(--tm-text); }
-    .tag-pill__v.mono { font-family: var(--tm-font-mono); font-size: 11px; }
-    .tag-pill--ink {
-      background: var(--tm-ink);
-      border-color: var(--tm-ink);
-      color: #fff;
-    }
-    .tag-pill--ink .tag-pill__k { color: rgba(255, 255, 255, 0.6); }
-    .tag-pill--ink .tag-pill__v { color: #fff; }
-    .tag-pill--link {
-      text-decoration: none;
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease),
-                  border-color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .tag-pill--link:hover {
-      background: var(--tm-green);
-      border-color: var(--tm-green-deep);
-      color: #fff;
-    }
-    .tag-pill--link:hover .tag-pill__k,
-    .tag-pill--link:hover .tag-pill__v { color: #fff; }
-
-    /* Age chip appended to the location pill */
-    .tag-pill__age {
-      display: inline-flex;
-      align-items: center;
-      padding: 1px 6px;
-      border-radius: var(--tm-radius-pill);
-      background: var(--tm-green-tint);
-      color: var(--tm-green-deep);
-      font-family: var(--tm-font-mono);
-      font-size: 10px;
-      font-weight: 800;
-      margin-left: 2px;
-    }
-    .tag-pill__age.is-stale {
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-soft);
-    }
-    .tag-pill--link:hover .tag-pill__age {
-      background: rgba(255, 255, 255, 0.18);
-      color: #fff;
-    }
-
-    .about__side-heading { margin-bottom: 4px; }
-    .about__side-sub {
-      margin: 0 0 var(--tm-space-3);
-      font-size: 12px;
-      color: var(--tm-text-muted);
-      font-weight: 500;
-    }
-    .channels { display: flex; flex-direction: column; gap: 8px; }
-    .channel {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px;
-      background: var(--tm-green-tint);
-      border: 1px solid var(--tm-green-deep);
-      border-radius: var(--tm-radius-md);
-    }
-    .channel.is-off {
-      background: var(--tm-canvas);
-      border-color: var(--tm-line);
-    }
-    .channel__icon {
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      background: var(--tm-green);
-      color: #fff;
-      display: grid; place-items: center;
-      flex-shrink: 0;
-    }
-    .channel.is-off .channel__icon {
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-soft);
-    }
-    .channel__body { flex: 1; display: flex; flex-direction: column; gap: 1px; }
-    .channel__title { font-size: 13px; font-weight: 700; color: var(--tm-text); }
-    .channel__sub { font-size: 11px; font-weight: 600; color: var(--tm-text-muted); }
-    .channel__led {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--tm-green);
-    }
-    .channel.is-off .channel__led { background: var(--tm-text-soft); }
-
-    .mono { font-family: var(--tm-font-mono); font-weight: 600; font-size: 12px; }
-    .muted { color: var(--tm-text-soft); }
+    .is-stale { color: var(--tm-text-soft); }
 
     /* -------------------- Activity feed -------------------- */
+
     .feed {
       background: var(--tm-surface);
       border: 1px solid var(--tm-line);
@@ -1227,6 +1050,7 @@ const BLOCK_REASONS = [
       display: flex;
       flex-direction: column;
       gap: var(--tm-space-4);
+      box-shadow: var(--tm-shadow-sm);
     }
     .feed__head {
       display: flex;
@@ -1256,7 +1080,9 @@ const BLOCK_REASONS = [
       padding: 4px;
       background: var(--tm-canvas);
       border-radius: var(--tm-radius-md);
+      border: 1px solid var(--tm-line);
       max-width: 100%;
+      overflow-x: auto;
     }
     .feed-tab {
       display: inline-flex; align-items: center; gap: 8px;
@@ -1313,7 +1139,53 @@ const BLOCK_REASONS = [
       background-repeat: no-repeat;
     }
 
-    .feed__search { max-width: 380px; }
+    .feed__toolbar { display: grid; gap: 12px; }
+    .feed__toolbar-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px;
+    }
+    .feed__search {
+      flex: 1 1 320px;
+      max-width: none;
+    }
+    .feed__filters {
+      flex: 0 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .feed__filters-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 10px;
+    }
+    .feed__pills { display: flex; flex-wrap: wrap; gap: 8px; }
+    .date-range {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--tm-text-muted);
+    }
+    .date-range input {
+      width: 150px;
+      padding: 9px 12px;
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      background: var(--tm-surface);
+      color: var(--tm-text);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+    }
 
     /* Feed loading skeleton */
     .feed__loading { display: flex; flex-direction: column; gap: 12px; }
@@ -1488,6 +1360,7 @@ const BLOCK_REASONS = [
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
       font-size: 11px; font-weight: 700;
     }
+    .ride-meta__item--mode { background: var(--tm-ink); color: #fff; }
     .ride-meta__item.mono { font-family: var(--tm-font-mono); }
     .ride-fare { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
     .ride-fare__est {
@@ -1815,8 +1688,11 @@ const BLOCK_REASONS = [
 
     /* -------------------- Responsive -------------------- */
     @media (max-width: 1100px) {
-      .about { grid-template-columns: 1fr; }
+      .overview { grid-template-columns: 1fr; }
       .stats { grid-template-columns: repeat(2, 1fr); }
+      .cover__inner { grid-template-columns: 1fr; }
+      .cover__actions { padding-top: 0; }
+      .overview-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 820px) {
       .cover__inner {
@@ -1840,7 +1716,27 @@ const BLOCK_REASONS = [
       .stats { grid-template-columns: 1fr 1fr; }
       .cover__name { font-size: 22px; }
       .action-toggle { grid-template-columns: 1fr; }
-      .feed__nav { display: none; }
+      .section-head__meta { justify-content: flex-start; }
+      .feed__toolbar-main {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .feed__search {
+        flex: 1 1 auto;
+        width: 100%;
+      }
+      .feed__filters {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .feed__filters-main {
+        width: 100%;
+      }
+      .date-range input {
+        width: 100%;
+        min-width: 0;
+      }
+      .feed__nav { display: flex; }
       .feed__select { display: block; }
       .post {
         grid-template-columns: auto 1fr;
@@ -1863,8 +1759,17 @@ export class CustomerDetailComponent implements OnInit {
   rides: any[] = [];
   walletTxns: any[] = [];
   cancelledRides: any[] = [];
-  referrals: any[] = [];
   tabSearch = '';
+  rideMode = 'all';
+  rideDateFrom = '';
+  rideDateTo = '';
+
+  readonly rideModeOptions = [
+    { label: 'Private', value: 'private' },
+    { label: 'Fixed', value: 'fixed' },
+    { label: 'Shuttle', value: 'shuttle' },
+  ];
+
 
   // Send OTP
   otpSending = false;
@@ -1878,11 +1783,10 @@ export class CustomerDetailComponent implements OnInit {
   deleteSaving = false;
   readonly blockReasons = BLOCK_REASONS;
 
-  readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' | 'users' }[] = [
+  readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' }[] = [
     { key: 'rides',     label: 'Rides',     icon: 'car' },
     { key: 'wallet',    label: 'Wallet',    icon: 'tag' },
     { key: 'cancelled', label: 'Cancelled', icon: 'x' },
-    { key: 'referrals', label: 'Referrals', icon: 'users' },
   ];
 
   /** "More" actions dropdown in the cover. */
@@ -1893,11 +1797,10 @@ export class CustomerDetailComponent implements OnInit {
       case 'rides':     return this.rides.length;
       case 'wallet':    return this.walletTxns.length;
       case 'cancelled': return this.cancelledRides.length;
-      case 'referrals': return this.referrals.length;
     }
   }
 
-  get currentTabIcon(): 'car' | 'tag' | 'x' | 'users' {
+  get currentTabIcon(): 'car' | 'tag' | 'x' {
     return this.historyTabs.find((t) => t.key === this.activeTab)?.icon ?? 'car';
   }
 
@@ -1906,7 +1809,6 @@ export class CustomerDetailComponent implements OnInit {
       case 'rides':     return this.filteredRides;
       case 'wallet':    return this.filteredWallet;
       case 'cancelled': return this.filteredCancelled;
-      case 'referrals': return this.filteredReferrals;
     }
   }
 
@@ -1915,7 +1817,6 @@ export class CustomerDetailComponent implements OnInit {
       case 'rides':     return 'Search by driver, engagement or fare…';
       case 'wallet':    return 'Search by reason, engagement or amount…';
       case 'cancelled': return 'Search cancelled rides…';
-      case 'referrals': return 'Search by name, phone or email…';
     }
   }
 
@@ -1924,7 +1825,6 @@ export class CustomerDetailComponent implements OnInit {
       case 'rides':     return 'No rides yet';
       case 'wallet':    return 'No wallet activity';
       case 'cancelled': return 'No cancellations';
-      case 'referrals': return 'No referrals';
     }
   }
 
@@ -1933,7 +1833,6 @@ export class CustomerDetailComponent implements OnInit {
       case 'rides':     return "When this customer takes a trip, it'll appear here.";
       case 'wallet':    return 'Credits and debits will show up here as soon as they happen.';
       case 'cancelled': return 'Cancelled trips will show up in this feed.';
-      case 'referrals': return 'Friends invited by this customer will show up here.';
     }
   }
 
@@ -1973,6 +1872,39 @@ export class CustomerDetailComponent implements OnInit {
     return (s || '').replace(/_/g, ' ').toLowerCase() || '—';
   }
 
+  private inDateRange(iso: string | null | undefined, from: string, to: string): boolean {
+    if (!iso) return false;
+    const day = iso.slice(0, 10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  }
+
+  rideModeOf(row: any): 'private' | 'fixed' | 'shuttle' {
+    if (!row?.route_departure_id) return 'private';
+    const mode = row?.route_departure?.route?.mode || row?.route?.mode;
+    return mode === 'fixed' ? 'fixed' : 'shuttle';
+  }
+
+  rideModeLabel(row: any): string {
+    return this.rideModeText(this.rideModeOf(row));
+  }
+
+  rideModeText(mode: string): string {
+    switch (mode) {
+      case 'private': return 'Private';
+      case 'fixed': return 'Fixed';
+      case 'shuttle': return 'Shuttle';
+      default: return 'All rides';
+    }
+  }
+
+  clearRideFilters(): void {
+    this.rideMode = 'all';
+    this.rideDateFrom = '';
+    this.rideDateTo = '';
+  }
+
   /** Considered "stale" when the last location ping is older than 30 minutes. */
   get isLocationStale(): boolean {
     const iso = this.profile?.current_location_updated_at;
@@ -2008,13 +1940,6 @@ export class CustomerDetailComponent implements OnInit {
   unsubPush = false;
   unsubSaving = false;
 
-  // Wallet modal
-  walletOpen = false;
-  walletType = 'credit';
-  walletAmount: number | null = null;
-  walletReason = '';
-  walletSaving = false;
-  readonly walletTypes = WALLET_TYPES;
 
   constructor(
     private route: ActivatedRoute,
@@ -2034,15 +1959,19 @@ export class CustomerDetailComponent implements OnInit {
   // -------------------- Tab filtered getters --------------------
   get filteredRides() {
     const q = this.tabSearch.trim().toLowerCase();
-    if (!q) return this.rides;
-    return this.rides.filter((r) =>
-      [r.driver?.name, r.id, r.payment_method, r.final_fare, r.estimated_fare]
+    return this.rides.filter((r) => {
+      const mode = this.rideModeOf(r);
+      const matchesMode = this.rideMode === 'all' || mode === this.rideMode;
+      const matchesDate = this.inDateRange(r.created_at, this.rideDateFrom, this.rideDateTo);
+      const matchesSearch = !q || [r.driver?.name, r.id, r.payment_method, r.final_fare, r.estimated_fare, mode, r.ride_type?.name, r.route?.name, r.route_departure?.route?.name]
         .map((x) => String(x ?? '').toLowerCase())
-        .some((s) => s.includes(q)),
-    );
+        .some((s) => s.includes(q));
+      return matchesMode && matchesDate && matchesSearch;
+    });
   }
 
   get filteredWallet() {
+
     const q = this.tabSearch.trim().toLowerCase();
     if (!q) return this.walletTxns;
     return this.walletTxns.filter((r) =>
@@ -2062,15 +1991,6 @@ export class CustomerDetailComponent implements OnInit {
     );
   }
 
-  get filteredReferrals() {
-    const q = this.tabSearch.trim().toLowerCase();
-    if (!q) return this.referrals;
-    return this.referrals.filter((r) =>
-      [r.name, r.phone, r.email]
-        .map((x) => String(x ?? '').toLowerCase())
-        .some((s) => s.includes(q)),
-    );
-  }
 
   /** Used in the stat strip — sums completed + cancelled where available. */
   get totalRidesAggregate(): number {
@@ -2127,7 +2047,6 @@ export class CustomerDetailComponent implements OnInit {
       rides:     `/admin/customers/${this.customerId}/rides`,
       wallet:    `/admin/customers/${this.customerId}/wallet/transactions`,
       cancelled: `/admin/customers/${this.customerId}/cancelled-rides`,
-      referrals: `/admin/customers/${this.customerId}/referrals`,
     };
     this.api.get<any>(pathMap[tab]).subscribe({
       next: (res) => {
@@ -2135,7 +2054,6 @@ export class CustomerDetailComponent implements OnInit {
         if (tab === 'rides')          this.rides = data;
         else if (tab === 'wallet')    this.walletTxns = data;
         else if (tab === 'cancelled') this.cancelledRides = data;
-        else if (tab === 'referrals') this.referrals = data;
         this.loadingTab = false;
       },
       error: () => {
@@ -2230,33 +2148,4 @@ export class CustomerDetailComponent implements OnInit {
       });
   }
 
-  openWallet(): void {
-    this.walletType = 'credit';
-    this.walletAmount = null;
-    this.walletReason = '';
-    this.walletOpen = true;
-  }
-
-  submitWallet(): void {
-    this.walletSaving = true;
-    this.api
-      .post(`/admin/customers/${this.customerId}/wallet/transactions`, {
-        type: this.walletType,
-        amount: this.walletAmount,
-        reason: this.walletReason || null,
-      })
-      .subscribe({
-        next: () => {
-          this.toast.success('Wallet transaction recorded');
-          this.walletSaving = false;
-          this.walletOpen = false;
-          this.loadProfile();
-          if (this.activeTab === 'wallet') this.loadTab('wallet');
-        },
-        error: (err) => {
-          this.toast.error(err?.error?.message || 'Transaction failed');
-          this.walletSaving = false;
-        },
-      });
-  }
 }

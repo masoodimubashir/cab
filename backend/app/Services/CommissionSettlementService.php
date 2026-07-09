@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\CityVehicleType;
+use App\Models\CitySetting;
 use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\WalletTransaction;
@@ -12,7 +12,7 @@ use App\Models\WalletTransaction;
  *
  *   - Solo (normal) rides: the platform takes a commission from the driver,
  *     debited from their prepaid wallet float. The cut is sourced from the
- *     trip's CityVehicleType — either fare × commission_percent/100, or a flat
+ *     city's CitySetting — either fare × commission_percent/100, or a flat
  *     fixed_commission (₹) — UNLESS an active subscription overrides the rate
  *     (its percent wins, usually 0% = commission-free). The subscription then
  *     consumes one ride against its allowance.
@@ -49,11 +49,10 @@ class CommissionSettlementService
         $toll = (float) ($trip->toll_amount ?? 0);
         $commissionableFare = max(0.0, $fare - $toll);
 
-        // The vehicle is the single source of the commission rule. Resolve it
-        // from the trip's city_vehicle_type_id; null-safe if the trip never
-        // carried one (treat as commission-free).
-        $cvt = $trip->city_vehicle_type_id
-            ? CityVehicleType::query()->find($trip->city_vehicle_type_id)
+        // City settings are the source of the standard commission rule.
+        // Subscription plans can still override this per driver below.
+        $settings = $trip->city_id
+            ? CitySetting::query()->firstOrCreate(['city_id' => $trip->city_id])
             : null;
 
         $vehicleTypeId = $trip->vehicle_type_id
@@ -72,13 +71,13 @@ class CommissionSettlementService
             // Active subscription: its percent rate wins.
             $percent = $subPct;
             $cut = round($commissionableFare * $percent / 100, 2);
-        } elseif ($cvt && $cvt->commission_type === 'fixed') {
-            // Flat per-ride fee from the vehicle.
+        } elseif ($settings && $settings->commission_type === 'fixed') {
+            // Flat per-ride fee from the city.
             $percent = 0.0;
-            $cut = round((float) $cvt->fixed_commission, 2);
+            $cut = round((float) $settings->fixed_commission, 2);
         } else {
-            // Percentage of the fare from the vehicle (default when no vehicle).
-            $percent = $cvt ? (float) $cvt->commission_percent : 0.0;
+            // Percentage of the fare from the city.
+            $percent = $settings ? (float) $settings->commission_percent : 0.0;
             $cut = round($commissionableFare * $percent / 100, 2);
         }
 

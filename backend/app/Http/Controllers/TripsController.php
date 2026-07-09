@@ -60,7 +60,7 @@ class TripsController extends Controller
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'outstation_package_id' => ['nullable', 'integer', 'exists:outstation_packages,id'],
             // Toll the client read from Google for this route (₹). Applied only
-            // when the booked vehicle's toll_mode is 'yes'; absent/blank → 0.
+            // when city tolls are enabled; absent/blank → 0.
             'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'scope' => ['nullable', 'in:local,outstation'],
 
@@ -98,10 +98,10 @@ class TripsController extends Controller
         }
         $cityId = (int) $cvt->city_id;
 
-        // Toll is gated by the vehicle: only an outstation vehicle with the toll
-        // toggle ON carries it, using whatever Google gave the client (else 0).
-        // Captured here so the same amount settles at completion.
-        $tollCharge = ($cvt->toll_mode === 'yes')
+        // Toll is gated by the city setting, using whatever Google gave the
+        // client (else 0). Captured here so the same amount settles at completion.
+        $citySettings = CitySetting::query()->firstOrCreate(['city_id' => $cityId]);
+        $tollCharge = ($citySettings->toll_mode === 'yes')
             ? (float) ($data['toll_amount'] ?? 0)
             : 0.0;
 

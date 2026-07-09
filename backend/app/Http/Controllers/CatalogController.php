@@ -130,11 +130,9 @@ class CatalogController extends Controller
     {
         // Default to the driver-document slice — the driver app shouldn't see
         // car-rental-only catalog rows. Caller can override with ?category=…
-        $category = $request->query('category', 'driver_document');
-
         $rows = Document::query()
             ->with('labels')
-            ->when($category, fn ($q) => $q->where('category', $category))
+            ->where('category', 'driver_document')
             ->orderBy('id')
             ->get()
             ->map(fn (Document $d) => [

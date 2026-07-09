@@ -25,24 +25,30 @@ interface CatalogDoc {
   no_of_images: number;
   category: string;
   required: string | null;
+  gallery_restricted: boolean;
   instructions: string | null;
   labels: DocumentLabelDef[];
 }
 interface ExistingUpload {
   id: number;
   document_id: number | null;
+  image_index: number | null;
   status: 'uploaded' | 'approved' | 'rejected';
   rejection_reason: string | null;
   file_url: string;
   uploaded_at: string | null;
 }
-interface DocUploadState {
-  doc: CatalogDoc;
+interface DocImageSlot {
+  index: number;
   file: File | null;
   status: DocStatus;
   error?: string;
-  labelValues: Record<string, string>;
   existing: ExistingUpload | null;
+}
+interface DocUploadState {
+  doc: CatalogDoc;
+  uploads: DocImageSlot[];
+  labelValues: Record<string, string>;
 }
 
 /**
@@ -384,7 +390,13 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
         .get<{ driver: Record<string, unknown> | null; documents: ExistingUpload[] }>('/drivers/me')
         .pipe(catchError((err) => {
           if (showErrors) this.error = err?.error?.message || 'Could not refresh your verification status.';
-          return of({ driver: null, documents: this.docs.map((slot) => slot.existing).filter(Boolean) as ExistingUpload[] });
+          const fallbackDocs: ExistingUpload[] = [];
+          for (const slot of this.docs) {
+            for (const upload of slot.uploads) {
+              if (upload.existing) fallbackDocs.push(upload.existing);
+            }
+          }
+          return of({ driver: null, documents: fallbackDocs });
         })),
     }).subscribe({
       next: ({ docs, driver }) => {
@@ -399,20 +411,38 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     const previousByDocId = new Map<number, DocUploadState>();
     for (const slot of this.docs) previousByDocId.set(slot.doc.id, slot);
 
-    const existingByDocId = new Map<number, ExistingUpload>();
+    const existingByDocId = new Map<number, ExistingUpload[]>();
     for (const upload of uploads) {
-      if (upload.document_id != null) existingByDocId.set(upload.document_id, upload);
+      if (upload.document_id == null) continue;
+      const list = existingByDocId.get(upload.document_id) ?? [];
+      list.push(upload);
+      existingByDocId.set(upload.document_id, list);
     }
+    existingByDocId.forEach((list) => {
+      list.sort((a, b) => (a.image_index ?? 999) - (b.image_index ?? 999) || a.id - b.id);
+    });
 
     this.docs = catalogDocs.map((doc) => {
       const previous = previousByDocId.get(doc.id);
+      const existingList = [...(existingByDocId.get(doc.id) ?? [])];
+      const slotCount = Math.max(1, doc.no_of_images || 1);
+      const uploadsState: DocImageSlot[] = Array.from({ length: slotCount }, (_, idx) => {
+        const imageIndex = idx + 1;
+        const exact = existingList.find((row) => (row.image_index ?? imageIndex) === imageIndex) ?? null;
+        const fallback = !exact && existingList[idx] ? existingList[idx] : null;
+        return {
+          index: imageIndex,
+          file: previous?.uploads[idx]?.file ?? null,
+          status: previous?.uploads[idx]?.status ?? 'idle',
+          error: previous?.uploads[idx]?.error,
+          existing: exact ?? fallback,
+        };
+      });
+
       return {
         doc,
-        file: previous?.file ?? null,
-        status: previous?.status ?? 'idle',
-        error: previous?.error,
+        uploads: uploadsState,
         labelValues: this.mergeLabelValues(doc, previous?.labelValues),
-        existing: existingByDocId.get(doc.id) ?? null,
       };
     });
   }
@@ -446,21 +476,26 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
-  onDocFileChange(slot: DocUploadState, ev: Event): void {
+  onDocFileChange(upload: DocImageSlot, ev: Event): void {
     const input = ev.target as HTMLInputElement;
-    slot.file = input.files?.[0] ?? null;
-    slot.status = 'idle';
-    slot.error = undefined;
+    upload.file = input.files?.[0] ?? null;
+    upload.status = 'idle';
+    upload.error = undefined;
   }
 
   hasSelection(): boolean {
-    return this.docs.some((d) => !!d.file && !this.isLocked(d));
+    return this.docs.some((d) => d.uploads.some((u) => !!u.file && !this.isLocked(u)));
   }
 
-  isLocked(slot: DocUploadState): boolean {
+  isLocked(upload: DocImageSlot): boolean {
     if (this.driverApproved) return true;
-    if (!slot.existing) return false;
-    return slot.existing.status !== 'rejected';
+    if (!upload.existing) return false;
+    return upload.existing.status !== 'rejected';
+  }
+
+  isDocLocked(doc: DocUploadState): boolean {
+    if (this.driverApproved) return true;
+    return doc.uploads.some((upload) => !!upload.existing && upload.existing.status !== 'rejected');
   }
 
   // ── Document view / download ─────────────────────────────────────
@@ -469,17 +504,17 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
    * Open the document in a new tab. window.open would skip the Bearer token,
    * so we fetch the file authenticated → object URL → open.
    */
-  viewDoc(slot: DocUploadState): void {
-    this.fetchDoc(slot, false);
+  viewDoc(upload: DocImageSlot): void {
+    this.fetchDoc(upload, false);
   }
 
-  downloadDoc(slot: DocUploadState): void {
-    this.fetchDoc(slot, true);
+  downloadDoc(upload: DocImageSlot): void {
+    this.fetchDoc(upload, true);
   }
 
-  private fetchDoc(slot: DocUploadState, asDownload: boolean): void {
-    if (!slot.existing?.file_url) return;
-    let apiPath = this.toApiPath(slot.existing.file_url);
+  private fetchDoc(upload: DocImageSlot, asDownload: boolean): void {
+    if (!upload.existing?.file_url) return;
+    let apiPath = this.toApiPath(upload.existing.file_url);
     if (!apiPath) return;
     if (asDownload) {
       apiPath += apiPath.includes('?') ? '&download=1' : '?download=1';
@@ -490,7 +525,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
         if (asDownload) {
           const a = document.createElement('a');
           a.href = objectUrl;
-          const safeName = (slot.doc.name || `doc-${slot.existing!.id}`)
+          const safeName = `doc-${upload.existing!.id}-image-${upload.index}`
             .replace(/[^a-z0-9._-]+/gi, '_');
           a.download = safeName.includes('.')
             ? safeName
@@ -501,7 +536,6 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
         } else {
           window.open(objectUrl, '_blank');
         }
-        // Don't leak the object URL — release it after a generous window.
         setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
       },
       error: (err) => {
@@ -536,6 +570,14 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     return 'text';
   }
 
+  fileAccept(doc: CatalogDoc): string {
+    return doc.gallery_restricted ? 'image/*' : 'image/*,application/pdf';
+  }
+
+  fileCapture(doc: CatalogDoc): string | null {
+    return doc.gallery_restricted ? 'environment' : null;
+  }
+
   /**
    * The dashboard is unlocked once every mandatory doc is uploaded (status
    * uploaded/approved) — or unconditionally if the operator has already
@@ -544,22 +586,27 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
    */
   get canGoToDashboard(): boolean {
     if (this.driverApproved) return true;
-    const mandatory = this.docs.filter((d) => d.doc.required === 'mandatory' || !d.doc.required);
+    const mandatory = this.docs.filter((d) => d.doc.required !== 'optional');
     if (mandatory.length === 0) return false; // nothing in catalog → still block
-    return mandatory.every((d) => d.existing && d.existing.status !== 'rejected');
+    return mandatory.every((d) => d.uploads.every((u) => u.existing && u.existing.status !== 'rejected'));
   }
 
   uploadSelected(): void {
-    const pending = this.docs.filter((d) => !!d.file && !this.isLocked(d));
+    const pending: Array<{ doc: DocUploadState; upload: DocImageSlot }> = [];
+    for (const doc of this.docs) {
+      for (const upload of doc.uploads) {
+        if (upload.file && !this.isLocked(upload)) pending.push({ doc, upload });
+      }
+    }
     if (pending.length === 0) {
       this.error = 'Pick at least one document file to upload.';
       return;
     }
 
-    for (const slot of pending) {
-      for (const lbl of slot.doc.labels) {
-        if (lbl.mandatory && !slot.labelValues[lbl.label]?.trim()) {
-          this.error = `"${lbl.label}" is required for ${slot.doc.name}.`;
+    for (const item of pending) {
+      for (const lbl of item.doc.doc.labels) {
+        if (lbl.mandatory && !item.doc.labelValues[lbl.label]?.trim()) {
+          this.error = `"${lbl.label}" is required for ${item.doc.doc.name}.`;
           return;
         }
       }
@@ -568,25 +615,26 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     this.uploadBusy = true;
     this.error = null;
     this.message = null;
-    pending.forEach((d) => { d.status = 'uploading'; d.error = undefined; });
+    pending.forEach(({ upload }) => { upload.status = 'uploading'; upload.error = undefined; });
 
-    const uploads = pending.map((slot) => {
+    const uploads = pending.map(({ doc, upload }) => {
       const fd = new FormData();
-      fd.append('document_id', String(slot.doc.id));
+      fd.append('document_id', String(doc.doc.id));
+      fd.append('image_index', String(upload.index));
       if (this.vehicle_type_id) fd.append('vehicle_type_id', String(this.vehicle_type_id));
-      if (slot.doc.labels.length) fd.append('label_values', JSON.stringify(slot.labelValues));
-      fd.append('file', slot.file as File, (slot.file as File).name);
+      if (doc.doc.labels.length) fd.append('label_values', JSON.stringify(doc.labelValues));
+      fd.append('file', upload.file as File, (upload.file as File).name);
       return this.api.postForm<{ document?: ExistingUpload }>('/drivers/documents', fd).pipe(
         map((res) => {
-          slot.status = 'done';
-          slot.file = null;
-          if (res?.document) slot.existing = res.document;
-          return { id: slot.doc.id, ok: true };
+          upload.status = 'done';
+          upload.file = null;
+          if (res?.document) upload.existing = res.document;
+          return { id: doc.doc.id, ok: true };
         }),
         catchError((err) => {
-          slot.status = 'error';
-          slot.error = err?.error?.message || 'Upload failed';
-          return of({ id: slot.doc.id, ok: false });
+          upload.status = 'error';
+          upload.error = err?.error?.message || 'Upload failed';
+          return of({ id: doc.doc.id, ok: false });
         }),
       );
     });
@@ -597,7 +645,6 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
         const failCount = results.length - okCount;
         if (failCount === 0) {
           this.message = `${okCount} document${okCount === 1 ? '' : 's'} uploaded.`;
-          // All mandatory docs now in → hand off to the locked under-review screen.
           if (this.canGoToDashboard) {
             ApprovedDriverGuard.setStatePending();
             this.router.navigateByUrl('/driver-pending-review', { replaceUrl: true });

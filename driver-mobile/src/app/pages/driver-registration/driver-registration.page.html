@@ -251,75 +251,76 @@
               <div class="doc-card__icon"><ion-icon name="document-text-outline"></ion-icon></div>
               <strong>{{ slot.doc.name }}</strong>
             </div>
-            <ng-container *ngIf="slot.existing as ex">
-              <span *ngIf="ex.status === 'approved'" class="badge badge--ok">
-                <ion-icon name="checkmark-circle"></ion-icon>Approved
-              </span>
-              <span *ngIf="ex.status === 'uploaded'" class="badge badge--pending">
-                <ion-icon name="time-outline"></ion-icon>Pending
-              </span>
-              <span *ngIf="ex.status === 'rejected'" class="badge badge--bad">
-                <ion-icon name="close-circle"></ion-icon>Rejected
-              </span>
-            </ng-container>
           </div>
 
           <p class="doc-card__instructions" *ngIf="slot.doc.instructions">{{ slot.doc.instructions }}</p>
-
-          <div class="reject-note"
-               *ngIf="slot.existing && slot.existing.status === 'rejected' && slot.existing.rejection_reason as reason">
-            <ion-icon name="information-circle-outline"></ion-icon>
-            <span>{{ reason }}</span>
-          </div>
 
           <!-- per-document label fields -->
           <div class="doc-card__labels" *ngIf="slot.doc.labels.length">
             <div class="field" *ngFor="let l of slot.doc.labels">
               <label class="field__label">{{ l.label }}<span class="req" *ngIf="l.mandatory"> *</span></label>
-              <div class="field__control" [class.is-disabled]="isLocked(slot) || uploadBusy">
+              <div class="field__control" [class.is-disabled]="isDocLocked(slot) || uploadBusy">
                 <ion-input
                   [type]="inputTypeFor(l.label_type)"
                   [(ngModel)]="slot.labelValues[l.label]"
-                  [disabled]="isLocked(slot) || uploadBusy"
+                  [disabled]="isDocLocked(slot) || uploadBusy"
                   class="input"
                 ></ion-input>
               </div>
             </div>
           </div>
 
-          <!-- existing file preview -->
-          <div class="doc-preview" *ngIf="slot.existing as ex">
-            <button class="ghost-btn dc-press" (click)="viewDoc(slot)">
-              <ion-icon name="eye-outline"></ion-icon>View
-            </button>
-            <button class="ghost-btn dc-press" (click)="downloadDoc(slot)">
-              <ion-icon name="download-outline"></ion-icon>Download
-            </button>
-            <span class="doc-preview__date" *ngIf="ex.uploaded_at">
-              {{ ex.uploaded_at | date:'dd MMM yyyy, HH:mm' }}
-            </span>
+          <div class="doc-card__images">
+            <div class="doc-image" *ngFor="let image of slot.uploads">
+              <div class="doc-image__head">
+                <span class="doc-image__title">Image {{ image.index }} / {{ slot.doc.no_of_images }}</span>
+                <ng-container *ngIf="image.existing as ex">
+                  <span *ngIf="ex.status === 'approved'" class="badge badge--ok">
+                    <ion-icon name="checkmark-circle"></ion-icon>Approved
+                  </span>
+                  <span *ngIf="ex.status === 'uploaded'" class="badge badge--pending">
+                    <ion-icon name="time-outline"></ion-icon>Pending
+                  </span>
+                  <span *ngIf="ex.status === 'rejected'" class="badge badge--bad">
+                    <ion-icon name="close-circle"></ion-icon>Rejected
+                  </span>
+                </ng-container>
+              </div>
+
+              <div class="doc-preview" *ngIf="image.existing as ex">
+                <button class="ghost-btn dc-press" (click)="viewDoc(image)">
+                  <ion-icon name="eye-outline"></ion-icon>View
+                </button>
+                <button class="ghost-btn dc-press" (click)="downloadDoc(image)">
+                  <ion-icon name="download-outline"></ion-icon>Download
+                </button>
+                <span class="doc-preview__date" *ngIf="ex.uploaded_at">
+                  {{ ex.uploaded_at | date:'dd MMM yyyy, HH:mm' }}
+                </span>
+              </div>
+
+              <label class="dropzone" *ngIf="!isLocked(image)"
+                     [class.has-file]="image.file" [class.is-disabled]="uploadBusy">
+                <input type="file"
+                       [attr.accept]="fileAccept(slot.doc)"
+                       [attr.capture]="fileCapture(slot.doc)"
+                       (change)="onDocFileChange(image, $event)" [disabled]="uploadBusy" hidden />
+                <ion-icon [name]="image.file ? 'document-attach-outline' : 'cloud-upload-outline'"></ion-icon>
+                <span class="dropzone__text" *ngIf="!image.file">Tap to upload <em>· {{ slot.doc.gallery_restricted ? 'camera only' : 'gallery or camera' }}</em></span>
+                <span class="dropzone__text" *ngIf="image.file">{{ image.file.name }}</span>
+              </label>
+
+              <p class="status-line uploading" *ngIf="image.status === 'uploading'">
+                <ion-spinner name="dots"></ion-spinner> Uploading…
+              </p>
+              <p class="status-line err" *ngIf="image.status === 'error'">
+                <ion-icon name="alert-circle-outline"></ion-icon> {{ image.error }}
+              </p>
+              <p class="status-line ok" *ngIf="image.status === 'done'">
+                <ion-icon name="checkmark-circle-outline"></ion-icon> Uploaded
+              </p>
+            </div>
           </div>
-
-          <!-- upload dropzone -->
-          <label class="dropzone" *ngIf="!isLocked(slot)"
-                 [class.has-file]="slot.file" [class.is-disabled]="uploadBusy">
-            <input type="file" accept="image/*,application/pdf"
-                   (change)="onDocFileChange(slot, $event)" [disabled]="uploadBusy" hidden />
-            <ion-icon [name]="slot.file ? 'document-attach-outline' : 'cloud-upload-outline'"></ion-icon>
-            <span class="dropzone__text" *ngIf="!slot.file">Tap to upload <em>· image or PDF</em></span>
-            <span class="dropzone__text" *ngIf="slot.file">{{ slot.file.name }}</span>
-          </label>
-
-          <!-- per-document status -->
-          <p class="status-line uploading" *ngIf="slot.status === 'uploading'">
-            <ion-spinner name="dots"></ion-spinner> Uploading…
-          </p>
-          <p class="status-line err" *ngIf="slot.status === 'error'">
-            <ion-icon name="alert-circle-outline"></ion-icon> {{ slot.error }}
-          </p>
-          <p class="status-line ok" *ngIf="slot.status === 'done'">
-            <ion-icon name="checkmark-circle-outline"></ion-icon> Uploaded
-          </p>
         </div>
       </div>
 

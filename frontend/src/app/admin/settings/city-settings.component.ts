@@ -56,6 +56,11 @@ interface CitySettings {
 
   allowed_driver_payment_modes: string[];
   negotiation_floor_percent: number | null;
+  commission_type: 'percent' | 'fixed';
+  commission_percent: number;
+  fixed_commission: number;
+  toll_mode: 'yes' | 'no';
+  show_low_wallet_alert: boolean;
   private_no_show_threshold_minutes: number | null;
   private_no_show_charge_per_minute: number | null;
   private_driver_no_show_grace_minutes: number;
@@ -63,6 +68,7 @@ interface CitySettings {
 
   fixed_waiting_time_per_stop_minutes: number;
   fixed_stop_arrival_radius_m: number;
+  fixed_stop_arrival_dwell_seconds: number;
   fixed_driver_missed_stop_grace_minutes: number;
   fixed_customer_pickup_radius_m: number;
   fixed_vehicle_approaching_alert_radius_m: number;
@@ -157,14 +163,24 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
           <div class="sec__body">
             <div class="subsec"><h4 class="subsec__title">Feature toggles</h4><div class="toggles"><label class="tgl" *ngFor="let t of toggles"><input type="checkbox" [ngModel]="boolVal(t.key)" (ngModelChange)="setBool(t.key, $event)" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">{{ t.label }}</span><span class="tgl__hint">{{ t.hint }}</span></span></label></div></div>
             <div class="subsec"><h4 class="subsec__title">Payments</h4><div class="chips"><button *ngFor="let p of paymentModeOptions" type="button" class="chip" [class.is-on]="isMode(p.value)" (click)="toggleMode(p.value)"><tm-icon [name]="isMode(p.value) ? 'check' : 'plus'" [size]="13" />{{ p.label }}</button></div></div>
-            <div class="subsec"><h4 class="subsec__title">Customer messaging</h4><div class="grid grid-2"><label class="field"><span class="field__lbl">Login OTP message - Android</span><textarea rows="3" [(ngModel)]="form.customer_login_otp_message"></textarea></label><label class="field"><span class="field__lbl">Login OTP message - iOS</span><textarea rows="3" [(ngModel)]="form.customer_login_otp_message_ios"></textarea></label></div></div>
-            <div class="subsec"><h4 class="subsec__title">Support contacts</h4><div class="grid grid-3"><label class="field"><span class="field__lbl">Emergency no.</span><input type="text" [(ngModel)]="form.emergency_no" /></label><label class="field"><span class="field__lbl">Police no.</span><input type="text" [(ngModel)]="form.emergency_police_no" /></label><label class="field"><span class="field__lbl">Driver support no.</span><input type="text" [(ngModel)]="form.driver_support_no" /></label><label class="field"><span class="field__lbl">Customer support no.</span><input type="text" [(ngModel)]="form.customer_support_no" /></label><label class="field"><span class="field__lbl">Support email</span><input type="email" [(ngModel)]="form.support_email" /></label></div></div>
+            <div class="subsec"><h4 class="subsec__title">Ride commercials</h4>
+              <div class="seg">
+                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'percent'" (click)="form.commission_type = 'percent'">Percent commission</button>
+                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'fixed'" (click)="form.commission_type = 'fixed'">Fixed commission</button>
+              </div>
+              <div class="toggles">
+                <label class="tgl"><input type="checkbox" [ngModel]="form.toll_mode === 'yes'" (ngModelChange)="form.toll_mode = $event ? 'yes' : 'no'" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Toll applicable</span><span class="tgl__hint">Allow route tolls returned by Google to be added to fares in this city.</span></span></label>
+                <label class="tgl"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Low wallet alert</span><span class="tgl__hint">Show wallet warning on the driver app for this city.</span></span></label>
+              </div>
+            </div>
+            <div class="subsec"><h4 class="subsec__title">Customer messaging</h4><div class="grid grid-2"><label class="field"><span class="field__lbl">Login OTP message - Android<span class="info" tabindex="0" aria-label="Message shown with the OTP when an Android customer logs in." data-tip="Message shown with the OTP when an Android customer logs in.">!</span></span><textarea rows="3" [(ngModel)]="form.customer_login_otp_message"></textarea></label><label class="field"><span class="field__lbl">Login OTP message - iOS<span class="info" tabindex="0" aria-label="Message shown with the OTP when an iOS customer logs in." data-tip="Message shown with the OTP when an iOS customer logs in.">!</span></span><textarea rows="3" [(ngModel)]="form.customer_login_otp_message_ios"></textarea></label></div></div>
+            <div class="subsec"><h4 class="subsec__title">Support contacts</h4><div class="grid grid-3"><label class="field"><span class="field__lbl">Emergency no.<span class="info" tabindex="0" aria-label="Emergency contact number shown to users in this city." data-tip="Emergency contact number shown to users in this city.">!</span></span><input type="text" [(ngModel)]="form.emergency_no" /></label><label class="field"><span class="field__lbl">Police no.<span class="info" tabindex="0" aria-label="Police contact number shown for safety help in this city." data-tip="Police contact number shown for safety help in this city.">!</span></span><input type="text" [(ngModel)]="form.emergency_police_no" /></label><label class="field"><span class="field__lbl">Driver support no.<span class="info" tabindex="0" aria-label="Support number drivers can use for this city." data-tip="Support number drivers can use for this city.">!</span></span><input type="text" [(ngModel)]="form.driver_support_no" /></label><label class="field"><span class="field__lbl">Customer support no.<span class="info" tabindex="0" aria-label="Support number customers can use for this city." data-tip="Support number customers can use for this city.">!</span></span><input type="text" [(ngModel)]="form.customer_support_no" /></label><label class="field"><span class="field__lbl">Support email<span class="info" tabindex="0" aria-label="Support email shown to users for this city." data-tip="Support email shown to users for this city.">!</span></span><input type="email" [(ngModel)]="form.support_email" /></label></div></div>
           </div>
         </section>
         <section class="sec" id="sec-private">
           <header class="sec__head"><span class="sec__icon"><tm-icon name="rupee" [size]="16" /></span><div><h3 class="sec__title">Private Ride Settings</h3><p class="sec__desc">Rules for normal local and outstation private rides.</p></div></header>
           <div class="sec__body">
-            <div class="subsec"><h4 class="subsec__title">Negotiation</h4><div class="grid grid-2"><label class="field"><span class="field__lbl">Maximum negotiation discount (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.negotiation_floor_percent" /></label></div></div>
+            <div class="subsec"><h4 class="subsec__title">Negotiation</h4><div class="grid grid-2"><label class="field"><span class="field__lbl">Maximum negotiation discount (%)<span class="info" tabindex="0" aria-label="Maximum discount allowed when fare negotiation is used." data-tip="Maximum discount allowed when fare negotiation is used.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.negotiation_floor_percent" /></label></div></div>
             <div class="subsec" *ngIf="activeDispatcher as d">
               <h4 class="subsec__title">Private dispatch</h4>
               <div class="seg">
@@ -172,12 +188,12 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
               </div>
               <label class="tgl"><input type="checkbox" [(ngModel)]="d.automatic_dispatcher_type" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Automatic dispatcher</span><span class="tgl__hint">Auto-send private ride requests to eligible drivers.</span></span></label>
               <div class="grid grid-4">
-                <label class="field"><span class="field__lbl">Request radius (m)</span><input type="number" min="0" max="50000" [(ngModel)]="d.request_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Hop interval (sec)</span><input type="number" min="1" max="600" [(ngModel)]="d.dispatcher_hop_interval_sec" /></label>
-                <label class="field"><span class="field__lbl">Hop radius (m)</span><input type="number" min="0" max="50000" [(ngModel)]="d.dispatcher_hop_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Max hops</span><input type="number" min="1" max="50" [(ngModel)]="d.max_hops" /></label>
-                <label class="field"><span class="field__lbl">Driver accept window (sec)</span><input type="number" min="0" max="600" [(ngModel)]="d.driver_accept_window_sec" /></label>
-                <label class="field"><span class="field__lbl">Block cancel within (m)</span><input type="number" min="0" max="50000" [(ngModel)]="d.cancel_block_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Request radius (m)<span class="info" tabindex="0" aria-label="Initial distance used to find nearby drivers for private rides." data-tip="Initial distance used to find nearby drivers for private rides.">!</span></span><input type="number" min="0" max="50000" [(ngModel)]="d.request_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Hop interval (sec)<span class="info" tabindex="0" aria-label="Time to wait before expanding the driver search." data-tip="Time to wait before expanding the driver search.">!</span></span><input type="number" min="1" max="600" [(ngModel)]="d.dispatcher_hop_interval_sec" /></label>
+                <label class="field"><span class="field__lbl">Hop radius (m)<span class="info" tabindex="0" aria-label="Extra distance added on each dispatch search hop." data-tip="Extra distance added on each dispatch search hop.">!</span></span><input type="number" min="0" max="50000" [(ngModel)]="d.dispatcher_hop_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Max hops<span class="info" tabindex="0" aria-label="Maximum number of times the driver search can expand." data-tip="Maximum number of times the driver search can expand.">!</span></span><input type="number" min="1" max="50" [(ngModel)]="d.max_hops" /></label>
+                <label class="field"><span class="field__lbl">Driver accept window (sec)<span class="info" tabindex="0" aria-label="How long a driver has to accept a private ride request." data-tip="How long a driver has to accept a private ride request.">!</span></span><input type="number" min="0" max="600" [(ngModel)]="d.driver_accept_window_sec" /></label>
+                <label class="field"><span class="field__lbl">Block cancel within (m)<span class="info" tabindex="0" aria-label="Prevents customer cancellation when driver is this close to pickup." data-tip="Prevents customer cancellation when driver is this close to pickup.">!</span></span><input type="number" min="0" max="50000" [(ngModel)]="d.cancel_block_radius_m" /></label>
               </div>
               <h4 class="subsec__title">Scheduled private rides</h4>
               <div class="toggles">
@@ -186,19 +202,19 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="tgl"><input type="checkbox" [(ngModel)]="d.dispatch_only_assigned_scheduled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Dispatch only pre-assigned</span></span></label>
               </div>
               <div class="grid grid-4">
-                <label class="field"><span class="field__lbl">Schedule dispatch mode</span><select [(ngModel)]="d.schedule_dispatch_instantly"><option *ngFor="let mode of dispatchModes" [value]="mode.value">{{ mode.label }}</option></select></label>
-                <label class="field"><span class="field__lbl">Scheduler alarm (min)</span><input type="number" min="0" max="1440" [(ngModel)]="d.scheduler_alarm_min" /></label>
-                <label class="field"><span class="field__lbl">Min lead time (min)</span><input type="number" min="0" max="1440" [(ngModel)]="d.schedule_current_time_diff_min" /></label>
-                <label class="field"><span class="field__lbl">Days limit</span><input type="number" min="0" max="365" [(ngModel)]="d.schedule_days_limit" /></label>
-                <label class="field" *ngIf="d.kind === 'outstation'"><span class="field__lbl">Return days limit</span><input type="number" min="0" max="365" [(ngModel)]="d.schedule_days_limit_return" /></label>
-                <label class="field"><span class="field__lbl">Rides limit / customer</span><input type="number" min="0" max="100" [(ngModel)]="d.schedule_rides_limit" /></label>
-                <label class="field"><span class="field__lbl">Cancel window (min)</span><input type="number" min="0" max="1440" [(ngModel)]="d.schedule_cancel_window_min" /></label>
+                <label class="field"><span class="field__lbl">Schedule dispatch mode<span class="info" tabindex="0" aria-label="Controls when scheduled private rides are dispatched." data-tip="Controls when scheduled private rides are dispatched.">!</span></span><select [(ngModel)]="d.schedule_dispatch_instantly"><option *ngFor="let mode of dispatchModes" [value]="mode.value">{{ mode.label }}</option></select></label>
+                <label class="field"><span class="field__lbl">Scheduler alarm (min)<span class="info" tabindex="0" aria-label="How many minutes before pickup the scheduler should wake up." data-tip="How many minutes before pickup the scheduler should wake up.">!</span></span><input type="number" min="0" max="1440" [(ngModel)]="d.scheduler_alarm_min" /></label>
+                <label class="field"><span class="field__lbl">Min lead time (min)<span class="info" tabindex="0" aria-label="Minimum time required between booking and scheduled pickup." data-tip="Minimum time required between booking and scheduled pickup.">!</span></span><input type="number" min="0" max="1440" [(ngModel)]="d.schedule_current_time_diff_min" /></label>
+                <label class="field"><span class="field__lbl">Days limit<span class="info" tabindex="0" aria-label="How many days ahead customers can schedule a ride." data-tip="How many days ahead customers can schedule a ride.">!</span></span><input type="number" min="0" max="365" [(ngModel)]="d.schedule_days_limit" /></label>
+                <label class="field" *ngIf="d.kind === 'outstation'"><span class="field__lbl">Return days limit<span class="info" tabindex="0" aria-label="How many days ahead return outstation rides can be scheduled." data-tip="How many days ahead return outstation rides can be scheduled.">!</span></span><input type="number" min="0" max="365" [(ngModel)]="d.schedule_days_limit_return" /></label>
+                <label class="field"><span class="field__lbl">Rides limit / customer<span class="info" tabindex="0" aria-label="Maximum scheduled rides one customer can hold." data-tip="Maximum scheduled rides one customer can hold.">!</span></span><input type="number" min="0" max="100" [(ngModel)]="d.schedule_rides_limit" /></label>
+                <label class="field"><span class="field__lbl">Cancel window (min)<span class="info" tabindex="0" aria-label="How long before pickup scheduled rides can still be cancelled." data-tip="How long before pickup scheduled rides can still be cancelled.">!</span></span><input type="number" min="0" max="1440" [(ngModel)]="d.schedule_cancel_window_min" /></label>
               </div>
             </div>
-            <div class="subsec"><h4 class="subsec__title">No-show / cancellation</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Customer no-show threshold (min)</span><input type="number" min="0" max="180" step="0.01" [(ngModel)]="form.private_no_show_threshold_minutes" /></label><label class="field"><span class="field__lbl">No-show charge / min</span><input type="number" min="0" step="0.01" [(ngModel)]="form.private_no_show_charge_per_minute" /></label><label class="field"><span class="field__lbl">Driver no-show grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.private_driver_no_show_grace_minutes" /></label></div></div>
+            <div class="subsec"><h4 class="subsec__title">No-show / cancellation</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Customer no-show threshold (min)<span class="info" tabindex="0" aria-label="Time after which a private ride customer can be treated as no-show." data-tip="Time after which a private ride customer can be treated as no-show.">!</span></span><input type="number" min="0" max="180" step="0.01" [(ngModel)]="form.private_no_show_threshold_minutes" /></label><label class="field"><span class="field__lbl">No-show charge / min<span class="info" tabindex="0" aria-label="Charge applied per minute for private ride no-show rules." data-tip="Charge applied per minute for private ride no-show rules.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.private_no_show_charge_per_minute" /></label><label class="field"><span class="field__lbl">Driver no-show grace (min)<span class="info" tabindex="0" aria-label="Extra time before treating the driver as no-show." data-tip="Extra time before treating the driver as no-show.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.private_driver_no_show_grace_minutes" /></label></div></div>
           </div>
         </section>
-        <section class="sec" id="sec-fixed"><header class="sec__head"><span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span><div><h3 class="sec__title">Fixed Ride Settings</h3><p class="sec__desc">City-level boarding and no-show rules for fixed shared rides.</p></div></header><div class="sec__body"><div class="subsec"><h4 class="subsec__title">Boarding & no-show</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Wait time per stop (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_waiting_time_per_stop_minutes" /></label><label class="field"><span class="field__lbl">Stop arrival radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_stop_arrival_radius_m" /></label><label class="field"><span class="field__lbl">Driver missed stop grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_driver_missed_stop_grace_minutes" /></label><label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_customer_pickup_radius_m" /></label><label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.fixed_vehicle_approaching_alert_radius_m" /></label><label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_customer_grace_minutes" /></label></div></div></div></section>
+        <section class="sec" id="sec-fixed"><header class="sec__head"><span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span><div><h3 class="sec__title">Fixed Ride Settings</h3><p class="sec__desc">City-level boarding and no-show rules for fixed shared rides.</p></div></header><div class="sec__body"><div class="subsec"><h4 class="subsec__title">Boarding & no-show</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Wait time per stop (min)<span class="info" tabindex="0" aria-label="How long the driver waits after confirmed arrival before no-show starts." data-tip="How long the driver waits after confirmed arrival before no-show starts.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_waiting_time_per_stop_minutes" /></label><label class="field"><span class="field__lbl">Stop arrival radius (m)<span class="info" tabindex="0" aria-label="Driver must be inside this distance from the stop." data-tip="Driver must be inside this distance from the stop.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_stop_arrival_radius_m" /></label><label class="field"><span class="field__lbl">Arrival dwell time (sec)<span class="info" tabindex="0" aria-label="Driver must stay inside the stop radius for this many seconds before arrival is confirmed." data-tip="Driver must stay inside the stop radius for this many seconds before arrival is confirmed.">!</span></span><input type="number" min="0" max="600" step="1" [(ngModel)]="form.fixed_stop_arrival_dwell_seconds" /></label><label class="field"><span class="field__lbl">Driver missed stop grace (min)<span class="info" tabindex="0" aria-label="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first." data-tip="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_driver_missed_stop_grace_minutes" /></label><label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_customer_pickup_radius_m" /></label><label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.fixed_vehicle_approaching_alert_radius_m" /></label><label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_customer_grace_minutes" /></label></div></div></div></section>
         <section class="sec" id="sec-shuttle">
           <header class="sec__head">
             <span class="sec__icon"><tm-icon name="send" [size]="16" /></span>
@@ -213,9 +229,9 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="subsec">
               <h4 class="subsec__title">Matching rules</h4>
               <div class="grid grid-4">
-                <label class="field"><span class="field__lbl">Pickup match distance (km)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_pickup_match_distance_km" /></label>
-                <label class="field"><span class="field__lbl">Drop match distance (km)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_drop_match_distance_km" /></label>
-                <label class="field"><span class="field__lbl">Max passenger delay (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_max_passenger_delay_minutes" /></label>
+                <label class="field"><span class="field__lbl">Pickup match distance (km)<span class="info" tabindex="0" aria-label="Maximum pickup detour allowed when matching shuttle passengers." data-tip="Maximum pickup detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_pickup_match_distance_km" /></label>
+                <label class="field"><span class="field__lbl">Drop match distance (km)<span class="info" tabindex="0" aria-label="Maximum drop detour allowed when matching shuttle passengers." data-tip="Maximum drop detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_drop_match_distance_km" /></label>
+                <label class="field"><span class="field__lbl">Max passenger delay (min)<span class="info" tabindex="0" aria-label="Maximum extra delay allowed for existing shuttle passengers." data-tip="Maximum extra delay allowed for existing shuttle passengers.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_max_passenger_delay_minutes" /></label>
               </div>
               <div class="toggles">
                 <label class="tgl"><input type="checkbox" [(ngModel)]="form.shuttle_join_after_start_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Allow joining after ride start</span></span></label>
@@ -225,12 +241,12 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="subsec">
               <h4 class="subsec__title">Boarding & no-show</h4>
               <div class="grid grid-4">
-                <label class="field"><span class="field__lbl">Driver waiting time (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_driver_waiting_time_minutes" /></label>
-                <label class="field"><span class="field__lbl">Pickup arrival radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_pickup_arrival_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Driver missed pickup grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_driver_missed_pickup_grace_minutes" /></label>
-                <label class="field"><span class="field__lbl">Customer pickup radius (m)</span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_customer_pickup_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Approaching alert radius (m)</span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.shuttle_approaching_alert_radius_m" /></label>
-                <label class="field"><span class="field__lbl">Customer grace (min)</span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_customer_grace_minutes" /></label>
+                <label class="field"><span class="field__lbl">Driver waiting time (min)<span class="info" tabindex="0" aria-label="How long the shuttle driver waits at pickup before no-show handling." data-tip="How long the shuttle driver waits at pickup before no-show handling.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_driver_waiting_time_minutes" /></label>
+                <label class="field"><span class="field__lbl">Pickup arrival radius (m)<span class="info" tabindex="0" aria-label="Shuttle driver must be inside this distance to count as arrived." data-tip="Shuttle driver must be inside this distance to count as arrived.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_pickup_arrival_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Driver missed pickup grace (min)<span class="info" tabindex="0" aria-label="Extra time before cancelling when shuttle driver misses the pickup." data-tip="Extra time before cancelling when shuttle driver misses the pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_driver_missed_pickup_grace_minutes" /></label>
+                <label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_customer_pickup_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.shuttle_approaching_alert_radius_m" /></label>
+                <label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_customer_grace_minutes" /></label>
               </div>
             </div>
           </div>
@@ -361,7 +377,12 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
 
     /* fields */
     .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-    .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .field__lbl { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--tm-canvas-2); color: var(--tm-text-muted); border: 1px solid var(--tm-line); font-size: 10px; font-weight: 900; cursor: help; }
+    .info:hover, .info:focus { background: var(--tm-green-tint, #e0f7fa); color: var(--tm-green); border-color: var(--tm-green); outline: none; }
+    .info::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: max-content; max-width: min(260px, 72vw); padding: 8px 10px; border-radius: 8px; background: var(--tm-ink); color: #fff; box-shadow: var(--tm-shadow-pop); font-size: 11px; font-weight: 700; line-height: 1.35; white-space: normal; opacity: 0; pointer-events: none; z-index: 20; }
+    .info::before { content: ''; position: absolute; left: 50%; bottom: calc(100% + 3px); transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--tm-ink); opacity: 0; pointer-events: none; z-index: 21; }
+    .info:hover::after, .info:focus::after, .info:hover::before, .info:focus::before { opacity: 1; }
     .field__hint { font-size: 11px; color: var(--tm-text-muted); line-height: 1.35; }
     .field input[type=text], .field input[type=number], .field input[type=email], .field select, .field textarea {
       width: 100%; padding: 9px 11px;
@@ -570,6 +591,11 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
             s.allowed_driver_payment_modes = [];
           }
           s.negotiation_floor_percent = Number(s.negotiation_floor_percent ?? 10);
+          s.commission_type = s.commission_type ?? 'percent';
+          s.commission_percent = Number(s.commission_percent ?? 0);
+          s.fixed_commission = Number(s.fixed_commission ?? 0);
+          s.toll_mode = s.toll_mode ?? 'no';
+          s.show_low_wallet_alert = !!s.show_low_wallet_alert;
           this.form = s;
           this.loading = false;
           this.activeId = NAV[0].id;
@@ -609,10 +635,13 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       JSON.stringify(f.allowed_driver_payment_modes ?? []),
     );
     append('negotiation_floor_percent', f.negotiation_floor_percent ?? 10);
+    append('commission_type', f.commission_type ?? 'percent');
+    append('toll_mode', f.toll_mode ?? 'no');
+    append('show_low_wallet_alert', f.show_low_wallet_alert);
 
     const cityRuleFields: (keyof CitySettings)[] = [
       'private_no_show_threshold_minutes', 'private_no_show_charge_per_minute', 'private_driver_no_show_grace_minutes',
-      'fixed_waiting_time_per_stop_minutes', 'fixed_stop_arrival_radius_m', 'fixed_driver_missed_stop_grace_minutes', 'fixed_customer_pickup_radius_m', 'fixed_vehicle_approaching_alert_radius_m', 'fixed_customer_grace_minutes',
+      'fixed_waiting_time_per_stop_minutes', 'fixed_stop_arrival_radius_m', 'fixed_stop_arrival_dwell_seconds', 'fixed_driver_missed_stop_grace_minutes', 'fixed_customer_pickup_radius_m', 'fixed_vehicle_approaching_alert_radius_m', 'fixed_customer_grace_minutes',
       'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
       'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes',
     ];
@@ -657,6 +686,11 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
             cityRes.settings.allowed_driver_payment_modes = [];
           }
           cityRes.settings.negotiation_floor_percent = Number(cityRes.settings.negotiation_floor_percent ?? 10);
+          cityRes.settings.commission_type = cityRes.settings.commission_type ?? 'percent';
+          cityRes.settings.commission_percent = Number(cityRes.settings.commission_percent ?? 0);
+          cityRes.settings.fixed_commission = Number(cityRes.settings.fixed_commission ?? 0);
+          cityRes.settings.toll_mode = cityRes.settings.toll_mode ?? 'no';
+          cityRes.settings.show_low_wallet_alert = !!cityRes.settings.show_low_wallet_alert;
           this.form = cityRes.settings;
         }
         this.fetchDispatcherSettings();

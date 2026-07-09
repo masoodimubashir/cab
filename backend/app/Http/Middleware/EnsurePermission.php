@@ -19,13 +19,20 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnsurePermission
 {
-    public function handle(Request $request, Closure $next, string $slug): Response
+    public function handle(Request $request, Closure $next, string $slugs): Response
     {
         $user = $request->user();
-        if (!$user || !$user->hasPermission($slug)) {
-            abort(403, 'You do not have permission to perform this action.');
+        $allowed = array_values(array_filter(
+            preg_split('/[,|]/', $slugs) ?: [],
+            fn ($slug) => trim($slug) !== ''
+        ));
+
+        foreach ($allowed as $slug) {
+            if ($user?->hasPermission(trim($slug))) {
+                return $next($request);
+            }
         }
 
-        return $next($request);
+        abort(403, 'You do not have permission to perform this action.');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ReservationException;
 use App\Jobs\DispatchHopJob;
+use App\Models\CitySetting;
 use App\Models\CityVehicleType;
 use App\Models\FareNegotiation;
 use App\Models\PricingRule;
@@ -35,7 +36,7 @@ class ShuttleBookingService
             null,
             isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
             isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
-            $cvt->toll_mode === 'yes' ? (float) ($data['toll_amount'] ?? 0) : 0.0,
+            (CitySetting::query()->firstOrCreate(['city_id' => $cvt->city_id])->toll_mode === 'yes') ? (float) ($data['toll_amount'] ?? 0) : 0.0,
         );
 
         return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate) {

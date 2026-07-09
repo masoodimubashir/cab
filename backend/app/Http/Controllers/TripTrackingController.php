@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DispatchDriverLocationUpdated;
 use App\Events\TripCustomerLocationUpdated;
 use App\Events\TripLocationUpdated;
 use App\Models\CustomerLocation;
@@ -71,9 +72,16 @@ class TripTrackingController extends Controller
             'bearing_deg' => $data['bearing_deg'] ?? null,
         ]);
 
+        $freshLocation = $location->fresh();
+
         broadcast(new TripLocationUpdated(
             tripId: $trip->id,
-            location: $location->fresh(),
+            location: $freshLocation,
+        ))->toOthers();
+
+        broadcast(new DispatchDriverLocationUpdated(
+            location: $freshLocation,
+            driver: $user->driver?->loadMissing(['user', 'vehicleTypeRef']),
         ))->toOthers();
 
         $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
