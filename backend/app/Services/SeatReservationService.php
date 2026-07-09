@@ -25,6 +25,7 @@ class SeatReservationService
 
     public function __construct(
         private FareEstimationService $fares,
+        private FixedPricingService $fixedPricing,
         private WalletService $wallet,
         private GeoService $geo,
     ) {}
@@ -47,9 +48,9 @@ class SeatReservationService
         $seats = max(1, (int) ($opts['seats'] ?? 1));
         $channel = $this->resolveChannel($route, $opts['booking_channel'] ?? 'advance');
         [$board, $drop] = $this->resolvePoints($route, $opts);
-        [$fare, $commissionPercent] = $this->computeFare($route, $seats);
+        [$fare, $commissionPercent, $commissionAmount] = $this->computeFare($route, $seats);
 
-        return DB::transaction(function () use ($customer, $departure, $route, $seats, $channel, $board, $drop, $fare, $commissionPercent) {
+        return DB::transaction(function () use ($customer, $departure, $route, $seats, $channel, $board, $drop, $fare, $commissionPercent, $commissionAmount) {
             // Serialise this customer's wallet debits: the wallet balance is an
             // unlocked ledger SUM, so without a per-user lock two concurrent
             // bookings (different departures) could both pass the balance check
@@ -97,6 +98,7 @@ class SeatReservationService
                 'drop_address' => $drop['address'],
                 'fare_amount' => $fare,
                 'commission_percent' => $commissionPercent,
+                'commission_amount' => $commissionAmount,
                 'payment_method' => 'wallet',
                 'status' => 'CONFIRMED',
             ]);
@@ -365,8 +367,16 @@ class SeatReservationService
             throw new ReservationException('Seat fare is not configured for this route.', 422);
         }
 
-        $estimate = $this->fares->seatFare($fareConfig, $seats);
+        if ($route->mode === 'fixed') {
+            $fare = $this->fixedPricing->bookingAmount($route, $seats);
+            $commission = $this->fixedPricing->bookingCommission($route, $fare, $seats);
 
-        return [(float) $estimate['estimated_fare'], (float) $estimate['commission_percent']];
+            return [$fare, (float) $commission['percent'], (float) $commission['amount']];
+        }
+
+        $estimate = $this->fares->seatFare($fareConfig, $seats);
+        $fare = (float) $estimate['estimated_fare'];
+
+        return [$fare, (float) $estimate['commission_percent'], 0.0];
     }
 }

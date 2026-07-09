@@ -1,4 +1,4 @@
-import { Component, Input, OnDestroy, OnInit } from '@angular/core';
+import { Component, HostListener, Input, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -34,9 +34,15 @@ interface RouteStopRow {
 
 interface FareConfig {
   seat_fare: number | null;
-  surge_multiplier: number | null;
+  commission_type?: 'percent' | 'fixed' | null;
   commission_percent: number | null;
-  tax_percent: number | null;
+  fixed_commission?: number | null;
+}
+
+interface CityCommercialSettings {
+  commission_type: 'percent' | 'fixed';
+  commission_percent: number;
+  fixed_commission: number;
 }
 
 interface LatLng { lat: number; lng: number; }
@@ -160,15 +166,41 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             </ng-template>
           </tm-column>
 
-          <tm-column key="fare" label="Flat fare" width="110">
+          <tm-column key="fare" label="Fare" width="100">
             <ng-template let-row>
               <span class="cell-amt">₹{{ row.flat_fare | number: '1.0-2' }}</span>
             </ng-template>
           </tm-column>
 
-          <tm-column key="stops" label="Stops" width="70" align="right">
+          <tm-column key="seats" label="Seats" width="82" align="right">
             <ng-template let-row>
-              <span class="muted">{{ row.stops?.length || 0 }}</span>
+              <span class="muted">{{ row.max_seats_per_booking || '-' }}</span>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="luggage" label="Luggage" width="132" align="right">
+            <ng-template let-row>
+              <div class="stack-cell stack-cell--right">
+                <span class="cell-amt">₹{{ (row.luggage_surcharge_amount || 0) | number: '1.0-2' }}</span>
+                <small>Max {{ row.max_luggage_per_vehicle || 0 }}</small>
+              </div>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="commission" label="Commission" width="124" align="right">
+            <ng-template let-row>
+              <span class="cell-amt">{{ commissionLabel(row) }}</span>
+            </ng-template>
+          </tm-column>
+
+          <tm-column key="stops" label="Stops" width="86" align="right">
+            <ng-template let-row>
+              <button
+                type="button"
+                class="stops-trigger"
+                (click)="toggleStopsPopover(row, $event)"
+                [attr.aria-expanded]="stopsPopoverRouteId === row.id"
+              >{{ row.stops?.length || 0 }}</button>
             </ng-template>
           </tm-column>
 
@@ -238,27 +270,27 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
         <div class="rt-panel__body">
           <div class="grid2">
             <label class="field">
-              <span class="field__lbl">Scope</span>
+              <span class="field__lbl">Scope <span class="help" data-tip="Choose whether this fixed route runs inside one city or between cities.">!</span></span>
               <select [(ngModel)]="form.scope" (ngModelChange)="onScopeChange()">
                 <option *ngFor="let s of scopeOptions" [value]="s.value">{{ s.label }}</option>
               </select>
             </label>
             <label class="field">
-              <span class="field__lbl">Route name <i>*</i></span>
+              <span class="field__lbl">Route name <i>*</i> <span class="help" data-tip="Internal and customer-facing name for this fixed route.">!</span></span>
               <input type="text" [(ngModel)]="form.name" placeholder="e.g. Sopore → Srinagar" />
             </label>
           </div>
 
           <div class="grid2" *ngIf="form.scope === 'outstation'">
             <label class="field">
-              <span class="field__lbl">Origin city <i>*</i></span>
+              <span class="field__lbl">Origin city <i>*</i> <span class="help" data-tip="Starting city for an outstation fixed route.">!</span></span>
               <select [(ngModel)]="form.origin_city_id">
                 <option [ngValue]="null">Select…</option>
                 <option *ngFor="let c of cities" [ngValue]="c.id">{{ c.name }}</option>
               </select>
             </label>
             <label class="field">
-              <span class="field__lbl">Destination city <i>*</i></span>
+              <span class="field__lbl">Destination city <i>*</i> <span class="help" data-tip="Ending city for an outstation fixed route.">!</span></span>
               <select [(ngModel)]="form.dest_city_id">
                 <option [ngValue]="null">Select…</option>
                 <option *ngFor="let c of cities" [ngValue]="c.id">{{ c.name }}</option>
@@ -297,10 +329,10 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             </div>
             <input type="text" class="stop-name" [(ngModel)]="s.name" placeholder="Stop name" />
             <div class="stop-flags">
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_pickup" /> <span>Boarding allowed</span></label>
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_drop" /> <span>Drop allowed</span></label>
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_active" /> <span>Stop active</span></label>
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_temporarily_unavailable" /> <span>Temporarily unavailable</span></label>
+              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_pickup" /> <span>Boarding allowed <span class="help" data-tip="Customers can choose this stop as their boarding point.">!</span></span></label>
+              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_drop" /> <span>Drop allowed <span class="help" data-tip="Customers can choose this stop as their drop point.">!</span></span></label>
+              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_active" /> <span>Stop active <span class="help" data-tip="Inactive stops are saved but not available for booking.">!</span></span></label>
+              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_temporarily_unavailable" /> <span>Temporarily unavailable <span class="help" data-tip="Temporarily blocks this stop without deleting it from the route.">!</span></span></label>
             </div>
             <input *ngIf="s.is_temporarily_unavailable" type="text" class="stop-reason" [(ngModel)]="s.unavailable_reason" placeholder="Unavailable reason" />
           </div>
@@ -308,27 +340,32 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
           <div class="section-lbl">Fare, seats and luggage</div>
           <div class="grid3">
             <label class="field">
-              <span class="field__lbl">Flat fare (₹) <i>*</i></span>
+              <span class="field__lbl">Flat fare (₹) <i>*</i> <span class="help" data-tip="Seat fare charged to the customer before any luggage surcharge.">!</span></span>
               <input type="number" min="0" step="0.01" [(ngModel)]="form.seat_fare" placeholder="150" />
             </label>
-            <label class="field"><span class="field__lbl">Surge ×</span><input type="number" min="0" step="0.01" [(ngModel)]="form.surge_multiplier" placeholder="1.0" /></label>
-            <label class="field"><span class="field__lbl">Commission (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" placeholder="20" /></label>
-            <label class="field"><span class="field__lbl">Tax (%)</span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.tax_percent" placeholder="0" /></label>
-            <label class="field"><span class="field__lbl">Vehicle</span>
+            <label class="field" *ngIf="commissionType === 'percent'">
+              <span class="field__lbl">Commission (%) <span class="help" data-tip="Platform cut calculated as a percentage of the fixed booking fare.">!</span></span>
+              <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" placeholder="20" />
+            </label>
+            <label class="field" *ngIf="commissionType === 'fixed'">
+              <span class="field__lbl">Fixed commission (₹) <span class="help" data-tip="Flat platform cut per booked seat for this fixed route.">!</span></span>
+              <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" placeholder="20" />
+            </label>
+            <label class="field"><span class="field__lbl">Vehicle <span class="help" data-tip="Vehicle type assigned to this fixed route.">!</span></span>
               <select [(ngModel)]="form.city_vehicle_type_id" [disabled]="cityVehicleTypeId != null">
                 <option [ngValue]="null">Any</option>
                 <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.display_name }}</option>
               </select>
             </label>
-            <label class="field"><span class="field__lbl">Booking window (hours)</span><input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" /></label>
-            <label class="field"><span class="field__lbl">Max seats per booking</span><input type="number" min="1" max="20" step="1" [(ngModel)]="form.max_seats_per_booking" /></label>
-            <label class="field"><span class="field__lbl">Luggage surcharge (₹)</span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
-            <label class="field"><span class="field__lbl">Max luggage per vehicle</span><input type="number" min="0" max="200" step="1" [(ngModel)]="form.max_luggage_per_vehicle" /></label>
+            <label class="field"><span class="field__lbl">Booking window (hours) <span class="help" data-tip="How long before departure customers can book this route.">!</span></span><input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" /></label>
+            <label class="field"><span class="field__lbl">Max seats per booking <span class="help" data-tip="Largest number of seats one customer can reserve in one booking.">!</span></span><input type="number" min="1" max="20" step="1" [(ngModel)]="form.max_seats_per_booking" /></label>
+            <label class="field"><span class="field__lbl">Luggage surcharge (₹) <span class="help" data-tip="Extra amount charged for each additional luggage item.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
+            <label class="field"><span class="field__lbl">Max luggage per vehicle <span class="help" data-tip="Total luggage capacity available on this fixed route vehicle.">!</span></span><input type="number" min="0" max="200" step="1" [(ngModel)]="form.max_luggage_per_vehicle" /></label>
           </div>
 
           <div class="toggles">
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.requires_prepaid" /><span>Prepaid required</span></label>
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active</span></label>
+            <label class="toggle"><input type="checkbox" [(ngModel)]="form.requires_prepaid" /><span>Prepaid required <span class="help" data-tip="Customers must pay before the fixed ride booking is confirmed.">!</span></span></label>
+            <label class="toggle" *ngIf="editingId"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active <span class="help" data-tip="Controls whether this fixed route is visible and bookable.">!</span></span></label>
           </div>
 
 
@@ -352,6 +389,17 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
         <tm-button variant="danger" (clicked)="confirmClearPath()">Clear</tm-button>
       </div>
     </tm-modal>
+
+    <div
+      class="stops-popover"
+      *ngIf="stopsPopoverLines.length"
+      [style.left.px]="stopsPopoverX"
+      [style.top.px]="stopsPopoverY"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="stops-popover__title">Stops</div>
+      <div class="stops-popover__line" *ngFor="let stop of stopsPopoverLines">{{ stop }}</div>
+    </div>
   `,
   styles: [`
     .page { display: flex; flex-direction: column; gap: 16px; }
@@ -370,6 +418,9 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .route-cell__od { font-size: 11px; color: var(--tm-text-muted); }
     .route-cell__od i { font-style: normal; color: var(--tm-green); font-weight: 800; }
     .cell-amt { font-family: var(--tm-font-mono); font-weight: 700; color: var(--tm-text); }
+    .stack-cell { display: flex; flex-direction: column; gap: 2px; line-height: 1.2; }
+    .stack-cell--right { align-items: flex-end; }
+    .stack-cell small { color: var(--tm-text-muted); font-size: 10.5px; font-weight: 700; }
     .muted { color: var(--tm-text-muted); font-size: 12px; }
     .muted.small { font-size: 12px; }
     .tag { display: inline-flex; align-items: center; text-transform: capitalize; font-size: 10px; font-weight: 800; letter-spacing: 0.3px; padding: 3px 8px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text-muted); }
@@ -407,6 +458,14 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .field { display: flex; flex-direction: column; gap: 5px; }
     .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
     .field__lbl i { color: var(--tm-danger, #ef4444); font-style: normal; }
+    .help { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 3px; border-radius: 50%; background: var(--tm-canvas-2); color: var(--tm-text-muted); font-size: 10px; font-weight: 900; cursor: help; }
+    .help:hover::after { content: attr(data-tip); position: absolute; z-index: 20; left: 0; bottom: calc(100% + 8px); width: max-content; max-width: 260px; padding: 8px 10px; border-radius: 8px; background: var(--tm-ink, #111827); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.35; text-align: left; white-space: normal; box-shadow: 0 10px 24px rgba(13,27,42,0.18); }
+    .stops-trigger { border: 0; background: transparent; color: var(--tm-text-muted); font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 5px; cursor: pointer; }
+    .stops-trigger:hover, .stops-trigger[aria-expanded="true"] { background: var(--tm-canvas-2); color: var(--tm-text); }
+    .stops-popover { position: fixed; z-index: 5000; width: 260px; max-width: calc(100vw - 24px); padding: 10px 12px; border-radius: 9px; background: var(--tm-ink, #111827); color: #fff; text-align: left; box-shadow: 0 14px 30px rgba(13,27,42,0.22); }
+    .stops-popover__title { margin-bottom: 7px; padding-bottom: 7px; border-bottom: 1px solid rgba(255,255,255,0.16); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; color: rgba(255,255,255,0.72); }
+    .stops-popover__line { display: block; padding: 4px 0; font-size: 12px; font-weight: 700; line-height: 1.35; color: #fff; word-break: break-word; }
+    .stops-popover__line + .stops-popover__line { border-top: 1px solid rgba(255,255,255,0.1); }
     .field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; outline: none; font-family: inherit; }
     .field input:focus, .field select:focus { border-color: var(--tm-green); }
     .endpoints { display: flex; flex-direction: column; gap: 8px; }
@@ -451,12 +510,17 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   scopeOptions = SCOPE_OPTIONS;
   scopeFilterOptions = SCOPE_OPTIONS.map((s) => ({ label: s.label, value: s.value }));
   statusFilterOptions = [{ label: 'Active', value: 'active' }, { label: 'Inactive', value: 'inactive' }];
+  cityCommercials: CityCommercialSettings = { commission_type: 'percent', commission_percent: 0, fixed_commission: 0 };
 
   open = false;
   editingId: number | null = null;
   saving = false;
   tool: MapTool = 'origin';
   clearPathConfirmOpen = false;
+  stopsPopoverRouteId: number | null = null;
+  stopsPopoverLines: string[] = [];
+  stopsPopoverX = 0;
+  stopsPopoverY = 0;
 
   form = this.blankForm();
 
@@ -494,6 +558,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.subs.push(
       this.cityCtx.cityId$.subscribe((id) => {
         this.cityId = id;
+        this.loadCityCommercials();
         this.loadVehicleTypes();
         this.loadCityMeta();
         this.fetchRoutes();
@@ -536,6 +601,50 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   get endpointsSet(): boolean { return this.form.origin_lat != null && this.form.dest_lat != null; }
 
+  get commissionType(): 'percent' | 'fixed' {
+    return this.cityCommercials.commission_type === 'fixed' ? 'fixed' : 'percent';
+  }
+
+  commissionLabel(row: FixedRouteRow): string {
+    const fc: Partial<FareConfig> = row.fare_config || {};
+    const type = fc.commission_type ?? this.commissionType;
+    if (type === 'fixed') return '₹' + Number(fc.fixed_commission ?? this.cityCommercials.fixed_commission ?? 0).toFixed(2);
+    return Number(fc.commission_percent ?? this.cityCommercials.commission_percent ?? 0).toFixed(2) + '%';
+  }
+
+  stopsTooltip(row: FixedRouteRow): string[] {
+    const stops = row.stops || [];
+    if (!stops.length) return ['No stops configured'];
+    return stops.map((s, i) => `${i + 1}. ${s.name || 'Unnamed stop'}`);
+  }
+
+  toggleStopsPopover(row: FixedRouteRow, event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.stopsPopoverRouteId === row.id) {
+      this.hideStopsPopover();
+      return;
+    }
+
+    this.stopsPopoverRouteId = row.id;
+    this.stopsPopoverLines = this.stopsTooltip(row);
+    this.positionStopsPopover(event);
+  }
+
+  positionStopsPopover(event: MouseEvent): void {
+    this.stopsPopoverX = Math.max(12, Math.min(event.clientX - 250, window.innerWidth - 272));
+    this.stopsPopoverY = Math.min(event.clientY + 12, window.innerHeight - 120);
+  }
+
+  hideStopsPopover(): void {
+    this.stopsPopoverRouteId = null;
+    this.stopsPopoverLines = [];
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    this.hideStopsPopover();
+  }
+
   get hasRouteDraftData(): boolean {
     const f = this.form;
     return !!(
@@ -575,12 +684,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lat: null as number | null,
       dest_lng: null as number | null,
       seat_fare: null as number | null,
-      surge_multiplier: null as number | null,
-      commission_percent: null as number | null,
-      tax_percent: null as number | null,
+      commission_percent: (this.cityCommercials.commission_type === 'percent' ? this.cityCommercials.commission_percent : null) as number | null,
+      fixed_commission: (this.cityCommercials.commission_type === 'fixed' ? this.cityCommercials.fixed_commission : null) as number | null,
       city_vehicle_type_id: this.cityVehicleTypeId,
       booking_window_hours: 6,
-      max_seats_per_booking: 4,
+      max_seats_per_booking: null as number | null,
       waiting_time_per_stop_minutes: 5,
       luggage_surcharge_amount: 0,
       max_luggage_per_vehicle: 0,
@@ -603,6 +711,24 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.api.get<{ data: any[] }>(`/admin/cities/${this.cityId}/vehicle-types`).subscribe({
       next: (res) => { this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, display_name: v.display_name ?? v.name ?? `#${v.id}` })); },
       error: () => (this.vehicleTypes = []),
+    });
+  }
+
+  loadCityCommercials(): void {
+    this.cityCommercials = { commission_type: 'percent', commission_percent: 0, fixed_commission: 0 };
+    if (this.cityId == null) return;
+    this.api.get<{ settings: Partial<CityCommercialSettings> }>('/admin/cities/' + this.cityId + '/settings').subscribe({
+      next: (res) => {
+        const s = res?.settings ?? {};
+        this.cityCommercials = {
+          commission_type: s.commission_type === 'fixed' ? 'fixed' : 'percent',
+          commission_percent: Number(s.commission_percent ?? 0),
+          fixed_commission: Number(s.fixed_commission ?? 0),
+        };
+      },
+      error: () => {
+        this.cityCommercials = { commission_type: 'percent', commission_percent: 0, fixed_commission: 0 };
+      },
     });
   }
 
@@ -643,7 +769,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   openEdit(r: FixedRouteRow): void {
     this.editingId = r.id;
-    const fc = r.fare_config || ({ seat_fare: null, surge_multiplier: null, commission_percent: null, tax_percent: null } as FareConfig);
+    const fc = r.fare_config || ({ seat_fare: null, commission_percent: null, fixed_commission: null } as FareConfig);
     const ns = r.fixed_settings_json || {};
     this.form = {
       scope: r.scope,
@@ -657,9 +783,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lat: r.dest_lat,
       dest_lng: r.dest_lng,
       seat_fare: fc.seat_fare ?? r.flat_fare,
-      surge_multiplier: fc.surge_multiplier ?? null,
-      commission_percent: fc.commission_percent ?? null,
-      tax_percent: fc.tax_percent ?? null,
+      commission_percent: fc.commission_percent ?? (this.commissionType === 'percent' ? this.cityCommercials.commission_percent : null),
+      fixed_commission: fc.fixed_commission ?? (this.commissionType === 'fixed' ? this.cityCommercials.fixed_commission : null),
       city_vehicle_type_id: r.city_vehicle_type_id,
       booking_window_hours: r.booking_window_hours,
       max_seats_per_booking: r.max_seats_per_booking,
@@ -1137,13 +1262,13 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         customer_grace_minutes: Number(f.customer_grace_minutes ?? 2),
         boarding_confirmation_mode: f.boarding_confirmation_mode ?? 'driver_only',
       },
-      is_active: f.is_active,
+      is_active: this.editingId ? f.is_active : true,
       sort_order: f.sort_order ?? 0,
       fare_config: {
         seat_fare: f.seat_fare,
-        surge_multiplier: f.surge_multiplier,
-        commission_percent: f.commission_percent,
-        tax_percent: f.tax_percent,
+        commission_type: this.commissionType,
+        commission_percent: this.commissionType === 'percent' ? (f.commission_percent ?? 0) : 0,
+        fixed_commission: this.commissionType === 'fixed' ? (f.fixed_commission ?? 0) : 0,
       },
       stops,
     };

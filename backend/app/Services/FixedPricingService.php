@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\ReservationException;
+use App\Models\CitySetting;
 use App\Models\Route;
 
 class FixedPricingService
@@ -30,5 +31,31 @@ class FixedPricingService
         $luggage = $luggageCount * max(0, (float) $route->luggage_surcharge_amount);
 
         return round(($seatFare * max(1, $seats)) + $luggage, 2);
+    }
+
+    /**
+     * Platform commission snapshot for a fixed booking. Fixed commission is per seat;
+     * percentage commission is charged on the full booking amount.
+     *
+     * @return array{percent: float, amount: float}
+     */
+    public function bookingCommission(Route $route, float $fareAmount, int $seats): array
+    {
+        $fare = max(0.0, round($fareAmount, 2));
+        $fareConfig = is_array($route->fare_config) ? $route->fare_config : [];
+        $settings = $route->city_id
+            ? CitySetting::query()->firstOrCreate(['city_id' => $route->city_id])
+            : null;
+
+        $type = ($fareConfig['commission_type'] ?? $settings?->commission_type ?? 'percent') === 'fixed' ? 'fixed' : 'percent';
+        if ($type === 'fixed') {
+            $amount = round(max(0.0, (float) ($fareConfig['fixed_commission'] ?? $settings?->fixed_commission ?? 0)) * max(1, $seats), 2);
+            return ['percent' => 0.0, 'amount' => min($amount, $fare)];
+        }
+
+        $percent = max(0.0, (float) ($fareConfig['commission_percent'] ?? $settings?->commission_percent ?? 0));
+        $amount = round($fare * $percent / 100, 2);
+
+        return ['percent' => round($percent, 2), 'amount' => min($amount, $fare)];
     }
 }
