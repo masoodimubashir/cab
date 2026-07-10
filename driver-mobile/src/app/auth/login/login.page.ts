@@ -6,6 +6,7 @@ import { Geolocation } from '@capacitor/geolocation';
 import { Contacts } from '@capacitor-community/contacts';
 import { Camera } from '@capacitor/camera';
 import { ApiService } from '../../core/api.service';
+import { DriverOnboardingDraftService } from '../../core/driver-onboarding-draft.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 import { PushService } from '../../core/push.service';
@@ -130,6 +131,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   constructor(
     private api: ApiService,
     private auth: AuthService,
+    private draft: DriverOnboardingDraftService,
     private router: Router,
     private phoneAuth: PhoneAuthService,
     private push: PushService,
@@ -434,10 +436,9 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   private routeAfterAuth(user: AuthUser): void {
     const needsProfile = this.isSyntheticEmail(user.email) || !user.name || user.name === 'User';
     if (needsProfile) {
-      // First-time signup → collect name/email/photo on /profile, which on
-      // submit forwards to /driver-registration for vehicle + documents.
       ApprovedDriverGuard.setStateRegistering();
-      this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
+      const profileDraft = this.draft.getProfile();
+      this.router.navigateByUrl(profileDraft ? '/driver-registration' : '/profile?next=registration', { replaceUrl: true });
       return;
     }
 

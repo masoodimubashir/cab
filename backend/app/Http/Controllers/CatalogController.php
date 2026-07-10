@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\City;
 use App\Models\CityRideMode;
 use App\Models\CityRideScope;
+use App\Models\CityVehicleType;
 use App\Models\Document;
 use App\Models\DocumentLabel;
 use App\Models\Fleet;
@@ -91,6 +92,33 @@ class CatalogController extends Controller
             ]);
 
         return response()->json(['scopes' => $scopes]);
+    }
+
+
+    public function cityVehicles(Request $request, City $city)
+    {
+        $data = $request->validate([
+            'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
+        ]);
+
+        $rows = CityVehicleType::query()
+            ->where('city_id', $city->id)
+            ->where('vehicle_type_id', (int) $data['vehicle_type_id'])
+            ->where('is_active', true)
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get(['id', 'city_id', 'ride_type_id', 'vehicle_type_id', 'display_name', 'max_people', 'luggage_capacity'])
+            ->map(fn (CityVehicleType $row) => [
+                'id' => $row->id,
+                'city_id' => $row->city_id,
+                'ride_type_id' => $row->ride_type_id,
+                'vehicle_type_id' => $row->vehicle_type_id,
+                'display_name' => $row->display_name,
+                'max_people' => (int) $row->max_people,
+                'luggage_capacity' => (int) $row->luggage_capacity,
+            ]);
+
+        return response()->json(['data' => $rows]);
     }
 
     public function fleets(Request $request)

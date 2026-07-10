@@ -1,11 +1,13 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Location } from '@angular/common';
 import { Router } from '@angular/router';
-import { forkJoin, interval, of, Subscription } from 'rxjs';
+import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
-import { AuthService } from '../../core/auth.service';
+import { DriverOnboardingDraftService } from '../../core/driver-onboarding-draft.service';
+import { AuthService, AuthUser } from '../../core/auth.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
+import { RealtimeService } from '../../core/realtime.service';
 import { Gesture, GestureController, NavController, Platform } from '@ionic/angular';
 
 type DocStatus = 'idle' | 'uploading' | 'done' | 'error';
@@ -15,6 +17,7 @@ type LabelType = 'text' | 'number' | 'date' | 'url';
 
 interface CityOpt { id: number; name: string; country_code: string | null; }
 interface VehicleTypeOpt { id: number; name: string; description: string | null; image_url: string | null; }
+interface CityVehicleOpt { id: number; display_name: string; max_people: number; luggage_capacity: number; vehicle_type_id: number; }
 interface FleetOpt { id: number; name: string; city_id: number | null; }
 interface DocumentLabelDef { id: number; label: string; label_type: LabelType; mandatory: boolean; sort_order: number; }
 interface RideModeOption { id: number; scope: ServiceScope; mode: ServiceMode; name: string; image_url: string | null; sort_order: number; }
@@ -79,10 +82,12 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   // Catalog data
   cities: CityOpt[] = [];
   vehicleTypes: VehicleTypeOpt[] = [];
+  cityVehicles: CityVehicleOpt[] = [];
   fleets: FleetOpt[] = [];
   docs: DocUploadState[] = [];
   rideScopes: RideScopeOption[] = [];
   loadingRideProducts = false;
+  loadingCityVehicles = false;
 
   service_scope: ServiceScope | null = null;
   service_mode: ServiceMode | null = null;
@@ -90,9 +95,10 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   // Step 2 fields — Driver info
   city_id: number | null = null;
   vehicle_type_id: number | null = null;
-  vehicle_brand = '';
-  vehicle_model = '';
+  city_vehicle_type_id: number | null = null;
+  vehicle_model_year = '';
   vehicle_color = '';
+  vehicle_reg_no = '';
   fleet_id: number | null = null; // null = "None"
 
   // Approved drivers cannot change ride/vehicle. Documents still listed read-only.
@@ -105,17 +111,19 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   error: string | null = null;
   private edgeBackGesture?: Gesture;
   private hardwareBackSub?: Subscription;
-  private documentsPollSub?: Subscription;
   private documentsRefreshInFlight = false;
+  private unsubscribeVerificationUpdates?: () => void;
 
   constructor(
     private api: ApiService,
     private auth: AuthService,
+    private draft: DriverOnboardingDraftService,
     private router: Router,
     private nav: NavController,
     private location: Location,
     private gestures: GestureController,
     private platform: Platform,
+    private realtime: RealtimeService,
   ) {}
 
   ngOnInit(): void {
@@ -146,11 +154,12 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
         const d = driver.driver as Record<string, string | number | null> | null;
         if (d) {
           this.vehicle_type_id = (d['vehicle_type_id'] as number | null) ?? null;
+          this.city_vehicle_type_id = (d['city_vehicle_type_id'] as number | null) ?? null;
           this.city_id = (d['city_id'] as number | null) ?? null;
           this.fleet_id = (d['fleet_id'] as number | null) ?? null;
-          this.vehicle_brand = (d['vehicle_brand'] as string | null) ?? '';
-          this.vehicle_model = (d['vehicle_model'] as string | null) ?? '';
+          this.vehicle_model_year = (d['vehicle_model'] as string | null) ?? '';
           this.vehicle_color = (d['vehicle_color'] as string | null) ?? '';
+          this.vehicle_reg_no = (d['vehicle_reg_no'] as string | null) ?? '';
           this.service_scope = (d['service_scope'] as ServiceScope | null) ?? null;
           this.service_mode = (d['service_mode'] as ServiceMode | null) ?? null;
           this.driverApproved = (d['approval_status'] as string | null) === 'approved';
@@ -166,19 +175,68 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
           }
 
           if (this.city_id) this.loadRideProducts();
+          if (this.city_id && this.vehicle_type_id) this.loadCityVehicles();
 
-          // Always land on Step 1 so approved drivers can review their locked service.
+          if (this.hasSavedDriverDetails(d)) {
+            this.step = 4;
+          }
+        } else {
+          this.restoreRegistrationDraft();
         }
-        if (!d && this.cities.length === 1) {
+        if (!d && !this.city_id && this.cities.length === 1) {
           this.city_id = this.cities[0].id;
+          this.persistRegistrationDraft();
           this.loadRideProducts();
         }
         this.initLoading = false;
-        this.startDocumentsLiveRefresh();
+        this.subscribeVerificationUpdates();
       },
     });
   }
 
+
+  private hasSavedDriverDetails(d: Record<string, string | number | null>): boolean {
+    return !!d['city_id']
+      && !!d['service_scope']
+      && !!d['service_mode']
+      && !!d['vehicle_type_id']
+      && !!d['city_vehicle_type_id']
+      && !!d['vehicle_model']
+      && !!d['vehicle_color']
+      && !!d['vehicle_reg_no'];
+  }
+
+  private restoreRegistrationDraft(): void {
+    const draft = this.draft.getRegistration();
+    if (!draft) return;
+    this.step = draft.step ?? 1;
+    this.city_id = draft.city_id ?? this.city_id;
+    this.service_scope = draft.service_scope ?? null;
+    this.service_mode = draft.service_mode ?? null;
+    this.vehicle_type_id = draft.vehicle_type_id ?? null;
+    this.city_vehicle_type_id = draft.city_vehicle_type_id ?? null;
+    this.fleet_id = draft.fleet_id ?? null;
+    this.vehicle_model_year = draft.vehicle_model_year ?? '';
+    this.vehicle_color = draft.vehicle_color ?? '';
+    this.vehicle_reg_no = draft.vehicle_reg_no ?? '';
+    if (this.city_id) this.loadRideProducts();
+    if (this.city_id && this.vehicle_type_id) this.loadCityVehicles();
+  }
+
+  persistRegistrationDraft(): void {
+    this.draft.setRegistration({
+      step: this.step,
+      city_id: this.city_id,
+      service_scope: this.service_scope,
+      service_mode: this.service_mode,
+      vehicle_type_id: this.vehicle_type_id,
+      city_vehicle_type_id: this.city_vehicle_type_id,
+      fleet_id: this.fleet_id,
+      vehicle_model_year: this.vehicle_model_year,
+      vehicle_color: this.vehicle_color,
+      vehicle_reg_no: this.vehicle_reg_no,
+    });
+  }
 
   ngAfterViewInit(): void {
     queueMicrotask(() => this.attachEdgeBackGesture());
@@ -190,7 +248,18 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   ngOnDestroy(): void {
     this.edgeBackGesture?.destroy();
     this.hardwareBackSub?.unsubscribe();
-    this.documentsPollSub?.unsubscribe();
+    this.unsubscribeVerificationUpdates?.();
+  }
+
+  private subscribeVerificationUpdates(): void {
+    this.unsubscribeVerificationUpdates?.();
+    const userId = this.auth.getUser()?.id;
+    if (!userId) return;
+
+    this.unsubscribeVerificationUpdates = this.realtime.subscribeDriverVerification(userId, () => {
+      if (this.step !== 4 || this.uploadBusy || this.documentsRefreshInFlight) return;
+      this.refreshDocumentStep(false);
+    });
   }
 
   private attachEdgeBackGesture(): void {
@@ -221,6 +290,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
 
     if (this.step > 1) {
       this.step = (this.step - 1) as 1 | 2 | 3 | 4;
+      this.persistRegistrationDraft();
       return;
     }
 
@@ -253,6 +323,16 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   pickVehicleType(v: VehicleTypeOpt): void {
     if (this.busy || this.driverApproved) return;
     this.vehicle_type_id = v.id;
+    this.city_vehicle_type_id = null;
+    this.cityVehicles = [];
+    this.persistRegistrationDraft();
+    this.loadCityVehicles();
+  }
+
+  pickCityVehicle(v: CityVehicleOpt): void {
+    if (this.busy || this.driverApproved) return;
+    this.city_vehicle_type_id = v.id;
+    this.persistRegistrationDraft();
   }
 
   // ── Step 1: city + permanent scope ──────────────────────────────
@@ -261,7 +341,11 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     if (this.driverApproved) return;
     this.service_scope = null;
     this.service_mode = null;
+    this.vehicle_type_id = null;
+    this.city_vehicle_type_id = null;
+    this.cityVehicles = [];
     this.rideScopes = [];
+    this.persistRegistrationDraft();
     this.loadRideProducts();
   }
 
@@ -272,12 +356,31 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
       catchError(() => of({ scopes: [] as RideScopeOption[] })),
     ).subscribe({
       next: (res) => {
-        this.rideScopes = (res.scopes ?? []).map((scope) => ({
-          ...scope,
-          modes: scope.modes ?? [],
-        }));
+        this.rideScopes = (res.scopes ?? [])
+          .map((scope) => ({
+            ...scope,
+            modes: scope.modes ?? [],
+          }))
+          .filter((scope) => scope.modes.length > 0);
       },
       complete: () => { this.loadingRideProducts = false; },
+    });
+  }
+
+  loadCityVehicles(): void {
+    if (!this.city_id || !this.vehicle_type_id) return;
+    this.loadingCityVehicles = true;
+    this.api.get<{ data: CityVehicleOpt[] }>(`/catalog/cities/${this.city_id}/vehicles?vehicle_type_id=${this.vehicle_type_id}`).pipe(
+      catchError(() => of({ data: [] as CityVehicleOpt[] })),
+    ).subscribe({
+      next: (res) => {
+        this.cityVehicles = res.data ?? [];
+        if (this.city_vehicle_type_id && !this.cityVehicles.some((v) => v.id === this.city_vehicle_type_id)) {
+          this.city_vehicle_type_id = null;
+          this.persistRegistrationDraft();
+        }
+      },
+      complete: () => { this.loadingCityVehicles = false; },
     });
   }
 
@@ -285,6 +388,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     if (this.busy || this.driverApproved) return;
     this.service_scope = scope.scope;
     this.service_mode = null;
+    this.persistRegistrationDraft();
   }
 
   get selectedScope(): RideScopeOption | undefined {
@@ -298,6 +402,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   pickMode(option: RideModeOption): void {
     if (this.busy || this.driverApproved) return;
     this.service_mode = option.mode;
+    this.persistRegistrationDraft();
   }
 
   iconForMode(mode: ServiceMode): string {
@@ -314,12 +419,47 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     return 'Not selected';
   }
 
+  get step1Valid(): boolean {
+    return !!this.city_id && !!this.service_scope && this.modeOptions.length > 0 && !this.loadingRideProducts;
+  }
+
+  get step2Valid(): boolean {
+    return !!this.service_mode;
+  }
+
+  get step3Valid(): boolean {
+    const fleetOk = this.fleetsForCurrentCity.length === 0 || !!this.fleet_id;
+    return !!this.city_id
+      && fleetOk
+      && !!this.vehicle_type_id
+      && !!this.city_vehicle_type_id
+      && /^\d{4}$/.test(this.vehicle_model_year.trim())
+      && !!this.vehicle_color.trim()
+      && !!this.vehicle_reg_no.trim();
+  }
+
+  get modelYearDate(): string | null {
+    return /^\d{4}$/.test(this.vehicle_model_year) ? `${this.vehicle_model_year}-01-01` : null;
+  }
+
+  get maxModelYearDate(): string {
+    return `${new Date().getFullYear()}-12-31`;
+  }
+
+  onModelYearChange(ev: CustomEvent): void {
+    const raw = String(ev.detail?.value ?? '');
+    const match = raw.match(/^(\d{4})/);
+    this.vehicle_model_year = match ? match[1] : '';
+    this.persistRegistrationDraft();
+  }
+
   continueToMode(): void {
     this.error = null;
     if (!this.city_id) { this.error = 'Please pick your city.'; return; }
     if (!this.service_scope) { this.error = 'Please choose Local or Outstation.'; return; }
     if (!this.modeOptions.length) { this.error = 'No service types are active for this selection.'; return; }
     this.step = 2;
+    this.persistRegistrationDraft();
   }
 
   continueToVehicle(): void {
@@ -327,6 +467,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     if (!this.service_scope) { this.error = 'Please choose Local or Outstation.'; this.step = 1; return; }
     if (!this.service_mode) { this.error = 'Please choose the service type you will provide.'; return; }
     this.step = 3;
+    this.persistRegistrationDraft();
   }
 
   // ── Step 3: vehicle + fleet ──────────────────────────────────────
@@ -337,22 +478,40 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     if (!this.service_mode) { this.error = 'Please choose the service type you will provide.'; this.step = 2; return; }
     if (!this.city_id) { this.error = 'Please pick your city.'; return; }
     if (!this.vehicle_type_id) { this.error = 'Please pick your vehicle type.'; return; }
-    // Brand / model / color and fleet are all optional ("None" for fleet).
+    if (!this.city_vehicle_type_id) { this.error = 'Please pick the city vehicle.'; return; }
+    if (this.fleetsForCurrentCity.length > 0 && !this.fleet_id) { this.error = 'Please pick your fleet.'; return; }
+    if (!/^\d{4}$/.test(this.vehicle_model_year.trim())) { this.error = 'Please select the model year.'; return; }
+    if (!this.vehicle_color.trim()) { this.error = 'Please enter the vehicle color.'; return; }
+    if (!this.vehicle_reg_no.trim()) { this.error = 'Please enter the registration number.'; return; }
+
+    const profile = this.draft.getProfile();
+    const fd = new FormData();
+    fd.append('service_scope', this.service_scope);
+    fd.append('service_mode', this.service_mode);
+    fd.append('vehicle_type_id', String(this.vehicle_type_id));
+    fd.append('city_vehicle_type_id', String(this.city_vehicle_type_id));
+    fd.append('city_id', String(this.city_id));
+    if (this.fleet_id) fd.append('fleet_id', String(this.fleet_id));
+    fd.append('vehicle_model', this.vehicle_model_year.trim());
+    fd.append('vehicle_color', this.vehicle_color.trim());
+    fd.append('vehicle_reg_no', this.vehicle_reg_no.trim().toUpperCase());
+    if (profile) {
+      fd.append('name', profile.name);
+      fd.append('email', profile.email);
+      fd.append('dob', profile.dob);
+      fd.append('address', profile.address);
+      if (profile.app_version) fd.append('app_version', profile.app_version);
+      if (profile.os_version) fd.append('os_version', profile.os_version);
+      if (profile.device_type) fd.append('device_type', profile.device_type);
+      const photo = this.draft.getPhotoFile();
+      if (photo) fd.append('photo', photo, photo.name);
+    }
 
     this.busy = true;
-    this.api.post<{ user?: { roles?: string[] }; driver?: unknown }>('/drivers/register', {
-      service_scope: this.service_scope,
-      service_mode: this.service_mode,
-      vehicle_type_id: this.vehicle_type_id,
-      city_id: this.city_id,
-      fleet_id: this.fleet_id,
-      vehicle_brand: this.vehicle_brand.trim() || null,
-      vehicle_model: this.vehicle_model.trim() || null,
-      vehicle_color: this.vehicle_color.trim() || null,
-    }).subscribe({
+    this.api.postForm<{ user?: Partial<AuthUser>; driver?: unknown }>('/drivers/register', fd).subscribe({
       next: (regRes) => {
-        const roles = regRes?.user?.roles;
-        if (roles?.length) this.auth.updateUser({ roles });
+        if (regRes?.user) this.auth.updateUser(regRes.user);
+        this.draft.clear();
         this.message = 'Vehicle saved. Now upload your documents.';
         this.step = 4;
         this.busy = false;
@@ -366,14 +525,6 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   }
 
   // ── Step 4: documents ────────────────────────────────────────────
-
-  private startDocumentsLiveRefresh(): void {
-    this.documentsPollSub?.unsubscribe();
-    this.documentsPollSub = interval(5000).subscribe(() => {
-      if (this.step !== 4 || this.uploadBusy || this.documentsRefreshInFlight) return;
-      this.refreshDocumentStep(false);
-    });
-  }
 
   private refreshDocumentStep(showErrors: boolean): void {
     if (this.documentsRefreshInFlight) return;
@@ -483,6 +634,47 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     upload.error = undefined;
   }
 
+  refreshDocuments(): void {
+    this.refreshDocumentStep(true);
+  }
+
+  clearDocFile(upload: DocImageSlot): void {
+    upload.file = null;
+    upload.status = 'idle';
+    upload.error = undefined;
+  }
+
+  removeDocUpload(upload: DocImageSlot): void {
+    const existing = upload.existing;
+    if (!existing || !this.canRemove(upload)) {
+      this.clearDocFile(upload);
+      return;
+    }
+
+    this.uploadBusy = true;
+    this.error = null;
+    this.message = null;
+    this.api.delete<{ ok?: boolean }>(`/drivers/documents/${existing.id}`).subscribe({
+      next: () => {
+        upload.existing = null;
+        this.clearDocFile(upload);
+        this.message = 'Document image removed.';
+      },
+      error: (err) => {
+        this.error = err?.error?.message || 'Could not remove document image.';
+      },
+      complete: () => { this.uploadBusy = false; },
+    });
+  }
+
+  canReplace(upload: DocImageSlot): boolean {
+    return !this.uploadBusy && !this.isLocked(upload);
+  }
+
+  canRemove(upload: DocImageSlot): boolean {
+    return !this.driverApproved && !this.uploadBusy && !!upload.existing && upload.existing.status !== 'approved';
+  }
+
   hasSelection(): boolean {
     return this.docs.some((d) => d.uploads.some((u) => !!u.file && !this.isLocked(u)));
   }
@@ -490,12 +682,12 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   isLocked(upload: DocImageSlot): boolean {
     if (this.driverApproved) return true;
     if (!upload.existing) return false;
-    return upload.existing.status !== 'rejected';
+    return upload.existing.status === 'approved';
   }
 
   isDocLocked(doc: DocUploadState): boolean {
     if (this.driverApproved) return true;
-    return doc.uploads.some((upload) => !!upload.existing && upload.existing.status !== 'rejected');
+    return doc.uploads.some((upload) => upload.existing?.status === 'approved');
   }
 
   // ── Document view / download ─────────────────────────────────────
@@ -690,6 +882,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
       return;
     }
     this.step = s;
+    this.persistRegistrationDraft();
     this.error = null;
     this.message = null;
   }

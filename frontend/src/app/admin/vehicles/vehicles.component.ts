@@ -135,7 +135,7 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
             <tm-filter-pill *ngIf="vehicleStatus !== 'all'" icon="bolt" label="Status" [value]="vehicleStatusLabel()" (clear)="clearVehicleStatus()" />
           </ng-container>
 
-          <tm-column key="name" label="Vehicle type">
+          <tm-column key="name" label="Vehicle name">
             <ng-template let-row>
               <div class="cell-veh">
                 <span class="cell-thumb"><tm-icon name="car" [size]="16" /></span>
@@ -165,7 +165,7 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
             <h2>City Vehicles</h2>
             <p>Add city vehicles by choosing one of the vehicle types created above, then configure fares.</p>
           </div>
-          <tm-button *ngIf="cityId != null" variant="green" icon="plus" [disabled]="!vehicleTypeOptions.length" (clicked)="openCreateCityVehicle()">Add city vehicle</tm-button>
+          <tm-button *ngIf="cityId != null" variant="green" icon="plus" [disabled]="!vehicleTypeOptions.length" (clicked)="openCreateCityVehicle()">Add vehicle</tm-button>
         </div>
 
         <div class="cue" *ngIf="cityId == null">
@@ -229,7 +229,7 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
 
     <tm-drawer [open]="vehicleOpen" [title]="vehicleEditingId ? 'Edit vehicle type' : 'Add vehicle type'" (closed)="vehicleOpen = false">
       <div slot="body" class="form">
-        <label class="field"><span class="field__lbl">Name <i>*</i></span><input type="text" [(ngModel)]="vehicleForm.name" (ngModelChange)="vTouched = true" placeholder="Auto / Bike / Sedan" /><span class="field__err" *ngIf="vTouched && !vehicleForm.name.trim()">Name is required.</span></label>
+        <label class="field"><span class="field__lbl">Vehicle name <i>*</i></span><input type="text" [(ngModel)]="vehicleForm.name" (ngModelChange)="vTouched = true" placeholder="Auto / Bike / Sedan" /><span class="field__err" *ngIf="vTouched && !vehicleForm.name.trim()">Vehicle name is required.</span></label>
         <label class="field"><span class="field__lbl">Sort order</span><input type="number" min="0" max="9999" [(ngModel)]="vehicleForm.sort_order" class="field--short" /></label>
         <label class="toggle"><input type="checkbox" [(ngModel)]="vehicleForm.is_active" /><span>Active</span></label>
       </div>
@@ -252,18 +252,18 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
       <div slot="footer"><tm-button variant="ghost" (clicked)="commonOpen = false">Cancel</tm-button><tm-button variant="green" icon="check" [disabled]="saving" (clicked)="saveCommon()">{{ saving ? 'Saving...' : 'Save common setup' }}</tm-button></div>
     </tm-drawer>
 
-    <tm-drawer [open]="createOpen" title="Add city vehicle" [width]="620" (closed)="createOpen = false">
+    <tm-drawer [open]="createOpen" title="Add vehicle" [width]="620" (closed)="createOpen = false">
       <div slot="body" class="create">
         <div class="setupNote"><strong>Vehicle type is required.</strong> Create the type in Step 1 first, then choose it here to create the city vehicle.</div>
-        <label class="field field--wide"><span class="field__lbl">Vehicle type <i>*</i></span><select [(ngModel)]="create.vehicle_type_id" (ngModelChange)="onCreateVehicleTypeChange($event)"><option [ngValue]="null" disabled>Select from Vehicle Types</option><option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option></select></label>
-        <label class="field field--wide"><span class="field__lbl">Vehicle name <i>*</i></span><input type="text" [(ngModel)]="create.display_name" placeholder="Display name shown in fare setup and apps" /></label>
+        <label class="field field--wide"><span class="field__lbl">Vehicle name <i>*</i></span><select [(ngModel)]="create.vehicle_type_id" (ngModelChange)="onCreateVehicleTypeChange($event)"><option [ngValue]="null" disabled>Select vehicle name</option><option *ngFor="let vt of vehicleTypeOptions" [ngValue]="vt.id">{{ vt.name }}</option></select></label>
+        <label class="field field--wide"><span class="field__lbl">Display name <i>*</i></span><input type="text" [(ngModel)]="create.display_name" placeholder="Display name shown in fare setup and apps" /></label>
         <div class="grid">
           <label class="field"><span class="field__lbl">Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
           <label class="field"><span class="field__lbl">Luggage capacity</span><input type="number" min="0" [(ngModel)]="create.luggage_capacity" /></label>
         </div>
         <div class="toggles"><label><input type="checkbox" [(ngModel)]="create.is_active" /> Active</label></div>
       </div>
-      <div slot="footer"><tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button><tm-button variant="green" [disabled]="creating || !createValid" (clicked)="submitCreateCityVehicle()">{{ creating ? 'Creating...' : 'Create city vehicle' }}</tm-button></div>
+      <div slot="footer"><tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button><tm-button variant="green" [disabled]="creating || !createValid" (clicked)="submitCreateCityVehicle()">{{ creating ? 'Creating...' : 'Create vehicle' }}</tm-button></div>
     </tm-drawer>
   `,
   styles: [`
@@ -572,14 +572,8 @@ export class VehiclesComponent implements OnInit, OnDestroy {
     return f.vehicle_type_id != null && f.display_name.trim().length > 0 && f.max_people != null && f.luggage_capacity != null;
   }
 
-  onCreateVehicleTypeChange(id: number | null): void {
-    if (!this.create.display_name.trim()) {
-      this.create.display_name = this.vehicleTypeName(id);
-    }
-  }
-
-  private vehicleTypeName(id: number | null): string {
-    return this.vehicleTypeOptions.find((vt) => vt.id === id)?.name ?? 'City vehicle';
+  onCreateVehicleTypeChange(_id: number | null): void {
+    this.create.display_name = '';
   }
 
   fareModesLabel(row: CityVehicleRow): string {

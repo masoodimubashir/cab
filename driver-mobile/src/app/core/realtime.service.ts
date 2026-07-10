@@ -39,6 +39,14 @@ export type TripCustomerLocationPayload = {
   };
 };
 
+export type DriverVerificationUpdatedPayload = {
+  type: 'driver_verification_updated';
+  driver_id: number | null;
+  reason: 'approval_status' | 'document_status' | string;
+  document_id?: number | null;
+  status?: string | null;
+};
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private pusher: Pusher | null = null;
@@ -83,6 +91,25 @@ export class RealtimeService {
       }),
     } as any);
     return this.pusher;
+  }
+
+  subscribeDriverVerification(
+    userId: number,
+    onUpdated: (p: DriverVerificationUpdatedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-App.Models.User.${userId}`;
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: DriverVerificationUpdatedPayload) => onUpdated(data);
+
+    channel.bind('DriverVerificationUpdated', handler);
+
+    return () => {
+      channel.unbind('DriverVerificationUpdated', handler);
+      pusher.unsubscribe(channelName);
+    };
   }
 
   /**

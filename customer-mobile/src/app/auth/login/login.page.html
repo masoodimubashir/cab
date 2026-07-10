@@ -1,4 +1,4 @@
-<ion-content>
+<ion-content [class.auth-content--info]="step === 'info'">
   <!-- ============ PERSISTENT MASTER AUTH SHELL ============ -->
   <div class="auth-header dc-anim-in" [class.auth-header--compact]="step === 'perms'">
     <!-- Soft brand glow / sheen behind the hero -->
@@ -50,7 +50,7 @@
   </div>
 
   <!-- ============ DYNAMIC SCENE WRAPPER ============ -->
-  <div class="auth-form-container">
+  <div class="auth-form-container" [class.auth-form-container--info]="step === 'info'">
     <div class="auth-scene-wrapper">
 
       <!-- STEP 1: PHONE ENTRY -->
@@ -87,11 +87,6 @@
 
         </div>
 
-        <!-- Reassurance line -->
-        <div class="phone-hint">
-          <ion-icon name="shield-checkmark-outline"></ion-icon>
-          <span>Your number stays private and secure</span>
-        </div>
       </div>
 
       <!-- STEP 2: BENTO PERMISSIONS -->
@@ -198,7 +193,7 @@
       </div>
 
       <!-- STEP 4: PROFILE COMPLETION -->
-      <div class="step-slide" *ngIf="step === 'info'">
+      <div class="step-slide step-slide--info" *ngIf="step === 'info'">
         <div class="info-form-wrapper dc-anim-up">
           <div class="avatar-wrap">
             <label class="avatar-edit dc-press">
@@ -234,18 +229,30 @@
               />
             </div>
 
-            <div class="input-container phone-container ion-margin-top address-field">
+            <div class="input-container phone-container ion-margin-top address-field" #addressFieldWrap>
               <label>Address</label>
-              <ion-input
-                type="text"
-                [(ngModel)]="addressQuery"
-                (ionInput)="onAddressQueryChange($event.detail.value)"
-                [disabled]="loading"
-                autocomplete="street-address"
-                placeholder="Search your address"
-                required
-                class="custom-phone-input"
-              ></ion-input>
+              <div class="address-input-row">
+                <ion-input
+                  type="text"
+                  [(ngModel)]="addressQuery"
+                  (ionInput)="onAddressQueryChange($event.detail.value)"
+                  (ionFocus)="scrollAddressFieldIntoView()"
+                  [disabled]="loading"
+                  autocomplete="street-address"
+                  placeholder="Search your address"
+                  required
+                  class="custom-phone-input"
+                ></ion-input>
+                <button
+                  type="button"
+                  class="address-map-btn dc-press"
+                  (click)="openAddressMap()"
+                  [disabled]="loading"
+                  aria-label="Pick address from map"
+                >
+                  <ion-icon name="map-outline"></ion-icon>
+                </button>
+              </div>
               <ul class="address-suggestions" *ngIf="addressSuggestions.length && !infoAddress">
                 <li
                   *ngFor="let s of addressSuggestions"
@@ -302,11 +309,45 @@
         <a>Term & Conditions</a> and <a>Privacy Policy</a>
       </p>
 
-      <p class="recaptcha-disclosure" *ngIf="step === 'phone' || step === 'otp'">
-        Protected by reCAPTCHA. Google <a href="https://policies.google.com/privacy" target="_blank">Privacy</a> & <a href="https://policies.google.com/terms" target="_blank">Terms</a> apply.
-      </p>
     </div>
   </div>
+
+  <!-- ============ ADDRESS MAP PICKER ============ -->
+  <ion-modal [isOpen]="mapPickerOpen" (didDismiss)="closeAddressMap()" class="auth-map-modal">
+    <ng-template>
+      <ion-header class="ion-no-border">
+        <ion-toolbar class="map-toolbar">
+          <ion-buttons slot="start">
+            <ion-button class="map-close-btn" (click)="closeAddressMap()" aria-label="Close map">
+              <ion-icon name="close-outline" slot="icon-only"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+          <ion-title>Pick address</ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content class="auth-map-content">
+        <div class="auth-map-panel">
+          <div class="auth-map-canvas" #addressMapEl></div>
+          <div class="auth-map-loading" *ngIf="mapLoading">
+            <ion-spinner name="crescent"></ion-spinner>
+            <span>Finding address...</span>
+          </div>
+        </div>
+        <div class="auth-map-summary">
+          <strong>Selected address</strong>
+          <p>{{ mapSelectedAddress || 'Tap the map to choose your address.' }}</p>
+          <small *ngIf="mapError">{{ mapError }}</small>
+        </div>
+      </ion-content>
+
+      <ion-footer class="ion-no-border auth-map-footer">
+        <button class="fab-btn fab-btn--block" type="button" (click)="confirmMapAddress()" [disabled]="mapLoading || (!mapSelectedAddress.trim() && !mapSelectedPosition)">
+          <span class="btn-text">Use this address</span>
+        </button>
+      </ion-footer>
+    </ng-template>
+  </ion-modal>
 
   <!-- ============ COUNTRY PICKER MODAL ============ -->
   <ion-modal

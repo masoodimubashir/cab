@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'user_id',
     'ride_type_id',
     'vehicle_type_id',
+    'city_vehicle_type_id',
     'city_id',
     'fleet_id',
     'service_scope',
@@ -100,6 +101,11 @@ class Driver extends Model
     public function vehicleTypeRef(): BelongsTo
     {
         return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
+    }
+
+    public function cityVehicleType(): BelongsTo
+    {
+        return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
     }
 
     public function city(): BelongsTo

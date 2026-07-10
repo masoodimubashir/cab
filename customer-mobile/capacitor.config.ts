@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from '@capacitor/cli';
+import { KeyboardResize } from '@capacitor/keyboard';
 
 const config: CapacitorConfig = {
   appId: 'com.dreamcabs.customer',
@@ -20,6 +21,10 @@ const config: CapacitorConfig = {
     FirebaseAuthentication: {
       skipNativeAuth: false,
       providers: ['google.com'],
+    },
+    Keyboard: {
+      resize: KeyboardResize.None,
+      resizeOnFullScreen: false,
     },
   },
 };

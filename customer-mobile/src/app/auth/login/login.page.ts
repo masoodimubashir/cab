@@ -1,4 +1,4 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
@@ -20,6 +20,8 @@ import {
 } from '../../core/phone-auth.service';
 import { normalizePhoneToE164 } from '../../core/phone-normalize';
 import { environment } from '../../../environments/environment';
+
+declare const google: any;
 
 type AuthExchangeResponse = {
   token: string;
@@ -45,6 +47,8 @@ const RESEND_SECONDS = 60;
   standalone: false,
 })
 export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, OnDestroy {
+  @ViewChild('addressFieldWrap') addressFieldWrap?: ElementRef<HTMLElement>;
+  @ViewChild('addressMapEl') addressMapEl?: ElementRef<HTMLElement>;
   step: Step = 'phone';
   phone = '';
   otp = '';
@@ -129,10 +133,18 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   infoPhotoFile: File | null = null;
   infoPhotoPreview: string | null = null;
 
-  // Address autocomplete (Google Places)
+  // Address autocomplete + map picker (Google Places / Maps)
   addressQuery = '';
   addressSuggestions: PlaceSuggestion[] = [];
   addressLoading = false;
+  mapPickerOpen = false;
+  mapLoading = false;
+  mapError: string | null = null;
+  mapSelectedAddress = '';
+  mapSelectedPosition: { lat: number; lng: number } | null = null;
+  private addressMap: any = null;
+  private addressMapMarker: any = null;
+  private addressMapClickListener: any = null;
   /** Skip the next query-change emit after we set query from a pick(). */
   private addressSkipNextQueryEmit = false;
   private addressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -250,6 +262,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.addressSuggestions = [];
       return;
     }
+    this.scrollAddressFieldIntoView();
     this.addressDebounceTimer = setTimeout(() => {
       this.fetchAddressSuggestions(q);
     }, 220);
@@ -266,6 +279,12 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
   }
 
+  scrollAddressFieldIntoView(): void {
+    setTimeout(() => {
+      this.addressFieldWrap?.nativeElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 120);
+  }
+
   async pickAddress(s: PlaceSuggestion): Promise<void> {
     this.addressLoading = true;
     try {
@@ -280,6 +299,116 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
   }
 
+  openAddressMap(): void {
+    if (this.loading) return;
+    this.mapPickerOpen = true;
+    this.mapError = null;
+    this.mapSelectedAddress = this.infoAddress || this.addressQuery || '';
+    this.mapSelectedPosition = null;
+    setTimeout(() => void this.initAddressMap(), 120);
+  }
+
+  closeAddressMap(): void {
+    this.mapPickerOpen = false;
+  }
+
+  confirmMapAddress(): void {
+    let picked = this.mapSelectedAddress.trim();
+    if (!picked && this.mapSelectedPosition) {
+      picked = `${this.mapSelectedPosition.lat.toFixed(6)}, ${this.mapSelectedPosition.lng.toFixed(6)}`;
+    }
+    if (!picked) {
+      this.mapError = 'Tap a place on the map first.';
+      return;
+    }
+    this.infoAddress = picked;
+    this.addressQuery = picked;
+    this.addressSkipNextQueryEmit = true;
+    this.addressSuggestions = [];
+    this.mapPickerOpen = false;
+  }
+
+  private async initAddressMap(): Promise<void> {
+    const el = this.addressMapEl?.nativeElement;
+    if (!el) return;
+    this.mapLoading = true;
+    this.mapError = null;
+    try {
+      await this.places.ensureLoaded();
+      const center = await this.initialMapCenter();
+      this.addressMap = new google.maps.Map(el, {
+        center,
+        zoom: 15,
+        disableDefaultUI: true,
+        zoomControl: true,
+        gestureHandling: 'greedy',
+      });
+      if (this.addressMapClickListener?.remove) this.addressMapClickListener.remove();
+      this.addressMapClickListener = this.addressMap.addListener('click', (ev: any) => {
+        const latLng = ev?.latLng;
+        if (!latLng) return;
+        void this.pickAddressFromMap({ lat: latLng.lat(), lng: latLng.lng() });
+      });
+      await this.pickAddressFromMap(center);
+    } catch {
+      this.mapError = 'Could not load the map. Type and pick your address instead.';
+    } finally {
+      this.mapLoading = false;
+    }
+  }
+
+  private async initialMapCenter(): Promise<{ lat: number; lng: number }> {
+    const current = await this.geo.getCurrentPosition();
+    if (current) return current;
+
+    const typed = (this.infoAddress || this.addressQuery).trim();
+    if (typed) {
+      const geocoded = await this.geocodeAddress(typed);
+      if (geocoded) return geocoded;
+    }
+    return { lat: 20.5937, lng: 78.9629 };
+  }
+
+  private geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+    return new Promise((resolve) => {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ address }, (results: any[], status: string) => {
+        const loc = status === 'OK' ? results?.[0]?.geometry?.location : null;
+        resolve(loc ? { lat: loc.lat(), lng: loc.lng() } : null);
+      });
+    });
+  }
+
+  private async pickAddressFromMap(position: { lat: number; lng: number }): Promise<void> {
+    this.mapLoading = true;
+    this.mapError = null;
+    this.mapSelectedPosition = position;
+    this.mapSelectedAddress = `${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`;
+    this.setAddressMapMarker(position);
+    try {
+      const label = await this.places.reverseGeocode(position.lat, position.lng);
+      if (label) this.mapSelectedAddress = label;
+    } catch {
+      /* coordinates remain selected */
+    } finally {
+      this.mapLoading = false;
+    }
+  }
+
+  private setAddressMapMarker(position: { lat: number; lng: number }): void {
+    if (!this.addressMap) return;
+    if (!this.addressMapMarker) {
+      this.addressMapMarker = new google.maps.Marker({
+        map: this.addressMap,
+        position,
+        draggable: false,
+      });
+    } else {
+      this.addressMapMarker.setPosition(position);
+    }
+    this.addressMap.panTo(position);
+  }
+
   ionViewWillLeave(): void {
     this.phoneAuth.teardownRecaptcha();
     this.stopResendTimer();
@@ -287,6 +416,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
 
   ngOnDestroy(): void {
     this.stopResendTimer();
+    if (this.addressDebounceTimer) clearTimeout(this.addressDebounceTimer);
+    if (this.addressMapClickListener?.remove) this.addressMapClickListener.remove();
   }
 
   private installRecaptchaSoon(): void {
