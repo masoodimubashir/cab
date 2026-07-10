@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\DriverVerificationUpdated;
 use App\Models\Driver;
 use App\Models\DriverDocument;
 use App\Models\Trip;
@@ -161,6 +162,16 @@ class AdminDriversController
 
         $driver->save();
 
+        if ($driver->user_id) {
+            broadcast(new DriverVerificationUpdated(
+                (int) $driver->user_id,
+                (int) $driver->id,
+                'approval_status',
+                null,
+                $driver->approval_status,
+            ));
+        }
+
         return response()->json(['driver' => $driver->fresh()]);
     }
 
@@ -209,7 +220,18 @@ class AdminDriversController
                 : null,
         ]);
 
-        return response()->json(['document' => $document->fresh()]);
+        $freshDocument = $document->fresh('driver');
+        if ($freshDocument?->driver?->user_id) {
+            broadcast(new DriverVerificationUpdated(
+                (int) $freshDocument->driver->user_id,
+                (int) $freshDocument->driver_id,
+                'document_status',
+                (int) $freshDocument->id,
+                $freshDocument->status,
+            ));
+        }
+
+        return response()->json(['document' => $freshDocument]);
     }
 
     /**

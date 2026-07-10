@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
+import { DriverOnboardingDraftService } from '../../core/driver-onboarding-draft.service';
 
 interface ActiveTrip {
   id: number;
@@ -22,6 +23,7 @@ export class SplashPage implements OnInit {
     private api: ApiService,
     private router: Router,
     private bgLocation: BackgroundLocationService,
+    private draft: DriverOnboardingDraftService,
   ) {}
 
   ngOnInit() {
@@ -46,7 +48,11 @@ export class SplashPage implements OnInit {
 
     const roles = this.auth.getUser()?.roles ?? [];
     if (!roles.includes('driver')) {
-      void this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
+      if (this.draft.getProfile() || this.draft.getRegistration()) {
+        void this.router.navigateByUrl(this.draft.getProfile() ? '/driver-registration' : '/profile?next=registration', { replaceUrl: true });
+      } else {
+        void this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
+      }
       return;
     }
 

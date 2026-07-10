@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Events\DispatchDriverLocationUpdated;
+use App\Models\CitySetting;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
+use App\Models\Fleet;
 use App\Models\DriverDocument;
 use App\Models\DriverLocation;
 use App\Models\OperatorSetting;
@@ -16,39 +18,117 @@ use App\Services\ShuttleStopAutomationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class DriversController extends Controller
 {
     public function register(Request $request)
     {
+        $user = $request->user();
+        $existing = Driver::query()->where('user_id', $user->id)->first();
+
         $data = $request->validate([
             // The 3-step wizard sends ride_type_id (Step 1) + vehicle_type_id
             // (Step 2). Free-text vehicle_type is kept for backwards compat
             // with older registrations and as a human-readable fallback.
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
             'vehicle_type' => ['nullable', 'string', 'max:100'],
-            'vehicle_brand' => ['nullable', 'string', 'max:100'],
-            'vehicle_model' => ['nullable', 'string', 'max:100'],
+            'vehicle_model' => ['nullable', 'regex:/^\d{4}$/'],
             'vehicle_color' => ['nullable', 'string', 'max:100'],
-            // Reg no is now collected/edited by an admin, not the driver,
-            // so it's optional during driver self-registration.
-            'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
+            'vehicle_reg_no' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::unique('drivers', 'vehicle_reg_no')->ignore($existing?->id),
+            ],
             // Onboarding wizard now also captures the city + fleet. Both are
             // nullable (fleet = "none" allowed; city set later by admin if missing).
             'city_id' => ['nullable', 'integer', 'exists:cities,id'],
             'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
             'service_scope' => ['nullable', 'string', 'in:local,outstation'],
             'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
+            'name' => ['nullable', 'string', 'max:120'],
+            'email' => ['nullable', 'email', 'max:190', Rule::unique('users', 'email')->ignore($user->id)],
+            'dob' => ['nullable', 'date', 'before:today'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'app_version' => ['nullable', 'string', 'max:32'],
+            'os_version' => ['nullable', 'string', 'max:32'],
+            'device_type' => ['nullable', 'string', 'max:64'],
+            'photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
-        $user = $request->user();
-        $existing = Driver::query()->where('user_id', $user->id)->first();
+        if (!$existing || $existing->approval_status !== 'approved') {
+            foreach ([
+                'city_id' => 'Please pick your city.',
+                'service_scope' => 'Choose the service area before continuing.',
+                'service_mode' => 'Choose the service type before continuing.',
+                'vehicle_type_id' => 'Please pick your vehicle type.',
+                'city_vehicle_type_id' => 'Please pick the city vehicle.',
+                'vehicle_model' => 'Please select the model year.',
+                'vehicle_color' => 'Please enter the vehicle color.',
+                'vehicle_reg_no' => 'Please enter the registration number.',
+            ] as $field => $message) {
+                if (empty($data[$field])) {
+                    return response()->json(['message' => $message], 422);
+                }
+            }
 
-        if (!$existing && (empty($data['service_scope']) || empty($data['service_mode']))) {
-            return response()->json([
-                'message' => 'Choose the service you will provide before continuing.',
-            ], 422);
+            $hasFleetChoices = Fleet::query()
+                ->where('is_active', true)
+                ->where(function ($q) use ($data, $existing) {
+                    $cityId = $data['city_id'] ?? $existing?->city_id;
+                    $q->whereNull('city_id');
+                    if ($cityId) $q->orWhere('city_id', (int) $cityId);
+                })
+                ->exists();
+            if ($hasFleetChoices && empty($data['fleet_id'])) {
+                return response()->json(['message' => 'Please pick your fleet.'], 422);
+            }
+
+            $profileChecks = [
+                'name' => [$data['name'] ?? $user->name, 'Please complete your profile name.'],
+                'email' => [$data['email'] ?? $user->email, 'Please complete your profile email.'],
+                'dob' => [$data['dob'] ?? $user->dob, 'Please complete your date of birth.'],
+                'address' => [$data['address'] ?? $user->address, 'Please complete your address.'],
+            ];
+            foreach ($profileChecks as [$value, $message]) {
+                if (empty($value) || $value === 'User' || str_ends_with((string) $value, '@otp.local')) {
+                    return response()->json(['message' => $message], 422);
+                }
+            }
+        }
+
+        if (! empty($data['city_vehicle_type_id'])) {
+            $cityVehicle = CityVehicleType::query()->find((int) $data['city_vehicle_type_id']);
+            if (! $cityVehicle
+                || ! $cityVehicle->is_active
+                || (int) $cityVehicle->city_id !== (int) ($data['city_id'] ?? $existing?->city_id)
+                || (int) $cityVehicle->vehicle_type_id !== (int) ($data['vehicle_type_id'] ?? $existing?->vehicle_type_id)) {
+                return response()->json([
+                    'message' => 'Selected city vehicle does not match your city and vehicle type.',
+                ], 422);
+            }
+        }
+
+        if (!$existing || $existing->approval_status !== 'approved') {
+            $profilePayload = [];
+            foreach (['name', 'email', 'dob', 'address', 'app_version', 'os_version', 'device_type'] as $field) {
+                if (array_key_exists($field, $data) && $data[$field] !== null && $data[$field] !== '') {
+                    $profilePayload[$field] = $data[$field];
+                }
+            }
+            if ($request->hasFile('photo')) {
+                if ($user->avatar_path && Storage::disk('public')->exists($user->avatar_path)) {
+                    Storage::disk('public')->delete($user->avatar_path);
+                }
+                $profilePayload['avatar_path'] = $request->file('photo')->store('avatars', 'public');
+            }
+            if ($profilePayload) {
+                $user->fill($profilePayload);
+                $user->save();
+            }
         }
 
         // Locked fields once the driver is approved. Trying to change ride,
@@ -61,13 +141,16 @@ class DriversController extends Controller
             $tryingToChangeVehicle = array_key_exists('vehicle_type_id', $data)
                 && $data['vehicle_type_id'] !== null
                 && (int) $data['vehicle_type_id'] !== (int) $existing->vehicle_type_id;
+            $tryingToChangeCityVehicle = array_key_exists('city_vehicle_type_id', $data)
+                && $data['city_vehicle_type_id'] !== null
+                && (int) $data['city_vehicle_type_id'] !== (int) $existing->city_vehicle_type_id;
             $tryingToChangeServiceScope = array_key_exists('service_scope', $data)
                 && $data['service_scope'] !== null
                 && $data['service_scope'] !== $existing->service_scope;
             $tryingToChangeServiceMode = array_key_exists('service_mode', $data)
                 && $data['service_mode'] !== null
                 && $data['service_mode'] !== $existing->service_mode;
-            if ($tryingToChangeRide || $tryingToChangeVehicle || $tryingToChangeServiceScope || $tryingToChangeServiceMode) {
+            if ($tryingToChangeRide || $tryingToChangeVehicle || $tryingToChangeCityVehicle || $tryingToChangeServiceScope || $tryingToChangeServiceMode) {
                 return response()->json([
                     'message' => 'Ride type, vehicle type, and driver service are locked after approval. Contact the operator.',
                 ], 422);
@@ -87,11 +170,11 @@ class DriversController extends Controller
         // re-registration, and freeze ride/vehicle type once approved.
         $payload = [
             'vehicle_type' => $vehicleTypeLabel ?? ($existing->vehicle_type ?? null),
-            'vehicle_brand' => $data['vehicle_brand'] ?? ($existing->vehicle_brand ?? null),
             'vehicle_model' => $data['vehicle_model'] ?? ($existing->vehicle_model ?? null),
             'vehicle_color' => $data['vehicle_color'] ?? ($existing->vehicle_color ?? null),
             'vehicle_reg_no' => $data['vehicle_reg_no'] ?? ($existing->vehicle_reg_no ?? null),
             'city_id' => array_key_exists('city_id', $data) ? $data['city_id'] : ($existing->city_id ?? null),
+            'city_vehicle_type_id' => array_key_exists('city_vehicle_type_id', $data) ? $data['city_vehicle_type_id'] : ($existing->city_vehicle_type_id ?? null),
             'fleet_id' => array_key_exists('fleet_id', $data) ? $data['fleet_id'] : ($existing->fleet_id ?? null),
         ];
         if (!$existing) {
@@ -110,6 +193,9 @@ class DriversController extends Controller
                 $payload['vehicle_type_id'] = array_key_exists('vehicle_type_id', $data)
                     ? $data['vehicle_type_id']
                     : $existing->vehicle_type_id;
+                $payload['city_vehicle_type_id'] = array_key_exists('city_vehicle_type_id', $data)
+                    ? $data['city_vehicle_type_id']
+                    : $existing->city_vehicle_type_id;
                 $payload['service_scope'] = array_key_exists('service_scope', $data)
                     ? $data['service_scope']
                     : $existing->service_scope;
@@ -120,6 +206,7 @@ class DriversController extends Controller
                 // Approved: ride/vehicle frozen regardless of payload.
                 $payload['ride_type_id'] = $existing->ride_type_id;
                 $payload['vehicle_type_id'] = $existing->vehicle_type_id;
+                $payload['city_vehicle_type_id'] = $existing->city_vehicle_type_id;
                 $payload['service_scope'] = $existing->service_scope;
                 $payload['service_mode'] = $existing->service_mode;
             }
@@ -482,7 +569,7 @@ class DriversController extends Controller
             'image_index' => ['nullable', 'integer', 'min:1', 'max:20'],
             'document_type' => ['nullable', 'in:DL,RC,INSURANCE,ID'],
             'label_values' => ['nullable'],
-            'file' => ['required', 'file', 'max:10240'],
+            'file' => ['required', 'file', 'max:25600'],
         ]);
 
         if (empty($data['document_id']) && empty($data['document_type'])) {
@@ -512,8 +599,8 @@ class DriversController extends Controller
             ->max('image_index') ?: 0) + 1);
 
         // Look up an existing row with the same identity + image slot.
-        // Re-upload is only allowed when that row was previously rejected —
-        // pending and approved rows are locked.
+        // Pending/rejected rows can be replaced by the driver; approved rows
+        // stay locked unless an operator changes them.
         $matcher = !empty($data['document_id'])
             ? [
                 'driver_id' => $driver->id,
@@ -528,11 +615,10 @@ class DriversController extends Controller
             ];
 
         $existing = DriverDocument::query()->where($matcher)->first();
-        if ($existing && $existing->status !== 'rejected') {
-            $msg = $existing->status === 'approved'
-                ? 'This document image is already approved and cannot be re-uploaded.'
-                : 'This document image is already uploaded and awaiting review.';
-            return response()->json(['message' => $msg], 409);
+        if ($existing && $existing->status === 'approved') {
+            return response()->json([
+                'message' => 'This document image is already approved and cannot be re-uploaded.',
+            ], 409);
         }
 
         // Allow label_values to arrive either as JSON string (multipart) or as
@@ -550,10 +636,9 @@ class DriversController extends Controller
         $file = $request->file('file');
         $path = $file->store('driver-documents', 'local');
 
-        // Clean up the previously-rejected file on disk before overwriting
-        // its row — we don't want orphan blobs accumulating.
-        if ($existing && $existing->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($existing->file_path)) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($existing->file_path);
+        // Clean up the previous file on disk before overwriting its row.
+        if ($existing && $existing->file_path && Storage::disk('local')->exists($existing->file_path)) {
+            Storage::disk('local')->delete($existing->file_path);
         }
 
         $doc = DriverDocument::query()->updateOrCreate(
@@ -571,6 +656,29 @@ class DriversController extends Controller
         );
 
         return response()->json(['document' => $doc->fresh()]);
+    }
+
+    public function deleteDocument(Request $request, DriverDocument $document)
+    {
+        $user = $request->user();
+        $driver = Driver::query()->where('user_id', $user->id)->first();
+        if (!$driver || $document->driver_id !== $driver->id) {
+            abort(404);
+        }
+
+        if ($driver->approval_status === 'approved' || $document->status === 'approved') {
+            return response()->json([
+                'message' => 'Approved document images cannot be removed from the app.',
+            ], 403);
+        }
+
+        if ($document->file_path && Storage::disk('local')->exists($document->file_path)) {
+            Storage::disk('local')->delete($document->file_path);
+        }
+
+        $document->delete();
+
+        return response()->json(['ok' => true]);
     }
 
     private function resolveDriverCityVehicleType(Driver $driver): ?CityVehicleType

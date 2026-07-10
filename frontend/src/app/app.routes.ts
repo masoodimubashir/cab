@@ -12,6 +12,7 @@ import { RideDetailComponent } from './admin/rides/ride-detail.component';
 import { VehiclesComponent } from './admin/vehicles/vehicles.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
 import { MapsComponent } from './admin/maps/maps.component';
+import { CityWorkspaceComponent } from './admin/city-workspace/city-workspace.component';
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
@@ -104,6 +105,7 @@ export const routes: Routes = [
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard], data: { permission: 'managers' } },
 
   { path: 'settings', redirectTo: 'settings/city', pathMatch: 'full' },
+  { path: 'settings/cities', component: CityWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
   { path: 'settings/operator', component: OperatorSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'operator_settings' } },
   { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard], data: { permission: 'app_assets' } },

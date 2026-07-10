@@ -19,6 +19,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Default city / ride type / vehicle type seed data disabled.
+        // Keep city and vehicle setup controlled from the admin panel when running
+        // `php artisan migrate:fresh --seed`.
+        /*
         // Default city for fare estimation / booking during development.
         $city = City::updateOrCreate(
             ['name' => 'Default City'],
@@ -52,6 +56,7 @@ class DatabaseSeeder extends Seeder
                 ['sort_order' => $vt['sort_order']],
             );
         }
+        */
 
         // Pricing rules are now keyed by city_vehicle_type_id (one rate card
         // per vehicle). The seeder skips here in dev since vehicles are added

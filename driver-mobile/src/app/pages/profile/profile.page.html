@@ -60,7 +60,7 @@
 
     <!-- Personal details -->
     <div class="pg-card pf-form">
-      <div class="pg-card__head">
+      <div class="pg-card__head" *ngIf="!onboarding">
         <div class="pg-card__icon"><ion-icon name="person-circle-outline"></ion-icon></div>
         <h2 class="pg-card__title">Your details</h2>
       </div>
@@ -78,12 +78,15 @@
       </label>
 
       <label class="pf-field">
-        <span class="pf-field__label">Email <small>(optional)</small></span>
+        <span class="pf-field__label">
+          Email <em *ngIf="onboarding">*</em><small *ngIf="!onboarding">(optional)</small>
+        </span>
         <input
           class="pf-input"
           type="email"
           [(ngModel)]="email"
           [disabled]="busy"
+          [required]="onboarding"
           autocomplete="email"
           placeholder="you@example.com"
         />
@@ -103,18 +106,30 @@
           />
         </label>
 
-        <div class="pf-field pf-field--address">
+        <div class="pf-field pf-field--address" #addressFieldWrap>
           <span class="pf-field__label">Address <em>*</em></span>
-          <input
-            class="pf-input"
-            type="text"
-            [(ngModel)]="addressQuery"
-            (input)="onAddressQueryChange($any($event.target).value)"
-            [disabled]="busy"
-            placeholder="Search your address"
-            autocomplete="street-address"
-            required
-          />
+          <div class="pf-address-input">
+            <input
+              class="pf-input"
+              type="text"
+              [(ngModel)]="addressQuery"
+              (input)="onAddressQueryChange($any($event.target).value)"
+              (focus)="scrollAddressFieldIntoView()"
+              [disabled]="busy"
+              placeholder="Search your address"
+              autocomplete="street-address"
+              required
+            />
+            <button
+              type="button"
+              class="pf-map-btn dc-press"
+              (click)="openAddressMap()"
+              [disabled]="busy"
+              aria-label="Pick address from map"
+            >
+              <ion-icon name="map-outline"></ion-icon>
+            </button>
+          </div>
           <ul class="pf-suggestions" *ngIf="addressSuggestions.length && !address">
             <li
               *ngFor="let s of addressSuggestions"
@@ -182,3 +197,39 @@
 
   </div>
 </ion-content>
+
+<ion-modal [isOpen]="mapPickerOpen" (didDismiss)="closeAddressMap()" cssClass="pf-map-modal">
+  <ng-template>
+    <ion-header class="ion-no-border">
+      <ion-toolbar class="pg-toolbar">
+        <ion-buttons slot="start">
+          <ion-button class="pg-action" (click)="closeAddressMap()" aria-label="Close map">
+            <ion-icon name="close-outline" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
+        <ion-title class="pg-brandtitle">Pick address</ion-title>
+      </ion-toolbar>
+    </ion-header>
+
+    <ion-content class="pf-map-content">
+      <div class="pf-map-panel">
+        <div class="pf-map-canvas" #addressMapEl></div>
+        <div class="pf-map-loading" *ngIf="mapLoading">
+          <ion-spinner name="crescent"></ion-spinner>
+          <span>Finding address…</span>
+        </div>
+      </div>
+      <div class="pf-map-summary">
+        <strong>Selected address</strong>
+        <p>{{ mapSelectedAddress || 'Tap the map to choose your address.' }}</p>
+        <small *ngIf="mapError">{{ mapError }}</small>
+      </div>
+    </ion-content>
+
+    <ion-footer class="ion-no-border pf-map-footer">
+      <button class="dc-cta" type="button" (click)="confirmMapAddress()" [disabled]="mapLoading || (!mapSelectedAddress.trim() && !mapSelectedPosition)">
+        Use this address
+      </button>
+    </ion-footer>
+  </ng-template>
+</ion-modal>

@@ -519,6 +519,13 @@
   color: var(--text-main, #0D1B2A);
 }
 
+
+.doc-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 12px;
+}
+
 .doc-preview {
   display: flex;
   flex-wrap: wrap;
@@ -541,6 +548,18 @@
   cursor: pointer;
   ion-icon { font-size: 15px; color: var(--ion-color-primary, #12B35B); }
   &:active { background: #E5E7EB; }
+  &:disabled { opacity: 0.55; cursor: not-allowed; }
+}
+
+.ghost-btn--danger {
+  color: #B42318;
+  background: #FEF3F2;
+  ion-icon { color: #D92D20; }
+  &:active { background: #FEE4E2; }
+}
+
+.doc-clear {
+  margin-top: 8px;
 }
 
 .doc-preview__date {
@@ -598,4 +617,31 @@
 .doc-actions {
   display: flex;
   flex-direction: column;
+}
+
+
+.service-card--compact {
+  min-height: 104px;
+}
+
+.field__control--button {
+  justify-content: space-between;
+  position: relative;
+}
+
+.year-button {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  --ion-color-base: transparent;
+}
+
+.year-placeholder {
+  position: absolute;
+  left: 12px;
+  pointer-events: none;
+  color: #9CA3AF;
+  font-size: 15px;
+  font-weight: 600;
 }

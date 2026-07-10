@@ -104,7 +104,7 @@
           <p class="card__hint" *ngIf="driverApproved">Your approved service is locked: {{ selectedServiceLabel }}.</p>
         </div>
 
-        <button class="dc-cta dc-cta--dark reg-cta" (click)="continueToMode()" [disabled]="busy || loadingRideProducts">
+        <button class="dc-cta dc-cta--dark reg-cta" (click)="continueToMode()" [disabled]="busy || !step1Valid">
           <span>Continue</span>
           <ion-icon name="arrow-forward-outline"></ion-icon>
         </button>
@@ -133,7 +133,7 @@
           </div>
         </div>
 
-        <button class="dc-cta dc-cta--dark reg-cta" (click)="continueToVehicle()" [disabled]="busy">
+        <button class="dc-cta dc-cta--dark reg-cta" (click)="continueToVehicle()" [disabled]="busy || !step2Valid">
           <span>Continue</span>
           <ion-icon name="arrow-forward-outline"></ion-icon>
         </button>
@@ -148,21 +148,20 @@
     <ng-container *ngIf="!initLoading && step === 3">
       <div class="pg-anim-body">
 
-        <!-- Where you drive -->
+        <!-- Fleet -->
         <div class="pg-card reg-card">
           <div class="pg-card__head">
-            <div class="pg-card__icon"><ion-icon name="briefcase-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Selected service</h2>
+            <div class="pg-card__icon"><ion-icon name="business-outline"></ion-icon></div>
+            <h2 class="pg-card__title">Fleet <span class="req">*</span></h2>
           </div>
 
-          <p class="card__hint">{{ selectedServiceLabel }}</p>
+          <p class="card__hint" *ngIf="!fleetsForCurrentCity.length">No active fleets are configured for this city. You can continue without a fleet.</p>
 
           <div class="field">
-            <label class="field__label">Fleet</label>
-            <div class="field__control" [class.is-disabled]="busy">
-              <ion-select [(ngModel)]="fleet_id" [disabled]="busy"
-                          interface="action-sheet" placeholder="None" class="select">
-                <ion-select-option [value]="null">None</ion-select-option>
+            <label class="field__label">Fleet <span class="req">*</span></label>
+            <div class="field__control" [class.is-disabled]="busy || driverApproved || !fleetsForCurrentCity.length">
+              <ion-select [(ngModel)]="fleet_id" [disabled]="busy || driverApproved || !fleetsForCurrentCity.length"
+                          (ionChange)="persistRegistrationDraft()" interface="action-sheet" placeholder="Pick your fleet" class="select">
                 <ion-select-option *ngFor="let f of fleetsForCurrentCity" [value]="f.id">{{ f.name }}</ion-select-option>
               </ion-select>
             </div>
@@ -195,39 +194,77 @@
           </div>
         </div>
 
+        <!-- City vehicle picker -->
+        <div class="pg-card reg-card" *ngIf="vehicle_type_id">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="car-outline"></ion-icon></div>
+            <h2 class="pg-card__title">City vehicle <span class="req">*</span></h2>
+          </div>
+
+          <p class="card__hint" *ngIf="loadingCityVehicles">Loading city vehicles…</p>
+          <p class="card__hint" *ngIf="!loadingCityVehicles && !cityVehicles.length">No city vehicles are configured for this vehicle type.</p>
+
+          <div class="service-grid" *ngIf="cityVehicles.length">
+            <button type="button" class="service-card service-card--compact"
+                    *ngFor="let v of cityVehicles"
+                    [class.is-selected]="city_vehicle_type_id === v.id"
+                    [class.is-disabled]="busy || driverApproved"
+                    (click)="pickCityVehicle(v)">
+              <ion-icon name="car-outline"></ion-icon>
+              <strong>{{ v.display_name }}</strong>
+              <span>{{ v.max_people }} seats · {{ v.luggage_capacity }} bags</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Vehicle details -->
         <div class="pg-card reg-card">
           <div class="pg-card__head">
             <div class="pg-card__icon"><ion-icon name="construct-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Vehicle details <span class="card__optional">Optional</span></h2>
+            <h2 class="pg-card__title">Vehicle details <span class="req">*</span></h2>
           </div>
 
           <div class="field">
-            <label class="field__label">Brand</label>
-            <div class="field__control" [class.is-disabled]="busy || driverApproved">
-              <ion-input [(ngModel)]="vehicle_brand" [disabled]="busy || driverApproved"
-                         placeholder="e.g. Maruti Suzuki" class="input"></ion-input>
+            <label class="field__label">Model year <span class="req">*</span></label>
+            <div class="field__control field__control--button" [class.is-disabled]="busy || driverApproved">
+              <ion-datetime-button datetime="modelYearPicker" [disabled]="busy || driverApproved" class="year-button"></ion-datetime-button>
+              <span class="year-placeholder" *ngIf="!vehicle_model_year">Pick model year</span>
             </div>
           </div>
 
           <div class="field">
-            <label class="field__label">Model</label>
-            <div class="field__control" [class.is-disabled]="busy || driverApproved">
-              <ion-input [(ngModel)]="vehicle_model" [disabled]="busy || driverApproved"
-                         placeholder="e.g. Dzire" class="input"></ion-input>
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="field__label">Color</label>
+            <label class="field__label">Color <span class="req">*</span></label>
             <div class="field__control" [class.is-disabled]="busy || driverApproved">
               <ion-input [(ngModel)]="vehicle_color" [disabled]="busy || driverApproved"
+                         (ngModelChange)="persistRegistrationDraft()"
                          placeholder="e.g. White" class="input"></ion-input>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field__label">Registration number <span class="req">*</span></label>
+            <div class="field__control" [class.is-disabled]="busy || driverApproved">
+              <ion-input [(ngModel)]="vehicle_reg_no" [disabled]="busy || driverApproved"
+                         (ngModelChange)="persistRegistrationDraft()"
+                         autocapitalize="characters" placeholder="e.g. KA01AB1234" class="input"></ion-input>
             </div>
           </div>
         </div>
 
-        <button class="dc-cta dc-cta--dark reg-cta" (click)="submitStep1()" [disabled]="busy">
+        <ion-modal [keepContentsMounted]="true">
+          <ng-template>
+            <ion-datetime
+              id="modelYearPicker"
+              presentation="year"
+              [value]="modelYearDate"
+              min="1980-01-01"
+              [max]="maxModelYearDate"
+              (ionChange)="onModelYearChange($event)"
+            ></ion-datetime>
+          </ng-template>
+        </ion-modal>
+
+        <button class="dc-cta dc-cta--dark reg-cta" (click)="submitStep1()" [disabled]="busy || !step3Valid">
           <ion-spinner name="crescent" *ngIf="busy"></ion-spinner>
           <span *ngIf="!busy">Continue</span>
           <ion-icon name="arrow-forward-outline" *ngIf="!busy"></ion-icon>
@@ -241,7 +278,11 @@
 
     <!-- ===== STEP 4 — Documents ===== -->
     <ng-container *ngIf="!initLoading && step === 4">
-
+      <div class="doc-toolbar">
+        <button type="button" class="ghost-btn dc-press" (click)="refreshDocuments()" [disabled]="uploadBusy">
+          <ion-icon name="refresh-outline"></ion-icon>Refresh
+        </button>
+      </div>
 
       <div class="doc-list pg-anim-body">
         <div class="pg-card doc-card" *ngFor="let slot of docs">
@@ -288,27 +329,35 @@
               </div>
 
               <div class="doc-preview" *ngIf="image.existing as ex">
-                <button class="ghost-btn dc-press" (click)="viewDoc(image)">
+                <button type="button" class="ghost-btn dc-press" (click)="viewDoc(image)">
                   <ion-icon name="eye-outline"></ion-icon>View
                 </button>
-                <button class="ghost-btn dc-press" (click)="downloadDoc(image)">
+                <button type="button" class="ghost-btn dc-press" (click)="downloadDoc(image)">
                   <ion-icon name="download-outline"></ion-icon>Download
+                </button>
+                <button type="button" class="ghost-btn ghost-btn--danger dc-press" *ngIf="canRemove(image)" (click)="removeDocUpload(image)">
+                  <ion-icon name="trash-outline"></ion-icon>Remove
                 </button>
                 <span class="doc-preview__date" *ngIf="ex.uploaded_at">
                   {{ ex.uploaded_at | date:'dd MMM yyyy, HH:mm' }}
                 </span>
               </div>
 
-              <label class="dropzone" *ngIf="!isLocked(image)"
+              <label class="dropzone" *ngIf="canReplace(image)"
                      [class.has-file]="image.file" [class.is-disabled]="uploadBusy">
                 <input type="file"
                        [attr.accept]="fileAccept(slot.doc)"
                        [attr.capture]="fileCapture(slot.doc)"
                        (change)="onDocFileChange(image, $event)" [disabled]="uploadBusy" hidden />
                 <ion-icon [name]="image.file ? 'document-attach-outline' : 'cloud-upload-outline'"></ion-icon>
-                <span class="dropzone__text" *ngIf="!image.file">Tap to upload <em>· {{ slot.doc.gallery_restricted ? 'camera only' : 'gallery or camera' }}</em></span>
+                <span class="dropzone__text" *ngIf="!image.file && !image.existing">Tap to upload <em>· {{ slot.doc.gallery_restricted ? 'camera only' : 'gallery or camera' }}</em></span>
+                <span class="dropzone__text" *ngIf="!image.file && image.existing">Tap to replace <em>· {{ slot.doc.gallery_restricted ? 'camera only' : 'gallery or camera' }}</em></span>
                 <span class="dropzone__text" *ngIf="image.file">{{ image.file.name }}</span>
               </label>
+
+              <button type="button" class="ghost-btn ghost-btn--danger doc-clear dc-press" *ngIf="image.file" (click)="clearDocFile(image)" [disabled]="uploadBusy">
+                <ion-icon name="close-circle-outline"></ion-icon>Remove selected
+              </button>
 
               <p class="status-line uploading" *ngIf="image.status === 'uploading'">
                 <ion-spinner name="dots"></ion-spinner> Uploading…

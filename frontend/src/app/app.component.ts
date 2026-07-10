@@ -44,6 +44,7 @@ export class AppComponent implements OnInit {
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
     [/^\/settings\/operator/,       'Operator Settings'],
     [/^\/settings\/app-assets/,     'App Assets'],
+    [/^\/settings\/cities/,         'Cities'],
     [/^\/settings\/city/,           'City Settings'],
     [/^\/settings\/fleets/,         'Fleets'],
     [/^\/settings\/vehicle-types/,  'Vehicle Type'],
@@ -68,7 +69,7 @@ export class AppComponent implements OnInit {
     /^\/vehicles\b/,
     /^\/promotions\/coupons\b/,
     /^\/subscriptions\b/,
-    /^\/settings\/(city|app-assets|fleets|vehicle-types)\b/,
+    /^\/settings\/(cities|city|app-assets|fleets|vehicle-types)\b/,
   ];
 
   private url = signal(this.router.url);
@@ -132,6 +133,7 @@ export class AppComponent implements OnInit {
     if (can('dashboard')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
     // --- City Setup (dependency order) ---
+    if (can('city_settings'))          citySetup.push({ label: 'Cities',        icon: 'map-marker', route: '/settings/cities' });
     if (can('vehicles'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
     if (can('pricing'))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });

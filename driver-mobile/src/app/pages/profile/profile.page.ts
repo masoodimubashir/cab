@@ -1,10 +1,14 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
+import { DriverOnboardingDraftService } from '../../core/driver-onboarding-draft.service';
+import { GeolocationService } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
+
+declare const google: any;
 
 type ServiceScope = 'local' | 'outstation';
 type ServiceMode = 'private' | 'fixed' | 'shuttle';
@@ -31,6 +35,8 @@ interface RideScopeOption { scope: ServiceScope; name: string; modes: RideModeOp
   standalone: false,
 })
 export class ProfilePage implements OnInit {
+  @ViewChild('addressFieldWrap') addressFieldWrap?: ElementRef<HTMLElement>;
+  @ViewChild('addressMapEl') addressMapEl?: ElementRef<HTMLElement>;
   photoFile: File | null = null;
   photoPreview: string | null = null;
   readonly defaultAvatar = 'assets/default-avatar.svg';
@@ -48,6 +54,14 @@ export class ProfilePage implements OnInit {
   addressQuery = '';
   addressSuggestions: PlaceSuggestion[] = [];
   addressLoading = false;
+  mapPickerOpen = false;
+  mapLoading = false;
+  mapError: string | null = null;
+  mapSelectedAddress = '';
+  mapSelectedPosition: { lat: number; lng: number } | null = null;
+  private addressMap: any = null;
+  private addressMapMarker: any = null;
+  private addressMapClickListener: any = null;
   private addressSkipNextQueryEmit = false;
   private addressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -72,7 +86,9 @@ export class ProfilePage implements OnInit {
   constructor(
     private api: ApiService,
     private auth: AuthService,
+    private draft: DriverOnboardingDraftService,
     private router: Router,
+    private geo: GeolocationService,
     private places: PlacesService,
   ) {}
 
@@ -182,6 +198,7 @@ export class ProfilePage implements OnInit {
       this.addressSuggestions = [];
       return;
     }
+    this.scrollAddressFieldIntoView();
     this.addressDebounceTimer = setTimeout(() => {
       this.fetchAddressSuggestions(q);
     }, 220);
@@ -198,6 +215,12 @@ export class ProfilePage implements OnInit {
     }
   }
 
+  scrollAddressFieldIntoView(): void {
+    setTimeout(() => {
+      this.addressFieldWrap?.nativeElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 120);
+  }
+
   async pickAddress(s: PlaceSuggestion): Promise<void> {
     this.addressLoading = true;
     try {
@@ -210,6 +233,147 @@ export class ProfilePage implements OnInit {
     } finally {
       this.addressLoading = false;
     }
+  }
+
+  openAddressMap(): void {
+    if (this.busy) return;
+    this.mapPickerOpen = true;
+    this.mapError = null;
+    this.mapSelectedAddress = this.address || this.addressQuery || '';
+    this.mapSelectedPosition = null;
+    setTimeout(() => void this.initAddressMap(), 120);
+  }
+
+  closeAddressMap(): void {
+    this.mapPickerOpen = false;
+  }
+
+  confirmMapAddress(): void {
+    let picked = this.mapSelectedAddress.trim();
+    if (!picked && this.mapSelectedPosition) {
+      picked = `${this.mapSelectedPosition.lat.toFixed(6)}, ${this.mapSelectedPosition.lng.toFixed(6)}`;
+    }
+    if (!picked) {
+      this.mapError = 'Tap a place on the map first.';
+      return;
+    }
+    this.address = picked;
+    this.addressQuery = picked;
+    this.addressSkipNextQueryEmit = true;
+    this.addressSuggestions = [];
+    this.mapPickerOpen = false;
+  }
+
+  private async initAddressMap(): Promise<void> {
+    const el = this.addressMapEl?.nativeElement;
+    if (!el) return;
+    this.mapLoading = true;
+    this.mapError = null;
+    try {
+      await this.places.ensureLoaded();
+      const center = await this.initialMapCenter();
+      this.addressMap = new google.maps.Map(el, {
+        center,
+        zoom: 15,
+        disableDefaultUI: true,
+        zoomControl: true,
+        gestureHandling: 'greedy',
+      });
+      if (this.addressMapClickListener?.remove) this.addressMapClickListener.remove();
+      this.addressMapClickListener = this.addressMap.addListener('click', (ev: any) => {
+        const latLng = ev?.latLng;
+        if (!latLng) return;
+        void this.pickAddressFromMap({ lat: latLng.lat(), lng: latLng.lng() });
+      });
+      await this.pickAddressFromMap(center);
+    } catch {
+      this.mapError = 'Could not load the map. Type and pick your address instead.';
+    } finally {
+      this.mapLoading = false;
+    }
+  }
+
+  private async initialMapCenter(): Promise<{ lat: number; lng: number }> {
+    const current = await this.currentPosition();
+    if (current) return current;
+
+    const typed = (this.address || this.addressQuery).trim();
+    if (typed) {
+      const geocoded = await this.geocodeAddress(typed);
+      if (geocoded) return geocoded;
+    }
+    return { lat: 20.5937, lng: 78.9629 };
+  }
+
+  private async currentPosition(): Promise<{ lat: number; lng: number } | null> {
+    try {
+      const perm = await this.geo.checkPermissions();
+      if (perm?.location === 'prompt' || perm?.coarseLocation === 'prompt') {
+        await this.geo.requestPermissions();
+      }
+    } catch {
+      /* continue to location request; web may prompt lazily */
+    }
+
+    try {
+      const fix = await this.geo.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
+      return { lat: fix.lat, lng: fix.lng };
+    } catch {
+      return null;
+    }
+  }
+
+  private geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+    return new Promise((resolve) => {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ address }, (results: any[], status: string) => {
+        const loc = status === 'OK' ? results?.[0]?.geometry?.location : null;
+        resolve(loc ? { lat: loc.lat(), lng: loc.lng() } : null);
+      });
+    });
+  }
+
+  private async pickAddressFromMap(position: { lat: number; lng: number }): Promise<void> {
+    this.mapLoading = true;
+    this.mapError = null;
+    this.mapSelectedPosition = position;
+    this.mapSelectedAddress = `${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`;
+    this.setAddressMapMarker(position);
+    try {
+      const label = await this.reverseGeocode(position);
+      if (label) this.mapSelectedAddress = label;
+    } catch {
+      /* coordinates remain selected */
+    } finally {
+      this.mapLoading = false;
+    }
+  }
+
+  private reverseGeocode(position: { lat: number; lng: number }): Promise<string | null> {
+    return new Promise((resolve) => {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: position }, (results: any[], status: string) => {
+        resolve(status === 'OK' ? (results?.[0]?.formatted_address ?? null) : null);
+      });
+    });
+  }
+
+  private setAddressMapMarker(position: { lat: number; lng: number }): void {
+    if (!this.addressMap) return;
+    if (!this.addressMapMarker) {
+      this.addressMapMarker = new google.maps.Marker({
+        map: this.addressMap,
+        position,
+        draggable: false,
+      });
+    } else {
+      this.addressMapMarker.setPosition(position);
+    }
+    this.addressMap.panTo(position);
   }
 
   private async captureDeviceInfo(): Promise<void> {
@@ -245,7 +409,10 @@ export class ProfilePage implements OnInit {
   submit(): void {
     this.error = null;
     const name = this.name.trim();
+    const email = this.email.trim();
     if (!name) { this.error = 'Please enter your name.'; return; }
+    if (this.onboarding && !email) { this.error = 'Please enter your email address.'; return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.error = 'Please enter a valid email address.'; return; }
     // DOB + Address are required during onboarding only — on the edit screen
     // they're locked and we don't send them.
     if (this.onboarding) {
@@ -253,16 +420,23 @@ export class ProfilePage implements OnInit {
       if (!this.address) { this.error = 'Please pick your address from the suggestions.'; return; }
     }
 
+    if (this.onboarding) {
+      this.draft.setProfile({
+        name,
+        email,
+        dob: this.dob,
+        address: this.address,
+        app_version: this.deviceInfo.app_version?.slice(0, 32),
+        os_version: this.deviceInfo.os_version?.slice(0, 32),
+        device_type: this.deviceInfo.device_type?.slice(0, 64),
+      }, this.photoFile);
+      this.router.navigateByUrl('/driver-registration', { replaceUrl: true });
+      return;
+    }
+
     const fd = new FormData();
     fd.append('name', name);
-    if (this.email.trim()) fd.append('email', this.email.trim());
-    if (this.onboarding) {
-      if (this.dob) fd.append('dob', this.dob);
-      if (this.address) fd.append('address', this.address);
-      if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
-      if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
-      if (this.deviceInfo.device_type) fd.append('device_type', this.deviceInfo.device_type.slice(0, 64));
-    }
+    if (email) fd.append('email', email);
     if (this.photoFile) fd.append('photo', this.photoFile);
 
     this.busy = true;
@@ -270,13 +444,7 @@ export class ProfilePage implements OnInit {
       next: (res) => {
         this.auth.updateUser(res.user);
         this.busy = false;
-        // First-time onboarding → move on to vehicle + documents.
-        // Otherwise → back to the More tab.
-        if (this.onboarding) {
-          this.router.navigateByUrl('/driver-registration', { replaceUrl: true });
-        } else {
-          this.router.navigateByUrl('/tabs/more');
-        }
+        this.router.navigateByUrl('/tabs/more');
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not save profile.';

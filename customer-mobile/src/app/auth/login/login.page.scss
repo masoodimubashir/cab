@@ -8,8 +8,10 @@ ion-content {
     padding: 0 !important;
     display: flex;
     flex-direction: column;
-    height: 100%;
-    overflow: hidden;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -20,14 +22,18 @@ ion-content {
   background: linear-gradient(165deg, #15273A 0%, var(--dc-ink, #0D1B2A) 60%);
   border-bottom-left-radius: 36px;
   border-bottom-right-radius: 36px;
-  height: 46vh;
-  min-height: 46vh;
+  height: 340px;
+  min-height: 340px;
+  max-height: 340px;
+  flex: 0 0 340px;
   padding: 56px 24px 36px;
   box-shadow: var(--dc-shadow-lg, 0 16px 40px rgba(13, 27, 42, 0.12));
 
   &.auth-header--compact {
-    height: 38vh;
-    min-height: 38vh;
+    height: 300px;
+    min-height: 300px;
+    max-height: 300px;
+    flex-basis: 300px;
     padding: 44px 24px 28px;
   }
 
@@ -38,9 +44,7 @@ ion-content {
   text-align: center;
   color: #ffffff;
   box-sizing: border-box;
-  transition: height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              min-height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              padding 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Soft green sheen drifting behind the brand */
   .auth-header__sheen {
@@ -56,7 +60,11 @@ ion-content {
     animation: heroSheen 9s ease-in-out infinite alternate;
   }
 
-  > * { position: relative; z-index: 1; }
+  > * {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+  }
 
   .back-button-wrap {
     position: absolute;
@@ -82,7 +90,12 @@ ion-content {
   .logo-mark {
     position: relative;
     width: 66px;
+    min-width: 66px;
+    max-width: 66px;
     height: 66px;
+    min-height: 66px;
+    max-height: 66px;
+    flex: 0 0 66px;
     background-color: #ffffff;
     border-radius: 50%;
     display: flex;
@@ -91,7 +104,6 @@ ion-content {
     gap: 3px;
     margin-bottom: 16px;
     box-shadow: 0 10px 26px rgba(18, 179, 91, 0.28);
-    animation: logoFloat 4.5s ease-in-out infinite;
 
     &::before {
       content: '';
@@ -116,6 +128,8 @@ ion-content {
 
   .logo-text {
     font-size: 24px;
+    line-height: 30px;
+    min-height: 30px;
     font-weight: 800;
     letter-spacing: -0.5px;
     margin-bottom: 32px;
@@ -126,6 +140,8 @@ ion-content {
 
   .auth-title {
     font-size: 30px;
+    line-height: 36px;
+    min-height: 36px;
     font-weight: 700;
     margin: 0 0 12px;
     letter-spacing: -0.5px;
@@ -134,7 +150,7 @@ ion-content {
   .auth-subtitle {
     font-size: 14px;
     color: rgba(255, 255, 255, 0.62);
-    line-height: 1.5;
+    line-height: 21px;
     margin: 0;
     max-width: 320px;
 
@@ -154,8 +170,8 @@ ion-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
-  min-height: 45vh;
+  flex: 1 0 auto;
+  min-height: 260px;
   box-sizing: border-box;
   position: relative;
   background: var(--dc-canvas, #F4F6F8);
@@ -164,11 +180,29 @@ ion-content {
 
 .auth-scene-wrapper {
   width: 100%;
-  flex: 1;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.auth-form-container--info {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding-top: 22px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+
+  .auth-scene-wrapper {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .submit-action {
+    flex: 0 0 auto;
+    margin-top: 18px;
+    margin-bottom: 0;
+  }
 }
 
 .step-slide {
@@ -177,7 +211,7 @@ ion-content {
   flex-direction: column;
   align-items: center;
   animation: stepSlideIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
-  height: 100%;
+  min-height: 160px;
   box-sizing: border-box;
 }
 
@@ -278,19 +312,6 @@ ion-content {
   }
 }
 
-.phone-hint {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--dc-ink-soft, #6C757D);
-
-  ion-icon {
-    font-size: 16px;
-    color: var(--dc-green, #12B35B);
-  }
-}
 
 /* ============ PERMISSIONS BENTO ============ */
 .bento-perm-grid {
@@ -446,13 +467,18 @@ ion-content {
 }
 
 /* ============ PROFILE COMPLETION ============ */
+.step-slide--info {
+  align-items: center;
+  min-height: auto;
+}
+
 .info-form-wrapper {
   width: 100%;
   max-width: 340px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 24px;
+  margin: 0 auto;
 }
 
 .avatar-wrap {
@@ -558,26 +584,50 @@ ion-content {
 .native-date::-webkit-date-and-time-value { text-align: left; }
 .native-date:disabled { color: var(--dc-ink-soft, #6C757D); }
 
-/* Address autocomplete — input + suggestions list that floats below it. */
+/* Address autocomplete + map picker. Suggestions stay in-flow so the keyboard cannot cover a floating popup. */
 .address-field {
   position: relative;
   overflow: visible;
 }
 
+.address-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.address-input-row .custom-phone-input {
+  flex: 1;
+}
+
+.address-map-btn {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--dc-green-tint, rgba(18, 179, 91, 0.10));
+  color: var(--dc-green, #12B35B);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  cursor: pointer;
+
+  ion-icon { font-size: 18px; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
 .address-suggestions {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 50;
-  margin: 0;
+  position: static;
+  z-index: 1;
+  margin: 10px 0 0;
   padding: 4px;
   list-style: none;
   background: var(--dc-surface, #ffffff);
   border: 1px solid var(--dc-hairline, #EEF0F2);
   border-radius: var(--dc-r-md, 14px);
   box-shadow: var(--dc-shadow-md, 0 8px 24px rgba(13, 27, 42, 0.08));
-  max-height: 240px;
+  max-height: 190px;
   overflow-y: auto;
 }
 
@@ -618,11 +668,8 @@ ion-content {
 }
 
 .address-empty {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 50;
+  position: static;
+  margin-top: 10px;
   padding: 10px 12px;
   background: var(--dc-surface, #ffffff);
   border: 1px solid var(--dc-hairline, #EEF0F2);
@@ -634,6 +681,96 @@ ion-content {
 
 .field-container {
   margin-top: 12px;
+}
+
+/* ============ ADDRESS MAP PICKER ============ */
+.auth-map-content {
+  --background: #F5F7FA;
+}
+
+.map-toolbar {
+  --background: #ffffff;
+  --color: var(--dc-ink, #0D1B2A);
+}
+
+.map-close-btn {
+  --color: var(--dc-ink, #0D1B2A);
+}
+
+.auth-map-panel {
+  position: relative;
+  margin: 14px;
+  height: min(58vh, 480px);
+  min-height: 330px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #E9EEF4;
+  box-shadow: 0 10px 28px rgba(13, 27, 42, 0.12);
+}
+
+.auth-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.auth-map-loading {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--dc-ink, #0D1B2A);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(13, 27, 42, 0.12);
+}
+
+.auth-map-summary {
+  margin: 0 14px 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(13, 27, 42, 0.08);
+
+  strong {
+    display: block;
+    font-size: 12px;
+    color: var(--dc-ink-soft, #6C757D);
+  }
+
+  p {
+    margin: 5px 0 0;
+    color: var(--dc-ink, #0D1B2A);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  small {
+    display: block;
+    margin-top: 7px;
+    color: var(--dc-danger, #DC3545);
+    font-size: 12px;
+    font-weight: 700;
+  }
+}
+
+.auth-map-footer {
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -10px 24px rgba(13, 27, 42, 0.08);
+}
+
+@media (max-height: 680px) {
+  .auth-map-panel {
+    height: 48vh;
+    min-height: 260px;
+  }
 }
 
 /* ============ PERSISTENT CTA ============ */
@@ -734,22 +871,6 @@ ion-content {
   }
 }
 
-.recaptcha-disclosure {
-  font-size: 9.5px;
-  line-height: 1.4;
-  color: var(--dc-ink-faint, #9AA3AE);
-  text-align: center;
-  margin-top: 2px;
-  margin-bottom: 6px;
-  max-width: 280px;
-  box-sizing: border-box;
-
-  a {
-    color: var(--dc-ink-soft, #6C757D);
-    text-decoration: underline;
-    font-weight: 600;
-  }
-}
 
 .error-banner {
   font-size: 13px;
@@ -985,10 +1106,6 @@ ion-content {
 }
 
 /* ============ PAGE-LOCAL MOTION ============ */
-@keyframes logoFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-6px); }
-}
 
 @keyframes heroSheen {
   0%   { transform: translate(0, 0) scale(1); opacity: 0.85; }

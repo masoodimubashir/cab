@@ -36,6 +36,22 @@ class User extends Authenticatable
 {
     use HasApiTokens;
 
+    protected $casts = [
+        'dob' => 'date',
+        'accepted_payment_methods' => 'array',
+        'last_login_at' => 'datetime',
+        'suspended_at' => 'datetime',
+        'current_location_updated_at' => 'datetime',
+        'manager_all_cities' => 'boolean',
+        'is_suspended' => 'boolean',
+        'email_unsubscribed' => 'boolean',
+        'sms_unsubscribed' => 'boolean',
+        'push_unsubscribed' => 'boolean',
+        'duplicate_registration' => 'boolean',
+        'current_lat' => 'float',
+        'current_lng' => 'float',
+    ];
+
     public function walletTransactions(): HasMany
     {
         return $this->hasMany(WalletTransaction::class, 'user_id');

@@ -41,6 +41,20 @@ class RbacSeeder extends Seeder
         // ── Roles ───────────────────────────────────────────────────────
         $allSlugs = Permission::query()->pluck('slug')->all();
 
+        $removedRoleSlugs = [
+            'manual_dispatch',
+            'marketing',
+            'franchise',
+            'franchise_l1',
+            'franchise_manager',
+        ];
+        $removedRoleIds = ManagerRole::query()->whereIn('slug', $removedRoleSlugs)->pluck('id')->all();
+        if ($removedRoleIds) {
+            DB::table('manager_role_permissions')->whereIn('manager_role_id', $removedRoleIds)->delete();
+            User::query()->whereIn('manager_role_id', $removedRoleIds)->update(['manager_role_id' => null]);
+            ManagerRole::query()->whereIn('id', $removedRoleIds)->delete();
+        }
+
         $superAdmin = ManagerRole::query()->updateOrCreate(
             ['slug' => ManagerRole::SUPER_ADMIN_SLUG],
             [
@@ -70,7 +84,7 @@ class RbacSeeder extends Seeder
             'drivers', 'contact_drivers',
             'vehicles', 'pricing', 'app_assets', 'city_settings',
             'coupons', 'subscriptions', 'fleets',
-            'rides', 'manual_dispatch', 'customers', 'safety',
+            'rides', 'customers', 'safety',
             'analytics', 'reports',
             'operator_settings',
         ]);
@@ -86,79 +100,11 @@ class RbacSeeder extends Seeder
         );
         $this->syncBySlug($cityManager, [
             'dashboard', 'live_operations',
-            'drivers', 'rides', 'manual_dispatch',
+            'drivers', 'rides',
             'analytics', 'reports', 'safety',
             'contact_drivers', 'subscriptions',
         ]);
 
-        $manualDispatch = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'manual_dispatch'],
-            [
-                'name' => 'Manual Dispatch',
-                'description' => 'Books trips on behalf of customers and follows live dispatch.',
-                'is_suspendable' => true,
-                'sort_order' => 30,
-            ]
-        );
-        $this->syncBySlug($manualDispatch, [
-            'dashboard', 'live_operations', 'rides', 'manual_dispatch', 'drivers',
-        ]);
-
-        $marketing = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'marketing'],
-            [
-                'name' => 'Marketing',
-                'description' => 'Manages promotions and coupons.',
-                'is_suspendable' => true,
-                'sort_order' => 40,
-            ]
-        );
-        $this->syncBySlug($marketing, [
-            'dashboard', 'coupons', 'contact_drivers', 'analytics',
-        ]);
-
-        $franchise = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'franchise'],
-            [
-                'name' => 'Franchise',
-                'description' => 'Read-only view of their own franchise (fleet).',
-                'is_suspendable' => true,
-                'requires_fleet' => true,
-                'sort_order' => 50,
-            ]
-        );
-        $this->syncBySlug($franchise, [
-            'dashboard', 'drivers', 'rides', 'analytics',
-        ]);
-
-        $franchiseL1 = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'franchise_l1'],
-            [
-                'name' => 'Franchise L1',
-                'description' => 'Front-line franchise staff: can manage drivers and trips for their fleet.',
-                'is_suspendable' => true,
-                'requires_fleet' => true,
-                'sort_order' => 60,
-            ]
-        );
-        $this->syncBySlug($franchiseL1, [
-            'dashboard', 'drivers', 'rides',
-        ]);
-
-        $franchiseManager = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'franchise_manager'],
-            [
-                'name' => 'Franchise Manager',
-                'description' => 'Senior franchise manager: full driver/trip control, but no city-wide settings.',
-                'is_suspendable' => true,
-                'requires_fleet' => true,
-                'sort_order' => 70,
-            ]
-        );
-        $this->syncBySlug($franchiseManager, [
-            'dashboard', 'drivers', 'rides', 'manual_dispatch',
-            'analytics', 'reports', 'contact_drivers',
-        ]);
 
         // ── Bootstrap: pin admin@example.com as Super Admin ──────────────
         $bootstrap = User::query()->where('email', env('ADMIN_EMAIL', 'admin@example.com'))->first();
@@ -198,7 +144,6 @@ class RbacSeeder extends Seeder
             'Operations' => [
                 ['rides', 'Rides', 'Open and manage rides.'],
                 ['customers', 'Customers', 'Open and manage customers.'],
-                ['manual_dispatch', 'Manual Dispatch', 'Create trips on behalf of customers.'],
                 ['drivers', 'Drivers', 'Open and manage drivers, approvals and document catalog.'],
                 ['contact_drivers', 'Contact Drivers', 'Send messages to drivers.'],
                 ['safety', 'Safety', 'Open SOS and safety events.'],
