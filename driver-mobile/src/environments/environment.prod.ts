@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // You only edit ONE line: SERVER_HOST. Everything else is derived from it.
 //
-//   • No domain / no SSL yet  →  set SERVER_HOST to your VPS public IP,
+//   • No domain / no SSL yet  →  set SERVER_HOST to your VPS public IP without a port,
 //     e.g.  const SERVER_HOST = '203.0.113.42';
 //     and keep USE_HTTPS = false.  API + websockets run over plain http/ws.
 //
@@ -13,15 +13,15 @@
 //
 // REVERB_APP_KEY must match REVERB_APP_KEY in the backend's production .env.
 // ===========================================================================
-const SERVER_HOST = 'REPLACE_WITH_SERVER_IP';
-const USE_HTTPS = false;
+const SERVER_HOST = 'dreamcabs.in';
+const USE_HTTPS = true;
 
 const httpScheme = USE_HTTPS ? 'https' : 'http';
 const wsScheme: 'http' | 'https' = USE_HTTPS ? 'https' : 'http';
 
 export const environment = {
   production: true,
-  apiUrl: `${httpScheme}://${SERVER_HOST}/api`,
+  apiUrl: 'http://localhost:8000/api',
   /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
   useServerOtp: true,
   /** Same Web app config as dev; `appId` must be `…:web:…`, not Android/iOS. */

@@ -15,9 +15,8 @@
 <ion-content class="fixed-content">
   <main class="fixed-shell">
     <section class="drv-hero fixed-hero">
-      <span class="drv-badge">Live boarding</span>
-      <h1>Open fixed vehicle</h1>
-      <p>Choose the route and start boarding when the car is ready.</p>
+      <h1>Fixed boarding</h1>
+      <p>Keep this screen open. List refreshes automatically.</p>
     </section>
 
     <ion-spinner *ngIf="loading" name="crescent" class="fixed-spinner"></ion-spinner>
@@ -31,7 +30,7 @@
       <span>{{ message }}</span>
     </div>
 
-    <section class="fixed-panel open-panel">
+    <section class="fixed-panel open-panel" *ngIf="!activeVehicle">
       <div class="panel-head">
         <div>
           <p>Step 1</p>
@@ -40,22 +39,29 @@
         <ion-icon name="car-outline"></ion-icon>
       </div>
 
-      <label class="fixed-field">
-        <span>Fixed route</span>
-        <ion-select [(ngModel)]="selectedRouteId" interface="action-sheet" placeholder="Select route">
+      <label class="fixed-field fixed-field--stack">
+        <span>Route</span>
+        <ion-select [(ngModel)]="selectedRouteId" (ionChange)="syncCapacity()" interface="action-sheet" placeholder="Select route">
           <ion-select-option *ngFor="let route of routes" [value]="route.id">{{ route.name }}</ion-select-option>
         </ion-select>
       </label>
 
       <div class="route-summary" *ngIf="selectedRoute as route">
-        <div class="route-points">
-          <strong>{{ route.origin_name }}</strong>
-          <ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon>
-          <strong>{{ route.dest_name }}</strong>
+        <div class="route-endpoints">
+          <div>
+            <span>From</span>
+            <strong>{{ route.origin_name }}</strong>
+          </div>
+          <div>
+            <span>To</span>
+            <strong>{{ route.dest_name }}</strong>
+          </div>
         </div>
         <div class="route-meta">
           <span>{{ route.scope }}</span>
-          <span>{{ route.flat_fare != null ? ('INR ' + route.flat_fare) : 'Fare configured' }}</span>
+          <span>{{ route.flat_fare != null ? ('INR ' + route.flat_fare) : 'Fare set' }}</span>
+          <span>{{ route.max_seats_per_booking }} seats</span>
+          <span>{{ route.max_luggage_per_vehicle }} luggage</span>
         </div>
       </div>
 
@@ -77,11 +83,10 @@
 
     <section class="fixed-panel active-panel" *ngIf="activeVehicle as vehicle">
       <div class="vehicle-top">
-        <div>
-          <p>{{ vehicle.visible_to_customers ? 'Visible to customers' : 'Hidden from customers' }}</p>
-          <h2>{{ vehicle.route_name }}</h2>
+        <div class="vehicle-badges">
+          <span class="gps-pill" *ngIf="fixedLocationStreaming"><span></span> GPS live</span>
+          <span class="status-pill" [class.status-pill--started]="vehicle.status !== 'FORMING'">{{ statusLabel(vehicle) }}</span>
         </div>
-        <span class="status-pill" [class.status-pill--started]="vehicle.status !== 'FORMING'">{{ statusLabel(vehicle) }}</span>
       </div>
 
       <div class="capacity-row">
@@ -107,10 +112,10 @@
         <ion-progress-bar [value]="vehicle.capacity ? vehicle.seats_taken / vehicle.capacity : 0"></ion-progress-bar>
       </div>
 
-      <div class="action-row">
-        <button class="dc-cta dc-cta--ghost dc-press" (click)="loadManifest(vehicle.id)" [disabled]="busy">
-          <ion-icon name="people-outline"></ion-icon>
-          <span>Passenger list</span>
+      <div class="action-grid">
+        <button class="dc-cta dc-cta--ghost dc-press" *ngIf="canCloseVehicle(vehicle)" (click)="closeBookings()" [disabled]="busy">
+          <ion-icon name="close-circle-outline"></ion-icon>
+          <span>Close vehicle</span>
         </button>
         <button class="dc-cta dc-press" (click)="startRide()" [disabled]="busy || !canStart(vehicle)">
           <ion-icon name="play-outline"></ion-icon>
@@ -122,27 +127,72 @@
         </button>
       </div>
 
-      <div class="fixed-alert fixed-alert--error" *ngIf="completeBlockReason(vehicle)">
-        <ion-icon name="information-circle-outline"></ion-icon>
-        <span>{{ completeBlockReason(vehicle) }}</span>
+      <div class="completion-checklist" *ngIf="passengers.length">
+        <div class="completion-checklist__head">
+          <span>Completion checklist</span>
+          <strong>{{ canComplete(vehicle) ? 'Ready to complete' : 'Action needed' }}</strong>
+        </div>
+        <div class="completion-checklist__grid">
+          <span *ngFor="let item of completionChecklist" [class.is-blocking]="item.tone === 'block'">{{ item.count }} {{ item.label }}</span>
+        </div>
       </div>
     </section>
 
-    <section class="empty-panel" *ngIf="activeVehicle && !passengers.length && !loading">
-      <ion-icon name="people-outline"></ion-icon>
-      <p>No prepaid passengers in this vehicle yet. Keep this screen open; the list refreshes automatically as customers book.</p>
+    <section class="fixed-panel driver-map-link-panel" *ngIf="activeVehicle && stops.length">
+      <button type="button" class="map-link dc-press" (click)="openRouteMap()">
+        <span class="map-link__icon"><ion-icon name="map-outline"></ion-icon></span>
+        <span class="map-link__copy">
+          <strong>Open route map</strong>
+          <small>{{ nextStopGuide ? ('Next: ' + nextStopGuide.name) : vehicleRouteLine(activeVehicle) }}</small>
+        </span>
+        <ion-icon class="map-link__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
     </section>
 
-    <section class="passenger-section" *ngIf="passengers.length">
+    <section class="route-progress-simple" *ngIf="activeVehicle && stopGuide.length">
+      <div class="route-progress-simple__head">
+        <div>
+          <span>Route progress</span>
+          <strong>{{ nextStopGuide ? ('Next: ' + nextStopGuide.name) : 'All stops reached' }}</strong>
+          <p *ngIf="lastReachedStop as reachedStop">Last reached: {{ reachedStop.name }}</p>
+        </div>
+      </div>
+      <div class="route-progress-simple__list">
+        <div class="route-progress-simple__row" *ngFor="let stop of stopGuide" [class.is-next]="stop.status === 'next'" [class.is-done]="stop.status === 'done'">
+          <span>{{ stop.seq }}. {{ stop.name }}</span>
+          <small>{{ stopStatusLabel(stop) }}</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="empty-panel" *ngIf="activeVehicle && !activeManifestPassengers.length && !loading">
+      <ion-icon name="people-outline"></ion-icon>
+      <p>No active passengers now. Dropped and completed passengers are kept in the checklist.</p>
+    </section>
+
+    <section class="passenger-section" *ngIf="activeManifestPassengers.length">
+      <div class="manifest-head">
+        <div>
+          <span>Passenger manifest</span>
+          <strong>{{ activeManifestPassengers.length }} active passenger{{ activeManifestPassengers.length > 1 ? 's' : '' }}</strong>
+        </div>
+        <ion-icon name="people-outline"></ion-icon>
+      </div>
       <ng-container *ngFor="let group of groupedPassengers">
-        <h2 class="stop-title">{{ group.stop }}</h2>
+        <div class="stop-title">
+          <strong>{{ group.stop }}</strong>
+          <span class="stop-title__stats">
+            <small>{{ group.waiting }} waiting</small>
+            <small>{{ group.boarded }} in vehicle</small>
+          </span>
+        </div>
         <article class="passenger-card" *ngFor="let passenger of group.passengers">
           <div class="passenger-head">
             <div>
               <strong>{{ passenger.customer_name || 'Passenger' }}</strong>
               <p>{{ passenger.customer_phone || 'No phone' }}</p>
             </div>
-            <ion-badge [color]="passenger.status === 'BOARDED' ? 'success' : passenger.status === 'NO_SHOW' ? 'danger' : 'warning'">{{ passenger.status }}</ion-badge>
+            <ion-badge [color]="passengerStatusColor(passenger)">{{ passengerStatusLabel(passenger) }}</ion-badge>
           </div>
 
           <div class="trip-line">
@@ -157,10 +207,21 @@
             <span *ngIf="passenger.fare_amount != null">INR {{ passenger.fare_amount }}</span>
           </div>
 
-          <div class="passenger-actions">
-            <button class="dc-cta dc-press" (click)="board(passenger)" [disabled]="busy || !canBoardPassenger(passenger)">Board</button>
-            <button class="dc-cta dc-cta--ghost dc-press" (click)="drop(passenger)" [disabled]="busy || !canDropPassenger(passenger)">Drop off</button>
+          <div class="passenger-actions passenger-actions--triple">
+            <button class="dc-cta passenger-action passenger-action--board dc-press" (click)="board(passenger)" [disabled]="busy || !canBoardPassenger(passenger)">
+              <ion-icon name="log-in-outline"></ion-icon>
+              <span>Board</span>
+            </button>
+            <button class="dc-cta dc-cta--ghost passenger-action passenger-action--drop dc-press" (click)="drop(passenger)" [disabled]="busy || !canDropPassenger(passenger)">
+              <ion-icon name="log-out-outline"></ion-icon>
+              <span>Drop off</span>
+            </button>
+            <button class="dc-cta dc-cta--danger passenger-action passenger-action--noshow dc-press" (click)="noShow(passenger)" [disabled]="busy || !canNoShowPassenger(passenger)">
+              <ion-icon name="person-remove-outline"></ion-icon>
+              <span>No-show</span>
+            </button>
           </div>
+          <p class="action-hint">{{ passengerActionHint(passenger) }}</p>
         </article>
       </ng-container>
     </section>

@@ -7,9 +7,11 @@ use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
 use App\Models\User;
+use App\Services\FixedStopAutomationService;
 use App\Services\RazorpayService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -185,10 +187,58 @@ class FixedBookingPhase4Test extends TestCase
         $this->assertSame(0, $this->departure->fresh()->seats_taken);
     }
 
-    public function test_driver_no_show_rejects_refund_and_releases_capacity(): void
+    public function test_driver_location_updates_fixed_stop_progress(): void
+    {
+        $this->departure->update(['status' => 'DEPARTED']);
+
+        app(FixedStopAutomationService::class)
+            ->processDriverLocation($this->driver->id, 34.0000000, 74.0000000, Carbon::parse('2026-06-19 10:00:00'));
+
+        $this->assertSame(1, $this->departure->fresh()->fixed_last_reached_stop_seq);
+
+        app(FixedStopAutomationService::class)
+            ->processDriverLocation($this->driver->id, 34.1000000, 74.1000000, Carbon::parse('2026-06-19 10:05:00'));
+
+        $this->assertSame(2, $this->departure->fresh()->fixed_last_reached_stop_seq);
+        $this->assertNotNull($this->departure->fresh()->fixed_last_reached_stop_at);
+    }
+
+    public function test_manual_fixed_stop_progress_endpoint_is_not_available(): void
+    {
+        $this->departure->update(['status' => 'DEPARTED']);
+
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+
+        $this->postJson("/api/fixed/departures/{$this->departure->id}/stops/{$this->dropStop->id}/reached")
+            ->assertNotFound();
+
+        $this->assertNull($this->departure->fresh()->fixed_last_reached_stop_seq);
+    }
+
+    public function test_driver_no_show_is_blocked_before_pickup_stop_is_reached(): void
+    {
+        $reservation = $this->createReservation(['seats' => 1]);
+        $this->departure->update(['status' => 'DEPARTED', 'seats_taken' => 1]);
+
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+
+        $this->postJson("/api/fixed/bookings/{$reservation->id}/no-show")
+            ->assertStatus(422);
+
+        $this->assertSame('CONFIRMED', $reservation->fresh()->status);
+        $this->assertSame(1, $this->departure->fresh()->seats_taken);
+    }
+
+    public function test_driver_no_show_rejects_refund_and_releases_capacity_after_pickup_stop_is_reached(): void
     {
         $reservation = $this->createReservation(['seats' => 2, 'extra_luggage_count' => 1, 'fare_amount' => 265]);
-        $this->departure->update(['seats_taken' => 2, 'luggage_taken' => 1]);
+        $this->departure->update([
+            'status' => 'DEPARTED',
+            'fixed_last_reached_stop_seq' => 1,
+            'fixed_last_reached_stop_at' => now(),
+            'seats_taken' => 2,
+            'luggage_taken' => 1,
+        ]);
 
         $razorpay = Mockery::mock(RazorpayService::class);
         $razorpay->shouldReceive('refundPayment')->never();

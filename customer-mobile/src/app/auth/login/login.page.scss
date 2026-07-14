@@ -17,7 +17,9 @@ ion-content {
 
 /* ============ BRANDED NAVY HERO ============ */
 .auth-header {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 30;
   overflow: hidden;
   background: linear-gradient(165deg, #15273A 0%, var(--dc-ink, #0D1B2A) 60%);
   border-bottom-left-radius: 36px;

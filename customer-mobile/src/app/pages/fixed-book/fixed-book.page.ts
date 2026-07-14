@@ -1,9 +1,13 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { GeoFix, GeolocationService } from '../../core/geolocation.service';
+import { FixedCustomerLocationService } from '../../core/fixed-customer-location.service';
+import { GeolocationService } from '../../core/geolocation.service';
+import { RealtimeService, TripLocationPayload } from '../../core/realtime.service';
+import { PlacesService } from '../../core/places.service';
 
 interface FixedStop {
   id: number;
@@ -29,6 +33,7 @@ interface FixedRoute {
   origin_lng: number;
   dest_lat: number;
   dest_lng: number;
+  path_polyline?: number[][] | null;
   flat_fare: number;
   luggage_surcharge_amount: number;
   max_luggage_per_vehicle: number;
@@ -42,6 +47,7 @@ interface FixedRoute {
 interface FixedDeparture {
   id: number;
   route_id: number;
+  trip_id?: number | null;
   service_date: string | null;
   depart_at: string | null;
   announced_depart_at: string | null;
@@ -55,6 +61,14 @@ interface FixedDeparture {
   luggage_capacity: number;
   luggage_taken: number;
   luggage_remaining: number;
+  driver?: string | null;
+  driver_name?: string | null;
+  vehicle_name?: string | null;
+  vehicle_type_name?: string | null;
+  vehicle_brand?: string | null;
+  vehicle_model?: string | null;
+  vehicle_color?: string | null;
+  vehicle_reg_no?: string | null;
 }
 
 interface SeatHold {
@@ -62,6 +76,9 @@ interface SeatHold {
   route_departure_id: number;
   seats: number;
   amount: number;
+  original_amount?: number | null;
+  discount_amount?: number | null;
+  coupon_assignment_id?: number | null;
   status: string;
   expires_at: string | null;
 }
@@ -71,6 +88,14 @@ interface FixedRazorpayOrder {
   razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
 }
 
+interface FixedCouponPreview {
+  base_amount: number;
+  discount: number;
+  final_amount: number;
+  coupon?: { assignment_id: number; title: string } | null;
+}
+
+declare const google: any;
 declare const Razorpay: any;
 
 interface FixedLiveStatus {
@@ -86,6 +111,8 @@ interface FixedLiveStatus {
 
 interface FixedReservation {
   id: number;
+  route_departure_id?: number | null;
+  trip_id?: number | null;
   seats: number;
   fare_amount: number | null;
   status: string;
@@ -95,13 +122,15 @@ interface FixedReservation {
   route_name?: string | null;
   board?: string | null;
   drop?: string | null;
+  latest_driver_location?: { lat: number; lng: number; recorded_at?: string | null } | null;
   route?: { id: number; name: string; scope: string; mode: string } | null;
   route_departure?: { id: number; service_date: string | null; depart_at: string | null; announced_depart_at: string | null; status: string } | null;
   board_stop?: { id: number; name: string } | null;
   drop_stop?: { id: number; name: string } | null;
 }
 
-type Step = 'routes' | 'vehicles' | 'details' | 'done';
+type Step = 'routes' | 'vehicles' | 'details' | 'review' | 'done';
+type FixedScopeFilter = 'all' | 'local' | 'outstation';
 
 @Component({
   selector: 'app-fixed-book',
@@ -112,11 +141,13 @@ type Step = 'routes' | 'vehicles' | 'details' | 'done';
 export class FixedBookPage implements OnInit, OnDestroy {
   cityId: number | null = null;
   scope: 'local' | 'outstation' | '' = '';
+  routeFilter: FixedScopeFilter = 'all';
   step: Step = 'routes';
 
   loading = false;
   booking = false;
   error: string | null = null;
+  locationWarning: string | null = null;
 
   routes: FixedRoute[] = [];
   departures: FixedDeparture[] = [];
@@ -127,14 +158,28 @@ export class FixedBookPage implements OnInit, OnDestroy {
   dropStopId: number | null = null;
   seats = 1;
   extraLuggageCount = 0;
+  couponTitle = '';
+  couponPreview: FixedCouponPreview | null = null;
+  couponMessage: string | null = null;
+  couponError: string | null = null;
+  applyingCoupon = false;
   hold: SeatHold | null = null;
   confirmation: FixedReservation | null = null;
   activeBookings: FixedReservation[] = [];
+  liveTrackingActive = false;
 
   private entered = false;
-  private locationWatchId: string | null = null;
-  private lastLocationPostAt = 0;
-  private readonly locationPostMinIntervalMs = 5000;
+  private unsubscribeFixedCity: (() => void) | null = null;
+  private fixedMap: any = null;
+  private fixedMapMarker: any = null;
+  private fixedVehicleMarker: any = null;
+  private fixedRouteLine: any = null;
+  private fixedStopMarkers: any[] = [];
+  private fixedSelectionLines: any[] = [];
+  private fixedVehiclePosition: { lat: number; lng: number } | null = null;
+  private trackingTripId: number | null = null;
+  private unsubscribeTracking: (() => void) | null = null;
+  private locationSub?: Subscription;
 
   constructor(
     private route: ActivatedRoute,
@@ -142,13 +187,32 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private api: ApiService,
     private auth: AuthService,
     private toast: ToastController,
+    private fixedLocation: FixedCustomerLocationService,
     private geo: GeolocationService,
+    private realtime: RealtimeService,
+    private places: PlacesService,
+    private zone: NgZone,
   ) {}
 
-  ngOnInit(): void { this.enter(); }
-  ngOnDestroy(): void { void this.stopFixedLocationStream(); }
+  ngOnInit(): void {
+    this.locationSub = this.fixedLocation.state$.subscribe((state) => {
+      this.locationWarning = state.degraded ? state.message : null;
+    });
+    this.enter();
+  }
+  ngOnDestroy(): void {
+    this.unsubscribeFixedCity?.();
+    this.unsubscribeFixedCity = null;
+    this.stopLiveTracking();
+    this.locationSub?.unsubscribe();
+    this.locationSub = undefined;
+  }
 
-  ionViewWillLeave(): void { void this.stopFixedLocationStream(); }
+  ionViewWillLeave(): void {}
+
+  ionViewDidEnter(): void {
+    void this.initFixedMap();
+  }
 
   ionViewWillEnter(): void {
     if (this.entered) this.enter();
@@ -156,11 +220,28 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   get title(): string {
-    return this.scope === 'outstation' ? 'Outstation fixed' : 'Local fixed';
+    if (this.routeFilter === 'outstation') return 'Outstation fixed';
+    if (this.routeFilter === 'local') return 'Local fixed';
+    return 'Fixed routes';
   }
 
   get scopeLabel(): string {
-    return this.scope === 'outstation' ? 'Outstation' : 'Local';
+    if (this.routeFilter === 'outstation') return 'Outstation';
+    if (this.routeFilter === 'local') return 'Local';
+    return 'All';
+  }
+
+  get visibleRoutes(): FixedRoute[] {
+    if (this.routeFilter === 'all') return this.routes;
+    return this.routes.filter((route) => route.scope === this.routeFilter);
+  }
+
+  get localRouteCount(): number {
+    return this.routes.filter((route) => route.scope === 'local').length;
+  }
+
+  get outstationRouteCount(): number {
+    return this.routes.filter((route) => route.scope === 'outstation').length;
   }
 
   get pickupStops(): FixedStop[] {
@@ -173,14 +254,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
     return (this.selectedRoute?.stops || []).filter((s) => s.is_active && !s.is_temporarily_unavailable && s.is_drop && s.seq > boardSeq);
   }
 
-  get unavailableStops(): FixedStop[] {
-    return (this.selectedRoute?.stops || []).filter((s) => !s.is_active || s.is_temporarily_unavailable);
-  }
-
   get maxSeats(): number {
     const routeMax = this.selectedRoute?.max_seats_per_booking ?? 4;
     const remaining = this.selectedDeparture?.seats_remaining ?? routeMax;
-    return Math.max(1, Math.min(routeMax, remaining));
+    return Math.max(0, Math.min(routeMax, remaining));
   }
 
   get luggageAvailable(): boolean {
@@ -195,6 +272,18 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const fare = this.selectedRoute?.flat_fare ?? 0;
     const luggage = this.extraLuggageCount * (this.selectedRoute?.luggage_surcharge_amount ?? 0);
     return (fare * Math.max(1, this.seats)) + luggage;
+  }
+
+  get payableTotal(): number {
+    return this.couponPreview?.final_amount ?? this.fareTotal;
+  }
+
+  get discountTotal(): number {
+    return this.couponPreview?.discount ?? 0;
+  }
+
+  get luggageTotal(): number {
+    return this.extraLuggageCount * (this.selectedRoute?.luggage_surcharge_amount ?? 0);
   }
 
   get fullStateText(): string | null {
@@ -216,6 +305,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (!this.dropStops.length) return 'No drop stops are available after the selected boarding stop.';
     if (!this.dropStopId) return 'Choose your drop stop.';
     if (this.boardStopId === this.dropStopId) return 'Boarding and drop stop must be different.';
+    if (this.maxSeats < 1) return 'No seats are available for this vehicle.';
     if (this.seats < 1) return 'Select at least one seat.';
     if (this.seats > this.maxSeats) return 'Only ' + this.maxSeats + ' seat' + (this.maxSeats > 1 ? 's are' : ' is') + ' available for this vehicle.';
     return null;
@@ -231,13 +321,258 @@ export class FixedBookPage implements OnInit, OnDestroy {
     return 'No later drop stop is available from this boarding stop.';
   }
 
+  private async initFixedMap(): Promise<void> {
+    if (this.fixedMap) return;
+
+    try {
+      await this.places.ensureLoaded();
+      const el = document.getElementById('fixed-route-map');
+      if (!el) return;
+
+      const start = (await this.geo.getCurrentPosition()) ?? { lat: 28.6139, lng: 77.209 };
+      this.fixedMap = new google.maps.Map(el, {
+        center: start,
+        zoom: 15,
+        disableDefaultUI: true,
+        clickableIcons: false,
+        mapId: 'DEMO_MAP_ID',
+      });
+
+      this.fixedMapMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: start,
+        map: this.fixedMap,
+        title: 'You',
+        content: this.buildMapDot(),
+        zIndex: 2,
+      });
+
+      if (this.selectedRoute) this.drawRouteOnMap(this.selectedRoute);
+      this.syncLiveVehicleTracking();
+    } catch {
+      this.fixedMap = null;
+      this.fixedMapMarker = null;
+    }
+  }
+
+  private drawRouteOnMap(route: FixedRoute): void {
+    if (!this.fixedMap || typeof google === 'undefined') return;
+
+    this.clearRouteFromMap();
+    const path = this.routeMapPath(route);
+    if (path.length < 2) return;
+
+    this.fixedRouteLine = new google.maps.Polyline({
+      path,
+      map: this.fixedMap,
+      geodesic: true,
+      strokeColor: '#1e6cf0',
+      strokeOpacity: 0.96,
+      strokeWeight: 5,
+    });
+
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach((point) => bounds.extend(point));
+    this.fixedMap.fitBounds(bounds, this.routeFitPadding());
+    if (this.step === 'details') this.renderStopsOnMap();
+    this.ensureVehicleMarker();
+  }
+
+  private routeFitPadding(): { top: number; right: number; bottom: number; left: number } {
+    const mapHeight = Math.max(1, document.getElementById('fixed-route-map')?.getBoundingClientRect().height || window.innerHeight || 1);
+    const sheetHeight = document.querySelector<HTMLElement>('.bottom-sheet')?.getBoundingClientRect().height || 0;
+    const topbarHeight = document.querySelector<HTMLElement>('.fb-topbar')?.getBoundingClientRect().height || 0;
+
+    return {
+      top: Math.round(topbarHeight + 28),
+      right: 28,
+      bottom: Math.min(Math.round(sheetHeight + 32), Math.round(mapHeight * 0.62)),
+      left: 28,
+    };
+  }
+
+  private clearRouteFromMap(): void {
+    this.clearStopMarkers();
+    if (this.fixedRouteLine) {
+      this.fixedRouteLine.setMap(null);
+      this.fixedRouteLine = null;
+    }
+  }
+
+  private bookableRouteStops(route: FixedRoute): FixedStop[] {
+    return [...(route.stops || [])].filter((stop) => stop.is_active && !stop.is_temporarily_unavailable);
+  }
+
+  private routeMapPath(route: FixedRoute): { lat: number; lng: number }[] {
+    const configured = Array.isArray(route.path_polyline)
+      ? route.path_polyline
+          .map((point) => ({ lat: Number(point?.[0]), lng: Number(point?.[1]) }))
+          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng))
+      : [];
+
+    if (configured.length >= 2) return configured;
+
+    const stops = this.bookableRouteStops(route)
+      .sort((a, b) => a.seq - b.seq)
+      .map((stop) => ({ lat: Number(stop.lat), lng: Number(stop.lng) }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+    return [
+      { lat: Number(route.origin_lat), lng: Number(route.origin_lng) },
+      ...stops,
+      { lat: Number(route.dest_lat), lng: Number(route.dest_lng) },
+    ].filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+  }
+
+  private renderStopsOnMap(): void {
+    if (!this.fixedMap || !this.selectedRoute || typeof google === 'undefined') return;
+
+    this.clearStopMarkers();
+    const stops = this.bookableRouteStops(this.selectedRoute)
+      .filter((stop) => Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng)))
+      .sort((a, b) => a.seq - b.seq);
+
+    this.fixedStopMarkers = stops.map((stop) => new google.maps.marker.AdvancedMarkerElement({
+      position: { lat: Number(stop.lat), lng: Number(stop.lng) },
+      map: this.fixedMap,
+      title: stop.name,
+      content: this.buildStopMarker(stop),
+      zIndex: this.stopMarkerZIndex(stop),
+    }));
+
+    this.drawSelectedStopSegments();
+  }
+
+  private drawSelectedStopSegments(): void {
+    if (!this.fixedMap || !this.selectedRoute || typeof google === 'undefined') return;
+
+    this.clearSelectionLines();
+    const board = this.stopById(this.boardStopId);
+    const drop = this.stopById(this.dropStopId);
+
+    if (board) {
+      const boardPath = this.segmentPathToStop(board);
+      if (boardPath.length >= 2) this.fixedSelectionLines.push(new google.maps.Polyline({
+        path: boardPath,
+        map: this.fixedMap,
+        geodesic: true,
+        strokeColor: '#12B35B',
+        strokeOpacity: 0.98,
+        strokeWeight: 6,
+        zIndex: 4,
+      }));
+    }
+
+    if (drop) {
+      const dropPath = board ? this.segmentPathBetweenStops(board, drop) : this.segmentPathToStop(drop);
+      if (dropPath.length >= 2) this.fixedSelectionLines.push(new google.maps.Polyline({
+        path: dropPath,
+        map: this.fixedMap,
+        geodesic: true,
+        strokeColor: '#F59E0B',
+        strokeOpacity: 0.98,
+        strokeWeight: 6,
+        zIndex: 5,
+      }));
+    }
+  }
+
+  private refreshStopMapSelection(): void {
+    if (this.step !== 'details') return;
+    this.renderStopsOnMap();
+  }
+
+  private buildStopMarker(stop: FixedStop): HTMLElement {
+    const marker = document.createElement('div');
+    marker.className = 'fb-stop-marker';
+    if (stop.id === this.boardStopId) marker.classList.add('is-pickup');
+    if (stop.id === this.dropStopId) marker.classList.add('is-drop');
+    const label = document.createElement('span');
+    label.textContent = stop.id === this.boardStopId ? 'P' : stop.id === this.dropStopId ? 'D' : String(stop.seq);
+    marker.appendChild(label);
+    return marker;
+  }
+
+  private stopMarkerZIndex(stop: FixedStop): number {
+    if (stop.id === this.dropStopId) return 7;
+    if (stop.id === this.boardStopId) return 6;
+    return 3;
+  }
+
+  private stopById(id: number | null): FixedStop | null {
+    if (!id || !this.selectedRoute) return null;
+    return this.selectedRoute.stops.find((stop) => stop.id === id) || null;
+  }
+
+  private segmentPathToStop(stop: FixedStop): { lat: number; lng: number }[] {
+    if (!this.selectedRoute) return [];
+    const routePath = this.routeMapPath(this.selectedRoute);
+    const stopPoint = { lat: Number(stop.lat), lng: Number(stop.lng) };
+    const stopIndex = this.nearestPathIndex(routePath, stopPoint);
+    if (stopIndex < 0) return [];
+    return [...routePath.slice(0, stopIndex + 1), stopPoint];
+  }
+
+  private segmentPathBetweenStops(from: FixedStop, to: FixedStop): { lat: number; lng: number }[] {
+    if (!this.selectedRoute) return [];
+    const routePath = this.routeMapPath(this.selectedRoute);
+    const fromPoint = { lat: Number(from.lat), lng: Number(from.lng) };
+    const toPoint = { lat: Number(to.lat), lng: Number(to.lng) };
+    const fromIndex = this.nearestPathIndex(routePath, fromPoint);
+    const toIndex = this.nearestPathIndex(routePath, toPoint);
+    if (fromIndex < 0 || toIndex < 0) return [];
+
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+    const middle = routePath.slice(start, end + 1);
+    return fromIndex <= toIndex ? [fromPoint, ...middle, toPoint] : [fromPoint, ...middle.reverse(), toPoint];
+  }
+
+  private nearestPathIndex(path: { lat: number; lng: number }[], point: { lat: number; lng: number }): number {
+    let best = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    path.forEach((candidate, index) => {
+      const distance = Math.pow(candidate.lat - point.lat, 2) + Math.pow(candidate.lng - point.lng, 2);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    return best;
+  }
+
+  private clearStopMarkers(): void {
+    this.fixedStopMarkers.forEach((marker) => { marker.map = null; });
+    this.fixedStopMarkers = [];
+    this.clearSelectionLines();
+  }
+
+  private clearSelectionLines(): void {
+    this.fixedSelectionLines.forEach((line) => line.setMap(null));
+    this.fixedSelectionLines = [];
+  }
+
+  private buildMapDot(): HTMLElement {
+    const dot = document.createElement('div');
+    dot.className = 'fb-map-dot';
+    return dot;
+  }
+
+  private buildVehicleMarker(): HTMLElement {
+    const marker = document.createElement('div');
+    marker.className = 'fb-vehicle-marker';
+    return marker;
+  }
+
   private enter(): void {
     const q = this.route.snapshot.queryParamMap;
     this.cityId = q.get('city_id') ? Number(q.get('city_id')) : null;
     const rawScope = q.get('scope') || '';
     this.scope = rawScope === 'outstation' ? 'outstation' : rawScope === 'local' ? 'local' : '';
+    this.routeFilter = this.scope || 'all';
+    this.subscribeFixedCatalog();
     this.step = 'routes';
     this.selectedRoute = null;
+    this.clearRouteFromMap();
     this.selectedDeparture = null;
     this.departures = [];
     this.hold = null;
@@ -247,20 +582,87 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.loadMyBookings();
   }
 
-  loadRoutes(): void {
+  private subscribeFixedCatalog(): void {
+    this.unsubscribeFixedCity?.();
+    this.unsubscribeFixedCity = null;
     if (this.cityId == null) return;
-    this.loading = true;
+    this.unsubscribeFixedCity = this.realtime.subscribeFixedCity(this.cityId, () => {
+      this.refreshLiveFixedState();
+    });
+  }
+
+  private refreshLiveFixedState(): void {
+    this.loadRoutes(false);
+    this.loadMyBookings();
+    if (this.selectedRoute) this.loadDepartures(this.selectedRoute, false);
+  }
+
+  private reconcileSelectedRoute(rows: FixedRoute[]): void {
+    if (!this.selectedRoute) return;
+
+    const updated = rows.find((route) => route.id === this.selectedRoute?.id) ?? null;
+    if (!updated) {
+      this.selectedRoute = null;
+      this.clearRouteFromMap();
+      this.selectedDeparture = null;
+      this.departures = [];
+      this.resetDetails();
+      this.step = 'routes';
+      return;
+    }
+
+    this.selectedRoute = updated;
+    this.drawRouteOnMap(updated);
+    this.reconcileDetails();
+  }
+
+  private reconcileSelectedDeparture(): void {
+    if (!this.selectedDeparture) return;
+
+    const updated = this.departures.find((departure) => departure.id === this.selectedDeparture?.id) ?? null;
+    if (!updated) {
+      this.selectedDeparture = null;
+      this.resetDetails();
+      if (this.step === 'details') this.step = 'vehicles';
+      return;
+    }
+
+    this.selectedDeparture = updated;
+    this.reconcileDetails();
+  }
+
+  private reconcileDetails(): void {
+    if (!this.selectedRoute) return;
+
+    if (!this.pickupStops.some((stop) => stop.id === this.boardStopId)) {
+      this.boardStopId = null;
+      this.dropStopId = null;
+    } else if (!this.dropStops.some((stop) => stop.id === this.dropStopId)) {
+      this.dropStopId = null;
+    }
+
+    if (this.maxSeats < 1) {
+      this.seats = 1;
+    } else {
+      this.seats = Math.max(1, Math.min(this.seats, this.maxSeats));
+    }
+    this.setExtraLuggage(this.extraLuggageCount);
+  }
+
+  loadRoutes(showSpinner = true): void {
+    if (this.cityId == null) return;
+    if (showSpinner) this.loading = true;
     this.error = null;
     this.api.get<{ data: FixedRoute[] }>(`/fixed/routes?city_id=${this.cityId}`).subscribe({
       next: (res) => {
-        let rows = res?.data || [];
-        if (this.scope) rows = rows.filter((r) => r.scope === this.scope);
+        const rows = res?.data || [];
         this.routes = rows;
-        this.loading = false;
+        this.reconcileSelectedRoute(this.visibleRoutes);
+        if (showSpinner) this.loading = false;
       },
       error: () => {
         this.routes = [];
-        this.loading = false;
+        if (showSpinner) this.loading = false;
         this.error = 'Could not load fixed routes for this city.';
       },
     });
@@ -273,12 +675,28 @@ export class FixedBookPage implements OnInit, OnDestroy {
         const rows = res?.data || [];
         this.activeBookings = rows.filter((booking) => !["DROPPED", "COMPLETED", "CANCELLED", "NO_SHOW"].includes(booking.status)).slice(0, 5);
         this.syncFixedLocationStream();
+        this.syncLiveVehicleTracking();
       },
       error: () => {
         this.activeBookings = [];
         this.syncFixedLocationStream();
+        this.syncLiveVehicleTracking();
       },
     });
+  }
+
+  setRouteFilter(filter: FixedScopeFilter): void {
+    if (this.routeFilter === filter) return;
+    this.routeFilter = filter;
+    this.reconcileSelectedRoute(this.visibleRoutes);
+  }
+
+  routeScopeLabel(route: FixedRoute): string {
+    return route.scope === 'outstation' ? 'Outstation' : 'Local';
+  }
+
+  routeScopeIcon(route: FixedRoute): string {
+    return route.scope === 'outstation' ? 'navigate-outline' : 'location-outline';
   }
 
   pickRoute(route: FixedRoute): void {
@@ -287,19 +705,23 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.departures = [];
     this.resetDetails();
     this.step = 'vehicles';
+    this.stopLiveTracking();
+    requestAnimationFrame(() => this.drawRouteOnMap(route));
     this.loadDepartures(route);
   }
 
-  loadDepartures(route: FixedRoute): void {
-    this.loading = true;
+  loadDepartures(route: FixedRoute, showSpinner = true): void {
+    if (showSpinner) this.loading = true;
     this.api.get<{ data: FixedDeparture[] }>(`/fixed/routes/${route.id}/departures`).subscribe({
       next: (res) => {
         this.departures = res?.data || [];
-        this.loading = false;
+        this.reconcileSelectedDeparture();
+        if (showSpinner) this.loading = false;
       },
       error: () => {
         this.departures = [];
-        this.loading = false;
+        this.reconcileSelectedDeparture();
+        if (showSpinner) this.loading = false;
       },
     });
   }
@@ -315,6 +737,11 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.seats = Math.min(this.seats, this.maxSeats);
     if (!this.seats || this.seats < 1) this.seats = 1;
     this.step = 'details';
+    this.syncLiveVehicleTracking();
+    requestAnimationFrame(() => {
+      if (this.selectedRoute) this.drawRouteOnMap(this.selectedRoute);
+      else this.renderStopsOnMap();
+    });
   }
 
 
@@ -322,14 +749,52 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (!this.dropStops.some((stop) => stop.id === this.dropStopId)) {
       this.dropStopId = null;
     }
+    this.clearCouponPreview();
+    this.refreshStopMapSelection();
+  }
+
+  onDropStopChange(): void {
+    this.clearCouponPreview();
+    this.refreshStopMapSelection();
   }
 
   setSeats(next: number): void {
     this.seats = Math.max(1, Math.min(this.maxSeats, next));
+    this.clearCouponPreview();
   }
 
   setExtraLuggage(next: number): void {
     this.extraLuggageCount = Math.max(0, Math.min(this.maxLuggage, next));
+    this.clearCouponPreview();
+  }
+
+  reviewBooking(): void {
+    if (!this.canConfirm) return;
+    this.step = 'review';
+  }
+
+  applyCoupon(): void {
+    if (!this.selectedDeparture || !this.couponTitle.trim() || this.applyingCoupon) return;
+    this.applyingCoupon = true;
+    this.couponError = null;
+    this.couponMessage = null;
+    this.api.post<FixedCouponPreview>('/fixed/coupon-preview', this.bookingPayload(true)).subscribe({
+      next: (res) => {
+        this.applyingCoupon = false;
+        this.couponPreview = res;
+        this.couponMessage = res?.coupon?.title ? `${res.coupon.title} applied` : 'Coupon applied';
+      },
+      error: (err) => {
+        this.applyingCoupon = false;
+        this.couponPreview = null;
+        this.couponError = err?.error?.message || err?.error?.error || 'Coupon could not be applied.';
+      },
+    });
+  }
+
+  removeCoupon(): void {
+    this.couponTitle = '';
+    this.clearCouponPreview();
   }
 
   testPay(): void {
@@ -340,14 +805,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (!this.canConfirm || !this.selectedDeparture) return;
     this.booking = true;
     this.hold = null;
-    this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', {
-      route_departure_id: this.selectedDeparture.id,
-      board_stop_id: this.boardStopId,
-      drop_stop_id: this.dropStopId,
-      seats: this.seats,
-      has_extra_luggage: this.extraLuggageCount > 0,
-      extra_luggage_count: this.extraLuggageCount,
-    }, { 'Idempotency-Key': this.uuid() }).subscribe({
+    this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', this.bookingPayload(false), { 'Idempotency-Key': this.uuid() }).subscribe({
       next: (res) => {
         this.hold = res?.hold ?? null;
         if (!this.hold) {
@@ -431,8 +889,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
       next: (res) => {
         this.booking = false;
         this.confirmation = res?.reservation ?? null;
-        this.step = "done";
         this.loadMyBookings();
+        this.openConfirmedFixedRide();
       },
       error: async (err) => {
         this.booking = false;
@@ -455,8 +913,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
       next: (res) => {
         this.booking = false;
         this.confirmation = res?.reservation ?? null;
-        this.step = 'done';
         this.loadMyBookings();
+        this.openConfirmedFixedRide();
       },
       error: async (err) => {
         this.booking = false;
@@ -467,11 +925,16 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   back(): void {
     if (this.step === 'done') {
-      this.router.navigateByUrl('/customer-tabs/my-trips');
+      this.router.navigateByUrl('/customer-tabs/fixed-rides');
+      return;
+    }
+    if (this.step === 'review') {
+      this.step = 'details';
       return;
     }
     if (this.step === 'details') {
       this.step = 'vehicles';
+      this.clearStopMarkers();
       this.hold = null;
       return;
     }
@@ -487,7 +950,24 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   done(): void {
-    this.router.navigateByUrl('/customer-tabs/my-trips');
+    this.openConfirmedFixedRide();
+  }
+
+  private openConfirmedFixedRide(): void {
+    const id = this.confirmation?.id;
+    this.router.navigateByUrl(id ? '/customer-tabs/fixed-rides/' + id : '/customer-tabs/fixed-rides?active=1');
+  }
+
+  departureVehicleName(dep: FixedDeparture | null): string {
+    if (!dep) return 'Vehicle';
+    const parts = [dep.vehicle_brand, dep.vehicle_name || dep.vehicle_type_name]
+      .map((value) => (value || '').trim())
+      .filter(Boolean);
+    return parts.length ? [...new Set(parts)].join(' ') : 'Vehicle';
+  }
+
+  departureDriverName(dep: FixedDeparture | null): string {
+    return dep?.driver_name || dep?.driver || 'Driver assigned';
   }
 
   departureTime(dep: FixedDeparture | null): string {
@@ -529,46 +1009,97 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
 
   private syncFixedLocationStream(): void {
-    const shouldStream = this.activeBookings.some((booking) => ['BOOKED', 'CONFIRMED'].includes(booking.status));
-    if (shouldStream) void this.startFixedLocationStream();
-    else void this.stopFixedLocationStream();
+    const shouldStream = this.activeBookings.some((booking) => ['BOOKED', 'CONFIRMED'].includes((booking.status || '').toUpperCase()));
+    if (shouldStream) void this.fixedLocation.start();
+    else void this.fixedLocation.stop();
   }
 
-  private async startFixedLocationStream(): Promise<void> {
-    if (this.locationWatchId !== null) return;
-    try {
-      await this.geo.requestPermissions();
-      this.locationWatchId = await this.geo.watchPosition(
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
-        (fix, err) => {
-          if (err) {
-            void this.stopFixedLocationStream();
-            return;
-          }
-          if (fix) this.postFixedCustomerLocation(fix);
-        },
-      );
-    } catch {
-      this.locationWatchId = null;
+  private syncLiveVehicleTracking(): void {
+    const booking = this.currentMapBooking();
+    const tripId = booking?.trip_id || null;
+    this.seedVehicleLocation(booking || null);
+
+    if (!tripId || !this.isLiveTrackingStatus(booking?.status || '')) {
+      this.stopLiveTracking(false);
+      return;
     }
-  }
 
-  private async stopFixedLocationStream(): Promise<void> {
-    if (this.locationWatchId !== null) {
-      await this.geo.clearWatch(this.locationWatchId);
-      this.locationWatchId = null;
+    if (this.trackingTripId === tripId && this.unsubscribeTracking) {
+      this.ensureVehicleMarker();
+      return;
     }
-    this.lastLocationPostAt = 0;
+
+    this.stopLiveTracking(false);
+    this.trackingTripId = tripId;
+    this.liveTrackingActive = true;
+    this.unsubscribeTracking = this.realtime.subscribeTracking(
+      tripId,
+      (payload) => this.onTripLocation(payload),
+      () => {},
+    );
   }
 
-  private postFixedCustomerLocation(fix: GeoFix): void {
-    const now = Date.now();
-    if (now - this.lastLocationPostAt < this.locationPostMinIntervalMs) return;
-    this.lastLocationPostAt = now;
+  private currentMapBooking(): FixedReservation | null {
+    if (this.confirmation) {
+      const confirmed = this.activeBookings.find((booking) => booking.id === this.confirmation?.id);
+      return confirmed || this.confirmation;
+    }
 
-    this.api.post('/me/location', { lat: fix.lat, lng: fix.lng }).subscribe({
-      error: () => {},
+    if (this.selectedDeparture) {
+      return this.activeBookings.find((booking) => booking.route_departure_id === this.selectedDeparture?.id) || null;
+    }
+
+    if (this.activeBookings.length === 1) return this.activeBookings[0];
+    return null;
+  }
+
+  private seedVehicleLocation(booking: FixedReservation | null): void {
+    const latest = booking?.latest_driver_location;
+    if (!latest || latest.lat == null || latest.lng == null) return;
+    this.fixedVehiclePosition = { lat: Number(latest.lat), lng: Number(latest.lng) };
+    this.ensureVehicleMarker();
+  }
+
+  private onTripLocation(payload: TripLocationPayload): void {
+    const loc = payload?.location;
+    if (!loc || loc.lat == null || loc.lng == null) return;
+    this.zone.run(() => {
+      this.fixedVehiclePosition = { lat: Number(loc.lat), lng: Number(loc.lng) };
+      this.ensureVehicleMarker();
     });
+  }
+
+  private ensureVehicleMarker(): void {
+    if (!this.fixedMap || !this.fixedVehiclePosition || typeof google === 'undefined') return;
+    if (!this.fixedVehicleMarker) {
+      this.fixedVehicleMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: this.fixedVehiclePosition,
+        map: this.fixedMap,
+        title: this.departureDriverName(this.selectedDeparture),
+        content: this.buildVehicleMarker(),
+        zIndex: 10,
+      });
+      return;
+    }
+
+    this.fixedVehicleMarker.position = this.fixedVehiclePosition;
+    this.fixedVehicleMarker.map = this.fixedMap;
+  }
+
+  private isLiveTrackingStatus(status: string): boolean {
+    return ['BOOKED', 'CONFIRMED', 'BOARDED', 'BOARDING', 'DISPATCHED', 'DEPARTED', 'IN_PROGRESS'].includes((status || '').toUpperCase());
+  }
+
+  private stopLiveTracking(clearMarker = true): void {
+    if (this.unsubscribeTracking) this.unsubscribeTracking();
+    this.unsubscribeTracking = null;
+    this.trackingTripId = null;
+    this.liveTrackingActive = false;
+    if (clearMarker) {
+      if (this.fixedVehicleMarker) this.fixedVehicleMarker.map = null;
+      this.fixedVehicleMarker = null;
+      this.fixedVehiclePosition = null;
+    }
   }
 
   private resetDetails(): void {
@@ -576,6 +1107,27 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.dropStopId = null;
     this.seats = 1;
     this.extraLuggageCount = 0;
+    this.removeCoupon();
+  }
+
+  clearCouponPreview(): void {
+    this.couponPreview = null;
+    this.couponMessage = null;
+    this.couponError = null;
+  }
+
+  private bookingPayload(requireCoupon: boolean): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      route_departure_id: this.selectedDeparture?.id,
+      board_stop_id: this.boardStopId,
+      drop_stop_id: this.dropStopId,
+      seats: this.seats,
+      has_extra_luggage: this.extraLuggageCount > 0,
+      extra_luggage_count: this.extraLuggageCount,
+    };
+    const coupon = this.couponTitle.trim();
+    if (coupon || requireCoupon) payload['coupon_title'] = coupon;
+    return payload;
   }
 
   private uuid(): string {

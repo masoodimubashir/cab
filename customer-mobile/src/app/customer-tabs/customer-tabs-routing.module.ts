@@ -18,6 +18,16 @@ const routes: Routes = [
           import('../pages/customer-trips/customer-trips.module').then((m) => m.CustomerTripsPageModule),
       },
       {
+        path: 'fixed-rides/:bookingId/map',
+        loadChildren: () =>
+          import('../pages/fixed-route-map/fixed-route-map.module').then((m) => m.FixedRouteMapPageModule),
+      },
+      {
+        path: 'fixed-rides/:bookingId',
+        loadChildren: () =>
+          import('../pages/fixed-ride-active/fixed-ride-active.module').then((m) => m.FixedRideActivePageModule),
+      },
+      {
         path: 'fixed-rides',
         loadChildren: () =>
           import('../pages/fixed-bookings/fixed-bookings.module').then((m) => m.FixedBookingsPageModule),

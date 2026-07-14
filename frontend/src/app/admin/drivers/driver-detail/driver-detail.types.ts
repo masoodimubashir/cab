@@ -10,6 +10,8 @@ export interface DriverProfile {
   ride_type_name: string | null;
   vehicle_type_id: number | null;
   vehicle_type_name: string | null;
+  city_vehicle_type_id: number | null;
+  city_vehicle_type_name: string | null;
   vehicle_reg_no: string | null;
   vehicle_brand: string | null;
   vehicle_model: string | null;

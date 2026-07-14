@@ -241,7 +241,7 @@ class AdminDriversController
      */
     public function fullProfile(Driver $driver)
     {
-        $driver->load(['user', 'rideType', 'vehicleTypeRef']);
+        $driver->load(['user', 'rideType', 'vehicleTypeRef', 'cityVehicleType']);
 
         $docs = DriverDocument::query()
             ->where('driver_id', $driver->id)
@@ -285,6 +285,8 @@ class AdminDriversController
                 'ride_type_name' => $driver->rideType?->name,
                 'vehicle_type_id' => $driver->vehicle_type_id,
                 'vehicle_type_name' => $driver->vehicleTypeRef?->name,
+                'city_vehicle_type_id' => $driver->city_vehicle_type_id,
+                'city_vehicle_type_name' => $driver->cityVehicleType?->display_name,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
                 'vehicle_brand' => $driver->vehicle_brand,
                 'vehicle_model' => $driver->vehicle_model,
@@ -309,6 +311,7 @@ class AdminDriversController
         $driver->load([
             'rideType:id,name',
             'vehicleTypeRef:id,name',
+            'cityVehicleType:id,display_name',
             'city:id,name',
         ]);
 
@@ -335,8 +338,11 @@ class AdminDriversController
                 'app_version' => $user?->app_version,
                 'os_version' => $user?->os_version,
                 'device_type' => $user?->device_type,
+                'push_unsubscribed' => (bool) $user?->push_unsubscribed,
                 'ride_type_name' => $driver->rideType?->name,
                 'vehicle_type_name' => $driver->vehicleTypeRef?->name,
+                'city_vehicle_type_id' => $driver->city_vehicle_type_id,
+                'city_vehicle_type_name' => $driver->cityVehicleType?->display_name,
                 'vehicle_type' => $driver->vehicle_type,
                 'vehicle_brand' => $driver->vehicle_brand,
                 'vehicle_model' => $driver->vehicle_model,
@@ -356,6 +362,28 @@ class AdminDriversController
                 'current_lng' => $user?->current_lng,
                 'current_location_updated_at' => $user?->current_location_updated_at,
             ],
+        ]);
+    }
+
+    public function unsubscribe(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            "push" => ["nullable", "boolean"],
+        ]);
+
+        $user = $driver->user;
+        if (!$user) {
+            abort(404, "Driver user account not found.");
+        }
+
+        if (array_key_exists("push", $data)) {
+            $user->push_unsubscribed = (bool) $data["push"];
+        }
+        $user->save();
+
+        return response()->json([
+            "message" => "Push preference updated.",
+            "driver" => $driver->fresh("user"),
         ]);
     }
 

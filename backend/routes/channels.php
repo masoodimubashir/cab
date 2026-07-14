@@ -11,7 +11,7 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
  * Trip-scoped private channels (negotiation, tracking, chat, sos).
  * Channel name pattern: trip.{tripId}.{kind}
  *
- * Authorisation: only the trip's customer or the assigned driver may subscribe.
+ * Authorisation: only trip participants or the assigned driver may subscribe.
  * Returning false (or non-truthy) causes /broadcasting/auth to respond 403.
  */
 Broadcast::channel('trip.{tripId}.{kind}', function ($user, int $tripId, string $kind) {
@@ -24,7 +24,7 @@ Broadcast::channel('trip.{tripId}.{kind}', function ($user, int $tripId, string 
         return false;
     }
 
-    return $user->id === $trip->customer_id
+    return $trip->isParticipant((int) $user->id)
         || ($trip->driver_id !== null && $user->id === $trip->driver_id);
 });
 

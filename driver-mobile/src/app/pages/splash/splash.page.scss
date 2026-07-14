@@ -27,6 +27,18 @@
   animation: splashFadeIn 1s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+
+.splash-logo-image {
+  width: min(260px, 72vw);
+  height: auto;
+  display: block;
+  border-radius: 22px;
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+  animation: logoScaleUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
 // Centered White Circular Logo Circle
 .splash-logo-circle {
   width: 96px;
@@ -71,12 +83,21 @@
   animation: textFadeIn 0.8s 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 
   .text-white {
-    color: #ffffff; // White "Taxi"
+    color: #ffffff; // White "Dream"
   }
 
   .text-primary {
-    color: var(--ion-color-primary, #12B35B); // Green "Mode"
+    color: var(--ion-color-primary, #12B35B); // Green "Cabs"
   }
+}
+
+.splash-tagline {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.55);
+  animation: textFadeIn 0.8s 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 // ============ KEYFRAME ANIMATIONS ============

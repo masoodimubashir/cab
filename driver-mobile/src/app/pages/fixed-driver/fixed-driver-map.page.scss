@@ -1,0 +1,228 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.fixed-map-page {
+  --background: #EEF2F6;
+}
+
+.fixed-driver-full-map {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #EEF2F6;
+}
+
+.map-back {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 14px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #0D1B2A;
+  box-shadow: 0 10px 24px rgba(13, 27, 42, 0.18);
+}
+
+.map-back ion-icon {
+  font-size: 23px;
+}
+
+.map-sheet {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 18px;
+  background: #FFFFFF;
+  box-shadow: 0 18px 34px rgba(13, 27, 42, 0.2);
+}
+
+.map-sheet__copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.map-sheet__copy span {
+  color: #12B35B;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.map-sheet__copy strong {
+  color: #0D1B2A;
+  font-size: 15px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-sheet__copy p {
+  margin: 0;
+  color: #64748B;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-passenger-summary {
+  color: #0D1B2A;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.map-refresh {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #DDE5EE;
+  border-radius: 12px;
+  background: #F8FAFC;
+  color: #0D1B2A;
+}
+
+.map-legend {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  top: calc(env(safe-area-inset-top) + 68px);
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #0D1B2A;
+  font-size: 11px;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.12);
+}
+
+.map-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.legend-pickup { background: #12B35B; }
+.legend-drop { background: #F59E0B; }
+
+.map-error {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  top: calc(env(safe-area-inset-top) + 68px);
+  z-index: 6;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: #FEF2F2;
+  color: #B42318;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 12px 24px rgba(180, 35, 24, 0.14);
+}
+
+:host ::ng-deep .fixed-driver-stop-marker {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #FFFFFF;
+  border-radius: 50%;
+  background: var(--stop-color, #12B35B);
+  box-shadow: 0 4px 12px rgba(13, 27, 42, 0.28);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+:host ::ng-deep .fixed-driver-passenger-marker {
+  min-width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 7px;
+  border: 3px solid #FFFFFF;
+  border-radius: 999px;
+  color: #FFFFFF;
+  box-shadow: 0 7px 16px rgba(13, 27, 42, 0.28);
+}
+
+:host ::ng-deep .fixed-driver-passenger-marker span {
+  font-size: 11px;
+  font-weight: 950;
+}
+
+:host ::ng-deep .fixed-driver-passenger-marker strong {
+  min-width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+:host ::ng-deep .fixed-driver-passenger-marker--pickup {
+  background: #12B35B;
+}
+
+:host ::ng-deep .fixed-driver-passenger-marker--drop {
+  background: #F59E0B;
+}
+
+:host ::ng-deep .fixed-driver-self-marker {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #FFFFFF;
+  border-radius: 50%;
+  background: #0D1B2A;
+  box-shadow: 0 4px 14px rgba(13, 27, 42, 0.35);
+}
+
+:host ::ng-deep .fixed-driver-self-marker span {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 18px solid #FFFFFF;
+  transform-origin: 50% 62%;
+}

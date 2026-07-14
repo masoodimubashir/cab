@@ -25,6 +25,16 @@ use Illuminate\Database\Eloquent\Model;
     'wallet_cash_min_capping',
     'wallet_cash_max_capping',
 
+    // Notifications
+    'notifications_sms_enabled',
+    'notifications_email_enabled',
+    'fixed_customer_sms_enabled',
+    'fixed_customer_email_enabled',
+    'fixed_driver_sms_enabled',
+    'fixed_driver_email_enabled',
+    'fixed_admin_sms_enabled',
+    'fixed_admin_email_enabled',
+
     // Subscriptions
     'subscription_popup_enabled',
     'subscription_popup_title',
@@ -46,6 +56,14 @@ class OperatorSetting extends Model
         'check_destination_outside_geofence' => 'boolean',
         'check_driver_debt' => 'boolean',
         'update_driver_payment_modes_enabled' => 'boolean',
+        'notifications_sms_enabled' => 'boolean',
+        'notifications_email_enabled' => 'boolean',
+        'fixed_customer_sms_enabled' => 'boolean',
+        'fixed_customer_email_enabled' => 'boolean',
+        'fixed_driver_sms_enabled' => 'boolean',
+        'fixed_driver_email_enabled' => 'boolean',
+        'fixed_admin_sms_enabled' => 'boolean',
+        'fixed_admin_email_enabled' => 'boolean',
 
         'customer_tip_value_1' => 'integer',
         'customer_tip_value_2' => 'integer',

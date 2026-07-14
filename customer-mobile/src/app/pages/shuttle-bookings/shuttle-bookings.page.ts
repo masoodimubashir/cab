@@ -55,7 +55,7 @@ export class ShuttleBookingsPage {
         this.loading = false;
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Could not load Shuttle rides.';
+        this.error = err?.error?.message || 'Could not load shuttle bookings.';
         this.bookings = [];
         this.loading = false;
       },

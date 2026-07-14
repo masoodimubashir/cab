@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\FixedRouteCatalogUpdated;
 use App\Models\City;
+use Illuminate\Validation\Rule;
 use App\Models\Route;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedRouteService;
@@ -22,7 +24,8 @@ class AdminFixedRoutesController
 
     public function store(Request $request, City $city)
     {
-        $route = $this->routes->createAdminRoute($city, $this->validatePayload($request));
+        $route = $this->routes->createAdminRoute($city, $this->validatePayload($request, $city));
+        broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_created'))->toOthers();
 
         return response()->json([
             'route' => $this->routes->shapeAdminRoute($route),
@@ -33,7 +36,8 @@ class AdminFixedRoutesController
     public function update(Request $request, City $city, Route $route)
     {
         $this->availability->assertCityOwnsRoute($city, $route);
-        $route = $this->routes->updateAdminRoute($city, $route, $this->validatePayload($request));
+        $route = $this->routes->updateAdminRoute($city, $route, $this->validatePayload($request, $city));
+        broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_updated'))->toOthers();
 
         return response()->json([
             'route' => $this->routes->shapeAdminRoute($route),
@@ -41,7 +45,7 @@ class AdminFixedRoutesController
         ]);
     }
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, City $city): array
     {
         return $request->validate([
             'scope' => ['required', 'in:local,outstation'],
@@ -58,12 +62,10 @@ class AdminFixedRoutesController
             'path_polyline.*' => ['array', 'size:2'],
             'path_polyline.*.*' => ['numeric'],
             'corridor_buffer_m' => ['nullable', 'integer', 'min:10', 'max:5000'],
-            'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
+            'city_vehicle_type_id' => ['required', 'integer', Rule::exists('city_vehicle_types', 'id')->where(fn ($q) => $q->where('city_id', $city->id))],
             'booking_window_hours' => ['nullable', 'integer', 'min:0', 'max:24'],
-            'max_seats_per_booking' => ['nullable', 'integer', 'min:1', 'max:20'],
             'waiting_time_per_stop_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'luggage_surcharge_amount' => ['nullable', 'numeric', 'min:0'],
-            'max_luggage_per_vehicle' => ['nullable', 'integer', 'min:0', 'max:200'],
             'requires_prepaid' => ['nullable', 'boolean'],
             'fixed_settings_json' => ['nullable', 'array'],
             'fixed_settings_json.stop_arrival_radius_m' => ['nullable', 'integer', 'min:25', 'max:1000'],
@@ -80,6 +82,7 @@ class AdminFixedRoutesController
             'fare_config.commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fare_config.fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             'stops' => ['required', 'array', 'min:2'],
+            'stops.*.id' => ['nullable', 'integer', 'exists:route_stops,id'],
             'stops.*.name' => ['required', 'string', 'max:160'],
             'stops.*.lat' => ['required', 'numeric', 'between:-90,90'],
             'stops.*.lng' => ['required', 'numeric', 'between:-180,180'],

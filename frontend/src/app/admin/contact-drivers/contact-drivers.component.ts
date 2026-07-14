@@ -655,7 +655,7 @@ export class ContactDriversComponent implements OnInit {
 
   // ── Derived ─────────────────────────────────────────────────────
   get sampleCsvUrl(): string {
-    const apiBase = localStorage.getItem('dreamcabs_api_base')?.trim() || 'http://localhost:8000/api';
+    const apiBase = 'http://localhost:8000/api';
     return apiBase.replace(/\/api\/?$/, '') + '/samples/contact_drivers_sample.csv';
   }
   get filteredRows(): AudienceRow[] {
@@ -772,7 +772,7 @@ export class ContactDriversComponent implements OnInit {
     const form = new FormData();
     form.append('file', file);
 
-    const apiBase = localStorage.getItem('dreamcabs_api_base')?.trim() || 'http://localhost:8000/api';
+    const apiBase = 'http://localhost:8000/api';
     const token = localStorage.getItem('dreamcabs_token');
     const headers = new HttpHeaders(token ? { Authorization: `Bearer ${token}` } : {});
 

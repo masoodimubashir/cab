@@ -26,6 +26,27 @@ export type DispatchDriverLocationPayload = {
   } | null;
 };
 
+export type FixedRouteCatalogUpdatedPayload = {
+  type: 'fixed_route_catalog_updated';
+  city_id: number;
+  route_id: number | null;
+  reason: string;
+};
+
+export type AppNotificationPayload = {
+  type: 'app_notification_created';
+  notification: {
+    id: number;
+    type: string;
+    title: string;
+    body?: string | null;
+    data?: Record<string, unknown> | null;
+    icon?: string | null;
+    read_at?: string | null;
+    created_at?: string | null;
+  };
+};
+
 type ReverbConfig = {
   appKey: string;
   host: string;
@@ -36,6 +57,22 @@ type ReverbConfig = {
 @Injectable({ providedIn: 'root' })
 export class AdminRealtimeService {
   private pusher: Pusher | null = null;
+
+  subscribeAppNotifications(userId: number, onCreated: (payload: AppNotificationPayload) => void): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-App.Models.User.`;
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: AppNotificationPayload) => onCreated(data);
+
+    channel.bind('AppNotificationCreated', handler);
+
+    return () => {
+      channel.unbind('AppNotificationCreated', handler);
+      pusher.unsubscribe(channelName);
+    };
+  }
 
   subscribeDispatchLocations(onLocation: (payload: DispatchDriverLocationPayload) => void): () => void {
     const pusher = this.ensure();
@@ -49,6 +86,22 @@ export class AdminRealtimeService {
 
     return () => {
       channel.unbind('DispatchDriverLocationUpdated', handler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
+  subscribeFixedCatalog(onUpdated: (payload: FixedRouteCatalogUpdatedPayload) => void): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = 'fixed.catalog';
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: FixedRouteCatalogUpdatedPayload) => onUpdated(data);
+
+    channel.bind('FixedRouteCatalogUpdated', handler);
+
+    return () => {
+      channel.unbind('FixedRouteCatalogUpdated', handler);
       pusher.unsubscribe(channelName);
     };
   }
@@ -106,7 +159,7 @@ export class AdminRealtimeService {
   }
 
   private apiBase(): string {
-    return (localStorage.getItem('dreamcabs_api_base')?.trim() || 'http://localhost:8000/api').replace(/\/$/, '');
+    return 'http://localhost:8000/api';
   }
 
   private authEndpoint(): string {

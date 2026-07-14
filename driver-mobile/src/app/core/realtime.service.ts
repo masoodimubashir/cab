@@ -39,12 +39,33 @@ export type TripCustomerLocationPayload = {
   };
 };
 
+export type FixedRouteCatalogUpdatedPayload = {
+  type: 'fixed_route_catalog_updated';
+  city_id: number;
+  route_id: number | null;
+  reason: string;
+};
+
 export type DriverVerificationUpdatedPayload = {
   type: 'driver_verification_updated';
   driver_id: number | null;
   reason: 'approval_status' | 'document_status' | string;
   document_id?: number | null;
   status?: string | null;
+};
+
+export type AppNotificationPayload = {
+  type: 'app_notification_created';
+  notification: {
+    id: number;
+    type: string;
+    title: string;
+    body?: string | null;
+    data?: Record<string, unknown> | null;
+    icon?: string | null;
+    read_at?: string | null;
+    created_at?: string | null;
+  };
 };
 
 @Injectable({ providedIn: 'root' })
@@ -112,6 +133,25 @@ export class RealtimeService {
     };
   }
 
+  subscribeAppNotifications(
+    userId: number,
+    onCreated: (p: AppNotificationPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-App.Models.User.`;
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: AppNotificationPayload) => onCreated(data);
+
+    channel.bind('AppNotificationCreated', handler);
+
+    return () => {
+      channel.unbind('AppNotificationCreated', handler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
   /**
    * Subscribe to a trip's negotiation channel — used to see live customer fare offers
    * (and your accepted/locked confirmations).
@@ -165,6 +205,42 @@ export class RealtimeService {
     return () => {
       channel.unbind('TripStatusUpdated', statusHandler);
       if (onCustomerLocation) channel.unbind('TripCustomerLocationUpdated', custLocHandler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+  subscribeFixedCatalog(
+    onUpdated: (p: FixedRouteCatalogUpdatedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = 'fixed.catalog';
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: FixedRouteCatalogUpdatedPayload) => onUpdated(data);
+
+    channel.bind('FixedRouteCatalogUpdated', handler);
+
+    return () => {
+      channel.unbind('FixedRouteCatalogUpdated', handler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
+  subscribeFixedCity(
+    cityId: number,
+    onUpdated: (p: FixedRouteCatalogUpdatedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = 'fixed.city.' + cityId;
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: FixedRouteCatalogUpdatedPayload) => onUpdated(data);
+
+    channel.bind('FixedRouteCatalogUpdated', handler);
+
+    return () => {
+      channel.unbind('FixedRouteCatalogUpdated', handler);
       pusher.unsubscribe(channelName);
     };
   }

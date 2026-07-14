@@ -2122,6 +2122,25 @@
 .where-to-bar .wt-text { flex: 1; text-align: left; font-size: 15.5px; font-weight: 700; color: var(--dc-ink-soft, #6C757D); }
 .where-to-bar .wt-arrow { font-size: 18px; color: var(--dc-ink-faint, #9AA3AE); flex: none; }
 
+.active-ride-link {
+  width: 100%;
+  min-height: 46px;
+  margin-bottom: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(18, 179, 91, 0.28);
+  border-radius: 14px;
+  background: rgba(18, 179, 91, 0.08);
+  color: var(--dc-ink, #0D1B2A);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 850;
+}
+.active-ride-link ion-icon:first-child { color: var(--dc-green, #12B35B); font-size: 19px; }
+.active-ride-link span { flex: 1; text-align: left; }
+.active-ride-link ion-icon:last-child { color: var(--dc-ink-faint, #9AA3AE); font-size: 17px; }
+
 .home-products { display: flex; gap: 10px; width: 100%; }
 .home-products .product-card {
   flex: 1;

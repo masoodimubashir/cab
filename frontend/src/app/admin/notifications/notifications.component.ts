@@ -1,6 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
+import { AdminRealtimeService } from '../../core/admin-realtime.service';
 import { IconComponent, IconName } from '../../ui';
 
 interface AppNotification {
@@ -125,16 +127,44 @@ interface AppNotification {
     }
   `],
 })
-export class AdminNotificationsComponent implements OnInit {
+export class AdminNotificationsComponent implements OnInit, OnDestroy {
   loading = false;
   error: string | null = null;
   notifications: AppNotification[] = [];
   unreadCount = 0;
+  private stopLive?: () => void;
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private realtime: AdminRealtimeService,
+  ) {}
 
   ngOnInit(): void {
     this.refresh();
+    this.bindLive();
+  }
+
+  ngOnDestroy(): void {
+    this.stopLive?.();
+  }
+
+  private bindLive(): void {
+    if (this.stopLive) return;
+    const bind = (userId: number | null | undefined) => {
+      if (!userId || this.stopLive) return;
+      this.stopLive = this.realtime.subscribeAppNotifications(userId, (payload) => {
+        const note = payload.notification;
+        if (this.notifications.some((n) => n.id === note.id)) return;
+        this.notifications = [note, ...this.notifications];
+        if (!note.read_at) this.unreadCount += 1;
+      });
+    };
+
+    bind(this.auth.profile?.id);
+    if (!this.stopLive) {
+      this.auth.ensureLoaded().subscribe((profile) => bind(profile?.id));
+    }
   }
 
   refresh(): void {

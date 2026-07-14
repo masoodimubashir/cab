@@ -7,25 +7,12 @@
       <span class="fb-topbar__title">{{ selectedRoute?.name || title }}</span>
     </div>
 
-    <div class="fb-route-hero" *ngIf="selectedRoute; else heroEmpty">
-      <span class="fb-badge">{{ scopeLabel }}</span>
-      <h1>{{ selectedRoute.origin_name }}</h1>
-      <div class="fb-line" aria-hidden="true">
-        <span></span><i></i><span></span>
-      </div>
-      <h2>{{ selectedRoute.dest_name }}</h2>
-      <p>Flat fare · ₹{{ selectedRoute.flat_fare | number: '1.0-0' }} per seat</p>
+    <div id="fixed-route-map" class="fb-map" aria-hidden="true"></div>
+    <div class="fb-map-scrim" aria-hidden="true"></div>
+    <div class="fb-live-badge" *ngIf="liveTrackingActive">
+      <span></span>
+      <strong>Live vehicle</strong>
     </div>
-
-    <ng-template #heroEmpty>
-      <div class="fb-hero">
-        <div class="fb-hero__badge"><ion-icon name="git-branch-outline"></ion-icon></div>
-        <div class="fb-hero__text">
-          <span class="fb-hero__title">{{ title }}</span>
-          <span class="fb-hero__sub">Prepaid shared routes with fixed stops</span>
-        </div>
-      </div>
-    </ng-template>
   </div>
 
   <div class="bottom-sheet">
@@ -40,25 +27,26 @@
         <h3 class="sheet-title">Choose a fixed route</h3>
       </div>
       <div class="sheet-body">
-        <div class="fb-live-list" *ngIf="activeBookings.length">
-          <div class="fb-live-head">Your fixed rides</div>
-          <div class="fb-live" *ngFor="let booking of activeBookings" [ngClass]="liveStatusClass(booking)">
-            <div class="fb-live__icon"><ion-icon name="notifications-outline"></ion-icon></div>
-            <div class="fb-live__main">
-              <span class="fb-live__route">{{ fixedBookingRoute(booking) }}</span>
-              <span class="fb-live__status">{{ liveStatus(booking).label }}</span>
-              <span class="fb-live__detail">{{ liveStatus(booking).detail }}</span>
-              <span class="fb-live__stops">{{ fixedBookingStops(booking) }}</span>
-            </div>
-          </div>
+        <div class="fb-scope-filter" *ngIf="routes.length">
+          <button type="button" class="dc-press" [class.active]="routeFilter === 'all'" (click)="setRouteFilter('all')">
+            <span>All</span><small>{{ routes.length }}</small>
+          </button>
+          <button type="button" class="dc-press" [class.active]="routeFilter === 'local'" (click)="setRouteFilter('local')">
+            <span>Local</span><small>{{ localRouteCount }}</small>
+          </button>
+          <button type="button" class="dc-press" [class.active]="routeFilter === 'outstation'" (click)="setRouteFilter('outstation')">
+            <span>Outstation</span><small>{{ outstationRouteCount }}</small>
+          </button>
         </div>
-        <div class="fb-empty" *ngIf="!routes.length">
+
+        <div class="fb-empty" *ngIf="!visibleRoutes.length">
           <ion-icon name="git-branch-outline"></ion-icon>
           <p>{{ error || 'No ' + scopeLabel.toLowerCase() + ' fixed routes are available yet.' }}</p>
         </div>
 
-        <button type="button" class="fb-card dc-press" *ngFor="let r of routes" (click)="pickRoute(r)">
+        <button type="button" class="fb-card dc-press" *ngFor="let r of visibleRoutes" (click)="pickRoute(r)">
           <div class="fb-card__main">
+            <span class="fb-card__meta"><ion-icon [name]="routeScopeIcon(r)"></ion-icon>{{ routeScopeLabel(r) }}</span>
             <span class="fb-card__title">{{ r.name }}</span>
             <span class="fb-card__sub">{{ r.origin_name }} → {{ r.dest_name }}</span>
           </div>
@@ -85,13 +73,17 @@
           <span>{{ fullStateText }}</span>
         </div>
 
-        <button type="button" class="fb-card dc-press" *ngFor="let d of departures" [disabled]="d.seats_remaining <= 0" (click)="pickDeparture(d)">
+        <div class="fb-full" *ngIf="locationWarning">
+          <ion-icon name="location-outline"></ion-icon>
+          <span>{{ locationWarning }}</span>
+        </div>
+
+        <button type="button" class="fb-card fb-vehicle-card dc-press" *ngFor="let d of departures" [disabled]="d.seats_remaining <= 0" (click)="pickDeparture(d)">
           <div class="fb-card__main">
-            <span class="fb-card__title">{{ departureTime(d) }}</span>
-            <span class="fb-card__sub">{{ d.seats_taken }} of {{ d.capacity }} seats filled · {{ d.luggage_remaining }} luggage left</span>
+            <span class="fb-card__title">{{ departureVehicleName(d) }}</span>
+            <span class="fb-card__sub">{{ d.vehicle_type_name || d.vehicle_name || departureVehicleName(d) }} · {{ departureDriverName(d) }}</span>
           </div>
           <div class="fb-card__right">
-            <span class="fb-seat" [class.full]="d.seats_remaining <= 0">{{ d.seats_remaining }} left</span>
             <ion-icon name="chevron-forward-outline"></ion-icon>
           </div>
         </button>
@@ -122,7 +114,7 @@
 
         <label class="fb-field">
           <span class="fb-label">Drop at</span>
-          <ion-select [(ngModel)]="dropStopId" interface="action-sheet" placeholder="Pick stop">
+          <ion-select [(ngModel)]="dropStopId" (ngModelChange)="onDropStopChange()" interface="action-sheet" placeholder="Pick stop">
             <ion-select-option *ngFor="let s of dropStops" [value]="s.id">{{ s.name }}</ion-select-option>
           </ion-select>
         </label>
@@ -130,11 +122,6 @@
         <div class="fb-unavailable" *ngIf="dropStopHelp">
           <ion-icon name="alert-circle-outline"></ion-icon>
           <span>{{ dropStopHelp }}</span>
-        </div>
-
-        <div class="fb-unavailable" *ngIf="unavailableStops.length">
-          <ion-icon name="remove-circle-outline"></ion-icon>
-          <span>{{ unavailableStops.length }} stop{{ unavailableStops.length > 1 ? 's are' : ' is' }} currently unavailable.</span>
         </div>
 
         <div class="fb-field fb-seats">
@@ -176,11 +163,63 @@
       </div>
 
       <div class="sheet-foot">
+        <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="reviewBooking()">
+          Confirm & pay
+        </button>
+      </div>
+    </div>
+
+    <div class="sheet-pane" *ngIf="step === 'review' && !loading">
+      <div class="sheet-head">
+        <h3 class="sheet-title">Review fixed ride</h3>
+      </div>
+      <div class="sheet-body">
+        <div class="fb-review-card">
+          <div class="fb-review-card__head">
+            <div>
+              <span>{{ selectedRoute?.name || 'Fixed route' }}</span>
+              <strong>{{ departureVehicleName(selectedDeparture) }}</strong>
+            </div>
+            <ion-icon name="car-outline"></ion-icon>
+          </div>
+          <div class="fb-path">
+            <div><small>Board</small><strong>{{ stopName(boardStopId) }}</strong></div>
+            <ion-icon name="arrow-forward-outline"></ion-icon>
+            <div><small>Drop</small><strong>{{ stopName(dropStopId) }}</strong></div>
+          </div>
+          <div class="fb-review-meta">
+            <span>{{ departureDriverName(selectedDeparture) }}</span>
+            <span>{{ seats }} seat{{ seats > 1 ? 's' : '' }}</span>
+            <span>{{ extraLuggageCount }} luggage</span>
+          </div>
+        </div>
+
+        <div class="fb-price-card">
+          <div><span>Seat fare</span><strong>₹{{ (selectedRoute?.flat_fare || 0) * seats | number: '1.0-2' }}</strong></div>
+          <div><span>Extra luggage</span><strong>₹{{ luggageTotal | number: '1.0-2' }}</strong></div>
+          <div *ngIf="discountTotal > 0" class="is-discount"><span>Coupon discount</span><strong>-₹{{ discountTotal | number: '1.0-2' }}</strong></div>
+          <div class="is-total"><span>Final price</span><strong>₹{{ payableTotal | number: '1.0-2' }}</strong></div>
+        </div>
+
+        <div class="fb-coupon-card">
+          <label class="fb-coupon-field">
+            <span>Coupon</span>
+            <input type="text" [(ngModel)]="couponTitle" (ngModelChange)="clearCouponPreview()" placeholder="Enter coupon title" />
+          </label>
+          <button type="button" class="fb-coupon-apply dc-press" (click)="applyCoupon()" [disabled]="applyingCoupon || !couponTitle.trim()">
+            {{ applyingCoupon ? 'Checking…' : 'Apply coupon' }}
+          </button>
+          <button type="button" class="fb-coupon-remove" *ngIf="couponPreview" (click)="removeCoupon()">Remove coupon</button>
+          <p class="fb-coupon-ok" *ngIf="couponMessage">{{ couponMessage }}</p>
+          <p class="fb-coupon-error" *ngIf="couponError">{{ couponError }}</p>
+        </div>
+      </div>
+      <div class="sheet-foot">
         <button type="button" class="fb-cta fb-cta--test dc-press" [disabled]="!canConfirm" (click)="testPay()">
           {{ booking ? 'Confirming…' : 'Pay test' }}
         </button>
         <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="confirm()">
-          {{ booking ? 'Confirming…' : 'Confirm & pay ₹' + (fareTotal | number: '1.0-2') }}
+          {{ booking ? 'Confirming…' : 'Confirm & pay ₹' + (payableTotal | number: '1.0-2') }}
         </button>
       </div>
     </div>
@@ -195,7 +234,7 @@
       </div>
       <div class="sheet-foot">
         <button type="button" class="fb-cta fb-cta--test dc-press" routerLink="/customer-tabs/fixed-rides">Fixed ride details</button>
-        <button type="button" class="fb-cta dc-press" (click)="done()">View trips</button>
+        <button type="button" class="fb-cta dc-press" (click)="done()">Fixed ride details</button>
       </div>
     </div>
   </div>

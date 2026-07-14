@@ -79,6 +79,12 @@ type ShuttleBooking = {
   payment_status?: string;
 };
 
+type ActiveFixedRide = {
+  id: number;
+  status: string;
+  trip_id?: number | null;
+};
+
 type ShuttleBookingResponse = {
   booking?: ShuttleBooking;
   message?: string;
@@ -337,6 +343,8 @@ export class CustomerBookPage implements OnDestroy {
   // Home skeleton-loading — a full-screen skeleton covers the whole home
   // (map + top bar + sheet) on cold start until BOTH the map and the home
   // data are ready, then it fades out and the live screen reveals.
+  activeFixedRides: ActiveFixedRide[] = [];
+
   homeLoading = true;
   private homeLoadStart = Date.now();
   private productsReady = false;
@@ -373,6 +381,7 @@ export class CustomerBookPage implements OnDestroy {
     this.loadVehicleTypes();
     this.loadCities();
     this.loadSavedPlaces();
+    this.loadActiveFixedRides();
   }
 
   ionViewDidEnter(): void {
@@ -432,6 +441,24 @@ export class CustomerBookPage implements OnDestroy {
   // ─────────────────────────────────────────────────────────────────
   // Lookups + initial state
   // ─────────────────────────────────────────────────────────────────
+
+  private loadActiveFixedRides(): void {
+    this.api.get<{ data: ActiveFixedRide[] }>("/fixed/bookings").subscribe({
+      next: (res) => {
+        const rows = res?.data || [];
+        this.activeFixedRides = rows
+          .filter((ride) => !["DROPPED", "COMPLETED", "CANCELLED", "NO_SHOW"].includes(ride.status))
+          .slice(0, 1);
+      },
+      error: () => {
+        this.activeFixedRides = [];
+      },
+    });
+  }
+
+  viewActiveFixedRide(): void {
+    this.router.navigateByUrl("/customer-tabs/fixed-rides?active=1");
+  }
 
   private loadRideTypes(): void {
     this.api.get<{ data: RideType[] }>('/pricing/ride-types').subscribe({

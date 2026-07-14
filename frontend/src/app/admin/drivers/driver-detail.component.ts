@@ -10,6 +10,7 @@ import {
   FilterSelectComponent,
   IconComponent,
   InputComponent,
+  ModalComponent,
   StatusPillComponent,
 } from '../../ui';
 
@@ -30,6 +31,8 @@ interface DriverProfile {
   device_type: string | null;
   ride_type_name: string | null;
   vehicle_type_name: string | null;
+  city_vehicle_type_id: number | null;
+  city_vehicle_type_name: string | null;
   vehicle_type: string | null;
   vehicle_brand: string | null;
   vehicle_model: string | null;
@@ -48,6 +51,7 @@ interface DriverProfile {
   current_lat?: number | null;
   current_lng?: number | null;
   current_location_updated_at?: string | null;
+  push_unsubscribed: boolean;
 }
 
 type TabKey = 'rides' | 'wallet' | 'cancelled';
@@ -65,6 +69,7 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
     FilterSelectComponent,
     IconComponent,
     InputComponent,
+    ModalComponent,
     StatusPillComponent,
   ],
   template: `
@@ -110,6 +115,11 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
               <tm-icon name="more-horizontal" [size]="16" />
             </button>
             <div class="more-menu" *ngIf="moreMenuOpen" (click)="$event.stopPropagation()">
+              <button type="button" class="more-menu__item" (click)="closeMore(); openUnsub()">
+                <tm-icon name="bell" [size]="14" />
+                <span>Subscription preferences</span>
+              </button>
+              <div class="more-menu__sep"></div>
               <button
                 type="button"
                 class="more-menu__item"
@@ -221,6 +231,7 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
                 <div class="kv-row"><span>Colour</span><strong>{{ profile.vehicle_color || '—' }}</strong></div>
                 <div class="kv-row"><span>Reg no</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
                 <div class="kv-row"><span>Vehicle type</span><strong>{{ profile.vehicle_type_name || profile.vehicle_type || '—' }}</strong></div>
+                <div class="kv-row"><span>Car</span><strong>{{ profile.city_vehicle_type_name || '—' }}</strong></div>
                 <div class="kv-row"><span>Ride type</span><strong>{{ profile.ride_type_name || '—' }}</strong></div>
                 <div class="kv-row"><span>City</span><strong>{{ profile.city_name || '—' }}</strong></div>
               </div>
@@ -259,6 +270,16 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
               <div class="kv-row"><span>Account</span><strong>{{ profile.is_active ? 'Active' : 'Inactive' }}</strong></div>
               <div class="kv-row" *ngIf="!profile.is_active"><span>Reason</span><strong>{{ profile.deactivated_reason || '—' }}</strong></div>
               <div class="kv-row"><span>Registered</span><strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong></div>
+            </div>
+          </section>
+
+          <section class="detail-card">
+            <div class="detail-card__head">
+              <h3 class="detail-card__title">Notification preferences</h3>
+              <span class="detail-card__hint">App channels</span>
+            </div>
+            <div class="kv-list">
+              <div class="kv-row"><span>Push</span><strong>{{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
             </div>
           </section>
         </aside>
@@ -464,6 +485,32 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
         <span>Loading driver…</span>
       </div>
     </ng-template>
+
+    <tm-modal
+      [open]="unsubOpen"
+      title="Subscription preferences"
+      (closed)="unsubOpen = false"
+    >
+      <div slot="body">
+        <p class="hint">This per-user setting controls only app push notifications. Email and SMS are controlled from Operator Settings.</p>
+        <div class="check-list">
+          <label class="check" [class.is-on]="unsubPush">
+            <input type="checkbox" [(ngModel)]="unsubPush" />
+            <span class="check__box"><tm-icon name="check" [size]="11" /></span>
+            <span class="check__body">
+              <span class="check__title">Unsubscribe push</span>
+              <span class="check__sub">Firebase app push notifications</span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="unsubOpen = false">Cancel</tm-button>
+        <tm-button variant="green" icon="check" [loading]="unsubSaving" (clicked)="submitUnsub()">
+          Save preferences
+        </tm-button>
+      </ng-container>
+    </tm-modal>
 
   `,
   styles: [`
@@ -1305,6 +1352,15 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
     }
     .form-input:focus { border-color: var(--tm-ink); }
     .form-textarea { resize: vertical; min-height: 64px; font-family: inherit; }
+    .hint { margin: 0 0 12px; color: var(--tm-text-muted); font-size: 13px; line-height: 1.5; }
+    .check-list { display: flex; flex-direction: column; gap: 10px; }
+    .check { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); cursor: pointer; background: var(--tm-surface); }
+    .check input { position: absolute; opacity: 0; pointer-events: none; }
+    .check__box { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--tm-line-2); display: inline-flex; align-items: center; justify-content: center; color: transparent; flex: none; margin-top: 1px; }
+    .check.is-on .check__box { background: var(--tm-green); border-color: var(--tm-green); color: #fff; }
+    .check__body { display: flex; flex-direction: column; gap: 2px; }
+    .check__title { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .check__sub { font-size: 12px; color: var(--tm-text-muted); line-height: 1.35; }
 
     .action-toggle {
       display: grid;
@@ -1478,6 +1534,9 @@ export class DriverDetailComponent implements OnInit {
   moreMenuOpen = false;
   busyApproval = false;
   busyActivation = false;
+  unsubOpen = false;
+  unsubPush = false;
+  unsubSaving = false;
 
 
   readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' }[] = [
@@ -1649,6 +1708,35 @@ export class DriverDetailComponent implements OnInit {
     this.moreMenuOpen = false;
   }
 
+  openUnsub(): void {
+    this.unsubPush = this.profile?.push_unsubscribed ?? false;
+    this.unsubOpen = true;
+  }
+
+  submitUnsub(): void {
+    if (!this.profile || this.unsubSaving) return;
+    this.unsubSaving = true;
+    this.api.post<any>(`/admin/drivers/${this.driverId}/unsubscribe`, {
+      push: this.unsubPush,
+    }).subscribe({
+      next: () => {
+        if (this.profile) {
+          this.profile = {
+            ...this.profile,
+            push_unsubscribed: this.unsubPush,
+          };
+        }
+        this.unsubOpen = false;
+        this.unsubSaving = false;
+        this.toast.success("Push preference updated");
+      },
+      error: (err) => {
+        this.unsubSaving = false;
+        this.toast.error(err?.error?.message || "Could not update push preference");
+      },
+    });
+  }
+
   @HostListener('document:click')
   onDocClick(): void {
     if (this.moreMenuOpen) this.moreMenuOpen = false;
@@ -1710,6 +1798,7 @@ export class DriverDetailComponent implements OnInit {
     this.api.get<any>(`/admin/drivers/${this.driverId}/profile`).subscribe({
       next: (res) => {
         this.profile = res.driver;
+        this.unsubPush = this.profile?.push_unsubscribed ?? false;
       },
       error: (err) =>
         this.toast.error(

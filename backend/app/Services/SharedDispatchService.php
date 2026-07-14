@@ -261,10 +261,14 @@ class SharedDispatchService
     private function resolveRideTypeId(Route $route): int
     {
         $cvt = $route->cityVehicleType()->first();
-        if ($cvt && $cvt->ride_type_id) {
+        if ($cvt && $cvt->ride_type_id && RideType::query()->whereKey((int) $cvt->ride_type_id)->exists()) {
             return (int) $cvt->ride_type_id;
         }
-        return (int) (RideType::query()->orderBy('id')->value('id') ?? 1);
+
+        return (int) RideType::query()->firstOrCreate(
+            ['name' => 'Fixed'],
+            ['description' => 'Fixed route shared ride', 'sort_order' => 30],
+        )->id;
     }
 
     private function notifyDriver(int $driverId, Route $route, int $pax): void

@@ -125,6 +125,7 @@
 .vehicle-top,
 .passenger-head,
 .route-points,
+.route-endpoints,
 .route-meta,
 .trip-line,
 .meta-line,
@@ -207,7 +208,22 @@
   &--split ion-input {
     max-width: 88px;
   }
+
+  &--stack {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+    padding: 11px 13px;
+  }
+
+  &--stack ion-select {
+    width: 100%;
+    max-width: none;
+    min-height: 34px;
+    text-align: left;
+  }
 }
+
 
 .route-summary {
   margin: 0 0 10px;
@@ -230,6 +246,39 @@
 
   ion-icon {
     color: var(--fixed-green);
+  }
+}
+
+.route-endpoints {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+
+  div {
+    padding: 10px 11px;
+    border: 1px solid var(--fixed-line);
+    border-radius: 12px;
+    background: #ffffff;
+  }
+
+  span,
+  strong {
+    display: block;
+  }
+
+  span {
+    margin-bottom: 3px;
+    color: var(--fixed-green);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  strong {
+    color: var(--fixed-dark);
+    font-size: 14px;
+    font-weight: 850;
+    line-height: 1.3;
   }
 }
 
@@ -272,6 +321,46 @@
     color: var(--fixed-dark);
     font-size: 18px;
     font-weight: 900;
+  }
+
+  .route-line {
+    display: block;
+    margin-top: 4px;
+    color: var(--fixed-muted);
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.35;
+  }
+}
+
+
+.vehicle-badges {
+  flex: 0 0 auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.gps-pill {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fixed-dark);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+
+  span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--fixed-green);
+    box-shadow: 0 0 0 4px rgba(18, 179, 91, 0.18);
   }
 }
 
@@ -352,6 +441,19 @@
 
   .dc-cta {
     flex: 1;
+    min-width: 0;
+    min-height: 44px;
+  }
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+
+  .dc-cta {
+    width: 100%;
     min-width: 0;
     min-height: 44px;
   }
@@ -445,6 +547,7 @@
   }
 
   .action-row,
+  .action-grid,
   .passenger-actions {
     grid-template-columns: 1fr;
     flex-direction: column;
@@ -461,4 +564,1222 @@
   ion-input {
     --color: var(--fixed-muted);
   }
+}
+
+/* Passenger manifest polish */
+.passenger-section {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--fixed-line);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(13, 27, 42, 0.08);
+}
+
+.manifest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid var(--fixed-line);
+
+  span,
+  strong {
+    display: block;
+  }
+
+  span {
+    margin-bottom: 3px;
+    color: var(--fixed-green);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  strong {
+    color: var(--fixed-dark);
+    font-size: 17px;
+    font-weight: 900;
+    line-height: 1.2;
+  }
+
+  ion-icon {
+    width: 38px;
+    height: 38px;
+    padding: 9px;
+    border-radius: 50%;
+    background: #E7F8EF;
+    color: var(--fixed-green);
+  }
+}
+
+.stop-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 8px;
+  color: var(--fixed-dark);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+
+  &::before {
+    content: '';
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--fixed-green);
+    box-shadow: 0 0 0 4px #E7F8EF;
+    flex: 0 0 auto;
+  }
+}
+
+.passenger-card {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 12px;
+  padding: 0;
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.passenger-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--fixed-green);
+}
+
+.passenger-head {
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 12px 10px 16px;
+
+  strong {
+    display: block;
+    max-width: 190px;
+    overflow: hidden;
+    color: var(--fixed-dark);
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  p {
+    margin-top: 4px;
+    color: var(--fixed-muted);
+    font-size: 12px;
+    font-weight: 750;
+  }
+
+  ion-badge {
+    --padding-start: 9px;
+    --padding-end: 9px;
+    min-height: 24px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+}
+
+.trip-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 0 16px;
+  padding: 10px;
+  border: 0;
+  border-radius: 13px;
+  background: #F7FAF8;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fixed-dark);
+    font-size: 12px;
+    font-weight: 850;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  ion-icon {
+    width: 22px;
+    height: 22px;
+    padding: 4px;
+    border-radius: 50%;
+    background: #ffffff;
+    color: var(--fixed-green);
+  }
+}
+
+.meta-line {
+  margin: 10px 12px 12px 16px;
+
+  span {
+    background: #F1F4F7;
+    color: var(--fixed-dark);
+  }
+}
+
+.passenger-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px 12px 16px;
+
+  .dc-cta {
+    min-height: 42px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .dc-cta:not(.dc-cta--ghost) {
+    color: #ffffff;
+  }
+}
+
+@media (max-width: 360px) {
+  .passenger-section {
+    padding: 10px;
+  }
+
+  .passenger-head strong {
+    max-width: 150px;
+  }
+
+  .passenger-actions--triple {
+    grid-template-columns: 1fr;
+  }
+
+  .trip-line {
+    grid-template-columns: 1fr;
+
+    ion-icon {
+      transform: rotate(90deg);
+      justify-self: center;
+    }
+  }
+}
+
+
+
+.route-progress-simple {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 0 2px;
+}
+
+.route-progress-simple__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.route-progress-simple__head span {
+  display: block;
+  color: var(--fixed-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.route-progress-simple__head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--fixed-text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.route-progress-simple__head p {
+  margin: 4px 0 0;
+  color: var(--fixed-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.route-progress-simple__list {
+  display: grid;
+  gap: 7px;
+}
+
+.route-progress-simple__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0;
+  color: var(--fixed-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.route-progress-simple__row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-progress-simple__row small {
+  flex: 0 0 auto;
+  color: var(--fixed-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.route-progress-simple__row.is-next span,
+.route-progress-simple__row.is-next small {
+  color: var(--fixed-text);
+}
+
+.route-progress-simple__row.is-done {
+  opacity: 0.7;
+}
+
+@media (max-width: 420px) {
+  .route-progress-simple__head {
+    flex-direction: column;
+  }
+}
+
+
+.dc-cta--danger {
+  border: 1px solid #F2B8B5;
+  background: #FDECEC;
+  color: #B42318;
+}
+
+
+.driver-map-link-panel {
+  margin-bottom: 14px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.map-link {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 0;
+  background: #FFFFFF;
+  color: var(--fixed-text);
+  text-align: left;
+}
+
+.map-link__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #EAF8F0;
+  color: #12B35B;
+  font-size: 22px;
+}
+
+.map-link__copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.map-link__copy strong {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--fixed-text);
+}
+
+.map-link__copy small {
+  overflow: hidden;
+  color: var(--fixed-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-link__chev {
+  color: var(--fixed-muted);
+  font-size: 20px;
+}
+
+
+/* Fixed boarding UI refinement */
+.fixed-shell {
+  padding: 0 12px calc(18px + env(safe-area-inset-bottom));
+}
+
+.fixed-hero {
+  margin: 0 -12px 0;
+  padding: 22px 16px 34px;
+}
+
+.fixed-hero h1 {
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.fixed-hero p {
+  font-size: 13px;
+}
+
+.fixed-panel,
+.passenger-section,
+.empty-panel {
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgba(13, 27, 42, 0.06);
+}
+
+.fixed-panel {
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.open-panel,
+.active-panel {
+  margin-top: -18px;
+}
+
+.vehicle-top {
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--fixed-line);
+}
+
+.vehicle-top h2 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.vehicle-top .route-line {
+  font-size: 12px;
+}
+
+.vehicle-badges {
+  gap: 5px;
+}
+
+.gps-pill,
+.status-pill {
+  min-height: 25px;
+  padding: 0 9px;
+  font-size: 10px;
+}
+
+.capacity-row {
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.capacity-row div {
+  min-height: 56px;
+  padding: 8px 6px;
+  border: 1px solid #EEF2F6;
+  background: #FFFFFF;
+}
+
+.capacity-row strong {
+  font-size: 18px;
+}
+
+.meter-wrap {
+  margin-bottom: 12px;
+}
+
+.action-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.action-grid .dc-cta {
+  min-height: 58px;
+  padding: 7px 5px;
+  border-radius: 12px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.action-grid .dc-cta ion-icon {
+  font-size: 18px;
+}
+
+.driver-map-link-panel {
+  border-radius: 14px;
+}
+
+.map-link {
+  padding: 12px;
+}
+
+.map-link__icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.route-progress-simple {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid var(--fixed-line);
+  border-radius: 14px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 22px rgba(13, 27, 42, 0.05);
+}
+
+.route-progress-simple__list {
+  gap: 0;
+}
+
+.route-progress-simple__row {
+  min-height: 32px;
+  border-top: 1px solid #F1F4F7;
+}
+
+.route-progress-simple__row:first-child {
+  border-top: 0;
+}
+
+.passenger-section {
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.manifest-head {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.manifest-head strong {
+  font-size: 15px;
+}
+
+.manifest-head ion-icon {
+  width: 34px;
+  height: 34px;
+  padding: 8px;
+}
+
+.stop-title {
+  margin: 10px 0 7px;
+  font-size: 12px;
+}
+
+.stop-title span {
+  margin-left: auto;
+  color: var(--fixed-muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.passenger-card {
+  margin-bottom: 9px;
+  border-radius: 12px;
+}
+
+.passenger-head {
+  padding: 10px 10px 8px 14px;
+}
+
+.passenger-head strong {
+  font-size: 14px;
+}
+
+.trip-line {
+  margin: 0 10px 0 14px;
+  padding: 9px;
+  border-radius: 10px;
+}
+
+.meta-line {
+  margin: 8px 10px 10px 14px;
+}
+
+.passenger-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 0 10px 10px 14px;
+}
+
+.passenger-actions .dc-cta {
+  min-height: 38px;
+  padding: 6px 5px;
+  font-size: 11px;
+}
+
+.action-hint {
+  margin: -4px 10px 10px 14px;
+  color: var(--fixed-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.completion-checklist {
+  margin-top: 10px;
+  padding: 11px;
+  border-radius: 12px;
+  background: #FAFBFC;
+}
+
+@media (max-width: 390px) {
+  .action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .passenger-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Device screenshot pass: fixed boarding polish */
+.fixed-header ion-toolbar {
+  --min-height: 52px;
+}
+
+.fixed-shell {
+  padding-inline: 10px;
+}
+
+.fixed-hero {
+  margin: 0 -10px;
+  padding: 14px 14px 22px;
+}
+
+.fixed-hero .drv-badge {
+  min-height: 22px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.fixed-hero h1 {
+  margin: 5px 0 0;
+  font-size: 20px;
+}
+
+.fixed-hero p {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.active-panel {
+  margin-top: -12px;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.vehicle-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+
+.vehicle-top p {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vehicle-top h2 {
+  margin-top: 2px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.vehicle-top .route-line {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.vehicle-badges {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.capacity-row {
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 8px;
+}
+
+.capacity-row div {
+  min-height: 48px;
+  padding: 7px 4px;
+  border-radius: 10px;
+}
+
+.capacity-row strong {
+  font-size: 17px;
+}
+
+.capacity-row span {
+  font-size: 10px;
+}
+
+.meter-wrap {
+  margin-bottom: 10px;
+}
+
+.meter-copy {
+  margin-bottom: 5px;
+  font-size: 11px;
+}
+
+.meter-wrap ion-progress-bar {
+  height: 6px;
+}
+
+.action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.action-grid .dc-cta {
+  min-height: 44px;
+  padding: 7px 8px;
+  flex-direction: row;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.action-grid .dc-cta ion-icon {
+  flex: 0 0 auto;
+  font-size: 17px;
+}
+
+.completion-checklist {
+  margin-top: 8px;
+  padding: 9px;
+}
+
+.completion-checklist__head {
+  gap: 8px;
+}
+
+.completion-checklist__head span,
+.completion-checklist__head strong {
+  font-size: 11px;
+}
+
+.driver-map-link-panel {
+  margin-bottom: 8px;
+}
+
+.map-link {
+  padding: 10px;
+}
+
+.map-link__icon {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+}
+
+.map-link__copy strong {
+  font-size: 13px;
+}
+
+.map-link__copy small {
+  font-size: 11px;
+}
+
+.route-progress-simple {
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.route-progress-simple__head strong {
+  font-size: 13px;
+}
+
+.route-progress-simple__row {
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.passenger-section {
+  padding: 9px;
+  border-radius: 12px;
+}
+
+.manifest-head {
+  margin-bottom: 6px;
+  padding-bottom: 7px;
+}
+
+.manifest-head span {
+  font-size: 10px;
+}
+
+.manifest-head strong {
+  font-size: 14px;
+}
+
+.manifest-head ion-icon {
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+}
+
+.stop-title {
+  margin: 9px 0 6px;
+  font-size: 11px;
+}
+
+.passenger-card {
+  margin-bottom: 8px;
+  border-radius: 11px;
+}
+
+.passenger-head {
+  padding: 9px 9px 7px 13px;
+}
+
+.passenger-head strong {
+  max-width: 170px;
+  font-size: 13px;
+}
+
+.passenger-head p {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.passenger-head ion-badge {
+  min-height: 22px;
+  font-size: 9px;
+}
+
+.trip-line {
+  margin: 0 9px 0 13px;
+  padding: 8px;
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+}
+
+.trip-line span {
+  font-size: 11px;
+}
+
+.trip-line ion-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.meta-line {
+  margin: 7px 9px 9px 13px;
+  gap: 5px;
+}
+
+.meta-line span {
+  padding: 4px 7px;
+  font-size: 10px;
+}
+
+.passenger-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 9px 9px 13px;
+}
+
+.passenger-actions .dc-cta {
+  min-height: 36px;
+  padding: 5px 4px;
+  font-size: 10px;
+  border-radius: 10px;
+}
+
+.action-hint {
+  margin: -3px 9px 9px 13px;
+  font-size: 10px;
+}
+
+.fixed-alert {
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+
+/* Passenger controls final polish */
+.stop-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  margin: 10px 0 8px;
+  padding: 10px 11px;
+  border: 1px solid #E8ECF0;
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.stop-title::before {
+  display: none;
+}
+
+.stop-title > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fixed-dark);
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-title__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.stop-title__stats small {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #F5F7FA;
+  color: var(--fixed-muted);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.stop-title__stats small:first-child {
+  background: #E7F8EF;
+  color: var(--fixed-green);
+}
+
+.passenger-actions.passenger-actions--triple {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 10px 10px 14px;
+}
+
+.passenger-action {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.passenger-action ion-icon {
+  flex: 0 0 auto;
+  font-size: 17px;
+}
+
+.passenger-action--board {
+  grid-column: 1 / -1;
+  min-height: 46px;
+  background: var(--fixed-green);
+  color: #FFFFFF;
+  box-shadow: 0 8px 18px rgba(18, 179, 91, 0.2);
+}
+
+.passenger-action--drop {
+  border: 1px solid #DDE5EE;
+  background: #FFFFFF;
+  color: var(--fixed-dark);
+}
+
+.passenger-action--noshow {
+  border: 1px solid #F2B8B5;
+  background: #FFF5F5;
+  color: #B42318;
+}
+
+.passenger-action:disabled {
+  opacity: 0.42;
+  box-shadow: none;
+}
+
+.action-hint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin: -2px 10px 10px 14px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #F5F7FA;
+  color: var(--fixed-muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+@media (max-width: 360px) {
+  .passenger-actions.passenger-actions--triple {
+    grid-template-columns: 1fr;
+  }
+
+  .passenger-action--board {
+    grid-column: auto;
+  }
+}
+
+
+/* Fixed boarding requested cleanup */
+.active-panel {
+  margin-top: 8px;
+  padding: 11px;
+}
+
+.vehicle-top {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 0;
+}
+
+.vehicle-top h2 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.capacity-row {
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.capacity-row div {
+  min-height: 44px;
+  padding: 6px 4px;
+  border-radius: 10px;
+  background: #F8FAFC;
+}
+
+.capacity-row strong {
+  font-size: 16px;
+}
+
+.capacity-row span {
+  margin-top: 0;
+  font-size: 9.5px;
+  text-transform: uppercase;
+}
+
+.meter-wrap {
+  margin-bottom: 9px;
+  padding: 8px 9px;
+  border: 1px solid #E8ECF0;
+  border-radius: 10px;
+  background: #FFFFFF;
+}
+
+.meter-copy {
+  margin-bottom: 5px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.meter-copy strong {
+  font-size: 11px;
+}
+
+.action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.action-grid .dc-cta {
+  min-height: 38px;
+  padding: 6px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.action-grid .dc-cta ion-icon {
+  font-size: 15px;
+}
+
+.completion-checklist {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #E8ECF0;
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.completion-checklist__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.completion-checklist__head span {
+  color: var(--fixed-muted);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.completion-checklist__head strong {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #F5F7FA;
+  color: var(--fixed-dark);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.completion-checklist__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.completion-checklist__grid span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #F5F7FA;
+  color: var(--fixed-muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.completion-checklist__grid span.is-blocking {
+  background: #FFF7ED;
+  color: #C2410C;
+}
+
+.route-progress-simple {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.passenger-section {
+  margin-top: 2px;
+  border-radius: 12px;
+}
+
+.passenger-card::before {
+  display: none;
+}
+
+.passenger-card {
+  border: 1px solid #E8ECF0;
+  background: #FFFFFF;
+}
+
+.passenger-head,
+.trip-line,
+.meta-line,
+.passenger-actions.passenger-actions--triple,
+.action-hint {
+  margin-left: 10px;
+}
+
+.passenger-head {
+  padding-left: 0;
+}
+
+.trip-line {
+  margin-right: 10px;
+}
+
+@media (max-width: 360px) {
+  .completion-checklist__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Final fixed boarding text cleanup */
+.fixed-hero {
+  padding-top: 12px;
+}
+
+.vehicle-top {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 7px;
+  padding-bottom: 0;
+}
+
+.vehicle-badges {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.passenger-action:disabled {
+  opacity: 0.68;
+}
+
+.passenger-action--noshow:disabled {
+  border-color: #F2B8B5;
+  background: #FFF5F5;
+  color: #B42318;
+}
+
+.passenger-action--drop:disabled {
+  color: #0D1B2A;
+}
+
+
+/* Disabled passenger button readability */
+.passenger-actions .passenger-action--noshow,
+.passenger-actions .passenger-action--noshow:disabled,
+.passenger-actions .passenger-action--noshow[disabled] {
+  opacity: 1 !important;
+  border: 1px solid #F2B8B5 !important;
+  background: #FFF5F5 !important;
+  color: #B42318 !important;
+  -webkit-text-fill-color: #B42318;
+}
+
+.passenger-actions .passenger-action--noshow ion-icon,
+.passenger-actions .passenger-action--noshow span,
+.passenger-actions .passenger-action--noshow:disabled ion-icon,
+.passenger-actions .passenger-action--noshow:disabled span,
+.passenger-actions .passenger-action--noshow[disabled] ion-icon,
+.passenger-actions .passenger-action--noshow[disabled] span {
+  opacity: 1 !important;
+  color: #B42318 !important;
+  -webkit-text-fill-color: #B42318;
+}
+
+.passenger-actions .passenger-action--drop:disabled,
+.passenger-actions .passenger-action--drop[disabled] {
+  opacity: 0.85 !important;
 }

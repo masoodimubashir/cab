@@ -1,0 +1,84 @@
+<ion-content class="fixed-active-page" [fullscreen]="true">
+  <div class="fixed-active-top">
+    <button class="icon-btn" type="button" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="icon-btn" type="button" (click)="load()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
+    <span>Fixed ride</span>
+    <h1>{{ booking?.route_name || 'Fixed route' }}</h1>
+  </div>
+
+  <main class="fixed-active-body">
+    <div class="state" *ngIf="loading">
+      <ion-spinner name="crescent"></ion-spinner>
+    </div>
+
+    <div class="state state--error" *ngIf="!loading && error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <p>{{ error }}</p>
+    </div>
+
+    <ng-container *ngIf="!loading && booking as ride">
+      <section class="ride-card ride-card--status">
+        <div>
+          <span>Status</span>
+          <strong>{{ bookingStatusLabel(ride) }}</strong>
+          <p>{{ statusDetail(ride) }}</p>
+        </div>
+        <span class="status-pill" [ngClass]="statusClass(ride)">{{ bookingStatusLabel(ride) }}</span>
+      </section>
+
+      <section class="ride-card route-card">
+        <div class="route-stop">
+          <i class="dot dot--pickup"></i>
+          <div><span>Pickup</span><strong>{{ ride.board || 'Pickup stop' }}</strong></div>
+        </div>
+        <div class="route-line"></div>
+        <div class="route-stop">
+          <i class="dot dot--drop"></i>
+          <div><span>Drop</span><strong>{{ ride.drop || 'Drop stop' }}</strong></div>
+        </div>
+      </section>
+
+      <section class="ride-card driver-card">
+        <div class="driver-icon"><ion-icon name="car-sport-outline"></ion-icon></div>
+        <div>
+          <span>Driver & vehicle</span>
+          <strong>{{ ride.driver_name || 'Driver assigned soon' }}</strong>
+          <p>{{ vehicleLine(ride) }}</p>
+          <small *ngIf="carLine(ride) || ride.vehicle_reg_no">{{ carLine(ride) }} {{ ride.vehicle_reg_no ? '· ' + ride.vehicle_reg_no : '' }}</small>
+        </div>
+      </section>
+
+      <section class="ride-grid">
+        <div><span>Date</span><strong>{{ dateLine(ride) }}</strong></div>
+        <div><span>Seats</span><strong>{{ ride.seats }}</strong></div>
+        <div><span>Luggage</span><strong>{{ luggageLine(ride) }}</strong></div>
+        <div><span>Fare</span><strong>{{ fareLine(ride) }}</strong></div>
+        <div><span>Coupon</span><strong>{{ discountLine(ride) }}</strong></div>
+        <div><span>Payment</span><strong>{{ paymentLine(ride) }}</strong></div>
+      </section>
+
+      <section class="ride-card detail-card">
+        <div><span>Booking ID</span><strong>#{{ ride.id }}</strong></div>
+        <div><span>Departure</span><strong>{{ ride.departure_status || 'Scheduled' }}</strong></div>
+        <div><span>Transaction</span><strong>{{ ride.payment_reference || 'Not available' }}</strong></div>
+        <div><span>Refund</span><strong>{{ ride.refund_status || 'None' }}</strong></div>
+      </section>
+
+      <section class="ride-actions">
+        <button class="primary-btn" type="button" (click)="openMap()" [disabled]="!hasMapCoords(ride)">
+          <ion-icon name="map-outline"></ion-icon>
+          <span>Open map</span>
+        </button>
+        <button class="danger-btn" type="button" *ngIf="canCancel(ride)" (click)="cancelRide()" [disabled]="cancelling">
+          <ion-spinner *ngIf="cancelling" name="crescent"></ion-spinner>
+          <ion-icon *ngIf="!cancelling" name="close-circle-outline"></ion-icon>
+          <span>{{ cancelling ? 'Cancelling...' : 'Cancel ride' }}</span>
+        </button>
+      </section>
+    </ng-container>
+  </main>
+</ion-content>

@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Models\DriverLocation;
 use App\Models\Trip;
 use App\Services\ManagerScope;
+use App\Services\FixedManifestService;
 use Illuminate\Http\Request;
 
 class AdminTripsController
 {
+    public function __construct(private readonly FixedManifestService $fixedManifest) {}
+
     /**
      * Lists trips for the admin ride-monitoring screens.
      *
@@ -27,7 +30,7 @@ class AdminTripsController
     public function index(Request $request)
     {
         $query = Trip::query()
-            ->with(['customer', 'driver', 'rideType', 'pricingRule']);
+            ->with(['customer', 'driver', 'rideType', 'pricingRule', 'seatReservations.customer']);
 
         // Restrict to the manager's city scope. Super Admin sees all.
         ManagerScope::applyCityScope($query, 'city_id');
@@ -58,7 +61,8 @@ class AdminTripsController
             if ($needle !== '') {
                 $query->where(function ($q) use ($needle) {
                     $q->whereHas('customer', fn ($c) => $c->where('phone', 'like', "%{$needle}%"))
-                      ->orWhereHas('driver', fn ($d) => $d->where('phone', 'like', "%{$needle}%"));
+                      ->orWhereHas('driver', fn ($d) => $d->where('phone', 'like', "%{$needle}%"))
+                      ->orWhereHas('seatReservations.customer', fn ($c) => $c->where('phone', 'like', "%{$needle}%"));
                 });
             }
         }
@@ -150,6 +154,7 @@ class AdminTripsController
             'pricingRule',
             'payment:id,trip_id,method,provider,status,amount,discount_amount,paid_at,coupon_assignment_id,razorpay_payment_id,razorpay_order_id',
             'payment.couponAssignment.coupon:id,title,discount_type,discount_value',
+            'routeDeparture.route:id,city_id,name,scope,mode,origin_name,dest_name',
         ]);
 
         // Driver profile fields (vehicle reg, brand etc) aren't on users —
@@ -171,10 +176,16 @@ class AdminTripsController
             ->limit(100)
             ->get(['lat', 'lng', 'recorded_at', 'bearing_deg']);
 
+        $fixedManifest = null;
+        if ($trip->routeDeparture && $trip->routeDeparture->route?->mode === 'fixed') {
+            $fixedManifest = $this->fixedManifest->manifest($trip->routeDeparture);
+        }
+
         return response()->json([
             'trip' => $trip,
             'driver_profile' => $driverProfile,
             'path' => $path,
+            'fixed_manifest' => $fixedManifest,
         ]);
     }
 

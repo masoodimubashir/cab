@@ -2,8 +2,13 @@
 
 namespace App\Services;
 
+use App\Exceptions\ReservationException;
 use App\Models\City;
+use App\Models\CityVehicleType;
+use App\Models\FixedSeatHold;
 use App\Models\Route;
+use App\Models\RouteDeparture;
+use App\Models\SeatReservation;
 use App\Models\RouteStop;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +27,7 @@ class FixedRouteService
             ->where('city_id', $cityId)
             ->where('mode', 'fixed')
             ->where('is_active', true)
+            ->whereHas('cityVehicleType', fn ($q) => $q->where('is_active', true))
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -42,6 +48,8 @@ class FixedRouteService
 
     public function createAdminRoute(City $city, array $data): Route
     {
+        $this->assertStopPlanIsValid($data['stops'] ?? []);
+
         return DB::transaction(function () use ($city, $data) {
             $route = Route::query()->create($this->routeAttributes($city, $data));
             $this->syncStops($route, $data['stops'] ?? []);
@@ -53,8 +61,11 @@ class FixedRouteService
     public function updateAdminRoute(City $city, Route $route, array $data): Route
     {
         $this->availability->assertCityOwnsRoute($city, $route);
+        $this->assertStopPlanIsValid($data['stops'] ?? []);
 
         return DB::transaction(function () use ($city, $route, $data) {
+            $route->loadMissing('stops');
+            $this->assertRouteEditIsSafe($route, $data);
             $route->fill($this->routeAttributes($city, $data))->save();
             $this->syncStops($route, $data['stops'] ?? []);
 
@@ -68,6 +79,7 @@ class FixedRouteService
 
         return [
             'id' => $route->id,
+            'city_id' => $route->city_id,
             'name' => $route->name,
             'scope' => $route->scope,
             'mode' => $route->mode,
@@ -77,6 +89,7 @@ class FixedRouteService
             'origin_lng' => (float) $route->origin_lng,
             'dest_lat' => (float) $route->dest_lat,
             'dest_lng' => (float) $route->dest_lng,
+            'path_polyline' => is_array($route->path_polyline) ? $route->path_polyline : null,
             'flat_fare' => $this->pricing->routeFare($route),
             'booking_window_hours' => (int) $route->booking_window_hours,
             'max_seats_per_booking' => (int) $route->max_seats_per_booking,
@@ -126,6 +139,9 @@ class FixedRouteService
     {
         $fareConfig = is_array($data['fare_config'] ?? null) ? $data['fare_config'] : [];
         $fixedSettings = $this->fixedSettings($data['fixed_settings_json'] ?? null);
+        $vehicle = CityVehicleType::query()
+            ->where('city_id', $city->id)
+            ->findOrFail((int) $data['city_vehicle_type_id']);
 
         return [
             'city_id' => $city->id,
@@ -142,7 +158,7 @@ class FixedRouteService
             'dest_lng' => $data['dest_lng'],
             'path_polyline' => $data['path_polyline'] ?? null,
             'corridor_buffer_m' => $data['corridor_buffer_m'] ?? 300,
-            'city_vehicle_type_id' => $data['city_vehicle_type_id'] ?? null,
+            'city_vehicle_type_id' => $vehicle->id,
             'fare_config' => [
                 'seat_fare' => isset($fareConfig['seat_fare']) ? (float) $fareConfig['seat_fare'] : null,
                 'commission_type' => ($fareConfig['commission_type'] ?? 'percent') === 'fixed' ? 'fixed' : 'percent',
@@ -150,10 +166,10 @@ class FixedRouteService
                 'fixed_commission' => isset($fareConfig['fixed_commission']) ? (float) $fareConfig['fixed_commission'] : null,
             ],
             'booking_window_hours' => (int) ($data['booking_window_hours'] ?? 6),
-            'max_seats_per_booking' => (int) ($data['max_seats_per_booking'] ?? 4),
+            'max_seats_per_booking' => max(1, (int) $vehicle->max_people),
             'waiting_time_per_stop_minutes' => (int) ($data['waiting_time_per_stop_minutes'] ?? 0),
             'luggage_surcharge_amount' => (float) ($data['luggage_surcharge_amount'] ?? 0),
-            'max_luggage_per_vehicle' => (int) ($data['max_luggage_per_vehicle'] ?? 0),
+            'max_luggage_per_vehicle' => max(0, (int) $vehicle->luggage_capacity),
             'requires_prepaid' => (bool) ($data['requires_prepaid'] ?? true),
             'fixed_settings_json' => $fixedSettings,
             'advance_required' => false,
@@ -184,10 +200,12 @@ class FixedRouteService
 
     private function syncStops(Route $route, array $stops): void
     {
-        $route->stops()->delete();
+        $existing = $route->stops()->get()->keyBy('id');
+        $keptIds = [];
 
         foreach (array_values($stops) as $index => $stop) {
-            RouteStop::query()->create([
+            $stopId = isset($stop['id']) ? (int) $stop['id'] : null;
+            $attributes = [
                 'route_id' => $route->id,
                 'seq' => (int) ($stop['seq'] ?? ($index + 1)),
                 'name' => trim((string) $stop['name']),
@@ -200,7 +218,131 @@ class FixedRouteService
                 'unavailable_reason' => isset($stop['unavailable_reason']) && trim((string) $stop['unavailable_reason']) !== ''
                     ? trim((string) $stop['unavailable_reason'])
                     : null,
+            ];
+
+            if ($stopId && $existing->has($stopId)) {
+                $existing[$stopId]->update($attributes);
+                $keptIds[] = $stopId;
+                continue;
+            }
+
+            $created = RouteStop::query()->create($attributes);
+            $keptIds[] = (int) $created->id;
+        }
+
+        $route->stops()
+            ->whereNotIn('id', $keptIds ?: [0])
+            ->update([
+                'is_active' => false,
+                'is_temporarily_unavailable' => true,
+                'unavailable_reason' => 'Removed from active route by admin.',
             ]);
+    }
+
+    private function assertStopPlanIsValid(array $stops): void
+    {
+        if (count($stops) < 2) {
+            throw new ReservationException('Add at least two stops for this fixed route.', 422);
+        }
+
+        $seenSeq = [];
+        $pickupSeqs = [];
+        $dropSeqs = [];
+
+        foreach (array_values($stops) as $index => $stop) {
+            $seq = (int) ($stop['seq'] ?? ($index + 1));
+            if ($seq < 1) {
+                throw new ReservationException('Stop order must start from 1.', 422);
+            }
+            if (isset($seenSeq[$seq])) {
+                throw new ReservationException('Two fixed route stops cannot have the same order number.', 422);
+            }
+            $seenSeq[$seq] = true;
+
+            if ((bool) ($stop['is_pickup'] ?? true)) {
+                $pickupSeqs[] = $seq;
+            }
+            if ((bool) ($stop['is_drop'] ?? true)) {
+                $dropSeqs[] = $seq;
+            }
+        }
+
+        if (!$pickupSeqs || !$dropSeqs) {
+            throw new ReservationException('Fixed route needs at least one pickup stop and one drop stop.', 422);
+        }
+
+        if (min($pickupSeqs) >= max($dropSeqs)) {
+            throw new ReservationException('At least one drop stop must come after a pickup stop.', 422);
         }
     }
+
+    private function assertRouteEditIsSafe(Route $route, array $data): void
+    {
+        if (!$this->hasActiveFixedUsage($route)) {
+            return;
+        }
+
+        if (array_key_exists('city_vehicle_type_id', $data) && (int) $data['city_vehicle_type_id'] !== (int) $route->city_vehicle_type_id) {
+            throw new ReservationException('This route has active fixed bookings. Vehicle type cannot be changed right now.', 422);
+        }
+
+        foreach (['origin_lat', 'origin_lng', 'dest_lat', 'dest_lng'] as $coordinateField) {
+            if (array_key_exists($coordinateField, $data) && round((float) $data[$coordinateField], 6) !== round((float) $route->{$coordinateField}, 6)) {
+                throw new ReservationException('This route has active fixed bookings. Origin and destination coordinates cannot be changed right now.', 422);
+            }
+        }
+
+        $currentStops = $route->stops->sortBy('seq')->values();
+        $incomingStops = collect($data['stops'] ?? [])->values();
+        $currentIds = $currentStops->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $incomingIds = $incomingStops->pluck('id')->filter()->map(fn ($id) => (int) $id)->all();
+
+        if ($currentIds !== $incomingIds) {
+            throw new ReservationException('This route has active fixed bookings. Stop additions/removals are blocked until the live vehicle is finished.', 422);
+        }
+
+        foreach ($currentStops as $index => $stop) {
+            $next = $incomingStops[$index] ?? null;
+            if (!$next || (int) ($next['id'] ?? 0) !== (int) $stop->id) {
+                throw new ReservationException('This route has active fixed bookings. Stop order cannot be changed right now.', 422);
+            }
+
+            $latChanged = round((float) ($next['lat'] ?? 0), 6) !== round((float) $stop->lat, 6);
+            $lngChanged = round((float) ($next['lng'] ?? 0), 6) !== round((float) $stop->lng, 6);
+            $flagsChanged = (bool) ($next['is_pickup'] ?? false) !== (bool) $stop->is_pickup
+                || (bool) ($next['is_drop'] ?? false) !== (bool) $stop->is_drop;
+
+            if ($latChanged || $lngChanged || $flagsChanged) {
+                throw new ReservationException('This route has active fixed bookings. Stop coordinates and pickup/drop flags cannot be changed right now.', 422);
+            }
+        }
+
+        $currentPath = is_array($route->path_polyline) ? $route->path_polyline : [];
+        $nextPath = is_array($data['path_polyline'] ?? null) ? $data['path_polyline'] : [];
+        if (json_encode($currentPath) !== json_encode($nextPath)) {
+            throw new ReservationException('This route has active fixed bookings. Route path cannot be changed until the live vehicle is finished.', 422);
+        }
+    }
+
+    private function hasActiveFixedUsage(Route $route): bool
+    {
+        return RouteDeparture::query()
+            ->where('route_id', $route->id)
+            ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])
+            ->where(function ($query) {
+                $query->whereHas('seatReservations', fn ($q) => $q->whereIn('status', SeatReservation::ACTIVE_STATUSES))
+                    ->orWhereHas('fixedSeatHolds', fn ($q) => $q->where('status', 'HELD')->where('expires_at', '>', now()));
+            })
+            ->exists()
+            || SeatReservation::query()
+                ->where('route_id', $route->id)
+                ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+                ->exists()
+            || FixedSeatHold::query()
+                ->whereHas('routeDeparture', fn ($query) => $query->where('route_id', $route->id))
+                ->where('status', 'HELD')
+                ->where('expires_at', '>', now())
+                ->exists();
+    }
+
 }

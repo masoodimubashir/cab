@@ -33,6 +33,15 @@ interface OperatorSettings {
   subscription_popup_button1: string | null;
   subscription_popup_button2: string | null;
 
+  notifications_sms_enabled: boolean;
+  notifications_email_enabled: boolean;
+  fixed_customer_sms_enabled: boolean;
+  fixed_customer_email_enabled: boolean;
+  fixed_driver_sms_enabled: boolean;
+  fixed_driver_email_enabled: boolean;
+  fixed_admin_sms_enabled: boolean;
+  fixed_admin_email_enabled: boolean;
+
   customer_ride_accept_msg: string | null;
   ride_cancellation_msg: string | null;
 }
@@ -42,6 +51,7 @@ type SectionKey =
   | 'geofence'
   | 'wallet'
   | 'subscription'
+  | 'notifications'
   | 'templates';
 
 interface SectionMeta {
@@ -217,6 +227,48 @@ interface SectionMeta {
               </div>
             </ng-container>
 
+            <!-- ============= NOTIFICATIONS ============= -->
+            <ng-container *ngIf="activeSection === 'notifications'">
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">Enable SMS notifications</span>
+                  <span class="switch-row__sub">Master switch for operator-controlled SMS. If off, no fixed SMS should be sent.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.notifications_sms_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">Enable email notifications</span>
+                  <span class="switch-row__sub">Master switch for operator-controlled email receipts, summaries, and fixed updates.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.notifications_email_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
+
+              <div class="fields fields--spaced">
+                <div class="field field--full">
+                  <span class="field__label">Fixed customer messages</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_sms_enabled" /> <span class="mini-check__body"><span class="mini-check__title">SMS for important customer fixed updates</span><span class="mini-check__sub">Booking confirmed, vehicle cancelled, refund approved or refunded, driver arrived, and no-show.</span></span></label>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email receipts and fixed booking records</span><span class="mini-check__sub">Booking receipt, cancellation/refund details, and completed trip summary.</span></span></label>
+                </div>
+                <div class="field field--full">
+                  <span class="field__label">Fixed driver messages</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_driver_sms_enabled" /> <span class="mini-check__body"><span class="mini-check__title">SMS for urgent driver fixed changes</span><span class="mini-check__sub">Fixed vehicle cancelled by admin or major booking change close to departure.</span></span></label>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_driver_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for driver fixed summaries</span><span class="mini-check__sub">End-of-ride or shift summaries only, not live driving alerts.</span></span></label>
+                </div>
+                <div class="field field--full">
+                  <span class="field__label">Fixed admin messages</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_admin_sms_enabled" /> <span class="mini-check__body"><span class="mini-check__title">SMS for critical fixed exceptions</span><span class="mini-check__sub">Driver missed pickup, refund failure or pending issue, and vehicle cancelled with passengers.</span></span></label>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_admin_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for fixed reports and summaries</span><span class="mini-check__sub">Daily or shift summaries, cancellation/refund reports, and operational exception summaries.</span></span></label>
+                </div>
+              </div>
+            </ng-container>
+
             <!-- ============= TEMPLATES ============= -->
             <ng-container *ngIf="activeSection === 'templates'">
               <div class="field field--full">
@@ -356,6 +408,17 @@ interface SectionMeta {
       text-transform: uppercase; color: var(--tm-text-muted);
     }
     .field__hint { font-size: 11px; color: var(--tm-text-soft); font-weight: 500; }
+    .fields--spaced { margin-top: 4px; }
+    .mini-check {
+      display: flex; align-items: flex-start; gap: 9px;
+      padding: 9px 10px; border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-sm); background: var(--tm-canvas);
+      font-size: 13px; font-weight: 650; color: var(--tm-text); cursor: pointer;
+    }
+    .mini-check input { width: 15px; height: 15px; accent-color: var(--tm-green); margin-top: 2px; flex: none; }
+    .mini-check__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .mini-check__title { font-size: 13px; font-weight: 750; color: var(--tm-text); }
+    .mini-check__sub { font-size: 12px; font-weight: 500; color: var(--tm-text-muted); line-height: 1.35; }
     .triple { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
     /* -------- Textarea -------- */
@@ -431,6 +494,7 @@ export class OperatorSettingsComponent implements OnInit {
     { key: 'geofence',     label: 'Driver & Geofence', icon: 'driver-helmet', desc: 'Operational safety checks applied to drivers and trips.' },
     { key: 'wallet',       label: 'Wallet',            icon: 'rupee',         desc: 'Cash-wallet limits and the terms shown to users.' },
     { key: 'subscription', label: 'Subscription',      icon: 'star',          desc: 'Copy for the driver subscription promo popup.' },
+    { key: 'notifications', label: 'Notifications',     icon: 'bell',          desc: 'Operator-level SMS and email switches for fixed module messages.' },
     { key: 'templates',    label: 'Templates',         icon: 'envelope',      desc: 'Notification copy with dynamic placeholders.' },
   ];
 
@@ -439,6 +503,7 @@ export class OperatorSettingsComponent implements OnInit {
     geofence: false,
     wallet: false,
     subscription: false,
+    notifications: false,
     templates: false,
   };
 
@@ -475,6 +540,16 @@ export class OperatorSettingsComponent implements OnInit {
       'subscription_popup_desc',
       'subscription_popup_button1',
       'subscription_popup_button2',
+    ],
+    notifications: [
+      'notifications_sms_enabled',
+      'notifications_email_enabled',
+      'fixed_customer_sms_enabled',
+      'fixed_customer_email_enabled',
+      'fixed_driver_sms_enabled',
+      'fixed_driver_email_enabled',
+      'fixed_admin_sms_enabled',
+      'fixed_admin_email_enabled',
     ],
     templates: ['customer_ride_accept_msg', 'ride_cancellation_msg'],
   };

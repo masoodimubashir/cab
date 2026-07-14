@@ -20,7 +20,38 @@ class FixedBookingsController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json(['data' => $this->bookings->myBookings($request->user())]);
+        $data = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        return response()->json($this->bookings->myBookings(
+            $request->user(),
+            (int) ($data['page'] ?? 1),
+            (int) ($data['per_page'] ?? 50),
+        ));
+    }
+
+    public function show(Request $request, SeatReservation $reservation)
+    {
+        return response()->json([
+            'booking' => $this->bookings->booking($request->user(), $reservation),
+        ]);
+    }
+
+    public function couponPreview(Request $request)
+    {
+        $data = $request->validate([
+            'route_departure_id' => ['required', 'integer', 'exists:route_departures,id'],
+            'board_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
+            'drop_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
+            'seats' => ['nullable', 'integer', 'min:1'],
+            'has_extra_luggage' => ['nullable', 'boolean'],
+            'extra_luggage_count' => ['nullable', 'integer', 'min:0', 'max:200'],
+            'coupon_title' => ['required', 'string', 'max:128'],
+        ]);
+
+        return response()->json($this->seatHolds->previewCoupon($request->user(), $data));
     }
 
     public function storeSeatHold(Request $request)
@@ -32,6 +63,7 @@ class FixedBookingsController extends Controller
             'seats' => ['nullable', 'integer', 'min:1'],
             'has_extra_luggage' => ['nullable', 'boolean'],
             'extra_luggage_count' => ['nullable', 'integer', 'min:0', 'max:200'],
+            'coupon_title' => ['nullable', 'string', 'max:128'],
         ]);
 
         $hold = $this->seatHolds->createHold($request->user(), $data);
@@ -63,8 +95,8 @@ class FixedBookingsController extends Controller
             'reservation' => $this->bookings->shapeBooking($reservation->fresh([
                 'route:id,name,scope,mode',
                 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status',
-                'boardStop:id,name',
-                'dropStop:id,name',
+                'boardStop:id,name,lat,lng',
+                'dropStop:id,name,lat,lng',
             ])),
             'message' => 'Fixed booking confirmed.',
         ], 201);
@@ -92,8 +124,8 @@ class FixedBookingsController extends Controller
             "reservation" => $this->bookings->shapeBooking($reservation->fresh([
                 "route:id,name,scope,mode",
                 "routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status",
-                "boardStop:id,name",
-                "dropStop:id,name",
+                "boardStop:id,name,lat,lng",
+                "dropStop:id,name,lat,lng",
             ])),
             "message" => "Fixed booking confirmed with test payment.",
         ], 201);

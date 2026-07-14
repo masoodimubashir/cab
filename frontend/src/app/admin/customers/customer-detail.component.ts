@@ -33,8 +33,6 @@ interface CustomerProfile {
   is_suspended: boolean;
   suspended_reason: string | null;
   duplicate_registration: boolean;
-  email_unsubscribed: boolean;
-  sms_unsubscribed: boolean;
   push_unsubscribed: boolean;
   wallet_balance: number;
   remaining_coupons: number;
@@ -248,8 +246,6 @@ const BLOCK_REASONS = [
               <span class="detail-card__hint">App channels</span>
             </div>
             <div class="kv-list">
-              <div class="kv-row"><span>Email</span><strong>{{ profile.email_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
-              <div class="kv-row"><span>SMS</span><strong>{{ profile.sms_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
               <div class="kv-row"><span>Push</span><strong>{{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
             </div>
           </section>
@@ -575,31 +571,15 @@ const BLOCK_REASONS = [
     >
       <div slot="body">
         <p class="hint">
-          Toggle which channels this customer is unsubscribed from. Changes are saved when you submit.
+          This per-user setting controls only app push notifications. Email and SMS are controlled from Operator Settings.
         </p>
         <div class="check-list">
-          <label class="check" [class.is-on]="unsubEmail">
-            <input type="checkbox" [(ngModel)]="unsubEmail" />
-            <span class="check__box"><tm-icon name="check" [size]="11" /></span>
-            <span class="check__body">
-              <span class="check__title">Unsubscribe email</span>
-              <span class="check__sub">Promotional + transactional emails</span>
-            </span>
-          </label>
-          <label class="check" [class.is-on]="unsubSms">
-            <input type="checkbox" [(ngModel)]="unsubSms" />
-            <span class="check__box"><tm-icon name="check" [size]="11" /></span>
-            <span class="check__body">
-              <span class="check__title">Unsubscribe SMS</span>
-              <span class="check__sub">Trip updates, OTPs (except security)</span>
-            </span>
-          </label>
           <label class="check" [class.is-on]="unsubPush">
             <input type="checkbox" [(ngModel)]="unsubPush" />
             <span class="check__box"><tm-icon name="check" [size]="11" /></span>
             <span class="check__body">
               <span class="check__title">Unsubscribe push</span>
-              <span class="check__sub">App notifications</span>
+              <span class="check__sub">Firebase app push notifications</span>
             </span>
           </label>
         </div>
@@ -1935,8 +1915,6 @@ export class CustomerDetailComponent implements OnInit {
 
   // Subscribe modal
   unsubOpen = false;
-  unsubEmail = false;
-  unsubSms = false;
   unsubPush = false;
   unsubSaving = false;
 
@@ -2021,8 +1999,6 @@ export class CustomerDetailComponent implements OnInit {
     this.api.get<any>(`/admin/customers/${this.customerId}`).subscribe({
       next: (res) => {
         this.profile = res.customer;
-        this.unsubEmail = this.profile?.email_unsubscribed ?? false;
-        this.unsubSms = this.profile?.sms_unsubscribed ?? false;
         this.unsubPush = this.profile?.push_unsubscribed ?? false;
       },
       error: (err) =>
@@ -2130,19 +2106,17 @@ export class CustomerDetailComponent implements OnInit {
     this.unsubSaving = true;
     this.api
       .post(`/admin/customers/${this.customerId}/unsubscribe`, {
-        email: this.unsubEmail,
-        sms: this.unsubSms,
         push: this.unsubPush,
       })
       .subscribe({
         next: () => {
-          this.toast.success('Subscription preferences updated');
+          this.toast.success('Push preference updated');
           this.unsubSaving = false;
           this.unsubOpen = false;
           this.loadProfile();
         },
         error: (err) => {
-          this.toast.error(err?.error?.message || 'Failed to update preferences');
+          this.toast.error(err?.error?.message || 'Failed to update push preference');
           this.unsubSaving = false;
         },
       });

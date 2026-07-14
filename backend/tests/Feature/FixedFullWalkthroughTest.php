@@ -37,8 +37,28 @@ class FixedFullWalkthroughTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        $vehicleId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $cityId,
+            'ride_type_id' => 1,
+            'display_name' => 'Walkthrough Hatchback',
+            'display_order' => 1,
+            'max_people' => 4,
+            'luggage_capacity' => 3,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $admin = User::factory()->create(['manager_all_cities' => true]);
         $admin->addRole('admin');
+        $roleId = DB::table('manager_roles')->insertGetId([
+            'slug' => 'super_admin',
+            'name' => 'Super Admin',
+            'is_system' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $admin->forceFill(['manager_role_id' => $roleId])->save();
 
         $driver = User::factory()->create();
         $driver->addRole('driver');
@@ -64,6 +84,7 @@ class FixedFullWalkthroughTest extends TestCase
             'origin_lng' => 74.0000000,
             'dest_lat' => 34.1000000,
             'dest_lng' => 74.1000000,
+            'city_vehicle_type_id' => $vehicleId,
             'booking_window_hours' => 6,
             'max_seats_per_booking' => 4,
             'waiting_time_per_stop_minutes' => 5,

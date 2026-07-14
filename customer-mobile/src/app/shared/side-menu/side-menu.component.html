@@ -1,120 +1,95 @@
 <ion-menu side="start" menuId="customer-menu" contentId="main-content">
   <ion-content class="menu-content">
-
-    <!-- ============ Navy profile header ============ -->
-    <div class="menu-header dc-anim-in dc-press" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
-      <div class="menu-header-sheen" aria-hidden="true"></div>
-      <div class="menu-avatar dc-anim-pop">
-        <img
-          *ngIf="!avatarBroken && auth.resolveAvatarUrl(u) as url"
-          [src]="url"
-          alt=""
-          (error)="avatarBroken = true"
-        />
-        <span *ngIf="avatarBroken || !auth.resolveAvatarUrl(u)" class="avatar-initials">{{ (u.name || 'U') | slice:0:1 | uppercase }}</span>
-      </div>
-      <div class="menu-header-info">
-        <h2 class="menu-name">{{ u.name || 'Guest' }}</h2>
-        <span class="menu-phone" *ngIf="u.phone">{{ u.phone }}</span>
-        <span class="menu-edit">Edit account <ion-icon name="chevron-forward" aria-hidden="true"></ion-icon></span>
+    <div class="drawer__header drv-hero dc-anim-in dc-press" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
+      <span class="drv-badge drawer__badge">CUSTOMER</span>
+      <div class="drawer__id">
+        <div class="drawer__avatar">
+          <img
+            *ngIf="!avatarBroken && auth.resolveAvatarUrl(u) as url"
+            [src]="url"
+            alt=""
+            (error)="avatarBroken = true"
+          />
+          <span *ngIf="avatarBroken || !auth.resolveAvatarUrl(u)" class="avatar-initials">{{ (u.name || 'U') | slice:0:1 | uppercase }}</span>
+        </div>
+        <div class="drawer__who">
+          <strong>{{ u.name || 'Guest' }}</strong>
+          <span class="drawer__role" *ngIf="u.phone">{{ u.phone }}</span>
+          <span class="drawer__chip">
+            <span class="drawer__chipdot"></span>Edit account
+          </span>
+        </div>
       </div>
     </div>
 
-    <!-- ============ Navigation ============ -->
-    <ion-list lines="none" class="menu-items-list dc-stagger">
+    <nav class="drawer__nav dc-stagger">
+      <p class="drawer__group">Main</p>
+      <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/book')">
+        <span class="dc-row__icon"><ion-icon name="home-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Home</strong><small>Book a ride</small></span>
+        <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
 
-      <ion-item button (click)="go('/customer-tabs/book')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="home" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Home</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
+      <p class="drawer__group">Bookings</p>
+      <button class="dc-row nav-row dc-press" (click)="toggleRidesMenu()" [attr.aria-expanded]="ridesMenuOpen">
+        <span class="dc-row__icon"><ion-icon name="car-sport-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Bookings</strong><small>Private, fixed, shuttle and scheduled</small></span>
+        <ion-icon class="dc-row__chev" [name]="ridesMenuOpen ? 'chevron-up-outline' : 'chevron-down-outline'"></ion-icon>
+      </button>
+      <div class="drawer__submenu" *ngIf="ridesMenuOpen">
+        <button class="dc-row nav-row nav-row--sub dc-press" (click)="go('/customer-tabs/my-trips')">
+          <span class="dc-row__icon"><ion-icon name="car-sport-outline"></ion-icon></span>
+          <span class="dc-row__text"><strong>Private</strong><small>Your cab rides</small></span>
+        </button>
+        <button class="dc-row nav-row nav-row--sub dc-press" (click)="go('/customer-tabs/fixed-rides')">
+          <span class="dc-row__icon"><ion-icon name="git-branch-outline"></ion-icon></span>
+          <span class="dc-row__text"><strong>Fixed</strong><small>Fixed route bookings</small></span>
+        </button>
+        <button class="dc-row nav-row nav-row--sub dc-press" (click)="go('/customer-tabs/shuttle-rides')">
+          <span class="dc-row__icon"><ion-icon name="bus-outline"></ion-icon></span>
+          <span class="dc-row__text"><strong>Shuttle</strong><small>Shared shuttle rides</small></span>
+        </button>
+        <button class="dc-row nav-row nav-row--sub dc-press" (click)="go('/customer-tabs/scheduled-rides')">
+          <span class="dc-row__icon"><ion-icon name="calendar-outline"></ion-icon></span>
+          <span class="dc-row__text"><strong>Scheduled</strong><small>Upcoming planned rides</small></span>
+        </button>
+      </div>
 
-      <ion-item button (click)="go('/customer-tabs/my-trips')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="car-sport" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Rides</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
+      <p class="drawer__group">Account</p>
+      <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/saved-locations')">
+        <span class="dc-row__icon"><ion-icon name="location-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Location</strong><small>Saved pickup and drop places</small></span>
+        <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
+      <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/notifications')">
+        <span class="dc-row__icon"><ion-icon name="notifications-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Notifications</strong><small>Ride updates and alerts</small></span>
+        <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
+      <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/coupons')">
+        <span class="dc-row__icon"><ion-icon name="pricetags-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Coupons</strong><small>Offers and promo codes</small></span>
+        <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
 
-      <ion-item button (click)="go('/customer-tabs/fixed-rides')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="git-branch" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Fixed rides</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
+      <p class="drawer__group">Help</p>
+      <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/emergency-contacts')">
+        <span class="dc-row__icon"><ion-icon name="people-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Contact</strong><small>Emergency contacts</small></span>
+        <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
+      <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/support')">
+        <span class="dc-row__icon"><ion-icon name="headset-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Support</strong><small>Help and service questions</small></span>
+        <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
+    </nav>
 
-      <ion-item button (click)="go('/customer-tabs/shuttle-rides')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="bus" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Shuttle rides</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="go('/customer-tabs/saved-locations')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="location" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Location</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="go('/customer-tabs/scheduled-rides')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="calendar" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Scheduled rides</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="go('/customer-tabs/notifications')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="notifications" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Notifications</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="go('/customer-tabs/coupons')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="pricetags" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Coupons</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="go('/customer-tabs/emergency-contacts')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="people" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Contact</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-      <ion-item button (click)="go('/customer-tabs/support')" class="menu-item dc-press" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="headset" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Support</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
-
-    </ion-list>
-
-    <!-- ============ Sign out (pinned to bottom) ============ -->
-    <div class="menu-footer">
-      <ion-item button (click)="signOut()" class="menu-item danger-item dc-press" lines="none" detail="false">
-        <div class="icon-box" slot="start">
-          <ion-icon name="log-out" class="menu-icon" aria-hidden="true"></ion-icon>
-        </div>
-        <ion-label class="menu-label">Sign out</ion-label>
-        <ion-icon name="chevron-forward" slot="end" class="row-chev" aria-hidden="true"></ion-icon>
-      </ion-item>
+    <div class="drawer__footer">
+      <button class="dc-row nav-row nav-row--danger dc-press" (click)="signOut()">
+        <span class="dc-row__icon dc-row__icon--danger"><ion-icon name="log-out-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Sign out</strong></span>
+      </button>
     </div>
-
   </ion-content>
 </ion-menu>

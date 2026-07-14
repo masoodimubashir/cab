@@ -31,6 +31,16 @@ class AdminOperatorSettingsController
             'check_driver_debt' => ['nullable', 'boolean'],
             'update_driver_payment_modes_enabled' => ['nullable', 'boolean'],
 
+            // Notifications
+            'notifications_sms_enabled' => ['nullable', 'boolean'],
+            'notifications_email_enabled' => ['nullable', 'boolean'],
+            'fixed_customer_sms_enabled' => ['nullable', 'boolean'],
+            'fixed_customer_email_enabled' => ['nullable', 'boolean'],
+            'fixed_driver_sms_enabled' => ['nullable', 'boolean'],
+            'fixed_driver_email_enabled' => ['nullable', 'boolean'],
+            'fixed_admin_sms_enabled' => ['nullable', 'boolean'],
+            'fixed_admin_email_enabled' => ['nullable', 'boolean'],
+
             // Wallet — min is signed (may be negative to allow debt); max 0 = no limit.
             'wallet_cash_min_capping' => ['nullable', 'integer', 'min:-1000000', 'max:1000000'],
             'wallet_cash_max_capping' => ['nullable', 'integer', 'min:0', 'max:1000000'],

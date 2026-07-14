@@ -45,6 +45,10 @@ class NotificationService
      */
     public function sendToUser(User $user, string $title, string $body, array $data = []): void
     {
+        if ($user->push_unsubscribed) {
+            return;
+        }
+
         if (!$this->messaging) {
             return;
         }

@@ -14,6 +14,7 @@ import { PushService } from '../../core/push.service';
 export class SideMenuComponent {
   /** Set when the avatar image URL fails to load → we show initials instead. */
   avatarBroken = false;
+  ridesMenuOpen = true;
 
   constructor(
     public auth: AuthService,
@@ -74,5 +75,9 @@ export class SideMenuComponent {
   async go(url: string): Promise<void> {
     await this.menuCtrl.close('customer-menu');
     this.router.navigateByUrl(url);
+  }
+
+  toggleRidesMenu(): void {
+    this.ridesMenuOpen = !this.ridesMenuOpen;
   }
 }

@@ -6,6 +6,7 @@ import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
+import { AdminRealtimeService } from '../../core/admin-realtime.service';
 import {
   ButtonComponent,
   ColumnComponent,
@@ -86,7 +87,7 @@ interface FixedRouteRow {
   stops: RouteStopRow[];
 }
 
-interface VehicleTypeOption { id: number; display_name: string; }
+interface VehicleTypeOption { id: number; display_name: string; max_people: number; luggage_capacity: number; }
 interface CityOption { id: number; name: string; }
 
 const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
@@ -268,6 +269,10 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
         </header>
 
         <div class="rt-panel__body">
+          <div class="edit-warning" *ngIf="editingId">
+            <tm-icon name="shield" [size]="15" />
+            <span>Structural route changes are blocked while live fixed vehicles, active bookings, or active holds exist. Safe text and availability edits can still be saved.</span>
+          </div>
           <div class="grid2">
             <label class="field">
               <span class="field__lbl">Scope <span class="help" data-tip="Choose whether this fixed route runs inside one city or between cities.">!</span></span>
@@ -322,19 +327,23 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <span class="hint-inline">Tap “Stops”, then click the map</span>
           </div>
           <p class="muted small" *ngIf="!form.stops.length">No intermediate stops yet. Use the <b>Stops</b> tool to drop pins along the line.</p>
-          <div class="stop-card" *ngFor="let s of form.stops; let i = index">
+          <div class="stop-card" *ngFor="let s of form.stops; let i = index" [class.is-paused]="!isStopBookable(s)">
             <div class="stop-card__head">
               <span class="stop-seq">Stop {{ i + 1 }}</span>
-              <button type="button" class="icon-btn icon-btn--danger" (click)="removeStop(i)" aria-label="Remove stop"><tm-icon name="trash" [size]="13" /></button>
+              <div class="stop-availability" *ngIf="editingId && s.id">
+                <span class="stop-state" [class.is-paused]="!isStopBookable(s)">{{ stopStateLabel(s) }}</span>
+                <button type="button" class="stop-toggle" [class.is-resume]="!isStopBookable(s)" (click)="toggleStopAvailability(s)" [attr.aria-label]="stopToggleLabel(s)">
+                  <tm-icon [name]="stopToggleIcon(s)" [size]="13" />
+                  <span>{{ stopToggleLabel(s) }}</span>
+                </button>
+                <span class="help" [attr.data-tip]="stopToggleHelp(s)">!</span>
+              </div>
             </div>
             <input type="text" class="stop-name" [(ngModel)]="s.name" placeholder="Stop name" />
             <div class="stop-flags">
               <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_pickup" /> <span>Boarding allowed <span class="help" data-tip="Customers can choose this stop as their boarding point.">!</span></span></label>
               <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_drop" /> <span>Drop allowed <span class="help" data-tip="Customers can choose this stop as their drop point.">!</span></span></label>
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_active" /> <span>Stop active <span class="help" data-tip="Inactive stops are saved but not available for booking.">!</span></span></label>
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_temporarily_unavailable" /> <span>Temporarily unavailable <span class="help" data-tip="Temporarily blocks this stop without deleting it from the route.">!</span></span></label>
             </div>
-            <input *ngIf="s.is_temporarily_unavailable" type="text" class="stop-reason" [(ngModel)]="s.unavailable_reason" placeholder="Unavailable reason" />
           </div>
 
           <div class="section-lbl">Fare, seats and luggage</div>
@@ -351,16 +360,14 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               <span class="field__lbl">Fixed commission (₹) <span class="help" data-tip="Flat platform cut per booked seat for this fixed route.">!</span></span>
               <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" placeholder="20" />
             </label>
-            <label class="field"><span class="field__lbl">Vehicle <span class="help" data-tip="Vehicle type assigned to this fixed route.">!</span></span>
+            <label class="field"><span class="field__lbl">Vehicle <i>*</i> <span class="help" data-tip="Vehicle type assigned to this fixed route. Seats and luggage capacity are taken from this vehicle.">!</span></span>
               <select [(ngModel)]="form.city_vehicle_type_id" [disabled]="cityVehicleTypeId != null">
-                <option [ngValue]="null">Any</option>
-                <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.display_name }}</option>
+                <option [ngValue]="null">Select vehicle</option>
+                <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.display_name }} - {{ v.max_people }} seats - {{ v.luggage_capacity }} bags</option>
               </select>
             </label>
             <label class="field"><span class="field__lbl">Booking window (hours) <span class="help" data-tip="How long before departure customers can book this route.">!</span></span><input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" /></label>
-            <label class="field"><span class="field__lbl">Max seats per booking <span class="help" data-tip="Largest number of seats one customer can reserve in one booking.">!</span></span><input type="number" min="1" max="20" step="1" [(ngModel)]="form.max_seats_per_booking" /></label>
             <label class="field"><span class="field__lbl">Luggage surcharge (₹) <span class="help" data-tip="Extra amount charged for each additional luggage item.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
-            <label class="field"><span class="field__lbl">Max luggage per vehicle <span class="help" data-tip="Total luggage capacity available on this fixed route vehicle.">!</span></span><input type="number" min="0" max="200" step="1" [(ngModel)]="form.max_luggage_per_vehicle" /></label>
           </div>
 
           <div class="toggles">
@@ -387,6 +394,17 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="clearPathConfirmOpen = false">Cancel</tm-button>
         <tm-button variant="danger" (clicked)="confirmClearPath()">Clear</tm-button>
+      </div>
+    </tm-modal>
+
+
+    <tm-modal [open]="stopAvailabilityConfirmOpen" title="Confirm stop availability" (closed)="cancelStopAvailabilityConfirm()">
+      <div slot="body">
+        <p>{{ stopAvailabilityConfirmMessage }}</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="cancelStopAvailabilityConfirm()">Cancel</tm-button>
+        <tm-button variant="green" (clicked)="confirmStopAvailabilitySave()">Confirm</tm-button>
       </div>
     </tm-modal>
 
@@ -452,6 +470,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .rt-panel__head h2 { margin: 0; font-size: 17px; font-weight: 800; color: var(--tm-text); }
     .rt-panel__head p { margin: 2px 0 0; font-size: 12px; color: var(--tm-text-muted); }
     .rt-panel__body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 13px; }
+    .edit-warning { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 12px; line-height: 1.4; }
     .rt-panel__foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--tm-line); }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
@@ -483,8 +502,15 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
     .stop-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); }
+    .stop-card.is-paused { border-color: #fecaca; background: #fff7f7; }
     .stop-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .stop-seq { font-size: 12px; font-weight: 800; color: var(--tm-text); }
+    .stop-availability { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+    .stop-state { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border-radius: 999px; background: var(--tm-success-bg); color: var(--tm-success-fg); font-size: 10.5px; font-weight: 900; }
+    .stop-state.is-paused { background: #fee2e2; color: #b91c1c; }
+    .stop-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 5px 9px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 900; cursor: pointer; font-family: inherit; }
+    .stop-toggle.is-resume { border-color: #bbf7d0; color: #15803d; }
+    .stop-toggle:hover { background: var(--tm-ink); border-color: var(--tm-ink); color: #fff; }
     .stop-name, .stop-reason { width: 100%; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 12px; outline: none; }
     .stop-flags { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stop-chip { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 10px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface); font-size: 12px; font-weight: 600; color: var(--tm-text); }
@@ -517,6 +543,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   saving = false;
   tool: MapTool = 'origin';
   clearPathConfirmOpen = false;
+  stopAvailabilityConfirmOpen = false;
+  stopAvailabilityConfirmMessage = '';
+  private pendingStopAvailabilityBody: Record<string, unknown> | null = null;
+  private originalStopBookable = new Map<number, boolean>();
   stopsPopoverRouteId: number | null = null;
   stopsPopoverLines: string[] = [];
   stopsPopoverX = 0;
@@ -551,6 +581,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     private cityCtx: CityContextService,
     private toast: ToastService,
     private mapsLoader: GoogleMapsLoaderService,
+    private realtime: AdminRealtimeService,
   ) {}
 
   ngOnInit(): void {
@@ -568,6 +599,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
       }),
     );
+    const unsubscribeFixedCatalog = this.realtime.subscribeFixedCatalog((payload) => {
+      if (this.cityId != null && payload.city_id === this.cityId) this.fetchRoutes();
+    });
+    this.subs.push({ unsubscribe: unsubscribeFixedCatalog } as Subscription);
   }
 
   ngOnDestroy(): void {
@@ -664,7 +699,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (!f.name.trim() || !f.origin_name.trim() || !f.dest_name.trim()) return false;
     if (f.origin_lat == null || f.origin_lng == null || f.dest_lat == null || f.dest_lng == null) return false;
     if (f.seat_fare == null || f.seat_fare <= 0) return false;
-    if (f.max_seats_per_booking == null || f.max_seats_per_booking <= 0) return false;
+    if ((this.cityVehicleTypeId ?? f.city_vehicle_type_id) == null) return false;
     if (f.scope === 'outstation' && (f.origin_city_id == null || f.dest_city_id == null)) return false;
     return true;
   }
@@ -676,6 +711,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       scope: 'local' as RouteScope,
       origin_city_id: null as number | null,
       dest_city_id: null as number | null,
+      origin_stop_id: null as number | null,
+      dest_stop_id: null as number | null,
       name: '',
       origin_name: '',
       origin_lat: null as number | null,
@@ -709,7 +746,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   loadVehicleTypes(): void {
     if (this.cityId == null) { this.vehicleTypes = []; return; }
     this.api.get<{ data: any[] }>(`/admin/cities/${this.cityId}/vehicle-types`).subscribe({
-      next: (res) => { this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, display_name: v.display_name ?? v.name ?? `#${v.id}` })); },
+      next: (res) => { this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, display_name: v.display_name ?? v.name ?? ("#" + v.id), max_people: Number(v.max_people ?? 0), luggage_capacity: Number(v.luggage_capacity ?? 0) })); },
       error: () => (this.vehicleTypes = []),
     });
   }
@@ -758,6 +795,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   openCreate(): void {
     this.editingId = null;
+    this.originalStopBookable.clear();
     this.form = this.blankForm();
     this.roadPath = [];
     this.pathLocked = false;
@@ -769,12 +807,15 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   openEdit(r: FixedRouteRow): void {
     this.editingId = r.id;
+    this.originalStopBookable = new Map((r.stops || []).map((stop) => [Number(stop.id), this.isStopBookable(stop)]));
     const fc = r.fare_config || ({ seat_fare: null, commission_percent: null, fixed_commission: null } as FareConfig);
     const ns = r.fixed_settings_json || {};
     this.form = {
       scope: r.scope,
       origin_city_id: r.origin_city_id,
       dest_city_id: r.dest_city_id,
+      origin_stop_id: r.stops?.[0]?.id ?? null,
+      dest_stop_id: r.stops?.[r.stops.length - 1]?.id ?? null,
       name: r.name,
       origin_name: r.origin_name,
       origin_lat: r.origin_lat,
@@ -818,7 +859,41 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     else if (this.form.origin_city_id == null) this.form.origin_city_id = this.cityId;
   }
 
-  removeStop(i: number): void { this.form.stops.splice(i, 1); this.redrawStops(); }
+  isStopBookable(stop: RouteStopRow): boolean {
+    return stop.is_active !== false && stop.is_temporarily_unavailable !== true;
+  }
+
+  stopStateLabel(stop: RouteStopRow): string {
+    return this.isStopBookable(stop) ? 'Bookable' : 'Paused';
+  }
+
+  stopToggleLabel(stop: RouteStopRow): string {
+    return this.isStopBookable(stop) ? 'Pause' : 'Resume';
+  }
+
+  stopToggleIcon(stop: RouteStopRow): 'x' | 'check' {
+    return this.isStopBookable(stop) ? 'x' : 'check';
+  }
+
+  stopToggleHelp(stop: RouteStopRow): string {
+    return this.isStopBookable(stop)
+      ? 'Pause this stop for new customer bookings without deleting route history.'
+      : 'Make this saved stop available again for new customer bookings.';
+  }
+
+  toggleStopAvailability(stop: RouteStopRow): void {
+    if (!this.editingId || !stop.id) return;
+    if (this.isStopBookable(stop)) {
+      stop.is_active = false;
+      stop.is_temporarily_unavailable = true;
+      stop.unavailable_reason = stop.unavailable_reason?.trim() || 'Paused by admin.';
+    } else {
+      stop.is_active = true;
+      stop.is_temporarily_unavailable = false;
+      stop.unavailable_reason = null;
+    }
+    this.redrawStops();
+  }
 
   setTool(t: MapTool): void {
     if ((t === 'path' || t === 'stop') && (this.form.origin_lat == null || this.form.dest_lat == null)) {
@@ -1198,6 +1273,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
     const stops = [
       {
+        id: f.origin_stop_id ?? undefined,
         seq: 1,
         name: f.origin_name.trim(),
         lat: f.origin_lat,
@@ -1209,17 +1285,19 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         unavailable_reason: null,
       },
       ...f.stops.filter((s) => s.lat != null && s.lng != null).map((s, i) => ({
+        id: s.id,
         seq: i + 2,
         name: s.name.trim() || `Stop ${i + 1}`,
         lat: s.lat,
         lng: s.lng,
         is_pickup: s.is_pickup || (!s.is_pickup && !s.is_drop),
         is_drop: s.is_drop || (!s.is_pickup && !s.is_drop),
-        is_active: s.is_active,
-        is_temporarily_unavailable: s.is_temporarily_unavailable,
-        unavailable_reason: s.is_temporarily_unavailable ? (s.unavailable_reason?.trim() || '') : null,
+        is_active: this.editingId ? s.is_active : true,
+        is_temporarily_unavailable: this.editingId ? s.is_temporarily_unavailable : false,
+        unavailable_reason: this.editingId && s.is_temporarily_unavailable ? (s.unavailable_reason?.trim() || 'Paused by admin.') : null,
       })),
       {
+        id: f.dest_stop_id ?? undefined,
         seq: f.stops.length + 2,
         name: f.dest_name.trim(),
         lat: f.dest_lat,
@@ -1248,10 +1326,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       path_polyline,
       city_vehicle_type_id: this.cityVehicleTypeId ?? f.city_vehicle_type_id,
       booking_window_hours: f.booking_window_hours,
-      max_seats_per_booking: f.max_seats_per_booking,
       waiting_time_per_stop_minutes: f.waiting_time_per_stop_minutes,
       luggage_surcharge_amount: f.luggage_surcharge_amount,
-      max_luggage_per_vehicle: f.max_luggage_per_vehicle ?? 0,
       requires_prepaid: f.requires_prepaid,
       fixed_settings_json: {
         auto_no_show_enabled: true,
@@ -1273,6 +1349,61 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       stops,
     };
 
+    const availabilityMessage = this.stopAvailabilityChangeMessage();
+    if (availabilityMessage) {
+      this.pendingStopAvailabilityBody = body;
+      this.stopAvailabilityConfirmMessage = availabilityMessage;
+      this.stopAvailabilityConfirmOpen = true;
+      return;
+    }
+
+    this.persistRoute(body);
+  }
+
+  cancelStopAvailabilityConfirm(): void {
+    this.stopAvailabilityConfirmOpen = false;
+    this.stopAvailabilityConfirmMessage = '';
+    this.pendingStopAvailabilityBody = null;
+  }
+
+  confirmStopAvailabilitySave(): void {
+    const body = this.pendingStopAvailabilityBody;
+    this.stopAvailabilityConfirmOpen = false;
+    this.stopAvailabilityConfirmMessage = '';
+    this.pendingStopAvailabilityBody = null;
+    if (body) this.persistRoute(body);
+  }
+
+  private stopAvailabilityChangeMessage(): string | null {
+    if (!this.editingId) return null;
+    const paused: string[] = [];
+    const resumed: string[] = [];
+
+    this.form.stops.forEach((stop, index) => {
+      if (!stop.id) return;
+      const before = this.originalStopBookable.get(Number(stop.id));
+      if (before === undefined) return;
+      const after = this.isStopBookable(stop);
+      if (before === after) return;
+      const name = (stop.name || `Stop ${index + 1}`).trim();
+      if (after) resumed.push(name);
+      else paused.push(name);
+    });
+
+    const lines: string[] = [];
+    if (resumed.length) lines.push(`${this.stopListLabel(resumed)} will be available for customer boarding and drop selection.`);
+    if (paused.length) lines.push(`${this.stopListLabel(paused)} will be unavailable for customer boarding and drop selection.`);
+    return lines.length ? lines.join(' ') : null;
+  }
+
+  private stopListLabel(stops: string[]): string {
+    if (stops.length === 1) return `Stop ${stops[0]}`;
+    if (stops.length <= 3) return `Stops ${stops.join(', ')}`;
+    return `${stops.length} selected stops`;
+  }
+
+  private persistRoute(body: Record<string, unknown>): void {
+    if (this.cityId == null) return;
     this.saving = true;
     const base = `/admin/cities/${this.cityId}/fixed-routes`;
     const req = this.editingId

@@ -34,7 +34,7 @@ use App\Models\WalletTransaction;
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
-    use HasApiTokens;
+    use HasApiTokens, HasFactory;
 
     protected $casts = [
         'dob' => 'date',

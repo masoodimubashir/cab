@@ -236,6 +236,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/drivers/performance', [AdminDriversController::class, 'performance'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/{driver}/approval', [AdminDriversController::class, 'setApproval'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/unsubscribe', [AdminDriversController::class, 'unsubscribe'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver'])->middleware('permission:drivers');
@@ -453,11 +454,13 @@ Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayW
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/routes', [FixedRoutesController::class, 'index']);
     Route::get('/fixed/routes/{route}/departures', [FixedRoutesController::class, 'departures']);
+    Route::post('/fixed/coupon-preview', [FixedBookingsController::class, 'couponPreview'])->middleware('throttle:booking');
     Route::post('/fixed/seat-holds', [FixedBookingsController::class, 'storeSeatHold'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/razorpay-order', [FixedBookingsController::class, 'createSeatHoldRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/test-confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldTestPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
+    Route::get('/fixed/bookings/{reservation}', [FixedBookingsController::class, 'show']);
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
     Route::get('/shuttle/bookings', [ShuttleBookingsController::class, 'index']);
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
@@ -472,6 +475,8 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
     Route::get('/fixed/departures/{departure}/manifest', [FixedDriverController::class, 'manifest']);
     Route::post('/fixed/departures/{departure}/start', [FixedDriverController::class, 'start']);
+    Route::post('/fixed/departures/{departure}/close-bookings', [FixedDriverController::class, 'closeBookings']);
+    Route::post('/fixed/departures/{departure}/open-bookings', [FixedDriverController::class, 'openBookings']);
     Route::post('/fixed/departures/{departure}/complete', [FixedDriverController::class, 'complete']);
     Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
     Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
