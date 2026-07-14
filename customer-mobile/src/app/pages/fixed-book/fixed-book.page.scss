@@ -8,13 +8,30 @@
 .fb-backdrop {
   position: absolute;
   inset: 0;
-  background: linear-gradient(160deg, #E7F8EF 0%, var(--dc-canvas, #F4F6F8) 58%);
+  background: var(--dc-canvas, #F4F6F8);
+  overflow: hidden;
   padding: max(16px, env(safe-area-inset-top)) 16px 0;
   display: flex;
   flex-direction: column;
 }
 
+.fb-map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.fb-map-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(244, 246, 248, 0.72), rgba(244, 246, 248, 0.18) 34%, rgba(244, 246, 248, 0) 64%);
+}
+
 .fb-topbar {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -75,6 +92,8 @@
 }
 
 .fb-route-hero {
+  position: relative;
+  z-index: 2;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -121,6 +140,107 @@
   }
 }
 
+:host ::ng-deep .fb-stop-marker {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid #1e6cf0;
+  color: #1e6cf0;
+  box-shadow: 0 6px 14px rgba(13, 27, 42, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+:host ::ng-deep .fb-stop-marker.is-pickup {
+  background: #12B35B;
+  border-color: #fff;
+  color: #fff;
+  box-shadow: 0 7px 18px rgba(18, 179, 91, 0.34);
+}
+
+:host ::ng-deep .fb-stop-marker.is-drop {
+  background: #F59E0B;
+  border-color: #fff;
+  color: #fff;
+  box-shadow: 0 7px 18px rgba(245, 158, 11, 0.34);
+}
+
+:host ::ng-deep .fb-stop-marker.is-disabled {
+  background: #E5E7EB;
+  border-color: #CBD5E1;
+  color: #64748B;
+}
+
+:host ::ng-deep .fb-map-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1e6cf0;
+  border: 4px solid #fff;
+  box-shadow: 0 6px 16px rgba(30, 108, 240, 0.32), 0 0 0 8px rgba(30, 108, 240, 0.14);
+}
+
+:host ::ng-deep .fb-vehicle-marker {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--dc-ink, #0D1B2A);
+  border: 3px solid #fff;
+  box-shadow: 0 10px 24px rgba(13, 27, 42, 0.32), 0 0 0 8px rgba(18, 179, 91, 0.16);
+  position: relative;
+}
+
+:host ::ng-deep .fb-vehicle-marker::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: 12px;
+  height: 10px;
+  border-radius: 4px 4px 3px 3px;
+  background: #fff;
+}
+
+:host ::ng-deep .fb-vehicle-marker::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 10px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--dc-green, #12B35B);
+}
+
+.fb-live-badge {
+  position: absolute;
+  top: calc(max(16px, env(safe-area-inset-top)) + 54px);
+  left: 16px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: var(--dc-surface, #fff);
+  color: var(--dc-ink, #0D1B2A);
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: var(--dc-shadow-sm, 0 2px 8px rgba(13, 27, 42, 0.06));
+}
+
+.fb-live-badge span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dc-green, #12B35B);
+  box-shadow: 0 0 0 5px rgba(18, 179, 91, 0.14);
+}
+
 .bottom-sheet {
   position: absolute;
   left: 10px;
@@ -160,6 +280,51 @@
 .sheet-body.center { align-items: center; justify-content: center; text-align: center; }
 .sheet-foot { flex: none; padding: 12px 16px 16px; border-top: 1px solid var(--dc-hairline, #EEF0F2); background: var(--dc-surface, #fff); }
 
+.fb-scope-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 2px;
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  border-radius: 14px;
+  background: var(--dc-surface-2, #FAFBFC);
+}
+
+.fb-scope-filter button {
+  min-width: 0;
+  min-height: 38px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--dc-ink-soft, #6C757D);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.fb-scope-filter button.active {
+  background: var(--dc-surface, #fff);
+  color: var(--dc-ink, #0D1B2A);
+  box-shadow: 0 4px 12px rgba(13, 27, 42, 0.07);
+}
+
+.fb-scope-filter small {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 27, 42, 0.06);
+  font-size: 10px;
+  font-weight: 900;
+}
+
 .fb-card {
   width: 100%;
   display: flex;
@@ -174,10 +339,21 @@
 
   &:disabled { opacity: 0.55; cursor: default; }
   .fb-card__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .fb-card__meta { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 20px; padding: 3px 7px; border-radius: 999px; background: var(--dc-green-tint, #E7F8EF); color: var(--dc-green, #12B35B); font-size: 10.5px; font-weight: 900; text-transform: uppercase; }
+  .fb-card__meta ion-icon { color: currentColor; font-size: 13px; }
   .fb-card__title { font-size: 15px; font-weight: 800; color: var(--dc-ink, #0D1B2A); }
   .fb-card__sub { font-size: 12.5px; color: var(--dc-ink-soft, #6C757D); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fb-card__right { display: flex; align-items: center; gap: 8px; }
   ion-icon { color: var(--dc-ink-faint, #9AA3AE); font-size: 18px; }
+}
+
+.fb-vehicle-card {
+  align-items: stretch;
+  padding: 14px;
+}
+
+.fb-vehicle-card .fb-card__main {
+  gap: 5px;
 }
 
 .fb-fare, .fb-seat {
@@ -384,3 +560,321 @@
     opacity: 0.62;
   }
 }
+
+
+/* Fixed booking UI refinement */
+.fb-backdrop {
+  padding: max(12px, env(safe-area-inset-top)) 12px 0;
+}
+
+.fb-topbar {
+  gap: 10px;
+}
+
+.fb-topbar .fb-back {
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.08);
+}
+
+.fb-topbar .fb-topbar__title {
+  max-width: calc(100vw - 86px);
+  padding: 8px 11px;
+  border: 1px solid rgba(13, 27, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.06);
+}
+
+.fb-live-badge {
+  top: calc(max(12px, env(safe-area-inset-top)) + 50px);
+  left: 12px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
+.bottom-sheet {
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  min-height: 28vh;
+  max-height: 52vh;
+  border: 1px solid rgba(13, 27, 42, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 42px rgba(13, 27, 42, 0.18);
+}
+
+.sheet-head {
+  padding: 14px 16px 8px;
+}
+
+.sheet-title {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.sheet-body {
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.sheet-foot {
+  padding: 10px 12px 12px;
+}
+
+.fb-card {
+  min-height: 64px;
+  padding: 12px;
+  border-radius: 12px;
+  border-color: #E8ECF0;
+  background: #FFFFFF;
+  box-shadow: 0 6px 16px rgba(13, 27, 42, 0.04);
+}
+
+.fb-card__meta {
+  font-size: 9.5px;
+  padding: 2px 6px;
+}
+
+.fb-card__title {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.fb-card__sub {
+  font-size: 12px;
+}
+
+.fb-card__right ion-icon {
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border-radius: 50%;
+  background: #F5F7FA;
+}
+
+.fb-fare {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  font-size: 14px;
+}
+
+.fb-summary,
+.fb-full,
+.fb-unavailable {
+  min-height: 38px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fb-field {
+  min-height: 48px;
+  padding: 6px 11px;
+  border-radius: 12px;
+  border-color: #E8ECF0;
+  background: #FFFFFF;
+}
+
+.fb-field .fb-label {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.fb-field ion-select {
+  max-width: 66%;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.fb-seats .fb-stepper ion-button,
+.fb-luggage .fb-stepper ion-button {
+  width: 34px;
+  height: 34px;
+}
+
+.fb-seats .fb-stepper .fb-seats__n,
+.fb-luggage .fb-stepper .fb-seats__n {
+  min-width: 24px;
+  font-size: 15px;
+}
+
+.fb-luggage small {
+  font-size: 10px;
+}
+
+.fb-total {
+  min-height: 52px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  box-shadow: 0 10px 22px rgba(13, 27, 42, 0.18);
+}
+
+.fb-total strong {
+  font-size: 17px;
+}
+
+.fb-cta {
+  min-height: 46px;
+  border-radius: 12px;
+  font-size: 14px;
+  box-shadow: 0 8px 20px rgba(18, 179, 91, 0.22);
+}
+
+.fb-cta--test {
+  margin-bottom: 7px;
+  box-shadow: none;
+}
+
+.fb-empty {
+  padding: 18px 10px;
+}
+
+.fb-empty ion-icon {
+  font-size: 30px;
+}
+
+.fb-done {
+  padding: 10px 12px;
+}
+
+.fb-done .fb-done__badge {
+  font-size: 44px;
+}
+
+.fb-done h2 {
+  font-size: 17px;
+}
+
+.fb-done p {
+  font-size: 13px;
+}
+
+:host ::ng-deep .fb-stop-marker {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+
+:host ::ng-deep .fb-vehicle-marker {
+  width: 36px;
+  height: 36px;
+}
+
+@media (max-width: 360px) {
+  .bottom-sheet {
+    max-height: 56vh;
+  }
+
+  .fb-field {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+    padding: 9px 11px;
+  }
+
+  .fb-field ion-select {
+    max-width: 100%;
+  }
+}
+
+/* Fixed booking review and coupon step */
+.fb-review-card,
+.fb-price-card,
+.fb-coupon-card {
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  background: var(--dc-surface-2, #FAFBFC);
+  border-radius: 16px;
+  padding: 13px;
+}
+
+.fb-review-card { display: flex; flex-direction: column; gap: 12px; }
+
+.fb-review-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  span { font-size: 12px; font-weight: 800; color: var(--dc-ink-soft, #6C757D); }
+  strong { font-size: 15px; font-weight: 850; color: var(--dc-ink, #0D1B2A); overflow-wrap: anywhere; }
+  ion-icon { flex: none; font-size: 21px; color: var(--dc-green, #12B35B); }
+}
+
+.fb-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+
+  div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  small { font-size: 11px; font-weight: 850; color: var(--dc-ink-faint, #9AA3AE); }
+  strong { font-size: 13px; font-weight: 850; color: var(--dc-ink, #0D1B2A); overflow-wrap: anywhere; }
+  ion-icon { color: var(--dc-ink-faint, #9AA3AE); }
+}
+
+.fb-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  span {
+    padding: 6px 9px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--dc-ink-soft, #6C757D);
+    font-size: 11.5px;
+    font-weight: 850;
+  }
+}
+
+.fb-price-card { display: flex; flex-direction: column; gap: 9px; }
+.fb-price-card div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fb-price-card span { font-size: 12.5px; font-weight: 800; color: var(--dc-ink-soft, #6C757D); }
+.fb-price-card strong { font-size: 13.5px; font-weight: 850; color: var(--dc-ink, #0D1B2A); }
+.fb-price-card .is-discount span,
+.fb-price-card .is-discount strong { color: var(--dc-green, #12B35B); }
+.fb-price-card .is-total { border-top: 1px solid var(--dc-hairline, #EEF0F2); padding-top: 10px; }
+.fb-price-card .is-total span { color: var(--dc-ink, #0D1B2A); }
+.fb-price-card .is-total strong { font-size: 18px; color: var(--dc-green, #12B35B); }
+
+.fb-coupon-card { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.fb-coupon-field { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.fb-coupon-field span { font-size: 12px; font-weight: 850; color: var(--dc-ink-soft, #6C757D); }
+.fb-coupon-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  border-radius: 13px;
+  background: #fff;
+  padding: 0 12px;
+  color: var(--dc-ink, #0D1B2A);
+  font-size: 14px;
+  font-weight: 800;
+  outline: none;
+}
+
+.fb-coupon-apply {
+  min-height: 42px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--dc-ink, #0D1B2A);
+  color: #fff;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 850;
+}
+
+.fb-coupon-apply:disabled { opacity: 0.5; }
+.fb-coupon-remove,
+.fb-coupon-ok,
+.fb-coupon-error { grid-column: 1 / -1; margin: 0; }
+.fb-coupon-remove { justify-self: start; border: 0; background: transparent; color: var(--dc-danger, #E53935); font-size: 12px; font-weight: 850; padding: 0; }
+.fb-coupon-ok { color: var(--dc-green, #12B35B); font-size: 12px; font-weight: 850; }
+.fb-coupon-error { color: var(--dc-danger, #E53935); font-size: 12px; font-weight: 850; }

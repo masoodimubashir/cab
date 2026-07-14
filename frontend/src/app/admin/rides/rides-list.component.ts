@@ -51,7 +51,6 @@ type StatusFilter =
 
 interface RideTypeOption { id: number; name: string; }
 interface CityVehicleTypeOption { id: number; display_name: string; }
-
 interface TripRow {
   id: number;
   status: string;
@@ -319,14 +318,6 @@ const STATUS_OPTIONS: { value: Exclude<StatusFilter, 'all'>; label: string }[] =
           </ng-template>
         </tm-column>
 
-        <tm-column key="customer" label="Customer">
-          <ng-template let-row>
-            <div class="cell-party">
-              <span class="cell-name">{{ row.customer?.name || '—' }}</span>
-              <span class="cell-sub">{{ row.customer?.phone || '' }}</span>
-            </div>
-          </ng-template>
-        </tm-column>
 
         <tm-column key="driver" label="Driver">
           <ng-template let-row>

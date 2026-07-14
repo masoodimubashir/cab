@@ -9,10 +9,7 @@ export class ApiService {
   constructor(private http: HttpClient) {}
 
   private getBaseUrl(): string {
-    return (
-      localStorage.getItem('dreamcabs_api_base')?.trim() ||
-      this.fallbackBaseUrl
-    );
+    return this.fallbackBaseUrl;
   }
 
   private authHeaders(): HttpHeaders {

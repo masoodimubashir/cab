@@ -71,7 +71,7 @@
             <span class="otp-digit" *ngFor="let d of otpDigits">{{ d }}</span>
           </div>
           <p class="otp-hint" *ngIf="trip?.is_for_other">
-            Also sent to {{ trip?.booked_for_name || 'your friend' }}. Share it so they can give it to the driver to start the trip.
+            Also sent to {{ trip.booked_for_name || 'your friend' }}. Share it so they can give it to the driver to start the trip.
           </p>
           <p class="otp-hint" *ngIf="!trip?.is_for_other">
             Give this to your driver to start the trip.
@@ -105,7 +105,7 @@
             <ion-icon name="share-social-outline"></ion-icon><span>Share</span>
           </button>
           <button *ngIf="canTextFriend()" class="act act--ghost dc-press" [disabled]="shareBusy" (click)="textTrackingToFriend()">
-            <ion-icon name="chatbubble-ellipses-outline"></ion-icon><span>Text {{ trip?.booked_for_name || 'rider' }}</span>
+            <ion-icon name="chatbubble-ellipses-outline"></ion-icon><span>Text {{ trip.booked_for_name || 'rider' }}</span>
           </button>
         </div>
 

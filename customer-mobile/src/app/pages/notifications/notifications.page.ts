@@ -1,6 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
+import { RealtimeService } from '../../core/realtime.service';
 
 interface AppNotification {
   id: number;
@@ -24,19 +26,32 @@ interface AppNotification {
   styleUrls: ['./notifications.page.scss'],
   standalone: false,
 })
-export class NotificationsPage {
+export class NotificationsPage implements OnDestroy {
   loading = false;
   error: string | null = null;
   notifications: AppNotification[] = [];
   unreadCount = 0;
+  private stopLive?: () => void;
 
   constructor(
     private api: ApiService,
     private router: Router,
+    private auth: AuthService,
+    private realtime: RealtimeService,
   ) {}
 
   ionViewWillEnter(): void {
     this.refresh();
+    this.bindLive();
+  }
+
+  ionViewWillLeave(): void {
+    this.stopLive?.();
+    this.stopLive = undefined;
+  }
+
+  ngOnDestroy(): void {
+    this.ionViewWillLeave();
   }
 
   refresh(): void {
@@ -54,6 +69,18 @@ export class NotificationsPage {
       complete: () => {
         this.loading = false;
       },
+    });
+  }
+
+  private bindLive(): void {
+    if (this.stopLive) return;
+    const userId = this.auth.getUser()?.id;
+    if (!userId) return;
+    this.stopLive = this.realtime.subscribeAppNotifications(userId, (payload) => {
+      const note = payload.notification;
+      if (this.notifications.some((n) => n.id === note.id)) return;
+      this.notifications = [note, ...this.notifications];
+      if (!note.read_at) this.unreadCount += 1;
     });
   }
 

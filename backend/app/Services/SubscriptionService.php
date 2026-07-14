@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CityVehicleType;
 use App\Models\DriverSubscription;
 use App\Models\SubscriptionPlan;
 use App\Models\Trip;
@@ -287,20 +288,27 @@ class SubscriptionService
      */
     public function consume(Trip $trip): void
     {
+        $this->consumeTripAllowance($trip, (float) ($trip->final_fare ?? 0));
+    }
+
+    public function consumeSharedTrip(Trip $trip, float $fare): void
+    {
+        $this->consumeTripAllowance($trip, $fare);
+    }
+
+    private function consumeTripAllowance(Trip $trip, float $fare): void
+    {
         if (! $trip->driver_id) {
             return;
         }
 
-        $vehicleTypeId = $trip->vehicle_type_id
-            ?? $trip->driver?->driver?->vehicle_type_id;
-
-        $sub = $this->activeFor((int) $trip->driver_id, $vehicleTypeId ? (int) $vehicleTypeId : null);
+        $vehicleTypeId = $this->vehicleTypeIdForTrip($trip);
+        $sub = $this->activeFor((int) $trip->driver_id, $vehicleTypeId);
         if (! $sub) {
             return;
         }
 
-        $fare = (float) ($trip->final_fare ?? 0);
-        $sub->earnings_accrued = round((float) $sub->earnings_accrued + $fare, 2);
+        $sub->earnings_accrued = round((float) $sub->earnings_accrued + max(0.0, $fare), 2);
         $sub->rides_used = $sub->rides_used + 1;
         $sub->save();
 
@@ -308,6 +316,30 @@ class SubscriptionService
         // sweep expires + auto-renews it (single renewal path; no wallet work
         // on the trip-settlement hot path). activeFor() already stops returning
         // it, so the driver loses the perk immediately.
+    }
+
+    public function effectiveCommissionPercentForTrip(Trip $trip, float $default): float
+    {
+        if (! $trip->driver_id) {
+            return $default;
+        }
+
+        return $this->effectiveCommissionPercent(
+            (int) $trip->driver_id,
+            $this->vehicleTypeIdForTrip($trip),
+            $default,
+        );
+    }
+
+    private function vehicleTypeIdForTrip(Trip $trip): ?int
+    {
+        $vehicleTypeId = $trip->vehicle_type_id
+            ?? ($trip->city_vehicle_type_id
+                ? CityVehicleType::query()->whereKey($trip->city_vehicle_type_id)->value("vehicle_type_id")
+                : null)
+            ?? $trip->driver?->driver?->vehicle_type_id;
+
+        return $vehicleTypeId ? (int) $vehicleTypeId : null;
     }
 
     /**

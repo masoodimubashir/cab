@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\FixedRouteCatalogUpdated;
 use App\Models\City;
 use App\Models\FixedBookingSupportNote;
 use App\Models\RouteDeparture;
@@ -12,6 +13,7 @@ use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
 use App\Services\FixedRefundService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AdminFixedDeparturesController
 {
@@ -48,6 +50,10 @@ class AdminFixedDeparturesController
             'refund_status' => ['nullable', 'string', 'max:30'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
+            'booking_date_from' => ['nullable', 'date'],
+            'booking_date_to' => ['nullable', 'date'],
+            'ride_date_from' => ['nullable', 'date'],
+            'ride_date_to' => ['nullable', 'date'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -59,7 +65,8 @@ class AdminFixedDeparturesController
             ->with([
                 'customer:id,name,phone',
                 'route:id,name,scope,mode,city_id',
-                'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status,departure_kind,driver_id',
+                'route.stops:id,route_id,seq,name',
+                'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status,departure_kind,driver_id,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
                 'routeDeparture.driver:id,name,phone',
                 'boardStop:id,name',
                 'dropStop:id,name',
@@ -68,8 +75,16 @@ class AdminFixedDeparturesController
             ->when(isset($data['status']), fn ($q) => $q->where('status', $data['status']))
             ->when(isset($data['payment_status']), fn ($q) => $q->where('payment_status', $data['payment_status']))
             ->when(isset($data['refund_status']), fn ($q) => $q->where('refund_status', $data['refund_status']))
-            ->when(isset($data['date_from']), fn ($q) => $q->whereDate('created_at', '>=', $data['date_from']))
-            ->when(isset($data['date_to']), fn ($q) => $q->whereDate('created_at', '<=', $data['date_to']));
+            ->when(isset($data['booking_date_from']), fn ($q) => $q->whereDate('created_at', '>=', $data['booking_date_from']))
+            ->when(isset($data['booking_date_to']), fn ($q) => $q->whereDate('created_at', '<=', $data['booking_date_to']))
+            ->when(isset($data['ride_date_from']) || isset($data['date_from']), function ($q) use ($data) {
+                $from = $data['ride_date_from'] ?? $data['date_from'];
+                $q->whereHas('routeDeparture', fn ($dep) => $dep->whereDate('service_date', '>=', $from));
+            })
+            ->when(isset($data['ride_date_to']) || isset($data['date_to']), function ($q) use ($data) {
+                $to = $data['ride_date_to'] ?? $data['date_to'];
+                $q->whereHas('routeDeparture', fn ($dep) => $dep->whereDate('service_date', '<=', $to));
+            });
 
         if (!empty($data['q'])) {
             $term = '%' . str_replace('%', '\\%', $data['q']) . '%';
@@ -154,6 +169,7 @@ class AdminFixedDeparturesController
     public function store(Request $request, City $city)
     {
         $departure = $this->departures->createAdminDeparture($city, $this->validatePayload($request));
+        $this->broadcastFixedUpdate($city, (int) $departure->route_id, 'departure_created');
 
         return response()->json([
             'departure' => $this->departures->shapeAdminDeparture($departure),
@@ -169,6 +185,7 @@ class AdminFixedDeparturesController
         }
 
         $departure = $this->departures->updateAdminDeparture($city, $departure, $this->validatePayload($request));
+        $this->broadcastFixedUpdate($city, (int) $departure->route_id, 'departure_updated');
 
         return response()->json([
             'departure' => $this->departures->shapeAdminDeparture($departure),
@@ -183,6 +200,7 @@ class AdminFixedDeparturesController
         ]);
 
         $departure = $this->departures->closeBookings($city, $departure, $request->user(), $data['reason'] ?? null);
+        $this->broadcastFixedUpdate($city, (int) $departure->route_id, 'departure_closed');
 
         return response()->json([
             'departure' => $this->departures->shapeAdminDeparture($departure),
@@ -197,6 +215,7 @@ class AdminFixedDeparturesController
         ]);
 
         $result = $this->departures->cancelAdminDeparture($city, $departure, $request->user(), $data['reason'] ?? null);
+        $this->broadcastFixedUpdate($city, (int) $result['departure']->route_id, 'departure_cancelled');
 
         return response()->json([
             'departure' => $this->departures->shapeAdminDeparture($result['departure']),
@@ -220,6 +239,7 @@ class AdminFixedDeparturesController
 
         $updated = $this->refunds->cancelBySystem($reservation, 'admin_passenger_cancelled', $request->user(), $detail);
         $updated = $this->cityScopedReservation($city, $updated);
+        $this->broadcastFixedUpdate($city, (int) $updated->route_id, 'booking_cancelled');
 
         return response()->json([
             'booking' => $this->shapeSupportBooking($updated),
@@ -333,13 +353,28 @@ class AdminFixedDeparturesController
             'status' => ['nullable', 'in:SCHEDULED,FORMING,DISPATCHED,DEPARTED,COMPLETED,CANCELLED'],
         ]);
     }
+    private function broadcastFixedUpdate(City $city, ?int $routeId, string $reason): void
+    {
+        try {
+            broadcast(new FixedRouteCatalogUpdated((int) $city->id, $routeId, $reason))->toOthers();
+        } catch (\Throwable $e) {
+            Log::warning('Fixed admin catalog broadcast failed', [
+                'city_id' => $city->id,
+                'route_id' => $routeId,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function cityScopedReservation(City $city, SeatReservation $reservation): SeatReservation
     {
         $reservation = SeatReservation::query()
             ->with([
                 'customer:id,name,phone',
                 'route:id,name,scope,mode,city_id',
-                'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status,departure_kind,driver_id',
+                'route.stops:id,route_id,seq,name',
+                'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status,departure_kind,driver_id,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
                 'routeDeparture.driver:id,name,phone',
                 'boardStop:id,name',
                 'dropStop:id,name',
@@ -357,12 +392,21 @@ class AdminFixedDeparturesController
     {
         $booking = $this->bookings->shapeBooking($reservation);
 
+        $reachedStopName = null;
+        $reachedSeq = $reservation->routeDeparture?->fixed_last_reached_stop_seq;
+        if ($reachedSeq !== null) {
+            $reachedStopName = $reservation->route?->stops?->firstWhere('seq', (int) $reachedSeq)?->name;
+        }
+
         return array_merge($booking, [
+            'fixed_last_reached_stop_name' => $reachedStopName,
             'customer_name' => $reservation->customer?->name,
             'customer_phone' => $reservation->customer?->phone,
             'driver_name' => $reservation->routeDeparture?->driver?->name,
             'driver_phone' => $reservation->routeDeparture?->driver?->phone,
             'departure_status' => $reservation->routeDeparture?->status,
+            'fixed_last_reached_stop_seq' => $reservation->routeDeparture?->fixed_last_reached_stop_seq,
+            'fixed_last_reached_stop_at' => optional($reservation->routeDeparture?->fixed_last_reached_stop_at)->toIso8601String(),
             'payment_reference' => $reservation->payment_reference,
             'refund_reference' => $reservation->refund_reference,
             'refund_amount' => $reservation->refund_amount !== null ? (float) $reservation->refund_amount : null,

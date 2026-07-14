@@ -114,8 +114,6 @@ class AdminCustomersController
                 'suspended_reason' => $user->suspended_reason,
                 'suspended_at' => $user->suspended_at,
                 'duplicate_registration' => (bool) $user->duplicate_registration,
-                'email_unsubscribed' => (bool) $user->email_unsubscribed,
-                'sms_unsubscribed' => (bool) $user->sms_unsubscribed,
                 'push_unsubscribed' => (bool) $user->push_unsubscribed,
                 'wallet_balance' => $this->walletService->balance($user),
                 'remaining_coupons' => 0, // placeholder until coupon redemption table exists
@@ -237,24 +235,16 @@ class AdminCustomersController
     {
         $this->ensureCustomer($user);
         $data = $request->validate([
-            'email' => ['nullable', 'boolean'],
-            'sms' => ['nullable', 'boolean'],
             'push' => ['nullable', 'boolean'],
         ]);
 
-        if (array_key_exists('email', $data)) {
-            $user->email_unsubscribed = (bool) $data['email'];
-        }
-        if (array_key_exists('sms', $data)) {
-            $user->sms_unsubscribed = (bool) $data['sms'];
-        }
         if (array_key_exists('push', $data)) {
             $user->push_unsubscribed = (bool) $data['push'];
         }
         $user->save();
 
         return response()->json([
-            'message' => 'Unsubscription preferences updated.',
+            'message' => 'Push preference updated.',
             'customer' => $user->fresh(),
         ]);
     }

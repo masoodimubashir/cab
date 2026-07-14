@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\FixedSeatHold;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
 
@@ -15,12 +16,12 @@ class FixedManifestService
     public function manifest(RouteDeparture $departure): array
     {
         $this->availability->assertFixedDeparture($departure);
-        $departure->loadMissing(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+        $departure->loadMissing(['route.stops' => fn ($q) => $q->orderBy('seq'), 'driver:id,name']);
 
         $passengers = SeatReservation::query()
             ->where('route_departure_id', $departure->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
-            ->with(['customer:id,name,phone', 'boardStop:id,name', 'dropStop:id,name'])
+            ->with(['customer:id,name,phone', 'boardStop:id,name,lat,lng', 'dropStop:id,name,lat,lng'])
             ->orderBy('id')
             ->get()
             ->map(fn (SeatReservation $reservation) => [
@@ -34,8 +35,14 @@ class FixedManifestService
                 'fixed_auto_outcome' => $reservation->fixed_auto_outcome,
                 'payment_status' => $reservation->payment_status,
                 'fare_amount' => $reservation->fare_amount !== null ? (float) $reservation->fare_amount : null,
-                'board' => $reservation->board_stop_id ? $reservation->boardStop?->name : $reservation->board_address,
-                'drop' => $reservation->drop_stop_id ? $reservation->dropStop?->name : $reservation->drop_address,
+                'board_stop_id' => $reservation->board_stop_id,
+                'drop_stop_id' => $reservation->drop_stop_id,
+                'board' => $reservation->board_address ?: $reservation->boardStop?->name,
+                'board_lat' => $reservation->board_lat !== null ? (float) $reservation->board_lat : ($reservation->boardStop?->lat !== null ? (float) $reservation->boardStop->lat : null),
+                'board_lng' => $reservation->board_lng !== null ? (float) $reservation->board_lng : ($reservation->boardStop?->lng !== null ? (float) $reservation->boardStop->lng : null),
+                'drop' => $reservation->drop_address ?: $reservation->dropStop?->name,
+                'drop_lat' => $reservation->drop_lat !== null ? (float) $reservation->drop_lat : ($reservation->dropStop?->lat !== null ? (float) $reservation->dropStop->lat : null),
+                'drop_lng' => $reservation->drop_lng !== null ? (float) $reservation->drop_lng : ($reservation->dropStop?->lng !== null ? (float) $reservation->dropStop->lng : null),
             ]);
 
         return [
@@ -43,14 +50,37 @@ class FixedManifestService
                 'id' => $departure->id,
                 'route_id' => $departure->route_id,
                 'route_name' => $departure->route?->name,
+                'origin_name' => $departure->route?->origin_name,
+                'dest_name' => $departure->route?->dest_name,
                 'service_date' => optional($departure->service_date)->toDateString(),
                 'depart_at' => optional($departure->depart_at)->toIso8601String(),
                 'announced_depart_at' => optional($departure->announced_depart_at)->toIso8601String(),
                 'capacity' => (int) $departure->capacity,
                 'seats_taken' => (int) $departure->seats_taken,
+                'active_hold_count' => FixedSeatHold::query()
+                    ->where('route_departure_id', $departure->id)
+                    ->where('status', 'HELD')
+                    ->where('expires_at', '>', now())
+                    ->count(),
+                'reservation_count' => SeatReservation::query()
+                    ->where('route_departure_id', $departure->id)
+                    ->count(),
                 'seats_remaining' => $this->availability->seatsRemaining($departure),
+                'fixed_last_reached_stop_seq' => $departure->fixed_last_reached_stop_seq,
+                'fixed_last_reached_stop_at' => optional($departure->fixed_last_reached_stop_at)->toIso8601String(),
                 'status' => $departure->status,
             ],
+            'stops' => $departure->route?->stops?->map(fn ($stop) => [
+                'id' => $stop->id,
+                'seq' => (int) $stop->seq,
+                'name' => $stop->name,
+                'lat' => $stop->lat !== null ? (float) $stop->lat : null,
+                'lng' => $stop->lng !== null ? (float) $stop->lng : null,
+                'is_pickup' => (bool) $stop->is_pickup,
+                'is_drop' => (bool) $stop->is_drop,
+                'is_active' => (bool) $stop->is_active,
+                'is_temporarily_unavailable' => (bool) $stop->is_temporarily_unavailable,
+            ])->values() ?? [],
             'passengers' => $passengers,
         ];
     }

@@ -5,7 +5,7 @@
 
 :host {
   --splash-navy: #0B131E;
-  --splash-navy-2: #0D1B2A; // var(--dc-ink)
+  --splash-navy-2: #0D1B2A; // brand navy
   --splash-green: var(--dc-green, #12B35B);
 }
 
@@ -88,6 +88,18 @@
   justify-content: center;
   gap: 18px;
   animation: splashFadeIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+
+.splash-logo-image {
+  width: min(260px, 72vw);
+  height: auto;
+  display: block;
+  border-radius: 22px;
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+  animation: logoPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 // Centered white circular logo mark, with a gentle continuous float

@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Exceptions\ReservationException;
 use App\Models\City;
 use App\Models\CityVehicleType;
+use App\Models\FixedSeatHold;
+use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
@@ -18,6 +20,7 @@ class FixedDepartureService
         private readonly FixedAvailabilityService $availability,
         private readonly FixedRefundService $refunds,
         private readonly FixedBookingEventService $events,
+        private readonly NotificationCenter $notifier,
     ) {}
 
     public function customerDepartures(Route $route): Collection
@@ -80,11 +83,66 @@ class FixedDepartureService
         }
 
         return DB::transaction(function () use ($departure, $data) {
-            $route = $departure->route;
-            $departure->fill($this->departureAttributes($route, $data, $departure))->save();
+            /** @var RouteDeparture $locked */
+            $locked = RouteDeparture::query()
+                ->with('route:id,city_id,name,scope,mode')
+                ->lockForUpdate()
+                ->findOrFail($departure->id);
 
-            return $departure->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+            $route = $locked->route;
+            $this->assertAdminDepartureUpdateIsSafe($locked, $data);
+            $locked->fill($this->departureAttributes($route, $data, $locked))->save();
+
+            return $locked->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
         });
+    }
+
+    private function assertAdminDepartureUpdateIsSafe(RouteDeparture $departure, array $data): void
+    {
+        if (in_array($departure->status, ['COMPLETED', 'CANCELLED'], true)) {
+            throw new ReservationException('This fixed vehicle is already closed.', 422);
+        }
+
+        $activeSeats = (int) SeatReservation::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->sum('seats');
+        $activeLuggage = (int) SeatReservation::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->sum('extra_luggage_count');
+        $heldSeats = (int) FixedSeatHold::query()
+            ->where('route_departure_id', $departure->id)
+            ->where('status', 'HELD')
+            ->where('expires_at', '>', now())
+            ->sum('seats');
+        $heldLuggage = (int) FixedSeatHold::query()
+            ->where('route_departure_id', $departure->id)
+            ->where('status', 'HELD')
+            ->where('expires_at', '>', now())
+            ->sum('extra_luggage_count');
+
+        $minimumCapacity = $activeSeats + $heldSeats;
+        $minimumLuggage = $activeLuggage + $heldLuggage;
+        if (array_key_exists('capacity', $data) && (int) $data['capacity'] < $minimumCapacity) {
+            throw new ReservationException("Capacity cannot be lower than {$minimumCapacity} active/held seat(s).", 422);
+        }
+        if (array_key_exists('luggage_capacity', $data) && (int) $data['luggage_capacity'] < $minimumLuggage) {
+            throw new ReservationException("Luggage capacity cannot be lower than {$minimumLuggage} active/held luggage space(s).", 422);
+        }
+
+        $hasPassengerActivity = ($minimumCapacity + $minimumLuggage) > 0 || SeatReservation::query()->where('route_departure_id', $departure->id)->exists();
+        if ($hasPassengerActivity && isset($data['route_id']) && (int) $data['route_id'] !== (int) $departure->route_id) {
+            throw new ReservationException('Route cannot be changed after passengers have booked this fixed vehicle.', 422);
+        }
+
+        if (isset($data['driver_id']) && (int) $data['driver_id'] !== (int) $departure->driver_id && $departure->status !== 'FORMING') {
+            throw new ReservationException('Driver can only be changed before this fixed ride starts.', 422);
+        }
+
+        if (isset($data['status']) && $data['status'] !== $departure->status) {
+            throw new ReservationException('Use the fixed vehicle action buttons to start, complete, close, or cancel this ride.', 422);
+        }
     }
 
     public function closeBookings(City $city, RouteDeparture $departure, ?User $actor = null, ?string $reason = null): RouteDeparture
@@ -123,6 +181,10 @@ class FixedDepartureService
                         $actor,
                     );
                 });
+
+            if ($dep->driver_id) {
+                $this->notifier->notifyUserId((int) $dep->driver_id, "fixed_bookings_closed", "Fixed bookings closed", "Admin closed new bookings for " . ($dep->route?->name ?: "this fixed vehicle") . ".", ["route_departure_id" => $dep->id, "route_id" => $dep->route_id], "lock");
+            }
 
             return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
         });
@@ -176,6 +238,10 @@ class FixedDepartureService
             return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
         });
 
+        if ($dep->driver_id) {
+            $this->notifier->notifyUserId((int) $dep->driver_id, "fixed_vehicle_cancelled", "Fixed vehicle cancelled", "Admin cancelled " . ($dep->route?->name ?: "this fixed vehicle") . ".", ["route_departure_id" => $dep->id, "route_id" => $dep->route_id, "cancelled_passengers" => $cancelled], "alert-triangle");
+        }
+
         return [
             'departure' => $dep,
             'cancelled_passengers' => $cancelled,
@@ -186,20 +252,47 @@ class FixedDepartureService
     public function shapeCustomerDeparture(RouteDeparture $departure): array
     {
         $this->availability->assertFixedDeparture($departure);
+        $departure->loadMissing(['driver:id,name', 'cityVehicleType:id,display_name,vehicle_type_id', 'cityVehicleType.vehicleType:id,name']);
+        $driverProfile = $departure->driver_id
+            ? Driver::query()
+                ->where('user_id', $departure->driver_id)
+                ->first(['user_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
+            : null;
 
         return [
             'id' => $departure->id,
             'route_id' => $departure->route_id,
+            'trip_id' => $departure->trip_id,
             'service_date' => optional($departure->service_date)->toDateString(),
             'depart_at' => optional($departure->depart_at)->toIso8601String(),
             'announced_depart_at' => optional($departure->announced_depart_at)->toIso8601String(),
             'capacity' => (int) $departure->capacity,
             'seats_taken' => (int) $departure->seats_taken,
-            'seats_remaining' => in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true) ? (int) $departure->capacity : $this->availability->seatsRemaining($departure),
+            'active_hold_count' => FixedSeatHold::query()
+                ->where('route_departure_id', $departure->id)
+                ->where('status', 'HELD')
+                ->where('expires_at', '>', now())
+                ->count(),
+            'reservation_count' => SeatReservation::query()
+                ->where('route_departure_id', $departure->id)
+                ->count(),
+            'seats_remaining' => $this->availability->seatsRemaining($departure),
             'first_bookable_stop_seq' => $this->availability->firstBookableStopSeq($departure),
+            'fixed_last_reached_stop_seq' => $departure->fixed_last_reached_stop_seq,
+            'fixed_last_reached_stop_at' => optional($departure->fixed_last_reached_stop_at)->toIso8601String(),
             'luggage_capacity' => (int) $departure->luggage_capacity,
             'luggage_taken' => (int) $departure->luggage_taken,
-            'luggage_remaining' => in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true) ? (int) $departure->luggage_capacity : $this->availability->luggageRemaining($departure),
+            'luggage_remaining' => $this->availability->luggageRemaining($departure),
+            'driver' => $departure->driver?->name,
+            'driver_name' => $departure->driver?->name,
+            'driver_id' => $departure->driver_id,
+            'city_vehicle_type_id' => $departure->city_vehicle_type_id,
+            'vehicle_name' => $departure->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type,
+            'vehicle_type_name' => $departure->cityVehicleType?->vehicleType?->name ?? $driverProfile?->vehicle_type,
+            'vehicle_brand' => $driverProfile?->vehicle_brand,
+            'vehicle_model' => $driverProfile?->vehicle_model,
+            'vehicle_color' => $driverProfile?->vehicle_color,
+            'vehicle_reg_no' => $driverProfile?->vehicle_reg_no,
             'status' => $departure->status,
             'departure_kind' => $departure->departure_kind,
             'visible_to_customers' => (bool) $departure->visible_to_customers,
@@ -213,7 +306,10 @@ class FixedDepartureService
         return [
             'id' => $departure->id,
             'route_id' => $departure->route_id,
+            'trip_id' => $departure->trip_id,
             'route_name' => $departure->route?->name,
+            'origin_name' => $departure->route?->origin_name,
+            'dest_name' => $departure->route?->dest_name,
             'scope' => $departure->route?->scope,
             'mode' => $departure->route?->mode,
             'service_date' => optional($departure->service_date)->toDateString(),
@@ -224,11 +320,21 @@ class FixedDepartureService
             'boarding_closed_at' => optional($departure->boarding_closed_at)->toIso8601String(),
             'capacity' => (int) $departure->capacity,
             'seats_taken' => (int) $departure->seats_taken,
-            'seats_remaining' => in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true) ? (int) $departure->capacity : $this->availability->seatsRemaining($departure),
+            'active_hold_count' => FixedSeatHold::query()
+                ->where('route_departure_id', $departure->id)
+                ->where('status', 'HELD')
+                ->where('expires_at', '>', now())
+                ->count(),
+            'reservation_count' => SeatReservation::query()
+                ->where('route_departure_id', $departure->id)
+                ->count(),
+            'seats_remaining' => $this->availability->seatsRemaining($departure),
             'first_bookable_stop_seq' => $this->availability->firstBookableStopSeq($departure),
+            'fixed_last_reached_stop_seq' => $departure->fixed_last_reached_stop_seq,
+            'fixed_last_reached_stop_at' => optional($departure->fixed_last_reached_stop_at)->toIso8601String(),
             'luggage_capacity' => (int) $departure->luggage_capacity,
             'luggage_taken' => (int) $departure->luggage_taken,
-            'luggage_remaining' => in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true) ? (int) $departure->luggage_capacity : $this->availability->luggageRemaining($departure),
+            'luggage_remaining' => $this->availability->luggageRemaining($departure),
             'driver' => $departure->driver?->name,
             'driver_id' => $departure->driver_id,
             'city_vehicle_type_id' => $departure->city_vehicle_type_id,

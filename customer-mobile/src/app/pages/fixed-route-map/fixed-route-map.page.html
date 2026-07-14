@@ -1,0 +1,40 @@
+<ion-content class="fixed-route-map-page" [fullscreen]="true">
+  <div id="fixed-route-full-map" class="fixed-route-full-map"></div>
+
+  <button type="button" class="map-back" (click)="back()" aria-label="Back">
+    <ion-icon name="arrow-back-outline"></ion-icon>
+  </button>
+
+  <div class="live-badge" *ngIf="liveTrackingActive">
+    <span></span>
+    <strong>Live</strong>
+  </div>
+
+  <div class="map-loading" *ngIf="loading">
+    <ion-spinner name="crescent"></ion-spinner>
+  </div>
+
+  <div class="map-error" *ngIf="!loading && error">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span>{{ error }}</span>
+  </div>
+
+  <section class="route-sheet" *ngIf="!loading && !error && booking">
+    <div class="route-stops">
+      <div class="stop">
+        <span class="stop-dot stop-dot--pickup"></span>
+        <div>
+          <small>Pickup</small>
+          <strong>{{ booking.board || 'Pickup stop' }}</strong>
+        </div>
+      </div>
+      <div class="stop">
+        <span class="stop-dot stop-dot--drop"></span>
+        <div>
+          <small>Drop</small>
+          <strong>{{ booking.drop || 'Drop stop' }}</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+</ion-content>

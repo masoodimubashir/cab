@@ -8,6 +8,7 @@ import 'daterangepicker';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
+import { AdminRealtimeService } from '../../core/admin-realtime.service';
 import {
   ButtonComponent,
   ColumnComponent,
@@ -49,6 +50,8 @@ interface DepartureRow {
   status: string;
   departure_kind: 'driver_opened' | 'scheduled';
   visible_to_customers: boolean;
+  fixed_last_reached_stop_seq?: number | null;
+  fixed_last_reached_stop_at?: string | null;
 }
 
 interface PassengerLiveStatus {
@@ -87,6 +90,12 @@ interface FixedSupportBooking {
   seats: number;
   status: string;
   departure_status?: string | null;
+  service_date?: string | null;
+  depart_at?: string | null;
+  announced_depart_at?: string | null;
+  fixed_last_reached_stop_seq?: number | null;
+  fixed_last_reached_stop_at?: string | null;
+  fixed_last_reached_stop_name?: string | null;
   payment_method?: string | null;
   payment_status?: string | null;
   payment_reference?: string | null;
@@ -310,6 +319,53 @@ const REFUND_STATUS_OPTIONS = [
           </tm-column>
         </tm-data-table>
 
+        <section class="support-panel">
+          <div class="support-head">
+            <div>
+              <h2>Fixed booking support</h2>
+              <p>Review passenger status, payment, refund and timeline details.</p>
+            </div>
+            <tm-button variant="ghost" size="sm" (clicked)="fetchBookings()">Refresh</tm-button>
+          </div>
+
+          <div class="support-filters">
+            <label class="support-search">
+              <span>Search</span>
+              <input [(ngModel)]="supportQuery" type="search" placeholder="Customer, phone, booking ID, payment ref" (ngModelChange)="onSupportFilterChange()" />
+            </label>
+            <label class="support-search compact"><span>Ride from</span><input [(ngModel)]="supportRideDateFrom" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
+            <label class="support-search compact"><span>Ride to</span><input [(ngModel)]="supportRideDateTo" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
+            <label class="support-search compact"><span>Booked from</span><input [(ngModel)]="supportBookingDateFrom" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
+            <label class="support-search compact"><span>Booked to</span><input [(ngModel)]="supportBookingDateTo" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
+            <tm-filter-select icon="road" ariaLabel="Support route" allLabel="All routes" [options]="routeFilterOptions" [value]="supportRouteId" (valueChange)="onSupportRouteChange($event)" />
+            <tm-filter-select icon="shield" ariaLabel="Booking status" allLabel="All booking statuses" [options]="bookingStatusOptions" [value]="supportStatus" (valueChange)="onSupportStatusChange($event)" />
+            <tm-filter-select icon="shield" ariaLabel="Payment status" allLabel="All payment statuses" [options]="paymentStatusOptions" [value]="supportPaymentStatus" (valueChange)="onSupportPaymentStatusChange($event)" />
+            <tm-filter-select icon="refresh" ariaLabel="Refund status" allLabel="All refund statuses" [options]="refundStatusOptions" [value]="supportRefundStatus" (valueChange)="onSupportRefundStatusChange($event)" />
+            <tm-button variant="ghost" size="sm" (clicked)="resetSupportFilters()">Reset</tm-button>
+          </div>
+
+          <div class="cue support-cue" *ngIf="supportLoading"><tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading fixed bookings...</p></div>
+          <div class="cue support-cue" *ngIf="!supportLoading && !supportBookings.length"><tm-icon name="user" [size]="20" /><p class="cue__text">No fixed bookings match these filters.</p></div>
+
+          <div class="support-list" *ngIf="!supportLoading && supportBookings.length">
+            <article class="support-card" *ngFor="let row of supportBookings">
+              <div class="support-card__main">
+                <div><span class="support-title">#{{ row.id }} · {{ row.customer_name || "Customer" }}</span><span class="support-sub">{{ row.customer_phone || "No phone" }} · booked {{ bookingDate(row) }} · ride {{ rideDate(row) }}</span></div>
+                <div class="support-card__actions"><span class="status-pill" [attr.data-s]="row.status">{{ bookingStatusLabel(row) }}</span><tm-button variant="ghost" size="sm" icon="eye" (clicked)="openSupportTimeline(row)">Timeline</tm-button></div>
+              </div>
+              <div class="support-route"><tm-icon name="road" [size]="14" /><span>{{ row.route_name || "Fixed route" }} · {{ row.board || "Pickup" }} → {{ row.drop || "Drop" }}</span></div>
+              <div class="support-meta"><span>{{ row.seats }} seat{{ row.seats > 1 ? "s" : "" }}</span><span>Ride {{ departureStatus(row) }}</span><span>{{ supportProgress(row) }}</span><span>{{ supportPayment(row) }}</span><span>{{ supportRefund(row) }}</span><span *ngIf="row.driver_name">Driver {{ row.driver_name }}</span></div>
+              <p class="support-note" *ngIf="row.fixed_live_status?.detail">{{ row.fixed_live_status?.label }} · {{ row.fixed_live_status?.detail }}</p>
+            </article>
+          </div>
+
+          <div class="support-pages" *ngIf="supportTotal > supportPageSize">
+            <tm-button variant="ghost" size="sm" [disabled]="supportPage <= 1" (clicked)="onSupportPageChange(-1)">Previous</tm-button>
+            <span>Page {{ supportPage }} of {{ supportPageCount }}</span>
+            <tm-button variant="ghost" size="sm" [disabled]="supportPage >= supportPageCount" (clicked)="onSupportPageChange(1)">Next</tm-button>
+          </div>
+        </section>
+
       </ng-container>
     </div>
 
@@ -318,14 +374,14 @@ const REFUND_STATUS_OPTIONS = [
         <div class="grid2">
           <label class="field">
             <span class="field__lbl">Route</span>
-            <select [(ngModel)]="form.route_id" (ngModelChange)="onFormRouteChange($event)">
+            <select [(ngModel)]="form.route_id" (ngModelChange)="onFormRouteChange($event)" [disabled]="!!editingId">
               <option [ngValue]="null">Select…</option>
               <option *ngFor="let route of routes" [ngValue]="route.id">{{ route.name }}</option>
             </select>
           </label>
           <label class="field">
             <span class="field__lbl">Status</span>
-            <select [(ngModel)]="form.status">
+            <select [(ngModel)]="form.status" [disabled]="!!editingId">
               <option *ngFor="let option of statusOptions" [value]="option.value">{{ option.label }}</option>
             </select>
           </label>
@@ -339,7 +395,7 @@ const REFUND_STATUS_OPTIONS = [
           </label>
           <div class="live-note">
             <tm-icon name="calendar" [size]="16" />
-            <span>Customers see this as boarding now. The driver starts the ride when ready.</span>
+            <span>{{ editingId ? 'Use action buttons for status changes. Capacity cannot go below active or held seats.' : 'Customers see this as boarding now. The driver starts the ride when ready.' }}</span>
           </div>
           <label class="field">
             <span class="field__lbl">Boarding closes</span>
@@ -403,10 +459,10 @@ const REFUND_STATUS_OPTIONS = [
           <section class="timeline-summary">
             <div>
               <span class="support-title">{{ timeline.booking.board || 'Pickup' }} → {{ timeline.booking.drop || 'Drop' }}</span>
-              <span class="support-sub">{{ supportPayment(timeline.booking) }} · {{ supportRefund(timeline.booking) }}</span>
+              <span class="support-sub">Ride {{ rideDate(timeline.booking) }} · booked {{ bookingDate(timeline.booking) }} · {{ supportPayment(timeline.booking) }} · {{ supportRefund(timeline.booking) }}</span>
             </div>
             <div class="timeline-summary__actions">
-              <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ timeline.booking.status }}</span>
+              <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ bookingStatusLabel(timeline.booking) }}</span>
               <tm-button variant="danger" size="sm" [disabled]="!canCancelBooking(timeline.booking)" (clicked)="openCancelBooking(timeline.booking)">Cancel passenger</tm-button>
             </div>
           </section>
@@ -583,6 +639,7 @@ const REFUND_STATUS_OPTIONS = [
     .support-head p { margin: 3px 0 0; font-size: 12px; color: var(--tm-text-muted); }
     .support-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
     .support-search { display: flex; flex-direction: column; gap: 5px; min-width: min(280px, 100%); }
+    .support-search.compact { min-width: 145px; }
     .support-search span { font-size: 12px; font-weight: 700; color: var(--tm-text); }
     .support-search input { min-height: 38px; padding: 8px 11px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-family: inherit; font-size: 13px; }
     .support-list { display: flex; flex-direction: column; gap: 10px; }
@@ -682,6 +739,10 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   supportStatus = 'all';
   supportPaymentStatus = 'all';
   supportRefundStatus = 'all';
+  supportRideDateFrom = '';
+  supportRideDateTo = '';
+  supportBookingDateFrom = '';
+  supportBookingDateTo = '';
   supportTimelineOpen = false;
   supportTimelineLoading = false;
   supportTimeline: FixedSupportTimeline | null = null;
@@ -708,6 +769,7 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     private cityCtx: CityContextService,
     private toast: ToastService,
     private zone: NgZone,
+    private realtime: AdminRealtimeService,
   ) {}
 
   ngOnInit(): void {
@@ -718,8 +780,16 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
         this.page = 1;
         this.loadRoutes();
         this.fetch();
+        this.fetchBookings();
       }),
     );
+    const unsubscribeFixedCatalog = this.realtime.subscribeFixedCatalog((payload) => {
+      if (this.cityId == null || payload.city_id !== this.cityId) return;
+      this.loadRoutes();
+      this.fetch();
+      this.fetchBookings();
+    });
+    this.subs.push({ unsubscribe: unsubscribeFixedCatalog } as Subscription);
   }
 
   ngAfterViewInit(): void {
@@ -1089,6 +1159,26 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     return isNaN(date.getTime()) ? iso : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
+  onSupportRouteChange(value: string): void {
+    this.supportRouteId = value || "all";
+    this.onSupportFilterChange();
+  }
+
+  onSupportStatusChange(value: string): void {
+    this.supportStatus = value || "all";
+    this.onSupportFilterChange();
+  }
+
+  onSupportPaymentStatusChange(value: string): void {
+    this.supportPaymentStatus = value || "all";
+    this.onSupportFilterChange();
+  }
+
+  onSupportRefundStatusChange(value: string): void {
+    this.supportRefundStatus = value || "all";
+    this.onSupportFilterChange();
+  }
+
   onSupportFilterChange(): void {
     this.supportPage = 1;
     this.fetchBookings();
@@ -1106,25 +1196,69 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     this.supportStatus = 'all';
     this.supportPaymentStatus = 'all';
     this.supportRefundStatus = 'all';
+    this.supportRideDateFrom = '';
+    this.supportRideDateTo = '';
+    this.supportBookingDateFrom = '';
+    this.supportBookingDateTo = '';
     this.supportPage = 1;
     this.fetchBookings();
   }
 
+  get supportPageCount(): number {
+    return Math.max(1, Math.ceil(this.supportTotal / this.supportPageSize));
+  }
+
+  bookingStatusLabel(row: FixedSupportBooking): string {
+    if (row.fixed_live_status?.key === "driver_missed_stop") return "Driver missed pickup";
+    switch ((row.status || "").toUpperCase()) {
+      case "BOOKED":
+      case "CONFIRMED": return "Booked";
+      case "BOARDED": return "Boarded";
+      case "DROPPED": return "Dropped off";
+      case "COMPLETED": return "Completed";
+      case "NO_SHOW": return "No-show";
+      case "CANCELLED": return "Cancelled";
+      default: return row.status || "Status";
+    }
+  }
+
   bookingDate(row: FixedSupportBooking): string {
-    if (!row.created_at) return '-';
-    const date = new Date(row.created_at);
-    return isNaN(date.getTime()) ? row.created_at : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return this.shortDateTime(row.created_at);
+  }
+
+  rideDate(row: FixedSupportBooking): string {
+    return this.shortDateTime(row.announced_depart_at || row.depart_at || row.service_date);
+  }
+
+  departureStatus(row: FixedSupportBooking): string {
+    return this.prettyToken(row.departure_status || 'scheduled');
+  }
+
+  supportProgress(row: FixedSupportBooking): string {
+    const seq = Number(row.fixed_last_reached_stop_seq || 0);
+    if (seq <= 0) return 'Progress not started';
+    return row.fixed_last_reached_stop_name ? 'Reached ' + row.fixed_last_reached_stop_name : 'Reached stop #' + seq;
   }
 
   supportPayment(row: FixedSupportBooking): string {
-    const method = row.payment_method ? row.payment_method.toUpperCase() : 'PAYMENT';
-    return method + ' · ' + (row.payment_status || 'UNKNOWN');
+    const method = row.payment_method ? this.prettyToken(row.payment_method) : 'Payment';
+    return method + ' · ' + this.prettyToken(row.payment_status || 'unknown');
   }
 
   supportRefund(row: FixedSupportBooking): string {
     if (!row.refund_status || row.refund_status === 'NONE') return 'Refund none';
     const amount = row.refund_amount != null ? ' · INR ' + Number(row.refund_amount).toFixed(2) : '';
-    return 'Refund ' + row.refund_status + amount;
+    return 'Refund ' + this.prettyToken(row.refund_status) + amount;
+  }
+
+  private shortDateTime(raw?: string | null): string {
+    if (!raw) return '-';
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? raw : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  private prettyToken(value: string): string {
+    return value.toString().toLowerCase().split('_').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
   }
 
   onFormRouteChange(routeId: number | null): void {
@@ -1282,6 +1416,10 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     if (this.supportStatus !== 'all') params.set('status', this.supportStatus);
     if (this.supportPaymentStatus !== 'all') params.set('payment_status', this.supportPaymentStatus);
     if (this.supportRefundStatus !== 'all') params.set('refund_status', this.supportRefundStatus);
+    if (this.supportRideDateFrom) params.set('ride_date_from', this.supportRideDateFrom);
+    if (this.supportRideDateTo) params.set('ride_date_to', this.supportRideDateTo);
+    if (this.supportBookingDateFrom) params.set('booking_date_from', this.supportBookingDateFrom);
+    if (this.supportBookingDateTo) params.set('booking_date_to', this.supportBookingDateTo);
 
     this.supportLoading = true;
     this.api.get<{ data: { data: FixedSupportBooking[]; total: number } }>('/admin/cities/' + this.cityId + '/fixed-bookings?' + params.toString()).subscribe({

@@ -48,6 +48,27 @@ interface Payment {
 }
 
 
+interface FixedManifestPassenger {
+  id: number;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  seats?: number | null;
+  status?: string | null;
+  payment_status?: string | null;
+  fare_amount?: number | null;
+  board?: string | null;
+  board_lat?: number | null;
+  board_lng?: number | null;
+  drop?: string | null;
+  drop_lat?: number | null;
+  drop_lng?: number | null;
+}
+
+interface FixedManifest {
+  departure?: { route_name?: string | null; origin_name?: string | null; dest_name?: string | null } | null;
+  passengers: FixedManifestPassenger[];
+}
+
 interface CityVehicleType {
   id: number;
   display_name?: string | null;
@@ -103,6 +124,7 @@ interface ShowResponse {
   trip: Trip;
   driver_profile: DriverProfile | null;
   path: PathPoint[];
+  fixed_manifest?: FixedManifest | null;
 }
 
 /**
@@ -147,28 +169,8 @@ interface ShowResponse {
         <!-- ============ RIGHT: Scrolling info ============ -->
         <div class="info">
 
-          <!-- Customer + Driver, side-by-side at the top -->
-          <div class="parties">
-            <section class="block">
-              <h3 class="block__title">Customer</h3>
-              <div class="party">
-                <div class="party__avatar">
-                  <img *ngIf="trip.customer?.avatar_path" [src]="trip.customer?.avatar_path" alt="" />
-                  <tm-icon *ngIf="!trip.customer?.avatar_path" name="user" [size]="22" />
-                </div>
-                <div class="party__id">
-                  <span class="party__name">{{ trip.customer?.name || ('Customer #' + (trip.customer?.id || '—')) }}</span>
-                  <span class="party__sub" *ngIf="trip.customer?.phone">
-                    <tm-icon name="phone" [size]="12" /> {{ trip.customer?.phone }}
-                  </span>
-                  <span class="party__sub" *ngIf="trip.customer?.email">
-                    <tm-icon name="envelope" [size]="12" /> {{ trip.customer?.email }}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            <section class="block">
+          <!-- Driver and vehicle -->
+          <section class="block">
               <h3 class="block__title">Driver &amp; vehicle</h3>
               <div *ngIf="trip.driver" class="party">
                 <div class="party__avatar">
@@ -201,8 +203,7 @@ interface ShowResponse {
                   <dt>Ride type</dt><dd>{{ trip.ride_type?.name }}</dd>
                 </ng-container>
               </dl>
-            </section>
-          </div>
+          </section>
 
           <!-- Summary -->
           <section class="block summary">
@@ -277,6 +278,37 @@ interface ShowResponse {
                   </small>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <!-- Fixed passengers -->
+          <section class="block" *ngIf="fixedManifest?.passengers?.length">
+            <div class="passenger-headline">
+              <div>
+                <h3 class="block__title">Customers</h3>
+                <p>{{ fixedManifest?.departure?.route_name || fixedManifestRouteLabel() }}</p>
+              </div>
+              <span>{{ fixedManifest?.passengers?.length }} customer{{ (fixedManifest?.passengers?.length || 0) > 1 ? 's' : '' }}</span>
+            </div>
+
+            <div class="passenger-list">
+              <article class="passenger-row" *ngFor="let p of fixedManifest?.passengers">
+                <div class="passenger-main">
+                  <strong>{{ p.customer_name || 'Passenger' }}</strong>
+                  <small>{{ p.customer_phone || 'No phone' }}</small>
+                </div>
+                <div class="passenger-route">
+                  <span><b>Pickup</b>{{ p.board || '—' }}</span>
+                  <span><b>Drop</b>{{ p.drop || '—' }}</span>
+                </div>
+                <div class="passenger-meta">
+                  <span>{{ p.seats || 1 }} seat{{ (p.seats || 1) > 1 ? 's' : '' }}</span>
+                  <span>{{ p.payment_status || 'payment pending' }}</span>
+                  <span>{{ p.status || 'BOOKED' }}</span>
+                  <span *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
+                  <button type="button" class="passenger-map-btn" [disabled]="!canViewPassengerOnMap(p)" (click)="viewPassengerOnMap(p)">View on map</button>
+                </div>
+              </article>
             </div>
           </section>
 
@@ -599,6 +631,83 @@ interface ShowResponse {
       text-align: right; font-weight: 600;
     }
 
+    /* ---------- Fixed passengers ---------- */
+    .passenger-headline {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      margin-bottom: 12px;
+    }
+    .passenger-headline .block__title { margin-bottom: 3px; }
+    .passenger-headline p { margin: 0; font-size: 13px; font-weight: 700; color: var(--tm-text); }
+    .passenger-headline > span {
+      flex: none;
+      padding: 4px 10px;
+      border-radius: var(--tm-radius-pill);
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .passenger-list { display: flex; flex-direction: column; gap: 10px; }
+    .passenger-row {
+      display: grid;
+      grid-template-columns: minmax(130px, 0.9fr) minmax(180px, 1.2fr);
+      gap: 10px 14px;
+      padding: 12px;
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-md);
+      background: var(--tm-canvas-2);
+    }
+    .passenger-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .passenger-main strong { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .passenger-main small { font-family: var(--tm-font-mono); font-size: 11px; color: var(--tm-text-muted); }
+    .passenger-route { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+    .passenger-route span {
+      display: flex; flex-direction: column; gap: 2px;
+      min-width: 0;
+      font-size: 12px;
+      line-height: 1.35;
+      color: var(--tm-text);
+    }
+    .passenger-route b {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--tm-text-muted);
+    }
+    .passenger-meta {
+      grid-column: 1 / -1;
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .passenger-meta span,
+    .passenger-map-btn {
+      padding: 3px 8px;
+      border-radius: var(--tm-radius-pill);
+      background: var(--tm-surface);
+      color: var(--tm-text-muted);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: capitalize;
+    }
+    .passenger-map-btn {
+      border: 1px solid var(--tm-green-deep);
+      background: var(--tm-surface);
+      color: var(--tm-green-deep);
+      cursor: pointer;
+    }
+    .passenger-map-btn:disabled {
+      border-color: var(--tm-line-2);
+      color: var(--tm-text-soft);
+      cursor: not-allowed;
+    }
+    .passenger-map-btn:not(:disabled):hover {
+      background: var(--tm-green-tint);
+    }
+    @media (max-width: 640px) {
+      .passenger-headline { flex-direction: column; }
+      .passenger-row,
+      .passenger-route { grid-template-columns: 1fr; }
+    }
+
     /* ---------- Fare lines ---------- */
     .lines { display: flex; flex-direction: column; gap: 8px; }
     .line {
@@ -648,6 +757,7 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   trip: Trip | null = null;
   driverProfile: DriverProfile | null = null;
   path: PathPoint[] = [];
+  fixedManifest: FixedManifest | null = null;
 
   // Filled from DirectionsService once the planned route resolves.
   routeDistanceKm: number | null = null;
@@ -659,6 +769,9 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   private directionsRenderer: google.maps.DirectionsRenderer | null = null;
   private driverPathLine: google.maps.Polyline | null = null;
   private markers: google.maps.Marker[] = [];
+  private fixedPassengerMarkers: google.maps.Marker[] = [];
+  private fixedPassengerDirectionsRenderer: google.maps.DirectionsRenderer | null = null;
+  private fixedPassengerLine: google.maps.Polyline | null = null;
 
   constructor(
     private route: ActivatedRoute,
@@ -703,6 +816,7 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.trip = res?.trip ?? null;
         this.driverProfile = res?.driver_profile ?? null;
         this.path = res?.path ?? [];
+        this.fixedManifest = res?.fixed_manifest ?? null;
         this.loading = false;
         this.cdr.detectChanges();
         this.tryRenderMap();
@@ -824,7 +938,96 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     );
   }
 
+  canViewPassengerOnMap(passenger: FixedManifestPassenger): boolean {
+    return Number.isFinite(Number(passenger.board_lat))
+      && Number.isFinite(Number(passenger.board_lng))
+      && Number.isFinite(Number(passenger.drop_lat))
+      && Number.isFinite(Number(passenger.drop_lng));
+  }
+
+  viewPassengerOnMap(passenger: FixedManifestPassenger): void {
+    if (!this.canViewPassengerOnMap(passenger)) return;
+
+    const render = () => {
+      this.tryRenderMap();
+      if (!this.map) return;
+
+      const pickup = { lat: Number(passenger.board_lat), lng: Number(passenger.board_lng) };
+      const drop = { lat: Number(passenger.drop_lat), lng: Number(passenger.drop_lng) };
+      this.clearFixedPassengerOverlays();
+
+      this.fixedPassengerMarkers.push(new google.maps.Marker({
+        position: pickup,
+        map: this.map,
+        title: passenger.board || "Passenger pickup",
+        icon: this.pinIcon("#f59e0b"),
+        label: { text: "P", color: "#fff", fontWeight: "800", fontSize: "12px" },
+        zIndex: 20,
+      }));
+      this.fixedPassengerMarkers.push(new google.maps.Marker({
+        position: drop,
+        map: this.map,
+        title: passenger.drop || "Passenger drop",
+        icon: this.pinIcon("#7c3aed"),
+        label: { text: "D", color: "#fff", fontWeight: "800", fontSize: "12px" },
+        zIndex: 21,
+      }));
+
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend(pickup);
+      bounds.extend(drop);
+
+      if (!this.fixedPassengerDirectionsRenderer) {
+        this.fixedPassengerDirectionsRenderer = new google.maps.DirectionsRenderer({
+          suppressMarkers: true,
+          preserveViewport: true,
+          polylineOptions: { strokeColor: "#f59e0b", strokeOpacity: 0.98, strokeWeight: 6, zIndex: 30 },
+        });
+      }
+      this.fixedPassengerDirectionsRenderer.setMap(this.map);
+
+      new google.maps.DirectionsService().route(
+        { origin: pickup, destination: drop, travelMode: google.maps.TravelMode.DRIVING },
+        (result, status) => {
+          if (status === google.maps.DirectionsStatus.OK && result) {
+            this.fixedPassengerDirectionsRenderer!.setDirections(result);
+            result.routes[0]?.overview_path?.forEach((pt) => bounds.extend(pt));
+            this.map?.fitBounds(bounds, 80);
+          } else {
+            this.fixedPassengerLine = new google.maps.Polyline({
+              path: [pickup, drop],
+              map: this.map,
+              strokeColor: "#f59e0b",
+              strokeOpacity: 0.9,
+              strokeWeight: 6,
+              zIndex: 30,
+            });
+            this.map?.fitBounds(bounds, 80);
+          }
+        },
+      );
+
+      this.mapEl?.nativeElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+
+    if (this.mapsReady) render();
+    else this.maps.load().then(() => { this.mapsReady = true; render(); });
+  }
+
+  private clearFixedPassengerOverlays(): void {
+    this.fixedPassengerMarkers.forEach((m) => m.setMap(null));
+    this.fixedPassengerMarkers = [];
+    if (this.fixedPassengerDirectionsRenderer) {
+      this.fixedPassengerDirectionsRenderer.setMap(null);
+    }
+    if (this.fixedPassengerLine) {
+      this.fixedPassengerLine.setMap(null);
+      this.fixedPassengerLine = null;
+    }
+  }
+
   private clearOverlays(): void {
+    this.clearFixedPassengerOverlays();
     this.markers.forEach((m) => m.setMap(null));
     this.markers = [];
     if (this.driverPathLine) {
@@ -867,6 +1070,13 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       .filter((s) => !!s)
       .join(' ');
   }
+  fixedManifestRouteLabel(): string {
+    const dep = this.fixedManifest?.departure;
+    if (!dep) return "Fixed route";
+    if (dep.origin_name && dep.dest_name) return dep.origin_name + " to " + dep.dest_name;
+    return dep.route_name || "Fixed route";
+  }
+
   timeline(): { label: string; at: string }[] {
     const t = this.trip;
     if (!t) return [];

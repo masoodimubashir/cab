@@ -106,6 +106,13 @@ class FixedStopAutomationTest extends TestCase
 
         $reservation->refresh();
         $this->assertSame('CONFIRMED', $reservation->status);
+        $this->assertNotNull($reservation->fixed_stop_arrival_started_at);
+        $this->assertNull($reservation->fixed_stop_arrived_at);
+
+        $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000, Carbon::parse('2026-06-19 10:00:21'));
+
+        $reservation->refresh();
+        $this->assertSame('CONFIRMED', $reservation->status);
         $this->assertNotNull($reservation->fixed_stop_arrived_at);
         $this->assertNotNull($reservation->fixed_leaving_soon_notified_at);
 

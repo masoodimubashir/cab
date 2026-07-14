@@ -113,7 +113,18 @@
             </div>
           </div>
 
-          <div class="drive-mode drive-mode--selected" *ngIf="driveMode">
+          <div class="drive-mode drive-mode--selected drive-mode--fixed" *ngIf="driveMode === 'fixed'">
+            <div class="drive-mode__copy">
+              <strong>Fixed boarding</strong>
+              <span>{{ activeFixedVehicleOpen ? 'Continue managing your open vehicle.' : 'Choose the route you will provide service on.' }}</span>
+            </div>
+            <button type="button" class="fixed-open-btn dc-press" (click)="chooseFixedRouteForBoarding()" [disabled]="toggling">
+              <ion-icon [name]="activeFixedVehicleOpen ? 'arrow-forward-circle-outline' : 'add-circle-outline'"></ion-icon>
+              <span>{{ activeFixedVehicleOpen ? 'Go to boarding' : 'Start boarding' }}</span>
+            </button>
+          </div>
+
+          <div class="drive-mode drive-mode--selected" *ngIf="driveMode && driveMode !== 'fixed'">
             <div>
               <strong>Ready to receive rides</strong>
               <span>{{ activeServiceLabel() }}</span>
@@ -206,5 +217,63 @@
       </button>
     </div>
   </aside>
+
+
+  <ion-modal class="route-picker-modal" [isOpen]="routePickerOpen" (didDismiss)="closeRoutePicker()">
+    <ng-template>
+      <ion-header class="route-picker__header ion-no-border">
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button fill="clear" (click)="closeRoutePicker()" [disabled]="openingRouteId !== null" aria-label="Close route picker">
+              <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ scopeLabel() }} fixed routes</ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content class="route-picker__content" [fullscreen]="true">
+        <section class="route-picker__hero">
+          <span class="route-picker__pill">{{ scopeLabel() }}</span>
+          <h2>Choose route</h2>
+          <p>Only routes matching your registered fixed service are shown.</p>
+        </section>
+
+        <div class="route-picker__error" *ngIf="routePickerError">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span>{{ routePickerError }}</span>
+        </div>
+
+        <section class="route-list" *ngIf="routePickerRoutes.length; else noRoutePickerRoutes">
+          <button
+            type="button"
+            class="route-card dc-press"
+            *ngFor="let route of routePickerRoutes"
+            (click)="openFixedRouteForBoarding(route)"
+            [disabled]="openingRouteId !== null"
+          >
+            <span class="route-card__icon">
+              <ion-spinner *ngIf="openingRouteId === route.id" name="crescent"></ion-spinner>
+              <ion-icon *ngIf="openingRouteId !== route.id" name="git-branch-outline"></ion-icon>
+            </span>
+            <span class="route-card__main">
+              <strong>{{ routeTitle(route) }}</strong>
+              <span class="route-card__leg"><small>From</small>{{ route.origin_name || 'Origin not set' }}</span>
+              <span class="route-card__leg"><small>To</small>{{ route.dest_name || 'Destination not set' }}</span>
+            </span>
+            <ion-icon class="route-card__chev" name="chevron-forward-outline"></ion-icon>
+          </button>
+        </section>
+
+        <ng-template #noRoutePickerRoutes>
+          <div class="route-empty">
+            <ion-icon name="git-branch-outline"></ion-icon>
+            <strong>No routes</strong>
+            <span>No {{ scopeLabel().toLowerCase() }} fixed routes are available right now.</span>
+          </div>
+        </ng-template>
+      </ion-content>
+    </ng-template>
+  </ion-modal>
 
 </ion-content>

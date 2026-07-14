@@ -1,0 +1,30 @@
+<ion-content class="fixed-map-page" [fullscreen]="true">
+  <div id="fixed-driver-full-map" class="fixed-driver-full-map"></div>
+
+  <button type="button" class="map-back dc-press" (click)="back()" aria-label="Back to boarding">
+    <ion-icon name="chevron-back-outline"></ion-icon>
+  </button>
+
+  <section class="map-sheet">
+    <div class="map-sheet__copy">
+      <span>{{ vehicle?.status || 'Route map' }}</span>
+      <strong>{{ routeLineText() }}</strong>
+      <p *ngIf="vehicle?.route_name">{{ vehicle?.route_name }}</p>
+      <small class="map-passenger-summary">{{ passengerSummaryText() }}</small>
+    </div>
+    <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
+    <button type="button" class="map-refresh dc-press" (click)="load()" [disabled]="loading" aria-label="Refresh map">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
+  </section>
+
+  <div class="map-legend" *ngIf="passengers.length">
+    <span><i class="legend-pickup"></i>Pickup</span>
+    <span><i class="legend-drop"></i>Drop after boarded</span>
+  </div>
+
+  <div class="map-error" *ngIf="error">
+    <ion-icon name="alert-circle-outline"></ion-icon>
+    <span>{{ error }}</span>
+  </div>
+</ion-content>

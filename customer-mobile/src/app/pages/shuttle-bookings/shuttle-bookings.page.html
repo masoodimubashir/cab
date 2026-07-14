@@ -6,7 +6,7 @@
     <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
       <ion-icon name="refresh-outline"></ion-icon>
     </button>
-    <h1>Shuttle rides</h1>
+    <h1>Shuttle</h1>
     <p>Your Shuttle bookings, Razorpay payment and manual refund status.</p>
   </div>
 
@@ -22,7 +22,7 @@
 
     <div class="state" *ngIf="!loading && !error && !bookings.length">
       <ion-icon name="bus-outline"></ion-icon>
-      <strong>No Shuttle rides yet</strong>
+      <strong>No shuttle bookings yet</strong>
       <span>Your Shuttle bookings will appear here.</span>
     </div>
 

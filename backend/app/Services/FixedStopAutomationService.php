@@ -157,8 +157,6 @@ class FixedStopAutomationService
             'fixed_auto_processed_at' => $now,
             'fixed_auto_outcome' => 'customer_no_show',
         ])->save();
-
-        $this->notifyCustomerNoShow($updated->fresh(), $now);
     }
 
     private function maybeMarkDriverMissedStop(SeatReservation $reservation, $stops, float $driverLat, float $driverLng, int $driverRadius, int $customerRadius, int $driverMissedGraceMinutes, Carbon $now): void
@@ -200,8 +198,6 @@ class FixedStopAutomationService
                 'fixed_auto_processed_at' => $now,
                 'fixed_auto_outcome' => 'driver_missed_stop',
             ])->save();
-
-            $this->notifyDriverMissedStop($updated->fresh(), $now);
         }
     }
 

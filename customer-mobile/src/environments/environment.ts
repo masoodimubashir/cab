@@ -5,7 +5,7 @@
 export const environment = {
   production: false,
   /** Laravel API base (include /api). */
-  apiUrl: 'http://192.168.29.13:8000/api',
+  apiUrl: 'http://localhost:8000/api',
   /**
    * Login OTP provider:
    *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). In mock mode

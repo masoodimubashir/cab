@@ -22,8 +22,28 @@ class FixedAdminRouteSettingsTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        $vehicleId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $cityId,
+            'ride_type_id' => null,
+            'display_name' => 'Auto Stop Hatchback',
+            'display_order' => 1,
+            'max_people' => 6,
+            'luggage_capacity' => 2,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $admin = User::factory()->create(['manager_all_cities' => true]);
         $admin->addRole('admin');
+        $roleId = DB::table('manager_roles')->insertGetId([
+            'slug' => 'super_admin',
+            'name' => 'Super Admin',
+            'is_system' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $admin->forceFill(['manager_role_id' => $roleId])->save();
         Sanctum::actingAs($admin, ['act-as:admin']);
 
         $response = $this->postJson("/api/admin/cities/{$cityId}/fixed-routes", [
@@ -35,6 +55,7 @@ class FixedAdminRouteSettingsTest extends TestCase
             'origin_lng' => 74.0000000,
             'dest_lat' => 34.1000000,
             'dest_lng' => 74.1000000,
+            'city_vehicle_type_id' => $vehicleId,
             'booking_window_hours' => 6,
             'max_seats_per_booking' => 4,
             'waiting_time_per_stop_minutes' => 5,
@@ -76,6 +97,8 @@ class FixedAdminRouteSettingsTest extends TestCase
         ])->assertCreated();
 
         $response
+            ->assertJsonPath('route.max_seats_per_booking', 6)
+            ->assertJsonPath('route.max_luggage_per_vehicle', 2)
             ->assertJsonPath('route.fixed_settings_json.stop_arrival_radius_m', 175)
             ->assertJsonPath('route.fixed_settings_json.driver_missed_stop_grace_minutes', 4)
             ->assertJsonPath('route.fixed_settings_json.customer_pickup_radius_m', 125)

@@ -40,6 +40,14 @@ class FixedAdminRecoveryActionsTest extends TestCase
 
         $this->admin = User::factory()->create(['manager_all_cities' => true]);
         $this->admin->addRole('admin');
+        $roleId = DB::table('manager_roles')->insertGetId([
+            'slug' => 'super_admin',
+            'name' => 'Super Admin',
+            'is_system' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->admin->forceFill(['manager_role_id' => $roleId])->save();
 
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');

@@ -73,6 +73,18 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
           />
         </div>
         <div class="field">
+          <label class="lbl">Ride Type</label>
+          <div class="ro-value">{{ driver.ride_type_name || '—' }}</div>
+        </div>
+        <div class="field">
+          <label class="lbl">Vehicle Type</label>
+          <div class="ro-value">{{ driver.vehicle_type_name || '—' }}</div>
+        </div>
+        <div class="field">
+          <label class="lbl">Car</label>
+          <div class="ro-value">{{ driver.city_vehicle_type_name || '—' }}</div>
+        </div>
+        <div class="field">
           <label class="lbl">Brand</label>
           <div class="ro-value">{{ driver.vehicle_brand || '—' }}</div>
         </div>

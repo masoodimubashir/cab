@@ -140,3 +140,22 @@
   .dc-stagger > *, .dc-skeleton { animation: none !important; }
   .dc-press { transition: none !important; }
 }
+
+/* Keep custom customer page headers pinned while the page body scrolls. */
+ion-content > .page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+ion-content > .page-header.dc-anim-up {
+  animation-name: dcFadeIn;
+}
+
+/* Remaining custom top controls that live inside full-screen map pages. */
+ion-content > .auth-header,
+ion-content .fb-topbar,
+ion-content .trip-top,
+ion-content .floating-step-progress {
+  z-index: 30;
+}

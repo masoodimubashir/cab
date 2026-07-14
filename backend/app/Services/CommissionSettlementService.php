@@ -26,6 +26,7 @@ class CommissionSettlementService
     public function __construct(
         private WalletService $wallet,
         private SubscriptionService $subscriptions,
+        private FixedPricingService $fixedPricing,
     ) {
     }
 
@@ -56,17 +57,10 @@ class CommissionSettlementService
             ? CitySetting::query()->firstOrCreate(['city_id' => $trip->city_id])
             : null;
 
-        $vehicleTypeId = $trip->vehicle_type_id
-            ?? $trip->driver?->driver?->vehicle_type_id;
-
         // An active subscription overrides the vehicle's commission with its own
         // percent (usually 0%). Use a sentinel default of -1 so we can tell
         // "no active sub" (default returned) apart from a real 0% sub rate.
-        $subPct = $this->subscriptions->effectiveCommissionPercent(
-            (int) $trip->driver_id,
-            $vehicleTypeId ? (int) $vehicleTypeId : null,
-            -1.0,
-        );
+        $subPct = $this->subscriptions->effectiveCommissionPercentForTrip($trip, -1.0);
 
         if ($subPct >= 0.0) {
             // Active subscription: its percent rate wins.
@@ -129,7 +123,10 @@ class CommissionSettlementService
             $gross += $fare;
 
             if ($isFixed) {
-                $commission += min($fare, max(0.0, (float) ($seat->commission_amount ?? 0)));
+                $seatCommission = $this->fixedBookingCommissionForTrip($trip, $seat, $fare);
+                $seat->commission_percent = (float) $seatCommission['percent'];
+                $seat->commission_amount = (float) $seatCommission['amount'];
+                $commission += min($fare, max(0.0, (float) $seat->commission_amount));
             } else {
                 $seat->commission_amount = 0.0;
             }
@@ -160,5 +157,28 @@ class CommissionSettlementService
                 null,
             );
         }
+
+        if ($isFixed) {
+            $this->subscriptions->consumeSharedTrip($trip, $gross);
+        }
+    }
+
+    private function fixedBookingCommissionForTrip(Trip $trip, SeatReservation $seat, float $fare): array
+    {
+        $trip->loadMissing("route");
+        $standard = $trip->route
+            ? $this->fixedPricing->bookingCommission($trip->route, $fare, (int) ($seat->seats ?? 1))
+            : ["percent" => (float) ($seat->commission_percent ?? 0), "amount" => (float) ($seat->commission_amount ?? 0)];
+
+        $subPercent = $this->subscriptions->effectiveCommissionPercentForTrip($trip, -1.0);
+        if ($subPercent < 0.0) {
+            return $standard;
+        }
+
+        $fare = max(0.0, round($fare, 2));
+        $percent = max(0.0, $subPercent);
+        $amount = round($fare * $percent / 100, 2);
+
+        return ["percent" => round($percent, 2), "amount" => min($amount, $fare)];
     }
 }

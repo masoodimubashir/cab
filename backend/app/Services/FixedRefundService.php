@@ -15,6 +15,7 @@ class FixedRefundService
         private readonly WalletService $wallet,
         private readonly RazorpayService $razorpay,
         private readonly FixedBookingEventService $events,
+        private readonly NotificationCenter $notifier,
     ) {}
 
     public function cancelByCustomer(SeatReservation $reservation): array
@@ -62,6 +63,8 @@ class FixedRefundService
                 $res->customer,
             );
 
+            $this->notifyCustomerCancelled($res, $refundOutcome);
+
             return [
                 'reservation' => $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']),
                 'refunded' => $refundOutcome['refunded'],
@@ -102,6 +105,8 @@ class FixedRefundService
                 'The vehicle reached the pickup stop and the customer did not board inside the allowed waiting time.',
                 ['refund_status' => 'REJECTED'],
             );
+
+            $this->notifyNoShow($res);
 
             return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
         });
@@ -162,8 +167,73 @@ class FixedRefundService
                 $actor,
             );
 
+            $this->notifySystemCancelled($res, $reason, $refundOutcome);
+
             return $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']);
         });
+    }
+
+    private function notifyCustomerCancelled(SeatReservation $reservation, array $refundOutcome): void
+    {
+        $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
+        $routeName = $reservation->route?->name ?: "Fixed route";
+        $refundText = $refundOutcome["refund_status"] === "REFUNDED"
+            ? " Refund processed."
+            : " Refund status: " . strtolower((string) $refundOutcome["refund_status"]) . ".";
+        $data = $this->notificationData($reservation) + ["refund_status" => $refundOutcome["refund_status"]];
+
+        $this->notifier->notifyUserId($reservation->customer_id, "fixed_booking_cancelled", "Fixed booking cancelled", "Your booking for " . $routeName . " was cancelled." . $refundText, $data, "x-circle");
+
+        $driverId = $reservation->routeDeparture?->driver_id;
+        if ($driverId) {
+            $this->notifier->notifyUserId((int) $driverId, "fixed_customer_cancelled", "Fixed passenger cancelled", "A passenger cancelled a booking on " . $routeName . ".", $data, "x-circle");
+        }
+
+        $this->notifier->notifyAdmins("fixed_customer_cancelled", "Fixed booking cancelled", "A customer cancelled a booking on " . $routeName . ".", $data, "x-circle");
+    }
+
+    private function notifyNoShow(SeatReservation $reservation): void
+    {
+        $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
+        $routeName = $reservation->route?->name ?: "Fixed route";
+        $data = $this->notificationData($reservation) + ["refund_status" => "REJECTED"];
+
+        $this->notifier->notifyUserId($reservation->customer_id, "fixed_customer_no_show", "Marked no-show", "You were marked no-show for " . $routeName . ".", $data, "alert-circle");
+        $this->notifier->notifyAdmins("fixed_customer_no_show", "Fixed customer no-show", "A passenger was marked no-show on " . $routeName . ".", $data, "alert-circle");
+    }
+
+    private function notifySystemCancelled(SeatReservation $reservation, string $reason, array $refundOutcome): void
+    {
+        $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
+        $routeName = $reservation->route?->name ?: "Fixed route";
+        $type = $reason === "driver_missed_stop" ? "fixed_driver_missed_pickup" : "fixed_booking_cancelled_by_admin";
+        $title = $reason === "driver_missed_stop" ? "Driver missed pickup" : "Fixed booking cancelled";
+        $body = $reason === "driver_missed_stop"
+            ? "The vehicle missed your pickup for " . $routeName . "."
+            : "Your booking for " . $routeName . " was cancelled by the operator.";
+        $data = $this->notificationData($reservation) + [
+            "reason" => $reason,
+            "refund_status" => $refundOutcome["refund_status"],
+        ];
+
+        $this->notifier->notifyUserId($reservation->customer_id, $type, $title, $body, $data, "alert-triangle");
+
+        $driverId = $reservation->routeDeparture?->driver_id;
+        if ($driverId && in_array($reason, ["admin_vehicle_cancelled", "admin_passenger_cancelled"], true)) {
+            $this->notifier->notifyUserId((int) $driverId, "fixed_admin_cancelled_booking", "Fixed booking cancelled", "The operator cancelled a passenger booking on " . $routeName . ".", $data, "alert-triangle");
+        }
+    }
+
+    private function notificationData(SeatReservation $reservation): array
+    {
+        return [
+            "reservation_id" => $reservation->id,
+            "route_departure_id" => $reservation->route_departure_id,
+            "route_id" => $reservation->route_id,
+            "trip_id" => $reservation->trip_id,
+            "customer_id" => $reservation->customer_id,
+            "status" => $reservation->status,
+        ];
     }
 
     private function releaseVehicleCapacity(?RouteDeparture $departure, SeatReservation $reservation): void

@@ -39,6 +39,19 @@ interface CityVehicleTypeConfig {
   show_low_wallet_alert: boolean;
 }
 
+interface FixedRouteOption {
+  id: number;
+  name: string;
+  origin_name: string;
+  dest_name: string;
+  scope: string;
+}
+
+interface FixedVehicleSummary {
+  id: number;
+  status: string;
+}
+
 /**
  * Driver Dashboard — full-map home
  * --------------------------------
@@ -102,6 +115,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private onlineTimer: ReturnType<typeof setInterval> | null = null;
   driveMode: 'private' | 'fixed' | 'shuttle' | null = null;
   driveScope: 'local' | 'outstation' | null = null;
+  routePickerOpen = false;
+  routePickerRoutes: FixedRouteOption[] = [];
+  openingRouteId: number | null = null;
+  routePickerError: string | null = null;
+  activeFixedVehicleOpen = false;
 
   /** Destinations the drawer exposes — everything the tab bar used to reach. */
   readonly navGroups: NavGroup[] = [
@@ -349,6 +367,81 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return `${this.scopeLabel()} - ${this.serviceLabel().replace(' rides', '').replace(' vehicle', '')}`;
   }
 
+  async chooseFixedRouteForBoarding(): Promise<void> {
+    if (this.toggling) return;
+    this.toggling = true;
+    this.error = null;
+
+    try {
+      const active = await this.loadActiveFixedVehicleState();
+      if (active) {
+        this.navTo('/tabs/fixed');
+        return;
+      }
+
+      const scope = this.driveScope === 'outstation' ? 'outstation' : 'local';
+      const res = await firstValueFrom(this.api.get<{ data: FixedRouteOption[] }>('/fixed/driver/routes'));
+      const routes = res.data || [];
+      if (!routes.length) {
+        this.error = 'No active ' + this.scopeLabel(scope).toLowerCase() + ' fixed routes are available right now.';
+        return;
+      }
+
+      this.routePickerRoutes = routes;
+      this.routePickerError = null;
+      this.routePickerOpen = true;
+    } catch (e) {
+      const body = (e as { error?: Record<string, unknown> })?.error;
+      this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not load fixed routes.';
+    } finally {
+      this.toggling = false;
+    }
+  }
+
+  closeRoutePicker(): void {
+    if (this.openingRouteId !== null) return;
+    this.routePickerOpen = false;
+    this.routePickerError = null;
+  }
+
+  async openFixedRouteForBoarding(route: FixedRouteOption): Promise<void> {
+    if (this.openingRouteId !== null || this.toggling) return;
+    this.openingRouteId = route.id;
+    this.toggling = true;
+    this.error = null;
+    this.routePickerError = null;
+
+    try {
+      await firstValueFrom(this.api.post('/fixed/driver/vehicles', { route_id: route.id }));
+      this.activeFixedVehicleOpen = true;
+      this.routePickerOpen = false;
+      setTimeout(() => this.router.navigateByUrl('/tabs/fixed'), 120);
+    } catch (e) {
+      const body = (e as { error?: Record<string, unknown> })?.error;
+      this.routePickerError = (body?.['message'] as string) || (e as Error)?.message || 'Could not open fixed vehicle.';
+      this.error = this.routePickerError;
+    } finally {
+      this.openingRouteId = null;
+      this.toggling = false;
+    }
+  }
+
+  routeTitle(route: FixedRouteOption): string {
+    return route.name || ((route.origin_name && route.dest_name) ? route.origin_name + ' to ' + route.dest_name : 'Fixed route #' + route.id);
+  }
+
+  private async loadActiveFixedVehicleState(): Promise<boolean> {
+    try {
+      const existing = await firstValueFrom(this.api.get<{ data: FixedVehicleSummary[] }>('/fixed/driver/vehicles'));
+      const active = (existing.data || []).some((vehicle) => !['COMPLETED', 'CANCELLED'].includes(vehicle.status));
+      this.activeFixedVehicleOpen = active;
+      return active;
+    } catch {
+      this.activeFixedVehicleOpen = false;
+      return false;
+    }
+  }
+
   async choosePrivateRides(): Promise<void> {
     await this.setDriveMode('private');
   }
@@ -488,8 +581,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           }
           this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
           this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
+          if (this.driveMode === 'fixed') void this.loadActiveFixedVehicleState();
+          else this.activeFixedVehicleOpen = false;
           this.startOnlineTimer();
         } else {
+          this.activeFixedVehicleOpen = false;
           this.stopOnlineTimer();
         }
       },
@@ -805,6 +901,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       await this.presence.stop();
       this.driveMode = null;
       this.driveScope = null;
+      this.activeFixedVehicleOpen = false;
       this.stopOnlineTimer();
       // Keep showing the driver where they are — take the watch back ourselves.
       await this.startVisualWatch();

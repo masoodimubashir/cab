@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\FixedRouteCatalogUpdated;
 use App\Models\City;
 use App\Models\CityVehicleType;
 use App\Models\RideType;
+use App\Models\Route;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AdminVehicleTypesController
 {
@@ -61,6 +64,7 @@ class AdminVehicleTypesController
             'max_people' => ['required', 'integer', 'min:1', 'max:99'],
             'luggage_capacity' => ['required', 'integer', 'min:0', 'max:99'],
             'reverse_bidding_enabled' => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
         $rideType = isset($data['ride_type_id']) ? RideType::query()->find((int) $data['ride_type_id']) : null;
@@ -176,6 +180,7 @@ class AdminVehicleTypesController
             $vehicleType->{$field} = $value;
         }
         $vehicleType->save();
+        $this->syncFixedRoutesForVehicle($city, $vehicleType->fresh(), $data);
 
         return response()->json([
             'vehicle_type' => $this->shape($vehicleType->fresh()->load(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name'])),
@@ -209,6 +214,52 @@ class AdminVehicleTypesController
         return ((int) CityVehicleType::query()
             ->where('city_id', $city->id)
             ->max('display_order')) + 1;
+    }
+
+    private function syncFixedRoutesForVehicle(City $city, CityVehicleType $vehicleType, array $changed): void
+    {
+        if (! array_intersect(array_keys($changed), ['max_people', 'luggage_capacity', 'is_active'])) {
+            return;
+        }
+
+        $routeIds = Route::query()
+            ->where('city_id', $city->id)
+            ->where('mode', 'fixed')
+            ->where('city_vehicle_type_id', $vehicleType->id)
+            ->pluck('id');
+
+        if ($routeIds->isEmpty()) {
+            return;
+        }
+
+        Route::query()
+            ->whereIn('id', $routeIds)
+            ->update([
+                'max_seats_per_booking' => max(1, (int) $vehicleType->max_people),
+                'max_luggage_per_vehicle' => max(0, (int) $vehicleType->luggage_capacity),
+            ]);
+
+        $reason = array_intersect(array_keys($changed), ['max_people', 'luggage_capacity'])
+            ? 'vehicle_capacity_updated'
+            : 'vehicle_visibility_updated';
+
+        foreach ($routeIds as $routeId) {
+            $this->broadcastFixedUpdate((int) $city->id, (int) $routeId, $reason);
+        }
+    }
+
+    private function broadcastFixedUpdate(int $cityId, ?int $routeId, string $reason): void
+    {
+        try {
+            broadcast(new FixedRouteCatalogUpdated($cityId, $routeId, $reason))->toOthers();
+        } catch (\Throwable $e) {
+            Log::warning('Fixed route catalog broadcast failed after vehicle update', [
+                'city_id' => $cityId,
+                'route_id' => $routeId,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function shape(CityVehicleType $v): array

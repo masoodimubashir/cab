@@ -138,6 +138,17 @@
         </div>
 
         <div class="sheet-body">
+          <button
+            *ngIf="activeFixedRides.length"
+            type="button"
+            class="active-ride-link dc-press"
+            (click)="viewActiveFixedRide()"
+          >
+            <ion-icon name="car-outline" aria-hidden="true"></ion-icon>
+            <span>View active ride</span>
+            <ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon>
+          </button>
+
           <!-- STEP 1 — choose a scope (Local / Outstation) -->
           <div class="home-products" *ngIf="scopeOptions.length && !selectedScope">
             <button

@@ -235,10 +235,10 @@ class SeatReservationService
                 'phone' => $r->customer?->phone,
                 'seats' => (int) $r->seats,
                 'status' => $r->status,
-                'board' => $r->board_stop_id ? $r->boardStop?->name : $r->board_address,
+                'board' => $r->board_address ?: $r->boardStop?->name,
                 'board_lat' => $r->board_lat !== null ? (float) $r->board_lat : null,
                 'board_lng' => $r->board_lng !== null ? (float) $r->board_lng : null,
-                'drop' => $r->drop_stop_id ? $r->dropStop?->name : $r->drop_address,
+                'drop' => $r->drop_address ?: $r->dropStop?->name,
             ])->all();
 
         $route = $trip->route()->with(['stops' => fn ($q) => $q->orderBy('seq')])->first();
@@ -329,6 +329,9 @@ class SeatReservationService
         $stop = RouteStop::query()->where('route_id', $route->id)->where('id', $stopId)->first();
         if (!$stop || !$stop->{$flag}) {
             throw new ReservationException("That {$label} stop is not valid for this route.", 422);
+        }
+        if (!$stop->is_active || $stop->is_temporarily_unavailable) {
+            throw new ReservationException("That {$label} stop is currently unavailable.", 422);
         }
         return ['stop_id' => $stop->id, 'lat' => (float) $stop->lat, 'lng' => (float) $stop->lng, 'address' => $stop->name];
     }

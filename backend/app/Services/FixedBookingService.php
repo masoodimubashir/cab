@@ -3,28 +3,65 @@
 namespace App\Services;
 
 use App\Models\FixedSeatHold;
+use App\Models\DriverLocation;
+use App\Models\Driver;
 use App\Models\SeatReservation;
 use App\Models\User;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 
 class FixedBookingService
 {
-    public function myBookings(User $customer): Collection
+    public function myBookings(User $customer, int $page = 1, int $perPage = 50): array
     {
-        return SeatReservation::query()
+        $perPage = max(1, min($perPage, 50));
+        $page = max(1, $page);
+
+        $paginator = SeatReservation::query()
             ->where('customer_id', $customer->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->with([
                 'route:id,name,scope,mode',
-                'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status',
-                'boardStop:id,name',
-                'dropStop:id,name',
+                'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
+                'routeDeparture.driver:id,name,phone',
+                'routeDeparture.cityVehicleType:id,display_name,vehicle_type_id',
+                'routeDeparture.cityVehicleType.vehicleType:id,name',
+                'boardStop:id,name,lat,lng',
+                'dropStop:id,name,lat,lng',
             ])
             ->orderByDesc('id')
-            ->limit(100)
-            ->get()
-            ->map(fn (SeatReservation $reservation) => $this->shapeBooking($reservation));
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        return [
+            'data' => $paginator->getCollection()
+                ->map(fn (SeatReservation $reservation) => $this->shapeBooking($reservation))
+                ->values(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'has_more' => $paginator->hasMorePages(),
+            ],
+        ];
+    }
+
+    public function booking(User $customer, SeatReservation $reservation): array
+    {
+        if ((int) $reservation->customer_id !== (int) $customer->id || $reservation->route?->mode !== 'fixed') {
+            abort(404);
+        }
+
+        $reservation->loadMissing([
+            'route:id,name,scope,mode',
+            'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
+            'routeDeparture.driver:id,name,phone',
+            'routeDeparture.cityVehicleType:id,display_name,vehicle_type_id',
+            'routeDeparture.cityVehicleType.vehicleType:id,name',
+            'boardStop:id,name,lat,lng',
+            'dropStop:id,name,lat,lng',
+        ]);
+
+        return $this->shapeBooking($reservation);
     }
 
     public function shapeSeatHold(FixedSeatHold $hold): array
@@ -38,6 +75,9 @@ class FixedBookingService
             'route_name' => $hold->routeDeparture?->route?->name,
             'seats' => (int) $hold->seats,
             'amount' => (float) $hold->amount,
+            'original_amount' => $hold->original_amount !== null ? (float) $hold->original_amount : (float) $hold->amount,
+            'discount_amount' => $hold->discount_amount !== null ? (float) $hold->discount_amount : 0.0,
+            'coupon_assignment_id' => $hold->coupon_assignment_id,
             'has_extra_luggage' => (bool) $hold->has_extra_luggage,
             'extra_luggage_count' => (int) $hold->extra_luggage_count,
             'luggage_surcharge_amount' => (float) $hold->luggage_surcharge_amount,
@@ -49,12 +89,55 @@ class FixedBookingService
 
     public function shapeBooking(SeatReservation $reservation): array
     {
+        $departure = $reservation->routeDeparture;
+        $driverProfile = $departure?->driver_id
+            ? Driver::query()
+                ->where('user_id', $departure->driver_id)
+                ->first(['user_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
+            : null;
+        $latestDriverLocation = null;
+        $driverLocationStale = false;
+        if ($departure?->driver_id) {
+            $latestDriverLocation = DriverLocation::query()
+                ->when($departure?->trip_id, fn ($query) => $query->where('trip_id', $departure->trip_id))
+                ->where('driver_id', $departure->driver_id)
+                ->orderByDesc('recorded_at')
+                ->first(['lat', 'lng', 'recorded_at']);
+
+            if (!$latestDriverLocation && $departure?->trip_id) {
+                $latestDriverLocation = DriverLocation::query()
+                    ->where('driver_id', $departure->driver_id)
+                    ->orderByDesc('recorded_at')
+                    ->first(['lat', 'lng', 'recorded_at']);
+            }
+            if ($latestDriverLocation && optional($latestDriverLocation->recorded_at)->lt(now()->subMinutes(5))) {
+                $latestDriverLocation = null;
+                $driverLocationStale = true;
+            }
+        }
+
         return [
             'id' => $reservation->id,
             'route_id' => $reservation->route_id,
             'route_name' => $reservation->route?->name,
             'scope' => $reservation->route?->scope,
             'route_departure_id' => $reservation->route_departure_id,
+            'trip_id' => $departure?->trip_id,
+            'departure_status' => $departure?->status,
+            'fixed_last_reached_stop_seq' => $departure?->fixed_last_reached_stop_seq,
+            'fixed_last_reached_stop_at' => optional($departure?->fixed_last_reached_stop_at)->toIso8601String(),
+            'capacity' => $departure?->capacity !== null ? (int) $departure->capacity : null,
+            'seats_taken' => $departure?->seats_taken !== null ? (int) $departure->seats_taken : null,
+            'luggage_capacity' => $departure?->luggage_capacity !== null ? (int) $departure->luggage_capacity : null,
+            'luggage_taken' => $departure?->luggage_taken !== null ? (int) $departure->luggage_taken : null,
+            'driver_name' => $departure?->driver?->name,
+            'driver_phone' => $departure?->driver?->phone,
+            'vehicle_name' => $departure?->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type,
+            'vehicle_type_name' => $departure?->cityVehicleType?->vehicleType?->name ?? $driverProfile?->vehicle_type,
+            'vehicle_brand' => $driverProfile?->vehicle_brand,
+            'vehicle_model' => $driverProfile?->vehicle_model,
+            'vehicle_color' => $driverProfile?->vehicle_color,
+            'vehicle_reg_no' => $driverProfile?->vehicle_reg_no,
             'service_date' => optional($reservation->routeDeparture?->service_date)->toDateString(),
             'depart_at' => optional($reservation->routeDeparture?->depart_at)->toIso8601String(),
             'announced_depart_at' => optional($reservation->routeDeparture?->announced_depart_at)->toIso8601String(),
@@ -64,20 +147,35 @@ class FixedBookingService
             'payment_method' => $reservation->payment_method,
             'payment_status' => $reservation->payment_status,
             'refund_status' => $reservation->refund_status,
+            'payment_reference' => $reservation->payment_reference,
+            'refund_reference' => $reservation->refund_reference,
+            'refund_amount' => $reservation->refund_amount !== null ? (float) $reservation->refund_amount : null,
             'booking_channel' => $reservation->booking_channel,
             'fare_amount' => $reservation->fare_amount !== null ? (float) $reservation->fare_amount : null,
+            'promo_discount_amount' => $reservation->promo_discount_amount !== null ? (float) $reservation->promo_discount_amount : 0.0,
+            'coupon_assignment_id' => $reservation->coupon_assignment_id,
             'has_extra_luggage' => (bool) $reservation->has_extra_luggage,
             'extra_luggage_count' => (int) $reservation->extra_luggage_count,
             'luggage_surcharge_amount' => (float) $reservation->luggage_surcharge_amount,
-            'board' => $reservation->board_stop_id ? $reservation->boardStop?->name : $reservation->board_address,
-            'drop' => $reservation->drop_stop_id ? $reservation->dropStop?->name : $reservation->drop_address,
+            'board' => $reservation->board_address ?: $reservation->boardStop?->name,
+            'drop' => $reservation->drop_address ?: $reservation->dropStop?->name,
+            'board_lat' => $reservation->board_lat ?? $reservation->boardStop?->lat,
+            'board_lng' => $reservation->board_lng ?? $reservation->boardStop?->lng,
+            'drop_lat' => $reservation->drop_lat ?? $reservation->dropStop?->lat,
+            'drop_lng' => $reservation->drop_lng ?? $reservation->dropStop?->lng,
+            'latest_driver_location_stale' => $driverLocationStale,
+            'latest_driver_location' => $latestDriverLocation ? [
+                'lat' => (float) $latestDriverLocation->lat,
+                'lng' => (float) $latestDriverLocation->lng,
+                'recorded_at' => optional($latestDriverLocation->recorded_at)->toIso8601String(),
+            ] : null,
             'created_at' => optional($reservation->created_at)->toIso8601String(),
         ];
     }
 
     public function fixedLiveStatus(SeatReservation $reservation): array
     {
-        $reservation->loadMissing("routeDeparture:id,status", "boardStop:id,name", "dropStop:id,name");
+        $reservation->loadMissing("routeDeparture:id,status", "boardStop:id,name,lat,lng", "dropStop:id,name,lat,lng");
 
         $base = [
             "key" => "confirmed",
@@ -91,11 +189,19 @@ class FixedBookingService
         ];
 
         if ($reservation->status === "BOARDED") {
-            return array_merge($base, ["key" => "boarded", "label" => "Boarded", "detail" => "You have been marked boarded for this fixed ride.", "tone" => "success"]);
+            return array_merge($base, ["key" => "boarded", "label" => "Boarded", "detail" => "You have boarded this fixed ride and are on the vehicle.", "tone" => "success"]);
+        }
+
+        if ($reservation->status === "DROPPED") {
+            return array_merge($base, ["key" => "dropped", "label" => "Dropped off", "detail" => "", "tone" => "success"]);
+        }
+
+        if ($reservation->status === "COMPLETED") {
+            return array_merge($base, ["key" => "completed", "label" => "Ride completed", "detail" => "This fixed ride is completed.", "tone" => "success"]);
         }
 
         if ($reservation->status === "NO_SHOW") {
-            return array_merge($base, ["key" => "customer_no_show", "label" => "Marked no-show", "detail" => "The driver reached your pickup stop and the waiting time expired.", "tone" => "danger"]);
+            return array_merge($base, ["key" => "customer_no_show", "label" => "No-show", "detail" => "The driver reached your pickup stop and the waiting time expired.", "tone" => "danger"]);
         }
 
         if ($reservation->status === "CANCELLED" && $reservation->fixed_auto_outcome === "driver_missed_stop") {

@@ -26,6 +26,7 @@
     "@angular/platform-browser": "^20.0.0",
     "@angular/platform-browser-dynamic": "^20.0.0",
     "@angular/router": "^20.0.0",
+    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor-community/contacts": "^7.2.0",
     "@capacitor-firebase/authentication": "^8.2.0",
     "@capacitor-firebase/messaging": "^8.2.0",
