@@ -782,9 +782,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     return this.homeRouteForUser(this.auth.getUser());
   }
 
-  private homeRouteForUser(user: AuthUser | null | undefined): string {
-    const roles = new Set([user?.role, ...(user?.roles ?? [])].filter(Boolean));
-    return roles.has('driver') ? '/tabs/dashboard' : '/customer-tabs/book';
+  private homeRouteForUser(_user: AuthUser | null | undefined): string {
+    return '/customer-tabs/book';
   }
 
   private isSyntheticEmail(email?: string | null): boolean {

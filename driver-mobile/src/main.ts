@@ -33,7 +33,7 @@ import { environment } from './environments/environment';
 // dev (already correct).
 if (!environment.production && typeof window !== 'undefined') {
   const host = window.location.hostname;
-  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+  if (environment.apiUrl.includes('localhost') && host && host !== 'localhost' && host !== '127.0.0.1') {
     environment.apiUrl = `http://${host}:8000/api`;
     environment.reverbHost = host;
   }
