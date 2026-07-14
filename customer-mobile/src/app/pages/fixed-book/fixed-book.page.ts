@@ -142,6 +142,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   cityId: number | null = null;
   scope: 'local' | 'outstation' | '' = '';
   routeFilter: FixedScopeFilter = 'all';
+  routeSearch = '';
   step: Step = 'routes';
 
   loading = false;
@@ -180,6 +181,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private trackingTripId: number | null = null;
   private unsubscribeTracking: (() => void) | null = null;
   private locationSub?: Subscription;
+  private routeSearchTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private route: ActivatedRoute,
@@ -204,6 +206,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.unsubscribeFixedCity?.();
     this.unsubscribeFixedCity = null;
     this.stopLiveTracking();
+    if (this.routeSearchTimer) clearTimeout(this.routeSearchTimer);
+    this.routeSearchTimer = undefined;
     this.locationSub?.unsubscribe();
     this.locationSub = undefined;
   }
@@ -232,8 +236,17 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   get visibleRoutes(): FixedRoute[] {
-    if (this.routeFilter === 'all') return this.routes;
-    return this.routes.filter((route) => route.scope === this.routeFilter);
+    const term = this.routeSearch.trim().toLowerCase();
+    return this.routes.filter((route) => {
+      if (this.routeFilter !== 'all' && route.scope !== this.routeFilter) return false;
+      if (!term) return true;
+      return [
+        route.name,
+        route.origin_name,
+        route.dest_name,
+        ...(route.stops || []).map((stop) => stop.name),
+      ].some((value) => (value || '').toLowerCase().includes(term));
+    });
   }
 
   get localRouteCount(): number {
@@ -649,11 +662,18 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.setExtraLuggage(this.extraLuggageCount);
   }
 
+  onRouteSearchInput(): void {
+    if (this.routeSearchTimer) clearTimeout(this.routeSearchTimer);
+    this.routeSearchTimer = setTimeout(() => this.loadRoutes(false), 300);
+  }
+
   loadRoutes(showSpinner = true): void {
-    if (this.cityId == null) return;
     if (showSpinner) this.loading = true;
     this.error = null;
-    this.api.get<{ data: FixedRoute[] }>(`/fixed/routes?city_id=${this.cityId}`).subscribe({
+    const params = new URLSearchParams({ limit: '100' });
+    const search = this.routeSearch.trim();
+    if (search.length >= 2) params.set('q', search);
+    this.api.get<{ data: FixedRoute[] }>("/fixed/routes?" + params.toString()).subscribe({
       next: (res) => {
         const rows = res?.data || [];
         this.routes = rows;
@@ -663,7 +683,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       error: () => {
         this.routes = [];
         if (showSpinner) this.loading = false;
-        this.error = 'Could not load fixed routes for this city.';
+        this.error = 'Could not load fixed routes.';
       },
     });
   }

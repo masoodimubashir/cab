@@ -20,16 +20,42 @@ class FixedRouteService
         private readonly FixedPricingService $pricing,
     ) {}
 
-    public function customerRoutes(int $cityId): Collection
+    public function customerRoutes(array|int $filters): Collection
     {
+        if (is_int($filters)) {
+            $filters = ['city_id' => $filters];
+        }
+
+        $limit = min(100, max(1, (int) ($filters['limit'] ?? 60)));
+
         return Route::query()
             ->with('stops')
-            ->where('city_id', $cityId)
             ->where('mode', 'fixed')
             ->where('is_active', true)
             ->whereHas('cityVehicleType', fn ($q) => $q->where('is_active', true))
+            ->when(isset($filters['scope']), fn ($q) => $q->where('scope', $filters['scope']))
+            ->when(isset($filters['city_id']), function ($q) use ($filters) {
+                $cityId = (int) $filters['city_id'];
+                $q->where(function ($inner) use ($cityId) {
+                    $inner->where('city_id', $cityId)
+                        ->orWhere('origin_city_id', $cityId)
+                        ->orWhere('dest_city_id', $cityId);
+                });
+            })
+            ->when(isset($filters['origin_city_id']), fn ($q) => $q->where('origin_city_id', (int) $filters['origin_city_id']))
+            ->when(isset($filters['dest_city_id']), fn ($q) => $q->where('dest_city_id', (int) $filters['dest_city_id']))
+            ->when(!empty($filters['q']), function ($q) use ($filters) {
+                $term = '%' . str_replace(['%', '_'], ['\\%', '\\_'], trim((string) $filters['q'])) . '%';
+                $q->where(function ($inner) use ($term) {
+                    $inner->where('name', 'like', $term)
+                        ->orWhere('origin_name', 'like', $term)
+                        ->orWhere('dest_name', 'like', $term)
+                        ->orWhereHas('stops', fn ($stop) => $stop->where('name', 'like', $term));
+                });
+            })
             ->orderBy('sort_order')
             ->orderBy('id')
+            ->limit($limit)
             ->get()
             ->map(fn (Route $route) => $this->shapeCustomerRoute($route));
     }

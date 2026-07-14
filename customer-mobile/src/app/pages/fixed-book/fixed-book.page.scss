@@ -878,3 +878,37 @@
 .fb-coupon-remove { justify-self: start; border: 0; background: transparent; color: var(--dc-danger, #E53935); font-size: 12px; font-weight: 850; padding: 0; }
 .fb-coupon-ok { color: var(--dc-green, #12B35B); font-size: 12px; font-weight: 850; }
 .fb-coupon-error { color: var(--dc-danger, #E53935); font-size: 12px; font-weight: 850; }
+
+.fb-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--dc-hairline, #EEF0F2);
+  border-radius: 14px;
+  background: var(--dc-canvas, #F4F6F8);
+  color: var(--dc-ink-soft, #6C757D);
+}
+
+.fb-search ion-icon {
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.fb-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--dc-ink, #0D1B2A);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fb-search input::placeholder {
+  color: var(--dc-ink-soft, #6C757D);
+  font-weight: 650;
+}
