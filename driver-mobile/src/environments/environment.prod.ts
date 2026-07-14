@@ -21,7 +21,7 @@ const wsScheme: 'http' | 'https' = USE_HTTPS ? 'https' : 'http';
 
 export const environment = {
   production: true,
-  apiUrl: 'http://localhost:8000/api',
+  apiUrl: 'https://dreamcabs.in/api/api',
   /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
   useServerOtp: true,
   /** Same Web app config as dev; `appId` must be `…:web:…`, not Android/iOS. */

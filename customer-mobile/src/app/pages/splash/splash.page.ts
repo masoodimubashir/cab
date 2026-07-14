@@ -15,9 +15,7 @@ export class SplashPage implements OnInit {
   ) {}
 
   private homeRouteForCurrentUser(): string {
-    const user = this.auth.getUser();
-    const roles = new Set([user?.role, ...(user?.roles ?? [])].filter(Boolean));
-    return roles.has('driver') ? '/tabs/dashboard' : '/customer-tabs/book';
+    return '/customer-tabs/book';
   }
 
   ngOnInit() {
