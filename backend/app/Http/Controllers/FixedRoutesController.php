@@ -19,10 +19,15 @@ class FixedRoutesController extends Controller
     public function index(Request $request)
     {
         $data = $request->validate([
-            'city_id' => ['required', 'integer', 'exists:cities,id'],
+            'city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'origin_city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'dest_city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'scope' => ['nullable', 'in:local,outstation'],
+            'q' => ['nullable', 'string', 'max:80'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        return response()->json(['data' => $this->routes->customerRoutes((int) $data['city_id'])]);
+        return response()->json(['data' => $this->routes->customerRoutes($data)]);
     }
 
     public function departures(Route $route)

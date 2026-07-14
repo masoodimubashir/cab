@@ -178,9 +178,13 @@ class FixedFullWalkthroughTest extends TestCase
             ->assertOk()
             ->assertJsonPath('vehicle.status', 'DEPARTED');
 
+        RouteDeparture::query()->findOrFail($departureId)->update(['fixed_last_reached_stop_seq' => (int) $pickupStop->seq, 'fixed_last_reached_stop_at' => now()]);
+
         $this->postJson("/api/fixed/bookings/{$reservationId}/board")
             ->assertOk()
             ->assertJsonPath('reservation.status', 'BOARDED');
+
+        RouteDeparture::query()->findOrFail($departureId)->update(['fixed_last_reached_stop_seq' => (int) $dropStop->seq, 'fixed_last_reached_stop_at' => now()]);
 
         $this->postJson("/api/fixed/bookings/{$reservationId}/drop")
             ->assertOk()

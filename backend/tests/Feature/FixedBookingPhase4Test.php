@@ -268,7 +268,7 @@ class FixedBookingPhase4Test extends TestCase
             "extra_luggage_count" => 1,
             "boarded_at" => now(),
         ]);
-        $this->departure->update(["seats_taken" => 2, "luggage_taken" => 1]);
+        $this->departure->update(["seats_taken" => 2, "luggage_taken" => 1, "status" => "DEPARTED", "fixed_last_reached_stop_seq" => 2, "fixed_last_reached_stop_at" => now()]);
 
         Sanctum::actingAs($this->driver, ["act-as:driver"]);
 

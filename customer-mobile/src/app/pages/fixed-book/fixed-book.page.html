@@ -39,9 +39,14 @@
           </button>
         </div>
 
+        <label class="fb-search" *ngIf="routes.length">
+          <ion-icon name="search-outline"></ion-icon>
+          <input type="search" [(ngModel)]="routeSearch" (input)="onRouteSearchInput()" placeholder="Search route or stop" />
+        </label>
+
         <div class="fb-empty" *ngIf="!visibleRoutes.length">
           <ion-icon name="git-branch-outline"></ion-icon>
-          <p>{{ error || 'No ' + scopeLabel.toLowerCase() + ' fixed routes are available yet.' }}</p>
+          <p>{{ error || 'No matching fixed routes found.' }}</p>
         </div>
 
         <button type="button" class="fb-card dc-press" *ngFor="let r of visibleRoutes" (click)="pickRoute(r)">
