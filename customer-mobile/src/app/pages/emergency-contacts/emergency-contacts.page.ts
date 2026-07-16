@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
+import { Capacitor } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 import { ApiService } from '../../core/api.service';
 
@@ -179,13 +180,24 @@ export class CustomerEmergencyContactsPage implements OnInit {
   }
 
   /**
-   * Open the phone's native contact picker (Capacitor contacts plugin). The
-   * user taps a contact in the system UI; we pre-fill the add form with the
-   * chosen name + number. No READ_CONTACTS dialog — the picker returns only
-   * the one contact the user selected.
+   * Open the phone's native contact picker (Capacitor contacts plugin) and
+   * pre-fill the add form with the chosen name + number. The plugin rejects
+   * unless the Contacts permission is granted (Android and iOS alike), so
+   * request it first and tell the user exactly what went wrong instead of a
+   * generic failure toast. iOS 18 "limited" access still allows picking.
    */
   async pickFromPhone(): Promise<void> {
+    if (!Capacitor.isNativePlatform()) {
+      await this.pickerToast('Picking from contacts only works in the installed app — please add the contact manually.');
+      this.openAdd();
+      return;
+    }
     try {
+      const status = await Contacts.requestPermissions();
+      if (status.contacts !== 'granted' && status.contacts !== 'limited') {
+        await this.pickerToast('Contacts permission is blocked. Allow Contacts for this app in your phone Settings, then try again.');
+        return;
+      }
       const res = await Contacts.pickContact({ projection: { name: true, phones: true } });
       const c = res?.contact;
       if (!c) return; // cancelled
@@ -195,12 +207,13 @@ export class CustomerEmergencyContactsPage implements OnInit {
       this.form = { id: null, name, countryCode, phone: local, relationship: '', is_primary: false };
       this.dialogOpen = true;
     } catch {
-      const t = await this.toastCtrl.create({
-        message: 'Could not open the contacts picker on this device.',
-        duration: 2500, color: 'warning',
-      });
-      await t.present();
+      await this.pickerToast('Could not open the contacts picker on this device.');
     }
+  }
+
+  private async pickerToast(message: string): Promise<void> {
+    const t = await this.toastCtrl.create({ message, duration: 3000, color: 'warning' });
+    await t.present();
   }
 
   submit(): void {

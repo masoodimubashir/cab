@@ -9,6 +9,7 @@ import { GeolocationService, LatLng, GeoFix } from '../../core/geolocation.servi
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { RealtimeService, DispatchRingExpandedPayload } from '../../core/realtime.service';
 import { environment } from '../../../environments/environment';
+import { Capacitor } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 
 declare const google: any;
@@ -2027,9 +2028,22 @@ export class CustomerBookPage implements OnDestroy {
     return { code: this.bookedForCountryCode || '91', local: p.replace(/\D/g, '').slice(-10) };
   }
 
-  /** Open the phone's native contact picker to fill the friend's name + number. */
+  /**
+   * Open the phone's native contact picker to fill the friend's name + number.
+   * The plugin rejects unless the Contacts permission is granted (Android and
+   * iOS alike), so request it first and explain instead of a generic failure.
+   */
   async pickBookedForContact(): Promise<void> {
+    if (!Capacitor.isNativePlatform()) {
+      await this.contactPickerToast('Picking from contacts only works in the installed app — please type the details manually.');
+      return;
+    }
     try {
+      const status = await Contacts.requestPermissions();
+      if (status.contacts !== 'granted' && status.contacts !== 'limited') {
+        await this.contactPickerToast('Contacts permission is blocked. Allow Contacts for this app in your phone Settings, then try again.');
+        return;
+      }
       const res = await Contacts.pickContact({ projection: { name: true, phones: true } });
       const c = res?.contact;
       if (!c) return; // cancelled
@@ -2040,12 +2054,13 @@ export class CustomerBookPage implements OnDestroy {
       this.bookedForCountryCode = code;
       this.bookedForPhone = local;
     } catch {
-      const t = await this.toastCtrl.create({
-        message: 'Could not open the contacts picker on this device.',
-        duration: 2500, color: 'warning',
-      });
-      await t.present();
+      await this.contactPickerToast('Could not open the contacts picker on this device.');
     }
+  }
+
+  private async contactPickerToast(message: string): Promise<void> {
+    const t = await this.toastCtrl.create({ message, duration: 3000, color: 'warning' });
+    await t.present();
   }
 
 

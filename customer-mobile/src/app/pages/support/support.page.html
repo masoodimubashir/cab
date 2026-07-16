@@ -1,7 +1,7 @@
 <ion-header class="ion-no-border">
   <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
-      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+      <ion-back-button defaultHref="/customer-tabs/book"></ion-back-button>
     </ion-buttons>
     <ion-title class="pg-brandtitle"><span class="b-white">Dream</span><span class="b-green">Cabs</span></ion-title>
     <ion-buttons slot="end">
@@ -13,14 +13,12 @@
 
   <div class="pg-hero">
     <h1 class="pg-title">Help &amp; Support</h1>
-    <p class="pg-subtitle">Reach the driver support team, browse common questions, or report an issue.</p>
+    <p class="pg-subtitle">Reach customer support, browse common questions, or report an issue.</p>
   </div>
 </ion-header>
 
 <ion-content class="pg-content">
   <div class="pg-body pg-anim-body">
-
-    <!-- Loading -->
     <div class="pg-card" *ngIf="loading">
       <div class="dc-skeleton" style="height:46px;margin-bottom:10px"></div>
       <div class="dc-skeleton" style="height:46px;margin-bottom:10px"></div>
@@ -28,14 +26,12 @@
     </div>
 
     <ng-container *ngIf="!loading">
-
-      <!-- Contact channels -->
       <ng-container *ngIf="hasChannels">
         <p class="dc-section">Contact us</p>
         <div class="dc-list">
-          <button class="dc-row dc-press" *ngIf="support?.driver_support_no" (click)="call(support?.driver_support_no)">
+          <button class="dc-row dc-press" *ngIf="support?.customer_support_no" (click)="call(support?.customer_support_no)">
             <span class="dc-row__icon"><ion-icon name="headset-outline"></ion-icon></span>
-            <span class="dc-row__text"><strong>Driver support</strong><small>{{ support?.driver_support_no }}</small></span>
+            <span class="dc-row__text"><strong>Customer support</strong><small>{{ support?.customer_support_no }}</small></span>
             <ion-icon class="dc-row__chev" name="call-outline"></ion-icon>
           </button>
           <button class="dc-row dc-press" *ngIf="support?.support_email" (click)="email(support?.support_email)">
@@ -46,7 +42,6 @@
         </div>
       </ng-container>
 
-      <!-- Emergency -->
       <ng-container *ngIf="support?.emergency_police_no">
         <p class="dc-section">Emergency</p>
         <div class="dc-list">
@@ -58,7 +53,6 @@
         </div>
       </ng-container>
 
-      <!-- Error / empty -->
       <div class="pg-card" *ngIf="error">
         <div class="dc-empty" style="padding:24px 8px">
           <div class="dc-empty__icon"><ion-icon name="cloud-offline-outline"></ion-icon></div>
@@ -70,7 +64,6 @@
         </div>
       </div>
 
-      <!-- Report -->
       <div class="pg-card sup-report">
         <div class="sup-report__icon"><ion-icon name="flag-outline"></ion-icon></div>
         <strong>Report a problem</strong>
@@ -80,8 +73,6 @@
         </button>
       </div>
 
-
-      <!-- FAQ -->
       <p class="dc-section">Frequently asked</p>
       <div class="pg-card sup-faqcard">
         <ion-accordion-group class="sup-faq">

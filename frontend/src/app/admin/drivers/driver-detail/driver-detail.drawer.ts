@@ -712,8 +712,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     try {
       const parsed = new URL(absoluteUrl);
       let p = parsed.pathname + parsed.search;
-      if (p.startsWith('/api/')) p = p.slice(4);
-      else if (p.startsWith('/api')) p = p.slice(4);
+      while (p === '/api' || p.startsWith('/api/')) p = p.slice(4) || '/';
       return p || null;
     } catch {
       return null;

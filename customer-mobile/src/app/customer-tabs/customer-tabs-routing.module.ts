@@ -68,11 +68,9 @@ const routes: Routes = [
           import('../pages/notifications/notifications.module').then((m) => m.NotificationsPageModule),
       },
       {
-        // Same page/component as emergency-contacts; the URL switches it to the
-        // Support view (official help numbers).
         path: 'support',
         loadChildren: () =>
-          import('../pages/emergency-contacts/emergency-contacts.module').then((m) => m.CustomerEmergencyContactsPageModule),
+          import('../pages/support/support.module').then((m) => m.SupportPageModule),
       },
       {
         path: 'trip/:tripId',

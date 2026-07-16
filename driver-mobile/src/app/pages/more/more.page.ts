@@ -28,6 +28,10 @@ export class MorePage {
     this.router.navigateByUrl('/emergency-contacts');
   }
 
+  goSupport(): void {
+    this.router.navigateByUrl('/support');
+  }
+
   goDocuments(): void {
     this.router.navigateByUrl('/driver-registration');
   }

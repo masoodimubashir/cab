@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "902566679623",
+    "project_id": "dreamcabs-1cd27",
+    "storage_bucket": "dreamcabs-1cd27.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:902566679623:android:fe1d8469028e352f5f4d62",
+        "android_client_info": {
+          "package_name": "com.dreamcabs.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVHwmVrURiFIT3Q4zwED3iAJ377CWF3U4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:902566679623:android:6dc889b6f7b4dc3f5f4d62",
+        "android_client_info": {
+          "package_name": "com.dreamcabs.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVHwmVrURiFIT3Q4zwED3iAJ377CWF3U4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

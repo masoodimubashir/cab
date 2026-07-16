@@ -159,3 +159,6 @@ ion-content .trip-top,
 ion-content .floating-step-progress {
   z-index: 30;
 }
+
+/* DreamCabs shared inner-page system used by driver support-style pages. */
+@import "./theme/pages.scss";

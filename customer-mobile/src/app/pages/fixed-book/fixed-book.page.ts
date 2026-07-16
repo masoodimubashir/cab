@@ -680,10 +680,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
         this.reconcileSelectedRoute(this.visibleRoutes);
         if (showSpinner) this.loading = false;
       },
-      error: () => {
+      error: (err) => {
         this.routes = [];
         if (showSpinner) this.loading = false;
-        this.error = 'Could not load fixed routes.';
+        this.error = err?.status === 401
+          ? 'Please login again on this local app.'
+          : 'Could not load fixed routes.';
       },
     });
   }

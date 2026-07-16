@@ -1,0 +1,96 @@
+.sup-faqcard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sup-faq {
+  background: #ffffff;
+  overflow: hidden;
+
+  ion-accordion {
+    background: transparent;
+    &::part(content) { background: #fff; }
+  }
+
+  &__head {
+    --background: #ffffff;
+    --min-height: 58px;
+    --padding-start: 14px;
+    --inner-padding-end: 12px;
+
+    ion-label {
+      font-size: 0.92rem !important;
+      font-weight: 600;
+      color: var(--text-main, #0d1b2a);
+      white-space: normal;
+      line-height: 1.35;
+      margin-inline-start: 12px;
+    }
+  }
+
+  &__qicon {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--ion-color-primary-rgb), 0.1);
+
+    ion-icon {
+      font-size: 19px;
+      color: var(--ion-color-primary, #12b35b);
+    }
+  }
+
+  &__body {
+    padding: 0 16px 16px 60px;
+    font-size: 0.86rem;
+    color: var(--text-muted, #6c757d);
+    line-height: 1.6;
+  }
+
+  ion-accordion + ion-accordion .sup-faq__head {
+    border-top: 1px solid #f0f2f5;
+  }
+}
+
+.sup-report {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 24px 18px;
+
+  &__icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: rgba(var(--ion-color-primary-rgb), 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+
+    ion-icon {
+      font-size: 27px;
+      color: var(--ion-color-primary, #12b35b);
+    }
+  }
+
+  strong {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main, #0d1b2a);
+  }
+
+  span {
+    font-size: 0.85rem;
+    color: var(--text-muted, #6c757d);
+    line-height: 1.5;
+    max-width: 280px;
+    margin-bottom: 16px;
+  }
+}

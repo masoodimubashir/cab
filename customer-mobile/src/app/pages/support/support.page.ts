@@ -13,11 +13,6 @@ interface Faq {
   a: string;
 }
 
-/**
- * Help & Support — the official support channels (pulled out of the old
- * emergency-contacts "Support" segment) plus an FAQ and a report-a-problem
- * shortcut. Support numbers/email come from /support-info (city_settings).
- */
 @Component({
   selector: 'app-support',
   templateUrl: './support.page.html',
@@ -31,24 +26,24 @@ export class SupportPage implements OnInit {
 
   readonly faqs: Faq[] = [
     {
-      q: 'How do I go online and start receiving rides?',
-      a: 'Open the dashboard and tap “Go Online”. Make sure location permission is granted so we can match you with nearby trips.',
+      q: 'How do I book a ride?',
+      a: 'Choose pickup and drop locations, select the ride type, then confirm the booking. For fixed rides, choose the route, departure, boarding stop, and drop stop.',
     },
     {
-      q: 'When and how do I get paid?',
-      a: 'Cash fares are collected directly from the rider. Online (Razorpay) fares settle to your wallet — open the Wallet page to see your balance and payouts.',
+      q: 'How do I track my driver?',
+      a: 'Open your active ride screen after a driver is assigned. The map updates with the latest driver location when location tracking is available.',
     },
     {
-      q: 'My documents are still under review. What now?',
-      a: 'Verification usually completes within a few hours. You’ll be notified the moment you’re approved, and you can re-check the status from your account screen.',
+      q: 'Can I cancel a booking?',
+      a: 'Yes. Open the active ride or fixed booking details and use Cancel. Refund availability depends on the booking type and cancellation time.',
     },
     {
-      q: 'How is commission calculated?',
-      a: 'Commission depends on your operator’s settings and any active subscription. A commission-free plan removes per-ride deductions — see Subscriptions.',
+      q: 'How do fixed route bookings work?',
+      a: 'Select a fixed route, pick a live departure, then choose your boarding and drop stops. You can book only from stops the vehicle has not already passed.',
     },
     {
-      q: 'How do I add emergency contacts?',
-      a: 'Open “Contact” from the menu and add people manually or straight from your phone. They can be reached during an SOS.',
+      q: 'How do I manage emergency contacts?',
+      a: 'Open Contact from the menu and add trusted people manually or from your phone contacts. They are used for SOS and safety support.',
     },
   ];
 
@@ -74,9 +69,8 @@ export class SupportPage implements OnInit {
   }
 
   get hasChannels(): boolean {
-    // Customer support is intentionally NOT shown in the driver app.
     return !!(
-      this.support?.driver_support_no ||
+      this.support?.customer_support_no ||
       this.support?.support_email ||
       this.support?.emergency_police_no
     );
@@ -94,9 +88,9 @@ export class SupportPage implements OnInit {
 
   report(): void {
     const to = this.support?.support_email || '';
-    const subject = encodeURIComponent('Driver app — Report a problem');
+    const subject = encodeURIComponent('Customer app - Report a problem');
     const body = encodeURIComponent(
-      'Please describe the problem you are facing:\n\n\n— Sent from the DreamCabs driver app',
+      'Please describe the problem you are facing:\n\n\n- Sent from the DreamCabs customer app',
     );
     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
   }
