@@ -6,7 +6,6 @@ use App\Models\Driver;
 use App\Models\Trip;
 use App\Models\User;
 use App\Services\NotificationService;
-use App\Services\SmsService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
@@ -14,7 +13,6 @@ class AdminContactDriversController
 {
     public function __construct(
         private NotificationService $notifications,
-        private SmsService $sms,
     ) {
     }
 
@@ -121,10 +119,11 @@ class AdminContactDriversController
     }
 
     /**
-     * Send a message to all drivers matching the audience.
+     * Send a push message to all drivers matching the audience.
+     * (SMS broadcast was removed on purpose — SMS is OTP-only by cost policy.)
      *
      * Body:
-     *   message_type: push | sms | both
+     *   message_type: push (kept for API-shape compatibility)
      *   to:           audience key (same as ?to in audience())
      *   vehicle_type: optional
      *   driver_ids:   required when to=custom_csv
@@ -134,7 +133,7 @@ class AdminContactDriversController
     public function send(Request $request)
     {
         $data = $request->validate([
-            'message_type' => ['required', 'in:push,sms,both'],
+            'message_type' => ['required', 'in:push'],
             'to' => ['required', 'string'],
             'vehicle_type' => ['nullable', 'string'],
             'driver_ids' => ['nullable', 'array'],
@@ -151,7 +150,6 @@ class AdminContactDriversController
             ->get();
 
         $sentPush = 0;
-        $sentSms = 0;
         $skipped = 0;
 
         foreach ($drivers as $driver) {
@@ -161,27 +159,15 @@ class AdminContactDriversController
                 continue;
             }
 
-            if (in_array($data['message_type'], ['push', 'both'], true)) {
-                $this->notifications->sendToUser($user, $title, $body, [
-                    'type' => 'admin_broadcast',
-                ]);
-                $sentPush++;
-            }
-
-            if (in_array($data['message_type'], ['sms', 'both'], true)) {
-                if ($user->phone) {
-                    $this->sms->send($user->phone, $body);
-                    $sentSms++;
-                } else {
-                    $skipped++;
-                }
-            }
+            $this->notifications->sendToUser($user, $title, $body, [
+                'type' => 'admin_broadcast',
+            ]);
+            $sentPush++;
         }
 
         return response()->json([
             'recipients' => $drivers->count(),
             'sent_push' => $sentPush,
-            'sent_sms' => $sentSms,
             'skipped' => $skipped,
         ]);
     }

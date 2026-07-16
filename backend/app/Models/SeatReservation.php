@@ -34,6 +34,9 @@ class SeatReservation extends Model
 
     public const TERMINAL_STATUSES = ['DROPPED', 'NO_SHOW', 'CANCELLED', 'COMPLETED'];
 
+    /** Never serialize the boarding-code hash into API payloads. */
+    protected $hidden = ['boarding_otp_hash'];
+
     protected $casts = [
         'seats' => 'integer',
         'board_lat' => 'float',
@@ -61,6 +64,10 @@ class SeatReservation extends Model
         'fixed_arrived_notified_at' => 'datetime',
         'fixed_leaving_soon_notified_at' => 'datetime',
         'fixed_auto_processed_at' => 'datetime',
+        'boarding_otp_attempts' => 'integer',
+        'boarding_otp_expires_at' => 'datetime',
+        'boarding_otp_last_sent_at' => 'datetime',
+        'boarding_otp_locked_until' => 'datetime',
     ];
 
     public function routeDeparture(): BelongsTo

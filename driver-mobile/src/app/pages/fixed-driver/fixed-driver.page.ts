@@ -5,6 +5,7 @@ import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
+import { GeolocationService } from '../../core/geolocation.service';
 import { RealtimeService } from '../../core/realtime.service';
 
 
@@ -107,14 +108,47 @@ export class FixedDriverPage {
   private manifestPoll?: Subscription;
   private unsubscribeFixedCatalog: (() => void) | null = null;
 
+  // Boarding OTP popup: tapping "Board" sends a code to the customer and the
+  // driver must type it back here to confirm the right passenger boards.
+  otpPassenger: FixedPassenger | null = null;
+  otpCode = '';
+  otpError: string | null = null;
+  otpSending = false;    // requesting/resending the code
+  otpVerifying = false;  // checking a typed code
+  otpResendIn = 0;       // seconds until Resend unlocks
+  otpLockedFor = 0;      // seconds of anti-brute-force lockout
+  otpDevCode: string | null = null; // shown only in SMS mock mode (dev)
+  // Per-passenger cooldown (reservation id → seconds). Set when the driver
+  // closes the OTP sheet while a resend/lockout timer is still running: the
+  // row's Board button shows the countdown and stays disabled until it ends,
+  // then a fresh tap starts the whole process again with a new code.
+  boardCooldowns: Record<number, number> = {};
+  private otpTimer?: Subscription;
+
   constructor(
     private api: ApiService,
     private alerts: AlertController,
     private toasts: ToastController,
     private router: Router,
     private realtime: RealtimeService,
-    private backgroundLocation: BackgroundLocationService
+    private backgroundLocation: BackgroundLocationService,
+    private geo: GeolocationService,
   ) {}
+
+  /**
+   * Fresh GPS fix attached to board/drop/no-show requests so the backend's
+   * stop-reached check never depends on the background stream being alive.
+   * Falls back to {} (backend then uses the last streamed ping) if the fix
+   * can't be obtained quickly.
+   */
+  private async actionCoords(): Promise<{ lat?: number; lng?: number }> {
+    try {
+      const fix = await this.geo.getCurrentPosition({ timeout: 8000, maximumAge: 15000 });
+      return { lat: fix.lat, lng: fix.lng };
+    } catch {
+      return {};
+    }
+  }
 
   ionViewWillEnter(): void {
     this.subscribeFixedCatalog();
@@ -125,6 +159,12 @@ export class FixedDriverPage {
     this.unsubscribeFixedCatalog?.();
     this.unsubscribeFixedCatalog = null;
     this.stopManifestPolling();
+    this.closeBoardingOtp();
+    // Leaving the page: drop row cooldowns and their ticker — the server
+    // still enforces the exact remaining time (429 puts it back on the button).
+    this.boardCooldowns = {};
+    this.otpTimer?.unsubscribe();
+    this.otpTimer = undefined;
     void this.stopFixedTripLocationStreaming();
   }
 
@@ -317,9 +357,189 @@ export class FixedDriverPage {
       });
   }
 
-  board(passenger: FixedPassenger): void {
-    if (!this.canBoardPassenger(passenger)) return;
-    this.updatePassenger(passenger, 'board');
+  /**
+   * Boarding is OTP-gated: tapping Board sends a code to the customer
+   * (on their booking screen until the SMS template is DLT-approved, then by
+   * SMS; email/push per operator settings) and slides up the half-screen
+   * sheet where the driver types the code the customer reads out.
+   */
+  async board(passenger: FixedPassenger): Promise<void> {
+    if (!this.canBoardPassenger(passenger) || this.otpSending || this.boardCooldown(passenger) > 0) return;
+
+    this.otpSending = true;
+    this.error = null;
+    const coords = await this.actionCoords();
+    this.api.post<{ message: string; resend_after?: number; dev_code?: string | null }>(
+      `/fixed/bookings/${passenger.id}/boarding-otp`, coords,
+    )
+      .pipe(finalize(() => this.otpSending = false))
+      .subscribe({
+        next: (res) => {
+          delete this.boardCooldowns[passenger.id];
+          this.openBoardingOtp(passenger);
+          this.otpDevCode = res.dev_code || null;
+          this.startOtpCountdown(res.resend_after ?? 30);
+        },
+        error: (err) => {
+          // Server-side cooldown/lockout still running (e.g. app restarted):
+          // put the countdown on the row's Board button instead of opening
+          // the sheet — same UX as closing it mid-timer.
+          if (err?.status === 429 && (err?.error?.retry_after || err?.error?.locked_for)) {
+            this.setBoardCooldown(passenger.id, err.error.retry_after || err.error.locked_for);
+            if (err?.error?.locked_for) {
+              this.error = err?.error?.message || 'Too many wrong codes. Wait before retrying.';
+            }
+            return;
+          }
+          this.error = err?.error?.message || 'Could not send the boarding code.';
+        },
+      });
+  }
+
+  /** Seconds left before this passenger's Board button unlocks again. */
+  boardCooldown(passenger: FixedPassenger): number {
+    return this.boardCooldowns[passenger.id] ?? 0;
+  }
+
+  private setBoardCooldown(reservationId: number, seconds: number): void {
+    const secs = Math.max(0, Math.round(seconds));
+    if (secs <= 0) return;
+    this.boardCooldowns[reservationId] = secs;
+    this.ensureOtpTimer();
+  }
+
+  async resendBoardingOtp(): Promise<void> {
+    const passenger = this.otpPassenger;
+    if (!passenger || this.otpResendIn > 0 || this.otpLockedFor > 0 || this.otpSending) return;
+
+    this.otpSending = true;
+    this.otpError = null;
+    const coords = await this.actionCoords();
+    this.api.post<{ message: string; resend_after?: number; dev_code?: string | null }>(
+      `/fixed/bookings/${passenger.id}/boarding-otp`, coords,
+    )
+      .pipe(finalize(() => this.otpSending = false))
+      .subscribe({
+        next: async (res) => {
+          this.otpCode = '';
+          this.otpDevCode = res.dev_code || null;
+          this.startOtpCountdown(res.resend_after ?? 30);
+          await this.showToast('Code re-sent to the passenger.');
+        },
+        error: (err) => {
+          if (err?.status === 429 && err?.error?.retry_after) {
+            this.startOtpCountdown(err.error.retry_after);
+            return;
+          }
+          if (err?.status === 429 && err?.error?.locked_for) {
+            this.otpError = err?.error?.message || 'Too many wrong codes.';
+            this.startOtpLockout(err.error.locked_for);
+            return;
+          }
+          this.otpError = err?.error?.message || 'Could not resend the code.';
+        },
+      });
+  }
+
+  async confirmBoardingOtp(): Promise<void> {
+    const passenger = this.otpPassenger;
+    if (!passenger || this.otpCode.length !== 4 || this.otpVerifying || this.otpLockedFor > 0) return;
+
+    this.otpVerifying = true;
+    this.otpError = null;
+    const coords = await this.actionCoords();
+    this.api.post<{ message: string }>(`/fixed/bookings/${passenger.id}/board`, { code: this.otpCode, ...coords })
+      .pipe(finalize(() => this.otpVerifying = false))
+      .subscribe({
+        next: async (res) => {
+          this.closeBoardingOtp();
+          // Boarded — any leftover resend countdown is moot and the Board
+          // button hides for this passenger.
+          delete this.boardCooldowns[passenger.id];
+          await this.showToast(res.message || 'Passenger boarded.');
+          if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
+        },
+        error: (err) => {
+          this.otpCode = '';
+          if (err?.status === 429 && err?.error?.locked_for) {
+            this.otpError = err?.error?.message || 'Too many wrong codes.';
+            this.startOtpLockout(err.error.locked_for);
+            return;
+          }
+          this.otpError = err?.error?.message || 'Wrong code. Try again.';
+        },
+      });
+  }
+
+  closeBoardingOtp(): void {
+    // Sheet closed while a resend/lockout timer is running → move the
+    // remaining seconds onto the row's Board button so the driver can't
+    // hammer new codes; it re-enables by itself when the timer ends.
+    if (this.otpPassenger) {
+      const remaining = Math.max(this.otpResendIn, this.otpLockedFor);
+      if (remaining > 0) this.setBoardCooldown(this.otpPassenger.id, remaining);
+    }
+    this.otpPassenger = null;
+    this.otpCode = '';
+    this.otpError = null;
+    this.otpDevCode = null;
+    this.otpResendIn = 0;
+    this.otpLockedFor = 0;
+    if (!Object.keys(this.boardCooldowns).length) {
+      this.otpTimer?.unsubscribe();
+      this.otpTimer = undefined;
+    }
+  }
+
+  onOtpInput(value: string | null | undefined): void {
+    this.otpCode = String(value ?? '').replace(/\D+/g, '').slice(0, 4);
+    if (this.otpError && this.otpCode.length > 0) this.otpError = null;
+  }
+
+  otpDigit(i: number): string {
+    return this.otpCode[i] ?? '';
+  }
+
+  private openBoardingOtp(passenger: FixedPassenger): void {
+    this.otpPassenger = passenger;
+    this.otpCode = '';
+    this.otpError = null;
+    this.otpDevCode = null;
+    this.otpLockedFor = 0;
+  }
+
+  private startOtpCountdown(seconds: number): void {
+    this.otpResendIn = Math.max(0, Math.round(seconds));
+    this.ensureOtpTimer();
+  }
+
+  private startOtpLockout(seconds: number): void {
+    this.otpLockedFor = Math.max(0, Math.round(seconds));
+    this.ensureOtpTimer();
+  }
+
+  /**
+   * One shared 1s ticker drives the in-sheet resend/lockout countdowns AND
+   * the per-row Board-button cooldowns (after the sheet was closed).
+   */
+  private ensureOtpTimer(): void {
+    if (this.otpTimer) return;
+    this.otpTimer = interval(1000).subscribe(() => {
+      if (this.otpResendIn > 0) this.otpResendIn--;
+      if (this.otpLockedFor > 0) {
+        this.otpLockedFor--;
+        if (this.otpLockedFor === 0 && this.otpError) this.otpError = null;
+      }
+      for (const key of Object.keys(this.boardCooldowns)) {
+        const id = Number(key);
+        this.boardCooldowns[id]--;
+        if (this.boardCooldowns[id] <= 0) delete this.boardCooldowns[id];
+      }
+      if (this.otpResendIn <= 0 && this.otpLockedFor <= 0 && !Object.keys(this.boardCooldowns).length) {
+        this.otpTimer?.unsubscribe();
+        this.otpTimer = undefined;
+      }
+    });
   }
 
   drop(passenger: FixedPassenger): void {
@@ -627,10 +847,11 @@ export class FixedDriverPage {
     this.fixedLocationStreaming = false;
   }
 
-  private updatePassenger(passenger: FixedPassenger, action: 'board' | 'drop' | 'no-show'): void {
+  private async updatePassenger(passenger: FixedPassenger, action: 'board' | 'drop' | 'no-show'): Promise<void> {
     this.busy = true;
     this.error = null;
-    this.api.post<{ message: string }>(`/fixed/bookings/${passenger.id}/${action}`, {})
+    const coords = await this.actionCoords();
+    this.api.post<{ message: string }>(`/fixed/bookings/${passenger.id}/${action}`, coords)
       .pipe(finalize(() => this.busy = false))
       .subscribe({
         next: async (res) => {

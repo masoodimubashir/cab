@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private readonly fallbackBaseUrl = 'https://dreamcabs.in/api/api';
+  private readonly fallbackBaseUrl = 'http://localhost:8000/api';
 
   constructor(private http: HttpClient) {}
 

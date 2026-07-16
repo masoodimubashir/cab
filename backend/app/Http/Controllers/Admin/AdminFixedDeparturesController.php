@@ -391,6 +391,8 @@ class AdminFixedDeparturesController
     private function shapeSupportBooking(SeatReservation $reservation): array
     {
         $booking = $this->bookings->shapeBooking($reservation);
+        // The boarding code is for the customer's own screen only — never admin.
+        unset($booking['boarding_code']);
 
         $reachedStopName = null;
         $reachedSeq = $reservation->routeDeparture?->fixed_last_reached_stop_seq;

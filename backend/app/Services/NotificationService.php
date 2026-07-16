@@ -65,7 +65,8 @@ class NotificationService
         $stringData = array_map(static fn ($v) => is_scalar($v) ? (string) $v : json_encode($v), $data);
 
         foreach ($tokens as $tokenId => $token) {
-            $message = CloudMessage::withTarget('token', $token)
+            $message = CloudMessage::new()
+                ->withToken($token)
                 ->withNotification(Notification::create($title, $body))
                 ->withData($stringData);
 

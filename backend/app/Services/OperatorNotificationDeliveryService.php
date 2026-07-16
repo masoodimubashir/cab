@@ -9,15 +9,10 @@ use Illuminate\Support\Facades\Mail;
 
 class OperatorNotificationDeliveryService
 {
-    private const CUSTOMER_SMS_TYPES = [
-        "fixed_booking_confirmed",
-        "fixed_booking_cancelled",
-        "fixed_booking_cancelled_by_admin",
-        "fixed_driver_missed_pickup",
-        "fixed_driver_missed_stop",
-        "fixed_driver_arrived",
-        "fixed_customer_no_show",
-    ];
+    // SMS is intentionally OTP-only (cost decision, 2026-07): no event type
+    // sends SMS for any audience. Add a type back here only after its DLT
+    // template is registered on MSG91 and the spend is accepted.
+    private const CUSTOMER_SMS_TYPES = [];
 
     private const CUSTOMER_EMAIL_TYPES = [
         "fixed_booking_confirmed",
@@ -26,27 +21,16 @@ class OperatorNotificationDeliveryService
         "fixed_driver_missed_pickup",
         "fixed_driver_missed_stop",
         "fixed_customer_no_show",
+        "fixed_boarding_otp",
     ];
 
-    private const DRIVER_SMS_TYPES = [
-        "fixed_vehicle_cancelled",
-        "fixed_admin_cancelled_booking",
-        "fixed_bookings_closed",
-        "fixed_customer_cancelled",
-    ];
+    private const DRIVER_SMS_TYPES = [];
 
     private const DRIVER_EMAIL_TYPES = [
         "fixed_vehicle_completed",
     ];
 
-    private const ADMIN_SMS_TYPES = [
-        "fixed_driver_missed_pickup",
-        "fixed_driver_missed_stop",
-        "fixed_driver_missed_pickup",
-        "fixed_customer_no_show",
-        "fixed_vehicle_cancelled",
-        "fixed_booking_cancelled_by_admin",
-    ];
+    private const ADMIN_SMS_TYPES = [];
 
     private const ADMIN_EMAIL_TYPES = [
         "fixed_booking_created",

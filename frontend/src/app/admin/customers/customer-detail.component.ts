@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -106,26 +106,9 @@ const BLOCK_REASONS = [
             <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
               Send OTP
             </tm-button>
-            <button
-              type="button"
-              class="more-btn"
-              (click)="toggleMoreMenu($event)"
-              [class.is-open]="moreMenuOpen"
-              aria-label="More actions"
-            >
-              <tm-icon name="more-horizontal" [size]="16" />
-            </button>
-            <div class="more-menu" *ngIf="moreMenuOpen" (click)="$event.stopPropagation()">
-              <button type="button" class="more-menu__item" (click)="closeMore(); openUnsub()">
-                <tm-icon name="bell" [size]="14" />
-                <span>Subscription preferences</span>
-              </button>
-              <button type="button" class="more-menu__item more-menu__item--danger"
-                      (click)="closeMore(); openBlockDelete()">
-                <tm-icon [name]="profile.is_suspended ? 'check' : 'shield'" [size]="14" />
-                <span>{{ profile.is_suspended ? 'Manage access' : 'Block or delete' }}</span>
-              </button>
-            </div>
+            <tm-button variant="outline" size="sm" [icon]="profile.is_suspended ? 'check' : 'shield'" (clicked)="openBlockDelete()">
+              {{ profile.is_suspended ? 'Manage access' : 'Block or delete' }}
+            </tm-button>
           </div>
         </div>
       </header>
@@ -248,6 +231,9 @@ const BLOCK_REASONS = [
             <div class="kv-list">
               <div class="kv-row"><span>Push</span><strong>{{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
             </div>
+            <tm-button variant="outline" size="sm" icon="bell" (clicked)="openUnsub()">
+              Manage preferences
+            </tm-button>
           </section>
         </aside>
       </section>
@@ -470,7 +456,7 @@ const BLOCK_REASONS = [
             type="button"
             class="action-toggle__btn"
             [class.is-active]="blockMode === 'block'"
-          [class.is-warn]="blockMode === 'block'"
+            [class.is-warn]="blockMode === 'block'"
             (click)="blockMode = 'block'"
           >
             <span class="action-toggle__icon">
@@ -796,54 +782,6 @@ const BLOCK_REASONS = [
       position: relative;
       z-index: 30;
     }
-    .more-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 34px; height: 34px;
-      border-radius: var(--tm-radius-md);
-      border: 1px solid var(--tm-line-2);
-      background: var(--tm-surface);
-      color: var(--tm-text-muted);
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .more-btn:hover { background: var(--tm-canvas-2); color: var(--tm-text); }
-    .more-btn.is-open { background: var(--tm-ink); color: #fff; border-color: var(--tm-ink); }
-
-    .more-menu {
-      position: absolute;
-      top: calc(100% + 8px);
-      right: 0;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      box-shadow: var(--tm-shadow-pop);
-      min-width: 220px;
-      padding: 4px;
-      z-index: 80;
-      animation: mm-in 160ms var(--tm-ease) both;
-    }
-    @keyframes mm-in {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .more-menu__item {
-      display: flex; align-items: center; gap: 10px;
-      width: 100%;
-      padding: 9px 12px;
-      border-radius: var(--tm-radius-sm);
-      background: transparent;
-      color: var(--tm-text);
-      font-size: 13px;
-      font-weight: 600;
-      text-align: left;
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease);
-    }
-    .more-menu__item:hover { background: var(--tm-canvas); }
-    .more-menu__item--danger { color: var(--tm-danger-fg); }
-    .more-menu__item--danger:hover { background: var(--tm-danger-bg); }
-
     /* -------------------- Stat row -------------------- */
     .stats {
       display: grid;
@@ -1769,9 +1707,6 @@ export class CustomerDetailComponent implements OnInit {
     { key: 'cancelled', label: 'Cancelled', icon: 'x' },
   ];
 
-  /** "More" actions dropdown in the cover. */
-  moreMenuOpen = false;
-
   tabCount(key: TabKey): number {
     switch (key) {
       case 'rides':     return this.rides.length;
@@ -1892,25 +1827,6 @@ export class CustomerDetailComponent implements OnInit {
     const then = new Date(iso).getTime();
     if (isNaN(then)) return false;
     return Date.now() - then > 30 * 60 * 1000;
-  }
-
-  toggleMoreMenu(event: Event): void {
-    event.stopPropagation();
-    this.moreMenuOpen = !this.moreMenuOpen;
-  }
-
-  closeMore(): void {
-    this.moreMenuOpen = false;
-  }
-
-  @HostListener('document:click')
-  onDocClick(): void {
-    if (this.moreMenuOpen) this.moreMenuOpen = false;
-  }
-
-  @HostListener('document:keydown.escape')
-  onDocEsc(): void {
-    if (this.moreMenuOpen) this.moreMenuOpen = false;
   }
 
   // Subscribe modal

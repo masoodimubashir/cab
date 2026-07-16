@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
+import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import {
   ButtonComponent,
@@ -51,8 +52,25 @@ type SectionKey =
   | 'geofence'
   | 'wallet'
   | 'subscription'
+  | 'services'
   | 'notifications'
   | 'templates';
+
+/** Service catalogue rows (scope → modes) from /admin/cities/{id}/ride-products. */
+interface RideMode {
+  id: number;
+  mode: 'private' | 'fixed' | 'shuttle' | string;
+  name: string;
+  is_active: boolean;
+}
+
+interface RideScope {
+  id: number;
+  scope: 'local' | 'outstation' | string;
+  name: string;
+  is_active: boolean;
+  modes: RideMode[];
+}
 
 interface SectionMeta {
   key: SectionKey;
@@ -227,22 +245,56 @@ interface SectionMeta {
               </div>
             </ng-container>
 
+            <!-- ============= SERVICES (ride catalogue) ============= -->
+            <ng-container *ngIf="activeSection === 'services'">
+              <div class="chan-note">
+                <span class="chan-note__title">Switches apply to both apps instantly</span>
+                <span class="chan-note__sub">Turning a service off hides it from the customer booking screen and from driver signup/profile. Every switch saves on its own — no Save button needed. At least one service must always stay on.</span>
+              </div>
+
+              <div class="loading" *ngIf="servicesLoading"><span class="spinner" aria-hidden="true"></span><span>Loading services…</span></div>
+              <p class="chan-note chan-note--error" *ngIf="!servicesLoading && servicesError">{{ servicesError }}</p>
+
+              <div class="svc-scope" *ngFor="let scope of servicesScopes">
+                <label class="switch-row svc-scope__head">
+                  <span class="switch-row__text">
+                    <span class="switch-row__title">{{ scope.name }}</span>
+                    <span class="switch-row__sub">{{ scope.scope === 'local' ? 'Rides inside the city.' : 'Rides between cities.' }} Master switch — off hides everything below it.</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" [checked]="scope.is_active" [disabled]="servicesBusy !== null" (change)="toggleScope(scope)" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                </label>
+
+                <label class="switch-row svc-scope__mode" [class.svc-scope__mode--off]="!scope.is_active" *ngFor="let mode of scope.modes">
+                  <span class="switch-row__text">
+                    <span class="switch-row__title">{{ mode.name }}</span>
+                    <span class="switch-row__sub">{{ modeSub(mode) }}</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" [checked]="mode.is_active" [disabled]="servicesBusy !== null" (change)="toggleMode(scope, mode)" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                </label>
+              </div>
+            </ng-container>
+
             <!-- ============= NOTIFICATIONS ============= -->
             <ng-container *ngIf="activeSection === 'notifications'">
-              <label class="switch-row">
-                <span class="switch-row__text">
-                  <span class="switch-row__title">Enable SMS notifications</span>
-                  <span class="switch-row__sub">Master switch for operator-controlled SMS. If off, no fixed SMS should be sent.</span>
-                </span>
-                <span class="switch">
-                  <input type="checkbox" [(ngModel)]="settings.notifications_sms_enabled" />
-                  <span class="switch__track"><span class="switch__thumb"></span></span>
-                </span>
-              </label>
+              <div class="chan-note">
+                <span class="chan-note__title">SMS — OTP only, always on</span>
+                <span class="chan-note__sub">SMS is sent only for the login code and the boarding code. Both always send (like login) and are not switchable — no other event sends SMS.</span>
+              </div>
+              <div class="chan-note">
+                <span class="chan-note__title">Push — managed per user</span>
+                <span class="chan-note__sub">Push notifications follow the app events automatically. To silence a specific customer or driver, open their profile page → Notification preferences → Manage preferences.</span>
+              </div>
+
               <label class="switch-row">
                 <span class="switch-row__text">
                   <span class="switch-row__title">Enable email notifications</span>
-                  <span class="switch-row__sub">Master switch for operator-controlled email receipts, summaries, and fixed updates.</span>
+                  <span class="switch-row__sub">Master switch for operator-controlled email receipts, summaries, and fixed updates. If off, no event email is sent.</span>
                 </span>
                 <span class="switch">
                   <input type="checkbox" [(ngModel)]="settings.notifications_email_enabled" />
@@ -252,18 +304,15 @@ interface SectionMeta {
 
               <div class="fields fields--spaced">
                 <div class="field field--full">
-                  <span class="field__label">Fixed customer messages</span>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_sms_enabled" /> <span class="mini-check__body"><span class="mini-check__title">SMS for important customer fixed updates</span><span class="mini-check__sub">Booking confirmed, vehicle cancelled, refund approved or refunded, driver arrived, and no-show.</span></span></label>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email receipts and fixed booking records</span><span class="mini-check__sub">Booking receipt, cancellation/refund details, and completed trip summary.</span></span></label>
+                  <span class="field__label">Fixed customer emails</span>
+                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_customer_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email receipts and fixed booking records</span><span class="mini-check__sub">Booking receipt, cancellation/refund details, boarding code, and completed trip summary.</span></span></label>
                 </div>
                 <div class="field field--full">
-                  <span class="field__label">Fixed driver messages</span>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_driver_sms_enabled" /> <span class="mini-check__body"><span class="mini-check__title">SMS for urgent driver fixed changes</span><span class="mini-check__sub">Fixed vehicle cancelled by admin or major booking change close to departure.</span></span></label>
+                  <span class="field__label">Fixed driver emails</span>
                   <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_driver_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for driver fixed summaries</span><span class="mini-check__sub">End-of-ride or shift summaries only, not live driving alerts.</span></span></label>
                 </div>
                 <div class="field field--full">
-                  <span class="field__label">Fixed admin messages</span>
-                  <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_admin_sms_enabled" /> <span class="mini-check__body"><span class="mini-check__title">SMS for critical fixed exceptions</span><span class="mini-check__sub">Driver missed pickup, refund failure or pending issue, and vehicle cancelled with passengers.</span></span></label>
+                  <span class="field__label">Fixed admin emails</span>
                   <label class="mini-check"><input type="checkbox" [(ngModel)]="settings.fixed_admin_email_enabled" /> <span class="mini-check__body"><span class="mini-check__title">Email for fixed reports and summaries</span><span class="mini-check__sub">Daily or shift summaries, cancellation/refund reports, and operational exception summaries.</span></span></label>
                 </div>
               </div>
@@ -288,7 +337,7 @@ interface SectionMeta {
             </ng-container>
           </div>
 
-          <footer class="panel__foot">
+          <footer class="panel__foot" *ngIf="activeSection !== 'services'">
             <tm-button
               variant="ink"
               icon="check"
@@ -408,6 +457,14 @@ interface SectionMeta {
       text-transform: uppercase; color: var(--tm-text-muted);
     }
     .field__hint { font-size: 11px; color: var(--tm-text-soft); font-weight: 500; }
+    .chan-note { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; background: var(--tm-surface-2, #F6F8FA); border: 1px solid var(--tm-border, #E5E9EF); margin-bottom: 10px; }
+    .chan-note__title { font-size: 12.5px; font-weight: 700; color: var(--tm-text); }
+    .chan-note__sub { font-size: 11.5px; color: var(--tm-text-soft); line-height: 1.45; }
+    .chan-note--error { color: var(--tm-red, #B42318); border-color: var(--tm-red, #B42318); }
+    .svc-scope { border: 1px solid var(--tm-border, #E5E9EF); border-radius: 12px; padding: 4px 14px; margin-bottom: 12px; }
+    .svc-scope__head { border-bottom: 1px solid var(--tm-border, #E5E9EF); }
+    .svc-scope__mode { padding-left: 18px; }
+    .svc-scope__mode--off { opacity: 0.45; }
     .fields--spaced { margin-top: 4px; }
     .mini-check {
       display: flex; align-items: flex-start; gap: 9px;
@@ -494,7 +551,8 @@ export class OperatorSettingsComponent implements OnInit {
     { key: 'geofence',     label: 'Driver & Geofence', icon: 'driver-helmet', desc: 'Operational safety checks applied to drivers and trips.' },
     { key: 'wallet',       label: 'Wallet',            icon: 'rupee',         desc: 'Cash-wallet limits and the terms shown to users.' },
     { key: 'subscription', label: 'Subscription',      icon: 'star',          desc: 'Copy for the driver subscription promo popup.' },
-    { key: 'notifications', label: 'Notifications',     icon: 'bell',          desc: 'Operator-level SMS and email switches for fixed module messages.' },
+    { key: 'services',     label: 'Services',          icon: 'car',           desc: 'Which ride services the apps offer: Local & Outstation, each with Private, Fixed and Shuttle. Off = hidden in both the customer and driver apps.' },
+    { key: 'notifications', label: 'Notifications',     icon: 'bell',          desc: 'Email switches for fixed module messages. SMS is OTP-only; push is managed per user from their profile page.' },
     { key: 'templates',    label: 'Templates',         icon: 'envelope',      desc: 'Notification copy with dynamic placeholders.' },
   ];
 
@@ -503,9 +561,18 @@ export class OperatorSettingsComponent implements OnInit {
     geofence: false,
     wallet: false,
     subscription: false,
+    services: false,
     notifications: false,
     templates: false,
   };
+
+  // ----- Services section (per-city catalogue; each switch saves instantly) -----
+  servicesScopes: RideScope[] = [];
+  servicesLoading = false;
+  servicesError: string | null = null;
+  /** 'scope-3' | 'mode-7' while its PATCH is in flight. */
+  servicesBusy: string | null = null;
+  private servicesCityId: number | null = null;
 
   // Only tokens the backend can actually fill are advertised, so a typed
   // placeholder never renders blank for the customer.
@@ -541,23 +608,30 @@ export class OperatorSettingsComponent implements OnInit {
       'subscription_popup_button1',
       'subscription_popup_button2',
     ],
+    services: [], // per-toggle instant PATCH, not part of the settings form
+    // SMS keys dropped from the UI on purpose: SMS is OTP-only (login +
+    // boarding, always on) so the old SMS toggles are dead switches.
     notifications: [
-      'notifications_sms_enabled',
       'notifications_email_enabled',
-      'fixed_customer_sms_enabled',
       'fixed_customer_email_enabled',
-      'fixed_driver_sms_enabled',
       'fixed_driver_email_enabled',
-      'fixed_admin_sms_enabled',
       'fixed_admin_email_enabled',
     ],
     templates: ['customer_ride_accept_msg', 'ride_cancellation_msg'],
   };
 
-  constructor(private api: ApiService, private toast: ToastService) {}
+  constructor(private api: ApiService, private toast: ToastService, private cityCtx: CityContextService) {}
 
   ngOnInit(): void {
     this.fetch();
+    // City known up-front (or switched later) → (re)load the services tree.
+    this.cityCtx.ensureCitiesLoaded().subscribe();
+    this.cityCtx.cityId$.subscribe((id) => {
+      if (id != null && id !== this.servicesCityId) {
+        this.servicesCityId = id;
+        this.loadServices();
+      }
+    });
   }
 
   get currentSection(): SectionMeta {
@@ -626,5 +700,84 @@ export class OperatorSettingsComponent implements OnInit {
 
   private titleFor(section: SectionKey): string {
     return this.sections.find((s) => s.key === section)?.label ?? 'Settings';
+  }
+
+  // ===================== Services (ride catalogue) =====================
+
+  loadServices(): void {
+    const cityId = this.servicesCityId ?? this.cityCtx.currentCityId;
+    if (cityId == null) return;
+    this.servicesCityId = cityId;
+    this.servicesLoading = true;
+    this.servicesError = null;
+    this.api.get<{ scopes: RideScope[] }>(`/admin/cities/${cityId}/ride-products`).subscribe({
+      next: (res) => {
+        this.servicesScopes = res?.scopes ?? [];
+        this.servicesLoading = false;
+      },
+      error: (err) => {
+        this.servicesError = err?.error?.message || 'Could not load the service catalogue.';
+        this.servicesLoading = false;
+      },
+    });
+  }
+
+  toggleScope(scope: RideScope): void {
+    if (this.servicesBusy) return;
+    const key = `scope-${scope.id}`;
+    this.servicesBusy = key;
+    this.api
+      .patch<{ scope: RideScope; message: string }>(
+        `/admin/cities/${this.servicesCityId}/ride-products/scopes/${scope.id}`,
+        { is_active: !scope.is_active },
+      )
+      .subscribe({
+        next: (res) => {
+          this.servicesBusy = null;
+          const fresh = res?.scope;
+          if (fresh) {
+            this.servicesScopes = this.servicesScopes.map((s) => (s.id === fresh.id ? fresh : s));
+          }
+          this.toast.success(`${scope.name} ${fresh?.is_active ? 'enabled' : 'hidden'} in both apps`);
+        },
+        error: (err) => {
+          this.servicesBusy = null;
+          this.toast.error(err?.error?.message || 'Could not update the service.', { title: 'Update failed' });
+        },
+      });
+  }
+
+  toggleMode(scope: RideScope, mode: RideMode): void {
+    if (this.servicesBusy) return;
+    const key = `mode-${mode.id}`;
+    this.servicesBusy = key;
+    this.api
+      .patch<{ mode: RideMode; message: string }>(
+        `/admin/cities/${this.servicesCityId}/ride-products/modes/${mode.id}`,
+        { is_active: !mode.is_active },
+      )
+      .subscribe({
+        next: (res) => {
+          this.servicesBusy = null;
+          const fresh = res?.mode;
+          if (fresh) {
+            scope.modes = scope.modes.map((m) => (m.id === fresh.id ? fresh : m));
+          }
+          this.toast.success(`${scope.name} ${mode.name} ${fresh?.is_active ? 'enabled' : 'hidden'} in both apps`);
+        },
+        error: (err) => {
+          this.servicesBusy = null;
+          this.toast.error(err?.error?.message || 'Could not update the service.', { title: 'Update failed' });
+        },
+      });
+  }
+
+  modeSub(mode: RideMode): string {
+    switch (mode.mode) {
+      case 'private': return 'Normal solo rides booked with a driver.';
+      case 'fixed': return 'Fixed-route seat bookings with boarding codes.';
+      case 'shuttle': return 'Shared shuttle journeys on set routes.';
+      default: return '';
+    }
   }
 }

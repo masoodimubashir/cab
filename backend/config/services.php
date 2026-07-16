@@ -47,7 +47,11 @@ return [
     // so you can test the whole flow. Fill the keys to send real SMS.
     'msg91' => [
         'authkey' => env('MSG91_AUTH_KEY', ''),
-        'template_id' => env('MSG91_TEMPLATE_ID', ''),   // DLT-approved flow template id
+        'template_id' => env('MSG91_TEMPLATE_ID', ''),   // DLT-approved flow template id (login OTP)
+        // Boarding-code template ("…boarding code is ##var##…"). Leave blank
+        // until it shows "Verified by DLT" on MSG91 — boarding SMS falls back
+        // to the login template while blank, so nothing breaks.
+        'boarding_template_id' => env('MSG91_BOARDING_TEMPLATE_ID', ''),
         'sender' => env('MSG91_SENDER_ID', ''),
         'otp_var' => env('MSG91_OTP_VAR', 'otp'),         // variable name in your template
         'flow_url' => env('MSG91_FLOW_URL', 'https://control.msg91.com/api/v5/flow'),

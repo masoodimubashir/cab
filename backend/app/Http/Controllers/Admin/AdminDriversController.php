@@ -8,10 +8,12 @@ use App\Models\DriverDocument;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Services\SmsService;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -19,6 +21,7 @@ class AdminDriversController
 {
     public function __construct(
         private readonly WalletService $walletService,
+        private readonly SmsService $smsService,
     ) {
     }
 
@@ -351,6 +354,9 @@ class AdminDriversController
                 'city_name' => $driver->city?->name,
                 'approval_status' => $driver->approval_status,
                 'is_online' => $driver->isOnlineFresh(),
+                'is_suspended' => (bool) $user?->is_suspended,
+                'suspended_reason' => $user?->suspended_reason,
+                'suspended_at' => optional($user?->suspended_at)->toIso8601String(),
                 'is_active' => $driver->deactivated_at === null,
                 'deactivated_at' => optional($driver->deactivated_at)->toIso8601String(),
                 'deactivated_reason' => $driver->deactivated_reason,
@@ -385,6 +391,99 @@ class AdminDriversController
             "message" => "Push preference updated.",
             "driver" => $driver->fresh("user"),
         ]);
+    }
+
+    /**
+     * Admin convenience OTP ("read me the code you just got") — mirrors the
+     * customer flow. Does NOT verify anything; app login is unaffected.
+     */
+    public function sendOtp(Driver $driver)
+    {
+        $user = $driver->user;
+        if (!$user?->phone) {
+            return response()->json(['message' => 'Driver has no phone on file.'], 422);
+        }
+
+        $code = (string) random_int(100000, 999999);
+        $body = "Your DreamCabs verification code is {$code}. Do not share it.";
+
+        $sent = $this->smsService->send($user->phone, $body);
+        if (!$sent) {
+            return response()->json(['message' => 'Failed to send OTP.'], 502);
+        }
+
+        Log::info('admin.driver.send_otp', [
+            'driver_id' => $driver->id,
+            'phone' => $user->phone,
+        ]);
+
+        return response()->json(['message' => 'OTP sent.']);
+    }
+
+    public function block(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $user = $driver->user;
+        if (!$user) {
+            abort(404, 'Driver user account not found.');
+        }
+
+        $user->is_suspended = true;
+        $user->suspended_reason = $data['reason'];
+        $user->suspended_at = now();
+        $user->save();
+
+        // A blocked driver must not keep receiving dispatches.
+        $driver->is_online = false;
+        $driver->save();
+
+        return response()->json(['message' => 'Driver blocked.', 'driver' => $driver->fresh('user')]);
+    }
+
+    public function unblock(Driver $driver)
+    {
+        $user = $driver->user;
+        if (!$user) {
+            abort(404, 'Driver user account not found.');
+        }
+
+        $user->is_suspended = false;
+        $user->suspended_reason = null;
+        $user->suspended_at = null;
+        $user->save();
+
+        return response()->json(['message' => 'Driver unblocked.', 'driver' => $driver->fresh('user')]);
+    }
+
+    public function destroy(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:50'],
+        ]);
+
+        $user = $driver->user;
+        if (!$user) {
+            abort(404, 'Driver user account not found.');
+        }
+
+        // Mirror the customer delete: stash the reason for later audit, then
+        // soft-delete the account. The driver profile is deactivated too so it
+        // drops out of the active roster immediately.
+        $user->suspended_reason = '[DELETED] ' . $data['reason'];
+        $user->suspended_at = now();
+        $user->save();
+
+        $driver->deactivated_at = now();
+        $driver->deactivated_reason = '[DELETED] ' . $data['reason'];
+        $driver->is_online = false;
+        $driver->save();
+
+        $user->delete();
+
+        return response()->json(['message' => 'Driver deleted.']);
     }
 
     public function rides(Driver $driver)

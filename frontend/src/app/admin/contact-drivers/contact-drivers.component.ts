@@ -12,7 +12,6 @@ import {
   ModalComponent,
 } from '../../ui';
 
-type MessageType = 'push' | 'sms' | 'both';
 type AudienceKey =
   | 'active'
   | 'free'
@@ -33,7 +32,6 @@ interface AudienceRow {
 interface SendResult {
   recipients: number;
   sent_push: number;
-  sent_sms: number;
   skipped: number;
 }
 
@@ -60,7 +58,7 @@ interface SendResult {
       <header class="page__hero">
         <div>
           <h1 class="page__title">Contact Drivers</h1>
-          <p class="page__sub">Pick an audience, optionally select rows, then send a push or SMS.</p>
+          <p class="page__sub">Pick an audience, optionally select rows, then send a push notification.</p>
         </div>
       </header>
 
@@ -287,7 +285,7 @@ interface SendResult {
       <!-- Result toast (inline) -->
       <p *ngIf="sendResult" class="msg msg--ok">
         <tm-icon name="check" [size]="12" />
-        Sent to {{ sendResult.recipients }} drivers · push {{ sendResult.sent_push }}, sms {{ sendResult.sent_sms }}, skipped {{ sendResult.skipped }}
+        Sent to {{ sendResult.recipients }} drivers · push {{ sendResult.sent_push }}, skipped {{ sendResult.skipped }}
       </p>
       <p *ngIf="sendError" class="msg msg--err">{{ sendError }}</p>
 
@@ -298,42 +296,6 @@ interface SendResult {
         (closed)="composerOpen = false"
       >
         <div slot="body" class="composer">
-          <div class="composer__row">
-            <span class="composer__label">Channel</span>
-            <div class="seg" role="radiogroup" aria-label="Channel">
-              <button
-                type="button"
-                class="seg__btn"
-                role="radio"
-                [class.is-on]="messageType === 'push'"
-                [attr.aria-checked]="messageType === 'push'"
-                (click)="messageType = 'push'"
-              >
-                <tm-icon name="bell" [size]="13" /> Push
-              </button>
-              <button
-                type="button"
-                class="seg__btn"
-                role="radio"
-                [class.is-on]="messageType === 'sms'"
-                [attr.aria-checked]="messageType === 'sms'"
-                (click)="messageType = 'sms'"
-              >
-                <tm-icon name="envelope" [size]="13" /> SMS
-              </button>
-              <button
-                type="button"
-                class="seg__btn"
-                role="radio"
-                [class.is-on]="messageType === 'both'"
-                [attr.aria-checked]="messageType === 'both'"
-                (click)="messageType = 'both'"
-              >
-                <tm-icon name="send" [size]="13" /> Both
-              </button>
-            </div>
-          </div>
-
           <div class="composer__row composer__row--block">
             <span class="composer__label">
               Message
@@ -640,7 +602,6 @@ export class ContactDriversComponent implements OnInit {
 
   // Composer modal
   composerOpen = false;
-  messageType: MessageType = 'both';
   message = '';
   sending = false;
   sendResult: SendResult | null = null;
@@ -655,7 +616,7 @@ export class ContactDriversComponent implements OnInit {
 
   // ── Derived ─────────────────────────────────────────────────────
   get sampleCsvUrl(): string {
-    const apiBase = 'https://dreamcabs.in/api/api';
+    const apiBase = 'http://localhost:8000/api';
     return apiBase.replace(/\/api\/?$/, '') + '/samples/contact_drivers_sample.csv';
   }
   get filteredRows(): AudienceRow[] {
@@ -669,9 +630,7 @@ export class ContactDriversComponent implements OnInit {
     );
   }
   get sendButtonLabel(): string {
-    if (this.messageType === 'push') return 'Send push';
-    if (this.messageType === 'sms') return 'Send SMS';
-    return 'Send both';
+    return 'Send push';
   }
   audienceLabel(): string {
     return this.audienceOptions.find((o) => o.value === this.audience)?.label ?? '';
@@ -772,7 +731,7 @@ export class ContactDriversComponent implements OnInit {
     const form = new FormData();
     form.append('file', file);
 
-    const apiBase = 'https://dreamcabs.in/api/api';
+    const apiBase = 'http://localhost:8000/api';
     const token = localStorage.getItem('dreamcabs_token');
     const headers = new HttpHeaders(token ? { Authorization: `Bearer ${token}` } : {});
 
@@ -803,7 +762,6 @@ export class ContactDriversComponent implements OnInit {
   // ── Composer ────────────────────────────────────────────────────
   openComposer(): void {
     this.message = '';
-    this.messageType = 'both';
     this.sendResult = null;
     this.sendError = null;
     this.composerOpen = true;
@@ -815,7 +773,7 @@ export class ContactDriversComponent implements OnInit {
     this.sendResult = null;
 
     const body: Record<string, unknown> = {
-      message_type: this.messageType,
+      message_type: 'push',
       message: this.message,
     };
 

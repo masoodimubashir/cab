@@ -91,6 +91,15 @@
           </div>
         </div>
 
+<!-- Boarding code (testing bridge while the SMS template awaits DLT approval) -->
+        <div class="boarding-code-banner" *ngIf="booking.boarding_code">
+          <span>
+            <ion-icon name="keypad-outline"></ion-icon>
+            Boarding code — share only when you board
+          </span>
+          <strong>{{ booking.boarding_code }}</strong>
+        </div>
+
         <div class="status-note" [ngClass]="statusClass(booking)" *ngIf="bookingStatusDetail(booking)">
           <ion-icon [name]="bookingStatusTone(booking) === 'success' ? 'checkmark-circle-outline' : (bookingStatusTone(booking) === 'danger' ? 'alert-circle-outline' : 'information-circle-outline')"></ion-icon>
           <span>{{ bookingStatusDetail(booking) }}</span>

@@ -28,6 +28,37 @@ class Msg91Service
      */
     public function sendOtp(string $phone, string $code, string $previewMessage): bool
     {
+        return $this->sendCode($phone, $code, $previewMessage, (string) config('services.msg91.template_id'));
+    }
+
+    /** True once MSG91_BOARDING_TEMPLATE_ID is filled (boarding DLT template approved). */
+    public function hasBoardingTemplate(): bool
+    {
+        return (string) config('services.msg91.boarding_template_id') !== '';
+    }
+
+    /**
+     * Boarding-code SMS. Sends ONLY when the dedicated boarding DLT template
+     * is configured (MSG91_BOARDING_TEMPLATE_ID). While it's blank — i.e.
+     * until the template is "Verified by DLT" — NO SMS goes out at all (we
+     * don't reuse the login template: wrong wording + per-SMS cost); instead
+     * FixedBoardingOtpService surfaces the code on the customer's own booking
+     * screen as the testing bridge.
+     */
+    public function sendBoardingOtp(string $phone, string $code, string $previewMessage): bool
+    {
+        if (!$this->hasBoardingTemplate()) {
+            Log::info('[msg91] boarding OTP SMS skipped — boarding template not configured (code shown in customer app instead)', [
+                'phone' => $this->normalizeMobile($phone),
+            ]);
+            return false;
+        }
+
+        return $this->sendCode($phone, $code, $previewMessage, (string) config('services.msg91.boarding_template_id'));
+    }
+
+    private function sendCode(string $phone, string $code, string $previewMessage, string $templateId): bool
+    {
         $mobile = $this->normalizeMobile($phone);
 
         if (!$this->isLive()) {
@@ -42,13 +73,18 @@ class Msg91Service
         $otpVar = (string) (config('services.msg91.otp_var') ?: 'otp');
 
         try {
+            // Force IPv4: MSG91's IP-security whitelist holds our IPv4 address,
+            // but dual-stack networks (e.g. Jio) prefer IPv6 outbound, which MSG91
+            // then rejects with "IP not whitelisted". Residential IPv6 prefixes
+            // also rotate, so pinning the request to IPv4 keeps the whitelist stable.
             $response = Http::asJson()
+                ->withOptions(['force_ip_resolve' => 'v4'])
                 ->withHeaders([
                     'authkey' => (string) config('services.msg91.authkey'),
                     'accept' => 'application/json',
                 ])
                 ->post((string) config('services.msg91.flow_url'), [
-                    'template_id' => (string) config('services.msg91.template_id'),
+                    'template_id' => $templateId,
                     'sender' => (string) config('services.msg91.sender'),
                     'recipients' => [
                         [
