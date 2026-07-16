@@ -257,6 +257,13 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
           <tm-icon name="pin" [size]="14" />
           <span>{{ toolHint }}</span>
         </div>
+
+        <div class="rt-steps">
+          <span [class.done]="form.origin_lat != null" [class.on]="tool === 'origin'">1 Start</span>
+          <span [class.done]="form.dest_lat != null" [class.on]="tool === 'dest'">2 Destination</span>
+          <span [class.done]="roadPath.length > 1 || form.path.length > 0" [class.on]="tool === 'path'">3 Path</span>
+          <span [class.done]="form.stops.length > 0" [class.on]="tool === 'stop'">4 Stops</span>
+        </div>
       </div>
 
       <aside class="rt-panel">
@@ -265,7 +272,12 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <h2>{{ editingId ? 'Edit fixed route' : 'New fixed route' }}</h2>
             <p>{{ cityName }}</p>
           </div>
-          <button class="icon-btn rt-x" (click)="closeEditor()" aria-label="Close">×</button>
+          <div class="rt-panel__head-actions">
+            <button type="button" class="removed-badge" *ngIf="removedStops.length" (click)="openRemovedStopsModal()">
+              Removed stops {{ removedStops.length }}
+            </button>
+            <button class="icon-btn rt-x" (click)="closeEditor()" aria-label="Close">×</button>
+          </div>
         </header>
 
         <div class="rt-panel__body">
@@ -324,10 +336,14 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
 
           <div class="section-lbl">
             Stops
-            <span class="hint-inline">Tap “Stops”, then click the map</span>
+            <span class="hint-inline">Click on the green route line</span>
           </div>
-          <p class="muted small" *ngIf="!form.stops.length">No intermediate stops yet. Use the <b>Stops</b> tool to drop pins along the line.</p>
-          <div class="stop-card" *ngFor="let s of form.stops; let i = index" [class.is-paused]="!isStopBookable(s)">
+          <div class="stop-guide">
+            <button type="button" class="stop-guide__btn" [class.on]="tool === 'stop'" [disabled]="!endpointsSet" (click)="setTool('stop')">Add stops on route</button>
+            <span>{{ form.stops.length }} stop{{ form.stops.length === 1 ? '' : 's' }} added</span>
+          </div>
+          <p class="muted small" *ngIf="!form.stops.length">Click directly on the green route line. The stop will snap to the path automatically.</p>
+          <div class="stop-card" *ngFor="let s of form.stops; let i = index" [class.is-paused]="!isStopBookable(s)" [class.is-restored]="isRestoredStop(s)">
             <div class="stop-card__head">
               <span class="stop-seq">Stop {{ i + 1 }}</span>
               <div class="stop-availability" *ngIf="editingId && s.id">
@@ -338,6 +354,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
                 </button>
                 <span class="help" [attr.data-tip]="stopToggleHelp(s)">!</span>
               </div>
+              <button type="button" class="stop-remove" (click)="removeStop(i)" aria-label="Remove stop">Remove</button>
             </div>
             <input type="text" class="stop-name" [(ngModel)]="s.name" placeholder="Stop name" />
             <div class="stop-flags">
@@ -408,6 +425,24 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
       </div>
     </tm-modal>
 
+    <tm-modal [open]="removedStopsModalOpen" title="Removed stops" (closed)="closeRemovedStopsModal()">
+      <div slot="body" class="removed-modal">
+        <p class="removed-modal__hint">Select one or more removed stops to add them back to the current route form.</p>
+        <label class="removed-modal__row" *ngFor="let s of removedStops; let i = index" [class.is-selected]="isRemovedStopSelected(i)">
+          <input type="checkbox" [checked]="isRemovedStopSelected(i)" (change)="toggleRemovedStopSelection(i)" />
+          <span class="removed-modal__name">{{ s.name || ('Stop ' + (i + 1)) }}</span>
+          <small *ngIf="s.lat != null && s.lng != null">{{ s.lat | number:'1.4-4' }}, {{ s.lng | number:'1.4-4' }}</small>
+        </label>
+        <p class="muted small" *ngIf="!removedStops.length">No removed stops for this route.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="closeRemovedStopsModal()">Cancel</tm-button>
+        <tm-button variant="green" [disabled]="!selectedRemovedStopCount" (clicked)="addSelectedRemovedStops()">
+          Add {{ selectedRemovedStopCount || '' }}
+        </tm-button>
+      </div>
+    </tm-modal>
+
     <div
       class="stops-popover"
       *ngIf="stopsPopoverLines.length"
@@ -465,9 +500,16 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .rt-tool__dot.a { background: #16a34a; } .rt-tool__dot.b { background: #ef4444; }
     .rt-tools__sep { width: 1px; height: 22px; background: var(--tm-line); margin: 0 2px; }
     .rt-hint { position: absolute; top: 14px; right: 14px; display: flex; align-items: center; gap: 7px; padding: 8px 12px; background: rgba(13,27,42,0.82); color: #fff; border-radius: 10px; font-size: 12.5px; font-weight: 600; max-width: 320px; }
+    .rt-steps { position: absolute; top: 66px; right: 14px; display: grid; gap: 6px; width: 178px; padding: 8px; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgba(13,27,42,0.16); }
+    .rt-steps span { min-height: 30px; display: flex; align-items: center; padding: 0 10px; border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 850; }
+    .rt-steps span.on { background: #ecfdf5; color: #15803d; outline: 1px solid #86efac; }
+    .rt-steps span.done { background: var(--tm-success-bg); color: var(--tm-success-fg); }
     .rt-panel { display: flex; flex-direction: column; background: var(--tm-surface); border-left: 1px solid var(--tm-line); height: 100%; min-height: 0; overflow: hidden; }
     .rt-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--tm-line); }
     .rt-panel__head h2 { margin: 0; font-size: 17px; font-weight: 800; color: var(--tm-text); }
+    .rt-panel__head-actions { display: inline-flex; align-items: center; gap: 8px; }
+    .removed-badge { display: inline-flex; align-items: center; min-height: 28px; padding: 0 9px; border: 1px solid #fed7aa; border-radius: 999px; background: #fff7ed; color: #c2410c; font-size: 11px; font-weight: 900; white-space: nowrap; cursor: pointer; font-family: inherit; }
+    .removed-badge:hover { background: #ffedd5; border-color: #fdba74; }
     .rt-panel__head p { margin: 2px 0 0; font-size: 12px; color: var(--tm-text-muted); }
     .rt-panel__body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 13px; }
     .edit-warning { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 12px; line-height: 1.4; }
@@ -498,10 +540,22 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .endpoint__set { align-self: flex-start; font-size: 11px; font-weight: 700; color: var(--tm-green-deep, #15803d); background: transparent; border: 0; padding: 0; cursor: pointer; }
     .section-lbl { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 800; color: var(--tm-text); text-transform: uppercase; letter-spacing: 0.4px; padding-top: 6px; border-top: 1px solid var(--tm-line); margin-top: 2px; }
     .hint-inline { font-size: 10px; font-weight: 700; color: var(--tm-text-muted); text-transform: none; letter-spacing: 0; }
+    .stop-guide { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 750; }
+    .stop-guide__btn { min-height: 36px; padding: 0 12px; border: 1px solid var(--tm-line); border-radius: 9px; background: #fff; color: var(--tm-text); font-size: 12px; font-weight: 900; cursor: pointer; font-family: inherit; }
+    .stop-guide__btn.on { border-color: var(--tm-green); background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .stop-guide__btn:disabled { opacity: .5; cursor: default; }
+    .removed-modal { display: grid; gap: 9px; }
+    .removed-modal__hint { margin: 0 0 4px; color: var(--tm-text-muted); font-size: 12px; line-height: 1.45; }
+    .removed-modal__row { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); cursor: pointer; }
+    .removed-modal__row.is-selected { border-color: #38bdf8; background: #f0f9ff; }
+    .removed-modal__row input { width: 16px; height: 16px; }
+    .removed-modal__name { min-width: 0; color: var(--tm-text); font-size: 13px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .removed-modal__row small { color: var(--tm-text-muted); font-family: var(--tm-font-mono); font-size: 10.5px; }
     .toggles { display: flex; flex-wrap: wrap; gap: 14px; padding-top: 6px; border-top: 1px solid var(--tm-line); }
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
     .stop-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); }
+    .stop-card.is-restored { border-color: #7dd3fc; background: #f0f9ff; box-shadow: inset 3px 0 0 #0284c7; }
     .stop-card.is-paused { border-color: #fecaca; background: #fff7f7; }
     .stop-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .stop-seq { font-size: 12px; font-weight: 800; color: var(--tm-text); }
@@ -511,6 +565,8 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .stop-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 5px 9px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 900; cursor: pointer; font-family: inherit; }
     .stop-toggle.is-resume { border-color: #bbf7d0; color: #15803d; }
     .stop-toggle:hover { background: var(--tm-ink); border-color: var(--tm-ink); color: #fff; }
+    .stop-remove { min-height: 28px; padding: 5px 9px; border: 1px solid var(--tm-line); border-radius: 8px; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 900; cursor: pointer; font-family: inherit; }
+    .stop-remove:hover { background: #b91c1c; border-color: #b91c1c; color: #fff; }
     .stop-name, .stop-reason { width: 100%; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 12px; outline: none; }
     .stop-flags { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stop-chip { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 10px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface); font-size: 12px; font-weight: 600; color: var(--tm-text); }
@@ -545,6 +601,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   clearPathConfirmOpen = false;
   stopAvailabilityConfirmOpen = false;
   stopAvailabilityConfirmMessage = '';
+  removedStopsModalOpen = false;
   private pendingStopAvailabilityBody: Record<string, unknown> | null = null;
   private originalStopBookable = new Map<number, boolean>();
   stopsPopoverRouteId: number | null = null;
@@ -553,6 +610,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   stopsPopoverY = 0;
 
   form = this.blankForm();
+  removedStops: RouteStopRow[] = [];
+  private selectedRemovedStopIndexes = new Set<number>();
+  private restoredStopIds = new Set<number>();
 
   private map: google.maps.Map | null = null;
   private originMarker: google.maps.Marker | null = null;
@@ -564,6 +624,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private mapListeners: google.maps.MapsEventListener[] = [];
   private geocoder: google.maps.Geocoder | null = null;
   private directionsSvc: google.maps.DirectionsService | null = null;
+  private placesSvc: google.maps.places.PlacesService | null = null;
   private directionsDisabled = false;
   private routeSeq = 0;
   private snapSeqOrigin = 0;
@@ -572,7 +633,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private autocomplete: google.maps.places.Autocomplete | null = null;
   private mapInitTries = 0;
   private pathLocked = false;
-  private roadPath: LatLng[] = [];
+  roadPath: LatLng[] = [];
 
   private subs: Subscription[] = [];
 
@@ -796,6 +857,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.editingId = null;
     this.originalStopBookable.clear();
+    this.removedStops = [];
+    this.selectedRemovedStopIndexes.clear();
+    this.restoredStopIds.clear();
+    this.removedStopsModalOpen = false;
     this.form = this.blankForm();
     this.roadPath = [];
     this.pathLocked = false;
@@ -807,6 +872,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   openEdit(r: FixedRouteRow): void {
     this.editingId = r.id;
+    this.selectedRemovedStopIndexes.clear();
+    this.restoredStopIds.clear();
+    this.removedStopsModalOpen = false;
     this.originalStopBookable = new Map((r.stops || []).map((stop) => [Number(stop.id), this.isStopBookable(stop)]));
     const fc = r.fare_config || ({ seat_fare: null, commission_percent: null, fixed_commission: null } as FareConfig);
     const ns = r.fixed_settings_json || {};
@@ -842,8 +910,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       is_active: r.is_active,
       sort_order: r.sort_order,
       path: [],
-      stops: (r.stops || []).slice(1, -1).map((s) => ({ ...s })),
+      stops: (r.stops || []).slice(1, -1).filter((s) => !this.isRemovedStop(s)).map((s) => ({ ...s })),
     };
+    this.removedStops = (r.stops || []).slice(1, -1).filter((s) => this.isRemovedStop(s)).map((s) => ({ ...s }));
     this.roadPath = (r.path_polyline || []).map((p) => ({ lat: p[0], lng: p[1] }));
     this.pathLocked = this.roadPath.length > 0;
     this.directionsDisabled = false;
@@ -852,7 +921,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.scheduleMapInit();
   }
 
-  closeEditor(): void { this.open = false; this.teardownMap(); }
+  closeEditor(): void {
+    this.open = false;
+    this.removedStopsModalOpen = false;
+    this.selectedRemovedStopIndexes.clear();
+    this.teardownMap();
+  }
 
   onScopeChange(): void {
     if (this.form.scope !== 'outstation') { this.form.origin_city_id = null; this.form.dest_city_id = null; }
@@ -861,6 +935,54 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   isStopBookable(stop: RouteStopRow): boolean {
     return stop.is_active !== false && stop.is_temporarily_unavailable !== true;
+  }
+
+  isRemovedStop(stop: RouteStopRow): boolean {
+    return /removed from active route/i.test(stop.unavailable_reason || "");
+  }
+
+  get selectedRemovedStopCount(): number { return this.selectedRemovedStopIndexes.size; }
+
+  isRestoredStop(stop: RouteStopRow): boolean {
+    return !!stop.id && this.restoredStopIds.has(Number(stop.id));
+  }
+
+  isRemovedStopSelected(index: number): boolean {
+    return this.selectedRemovedStopIndexes.has(index);
+  }
+
+  openRemovedStopsModal(): void {
+    this.selectedRemovedStopIndexes.clear();
+    this.removedStopsModalOpen = true;
+  }
+
+  closeRemovedStopsModal(): void {
+    this.removedStopsModalOpen = false;
+    this.selectedRemovedStopIndexes.clear();
+  }
+
+  toggleRemovedStopSelection(index: number): void {
+    if (this.selectedRemovedStopIndexes.has(index)) this.selectedRemovedStopIndexes.delete(index);
+    else this.selectedRemovedStopIndexes.add(index);
+  }
+
+  addSelectedRemovedStops(): void {
+    if (!this.selectedRemovedStopIndexes.size) return;
+    const restored: RouteStopRow[] = [];
+    const indexes = Array.from(this.selectedRemovedStopIndexes).sort((a, b) => b - a);
+    indexes.forEach((index) => {
+      if (index < 0 || index >= this.removedStops.length) return;
+      const [stop] = this.removedStops.splice(index, 1);
+      if (!stop) return;
+      stop.is_active = true;
+      stop.is_temporarily_unavailable = false;
+      stop.unavailable_reason = null;
+      if (stop.id) this.restoredStopIds.add(Number(stop.id));
+      restored.unshift(stop);
+    });
+    if (restored.length) this.form.stops = [...this.form.stops, ...restored];
+    this.closeRemovedStopsModal();
+    this.redrawStops();
   }
 
   stopStateLabel(stop: RouteStopRow): string {
@@ -929,6 +1051,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     });
     this.geocoder = new google.maps.Geocoder();
     this.directionsSvc = new google.maps.DirectionsService();
+    this.placesSvc = new google.maps.places.PlacesService(this.map);
 
     this.mapListeners.push(this.map.addListener('click', (e: google.maps.MapMouseEvent) => {
       if (e.latLng) void this.onMapClick(e.latLng.lat(), e.latLng.lng());
@@ -987,7 +1110,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       return;
     }
     if (this.tool === 'stop') {
-      const p = await this.snapPoint({ lat, lng });
+      const roadPoint = this.snapToRoutePath({ lat, lng });
+      if (!roadPoint) { this.toast.error('Click on or very near the green route line to add a stop.'); return; }
+      const p = await this.snapPoint(roadPoint);
       if (!this.open) return;
       const v = this.validatePlacement(p.lat, p.lng, 'stop');
       if (!v.ok) { this.toast.error(v.msg!); return; }
@@ -1114,12 +1239,114 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   private reverseGeocodeStop(stop: RouteStopRow): void {
     if (stop.lat == null || stop.lng == null) return;
+    if (stop.name.trim() && !this.isBadStopName(stop.name)) return;
+    this.resolveNearbyStopName(stop, (name) => {
+      if (!this.map || !this.open) return;
+      if (!stop.name.trim() || this.isBadStopName(stop.name)) stop.name = name;
+    });
+
+  }
+
+  private resolveNearbyStopName(stop: RouteStopRow, done: (name: string) => void): void {
+    if (stop.lat == null || stop.lng == null) return;
+    const lat = stop.lat;
+    const lng = stop.lng;
+    const fallback = () => this.resolveGeocodeStopName(stop, done);
+    if (!this.placesSvc || typeof google === "undefined" || !google.maps?.places) { fallback(); return; }
+
+    this.placesSvc.nearbySearch({ location: new google.maps.LatLng(lat, lng), radius: 100 }, (places, status) => {
+      if (!this.map || !this.open) return;
+      const ok = status === google.maps.places.PlacesServiceStatus.OK;
+      const name = ok ? this.bestNearbyStopName(places || [], lat, lng) : "";
+      if (name) done(name);
+      else fallback();
+    });
+  }
+
+  private resolveGeocodeStopName(stop: RouteStopRow, done: (name: string) => void): void {
+    if (stop.lat == null || stop.lng == null) return;
     this.geocoder?.geocode({ location: { lat: stop.lat, lng: stop.lng } }, (results, statusStr) => {
       if (!this.map || !this.open) return;
-      if (statusStr === 'OK' && results && results[0] && !stop.name.trim()) {
-        stop.name = results[0].formatted_address.split(',').slice(0, 1).join(',').trim();
-      }
+      const name = statusStr === "OK" ? this.bestGeocodeStopName(results || []) : "";
+      done(name || this.fallbackStopName(stop));
     });
+  }
+
+  private bestNearbyStopName(places: google.maps.places.PlaceResult[], lat: number, lng: number): string {
+    const ranked = places
+      .map((place) => {
+        const name = this.cleanStopName(place.name || "");
+        const loc = place.geometry?.location;
+        const distance = loc ? this.distanceMeters(lat, lng, loc.lat(), loc.lng()) : Number.POSITIVE_INFINITY;
+        return { name, distance };
+      })
+      .filter((item) => item.name && !this.isBadStopName(item.name) && item.distance <= 100)
+      .sort((a, b) => a.distance - b.distance);
+    return ranked[0]?.name || "";
+  }
+
+  private bestGeocodeStopName(results: google.maps.GeocoderResult[]): string {
+    for (const result of results) {
+      const parts = (result.formatted_address || "")
+        .split(",")
+        .map((part) => this.cleanStopName(part))
+        .filter((part) => part && !this.isBadStopName(part));
+      if (parts.length) return parts.slice(0, 2).join(", ");
+    }
+    return "";
+  }
+
+  private cleanStopName(name: string): string {
+    return (name || "")
+      .replace(/\b[A-Z0-9]{4,}\+[A-Z0-9]{2,}\b,?\s*/gi, "")
+      .replace(/\s+/g, " ")
+      .replace(/^[,.\-\s]+|[,.\-\s]+$/g, "")
+      .trim();
+  }
+
+  private isBadStopName(name: string): boolean {
+    const value = this.cleanStopName(name);
+    if (!value) return true;
+    if (/^stop\s*\d*$/i.test(value)) return true;
+    if (/^unnamed/i.test(value)) return true;
+    if (/^-?\d{1,2}\.\d+,\s*-?\d{1,3}\.\d+$/.test(value)) return true;
+    if (/\b[A-Z0-9]{4,}\+[A-Z0-9]{2,}\b/i.test(name)) return true;
+    return false;
+  }
+
+  private normalizedRouteName(name: string, origin: string, dest: string): string {
+    const cleaned = this.cleanStopName(name).replace(/\s+/g, ' ').trim();
+    if (cleaned && !this.isBadRouteName(cleaned)) return cleaned;
+    const start = this.cleanStopName(origin) || 'Start';
+    const end = this.cleanStopName(dest) || 'Destination';
+    return start + ' → ' + end;
+  }
+
+  private isBadRouteName(name: string): boolean {
+    const value = this.cleanStopName(name);
+    if (!value || value.length < 3) return true;
+    if (this.isBadStopName(value)) return true;
+    if (/^[\d\s,.\-→>]+$/.test(value)) return true;
+    if (/\b[A-Z0-9]{4,}\+[A-Z0-9]{2,}\b/i.test(name)) return true;
+    return false;
+  }
+  private normalizedStopName(stop: RouteStopRow, index: number): string {
+    const cleaned = this.cleanStopName(stop.name || "");
+    return cleaned && !this.isBadStopName(cleaned) ? cleaned : "Stop " + (index + 1);
+  }
+
+  private fallbackStopName(stop: RouteStopRow): string {
+    const index = this.form.stops.indexOf(stop);
+    return "Stop " + (index >= 0 ? index + 1 : this.form.stops.length + 1);
+  }
+
+  private distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const earthM = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return earthM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private maybeAutoName(): void {
@@ -1198,17 +1425,79 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       const m = new google.maps.Marker({
         position: { lat: s.lat, lng: s.lng }, map: this.map!, draggable: true,
         label: { text: String(i + 1), color: '#fff', fontSize: '11px', fontWeight: '700' },
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 14, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3 },
       });
       m.addListener('dragend', (e: google.maps.MapMouseEvent) => {
         if (!e.latLng) return;
         const lat = e.latLng.lat(), lng = e.latLng.lng();
-        const v = this.validatePlacement(lat, lng, 'stop');
+        const roadPoint = this.snapToRoutePath({ lat, lng });
+        if (!roadPoint) { this.toast.error('Move the stop on or very near the green route line.'); this.redrawStops(); return; }
+        const v = this.validatePlacement(roadPoint.lat, roadPoint.lng, 'stop');
         if (!v.ok) { this.toast.error(v.msg!); this.redrawStops(); return; }
-        s.lat = lat; s.lng = lng;
+        s.lat = roadPoint.lat; s.lng = roadPoint.lng;
+        if (!s.name.trim() || this.isBadStopName(s.name)) this.reverseGeocodeStop(s);
       });
       this.stopMarkers.push(m);
     });
+  }
+
+  private snapToRoutePath(point: LatLng): LatLng | null {
+    const path = this.currentRoutePath();
+    if (path.length < 2) return point;
+    let best: { point: LatLng; distance: number } | null = null;
+    for (let i = 0; i < path.length - 1; i++) {
+      const candidate = this.projectPointToSegment(point, path[i], path[i + 1]);
+      if (!best || candidate.distance < best.distance) best = candidate;
+    }
+    if (!best) return null;
+    return best.distance <= 150 ? best.point : null;
+  }
+
+  private currentRoutePath(): LatLng[] {
+    const path = this.roadPath.length ? this.roadPath : [
+      this.form.origin_lat != null ? { lat: this.form.origin_lat, lng: this.form.origin_lng as number } : null,
+      ...this.form.path,
+      this.form.dest_lat != null ? { lat: this.form.dest_lat, lng: this.form.dest_lng as number } : null,
+    ].filter((p): p is LatLng => !!p);
+    return path.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  }
+
+  private projectPointToSegment(point: LatLng, a: LatLng, b: LatLng): { point: LatLng; distance: number } {
+    const metersPerLat = 111320;
+    const metersPerLng = Math.max(1, 111320 * Math.cos(point.lat * Math.PI / 180));
+    const ax = (a.lng - point.lng) * metersPerLng;
+    const ay = (a.lat - point.lat) * metersPerLat;
+    const bx = (b.lng - point.lng) * metersPerLng;
+    const by = (b.lat - point.lat) * metersPerLat;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lenSq)) : 0;
+    const x = ax + dx * t;
+    const y = ay + dy * t;
+    return {
+      point: { lat: point.lat + y / metersPerLat, lng: point.lng + x / metersPerLng },
+      distance: Math.sqrt(x * x + y * y),
+    };
+  }
+
+  removeStop(index: number): void {
+    if (index < 0 || index >= this.form.stops.length) return;
+    const [stop] = this.form.stops.splice(index, 1);
+    if (stop?.id) {
+      this.restoredStopIds.delete(Number(stop.id));
+      stop.is_active = false;
+      stop.is_temporarily_unavailable = true;
+      stop.unavailable_reason = 'Removed from active route by admin.';
+      this.removedStops = [...this.removedStops, stop];
+    }
+    this.redrawStops();
+  }
+
+  restoreStop(index: number): void {
+    this.selectedRemovedStopIndexes.clear();
+    this.selectedRemovedStopIndexes.add(index);
+    this.addSelectedRemovedStops();
   }
 
   undoPath(): void { this.pathLocked = false; this.form.path.pop(); this.recomputeRoadPath(); }
@@ -1256,7 +1545,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.pathDots.forEach((m) => m.setMap(null)); this.pathDots = [];
     this.stopMarkers.forEach((m) => m.setMap(null)); this.stopMarkers = [];
     this.boundaryPoly?.setMap(null); this.boundaryPoly = null;
-    this.map = null; this.geocoder = null; this.directionsSvc = null;
+    this.map = null; this.geocoder = null; this.directionsSvc = null; this.placesSvc = null;
     this.roadPath = [];
   }
 
@@ -1275,7 +1564,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       {
         id: f.origin_stop_id ?? undefined,
         seq: 1,
-        name: f.origin_name.trim(),
+        name: this.cleanStopName(f.origin_name) || f.origin_name.trim(),
         lat: f.origin_lat,
         lng: f.origin_lng,
         is_pickup: true,
@@ -1287,7 +1576,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       ...f.stops.filter((s) => s.lat != null && s.lng != null).map((s, i) => ({
         id: s.id,
         seq: i + 2,
-        name: s.name.trim() || `Stop ${i + 1}`,
+        name: this.normalizedStopName(s, i),
         lat: s.lat,
         lng: s.lng,
         is_pickup: s.is_pickup || (!s.is_pickup && !s.is_drop),
@@ -1299,7 +1588,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       {
         id: f.dest_stop_id ?? undefined,
         seq: f.stops.length + 2,
-        name: f.dest_name.trim(),
+        name: this.cleanStopName(f.dest_name) || f.dest_name.trim(),
         lat: f.dest_lat,
         lng: f.dest_lng,
         is_pickup: false,
@@ -1316,9 +1605,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       scope: f.scope,
       origin_city_id: f.scope === 'outstation' ? f.origin_city_id : null,
       dest_city_id: f.scope === 'outstation' ? f.dest_city_id : null,
-      name: f.name.trim(),
-      origin_name: f.origin_name.trim(),
-      dest_name: f.dest_name.trim(),
+      name: this.normalizedRouteName(f.name, f.origin_name, f.dest_name),
+      origin_name: this.cleanStopName(f.origin_name) || f.origin_name.trim(),
+      dest_name: this.cleanStopName(f.dest_name) || f.dest_name.trim(),
       origin_lat: f.origin_lat,
       origin_lng: f.origin_lng,
       dest_lat: f.dest_lat,

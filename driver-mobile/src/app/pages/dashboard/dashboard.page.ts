@@ -141,8 +141,13 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Documents', sub: 'Vehicle details & uploads', icon: 'document-text-outline', path: '/driver-registration' },
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
         { label: 'Payment methods', sub: 'Cash & Razorpay', icon: 'card-outline', path: '/payment-methods' },
-        { label: 'Emergency numbers', sub: 'SOS contacts', icon: 'people-outline', path: '/emergency-contacts' },
         { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
+      ],
+    },
+    {
+      title: 'Help & Support',
+      items: [
+        { label: 'Contact', sub: 'SOS contacts', icon: 'people-outline', path: '/emergency-contacts' },
         { label: 'Help & Support', sub: 'Contact us, FAQ & report', icon: 'help-buoy-outline', path: '/support' },
       ],
     },

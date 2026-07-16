@@ -1,163 +1,128 @@
-<ion-header class="ion-no-border">
-  <ion-toolbar class="pg-toolbar">
-    <ion-buttons slot="start">
-      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
-    </ion-buttons>
-    <ion-buttons slot="end">
-      <button class="pg-action dc-press" (click)="refresh()" aria-label="Reload">
-        <ion-icon name="refresh-outline"></ion-icon>
-        Reload
-      </button>
-    </ion-buttons>
-  </ion-toolbar>
-</ion-header>
+<ion-content class="ec-page" [fullscreen]="true">
 
-<ion-content class="pg-content">
-  <div class="pg-hero">
-    <h1 class="pg-title">Emergency contacts</h1>
-    <p class="pg-subtitle">Your trusted SOS list. We can reach these people instantly if something goes wrong on a trip.</p>
-    <div class="ec-herostat" *ngIf="!loading">
-      <span class="drv-status">
-        <span class="drv-status__dot"></span>
-        {{ contacts.length }} saved
-      </span>
+  <!-- ============ Hero header ============ -->
+  <div class="page-header dc-anim-up">
+    <button class="header-back dc-press" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <h1 class="header-title">Contact</h1>
+    <p class="header-sub">Trusted people we can reach in an SOS.</p>
+  </div>
+
+  <!-- ============ My Contacts ============ -->
+  <div class="page-body">
+
+    <div class="cta-row dc-anim-in">
+      <button class="add-btn dc-press" (click)="openAdd()">
+        <ion-icon name="create-outline"></ion-icon><span>Add manually</span>
+      </button>
+      <button class="add-btn outline dc-press" (click)="pickFromPhone()">
+        <ion-icon name="person-add-outline"></ion-icon><span>Choose from device</span>
+      </button>
+    </div>
+
+    <p class="page-error dc-anim-in" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+
+    <p class="section-label" *ngIf="!loading && contacts.length">Saved contacts</p>
+
+    <div class="ec-list dc-stagger" *ngIf="!loading && contacts.length">
+      <div class="ec-card dc-press" *ngFor="let c of contacts" (click)="openEdit(c)">
+        <div class="ec-icon" [class.primary]="c.is_primary">
+          <ion-icon [name]="c.is_primary ? 'star' : 'person'"></ion-icon>
+        </div>
+        <div class="ec-info">
+          <span class="ec-name">{{ c.name }} <span class="ec-pill" *ngIf="c.is_primary">Primary</span></span>
+          <span class="ec-meta">{{ c.phone }}<span *ngIf="c.relationship"> · {{ c.relationship }}</span></span>
+        </div>
+        <button class="ec-call dc-press" (click)="$event.stopPropagation(); callNumber(c.phone)" aria-label="Call">
+          <ion-icon name="call"></ion-icon>
+        </button>
+        <button class="ec-del dc-press" (click)="$event.stopPropagation(); confirmDelete(c)" aria-label="Delete">
+          <ion-icon name="trash-outline"></ion-icon>
+        </button>
+      </div>
+    </div>
+
+    <div class="state-box" *ngIf="loading">
+      <div class="dc-skeleton sk-row"></div>
+      <div class="dc-skeleton sk-row"></div>
+      <div class="dc-skeleton sk-row"></div>
+    </div>
+
+    <div class="state-box dc-anim-in" *ngIf="!loading && !contacts.length">
+      <div class="state-icon"><ion-icon name="people-outline"></ion-icon></div>
+      <p class="state-title">No emergency contacts yet</p>
+      <p class="state-sub">Add trusted people we can show in an SOS.</p>
     </div>
   </div>
 
-  <div class="pg-body pg-anim-body">
-    <!-- Add actions: always show both -->
-    <div class="ec-actions">
-      <button class="dc-cta dc-press" (click)="pickFromPhone()">
-        <ion-icon name="people-outline"></ion-icon>
-        Add from phone
-      </button>
-      <button class="dc-cta dc-cta--ghost dc-press" (click)="openAdd()">
-        <ion-icon name="add-outline"></ion-icon>
-        Add manually
-      </button>
+  <!-- ============ Add / edit overlay ============ -->
+  <div class="form-overlay" *ngIf="dialogOpen">
+    <div class="form-backdrop" (click)="dialogOpen = false"></div>
+    <div class="form-sheet">
+      <div class="modal-handle"></div>
+      <h2 class="modal-title">{{ form.id ? 'Edit contact' : 'New contact' }}</h2>
+
+      <div class="field-card">
+        <label class="field-label">Name</label>
+        <input type="text" [(ngModel)]="form.name" placeholder="Full name" [disabled]="saving" />
+      </div>
+      <div class="field-card">
+        <label class="field-label">Phone</label>
+        <div class="phone-row">
+          <button type="button" class="cc-btn dc-press" (click)="showCountryPicker = true" [disabled]="saving">
+            <span class="cc-flag">{{ selectedCountry.flag }}</span>
+            <span class="cc-code">+{{ form.countryCode }}</span>
+            <ion-icon name="chevron-down"></ion-icon>
+          </button>
+          <input
+            type="tel"
+            inputmode="numeric"
+            maxlength="10"
+            [(ngModel)]="form.phone"
+            (ngModelChange)="onPhoneInput()"
+            placeholder="9876543210"
+            [disabled]="saving"
+          />
+        </div>
+      </div>
+      <div class="field-card">
+        <label class="field-label">Relationship <span class="optional">· optional</span></label>
+        <input type="text" [(ngModel)]="form.relationship" placeholder="e.g. Spouse" [disabled]="saving" />
+      </div>
+      <div class="toggle-card">
+        <span class="toggle-label">Primary contact</span>
+        <ion-toggle [(ngModel)]="form.is_primary" [disabled]="saving"></ion-toggle>
+      </div>
+
+      <p class="page-error" *ngIf="error"><ion-icon name="alert-circle-outline"></ion-icon> {{ error }}</p>
+
+      <div class="modal-actions">
+        <button class="btn-ghost dc-press" (click)="dialogOpen = false" [disabled]="saving">Cancel</button>
+        <button class="btn-primary dc-press" (click)="submit()" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
+      </div>
     </div>
-
-    <p class="dc-error" *ngIf="error && !dialogOpen">{{ error }}</p>
-
-    <!-- Loading skeletons -->
-    <div class="dc-list" *ngIf="loading">
-      <div class="ec-skelrow">
-        <div class="dc-skeleton ec-skelrow__avatar"></div>
-        <div class="ec-skelrow__lines">
-          <div class="dc-skeleton" style="height:13px; width:55%"></div>
-          <div class="dc-skeleton" style="height:11px; width:38%"></div>
-        </div>
-      </div>
-      <div class="ec-skelrow">
-        <div class="dc-skeleton ec-skelrow__avatar"></div>
-        <div class="ec-skelrow__lines">
-          <div class="dc-skeleton" style="height:13px; width:62%"></div>
-          <div class="dc-skeleton" style="height:11px; width:30%"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Contacts list -->
-    <ng-container *ngIf="!loading">
-      <p class="dc-section" *ngIf="contacts.length">MY EMERGENCY CONTACTS</p>
-
-      <div class="dc-list dc-stagger" *ngIf="contacts.length; else emptyState">
-        <div class="dc-row ec-row" *ngFor="let c of contacts">
-          <button class="ec-row__main" (click)="openEdit(c)">
-            <span class="dc-row__icon ec-avatar" [class.ec-avatar--primary]="c.is_primary">
-              {{ initial(c.name) }}
-            </span>
-            <span class="dc-row__text">
-              <strong>
-                {{ c.name }}
-                <span class="dc-badge dc-badge--ok" *ngIf="c.is_primary">Primary</span>
-              </strong>
-              <small>
-                {{ c.phone }}<span *ngIf="c.relationship"> · {{ c.relationship }}</span>
-              </small>
-            </span>
-          </button>
-
-          <button class="ec-action ec-action--call dc-press" (click)="callNumber(c.phone)" aria-label="Call">
-            <ion-icon name="call-outline"></ion-icon>
-          </button>
-          <button class="ec-action ec-action--delete dc-press" (click)="confirmDelete(c)" aria-label="Delete">
-            <ion-icon name="trash-outline"></ion-icon>
-          </button>
-        </div>
-      </div>
-    </ng-container>
-
-    <ng-template #emptyState>
-      <div class="dc-empty dc-anim">
-        <div class="dc-empty__icon">
-          <ion-icon name="people-outline"></ion-icon>
-        </div>
-        <strong>No emergency contacts yet</strong>
-        <span>Add a trusted contact from your phone or enter one manually above.</span>
-      </div>
-    </ng-template>
   </div>
 
-  <!-- ── Add / edit dialog ── -->
-  <ion-modal class="ec-modal" [isOpen]="dialogOpen" (didDismiss)="dialogOpen = false">
-    <ng-template>
-      <ion-header class="ion-no-border">
-        <ion-toolbar class="pg-toolbar">
-          <ion-title>{{ form.id ? 'Edit contact' : 'Add contact' }}</ion-title>
-          <ion-buttons slot="end">
-            <ion-button (click)="dialogOpen = false">Close</ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-
-      <ion-content class="pg-content">
-        <div class="pg-hero">
-          <h1 class="pg-title">{{ form.id ? 'Edit contact' : 'New contact' }}</h1>
-          <p class="pg-subtitle">A trusted friend or family member we can call in an emergency.</p>
-        </div>
-
-        <div class="pg-body pg-anim-body">
-          <div class="pg-card ec-form">
-            <div class="pg-card__head">
-              <div class="pg-card__icon">
-                <ion-icon name="person-outline"></ion-icon>
-              </div>
-              <h2 class="pg-card__title">Contact details</h2>
-            </div>
-
-            <label class="ec-field">
-              <span class="ec-field__label">Name <em>*</em></span>
-              <input class="ec-field__input" [(ngModel)]="form.name" [disabled]="saving" placeholder="Full name" />
-            </label>
-
-            <label class="ec-field">
-              <span class="ec-field__label">Phone <em>*</em></span>
-              <input class="ec-field__input" type="tel" [(ngModel)]="form.phone" [disabled]="saving" placeholder="+91 9876543210" />
-            </label>
-
-            <label class="ec-field">
-              <span class="ec-field__label">Relationship</span>
-              <input class="ec-field__input" [(ngModel)]="form.relationship" [disabled]="saving" placeholder="e.g. Spouse, Brother" />
-            </label>
-
-            <div class="ec-field ec-field--row">
-              <span class="ec-field__text">
-                <span class="ec-field__label">Primary contact</span>
-                <small class="ec-field__hint">Called first in an SOS</small>
-              </span>
-              <ion-toggle [(ngModel)]="form.is_primary" [disabled]="saving"></ion-toggle>
-            </div>
-          </div>
-
-          <p class="dc-error" *ngIf="error">{{ error }}</p>
-
-          <button class="dc-cta dc-press" (click)="submit()" [disabled]="saving">
-            <ion-spinner *ngIf="saving" name="crescent"></ion-spinner>
-            <span *ngIf="!saving">Save contact</span>
-          </button>
-        </div>
-      </ion-content>
-    </ng-template>
-  </ion-modal>
+  <!-- ============ Country code picker ============ -->
+  <div class="form-overlay" *ngIf="showCountryPicker">
+    <div class="form-backdrop" (click)="showCountryPicker = false"></div>
+    <div class="form-sheet cc-sheet">
+      <div class="modal-handle"></div>
+      <h2 class="modal-title">Select country</h2>
+      <div class="cc-list">
+        <button
+          type="button"
+          class="cc-item"
+          [class.active]="c.code === form.countryCode"
+          *ngFor="let c of countries"
+          (click)="selectCountry(c)"
+        >
+          <span class="cc-flag">{{ c.flag }}</span>
+          <span class="cc-name">{{ c.name }}</span>
+          <span class="cc-code">+{{ c.code }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </ion-content>

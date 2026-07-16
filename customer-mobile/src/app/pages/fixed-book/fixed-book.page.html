@@ -51,8 +51,6 @@
 
         <button type="button" class="fb-card dc-press" *ngFor="let r of visibleRoutes" (click)="pickRoute(r)">
           <div class="fb-card__main">
-            <span class="fb-card__meta"><ion-icon [name]="routeScopeIcon(r)"></ion-icon>{{ routeScopeLabel(r) }}</span>
-            <span class="fb-card__title">{{ r.name }}</span>
             <span class="fb-card__sub">{{ r.origin_name }} → {{ r.dest_name }}</span>
           </div>
           <div class="fb-card__right">

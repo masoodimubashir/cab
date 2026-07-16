@@ -48,7 +48,7 @@ export class SupportPage implements OnInit {
     },
     {
       q: 'How do I add emergency contacts?',
-      a: 'Open “Emergency numbers” from the menu and add people manually or straight from your phone. They can be reached during an SOS.',
+      a: 'Open “Contact” from the menu and add people manually or straight from your phone. They can be reached during an SOS.',
     },
   ];
 

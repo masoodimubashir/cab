@@ -27,7 +27,7 @@ export const environment = {
    * Leave reverbAppKey blank to fall back to polling-only.
    */
   reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: '192.168.29.13',
+  reverbHost: 'localhost',
   reverbPort: 8080,
   reverbScheme: 'http' as 'http' | 'https',
   /**
