@@ -21,6 +21,7 @@ use App\Http\Controllers\DriverManifestController;
 use App\Http\Controllers\FareNegotiationController;
 use App\Http\Controllers\DriversController;
 use App\Http\Controllers\Admin\AdminCitiesController;
+use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminDocumentsController;
 use App\Http\Controllers\Admin\AdminGlobalVehicleTypesController;
 use App\Http\Controllers\Admin\AdminRideTypesController;
@@ -237,6 +238,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/drivers/{driver}/approval', [AdminDriversController::class, 'setApproval'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/unsubscribe', [AdminDriversController::class, 'unsubscribe'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/send-otp', [AdminDriversController::class, 'sendOtp'])->middleware(['permission:drivers', 'throttle:otp']);
+    Route::post('/admin/drivers/{driver}/block', [AdminDriversController::class, 'block'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/unblock', [AdminDriversController::class, 'unblock'])->middleware('permission:drivers');
+    Route::delete('/admin/drivers/{driver}', [AdminDriversController::class, 'destroy'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver'])->middleware('permission:drivers');
@@ -478,12 +483,19 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/departures/{departure}/close-bookings', [FixedDriverController::class, 'closeBookings']);
     Route::post('/fixed/departures/{departure}/open-bookings', [FixedDriverController::class, 'openBookings']);
     Route::post('/fixed/departures/{departure}/complete', [FixedDriverController::class, 'complete']);
+    Route::post('/fixed/bookings/{reservation}/boarding-otp', [FixedDriverController::class, 'sendBoardingOtp'])->middleware('throttle:otp');
     Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
     Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rides'])->group(function () {
+    // Service catalogue: scope (Local/Outstation) → mode (Private/Fixed/Shuttle)
+    // toggles that gate what BOTH apps offer (customer booking + driver signup).
+    Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
+    Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope']);
+    Route::patch('/admin/cities/{city}/ride-products/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
+
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);

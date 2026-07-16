@@ -30,6 +30,22 @@
         <span class="status-pill" [ngClass]="statusClass(ride)">{{ bookingStatusLabel(ride) }}</span>
       </section>
 
+      <!-- Boarding code (testing bridge while the SMS template awaits DLT approval) -->
+      <section class="ride-card boarding-code-card" *ngIf="ride.boarding_code">
+        <span class="boarding-code-label">
+          <ion-icon name="keypad-outline"></ion-icon>
+          Boarding code
+        </span>
+        <strong class="boarding-code-digits">
+          <i *ngFor="let digit of codeDigits(ride)">{{ digit }}</i>
+        </strong>
+        <p>Tell this code to your driver only when you board the vehicle.</p>
+        <p class="boarding-code-warn">
+          <ion-icon name="shield-checkmark-outline"></ion-icon>
+          Don't share it with anyone before boarding.
+        </p>
+      </section>
+
       <section class="ride-card route-card">
         <div class="route-stop">
           <i class="dot dot--pickup"></i>

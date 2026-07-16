@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -41,6 +41,8 @@ interface DriverProfile {
   city_name: string | null;
   approval_status: 'approved' | 'rejected' | 'pending' | string;
   is_online: boolean;
+  is_suspended: boolean;
+  suspended_reason: string | null;
   is_active: boolean;
   deactivated_at: string | null;
   deactivated_reason: string | null;
@@ -55,6 +57,13 @@ interface DriverProfile {
 }
 
 type TabKey = 'rides' | 'wallet' | 'cancelled';
+
+const BLOCK_REASONS = [
+  'Spam / fraud',
+  'Abusive behaviour',
+  'Payment dispute',
+  'Other',
+];
 
 @Component({
   selector: 'app-driver-detail',
@@ -96,6 +105,7 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
               <tm-status-pill [tone]="approvalTone">{{ profile.approval_status | titlecase }}</tm-status-pill>
               <tm-status-pill *ngIf="profile.is_online" tone="success">Online</tm-status-pill>
               <tm-status-pill *ngIf="!profile.is_active" tone="danger">Deactivated</tm-status-pill>
+              <tm-status-pill *ngIf="profile.is_suspended" tone="danger">Blocked</tm-status-pill>
             </div>
             <div class="cover__handle">
               <span class="mono">#{{ profile.id }}</span>
@@ -105,51 +115,12 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
           </div>
 
           <div class="cover__actions">
-            <button
-              type="button"
-              class="more-btn"
-              (click)="toggleMoreMenu($event)"
-              [class.is-open]="moreMenuOpen"
-              aria-label="More actions"
-            >
-              <tm-icon name="more-horizontal" [size]="16" />
-            </button>
-            <div class="more-menu" *ngIf="moreMenuOpen" (click)="$event.stopPropagation()">
-              <button type="button" class="more-menu__item" (click)="closeMore(); openUnsub()">
-                <tm-icon name="bell" [size]="14" />
-                <span>Subscription preferences</span>
-              </button>
-              <div class="more-menu__sep"></div>
-              <button
-                type="button"
-                class="more-menu__item"
-                [disabled]="profile.approval_status === 'approved' || busyApproval"
-                (click)="closeMore(); setApproval('approved')"
-              >
-                <tm-icon name="check" [size]="14" />
-                <span>Approve driver</span>
-              </button>
-              <button
-                type="button"
-                class="more-menu__item more-menu__item--danger"
-                [disabled]="profile.approval_status === 'rejected' || busyApproval"
-                (click)="closeMore(); setApproval('rejected')"
-              >
-                <tm-icon name="x" [size]="14" />
-                <span>Reject driver</span>
-              </button>
-              <div class="more-menu__sep"></div>
-              <button
-                type="button"
-                class="more-menu__item"
-                [class.more-menu__item--danger]="profile.is_active"
-                [disabled]="busyActivation"
-                (click)="closeMore(); setActivation(!profile.is_active)"
-              >
-                <tm-icon [name]="profile.is_active ? 'shield' : 'check'" [size]="14" />
-                <span>{{ profile.is_active ? 'Deactivate driver' : 'Reactivate driver' }}</span>
-              </button>
-            </div>
+            <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
+              Send OTP
+            </tm-button>
+            <tm-button variant="outline" size="sm" [icon]="profile.is_suspended ? 'check' : 'shield'" (clicked)="openBlockDelete()">
+              {{ profile.is_suspended ? 'Manage access' : 'Block or delete' }}
+            </tm-button>
           </div>
         </div>
       </header>
@@ -202,6 +173,7 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
               <tm-status-pill [tone]="approvalTone">{{ profile.approval_status | titlecase }}</tm-status-pill>
               <tm-status-pill *ngIf="profile.is_online" tone="success">Online</tm-status-pill>
               <tm-status-pill *ngIf="!profile.is_active" tone="danger">Deactivated</tm-status-pill>
+              <tm-status-pill *ngIf="profile.is_suspended" tone="danger">Blocked</tm-status-pill>
             </div>
           </header>
 
@@ -281,6 +253,9 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
             <div class="kv-list">
               <div class="kv-row"><span>Push</span><strong>{{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
             </div>
+            <tm-button variant="outline" size="sm" icon="bell" (clicked)="openUnsub()">
+              Manage preferences
+            </tm-button>
           </section>
         </aside>
       </section>
@@ -486,6 +461,117 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
       </div>
     </ng-template>
 
+    <!-- =================== Block / Delete modal =================== -->
+    <tm-modal
+      [open]="blockDeleteOpen"
+      [title]="profile?.is_suspended ? 'Manage driver access' : 'Restrict this driver'"
+      (closed)="blockDeleteOpen = false"
+    >
+      <div slot="body">
+        <p class="hint hint--top">
+          Pick an action below. Blocking can be reversed later — deletion cannot.
+        </p>
+
+        <!-- Action selector -->
+        <div class="action-toggle">
+          <button
+            type="button"
+            class="action-toggle__btn"
+            [class.is-active]="blockMode === 'block'"
+            [class.is-warn]="blockMode === 'block'"
+            (click)="blockMode = 'block'"
+          >
+            <span class="action-toggle__icon">
+              <tm-icon [name]="profile?.is_suspended ? 'check' : 'shield'" [size]="14" />
+            </span>
+            <span class="action-toggle__title">
+              {{ profile?.is_suspended ? 'Unblock' : 'Block' }}
+            </span>
+            <span class="action-toggle__sub">Reversible</span>
+          </button>
+          <button
+            type="button"
+            class="action-toggle__btn"
+            [class.is-active]="blockMode === 'delete'"
+            [class.is-danger]="blockMode === 'delete'"
+            (click)="blockMode = 'delete'"
+          >
+            <span class="action-toggle__icon">
+              <tm-icon name="trash" [size]="14" />
+            </span>
+            <span class="action-toggle__title">Delete</span>
+            <span class="action-toggle__sub">Permanent</span>
+          </button>
+        </div>
+
+        <!-- Block path -->
+        <ng-container *ngIf="blockMode === 'block' && !profile?.is_suspended">
+          <label class="lbl"><span class="req">*</span> Reason for blocking</label>
+          <select class="form-input" [(ngModel)]="blockReason">
+            <option value="">Select a reason…</option>
+            <option *ngFor="let r of blockReasons" [value]="r">{{ r }}</option>
+          </select>
+        </ng-container>
+
+        <div class="notice notice--info" *ngIf="blockMode === 'block' && profile?.is_suspended">
+          <tm-icon name="check" [size]="14" />
+          <span>
+            Unblocking will restore the driver's full access immediately.
+            They will be able to log in and take rides again.
+          </span>
+        </div>
+
+        <!-- Delete path -->
+        <ng-container *ngIf="blockMode === 'delete'">
+          <div class="notice notice--danger">
+            <tm-icon name="trash" [size]="14" />
+            <span>
+              This action <strong>cannot be undone</strong>. The driver's account
+              will be permanently deleted.
+            </span>
+          </div>
+          <label class="lbl">
+            <span class="req">*</span> Reason for deletion
+            <span class="hint">{{ deleteReason.length }} / 50</span>
+          </label>
+          <textarea
+            class="form-input form-textarea"
+            rows="3"
+            maxlength="50"
+            [(ngModel)]="deleteReason"
+            placeholder="Why is this driver being deleted?"
+          ></textarea>
+        </ng-container>
+      </div>
+
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="blockDeleteOpen = false">Cancel</tm-button>
+
+        <tm-button
+          *ngIf="blockMode === 'block'"
+          [variant]="profile?.is_suspended ? 'green' : 'ink'"
+          [icon]="profile?.is_suspended ? 'check' : 'shield'"
+          [loading]="blockSaving"
+          [disabled]="!profile?.is_suspended && !blockReason"
+          (clicked)="submitBlock()"
+        >
+          {{ profile?.is_suspended ? 'Unblock driver' : 'Block driver' }}
+        </tm-button>
+
+        <tm-button
+          *ngIf="blockMode === 'delete'"
+          variant="danger"
+          icon="trash"
+          [loading]="deleteSaving"
+          [disabled]="!deleteReason.trim()"
+          (clicked)="submitDelete()"
+        >
+          Delete permanently
+        </tm-button>
+      </ng-container>
+    </tm-modal>
+
+    <!-- =================== Unsubscribe modal =================== -->
     <tm-modal
       [open]="unsubOpen"
       title="Subscription preferences"
@@ -711,56 +797,6 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
       padding-top: 56px;
       position: relative;
     }
-    .more-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 34px; height: 34px;
-      border-radius: var(--tm-radius-md);
-      border: 1px solid var(--tm-line-2);
-      background: var(--tm-surface);
-      color: var(--tm-text-muted);
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .more-btn:hover { background: var(--tm-canvas-2); color: var(--tm-text); }
-    .more-btn.is-open { background: var(--tm-ink); color: #fff; border-color: var(--tm-ink); }
-
-    .more-menu {
-      position: absolute;
-      top: calc(100% + 6px);
-      right: 0;
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      box-shadow: var(--tm-shadow-pop);
-      min-width: 220px;
-      padding: 4px;
-      z-index: 60;
-      animation: mm-in 160ms var(--tm-ease) both;
-    }
-    @keyframes mm-in {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .more-menu__item {
-      display: flex; align-items: center; gap: 10px;
-      width: 100%;
-      padding: 9px 12px;
-      border-radius: var(--tm-radius-sm);
-      background: transparent;
-      border: 0;
-      color: var(--tm-text);
-      font-size: 13px;
-      font-weight: 600;
-      text-align: left;
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease);
-    }
-    .more-menu__item:hover:not(:disabled) { background: var(--tm-canvas); }
-    .more-menu__item:disabled { opacity: 0.45; cursor: not-allowed; }
-    .more-menu__item--danger { color: var(--tm-danger-fg); }
-    .more-menu__item--danger:hover:not(:disabled) { background: var(--tm-danger-bg); }
-    .more-menu__sep { height: 1px; background: var(--tm-line); margin: 4px 6px; }
 
     /* -------------------- Stat row -------------------- */
     .stats {
@@ -1421,6 +1457,50 @@ type TabKey = 'rides' | 'wallet' | 'cancelled';
       background: var(--tm-danger);
       color: #fff;
     }
+    .action-toggle__btn.is-active {
+      background: var(--tm-canvas);
+      border-color: var(--tm-ink);
+    }
+    .action-toggle__btn.is-warn.is-active {
+      background: var(--tm-warning-bg);
+      border-color: var(--tm-warning);
+    }
+    .action-toggle__btn.is-warn.is-active .action-toggle__icon {
+      background: var(--tm-warning);
+      color: #fff;
+    }
+    .action-toggle__btn.is-danger.is-active {
+      background: var(--tm-danger-bg);
+      border-color: var(--tm-danger);
+    }
+    .action-toggle__btn.is-danger.is-active .action-toggle__icon {
+      background: var(--tm-danger);
+      color: #fff;
+    }
+
+    .req { color: var(--tm-danger); margin-right: 2px; }
+    .hint--top { margin: 0 0 14px; }
+
+    /* Notice banners inside modals */
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--tm-radius-md);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.5;
+      margin: 8px 0 0;
+    }
+    .notice--info {
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+    }
+    .notice--danger {
+      background: var(--tm-danger-bg);
+      color: var(--tm-danger-fg);
+    }
 
     .balance-row {
       display: flex;
@@ -1530,10 +1610,19 @@ export class DriverDetailComponent implements OnInit {
   ];
 
 
-  // Cover actions
-  moreMenuOpen = false;
-  busyApproval = false;
-  busyActivation = false;
+  // Send OTP
+  otpSending = false;
+
+  // Block / Delete modal
+  blockDeleteOpen = false;
+  blockMode: 'block' | 'delete' = 'block';
+  blockReason = '';
+  deleteReason = '';
+  blockSaving = false;
+  deleteSaving = false;
+  readonly blockReasons = BLOCK_REASONS;
+
+  // Notification preferences modal
   unsubOpen = false;
   unsubPush = false;
   unsubSaving = false;
@@ -1699,13 +1788,63 @@ export class DriverDetailComponent implements OnInit {
     return Date.now() - then > 30 * 60 * 1000;
   }
 
-  toggleMoreMenu(event: Event): void {
-    event.stopPropagation();
-    this.moreMenuOpen = !this.moreMenuOpen;
+  sendOtp(): void {
+    if (!this.driverId) return;
+    this.otpSending = true;
+    this.api.post(`/admin/drivers/${this.driverId}/send-otp`, {}).subscribe({
+      next: () => {
+        this.toast.success('OTP sent successfully');
+        this.otpSending = false;
+      },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'Could not send OTP', { title: 'OTP failed' });
+        this.otpSending = false;
+      },
+    });
   }
 
-  closeMore(): void {
-    this.moreMenuOpen = false;
+  openBlockDelete(): void {
+    this.blockMode = 'block';
+    this.blockReason = '';
+    this.deleteReason = '';
+    this.blockDeleteOpen = true;
+  }
+
+  submitBlock(): void {
+    if (!this.profile) return;
+    this.blockSaving = true;
+    const action = this.profile.is_suspended ? 'unblock' : 'block';
+    const body = this.profile.is_suspended ? {} : { reason: this.blockReason };
+    this.api.post(`/admin/drivers/${this.driverId}/${action}`, body).subscribe({
+      next: () => {
+        this.toast.success(this.profile?.is_suspended ? 'Driver unblocked' : 'Driver blocked');
+        this.blockSaving = false;
+        this.blockDeleteOpen = false;
+        this.loadProfile();
+      },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'Action failed');
+        this.blockSaving = false;
+      },
+    });
+  }
+
+  submitDelete(): void {
+    this.deleteSaving = true;
+    this.api
+      .delete(`/admin/drivers/${this.driverId}?reason=${encodeURIComponent(this.deleteReason)}`)
+      .subscribe({
+        next: () => {
+          this.toast.success('Driver deleted');
+          this.deleteSaving = false;
+          this.blockDeleteOpen = false;
+          this.router.navigate(['/drivers']);
+        },
+        error: (err) => {
+          this.toast.error(err?.error?.message || 'Delete failed');
+          this.deleteSaving = false;
+        },
+      });
   }
 
   openUnsub(): void {
@@ -1735,16 +1874,6 @@ export class DriverDetailComponent implements OnInit {
         this.toast.error(err?.error?.message || "Could not update push preference");
       },
     });
-  }
-
-  @HostListener('document:click')
-  onDocClick(): void {
-    if (this.moreMenuOpen) this.moreMenuOpen = false;
-  }
-
-  @HostListener('document:keydown.escape')
-  onDocEsc(): void {
-    if (this.moreMenuOpen) this.moreMenuOpen = false;
   }
 
   // -------------------- Tab filtered getters --------------------
@@ -1835,49 +1964,6 @@ export class DriverDetailComponent implements OnInit {
         this.loadingTab = false;
       },
     });
-  }
-
-  // -------------------- Actions --------------------
-  setApproval(status: 'approved' | 'rejected'): void {
-    if (!this.profile || this.busyApproval) return;
-    this.busyApproval = true;
-    this.api
-      .patch<any>(`/admin/drivers/${this.driverId}/approval`, { approval_status: status })
-      .subscribe({
-        next: () => {
-          this.toast.success(`Driver ${status}`);
-          this.busyApproval = false;
-          this.loadProfile();
-        },
-        error: (err) => {
-          const missing = err?.error?.missing as string[] | undefined;
-          this.toast.error(
-            missing?.length
-              ? `${err.error.message} Missing: ${missing.join(', ')}`
-              : (err?.error?.message || 'Approval update failed'),
-            { title: 'Action failed' },
-          );
-          this.busyApproval = false;
-        },
-      });
-  }
-
-  setActivation(active: boolean): void {
-    if (!this.profile || this.busyActivation) return;
-    this.busyActivation = true;
-    this.api
-      .patch<any>(`/admin/drivers/${this.driverId}/activation`, { active })
-      .subscribe({
-        next: () => {
-          this.toast.success(active ? 'Driver reactivated' : 'Driver deactivated');
-          this.busyActivation = false;
-          this.loadProfile();
-        },
-        error: (err) => {
-          this.toast.error(err?.error?.message || 'Action failed');
-          this.busyActivation = false;
-        },
-      });
   }
 
 }

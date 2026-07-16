@@ -15,6 +15,7 @@ use App\Models\Trip;
 use App\Services\DriverServiceModeService;
 use App\Services\CommissionSettlementService;
 use App\Services\FixedAvailabilityService;
+use App\Services\FixedBoardingOtpService;
 use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
 use App\Services\FixedManifestService;
@@ -37,6 +38,7 @@ class FixedDriverController extends Controller
         private readonly DriverServiceModeService $serviceModes,
         private readonly NotificationCenter $notifier,
         private readonly CommissionSettlementService $settlements,
+        private readonly FixedBoardingOtpService $boardingOtp,
     ) {}
 
     public function routes(Request $request)
@@ -290,8 +292,59 @@ class FixedDriverController extends Controller
         ]);
     }
 
+    /**
+     * Step 1 of boarding: generate + send the boarding code to the customer
+     * (SMS always, email/push per operator toggles). The driver app opens the
+     * code popup after this succeeds. Re-hitting it acts as "Resend" (30s
+     * cooldown enforced by the service).
+     */
+    public function sendBoardingOtp(Request $request, SeatReservation $reservation)
+    {
+        $this->guardDriverReservation($request, $reservation);
+        $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json', 'boardStop:id,route_id,seq,name,lat,lng', 'customer:id,name,phone,email,push_unsubscribed');
+
+        // Same preconditions as boarding itself, so a code can never be
+        // requested in a state where boarding would be rejected anyway.
+        if (!in_array($reservation->status, ['BOOKED', 'CONFIRMED'], true)) {
+            abort(422, 'This passenger cannot be boarded from the current status.');
+        }
+
+        $departure = $reservation->routeDeparture;
+        if (!$departure || !in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true)) {
+            abort(422, 'Start the fixed ride before boarding passengers.');
+        }
+        $this->recordActionPing($request, $departure, (int) $request->user()->id);
+        $this->ensureStopReachedForAction($departure, $reservation->boardStop, (int) $request->user()->id, 'Reach the passenger pickup stop before boarding.');
+
+        $result = $this->boardingOtp->send($reservation);
+
+        if (!($result['sent'] ?? false)) {
+            if (isset($result['locked_for'])) {
+                return response()->json([
+                    'message' => 'Too many wrong codes. Wait ' . ceil($result['locked_for'] / 60) . ' min, then resend — or mark no-show.',
+                    'locked_for' => $result['locked_for'],
+                ], 429);
+            }
+            return response()->json([
+                'message' => 'Code already sent. You can resend in ' . ($result['retry_after'] ?? FixedBoardingOtpService::RESEND_COOLDOWN_SEC) . 's.',
+                'retry_after' => $result['retry_after'] ?? FixedBoardingOtpService::RESEND_COOLDOWN_SEC,
+            ], 429);
+        }
+
+        return response()->json([
+            'message' => 'Boarding code sent to the passenger.',
+            'resend_after' => FixedBoardingOtpService::RESEND_COOLDOWN_SEC,
+            // Present only in SMS mock mode (no MSG91 key) for dev testing.
+            'dev_code' => $result['dev_code'] ?? null,
+        ]);
+    }
+
     public function board(Request $request, SeatReservation $reservation)
     {
+        $data = $request->validate([
+            'code' => ['required', 'digits:4'],
+        ]);
+
         $this->guardDriverReservation($request, $reservation);
         $reservation->loadMissing('routeDeparture.route:id,fixed_settings_json', 'boardStop:id,route_id,seq,name,lat,lng');
 
@@ -303,7 +356,28 @@ class FixedDriverController extends Controller
         if (!$departure || !in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true)) {
             abort(422, 'Start the fixed ride before boarding passengers.');
         }
+        $this->recordActionPing($request, $departure, (int) $request->user()->id);
         $this->ensureStopReachedForAction($departure, $reservation->boardStop, (int) $request->user()->id, 'Reach the passenger pickup stop before boarding.');
+
+        // Boarding is code-gated: the customer reads out the code we sent
+        // them and the driver types it here. Wrong/expired/locked → no board.
+        $check = $this->boardingOtp->verify($reservation, $data['code']);
+        if (!($check['ok'] ?? false)) {
+            return match ($check['error'] ?? 'wrong') {
+                'locked' => response()->json([
+                    'message' => 'Too many wrong codes. Wait ' . ceil(($check['locked_for'] ?? 300) / 60) . ' min, then resend — or mark no-show.',
+                    'locked_for' => $check['locked_for'] ?? 300,
+                ], 429),
+                'expired' => response()->json([
+                    'message' => 'This code has expired. Resend a fresh code to the passenger.',
+                    'expired' => true,
+                ], 422),
+                default => response()->json([
+                    'message' => 'Wrong code. ' . ($check['attempts_left'] ?? 0) . ' ' . (($check['attempts_left'] ?? 0) === 1 ? 'try' : 'tries') . ' left.',
+                    'attempts_left' => $check['attempts_left'] ?? 0,
+                ], 422),
+            };
+        }
 
         $reservation->update([
             'status' => 'BOARDED',
@@ -314,8 +388,8 @@ class FixedDriverController extends Controller
             $reservation->fresh(),
             'passenger_boarded',
             'Passenger boarded',
-            'Driver marked this customer as boarded on the fixed ride.',
-            ['driver_id' => $request->user()->id],
+            'Driver verified the boarding code and marked this customer as boarded.',
+            ['driver_id' => $request->user()->id, 'otp_verified' => true],
             $request->user(),
         );
 
@@ -342,6 +416,7 @@ class FixedDriverController extends Controller
         if (!$departure || !in_array($departure->status, ['DISPATCHED', 'DEPARTED'], true)) {
             abort(422, 'Start the fixed ride before dropping passengers.');
         }
+        $this->recordActionPing($request, $departure, (int) $request->user()->id);
         $this->ensureStopReachedForAction($departure, $reservation->dropStop, (int) $request->user()->id, 'Reach the passenger drop stop before drop-off.');
 
         DB::transaction(function () use ($reservation) {
@@ -453,6 +528,7 @@ class FixedDriverController extends Controller
             abort(422, 'Passenger pickup stop is not available for no-show validation.');
         }
 
+        $this->recordActionPing($request, $departure, (int) $request->user()->id);
         $this->ensureStopReachedForAction($departure, $reservation->boardStop, (int) $request->user()->id, 'Reach the passenger pickup stop before marking no-show.');
 
         $updated = $this->refunds->markNoShow($reservation);
@@ -465,6 +541,34 @@ class FixedDriverController extends Controller
                 'refund_status' => $updated->refund_status,
             ],
             'message' => 'Passenger marked as no-show.',
+        ]);
+    }
+
+    /**
+     * Board/drop/no-show taps may carry the driver's live GPS fix (lat/lng in
+     * the request body) so the stop-reached guard never depends on the
+     * background location stream still being alive — the action brings its
+     * own proof. The fix is stored as a normal ping (customer tracking
+     * benefits too). Absent coords = old behaviour: guard falls back to the
+     * most recent streamed ping (max 5 min old).
+     */
+    private function recordActionPing(Request $request, ?RouteDeparture $departure, int $driverId): void
+    {
+        $data = $request->validate([
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
+        ]);
+
+        if (!isset($data['lat'], $data['lng'])) {
+            return;
+        }
+
+        DriverLocation::query()->create([
+            'driver_id' => $driverId,
+            'trip_id' => $departure?->trip_id,
+            'lat' => (float) $data['lat'],
+            'lng' => (float) $data['lng'],
+            'recorded_at' => now(),
         ]);
     }
 

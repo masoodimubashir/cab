@@ -8,6 +8,7 @@ use App\Models\Driver;
 use App\Models\SeatReservation;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class FixedBookingService
 {
@@ -143,6 +144,14 @@ class FixedBookingService
             'announced_depart_at' => optional($reservation->routeDeparture?->announced_depart_at)->toIso8601String(),
             'seats' => (int) $reservation->seats,
             'status' => $reservation->status,
+            // Testing bridge while the boarding DLT template isn't approved:
+            // the plaintext boarding code (cached by FixedBoardingOtpService,
+            // 10-min TTL) is shown on the customer's own booking screen since
+            // no SMS goes out. Null in every other situation. This payload is
+            // customer-only (never the driver's or admin's view).
+            'boarding_code' => in_array($reservation->status, ['BOOKED', 'CONFIRMED'], true)
+                ? Cache::get(FixedBoardingOtpService::codeCacheKey($reservation->id))
+                : null,
             'fixed_live_status' => $this->fixedLiveStatus($reservation),
             'payment_method' => $reservation->payment_method,
             'payment_status' => $reservation->payment_status,

@@ -159,7 +159,7 @@ export class AdminRealtimeService {
   }
 
   private apiBase(): string {
-    return 'https://dreamcabs.in/api/api';
+    return 'http://localhost:8000/api';
   }
 
   private authEndpoint(): string {

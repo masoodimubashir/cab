@@ -1,6 +1,6 @@
 import { Component } from "@angular/core";
 import { AlertController, ToastController } from "@ionic/angular";
-import { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
@@ -49,6 +49,8 @@ interface FixedBooking {
   latest_driver_location?: { lat: number; lng: number; recorded_at?: string | null } | null;
   seats: number;
   status: string;
+  /** Testing bridge: boarding code shown here while the SMS template awaits DLT approval. */
+  boarding_code?: string | null;
   fixed_live_status?: FixedLiveStatus | null;
   payment_method?: string | null;
   payment_status?: string | null;
@@ -91,6 +93,7 @@ export class FixedBookingsPage {
   cancellingId: number | null = null;
   activeOnly = false;
   private locationSub?: Subscription;
+  private pollSub?: Subscription;
   private readonly inactiveStatuses = new Set(['DROPPED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']);
 
   constructor(
@@ -108,9 +111,15 @@ export class FixedBookingsPage {
       this.locationWarning = state.degraded ? state.message : null;
     });
     this.refresh();
+    // Light poll while any booking is live so the boarding code (and status
+    // flips like BOARDED) show up without a manual refresh.
+    this.pollSub ??= interval(6000).subscribe(() => this.silentRefresh());
   }
 
-  ionViewWillLeave(): void {}
+  ionViewWillLeave(): void {
+    this.pollSub?.unsubscribe();
+    this.pollSub = undefined;
+  }
 
   ngOnDestroy(): void {
     this.locationSub?.unsubscribe();
@@ -143,6 +152,24 @@ export class FixedBookingsPage {
         this.loading = false;
         this.syncFixedLocationStream();
       },
+    });
+  }
+
+  /**
+   * Background refresh: no spinner, merges page-1 rows into what's loaded so
+   * pagination isn't disturbed. Only runs while an active booking exists.
+   */
+  private silentRefresh(): void {
+    if (this.loading || this.loadingMore || this.cancellingId) return;
+    if (!this.allBookings.some((booking) => ['BOOKED', 'CONFIRMED'].includes((booking.status || '').toUpperCase()))) return;
+    this.api.get<{ data: FixedBooking[] }>(this.bookingsUrl(1)).subscribe({
+      next: (res) => {
+        const fresh = new Map((res?.data || []).map((row) => [row.id, row]));
+        if (!fresh.size) return;
+        this.allBookings = this.allBookings.map((row) => fresh.get(row.id) || row);
+        this.applyFilters();
+      },
+      error: () => {},
     });
   }
 

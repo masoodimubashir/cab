@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
+import { Subscription, interval } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { FixedCustomerLocationService } from '../../core/fixed-customer-location.service';
@@ -32,6 +33,8 @@ interface FixedBooking {
   drop_lng?: number | null;
   seats: number;
   status: string;
+  /** Testing bridge: boarding code shown here while the SMS template awaits DLT approval. */
+  boarding_code?: string | null;
   fixed_live_status?: FixedLiveStatus | null;
   payment_method?: string | null;
   payment_status?: string | null;
@@ -61,6 +64,7 @@ export class FixedRideActivePage {
   cancelling = false;
   error: string | null = null;
   booking: FixedBooking | null = null;
+  private pollSub?: Subscription;
   private readonly inactiveStatuses = new Set(['DROPPED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']);
 
   constructor(
@@ -74,9 +78,14 @@ export class FixedRideActivePage {
 
   ionViewWillEnter(): void {
     this.load();
+    // Light poll while the booking is live so the boarding code (and status
+    // flips like BOARDED) show up without a manual refresh.
+    this.pollSub ??= interval(5000).subscribe(() => this.silentReload());
   }
 
   ionViewWillLeave(): void {
+    this.pollSub?.unsubscribe();
+    this.pollSub = undefined;
     if (!this.booking || !this.isActiveBooking(this.booking)) void this.fixedLocation.stop();
   }
 
@@ -101,6 +110,23 @@ export class FixedRideActivePage {
         this.error = err?.error?.message || 'Could not load fixed ride.';
         this.syncFixedLocationStream();
       },
+    });
+  }
+
+  /** Background refresh: no spinner, keeps stale data on transient errors. */
+  private silentReload(): void {
+    if (this.loading || this.cancelling) return;
+    if (this.booking && !this.isActiveBooking(this.booking)) return;
+    const bookingId = Number(this.route.snapshot.paramMap.get('bookingId') || 0);
+    if (!bookingId) return;
+    this.api.get<{ booking: FixedBooking }>('/fixed/bookings/' + bookingId).subscribe({
+      next: (res) => {
+        if (res?.booking) {
+          this.booking = res.booking;
+          this.syncFixedLocationStream();
+        }
+      },
+      error: () => {},
     });
   }
 
@@ -142,6 +168,10 @@ export class FixedRideActivePage {
 
   isActiveBooking(booking: FixedBooking): boolean {
     return !this.inactiveStatuses.has((booking.status || '').toUpperCase());
+  }
+
+  codeDigits(booking: FixedBooking): string[] {
+    return (booking.boarding_code || '').split('');
   }
 
   canCancel(booking: FixedBooking): boolean {

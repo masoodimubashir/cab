@@ -1783,3 +1783,229 @@
 .passenger-actions .passenger-action--drop[disabled] {
   opacity: 0.85 !important;
 }
+
+/* ============ Boarding code popup (full screen) ============ */
+.otp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(13, 27, 42, 0.72); /* navy scrim, driver identity */
+  backdrop-filter: blur(3px);
+  animation: otp-fade 160ms ease-out;
+}
+
+@keyframes otp-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.otp-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  min-height: 50vh;   /* half-screen bottom sheet */
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 24px 24px 0 0;
+  padding: 28px 22px calc(24px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: otp-rise 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes otp-rise {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Board button while its post-close cooldown ticks down */
+.passenger-action--cooldown {
+  opacity: 1 !important;
+  background: var(--fixed-bg, #F4F6F8) !important;
+  color: var(--fixed-dark, #0D1B2A) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.otp-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--fixed-bg);
+  color: var(--fixed-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.otp-head {
+  text-align: center;
+  margin-bottom: 14px;
+
+  &__icon {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 10px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    color: #ffffff;
+    background: linear-gradient(135deg, var(--fixed-green), var(--fixed-dark));
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 850;
+    color: var(--fixed-dark);
+  }
+
+  p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--fixed-muted);
+  }
+}
+
+.otp-hint {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--fixed-muted);
+  max-width: 300px;
+}
+
+/* Four display boxes with one invisible real input stretched on top, so the
+   native numeric keyboard drives all four "digits" at once. */
+.otp-input-wrap {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+
+  &--error .otp-box {
+    border-color: #F04438;
+    animation: otp-shake 240ms ease-in-out;
+  }
+
+  &--locked .otp-box {
+    opacity: 0.45;
+  }
+}
+
+@keyframes otp-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.otp-box {
+  width: 56px;
+  height: 64px;
+  border: 2px solid var(--fixed-line);
+  border-radius: 14px;
+  background: var(--fixed-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 850;
+  color: var(--fixed-dark);
+
+  &--filled {
+    border-color: var(--fixed-green);
+    background: #ffffff;
+  }
+}
+
+.otp-real-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.01; /* keep focusable + keyboard-driven, visually hidden */
+  font-size: 24px;
+  letter-spacing: 32px;
+  border: 0;
+  background: transparent;
+  caret-color: transparent;
+}
+
+.otp-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #B42318;
+
+  ion-icon { font-size: 16px; flex: none; }
+}
+
+.otp-locked {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #B54708;
+  text-align: center;
+}
+
+.otp-dev {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fixed-green);
+}
+
+.otp-confirm {
+  width: 100%;
+  max-width: 320px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 16px;
+  background: var(--fixed-green);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 850;
+  margin-top: auto;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+
+  ion-spinner { width: 22px; height: 22px; }
+}
+
+.otp-resend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+  background: none;
+  border: 0;
+  font-size: 14px;
+  font-weight: 750;
+  color: var(--fixed-dark);
+
+  ion-icon { font-size: 16px; }
+
+  &:disabled {
+    color: var(--fixed-muted);
+    opacity: 0.75;
+  }
+}

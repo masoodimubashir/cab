@@ -208,9 +208,16 @@
           </div>
 
           <div class="passenger-actions passenger-actions--triple">
-            <button class="dc-cta passenger-action passenger-action--board dc-press" (click)="board(passenger)" [disabled]="busy || !canBoardPassenger(passenger)">
-              <ion-icon name="log-in-outline"></ion-icon>
-              <span>Board</span>
+            <button
+              *ngIf="canBoardPassenger(passenger) || boardCooldown(passenger) > 0"
+              class="dc-cta passenger-action passenger-action--board dc-press"
+              [class.passenger-action--cooldown]="boardCooldown(passenger) > 0"
+              (click)="board(passenger)"
+              [disabled]="busy || otpSending || !canBoardPassenger(passenger) || boardCooldown(passenger) > 0"
+            >
+              <ion-icon [name]="boardCooldown(passenger) > 0 ? 'time-outline' : 'log-in-outline'"></ion-icon>
+              <span *ngIf="boardCooldown(passenger) <= 0">Board</span>
+              <span *ngIf="boardCooldown(passenger) > 0">Board in {{ boardCooldown(passenger) }}s</span>
             </button>
             <button class="dc-cta dc-cta--ghost passenger-action passenger-action--drop dc-press" (click)="drop(passenger)" [disabled]="busy || !canDropPassenger(passenger)">
               <ion-icon name="log-out-outline"></ion-icon>
@@ -226,4 +233,68 @@
       </ng-container>
     </section>
   </main>
+
+  <!-- ============ Boarding code sheet (half screen, slides up) ============ -->
+  <div class="otp-overlay" *ngIf="otpPassenger">
+    <div class="otp-sheet">
+      <button type="button" class="otp-close" (click)="closeBoardingOtp()" aria-label="Cancel">
+        <ion-icon name="close-outline"></ion-icon>
+      </button>
+
+      <div class="otp-head">
+        <span class="otp-head__icon"><ion-icon name="keypad-outline"></ion-icon></span>
+        <h2>Board {{ otpPassenger.customer_name || 'passenger' }}</h2>
+        <p>{{ otpPassenger.seats }} seat{{ otpPassenger.seats > 1 ? 's' : '' }} · {{ otpPassenger.board || 'Boarding point' }}</p>
+      </div>
+
+      <p class="otp-hint">
+        The passenger just received a boarding code.
+        Ask them for it and type it below.
+      </p>
+
+      <label class="otp-input-wrap" [class.otp-input-wrap--error]="!!otpError" [class.otp-input-wrap--locked]="otpLockedFor > 0">
+        <span class="otp-box" *ngFor="let i of [0, 1, 2, 3]" [class.otp-box--filled]="!!otpDigit(i)">{{ otpDigit(i) }}</span>
+        <input
+          class="otp-real-input"
+          type="tel"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="4"
+          [disabled]="otpVerifying || otpLockedFor > 0"
+          [ngModel]="otpCode"
+          (ngModelChange)="onOtpInput($event)"
+        />
+      </label>
+
+      <p class="otp-error" *ngIf="otpError">
+        <ion-icon name="alert-circle-outline"></ion-icon>
+        <span>{{ otpError }}</span>
+      </p>
+      <p class="otp-locked" *ngIf="otpLockedFor > 0">
+        Locked for {{ otpLockedFor }}s — or mark the passenger no-show.
+      </p>
+      <p class="otp-dev" *ngIf="otpDevCode">DEV code (SMS mock mode): {{ otpDevCode }}</p>
+
+      <button
+        type="button"
+        class="dc-cta otp-confirm dc-press"
+        (click)="confirmBoardingOtp()"
+        [disabled]="otpCode.length !== 4 || otpVerifying || otpLockedFor > 0"
+      >
+        <ion-spinner *ngIf="otpVerifying" name="crescent"></ion-spinner>
+        <span *ngIf="!otpVerifying">Confirm boarding</span>
+      </button>
+
+      <button
+        type="button"
+        class="otp-resend"
+        (click)="resendBoardingOtp()"
+        [disabled]="otpResendIn > 0 || otpLockedFor > 0 || otpSending"
+      >
+        <ion-icon name="refresh-outline"></ion-icon>
+        <span *ngIf="otpResendIn > 0">Resend in {{ otpResendIn }}s</span>
+        <span *ngIf="otpResendIn <= 0">Resend code</span>
+      </button>
+    </div>
+  </div>
 </ion-content>
