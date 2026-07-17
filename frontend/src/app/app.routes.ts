@@ -101,6 +101,14 @@ export const routes: Routes = [
   { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
   { path: 'shuttle-bookings', component: ShuttleBookingsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
 
+  // B5 — customer-refund register (fixed + shuttle, manual settlement).
+  {
+    path: 'refunds',
+    loadComponent: () => import('./admin/refunds/refunds.component').then((m) => m.AdminRefundsComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'rides' },
+  },
+
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard], data: { permission: 'roles_permissions' } },
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard], data: { permission: 'managers' } },
 

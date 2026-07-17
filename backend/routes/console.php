@@ -44,3 +44,10 @@ Schedule::command('routes:dispatch-due')
     ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
+
+// B1: reconcile anything stuck PENDING >15 min against the Razorpay API —
+// the safety net for webhooks that never arrived.
+Schedule::command('payments:reconcile-pending')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

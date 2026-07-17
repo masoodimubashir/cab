@@ -14,8 +14,9 @@ import { DriversListComponent } from './drivers-list.component';
 import { DriverDetailDrawerComponent } from './driver-detail/driver-detail.drawer';
 import { DriversApprovalsTabComponent } from './tabs/drivers-approvals.tab';
 import { DocumentsCatalogTabComponent } from './tabs/documents-catalog.tab';
+import { DriversPayoutsTabComponent } from './tabs/drivers-payouts.tab';
 
-export type DriversTab = 'all' | 'approvals' | 'documents';
+export type DriversTab = 'all' | 'approvals' | 'documents' | 'payouts';
 
 const TAB_FROM_DATA: Record<string, DriversTab> = {
   'drivers-all': 'all',
@@ -45,6 +46,7 @@ const TAB_FROM_DATA: Record<string, DriversTab> = {
     DriverDetailDrawerComponent,
     DriversApprovalsTabComponent,
     DocumentsCatalogTabComponent,
+    DriversPayoutsTabComponent,
   ],
   template: `
     <div class="page">
@@ -68,6 +70,7 @@ const TAB_FROM_DATA: Record<string, DriversTab> = {
           <app-drivers-list                *ngSwitchCase="'all'" />
           <app-drivers-approvals-tab       *ngSwitchCase="'approvals'" />
           <app-documents-catalog-tab       *ngSwitchCase="'documents'" />
+          <app-drivers-payouts-tab         *ngSwitchCase="'payouts'" />
         </ng-container>
       </div>
 
@@ -136,10 +139,11 @@ export class DriversPageComponent implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly cdr = inject(ChangeDetectorRef);
 
-  readonly tabs: { value: DriversTab; label: string; icon: 'user' | 'check' | 'edit' }[] = [
+  readonly tabs: { value: DriversTab; label: string; icon: 'user' | 'check' | 'edit' | 'rupee' }[] = [
     { value: 'all',        label: 'All Drivers',         icon: 'user' },
     { value: 'approvals',  label: 'Approvals',           icon: 'check' },
     { value: 'documents',  label: 'Documents Catalog',   icon: 'edit' },
+    { value: 'payouts',    label: 'Payouts Due',         icon: 'rupee' },
   ];
 
   activeTab: DriversTab = 'all';
@@ -215,7 +219,7 @@ export class DriversPageComponent implements OnInit, OnDestroy {
   }
 
   private normalize(v: string | null): DriversTab | null {
-    return v === 'all' || v === 'approvals' || v === 'documents' ? v : null;
+    return v === 'all' || v === 'approvals' || v === 'documents' || v === 'payouts' ? v : null;
   }
 
   /**

@@ -99,7 +99,7 @@ class ShuttleRefundService
 
     public function resolveManualRefund(ShuttlePassengerBooking $booking, User $actor, ?string $reference, ?float $amount, ?string $note = null): ShuttlePassengerBooking
     {
-        return DB::transaction(function () use ($booking, $reference, $amount) {
+        return DB::transaction(function () use ($booking, $actor, $reference, $amount, $note) {
             /** @var ShuttlePassengerBooking|null $locked */
             $locked = ShuttlePassengerBooking::query()->lockForUpdate()->find($booking->id);
             if (!$locked) {
@@ -113,7 +113,10 @@ class ShuttleRefundService
                 'refund_status' => 'REFUNDED',
                 'payment_status' => 'REFUNDED',
                 'refund_reference' => $reference ?: $locked->refund_reference,
-                'refund_amount' => $amount ?? (float) $locked->fare_amount,
+                'refund_amount' => $amount ?? ($locked->refund_amount ?? (float) $locked->fare_amount),
+                'refund_note' => $note ?: $locked->refund_note,
+                'refunded_by' => $actor->id,
+                'refunded_at' => $locked->refunded_at ?? now(),
             ]);
 
             return $locked->fresh(['journey:id,status,capacity,seats_taken,driver_id,trip_id']);
@@ -129,6 +132,11 @@ class ShuttleRefundService
             'cancelled_at' => now(),
             'cancelled_reason' => $reason,
             'refund_status' => $refundStatus,
+            // APPROVED = owed; record how much so the Refunds register can
+            // lock the amount when the operator marks it paid.
+            'refund_amount' => $refundStatus === 'APPROVED'
+                ? ($booking->refund_amount ?? (float) $booking->fare_amount)
+                : $booking->refund_amount,
         ]);
 
         if ($booking->journey) {

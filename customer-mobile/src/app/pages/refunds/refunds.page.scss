@@ -1,0 +1,129 @@
+/* My refunds — mirrors the Trip history page (pg-* header + filter sheet).
+   Only the refund-card body is page-specific. */
+
+.rf-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: #D33651;
+  font-size: 0.88rem;
+  font-weight: 600;
+  ion-icon { font-size: 1.25rem; flex-shrink: 0; }
+}
+
+.rf-skeletons {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rf-list {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rf-card {
+  display: flex;
+  flex-direction: column;
+
+  &.is-rejected {
+    border: 1px dashed #E6EAEF;
+    .rf-amount { color: #8A929B; text-decoration: line-through; }
+  }
+}
+
+.rf-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.rf-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rf-amount {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-main, #0D1B2A);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rf-trip {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted, #6C757D);
+  line-height: 1.3;
+}
+
+.rf-reason {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #6C757D);
+}
+
+.rf-arrival {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted, #6C757D);
+  background: #F6F8FA;
+  border-radius: 12px;
+  padding: 10px 12px;
+
+  &.is-due {
+    background: rgba(245, 158, 11, 0.1);
+    color: #8A6100;
+  }
+}
+
+.rf-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(18, 179, 91, 0.08);
+  border: 1px solid rgba(18, 179, 91, 0.18);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #0E6B39;
+
+  ion-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; color: var(--dc-green, #12B35B); }
+  span { overflow-wrap: anywhere; }
+}
+
+.rf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #F0F3F6;
+}
+
+.rf-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #6C757D);
+  ion-icon { font-size: 1rem; }
+}
+
+.rf-ref {
+  font-size: 0.78rem;
+  color: var(--text-muted, #6C757D);
+  overflow-wrap: anywhere;
+}

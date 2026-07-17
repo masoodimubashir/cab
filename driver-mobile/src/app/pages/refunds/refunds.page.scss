@@ -1,0 +1,93 @@
+/* Trip refunds — mirrors the Trip history page (pg-* header + filter sheet).
+   Only the refund-card body is page-specific. */
+
+.rf-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: #D33651;
+  font-size: 0.88rem;
+  font-weight: 600;
+  ion-icon { font-size: 1.25rem; flex-shrink: 0; }
+}
+
+.rf-skeletons {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rf-list {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rf-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.rf-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.rf-customer {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-main, #0D1B2A);
+  letter-spacing: -0.01em;
+}
+
+.rf-trip {
+  margin: 4px 0 0;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-muted, #6C757D);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rf-reason {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #6C757D);
+}
+
+.rf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #F0F3F6;
+}
+
+.rf-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #6C757D);
+  ion-icon { font-size: 1rem; }
+}
+
+.rf-amount {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-main, #0D1B2A);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

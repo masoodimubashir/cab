@@ -522,6 +522,169 @@ class AdminDriversController
     }
 
     /**
+     * Payout worklist: every driver the company currently owes money to
+     * (positive derived wallet balance), biggest first. The operator works
+     * down this list — GPay the driver, then "Record payout" on their page.
+     */
+    public function payoutsDue()
+    {
+        $balances = WalletTransaction::query()
+            ->selectRaw("user_id, ROUND(SUM(CASE WHEN type = 'debit' THEN -amount ELSE amount END), 2) AS balance")
+            ->groupBy('user_id')
+            ->havingRaw('balance > 0')
+            ->pluck('balance', 'user_id');
+
+        $drivers = Driver::query()
+            ->whereIn('user_id', $balances->keys())
+            ->with('user:id,name,phone')
+            ->get(['id', 'user_id', 'vehicle_reg_no']);
+
+        $rows = $drivers
+            ->map(fn (Driver $d) => [
+                'driver_id' => $d->id,
+                'user_id' => $d->user_id,
+                'name' => $d->user?->name,
+                'phone' => $d->user?->phone,
+                'vehicle_reg_no' => $d->vehicle_reg_no,
+                'balance' => (float) ($balances[$d->user_id] ?? 0),
+            ])
+            ->sortByDesc('balance')
+            ->values();
+
+        return response()->json([
+            'data' => $rows,
+            'total_owed' => round($rows->sum('balance'), 2),
+        ]);
+    }
+
+    /**
+     * Numbers for the Record-payout modal: total balance split into "he
+     * earned" (payable) vs "he deposited" (his own float — leave it).
+     * Convention: the driver's own spending (commission, subscriptions)
+     * consumes his deposits first; payouts consume earnings.
+     */
+    public function payoutSummary(Driver $driver)
+    {
+        return response()->json($this->walletBreakdown((int) $driver->user_id));
+    }
+
+    /**
+     * Record a payout that was made OUTSIDE the app (GPay/bank/cash) as a
+     * wallet debit, so the ledger keeps matching reality. Guarded by the
+     * operator's min-balance cap and by the current balance itself.
+     */
+    public function recordPayout(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:10000000'],
+            'method' => ['required', 'in:gpay,bank,cash,other'],
+            'reference' => ['nullable', 'string', 'max:120'],
+            'note' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        $user = $driver->user;
+        if (!$user) {
+            return response()->json(['message' => 'This driver has no linked user account.'], 422);
+        }
+
+        $amount = round((float) $data['amount'], 2);
+        $balance = $this->walletService->balance($user);
+
+        // A payout can never exceed what the wallet actually holds — paying a
+        // driver into debt makes no sense and would corrupt the ledger's story.
+        if ($amount > $balance) {
+            return response()->json([
+                'message' => "Payout exceeds the wallet balance (₹" . number_format($balance, 2) . "). Record what was actually owed.",
+            ], 422);
+        }
+
+        // Operator wallet floor (manual moves only) — protects against typos.
+        if ($msg = $this->walletService->capViolation($user, WalletTransaction::TYPE_DEBIT, $amount)) {
+            return response()->json(['message' => $msg], 422);
+        }
+
+        $methodLabel = match ($data['method']) {
+            'gpay' => 'GPay',
+            'bank' => 'Bank transfer',
+            'cash' => 'Cash',
+            default => 'Other',
+        };
+        $reason = 'Payout — ' . $methodLabel
+            . (filled($data['reference'] ?? null) ? ', ref ' . trim($data['reference']) : '')
+            . (filled($data['note'] ?? null) ? ' — ' . trim($data['note']) : '');
+
+        $txn = $this->walletService->recordTransaction(
+            $user,
+            WalletTransaction::TYPE_DEBIT,
+            $amount,
+            $reason,
+            null,
+            $request->user(),
+        );
+
+        return response()->json([
+            'message' => 'Payout recorded.',
+            'transaction' => $txn,
+            'wallet' => $this->walletBreakdown((int) $driver->user_id),
+        ], 201);
+    }
+
+    /**
+     * Split one derived balance into earned vs deposited.
+     *
+     *   deposits  = top-ups + driver-added cash (his own parked money)
+     *   payouts   = debits whose reason starts with "Payout"
+     *   spending  = every other debit (commission, subscriptions, …)
+     *   earnings  = every other credit (ride earnings, tips, cashback)
+     *
+     * Spending eats deposits first; payouts eat earnings. What remains of
+     * earnings is the amount the company still owes the driver.
+     */
+    private function walletBreakdown(int $userId): array
+    {
+        $rows = WalletTransaction::query()
+            ->where('user_id', $userId)
+            ->get(['type', 'amount', 'reason']);
+
+        $deposits = 0.0;
+        $earnings = 0.0;
+        $spending = 0.0;
+        $payouts = 0.0;
+
+        foreach ($rows as $row) {
+            $amount = (float) $row->amount;
+            if ($row->type === WalletTransaction::TYPE_DEBIT) {
+                if (str_starts_with((string) $row->reason, 'Payout')) {
+                    $payouts += $amount;
+                } else {
+                    $spending += $amount;
+                }
+                continue;
+            }
+            // Credit-side rows: top-ups and driver-added cash are the driver's
+            // own money; everything else (earnings, tips, cashback, refunds)
+            // is money the company owes him.
+            if ($row->type === WalletTransaction::TYPE_DRIVER_ADDED_CASH
+                || str_starts_with((string) $row->reason, 'Wallet top-up')) {
+                $deposits += $amount;
+            } else {
+                $earnings += $amount;
+            }
+        }
+
+        $balance = round($deposits + $earnings - $spending - $payouts, 2);
+        $depositsRemaining = round(max(0.0, $deposits - $spending), 2);
+        $earnedRemaining = round(max(0.0, $balance - $depositsRemaining), 2);
+
+        return [
+            'balance' => $balance,
+            'earned_remaining' => $earnedRemaining,
+            'deposits_remaining' => $depositsRemaining,
+            'total_paid_out' => round($payouts, 2),
+        ];
+    }
+
+    /**
      * Stream a document file back to the admin. Files are stored on the
      * non-public disk so a direct URL won't work — this endpoint
      * authenticates the request and pipes the bytes through.
