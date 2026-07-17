@@ -159,6 +159,55 @@ class ShuttleBookingService
         return $confirmed;
     }
 
+    /**
+     * Server-verified confirmation used by the Razorpay webhook and the
+     * pending-payment sweeper: Razorpay already told us the order's payment is
+     * captured, so there is no checkout signature and no logged-in customer.
+     * Idempotent — an already-PAID booking is returned unchanged.
+     */
+    public function confirmPaidServerVerified(ShuttlePassengerBooking $booking, string $razorpayPaymentId, string $source = 'webhook'): ShuttlePassengerBooking
+    {
+        $dispatch = null;
+
+        $confirmed = DB::transaction(function () use ($booking, $razorpayPaymentId, $source, &$dispatch) {
+            $locked = ShuttlePassengerBooking::query()->lockForUpdate()->find($booking->id);
+            if (!$locked) {
+                throw new ReservationException('This Shuttle booking could not be found.', 404);
+            }
+            if ($locked->payment_status === 'PAID') {
+                return $locked->fresh();
+            }
+            if (!in_array($locked->status, ['PAYMENT_PENDING', 'CONFIRMED'], true)) {
+                throw new ReservationException('This Shuttle booking is not waiting for payment.', 422);
+            }
+            if ($locked->razorpay_payment_id && $locked->razorpay_payment_id !== $razorpayPaymentId) {
+                throw new ReservationException('This Shuttle booking is already linked to another payment.', 422);
+            }
+
+            $locked->update([
+                'payment_method' => 'razorpay',
+                'payment_status' => 'PAID',
+                'payment_reference' => $razorpayPaymentId,
+                'razorpay_payment_id' => $razorpayPaymentId,
+                'razorpay_signature' => 'server_verified:' . $source,
+                'status' => 'CONFIRMED',
+            ]);
+
+            $trip = $this->ensureDispatchTrip($locked);
+            if ($trip->wasRecentlyCreated) {
+                $dispatch = [$trip->id, (float) $locked->fare_amount];
+            }
+
+            return $locked->fresh();
+        });
+
+        if ($dispatch) {
+            DispatchHopJob::startChain($dispatch[0], $dispatch[1]);
+        }
+
+        return $confirmed;
+    }
+
     public function shapeBooking(ShuttlePassengerBooking $booking): array
     {
         $booking->loadMissing(['journey:id,status,capacity,seats_taken,trip_id', 'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id']);

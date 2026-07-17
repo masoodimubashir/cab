@@ -58,6 +58,11 @@ const routes: Routes = [
           import('../pages/coupons/coupons.module').then((m) => m.CouponsPageModule),
       },
       {
+        path: 'refunds',
+        loadChildren: () =>
+          import('../pages/refunds/refunds.module').then((m) => m.RefundsPageModule),
+      },
+      {
         path: 'scheduled-rides',
         loadChildren: () =>
           import('../pages/scheduled-rides/scheduled-rides.module').then((m) => m.ScheduledRidesPageModule),

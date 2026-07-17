@@ -51,6 +51,13 @@
         <p>Discount codes you can use on your rides</p>
       </ion-label>
     </ion-item>
+    <ion-item button detail="true" (click)="goRefunds()">
+      <ion-icon name="cash-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>My Refunds</h2>
+        <p>Money coming back to you from cancelled bookings</p>
+      </ion-label>
+    </ion-item>
 
     <ion-item button detail="false" (click)="signOut()" lines="full">
       <ion-icon name="log-out-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>

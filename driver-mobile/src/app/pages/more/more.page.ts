@@ -48,6 +48,10 @@ export class MorePage {
     this.router.navigateByUrl('/subscriptions');
   }
 
+  goRefunds(): void {
+    this.router.navigateByUrl('/refunds');
+  }
+
   async signOut(): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: 'Sign out?',

@@ -19,7 +19,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'drop_stop_id', 'drop_lat', 'drop_lng', 'drop_address',
     'fare_amount', 'commission_percent', 'commission_amount', 'promo_discount_amount', 'coupon_assignment_id',
     'payment_method', 'payment_status', 'payment_reference', 'has_extra_luggage', 'extra_luggage_count', 'luggage_surcharge_amount',
-    'refund_status', 'refund_reference', 'refund_amount', 'status', 'rating_score', 'rating_comment',
+    'refund_status', 'refund_reference', 'refund_amount', 'refund_method', 'refund_note', 'refunded_by', 'refunded_at',
+    'status', 'rating_score', 'rating_comment',
     'boarded_at', 'dropped_at', 'cancelled_at',
     'fixed_stop_arrival_started_at', 'fixed_stop_arrived_at', 'fixed_no_show_after_at', 'fixed_driver_missed_after_at',
     'fixed_approaching_notified_at', 'fixed_arrived_notified_at', 'fixed_leaving_soon_notified_at',
@@ -52,6 +53,8 @@ class SeatReservation extends Model
         'extra_luggage_count' => 'integer',
         'luggage_surcharge_amount' => 'float',
         'refund_amount' => 'float',
+        'refunded_by' => 'integer',
+        'refunded_at' => 'datetime',
         'rating_score' => 'integer',
         'boarded_at' => 'datetime',
         'dropped_at' => 'datetime',
@@ -88,6 +91,12 @@ class SeatReservation extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    /** Admin who marked the manual refund as sent (B5 refund register). */
+    public function refundedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'refunded_by');
     }
 
     public function boardStop(): BelongsTo

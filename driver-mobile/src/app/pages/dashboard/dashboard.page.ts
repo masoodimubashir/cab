@@ -131,6 +131,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Earnings', sub: "Today & this week's income", icon: 'cash-outline', path: '/tabs/earnings' },
         { label: 'Wallet', sub: 'Balance & payouts', icon: 'wallet-outline', path: '/tabs/wallet' },
         { label: 'Trip history', sub: 'Your past rides', icon: 'time-outline', path: '/tabs/history' },
+        { label: 'Trip refunds', sub: 'Passenger refunds — paid by DreamCabs, not you', icon: 'receipt-outline', path: '/refunds' },
       ],
     },
     {

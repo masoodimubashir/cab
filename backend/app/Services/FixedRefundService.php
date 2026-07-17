@@ -7,13 +7,11 @@ use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class FixedRefundService
 {
     public function __construct(
         private readonly WalletService $wallet,
-        private readonly RazorpayService $razorpay,
         private readonly FixedBookingEventService $events,
         private readonly NotificationCenter $notifier,
     ) {}
@@ -53,7 +51,7 @@ class FixedRefundService
                 'customer_cancelled',
                 'Customer cancelled booking',
                 $refundOutcome['refund_status'] === 'REFUNDED'
-                    ? 'Customer cancelled before the cutoff and the Razorpay refund was processed.'
+                    ? 'Customer cancelled before the cutoff and the refund was credited to their wallet.'
                     : 'Customer cancelled the fixed booking. Refund status: ' . strtolower((string) $refundOutcome['refund_status']) . '.',
                 [
                     'refund_status' => $refundOutcome['refund_status'],
@@ -285,6 +283,12 @@ class FixedRefundService
                 );
             }
 
+            $reservation->forceFill([
+                'refund_amount' => (float) $reservation->fare_amount,
+                'refund_method' => 'wallet',
+                'refunded_at' => now(),
+            ])->save();
+
             return [
                 'refunded' => true,
                 'refund_pending' => false,
@@ -294,49 +298,20 @@ class FixedRefundService
         }
 
         if ($reservation->payment_method === 'razorpay') {
-            $paymentReference = trim((string) $reservation->payment_reference);
-            if ($paymentReference === '') {
-                return [
-                    'refunded' => false,
-                    'refund_pending' => true,
-                    'refund_status' => 'APPROVED',
-                    'payment_status' => $reservation->payment_status ?: 'PAID',
-                ];
-            }
+            // B5 policy: captured Razorpay money is returned MANUALLY by the
+            // operator (GPay/bank/Razorpay dashboard) outside the app. We only
+            // record the debt here — APPROVED means "owed" — and the booking
+            // shows up in the admin Refunds register until it is marked paid.
+            $reservation->forceFill([
+                'refund_amount' => (float) $reservation->fare_amount,
+            ])->save();
 
-            try {
-                $amountPaise = max(1, (int) round(((float) $reservation->fare_amount) * 100));
-                $refund = $this->razorpay->refundPayment($paymentReference, $amountPaise, [
-                    'module' => 'fixed',
-                    'reservation_id' => (string) $reservation->id,
-                ]);
-                $processed = strtolower((string) $refund['status']) === 'processed';
-
-                $reservation->forceFill([
-                    'refund_reference' => $refund['id'],
-                    'refund_amount' => ((int) $refund['amount']) / 100,
-                ])->save();
-
-                return [
-                    'refunded' => $processed,
-                    'refund_pending' => !$processed,
-                    'refund_status' => $processed ? 'REFUNDED' : 'APPROVED',
-                    'payment_status' => $processed ? 'REFUNDED' : ($reservation->payment_status ?: 'PAID'),
-                ];
-            } catch (\Throwable $e) {
-                Log::warning('Fixed booking Razorpay refund could not be created', [
-                    'seat_reservation_id' => $reservation->id,
-                    'payment_reference' => $paymentReference,
-                    'error' => $e->getMessage(),
-                ]);
-
-                return [
-                    'refunded' => false,
-                    'refund_pending' => true,
-                    'refund_status' => 'APPROVED',
-                    'payment_status' => $reservation->payment_status ?: 'PAID',
-                ];
-            }
+            return [
+                'refunded' => false,
+                'refund_pending' => true,
+                'refund_status' => 'APPROVED',
+                'payment_status' => $reservation->payment_status ?: 'PAID',
+            ];
         }
 
         return [

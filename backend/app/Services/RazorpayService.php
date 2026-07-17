@@ -85,6 +85,76 @@ class RazorpayService
     }
 
     /**
+     * Fetches an order from Razorpay. Used by the pending-payment sweeper to
+     * ask "what actually happened to this order?" when no webhook arrived.
+     *
+     * @return array{id:string,status:string,amount:int,amount_paid:int}|null
+     */
+    public function fetchOrder(string $orderId): ?array
+    {
+        try {
+            $order = $this->api->order->fetch($orderId);
+
+            return [
+                'id' => (string) $order->id,
+                // created | attempted | paid
+                'status' => (string) $order->status,
+                'amount' => (int) $order->amount,
+                'amount_paid' => (int) ($order->amount_paid ?? 0),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Lists the payment attempts made against an order (a customer can fail a
+     * few times and then succeed on the same order).
+     *
+     * @return array<int, array{id:string,status:string,amount:int}>
+     */
+    public function fetchOrderPayments(string $orderId): array
+    {
+        try {
+            $payments = $this->api->order->fetch($orderId)->payments();
+            $out = [];
+            foreach ($payments->items as $payment) {
+                $out[] = [
+                    'id' => (string) $payment->id,
+                    // created | authorized | captured | refunded | failed
+                    'status' => (string) $payment->status,
+                    'amount' => (int) $payment->amount,
+                ];
+            }
+
+            return $out;
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Fetches a refund's current state (pending | processed | failed).
+     *
+     * @return array{id:string,payment_id:string,status:string,amount:int}|null
+     */
+    public function fetchRefund(string $refundId): ?array
+    {
+        try {
+            $refund = $this->api->refund->fetch($refundId);
+
+            return [
+                'id' => (string) $refund->id,
+                'payment_id' => (string) ($refund->payment_id ?? ''),
+                'status' => (string) ($refund->status ?? 'pending'),
+                'amount' => (int) ($refund->amount ?? 0),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Verifies webhook signature. Returns boolean.
      */
     public function verifyWebhookSignature(string $body, string $signature): bool

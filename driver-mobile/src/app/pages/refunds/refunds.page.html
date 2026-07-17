@@ -1,0 +1,104 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+    </ion-buttons>
+    <ion-buttons slot="end">
+      <ion-button class="dc-press" (click)="refresh()" aria-label="Reload">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+      </ion-button>
+      <button class="pg-action dc-press" (click)="openFilters()">
+        <ion-icon name="options-outline"></ion-icon>
+        Filter
+        <span class="pg-action__count" *ngIf="activeFilterCount">{{ activeFilterCount }}</span>
+      </button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <h1 class="pg-title">Trip refunds</h1>
+  </div>
+
+  <div class="pg-body pg-anim-body">
+    <!-- Error. -->
+    <div *ngIf="error" class="dc-card rf-error">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>{{ error }}</span>
+    </div>
+
+    <!-- Loading skeletons. -->
+    <div *ngIf="loading" class="rf-skeletons">
+      <div class="dc-skeleton" style="height:120px"></div>
+      <div class="dc-skeleton" style="height:120px"></div>
+      <div class="dc-skeleton" style="height:120px"></div>
+    </div>
+
+    <!-- Refunds list. -->
+    <div *ngIf="!loading && filteredRows.length" class="rf-list dc-stagger">
+      <div *ngFor="let r of filteredRows" class="dc-card rf-card dc-press">
+        <div class="rf-badges">
+          <span class="dc-badge" [ngClass]="badgeClass(r)">{{ statusLabel(r) }}</span>
+        </div>
+
+        <p class="rf-customer">{{ r.customer_name || 'Passenger' }}</p>
+        <p class="rf-trip">{{ r.trip_label }}</p>
+        <p class="rf-reason" *ngIf="r.reason">{{ r.reason }}</p>
+
+        <div class="rf-foot">
+          <span class="rf-date" *ngIf="metaDate(r) as d">
+            <ion-icon name="time-outline"></ion-icon>
+            {{ d | date: 'dd MMM yyyy' }}<ng-container *ngIf="r.state === 'refunded' && r.refund_method_label"> · {{ r.refund_method_label }}</ng-container>
+          </span>
+          <span class="rf-amount">₹{{ r.amount | number: '1.0-2' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty state. -->
+    <div *ngIf="!loading && !filteredRows.length && !error" class="dc-empty dc-anim">
+      <div class="dc-empty__icon"><ion-icon name="cash-outline"></ion-icon></div>
+      <strong>No refunds found</strong>
+      <span>No refunds match these filters. Try a different date range or status.</span>
+    </div>
+  </div>
+
+  <!-- Filter bottom sheet. -->
+  <ion-modal class="pg-filter-modal" [isOpen]="filterOpen" [initialBreakpoint]="0.6" [breakpoints]="[0,0.6,1]" (didDismiss)="closeFilters()">
+    <ng-template>
+      <div class="filter-sheet">
+        <div class="filter-sheet__grab"></div>
+        <div class="filter-sheet__head">
+          <h2>Filters</h2>
+          <button class="dc-press" (click)="resetFilters()">Reset</button>
+        </div>
+
+        <!-- Date range filter. -->
+        <div class="filter-sheet__group">
+          <p class="dc-section">WHEN</p>
+          <div class="dc-pills">
+            <button class="dc-pill dc-press" [class.is-active]="range === 'all'" (click)="setRange('all')">All</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'today'" (click)="setRange('today')">Today</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'week'" (click)="setRange('week')">This week</button>
+            <button class="dc-pill dc-press" [class.is-active]="range === 'month'" (click)="setRange('month')">This month</button>
+          </div>
+        </div>
+
+        <!-- Status filter. -->
+        <div class="filter-sheet__group">
+          <p class="dc-section">STATUS</p>
+          <div class="dc-pills">
+            <button class="dc-pill dc-press" [class.is-active]="status === 'all'" (click)="setStatus('all')">All</button>
+            <button class="dc-pill dc-press" [class.is-active]="status === 'due'" (click)="setStatus('due')">Pending</button>
+            <button class="dc-pill dc-press" [class.is-active]="status === 'refunded'" (click)="setStatus('refunded')">Refunded</button>
+          </div>
+        </div>
+
+        <div class="filter-sheet__footer">
+          <button class="dc-cta dc-press" (click)="closeFilters()">Show results</button>
+        </div>
+      </div>
+    </ng-template>
+  </ion-modal>
+</ion-content>

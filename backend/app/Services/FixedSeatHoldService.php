@@ -258,6 +258,162 @@ class FixedSeatHoldService
     }
 
 
+    /**
+     * Server-verified confirmation used by the Razorpay webhook and the
+     * pending-payment sweeper. By the time this runs, Razorpay itself has told
+     * us (signed webhook / Orders API) that the money for this hold's order is
+     * CAPTURED — so there is no checkout signature to verify and no logged-in
+     * customer making the call.
+     *
+     * EXPIRED holds are accepted too: the customer paid, so if the seats are
+     * still free we honour the booking. When confirmation is impossible
+     * (seats gone, departure closed, coupon burned) this throws a
+     * ReservationException and the caller auto-refunds the captured payment.
+     */
+    public function confirmPaidHold(FixedSeatHold $hold, string $razorpayPaymentId, string $source = 'webhook'): SeatReservation
+    {
+        $alreadyConfirmed = false;
+
+        $reservation = DB::transaction(function () use ($hold, $razorpayPaymentId, $source, &$alreadyConfirmed) {
+            $lockedHold = FixedSeatHold::query()->lockForUpdate()->find($hold->id);
+            if (!$lockedHold) {
+                throw new ReservationException('This seat hold could not be found.', 404);
+            }
+
+            // Idempotency: verify endpoint / a duplicate webhook may have
+            // already confirmed this hold. Return the existing reservation.
+            if ($lockedHold->status === 'CONFIRMED') {
+                $existing = SeatReservation::query()
+                    ->where('route_departure_id', $lockedHold->route_departure_id)
+                    ->where('customer_id', $lockedHold->customer_id)
+                    ->where('payment_reference', $lockedHold->payment_reference ?: $razorpayPaymentId)
+                    ->first();
+                if ($existing) {
+                    $alreadyConfirmed = true;
+
+                    return $existing;
+                }
+                throw new ReservationException('This seat hold is already confirmed.', 409);
+            }
+
+            if (!in_array($lockedHold->status, ['HELD', 'EXPIRED'], true)) {
+                throw new ReservationException('This seat hold is no longer active.', 422);
+            }
+            if ($lockedHold->razorpay_payment_id && $lockedHold->razorpay_payment_id !== $razorpayPaymentId) {
+                throw new ReservationException('This seat hold is already linked to another payment.', 422);
+            }
+
+            $customer = $lockedHold->customer()->first();
+            if (!$customer) {
+                throw new ReservationException('The customer for this seat hold could not be found.', 404);
+            }
+
+            $dep = RouteDeparture::query()->with('route')->lockForUpdate()->find($lockedHold->route_departure_id);
+            if (!$dep) {
+                throw new ReservationException('This departure could not be found.', 404);
+            }
+
+            $this->availability->assertBookableDeparture($dep, true);
+            $route = $dep->route;
+            if (!$route) {
+                throw new ReservationException('This fixed route is not available.', 404);
+            }
+
+            $boardStop = $this->resolveStop($route->id, (int) $lockedHold->board_stop_id, 'is_pickup', 'boarding');
+            $dropStop = $this->resolveStop($route->id, (int) $lockedHold->drop_stop_id, 'is_drop', 'drop');
+            if ((int) $boardStop->seq >= (int) $dropStop->seq) {
+                throw new ReservationException('Drop stop must come after the boarding stop.', 422);
+            }
+            $this->availability->assertFutureBoardingStop($dep, $boardStop);
+
+            $remainingForThisHold = $this->availability->seatsRemainingForSegment($dep, $boardStop, $dropStop, $lockedHold->id);
+            if ($remainingForThisHold < (int) $lockedHold->seats) {
+                throw new ReservationException('The held seats are no longer available between those stops.', 422);
+            }
+
+            $extraLuggageCount = max(0, (int) $lockedHold->extra_luggage_count);
+            $luggageRemainingForThisHold = $this->availability->luggageRemainingForSegment($dep, $boardStop, $dropStop, $lockedHold->id);
+            if ($extraLuggageCount > $luggageRemainingForThisHold) {
+                throw new ReservationException('The held extra luggage space is no longer available between those stops.', 422);
+            }
+
+            $expectedAmount = $this->pricing->bookingAmount($route, (int) $lockedHold->seats, $extraLuggageCount);
+            if (round((float) ($lockedHold->original_amount ?? $lockedHold->amount), 2) !== round($expectedAmount, 2)) {
+                throw new ReservationException('The hold amount is no longer valid.', 409);
+            }
+            $this->assertCouponStillRedeemable($lockedHold, $customer, $dep, $route, $boardStop, $dropStop, $expectedAmount);
+
+            $commission = $this->bookingCommissionForDeparture($dep, $route, (float) $lockedHold->amount, (int) $lockedHold->seats);
+
+            $reservation = SeatReservation::query()->create([
+                'route_departure_id' => $dep->id,
+                'trip_id' => $dep->trip_id,
+                'route_id' => $route->id,
+                'customer_id' => $customer->id,
+                'seats' => (int) $lockedHold->seats,
+                'booking_channel' => 'advance',
+                'board_stop_id' => $boardStop->id,
+                'board_lat' => (float) $boardStop->lat,
+                'board_lng' => (float) $boardStop->lng,
+                'board_address' => $boardStop->name,
+                'drop_stop_id' => $dropStop->id,
+                'drop_lat' => (float) $dropStop->lat,
+                'drop_lng' => (float) $dropStop->lng,
+                'drop_address' => $dropStop->name,
+                'fare_amount' => (float) $lockedHold->amount,
+                'commission_percent' => (float) $commission['percent'],
+                'commission_amount' => (float) $commission['amount'],
+                'promo_discount_amount' => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
+                'coupon_assignment_id' => $lockedHold->coupon_assignment_id,
+                'payment_method' => 'razorpay',
+                'payment_status' => 'PAID',
+                'payment_reference' => $razorpayPaymentId,
+                'has_extra_luggage' => $extraLuggageCount > 0,
+                'extra_luggage_count' => $extraLuggageCount,
+                'luggage_surcharge_amount' => (float) $lockedHold->luggage_surcharge_amount,
+                'refund_status' => 'NONE',
+                'status' => 'CONFIRMED',
+            ]);
+
+            $dep->increment('seats_taken', (int) $lockedHold->seats);
+            if ($extraLuggageCount > 0) {
+                $dep->increment('luggage_taken', $extraLuggageCount);
+            }
+            $lockedHold->update([
+                'status' => 'CONFIRMED',
+                'payment_reference' => $razorpayPaymentId,
+                'razorpay_payment_id' => $razorpayPaymentId,
+                'razorpay_signature' => 'server_verified:' . $source,
+            ]);
+
+            $this->markCouponRedeemed($lockedHold);
+
+            $this->events->record(
+                $reservation,
+                'booking_confirmed',
+                'Booking confirmed',
+                $source === 'sweeper'
+                    ? 'Razorpay confirmed the payment during reconciliation and the fixed booking was completed automatically.'
+                    : 'Razorpay confirmed the payment via webhook and the fixed booking was completed automatically.',
+                [
+                    'payment_reference' => $razorpayPaymentId,
+                    'booking_channel' => 'advance',
+                    'confirmed_via' => $source,
+                ],
+                $customer,
+            );
+
+            return $reservation;
+        });
+
+        if (!$alreadyConfirmed) {
+            $this->broadcastDepartureUpdate((int) $reservation->route_departure_id, 'booking_confirmed');
+            $this->notifyBookingConfirmed($reservation);
+        }
+
+        return $reservation;
+    }
+
     public function confirmTestHold(User $customer, FixedSeatHold $hold, string $bookingChannel = "advance"): SeatReservation
     {
         $this->availability->expireHoldIfNeeded($hold);

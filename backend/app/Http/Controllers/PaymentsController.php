@@ -7,6 +7,7 @@ use App\Models\Trip;
 use App\Services\CouponService;
 use App\Services\InvoiceGeneratorService;
 use App\Services\PaymentModeService;
+use App\Services\PaymentReconciliationService;
 use App\Services\RazorpayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -304,7 +305,16 @@ class PaymentsController extends Controller
             ]);
     }
 
-    public function razorpayWebhook(Request $request, RazorpayService $razorpayService)
+    /**
+     * B1 — Razorpay's server-to-server callback. Signature-verified against
+     * RAZORPAY_WEBHOOK_SECRET (fail-closed while blank), then delegated to
+     * PaymentReconciliationService which owns all four payment flows (solo,
+     * fixed, shuttle, wallet top-up) plus refund settlement.
+     *
+     * Unmatched events return 200 on purpose: Razorpay disables webhooks that
+     * keep failing, and the scheduled sweeper re-checks anything we missed.
+     */
+    public function razorpayWebhook(Request $request, RazorpayService $razorpayService, PaymentReconciliationService $reconciler)
     {
         $signature = (string) $request->header('X-Razorpay-Signature', '');
         $body = $request->getContent();
@@ -320,57 +330,66 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Invalid webhook payload.'], 400);
         }
 
+        $event = (string) ($payload['event'] ?? '');
+
+        // Refund lifecycle: flips APPROVED → REFUNDED (or logs the failure).
+        if (in_array($event, ['refund.processed', 'refund.failed'], true)) {
+            $refund = $payload['payload']['refund']['entity'] ?? null;
+            if (!is_array($refund) || empty($refund['id'])) {
+                return response()->json(['message' => 'Webhook missing refund entity.'], 400);
+            }
+
+            $result = $reconciler->applyRefund(
+                (string) $refund['id'],
+                (string) ($refund['payment_id'] ?? ''),
+                (int) ($refund['amount'] ?? 0),
+                $event === 'refund.processed',
+            );
+
+            Log::info('DreamCabs Razorpay refund webhook processed', [
+                'event' => $event,
+                'refund_id' => $refund['id'],
+            ] + $result);
+
+            return response()->json(['ok' => true] + $result);
+        }
+
+        // Payment lifecycle (also covers legacy payloads with no event name).
         $entity = $payload['payload']['payment']['entity'] ?? null;
         if (!$entity || !is_array($entity)) {
-            return response()->json(['message' => 'Webhook missing payment entity.'], 400);
+            // Some other event type we don't handle — acknowledge and move on.
+            Log::info('DreamCabs Razorpay webhook ignored (unhandled event)', ['event' => $event]);
+            return response()->json(['ok' => true, 'ignored' => true]);
         }
 
-        $razorpayPaymentId = $entity['id'] ?? null;
+        $razorpayPaymentId = (string) ($entity['id'] ?? '');
         $razorpayOrderId = $entity['order_id'] ?? null;
-        $status = $entity['status'] ?? null;
+        $status = (string) ($entity['status'] ?? '');
 
-        if (!$razorpayPaymentId || !$razorpayOrderId) {
-            return response()->json(['message' => 'Webhook missing IDs.'], 400);
+        if ($razorpayPaymentId === '') {
+            return response()->json(['message' => 'Webhook missing payment id.'], 400);
         }
 
-        $payment = Payment::query()
-            ->where('razorpay_payment_id', $razorpayPaymentId)
-            ->orWhere('razorpay_order_id', $razorpayOrderId)
-            ->first();
+        $captured = $event === 'payment.captured'
+            || ($event === '' && in_array($status, ['captured', 'success', 'paid'], true));
 
-        if (!$payment) {
-            return response()->json(['message' => 'Payment record not found.'], 404);
-        }
-
-        $captured = in_array($status, ['captured', 'success', 'paid'], true);
-        $payment->razorpay_payment_id = $razorpayPaymentId;
-        $payment->razorpay_order_id = $razorpayOrderId;
-        $payment->provider_response = $payload;
-        $payment->status = $captured ? 'SUCCESS' : 'FAILED';
-        $payment->paid_at = $captured ? now() : null;
-        $payment->save();
+        $result = $reconciler->applyPayment(
+            $razorpayPaymentId,
+            $razorpayOrderId ? (string) $razorpayOrderId : null,
+            $captured,
+            $payload,
+            'webhook',
+        );
 
         Log::info('DreamCabs Razorpay webhook processed', [
+            'event' => $event,
             'razorpay_payment_id' => $razorpayPaymentId,
             'razorpay_order_id' => $razorpayOrderId,
             'captured' => $captured,
             'status' => $status,
-        ]);
+        ] + $result);
 
-        // Generate invoice on successful payment (best-effort) + burn coupon.
-        if ($captured) {
-            try {
-                $trip = $payment->trip()->first();
-                if ($trip) {
-                    $this->markCouponRedeemed($payment, $trip);
-                    app(InvoiceGeneratorService::class)->generateForTrip($trip);
-                }
-            } catch (\Throwable) {
-                // Avoid failing webhook; invoice can be generated later via API.
-            }
-        }
-
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => true] + $result);
     }
 }
 

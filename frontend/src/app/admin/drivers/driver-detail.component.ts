@@ -118,6 +118,9 @@ const BLOCK_REASONS = [
             <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
               Send OTP
             </tm-button>
+            <tm-button variant="green" size="sm" icon="rupee" (clicked)="openPayout()">
+              Record payout
+            </tm-button>
             <tm-button variant="outline" size="sm" [icon]="profile.is_suspended ? 'check' : 'shield'" (clicked)="openBlockDelete()">
               {{ profile.is_suspended ? 'Manage access' : 'Block or delete' }}
             </tm-button>
@@ -567,6 +570,94 @@ const BLOCK_REASONS = [
           (clicked)="submitDelete()"
         >
           Delete permanently
+        </tm-button>
+      </ng-container>
+    </tm-modal>
+
+    <!-- =================== Record payout modal =================== -->
+    <tm-modal
+      [open]="payoutOpen"
+      title="Record a payout"
+      (closed)="payoutOpen = false"
+    >
+      <div slot="body">
+        <p class="hint hint--top">
+          The money moves by GPay/bank outside the app — this only records it,
+          so the wallet balance stays true.
+        </p>
+
+        <div class="payout-summary" *ngIf="payoutSummary; else payoutLoadingTpl">
+          <div class="payout-summary__row">
+            <span>Total in wallet</span>
+            <strong>₹ {{ payoutSummary.balance | number:'1.2-2' }}</strong>
+          </div>
+          <div class="payout-summary__row payout-summary__row--pay">
+            <span>He earned — pay this</span>
+            <strong>₹ {{ payoutSummary.earned_remaining | number:'1.2-2' }}</strong>
+          </div>
+          <div class="payout-summary__row">
+            <span>He deposited — leave this</span>
+            <strong>₹ {{ payoutSummary.deposits_remaining | number:'1.2-2' }}</strong>
+          </div>
+          <div class="payout-summary__row payout-summary__row--muted">
+            <span>Paid out so far</span>
+            <strong>₹ {{ payoutSummary.total_paid_out | number:'1.2-2' }}</strong>
+          </div>
+        </div>
+        <ng-template #payoutLoadingTpl>
+          <p class="hint">Loading wallet summary…</p>
+        </ng-template>
+
+        <label class="lbl"><span class="req">*</span> Amount paid (₹)</label>
+        <input
+          class="form-input"
+          type="number"
+          min="1"
+          [(ngModel)]="payoutAmount"
+          placeholder="0.00"
+        />
+
+        <label class="lbl"><span class="req">*</span> Paid via</label>
+        <select class="form-input" [(ngModel)]="payoutMethod">
+          <option value="gpay">GPay / UPI</option>
+          <option value="bank">Bank transfer</option>
+          <option value="cash">Cash</option>
+          <option value="other">Other</option>
+        </select>
+
+        <label class="lbl">Reference (UPI/UTR number)</label>
+        <input
+          class="form-input"
+          type="text"
+          maxlength="120"
+          [(ngModel)]="payoutReference"
+          placeholder="e.g. UPI ref 338245…"
+        />
+
+        <label class="lbl">Note</label>
+        <input
+          class="form-input"
+          type="text"
+          maxlength="300"
+          [(ngModel)]="payoutNote"
+          placeholder="e.g. week 28 earnings"
+        />
+
+        <div class="notice notice--danger" *ngIf="payoutError">
+          <tm-icon name="shield" [size]="14" />
+          <span>{{ payoutError }}</span>
+        </div>
+      </div>
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="payoutOpen = false">Cancel</tm-button>
+        <tm-button
+          variant="green"
+          icon="check"
+          [loading]="payoutSaving"
+          [disabled]="!payoutAmount || payoutAmount <= 0"
+          (clicked)="submitPayout()"
+        >
+          Record payout
         </tm-button>
       </ng-container>
     </tm-modal>
@@ -1364,6 +1455,30 @@ const BLOCK_REASONS = [
     }
     @keyframes dd-spin { to { transform: rotate(360deg); } }
 
+    /* -------------------- Payout modal -------------------- */
+    .payout-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--tm-canvas-2);
+      border: 1px solid var(--tm-border);
+      border-radius: var(--tm-radius-md);
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .payout-summary__row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12.5px;
+      color: var(--tm-text-muted);
+    }
+    .payout-summary__row strong { font-variant-numeric: tabular-nums; color: var(--tm-text); }
+    .payout-summary__row--pay { font-weight: 700; }
+    .payout-summary__row--pay span { color: var(--tm-green); }
+    .payout-summary__row--pay strong { color: var(--tm-green); font-size: 14px; }
+    .payout-summary__row--muted { opacity: 0.75; }
+
     /* -------------------- Modal form pieces -------------------- */
     .lbl {
       display: block;
@@ -1626,6 +1741,17 @@ export class DriverDetailComponent implements OnInit {
   unsubOpen = false;
   unsubPush = false;
   unsubSaving = false;
+
+  // Record payout modal — logs an outside-the-app GPay/bank payment as a
+  // wallet debit so the ledger keeps matching reality.
+  payoutOpen = false;
+  payoutSummary: { balance: number; earned_remaining: number; deposits_remaining: number; total_paid_out: number } | null = null;
+  payoutAmount: number | null = null;
+  payoutMethod: 'gpay' | 'bank' | 'cash' | 'other' = 'gpay';
+  payoutReference = '';
+  payoutNote = '';
+  payoutSaving = false;
+  payoutError: string | null = null;
 
 
   readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' }[] = [
@@ -1923,6 +2049,52 @@ export class DriverDetailComponent implements OnInit {
   }
 
   // -------------------- Data loading --------------------
+  // -------------------- Record payout --------------------
+  openPayout(): void {
+    this.payoutOpen = true;
+    this.payoutSummary = null;
+    this.payoutAmount = null;
+    this.payoutMethod = 'gpay';
+    this.payoutReference = '';
+    this.payoutNote = '';
+    this.payoutError = null;
+    this.api.get<any>(`/admin/drivers/${this.driverId}/wallet/payout-summary`).subscribe({
+      next: (res) => {
+        this.payoutSummary = res;
+        // Pre-fill with the payable amount (earnings only, float untouched).
+        this.payoutAmount = res?.earned_remaining > 0 ? res.earned_remaining : null;
+      },
+      error: (err) => {
+        this.payoutError = err?.error?.message || 'Could not load the wallet summary.';
+      },
+    });
+  }
+
+  submitPayout(): void {
+    if (!this.payoutAmount || this.payoutAmount <= 0 || this.payoutSaving) return;
+    this.payoutSaving = true;
+    this.payoutError = null;
+    this.api.post<any>(`/admin/drivers/${this.driverId}/wallet/payout`, {
+      amount: this.payoutAmount,
+      method: this.payoutMethod,
+      reference: this.payoutReference.trim() || null,
+      note: this.payoutNote.trim() || null,
+    }).subscribe({
+      next: (res) => {
+        this.payoutSaving = false;
+        this.payoutOpen = false;
+        this.toast.success(`Payout of ₹${Number(this.payoutAmount).toFixed(2)} recorded`);
+        this.loadProfile();
+        this.loadTab('wallet');
+        this.activeTab = 'wallet';
+      },
+      error: (err) => {
+        this.payoutSaving = false;
+        this.payoutError = err?.error?.message || 'Could not record the payout.';
+      },
+    });
+  }
+
   loadProfile(): void {
     this.api.get<any>(`/admin/drivers/${this.driverId}/profile`).subscribe({
       next: (res) => {

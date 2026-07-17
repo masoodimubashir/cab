@@ -17,6 +17,7 @@ use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FixedRoutesController;
 use App\Http\Controllers\FixedBookingsController;
 use App\Http\Controllers\FixedDriverController;
+use App\Http\Controllers\RefundsController;
 use App\Http\Controllers\DriverManifestController;
 use App\Http\Controllers\FareNegotiationController;
 use App\Http\Controllers\DriversController;
@@ -243,6 +244,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/drivers/{driver}/unblock', [AdminDriversController::class, 'unblock'])->middleware('permission:drivers');
     Route::delete('/admin/drivers/{driver}', [AdminDriversController::class, 'destroy'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus'])->middleware('permission:drivers');
+    // Payouts: the money leaves by GPay/bank OUTSIDE the app (manual by
+    // design); these record the fact in the wallet ledger so balances stay
+    // true. payouts-due must be registered before the {driver} routes.
+    Route::get('/admin/drivers/payouts-due', [AdminDriversController::class, 'payoutsDue'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/wallet/payout-summary', [AdminDriversController::class, 'payoutSummary'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/wallet/payout', [AdminDriversController::class, 'recordPayout'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/full', [AdminDriversController::class, 'fullProfile'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/{driver}', [AdminDriversController::class, 'updateDriver'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/documents', [AdminDriversController::class, 'uploadDocument'])->middleware('permission:drivers');
@@ -467,6 +474,10 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
     Route::get('/fixed/bookings/{reservation}', [FixedBookingsController::class, 'show']);
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
+    // B5 — "My refunds": everything owed to / returned to this customer
+    // across fixed + shuttle bookings, with how and when it arrives.
+    Route::get('/customer/refunds', [RefundsController::class, 'customerIndex']);
+
     Route::get('/shuttle/bookings', [ShuttleBookingsController::class, 'index']);
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/razorpay-order', [ShuttleBookingsController::class, 'createRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
@@ -475,6 +486,10 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
+    // B5 — refunds on this driver's trips (informational: paid by the
+    // company, never deducted from the driver).
+    Route::get('/driver/refunds', [RefundsController::class, 'driverIndex']);
+
     Route::get('/fixed/driver/routes', [FixedDriverController::class, 'routes']);
     Route::get('/fixed/driver/vehicles', [FixedDriverController::class, 'vehicles']);
     Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
@@ -503,6 +518,11 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::get('/admin/cities/{city}/fixed-bookings', [AdminFixedDeparturesController::class, 'bookings']);
     Route::get('/admin/cities/{city}/shuttle-bookings', [AdminShuttleBookingsController::class, 'index']);
     Route::post('/admin/cities/{city}/shuttle-bookings/{booking}/resolve-refund', [AdminShuttleBookingsController::class, 'resolveRefund']);
+
+    // B5 — the customer-refund register: who is owed money, why, and the
+    // proof trail once the operator sends it (GPay/bank, outside the app).
+    Route::get('/admin/refunds', [RefundsController::class, 'adminIndex']);
+    Route::post('/admin/refunds/{module}/{id}/mark-refunded', [RefundsController::class, 'adminMarkRefunded'])->whereIn('module', ['fixed', 'shuttle'])->whereNumber('id');
     Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);
