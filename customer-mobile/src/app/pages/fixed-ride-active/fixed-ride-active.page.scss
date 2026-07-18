@@ -97,7 +97,7 @@
 .primary-btn:disabled,
 .danger-btn:disabled { opacity: 0.5; }
 
-/* Boarding code (testing bridge while the SMS template awaits DLT approval) */
+/* Boarding code (permanent on-screen channel — passenger reads it out to the driver, no SMS) */
 .boarding-code-card {
   text-align: center;
   border-color: var(--dc-green, #12B35B);

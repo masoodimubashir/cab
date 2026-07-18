@@ -235,7 +235,9 @@ class FixedBookingPhase4Test extends TestCase
         $this->departure->update([
             'status' => 'DEPARTED',
             'fixed_last_reached_stop_seq' => 1,
-            'fixed_last_reached_stop_at' => now(),
+            // Reached 6 minutes ago, so the 5-minute per-stop waiting time has
+            // elapsed and the driver is allowed to mark the passenger no-show.
+            'fixed_last_reached_stop_at' => now()->subMinutes(6),
             'seats_taken' => 2,
             'luggage_taken' => 1,
         ]);
@@ -257,6 +259,27 @@ class FixedBookingPhase4Test extends TestCase
         $this->assertSame('PAID', $reservation->payment_status);
         $this->assertSame(0, $this->departure->fresh()->seats_taken);
         $this->assertSame(0, $this->departure->fresh()->luggage_taken);
+    }
+
+    public function test_driver_no_show_is_blocked_until_the_waiting_time_elapses(): void
+    {
+        $reservation = $this->createReservation(['seats' => 1]);
+        $this->departure->update([
+            'status' => 'DEPARTED',
+            'fixed_last_reached_stop_seq' => 1,
+            // Just reached the pickup stop — the 5-minute waiting time has not
+            // passed yet, so the customer must not be marked no-show.
+            'fixed_last_reached_stop_at' => now(),
+            'seats_taken' => 1,
+        ]);
+
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+
+        $this->postJson("/api/fixed/bookings/{$reservation->id}/no-show")
+            ->assertStatus(422);
+
+        $this->assertSame('CONFIRMED', $reservation->fresh()->status);
+        $this->assertSame(1, $this->departure->fresh()->seats_taken);
     }
 
 

@@ -46,6 +46,7 @@ interface FixedPassenger {
   customer_phone: string | null;
   seats: number;
   status: string;
+  no_show_unlock_at?: string | null;
   payment_status: string | null;
   fare_amount: number | null;
   board_stop_id?: number | null;
@@ -107,6 +108,10 @@ export class FixedDriverPage {
   fixedLocationStreaming = false;
   private manifestPoll?: Subscription;
   private unsubscribeFixedCatalog: (() => void) | null = null;
+  // Ticks every second while the page is open so the No-show waiting-time
+  // countdown updates smoothly between the 8s manifest refreshes.
+  nowMs = Date.now();
+  private clockTimer?: Subscription;
 
   // Boarding OTP popup: tapping "Board" sends a code to the customer and the
   // driver must type it back here to confirm the right passenger boards.
@@ -152,6 +157,7 @@ export class FixedDriverPage {
 
   ionViewWillEnter(): void {
     this.subscribeFixedCatalog();
+    this.startClock();
     this.refresh();
   }
 
@@ -159,6 +165,7 @@ export class FixedDriverPage {
     this.unsubscribeFixedCatalog?.();
     this.unsubscribeFixedCatalog = null;
     this.stopManifestPolling();
+    this.stopClock();
     this.closeBoardingOtp();
     // Leaving the page: drop row cooldowns and their ticker — the server
     // still enforces the exact remaining time (429 puts it back on the button).
@@ -542,6 +549,17 @@ export class FixedDriverPage {
     });
   }
 
+  private startClock(): void {
+    this.nowMs = Date.now();
+    this.clockTimer?.unsubscribe();
+    this.clockTimer = interval(1000).subscribe(() => (this.nowMs = Date.now()));
+  }
+
+  private stopClock(): void {
+    this.clockTimer?.unsubscribe();
+    this.clockTimer = undefined;
+  }
+
   drop(passenger: FixedPassenger): void {
     if (!this.canDropPassenger(passenger)) return;
     this.updatePassenger(passenger, 'drop');
@@ -703,9 +721,36 @@ export class FixedDriverPage {
     return (passenger.status || '').toUpperCase() === 'BOARDED';
   }
 
-  canNoShowPassenger(passenger: FixedPassenger): boolean {
+  /**
+   * The No-show button appears once the vehicle has reached the pickup stop
+   * (the backend then reports a no_show_unlock_at). Before that the button is
+   * hidden entirely — no dead greyed-out button.
+   */
+  noShowVisible(passenger: FixedPassenger): boolean {
     const status = (passenger.status || '').toUpperCase();
-    return ['BOOKED', 'CONFIRMED'].includes(status) && this.isPassengerPickupReached(passenger);
+    return ['BOOKED', 'CONFIRMED'].includes(status) && !!passenger.no_show_unlock_at;
+  }
+
+  /**
+   * Seconds left on the mandatory waiting time before no-show unlocks.
+   * 0 = ready (or not applicable). The server enforces the same deadline, so
+   * this is only the visible countdown, not the actual gate.
+   */
+  noShowCountdown(passenger: FixedPassenger): number {
+    if (!passenger.no_show_unlock_at) return 0;
+    const remaining = new Date(passenger.no_show_unlock_at).getTime() - this.nowMs;
+    return remaining > 0 ? Math.ceil(remaining / 1000) : 0;
+  }
+
+  noShowCountdownLabel(passenger: FixedPassenger): string {
+    const secs = this.noShowCountdown(passenger);
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    return mins > 0 ? `${mins}:${rem.toString().padStart(2, '0')}` : `${rem}s`;
+  }
+
+  canNoShowPassenger(passenger: FixedPassenger): boolean {
+    return this.noShowVisible(passenger) && this.noShowCountdown(passenger) <= 0;
   }
 
   private isActivePassenger(passenger: FixedPassenger): boolean {
@@ -757,7 +802,10 @@ export class FixedDriverPage {
   passengerActionHint(passenger: FixedPassenger): string {
     const status = (passenger.status || '').toUpperCase();
     if (['BOOKED', 'CONFIRMED'].includes(status)) {
-      return this.isPassengerPickupReached(passenger) ? 'Board or mark no-show' : 'No-show unlocks after pickup stop is reached';
+      if (!this.isPassengerPickupReached(passenger)) return 'No-show unlocks after pickup stop is reached';
+      const secs = this.noShowCountdown(passenger);
+      if (secs > 0) return 'Wait for the passenger — no-show unlocks in ' + this.noShowCountdownLabel(passenger);
+      return 'Board or mark no-show';
     }
     if (status === 'BOARDED') return 'Ready to drop';
     return this.passengerStatusLabel(passenger);

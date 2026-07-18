@@ -31,32 +31,6 @@ class Msg91Service
         return $this->sendCode($phone, $code, $previewMessage, (string) config('services.msg91.template_id'));
     }
 
-    /** True once MSG91_BOARDING_TEMPLATE_ID is filled (boarding DLT template approved). */
-    public function hasBoardingTemplate(): bool
-    {
-        return (string) config('services.msg91.boarding_template_id') !== '';
-    }
-
-    /**
-     * Boarding-code SMS. Sends ONLY when the dedicated boarding DLT template
-     * is configured (MSG91_BOARDING_TEMPLATE_ID). While it's blank — i.e.
-     * until the template is "Verified by DLT" — NO SMS goes out at all (we
-     * don't reuse the login template: wrong wording + per-SMS cost); instead
-     * FixedBoardingOtpService surfaces the code on the customer's own booking
-     * screen as the testing bridge.
-     */
-    public function sendBoardingOtp(string $phone, string $code, string $previewMessage): bool
-    {
-        if (!$this->hasBoardingTemplate()) {
-            Log::info('[msg91] boarding OTP SMS skipped — boarding template not configured (code shown in customer app instead)', [
-                'phone' => $this->normalizeMobile($phone),
-            ]);
-            return false;
-        }
-
-        return $this->sendCode($phone, $code, $previewMessage, (string) config('services.msg91.boarding_template_id'));
-    }
-
     private function sendCode(string $phone, string $code, string $previewMessage, string $templateId): bool
     {
         $mobile = $this->normalizeMobile($phone);
@@ -94,7 +68,14 @@ class Msg91Service
                     ],
                 ]);
 
-            if (!$response->successful()) {
+            // MSG91's v5 flow API returns HTTP 200 even when it REJECTS the send
+            // (bad template, IP-not-whitelisted, insufficient balance, …) and puts
+            // the real outcome in the body: {"type":"success"|"error","message":…}.
+            // So HTTP-2xx alone does NOT mean delivered — inspect the body's type.
+            $type = strtolower((string) ($response->json('type') ?? ''));
+            $ok = $response->successful() && $type === 'success';
+
+            if (!$ok) {
                 Log::warning('[msg91] OTP send failed', [
                     'phone' => $mobile,
                     'status' => $response->status(),

@@ -49,7 +49,7 @@ interface FixedBooking {
   latest_driver_location?: { lat: number; lng: number; recorded_at?: string | null } | null;
   seats: number;
   status: string;
-  /** Testing bridge: boarding code shown here while the SMS template awaits DLT approval. */
+  /** Boarding code shown here — the permanent on-screen channel (no SMS); the passenger reads it out to the driver. */
   boarding_code?: string | null;
   fixed_live_status?: FixedLiveStatus | null;
   payment_method?: string | null;

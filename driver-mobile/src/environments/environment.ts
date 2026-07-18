@@ -4,8 +4,10 @@
 
 export const environment = {
   production: false,
-  /** Laravel API base (include /api). */
-  apiUrl: 'http://localhost:8000/api',
+  /** Laravel API base (include /api). On-device dev (`npm run dev:device`) runs
+   *  on the PHONE, so this must be the laptop's LAN IP — NOT localhost, which on
+   *  the phone means the phone itself. Update if the laptop's Wi-Fi IP changes. */
+  apiUrl: 'http://192.168.29.13:8000/api',
   /**
    * Login OTP provider:
    *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). Mock mode
@@ -29,7 +31,7 @@ export const environment = {
   },
   /** Reverb (WebSocket) — match backend/.env REVERB_* values. */
   reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: 'localhost',
+  reverbHost: '192.168.29.13',
   reverbPort: 8080,
   reverbScheme: 'http' as 'http' | 'https',
   /** FCM Web Push VAPID key — Firebase Console → Cloud Messaging → Web Push certificates. */

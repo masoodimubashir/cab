@@ -81,6 +81,9 @@ export class AuthService {
   hasPermission(slug: string): boolean {
     const p = this._profile$.value;
     if (!p) return false;
+    // Dashboard is a baseline every signed-in manager can open (mirrors the
+    // backend), so no role is ever left without a landing page.
+    if (slug === 'dashboard') return true;
     if (p.permissions?.includes('*')) return true;
     return p.permissions?.includes(slug) === true;
   }
@@ -88,6 +91,41 @@ export class AuthService {
   /** True for any slug in the list. */
   hasAnyPermission(slugs: string[]): boolean {
     return slugs.some((s) => this.hasPermission(s));
+  }
+
+  /**
+   * The first page this user is actually allowed to open, in sidebar order.
+   * Used as the post-login landing and the guard's "permission denied"
+   * fallback so a role WITHOUT `dashboard` (e.g. a Finance-only role) never
+   * bounces off /dashboard in a redirect loop. Falls back to /dashboard only
+   * for a misconfigured role that holds no module permission at all.
+   */
+  landingRoute(): string {
+    const candidates: Array<[string, string]> = [
+      ['dashboard', '/dashboard'],
+      ['rides', '/rides'],
+      ['drivers', '/drivers'],
+      ['customers', '/customers'],
+      ['manual_dispatch', '/rides/manual-dispatch'],
+      ['finance', '/finance/overview'],
+      ['analytics', '/analytics/real-time'],
+      ['reports', '/analytics/reports'],
+      ['live_operations', '/maps'],
+      ['vehicles', '/vehicles'],
+      ['pricing', '/pricing'],
+      ['city_settings', '/settings/cities'],
+      ['coupons', '/promotions/coupons'],
+      ['subscriptions', '/subscriptions'],
+      // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
+      // ['app_assets', '/settings/app-assets'],
+      ['fleets', '/settings/fleets'],
+      ['safety', '/safety'],
+      ['contact_drivers', '/contact-drivers'],
+      ['operator_settings', '/settings/operator'],
+      ['managers', '/managers'],
+      ['roles_permissions', '/roles-permissions'],
+    ];
+    return candidates.find(([slug]) => this.hasPermission(slug))?.[1] ?? '/dashboard';
   }
 
   private readStored(): ManagerProfile | null {

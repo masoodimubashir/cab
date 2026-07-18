@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CheckboxModule } from 'primeng/checkbox';
 import { ToastModule } from 'primeng/toast';
@@ -29,7 +28,6 @@ interface RoleRow {
   id: number;
   slug: string;
   name: string;
-  description: string | null;
   is_system: boolean;
   is_suspendable: boolean;
   requires_fleet: boolean;
@@ -43,7 +41,7 @@ interface RoleRow {
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    ButtonModule, DialogModule, InputTextModule, InputTextareaModule, InputSwitchModule, CheckboxModule,
+    ButtonModule, DialogModule, InputTextModule, InputSwitchModule, CheckboxModule,
     ToastModule, ConfirmDialogModule,
     IconComponent, StatusPillComponent,
   ],
@@ -79,7 +77,7 @@ interface RoleRow {
           >
             <div class="role-card__main">
               <strong>{{ r.name }}</strong>
-              <span>{{ r.description || 'No description' }}</span>
+              <span>{{ moduleCountLabel(r) }}</span>
             </div>
             <div class="badges">
               <span class="badge badge--system" *ngIf="r.is_system">System</span>
@@ -96,7 +94,7 @@ interface RoleRow {
                 <h2>{{ selected.name }}</h2>
                 <tm-status-pill *ngIf="selected.is_system" tone="info">System</tm-status-pill>
               </div>
-              <p>{{ selected.description || 'No description added.' }}</p>
+              <p>{{ moduleCountLabel(selected) }}</p>
             </div>
             <div class="actions" *ngIf="!selected.is_system">
               <button type="button" class="secondary-btn" (click)="openEdit(selected)">
@@ -130,6 +128,15 @@ interface RoleRow {
           </section>
 
           <section class="module-grid">
+            <div class="module-item is-on is-locked">
+              <span class="module-item__check">
+                <tm-icon name="check" [size]="13" />
+              </span>
+              <div>
+                <strong>Dashboard <em class="lock-tag">Always on</em></strong>
+                <small>Every role can open the dashboard.</small>
+              </div>
+            </div>
             <div class="module-item" *ngFor="let p of modules" [class.is-on]="hasPermission(p.slug)">
               <span class="module-item__check">
                 <tm-icon *ngIf="hasPermission(p.slug)" name="check" [size]="13" />
@@ -168,36 +175,27 @@ interface RoleRow {
 
       <div class="role-form">
         <section class="form-section form-section--identity">
-          <div class="field-grid">
-            <label class="field">
-              <span>Name *</span>
-              <input pInputText [(ngModel)]="form.name" [disabled]="!!editingId" placeholder="e.g. City Manager" />
-            </label>
-            <label class="field">
-              <span>Slug *</span>
-              <input pInputText [(ngModel)]="form.slug" [disabled]="!!editingId" placeholder="city_manager" (input)="normalizeSlug()" />
-            </label>
-          </div>
           <label class="field">
-            <span>Description</span>
-            <textarea pInputTextarea rows="3" [(ngModel)]="form.description" placeholder="Short summary of this role."></textarea>
+            <span>Name *</span>
+            <input pInputText [(ngModel)]="form.name" [disabled]="!!editingId" placeholder="e.g. City Manager" />
+            <small class="field-hint" *ngIf="!editingId">A short, unique ID is generated from this name automatically.</small>
           </label>
 
           <div class="switch-grid">
-            <label class="switch-card">
+            <div class="switch-card">
               <span>
                 <strong>Users with this role can be suspended</strong>
                 <small>Turn off for protected roles such as Super Admin.</small>
               </span>
               <p-inputSwitch [(ngModel)]="form.is_suspendable"></p-inputSwitch>
-            </label>
-            <label class="switch-card">
+            </div>
+            <div class="switch-card">
               <span>
                 <strong>Requires franchise assignment</strong>
                 <small>Managers with this role must be tied to a fleet.</small>
               </span>
               <p-inputSwitch [(ngModel)]="form.requires_fleet"></p-inputSwitch>
-            </label>
+            </div>
           </div>
         </section>
 
@@ -205,7 +203,9 @@ interface RoleRow {
           <div class="module-picker-head">
             <div>
               <h3>Module Access</h3>
-              <p>{{ form.permission_slugs.length }} selected</p>
+              <p [class.is-warn]="!form.permission_slugs.length">
+                {{ form.permission_slugs.length }} selected · pick at least one module (Dashboard is always included).
+              </p>
             </div>
             <div class="quick-actions">
               <button type="button" (click)="selectAll()">Select all</button>
@@ -214,6 +214,15 @@ interface RoleRow {
           </div>
 
           <div class="module-picker">
+            <!-- Dashboard is a baseline every role gets — shown ticked + locked
+                 so it's obvious it's always included, but it can't be toggled. -->
+            <div class="module-option is-on is-locked">
+              <p-checkbox [binary]="true" [ngModel]="true" [disabled]="true"></p-checkbox>
+              <span>
+                <strong>Dashboard <em class="lock-tag">Always on</em></strong>
+                <small>Every role can open the dashboard.</small>
+              </span>
+            </div>
             <label class="module-option" *ngFor="let p of modules" [class.is-on]="formHasPermission(p.slug)">
               <p-checkbox [binary]="true" [ngModel]="formHasPermission(p.slug)" (ngModelChange)="toggleFormPermission(p.slug, $event)"></p-checkbox>
               <span>
@@ -228,7 +237,7 @@ interface RoleRow {
       <ng-template pTemplate="footer">
         <div class="dialog-footer">
           <button type="button" class="secondary-btn" (click)="dialogOpen = false">Cancel</button>
-          <button type="button" class="primary-btn" (click)="submit()" [disabled]="saving">
+          <button type="button" class="primary-btn" (click)="submit()" [disabled]="saving || !form.permission_slugs.length">
             {{ saving ? 'Saving...' : (editingId ? 'Update Role' : 'Create Role') }}
           </button>
         </div>
@@ -273,6 +282,7 @@ interface RoleRow {
     .detail-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .detail h2 { margin: 0; color: var(--tm-text); font-size: 22px; }
     .detail-head p, .modules-head p, .module-picker-head p { margin: 5px 0 0; color: var(--tm-text-muted); font-size: 13px; }
+    .module-picker-head p.is-warn { color: var(--tm-danger, #dc2626); font-weight: 750; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
     .fact { padding: 12px; border-radius: 8px; background: var(--tm-canvas-2); display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -300,6 +310,7 @@ interface RoleRow {
     .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .field { display: flex; flex-direction: column; gap: 6px; color: var(--tm-text); font-size: 12px; font-weight: 850; }
     .field input, .field textarea { width: 100%; border-radius: 8px; }
+    .field-hint { color: var(--tm-text-muted); font-size: 11px; font-weight: 650; }
     .switch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
     .switch-card { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas-2); }
     .switch-card span { display: flex; flex-direction: column; gap: 2px; }
@@ -309,6 +320,9 @@ interface RoleRow {
     .quick-actions button { border: 1px solid var(--tm-line); background: #fff; border-radius: 8px; min-height: 32px; padding: 0 10px; font-weight: 800; color: var(--tm-text); cursor: pointer; }
     .module-option { cursor: pointer; }
     .module-option.is-on { background: color-mix(in srgb, var(--tm-green-tint) 55%, #fff); }
+    .module-option.is-locked, .module-item.is-locked { cursor: default; border-style: dashed; }
+    .lock-tag { font-style: normal; font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .03em;
+      color: var(--tm-green-deep); background: var(--tm-green-tint); border-radius: var(--tm-radius-pill); padding: 2px 7px; margin-left: 6px; }
     .dialog-footer { display: flex; justify-content: flex-end; gap: 8px; width: 100%; }
     :host ::ng-deep .role-dialog .p-dialog-header { padding: 18px 18px 12px; }
     :host ::ng-deep .role-dialog .p-dialog-footer { padding: 14px 18px; border-top: 1px solid var(--tm-line); }
@@ -356,11 +370,16 @@ export class RolesPermissionsComponent implements OnInit {
     return this.groups.flatMap((group) => group.permissions);
   }
 
+  /** "5 of 18 modules" — used on the role cards and detail header. */
+  moduleCountLabel(r: RoleRow): string {
+    const n = r.permission_slugs?.length ?? 0;
+    if (r.is_system) return 'Full access — every module';
+    return `${n} of ${this.modules.length} modules`;
+  }
+
   blankForm() {
     return {
-      slug: '',
       name: '',
-      description: '',
       is_suspendable: true,
       requires_fleet: false,
       sort_order: 100,
@@ -368,9 +387,17 @@ export class RolesPermissionsComponent implements OnInit {
     };
   }
 
+  // Modules temporarily hidden from the role editor (not part of the first
+  // release). The permission still exists in the DB, so nobody loses a grant —
+  // it just isn't offered as a checkbox. Empty this list to bring them back.
+  private readonly hiddenSlugs = new Set<string>(['app_assets']);
+
   loadPermissions(): void {
     this.api.get<{ grouped: PermissionGroup[] }>('/admin/permissions').subscribe({
-      next: (r) => (this.groups = r.grouped ?? []),
+      next: (r) =>
+        (this.groups = (r.grouped ?? [])
+          .map((g) => ({ ...g, permissions: g.permissions.filter((p) => !this.hiddenSlugs.has(p.slug)) }))
+          .filter((g) => g.permissions.length > 0)),
       error: () => this.msg.add({ severity: 'error', summary: 'Failed to load permissions' }),
     });
   }
@@ -411,10 +438,6 @@ export class RolesPermissionsComponent implements OnInit {
   }
   clearAll(): void { this.form.permission_slugs = []; }
 
-  normalizeSlug(): void {
-    this.form.slug = (this.form.slug || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
-  }
-
   openCreate(): void {
     this.editingId = null;
     this.form = this.blankForm();
@@ -424,9 +447,7 @@ export class RolesPermissionsComponent implements OnInit {
   openEdit(r: RoleRow): void {
     this.editingId = r.id;
     this.form = {
-      slug: r.slug,
       name: r.name,
-      description: r.description || '',
       is_suspendable: r.is_suspendable,
       requires_fleet: r.requires_fleet,
       sort_order: r.sort_order,
@@ -437,20 +458,16 @@ export class RolesPermissionsComponent implements OnInit {
 
   submit(): void {
     if (!this.editingId && !this.form.name.trim()) { this.msg.add({ severity: 'warn', summary: 'Name is required' }); return; }
-    if (!this.editingId && !this.form.slug.trim()) {
-      this.msg.add({ severity: 'warn', summary: 'Slug is required' });
-      return;
-    }
+    if (!this.form.permission_slugs.length) { this.msg.add({ severity: 'warn', summary: 'Select at least one module for this role.' }); return; }
     const body: any = {
-      description: this.form.description?.trim() || null,
       is_suspendable: this.form.is_suspendable,
       requires_fleet: this.form.requires_fleet,
       sort_order: this.form.sort_order,
       permission_slugs: this.form.permission_slugs,
     };
     if (!this.editingId) {
+      // Slug is derived from the name server-side.
       body.name = this.form.name.trim();
-      body.slug = this.form.slug.trim();
     }
 
     this.saving = true;

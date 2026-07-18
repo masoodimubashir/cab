@@ -6,6 +6,7 @@ use App\Models\CitySetting;
 use App\Models\PhoneOtp;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Server-side login OTP: generates a 6-digit code, stores it hashed with an
@@ -54,7 +55,22 @@ class PhoneOtpService
         );
 
         $message = $this->buildMessage($code, $platform, $ttlMin);
-        $this->msg91->sendOtp($phone, $code, $message);
+        $sent = $this->msg91->sendOtp($phone, $code, $message);
+
+        // Surface the code in the log, but safely per environment:
+        //   • dev/local (APP_DEBUG=true)  → ALWAYS, so on-device testing can read
+        //     it back whether or not the SMS reached the phone;
+        //   • production (APP_DEBUG=false) → ONLY when the send actually FAILED,
+        //     as a fallback. A successful LIVE send is never logged, so real
+        //     customers' codes don't leak into the log file.
+        // Read it with:  tail -f storage/logs/laravel.log | grep '\[otp\]'
+        if (config('app.debug') || !$sent) {
+            Log::warning('[otp] login/registration code', [
+                'phone' => $phone,
+                'code' => $code,
+                'sms_sent' => $sent,
+            ]);
+        }
 
         return [
             'sent' => true,

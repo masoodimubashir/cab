@@ -40,6 +40,7 @@ use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminPricingController;
 use App\Http\Controllers\Admin\AdminTripsController;
 use App\Http\Controllers\Admin\AdminReportsController;
+use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\TripTrackingController;
 use App\Http\Controllers\RideAssignmentController;
 use App\Http\Controllers\PaymentsController;
@@ -519,10 +520,6 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::get('/admin/cities/{city}/shuttle-bookings', [AdminShuttleBookingsController::class, 'index']);
     Route::post('/admin/cities/{city}/shuttle-bookings/{booking}/resolve-refund', [AdminShuttleBookingsController::class, 'resolveRefund']);
 
-    // B5 — the customer-refund register: who is owed money, why, and the
-    // proof trail once the operator sends it (GPay/bank, outside the app).
-    Route::get('/admin/refunds', [RefundsController::class, 'adminIndex']);
-    Route::post('/admin/refunds/{module}/{id}/mark-refunded', [RefundsController::class, 'adminMarkRefunded'])->whereIn('module', ['fixed', 'shuttle'])->whereNumber('id');
     Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);
@@ -531,4 +528,17 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::patch('/admin/cities/{city}/fixed-departures/{departure}', [AdminFixedDeparturesController::class, 'update']);
     Route::post('/admin/cities/{city}/fixed-departures/{departure}/close-bookings', [AdminFixedDeparturesController::class, 'closeBookings']);
     Route::post('/admin/cities/{city}/fixed-departures/{departure}/cancel', [AdminFixedDeparturesController::class, 'cancelDeparture']);
+});
+
+// Finance section — the money-in ledger, financial-health overview (B6), and
+// the customer-refund register (B5). All gated by the single `finance`
+// permission so one toggle controls the whole Finance sidebar group.
+Route::middleware(['auth:sanctum', 'role:admin', 'permission:finance'])->group(function () {
+    Route::get('/admin/finance/overview', [FinanceController::class, 'overview']);
+    Route::get('/admin/finance/money-in', [FinanceController::class, 'moneyIn']);
+
+    // The customer-refund register: who is owed money, why, and the proof
+    // trail once the operator sends it (GPay/bank, outside the app).
+    Route::get('/admin/refunds', [RefundsController::class, 'adminIndex']);
+    Route::post('/admin/refunds/{module}/{id}/mark-refunded', [RefundsController::class, 'adminMarkRefunded'])->whereIn('module', ['fixed', 'shuttle'])->whereNumber('id');
 });

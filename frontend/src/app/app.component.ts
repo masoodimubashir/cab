@@ -50,6 +50,8 @@ export class AppComponent implements OnInit {
     [/^\/settings\/vehicle-types/,  'Vehicle Type'],
     [/^\/managers/,                 'Managers'],
     [/^\/roles-permissions/,        'Roles & Permissions'],
+    [/^\/finance\/overview/,        'Financial Overview'],
+    [/^\/finance\/money-in/,        'Money In'],
     [/^\/analytics\/real-time/,     'Real Time Analytics'],
     [/^\/analytics\/graphs/,        'Analytics Graphs'],
     [/^\/analytics\/reports/,       'Reports'],
@@ -126,6 +128,7 @@ export class AppComponent implements OnInit {
     const home: NavItem[] = [];
     const citySetup: NavItem[] = [];
     const operations: NavItem[] = [];
+    const finance: NavItem[] = [];
     const insights: NavItem[] = [];
     const platform: NavItem[] = [];
 
@@ -137,7 +140,8 @@ export class AppComponent implements OnInit {
     if (can('vehicles'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
     if (can('pricing'))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
-    if (can('app_assets'))             citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
+    // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
+    // if (can('app_assets'))             citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
     if (can('city_settings'))          citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (can('coupons')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
@@ -149,25 +153,29 @@ export class AppComponent implements OnInit {
 
     // --- Operations ---
     if (can('rides')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
-    if (can('rides')) operations.push({ label: 'Refunds', icon: 'rupee', route: '/refunds' });
     if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
 
     if (can('manual_dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 
-    if (can('drivers')) {
+    if (canAny(['drivers', 'contact_drivers'])) {
       operations.push({
         label: 'Drivers', icon: 'id-card',
         children: filterTruthy([
           can('drivers') && { label: 'All Drivers',           icon: 'user',  route: '/drivers' },
           can('drivers') && { label: 'Approvals & Documents',  icon: 'check', route: '/drivers', queryParams: { tab: 'approvals' } },
           can('drivers') && { label: 'Documents Catalog',      icon: 'edit',  route: '/drivers', queryParams: { tab: 'documents' } },
+          // Contact Drivers moved in under Drivers, after Documents Catalog.
+          can('contact_drivers') && { label: 'Contact Drivers', icon: 'envelope', route: '/contact-drivers' },
         ]),
       });
     }
 
-    if (can('contact_drivers')) operations.push({ label: 'Contact Drivers', icon: 'envelope',   route: '/contact-drivers' });
-
     if (can('safety'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
+
+    // --- Finance (money in, refunds out, financial health) ---
+    if (can('finance')) finance.push({ label: 'Overview',  icon: 'chart-line', route: '/finance/overview' });
+    if (can('finance')) finance.push({ label: 'Money In',  icon: 'rupee',      route: '/finance/money-in' });
+    if (can('finance')) finance.push({ label: 'Refunds',   icon: 'send',       route: '/refunds' });
 
     // --- Insights ---
     if (canAny(['analytics','reports'])) {
@@ -190,6 +198,7 @@ export class AppComponent implements OnInit {
       { items: home },                            // unlabeled — sits at the very top
       { label: 'City Setup', items: citySetup },
       { label: 'Operations', items: operations },
+      { label: 'Finance',    items: finance },
       { label: 'Insights',   items: insights },
       { label: 'Platform',   items: platform },
     ].filter((s) => s.items.length > 0);
