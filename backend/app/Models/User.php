@@ -146,6 +146,11 @@ class User extends Authenticatable
         if ($this->isSuperAdmin()) {
             return true;
         }
+        // Dashboard is a baseline every role can open, so a manager always has
+        // a safe place to land no matter which modules their role grants.
+        if ($slug === 'dashboard') {
+            return true;
+        }
         $role = $this->managerRole;
         if (! $role) {
             return false;

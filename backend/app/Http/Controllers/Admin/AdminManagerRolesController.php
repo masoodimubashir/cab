@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Models\ManagerRole;
 use App\Models\Permission;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 
 class AdminManagerRolesController
 {
@@ -33,6 +33,10 @@ class AdminManagerRolesController
         $data = $this->validatePayload($request, partial: false);
         $slugs = $data['permission_slugs'] ?? [];
         unset($data['permission_slugs']);
+
+        // Slug is never entered by hand — it's derived from the role name and
+        // made unique automatically (e.g. "City Manager" → "city_manager").
+        $data['slug'] = $this->uniqueSlug($data['name']);
 
         $role = ManagerRole::query()->create($data);
         if (! empty($slugs)) {
@@ -89,29 +93,46 @@ class AdminManagerRolesController
 
     private function validatePayload(Request $request, bool $partial, ?int $currentId = null): array
     {
-        $unique = Rule::unique('manager_roles', 'slug');
-        if ($currentId) {
-            $unique = $unique->ignore($currentId);
-        }
-
         $rules = [
-            'description' => ['nullable', 'string', 'max:500'],
             'is_suspendable' => ['sometimes', 'boolean'],
             'requires_fleet' => ['sometimes', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
-            'permission_slugs' => ['nullable', 'array'],
             'permission_slugs.*' => ['string', 'exists:permissions,slug'],
         ];
 
+        // Name and slug are set once at creation. The slug is derived from the
+        // name server-side, so the client never sends one.
+        $rules['slug'] = ['prohibited'];
         if ($partial) {
-            $rules['slug'] = ['prohibited'];
             $rules['name'] = ['prohibited'];
+            // Optional on edit, but if sent it can't be emptied out.
+            $rules['permission_slugs'] = ['sometimes', 'array', 'min:1'];
         } else {
-            $rules['slug'] = ['required', 'string', 'max:80', 'regex:/^[a-z0-9_]+$/', $unique];
             $rules['name'] = ['required', 'string', 'max:160'];
+            // Every role must grant at least one module.
+            $rules['permission_slugs'] = ['required', 'array', 'min:1'];
         }
 
-        return $request->validate($rules);
+        return $request->validate($rules, [
+            'permission_slugs.required' => 'Select at least one module for this role.',
+            'permission_slugs.min' => 'Select at least one module for this role.',
+        ]);
+    }
+
+    /**
+     * Turn a role name into a unique, code-safe slug ("City Manager" →
+     * "city_manager", then "city_manager_2" if that's taken).
+     */
+    private function uniqueSlug(string $name): string
+    {
+        $base = Str::slug($name, '_') ?: 'role';
+        $slug = $base;
+        $n = 2;
+        while (ManagerRole::query()->where('slug', $slug)->exists()) {
+            $slug = $base . '_' . $n;
+            $n++;
+        }
+        return $slug;
     }
 
     private function shape(ManagerRole $r, bool $withPermissions): array
@@ -120,7 +141,6 @@ class AdminManagerRolesController
             'id' => $r->id,
             'slug' => $r->slug,
             'name' => $r->name,
-            'description' => $r->description,
             'is_system' => (bool) $r->is_system,
             'is_suspendable' => (bool) $r->is_suspendable,
             'requires_fleet' => (bool) $r->requires_fleet,

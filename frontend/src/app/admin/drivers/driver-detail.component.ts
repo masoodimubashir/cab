@@ -1,7 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import $ from 'jquery';
+import moment from 'moment';
+import 'daterangepicker';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
 import {
@@ -317,14 +320,27 @@ const BLOCK_REASONS = [
                   [value]="rideMode"
                   (valueChange)="rideMode = $event"
                 />
-                <label class="date-range">
-                  <span>From</span>
-                  <input type="date" [(ngModel)]="rideDateFrom" />
-                </label>
-                <label class="date-range">
-                  <span>To</span>
-                  <input type="date" [(ngModel)]="rideDateTo" />
-                </label>
+                <div class="date-range" [class.has-value]="rideDateFrom || rideDateTo">
+                  <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
+                  <input
+                    #rideRange
+                    type="text"
+                    readonly
+                    class="date-range__input"
+                    placeholder="Ride date · any"
+                    [value]="rangeLabel"
+                    aria-label="Filter rides by date range"
+                  />
+                  <button
+                    *ngIf="rideDateFrom || rideDateTo"
+                    type="button"
+                    class="date-range__clear"
+                    (click)="clearRideDates(); $event.stopPropagation()"
+                    aria-label="Clear date range"
+                  >
+                    <tm-icon name="x" [size]="12" />
+                  </button>
+                </div>
               </div>
               <tm-button variant="ghost" size="sm" icon="x" (clicked)="clearRideFilters()">Clear rides</tm-button>
             </div>
@@ -333,7 +349,23 @@ const BLOCK_REASONS = [
           <div class="feed__pills">
             <tm-filter-pill *ngIf="tabSearch.trim()" icon="search" label="Search" [value]="tabSearch" (clear)="tabSearch = ''" />
             <tm-filter-pill *ngIf="activeTab === 'rides' && rideMode !== 'all'" icon="car" label="Ride mode" [value]="rideModeText(rideMode)" (clear)="rideMode = 'all'" />
-            <tm-filter-pill *ngIf="activeTab === 'rides' && (rideDateFrom || rideDateTo)" icon="calendar" label="Ride date" [value]="(rideDateFrom || '…') + ' → ' + (rideDateTo || '…')" (clear)="clearRideFilters()" />
+            <tm-filter-pill *ngIf="activeTab === 'rides' && (rideDateFrom || rideDateTo)" icon="calendar" label="Ride date" [value]="(rideDateFrom || '…') + ' → ' + (rideDateTo || '…')" (clear)="clearRideDates()" />
+          </div>
+        </div>
+
+        <!-- Money summary (rides tab) — what riders paid on this driver's trips -->
+        <div *ngIf="activeTab === 'rides' && rideSummary" class="ride-summary">
+          <div class="ride-summary__card">
+            <span class="ride-summary__label">Rides</span>
+            <strong class="ride-summary__value">{{ rideSummary.rides_count }}</strong>
+          </div>
+          <div class="ride-summary__card">
+            <span class="ride-summary__label">Fares collected</span>
+            <strong class="ride-summary__value">₹ {{ rideSummary.fares_collected | number:'1.0-2' }}</strong>
+          </div>
+          <div class="ride-summary__card" [class.is-refund]="rideSummary.refunded > 0">
+            <span class="ride-summary__label">Refunded</span>
+            <strong class="ride-summary__value">₹ {{ rideSummary.refunded | number:'1.0-2' }}</strong>
           </div>
         </div>
 
@@ -361,7 +393,8 @@ const BLOCK_REASONS = [
               <header class="post__head">
                 <span class="post__who">
                   <span class="post__role">Rider</span>
-                  <strong class="post__title">{{ r.customer?.name || 'Unknown rider' }}</strong>
+                  <strong class="post__title">{{ r.rider_name || 'Unknown rider' }}</strong>
+                  <span class="rider-extra" *ngIf="r.rider_extra_count">+{{ r.rider_extra_count }} more</span>
                 </span>
                 <span class="ride-status" [attr.data-s]="statusBucket(r.status)">{{ statusDisplay(r.status) }}</span>
               </header>
@@ -378,7 +411,21 @@ const BLOCK_REASONS = [
                 <span class="ride-meta__item" *ngIf="r.ride_type?.name"><tm-icon name="road" [size]="11" /> {{ r.ride_type.name }}</span>
                 <span class="ride-meta__item" *ngIf="r.distance_km"><tm-icon name="pin" [size]="11" /> {{ r.distance_km }} km</span>
                 <span class="ride-meta__item" *ngIf="r.duration_min"><tm-icon name="calendar" [size]="11" /> {{ r.duration_min }} min</span>
-                <span class="ride-meta__item mono" *ngIf="r.payment_method">{{ r.payment_method | uppercase }}</span>
+              </div>
+              <div class="ride-pay" *ngIf="r.payment_method || r.refund_status !== 'NONE'">
+                <span class="pay-chip"
+                      *ngIf="r.payment_method"
+                      [class.pay-chip--paid]="r.payment_status === 'PAID'"
+                      [class.pay-chip--pending]="r.payment_status === 'PENDING' || r.payment_status === 'PARTIAL'">
+                  <tm-icon name="rupee" [size]="11" />
+                  {{ r.payment_method | uppercase }}<ng-container *ngIf="r.payment_status"> · {{ paymentStatusText(r.payment_status) }}</ng-container><ng-container *ngIf="r.paid_amount"> · ₹{{ r.paid_amount | number:'1.0-2' }}</ng-container>
+                </span>
+                <span class="pay-chip pay-chip--refund" *ngIf="r.refund_status === 'REFUNDED'">
+                  <tm-icon name="refresh" [size]="11" /> Refunded ₹{{ r.refund_amount | number:'1.0-2' }}
+                </span>
+                <span class="pay-chip pay-chip--due" *ngIf="r.refund_status === 'APPROVED'">
+                  <tm-icon name="refresh" [size]="11" /> Refund due ₹{{ r.refund_due | number:'1.0-2' }}
+                </span>
               </div>
               <footer class="post__foot">
                 <span class="post__meta mono">#{{ r.id }}</span>
@@ -1194,27 +1241,106 @@ const BLOCK_REASONS = [
       gap: 10px;
     }
     .feed__pills { display: flex; flex-wrap: wrap; gap: 8px; }
+    /* ---------- Date range picker (daterangepicker) ---------- */
     .date-range {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-    .date-range input {
-      width: 150px;
-      padding: 9px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px 4px 10px;
       border: 1px solid var(--tm-line-2);
       border-radius: var(--tm-radius-md);
       background: var(--tm-surface);
-      color: var(--tm-text);
-      font: inherit;
-      font-size: 13px;
-      font-weight: 600;
+      cursor: pointer;
+      transition: border-color var(--tm-duration-fast) var(--tm-ease),
+                  background var(--tm-duration-fast) var(--tm-ease);
     }
+    .date-range:focus-within { border-color: var(--tm-ink); }
+    .date-range.has-value { background: var(--tm-green-tint); border-color: var(--tm-green-deep); }
+    .date-range__icon { color: var(--tm-text-muted); display: inline-flex; }
+    .date-range.has-value .date-range__icon { color: var(--tm-green-deep); }
+    .date-range__input {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      outline: 0;
+      font-family: var(--tm-font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--tm-text);
+      padding: 4px 0;
+      min-width: 200px;
+      cursor: pointer;
+    }
+    .date-range__input::placeholder { color: var(--tm-text-soft); }
+    .date-range__clear {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--tm-canvas-2);
+      color: var(--tm-text-muted);
+      transition: background var(--tm-duration-fast) var(--tm-ease),
+                  color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .date-range__clear:hover { background: var(--tm-ink); color: #fff; }
+
+    /* Brand-tone the daterangepicker dropdown — it mounts on document.body. */
+    :host ::ng-deep .daterangepicker {
+      font-family: var(--tm-font-body) !important;
+      border-radius: var(--tm-radius-md);
+      border: 1px solid var(--tm-line-2);
+      box-shadow: var(--tm-shadow-pop);
+    }
+    :host ::ng-deep .daterangepicker .btn-primary,
+    :host ::ng-deep .daterangepicker .btn-success {
+      background: var(--tm-ink); border-color: var(--tm-ink);
+      border-radius: var(--tm-radius-sm); font-weight: 700;
+    }
+    :host ::ng-deep .daterangepicker .ranges li.active,
+    :host ::ng-deep .daterangepicker td.active,
+    :host ::ng-deep .daterangepicker td.active:hover { background: var(--tm-ink); color: #fff; }
+    :host ::ng-deep .daterangepicker td.in-range { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+
+    /* ---------- Money summary cards (rides tab) ---------- */
+    .ride-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+    .ride-summary__card {
+      flex: 1 1 120px;
+      min-width: 120px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 10px 14px;
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      background: var(--tm-surface);
+    }
+    .ride-summary__card.is-refund { border-color: var(--tm-warning-fg); background: var(--tm-warning-bg); }
+    .ride-summary__label {
+      font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--tm-text-muted);
+    }
+    .ride-summary__value { font-size: 18px; font-weight: 800; color: var(--tm-text); }
+
+    /* ---------- Rider extra + payment/refund chips ---------- */
+    .rider-extra {
+      margin-left: 6px; font-size: 11px; font-weight: 700;
+      color: var(--tm-text-muted); background: var(--tm-canvas-2);
+      border-radius: var(--tm-radius-pill); padding: 1px 7px;
+    }
+    .ride-pay { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .pay-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700;
+      padding: 3px 9px; border-radius: var(--tm-radius-pill);
+      background: var(--tm-canvas-2); color: var(--tm-text-muted);
+    }
+    .pay-chip--paid { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .pay-chip--pending { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
+    .pay-chip--refund { background: var(--tm-info-bg); color: var(--tm-info-fg); }
+    .pay-chip--due { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
 
     .feed__loading { display: flex; flex-direction: column; gap: 12px; }
     .feed__skel {
@@ -1686,7 +1812,8 @@ const BLOCK_REASONS = [
       .feed__filters-main {
         width: 100%;
       }
-      .date-range input {
+      .date-range { width: 100%; }
+      .date-range__input {
         width: 100%;
         min-width: 0;
       }
@@ -1703,7 +1830,18 @@ const BLOCK_REASONS = [
     }
   `],
 })
-export class DriverDetailComponent implements OnInit {
+export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
+  // The #rideRange input only exists once `profile` has loaded AND the rides
+  // tab is active, so it enters/leaves the DOM well after ngAfterViewInit.
+  // Drive picker init from a setter so it attaches whenever the element appears.
+  private rideRangeEl?: ElementRef<HTMLInputElement>;
+  @ViewChild('rideRange') set rideRange(el: ElementRef<HTMLInputElement> | undefined) {
+    if (el === this.rideRangeEl) return;
+    this.destroyRideRangePicker();
+    this.rideRangeEl = el;
+    if (el) setTimeout(() => this.initRideRangePicker());
+  }
+
   driverId!: number;
   profile: DriverProfile | null = null;
 
@@ -1713,6 +1851,7 @@ export class DriverDetailComponent implements OnInit {
   rides: any[] = [];
   walletTxns: any[] = [];
   cancelledRides: any[] = [];
+  rideSummary: { rides_count: number; fares_collected: number; refunded: number } | null = null;
   tabSearch = '';
   rideMode = 'all';
   rideDateFrom = '';
@@ -1765,6 +1904,7 @@ export class DriverDetailComponent implements OnInit {
     private router: Router,
     private api: ApiService,
     private toast: ToastService,
+    private zone: NgZone,
   ) {}
 
   ngOnInit(): void {
@@ -1773,6 +1913,78 @@ export class DriverDetailComponent implements OnInit {
       this.loadProfile();
       this.loadTab('rides');
     });
+  }
+
+  ngAfterViewInit(): void {
+    // Picker init is driven by the #rideRange ViewChild setter (the element
+    // mounts asynchronously after profile load / tab switch).
+  }
+
+  ngOnDestroy(): void {
+    this.destroyRideRangePicker();
+  }
+
+  // -------------------- Date range picker --------------------
+  get rangeLabel(): string {
+    if (!this.rideDateFrom && !this.rideDateTo) return '';
+    return `${this.rideDateFrom || '…'} → ${this.rideDateTo || '…'}`;
+  }
+
+  private initRideRangePicker(): void {
+    const el = this.rideRangeEl?.nativeElement;
+    if (!el) return;
+    const $el = $(el);
+    if ($el.data('daterangepicker')) return; // already attached
+    $el.daterangepicker(
+      {
+        autoApply: true,
+        autoUpdateInput: false,
+        opens: 'left',
+        maxDate: moment(),
+        alwaysShowCalendars: true,
+        locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
+        ranges: {
+          Today: [moment(), moment()],
+          Yesterday: [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+          'Last 7 days': [moment().subtract(6, 'days'), moment()],
+          'Last 30 days': [moment().subtract(29, 'days'), moment()],
+          'This month': [moment().startOf('month'), moment().endOf('month')],
+          'Last month': [
+            moment().subtract(1, 'month').startOf('month'),
+            moment().subtract(1, 'month').endOf('month'),
+          ],
+        },
+      } as any,
+      (start: moment.Moment, end: moment.Moment) => {
+        this.zone.run(() => {
+          this.rideDateFrom = start.format('YYYY-MM-DD');
+          this.rideDateTo = end.format('YYYY-MM-DD');
+        });
+      },
+    );
+    $el.on('cancel.daterangepicker', () => {
+      this.zone.run(() => this.clearRideDates());
+    });
+  }
+
+  private destroyRideRangePicker(): void {
+    if (!this.rideRangeEl?.nativeElement) return;
+    const picker = ($(this.rideRangeEl.nativeElement) as any).data('daterangepicker');
+    if (picker) picker.remove();
+  }
+
+  clearRideDates(): void {
+    this.rideDateFrom = '';
+    this.rideDateTo = '';
+  }
+
+  paymentStatusText(s: string | null | undefined): string {
+    switch (s) {
+      case 'PAID':    return 'Paid';
+      case 'PENDING': return 'Pending';
+      case 'PARTIAL': return 'Part-paid';
+      default:        return s ? s.toLowerCase() : '';
+    }
   }
 
   // -------------------- Derived view state --------------------
@@ -2009,7 +2221,7 @@ export class DriverDetailComponent implements OnInit {
       const mode = this.rideModeOf(r);
       const matchesMode = this.rideMode === 'all' || mode === this.rideMode;
       const matchesDate = this.inDateRange(r.created_at, this.rideDateFrom, this.rideDateTo);
-      const matchesSearch = !q || [r.customer?.name, r.id, r.payment_method, r.final_fare, r.estimated_fare, mode, r.ride_type?.name, r.route?.name, r.route_departure?.route?.name]
+      const matchesSearch = !q || [r.rider_name, r.customer?.name, r.id, r.payment_method, r.final_fare, r.estimated_fare, mode, r.ride_type?.name, r.route?.name, r.route_departure?.route?.name]
         .map((x) => String(x ?? '').toLowerCase())
         .some((s) => s.includes(q));
       return matchesMode && matchesDate && matchesSearch;
@@ -2031,7 +2243,7 @@ export class DriverDetailComponent implements OnInit {
     const q = this.tabSearch.trim().toLowerCase();
     if (!q) return this.cancelledRides;
     return this.cancelledRides.filter((r) =>
-      [r.id, r.cancelled_reason, r.customer?.name]
+      [r.id, r.cancelled_reason, r.rider_name, r.customer?.name]
         .map((x) => String(x ?? '').toLowerCase())
         .some((s) => s.includes(q)),
     );
@@ -2127,7 +2339,7 @@ export class DriverDetailComponent implements OnInit {
     this.api.get<any>(pathMap[tab]).subscribe({
       next: (res) => {
         const data = res?.data?.data ?? [];
-        if (tab === 'rides')          this.rides = data;
+        if (tab === 'rides')          { this.rides = data; this.rideSummary = res?.summary ?? null; }
         else if (tab === 'wallet')    this.walletTxns = data;
         else if (tab === 'cancelled') this.cancelledRides = data;
         this.loadingTab = false;

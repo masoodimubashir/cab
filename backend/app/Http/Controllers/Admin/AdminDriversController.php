@@ -488,26 +488,107 @@ class AdminDriversController
 
     public function rides(Driver $driver)
     {
-        $rows = Trip::query()
-            ->where('driver_id', $driver->user_id)
-            ->where('status', '!=', 'CANCELLED')
-            ->with(['customer:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
-            ->orderByDesc('created_at')
-            ->paginate(50);
-
-        return response()->json(['data' => $rows]);
+        return response()->json($this->driverRidesPayload($driver, cancelled: false));
     }
 
     public function cancelledRides(Driver $driver)
     {
-        $rows = Trip::query()
+        return response()->json($this->driverRidesPayload($driver, cancelled: true));
+    }
+
+    /**
+     * Rides feed for the driver detail page. A driver's row is the vehicle-level
+     * trip. For a fixed/shuttle trip the riders live in seat_reservations on the
+     * departure, so the rider name(s) + collected payment/refunds are resolved
+     * from there; a solo/private trip carries its own customer_id + fare instead.
+     */
+    private function driverRidesPayload(Driver $driver, bool $cancelled): array
+    {
+        $trips = Trip::query()
             ->where('driver_id', $driver->user_id)
-            ->where('status', 'CANCELLED')
+            ->when(
+                $cancelled,
+                fn ($q) => $q->where('status', 'CANCELLED'),
+                fn ($q) => $q->where('status', '!=', 'CANCELLED'),
+            )
             ->with(['customer:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->orderByDesc('created_at')
-            ->paginate(50);
+            ->limit(200)
+            ->get();
 
-        return response()->json(['data' => $rows]);
+        // Batch-load the passenger seats for every fixed departure in one query
+        // (kept out of the trip payload — we only read names/amounts off them).
+        $departureIds = $trips->pluck('route_departure_id')->filter()->unique()->values();
+        $seatsByDeparture = $departureIds->isEmpty()
+            ? collect()
+            : \App\Models\SeatReservation::query()
+                ->whereIn('route_departure_id', $departureIds)
+                ->with('customer:id,name')
+                ->get()
+                ->groupBy('route_departure_id');
+
+        $rows = $trips->map(fn (Trip $t) => $this->driverRideRow(
+            $t,
+            $t->route_departure_id ? ($seatsByDeparture[$t->route_departure_id] ?? collect()) : collect(),
+        ));
+
+        return [
+            'data' => ['data' => $rows->values()],
+            'summary' => [
+                'rides_count' => $rows->count(),
+                'fares_collected' => round((float) $rows->sum(fn ($r) => $r['paid_amount'] ?? 0), 2),
+                'refunded' => round((float) $rows->sum(fn ($r) => $r['refund_amount'] ?? 0), 2),
+            ],
+        ];
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\SeatReservation>  $seats
+     */
+    private function driverRideRow(Trip $t, $seats): array
+    {
+        $row = $t->toArray();
+
+        $riderName = $t->customer?->name;
+        $riderExtra = 0;
+        $paidAmount = (float) ($t->final_fare ?? $t->estimated_fare ?? 0);
+        $refundAmount = 0.0;   // money actually returned (REFUNDED)
+        $refundDue = 0.0;      // owed but not yet paid out (APPROVED)
+        $paymentMethod = $t->payment_method;
+        $paymentStatus = $t->payment_method ? 'PAID' : null;
+
+        if ($t->route_departure_id !== null) {
+            // Prefer the seats linked to THIS trip; fall back to the whole
+            // departure if none are linked yet (trip just started).
+            $mine = $seats->where('trip_id', $t->id)->values();
+            if ($mine->isEmpty()) {
+                $mine = $seats->values();
+            }
+
+            $names = $mine->map(fn ($r) => $r->customer?->name)->filter()->values();
+            $riderName = $names->first();
+            $riderExtra = max(0, $names->count() - 1);
+
+            $paidAmount = (float) $mine->where('payment_status', 'PAID')->sum('fare_amount');
+            $refundAmount = (float) $mine->where('refund_status', 'REFUNDED')->sum('refund_amount');
+            $refundDue = (float) $mine->where('refund_status', 'APPROVED')->sum('refund_amount');
+
+            $methods = $mine->pluck('payment_method')->filter()->unique();
+            $paymentMethod = $methods->count() === 1 ? $methods->first() : ($methods->count() > 1 ? 'mixed' : null);
+            $allPaid = $mine->isNotEmpty() && $mine->every(fn ($r) => $r->payment_status === 'PAID');
+            $paymentStatus = $allPaid ? 'PAID' : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+        }
+
+        $row['rider_name'] = $riderName;
+        $row['rider_extra_count'] = $riderExtra;
+        $row['payment_method'] = $paymentMethod;
+        $row['payment_status'] = $paymentStatus;
+        $row['paid_amount'] = round($paidAmount, 2);
+        $row['refund_amount'] = round($refundAmount, 2);
+        $row['refund_due'] = round($refundDue, 2);
+        $row['refund_status'] = $refundAmount > 0 ? 'REFUNDED' : ($refundDue > 0 ? 'APPROVED' : 'NONE');
+
+        return $row;
     }
 
     public function walletTransactions(Driver $driver)

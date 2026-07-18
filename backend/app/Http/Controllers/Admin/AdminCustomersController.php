@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\Driver;
+use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\WalletTransaction;
@@ -293,28 +294,159 @@ class AdminCustomersController
     {
         $this->ensureCustomer($user);
 
-        $rows = Trip::query()
-            ->where('customer_id', $user->id)
-            ->where('status', '!=', 'CANCELLED')
-            ->with(['driver:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
-            ->orderByDesc('created_at')
-            ->paginate(50);
-
-        return response()->json(['data' => $rows]);
+        return response()->json($this->customerRidesPayload($user, cancelled: false));
     }
 
     public function cancelledRides(User $user)
     {
         $this->ensureCustomer($user);
 
-        $rows = Trip::query()
+        return response()->json($this->customerRidesPayload($user, cancelled: true));
+    }
+
+    /**
+     * Rides feed for the customer detail page. A rider's history is two things
+     * merged: solo/private trips they booked (trips.customer_id) AND their
+     * fixed/shuttle seat bookings (seat_reservations.customer_id) — the latter
+     * never live on trips.customer_id, so without this a fixed-only rider's
+     * Rides tab would look empty. Each row also carries what they paid and any
+     * refund received.
+     */
+    private function customerRidesPayload(User $user, bool $cancelled): array
+    {
+        $solo = Trip::query()
             ->where('customer_id', $user->id)
-            ->where('status', 'CANCELLED')
+            ->when(
+                $cancelled,
+                fn ($q) => $q->where('status', 'CANCELLED'),
+                fn ($q) => $q->where('status', '!=', 'CANCELLED'),
+            )
             ->with(['driver:id,name', 'rideType:id,name', 'route:id,mode,name', 'routeDeparture.route:id,mode,name'])
             ->orderByDesc('created_at')
-            ->paginate(50);
+            ->limit(200)
+            ->get()
+            ->map(fn (Trip $t) => $this->soloRideRowForCustomer($t));
 
-        return response()->json(['data' => $rows]);
+        $fixed = SeatReservation::query()
+            ->where('customer_id', $user->id)
+            ->when(
+                $cancelled,
+                fn ($q) => $q->where('status', 'CANCELLED'),
+                fn ($q) => $q->where('status', '!=', 'CANCELLED'),
+            )
+            ->with(['route:id,mode,name', 'routeDeparture.route:id,mode,name', 'routeDeparture.driver:id,name'])
+            ->orderByDesc('created_at')
+            ->limit(200)
+            ->get()
+            ->map(fn (SeatReservation $sr) => $this->fixedRideRowForCustomer($sr));
+
+        $rows = $solo->concat($fixed)
+            ->sortByDesc(fn ($r) => $r['created_at'] ?? '')
+            ->values();
+
+        return [
+            'data' => ['data' => $rows],
+            'summary' => $this->customerMoneySummary($user),
+        ];
+    }
+
+    private function soloRideRowForCustomer(Trip $t): array
+    {
+        $row = $t->toArray();
+        $row['kind'] = 'solo';
+        $row['driver_name'] = $t->driver?->name;
+        $row['paid_amount'] = round((float) ($t->final_fare ?? $t->estimated_fare ?? 0), 2);
+        $row['payment_status'] = $t->payment_method ? 'PAID' : null;
+        $row['refund_amount'] = 0;
+        $row['refund_due'] = 0;
+        $row['refund_status'] = 'NONE';
+
+        return $row;
+    }
+
+    private function fixedRideRowForCustomer(SeatReservation $sr): array
+    {
+        $dep = $sr->routeDeparture;
+        $route = $sr->route ?? $dep?->route;
+        $refunded = $sr->refund_status === 'REFUNDED';
+        $refundDue = $sr->refund_status === 'APPROVED';
+
+        return [
+            // No trip.customer_id for these, so the row id is the trip (when the
+            // vehicle has been assigned) else the booking id — display only.
+            'id' => $sr->trip_id ?? $sr->id,
+            'kind' => $route?->mode === 'shuttle' ? 'shuttle' : 'fixed',
+            'status' => $sr->status,
+            'driver' => $dep?->driver ? ['id' => $dep->driver->id, 'name' => $dep->driver->name] : null,
+            'driver_name' => $dep?->driver?->name,
+            'pickup_address' => $sr->board_address,
+            'pickup_lat' => $sr->board_lat,
+            'pickup_lng' => $sr->board_lng,
+            'drop_address' => $sr->drop_address,
+            'drop_lat' => $sr->drop_lat,
+            'drop_lng' => $sr->drop_lng,
+            'ride_type' => null,
+            'route' => $route ? ['mode' => $route->mode, 'name' => $route->name] : null,
+            'route_departure_id' => $sr->route_departure_id,
+            'route_departure' => $dep && $dep->route
+                ? ['route' => ['mode' => $dep->route->mode, 'name' => $dep->route->name]]
+                : null,
+            'seats' => $sr->seats,
+            'payment_method' => $sr->payment_method,
+            'payment_status' => $sr->payment_status,
+            'paid_amount' => $sr->payment_status === 'PAID' ? round((float) $sr->fare_amount, 2) : 0,
+            'final_fare' => round((float) $sr->fare_amount, 2),
+            'estimated_fare' => round((float) $sr->fare_amount, 2),
+            'refund_amount' => $refunded ? round((float) ($sr->refund_amount ?? 0), 2) : 0,
+            'refund_due' => $refundDue ? round((float) ($sr->refund_amount ?? $sr->fare_amount), 2) : 0,
+            'refund_status' => $sr->refund_status ?: 'NONE',
+            'created_at' => $sr->created_at?->toISOString(),
+            'completed_at' => $sr->dropped_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * Money totals for the customer detail header: everything they've paid and
+     * every refund actually returned (REFUNDED), plus refunds still owed
+     * (APPROVED = in the manual refund register, not yet paid out).
+     */
+    private function customerMoneySummary(User $user): array
+    {
+        $soloPaid = (float) Trip::query()
+            ->where('customer_id', $user->id)
+            ->where('status', '!=', 'CANCELLED')
+            ->sum(DB::raw('COALESCE(final_fare, estimated_fare, 0)'));
+
+        $seatPaid = (float) SeatReservation::query()
+            ->where('customer_id', $user->id)
+            ->where('payment_status', 'PAID')
+            ->sum('fare_amount');
+
+        $refunded = (float) SeatReservation::query()
+            ->where('customer_id', $user->id)
+            ->where('refund_status', 'REFUNDED')
+            ->sum('refund_amount');
+
+        $refundDue = (float) SeatReservation::query()
+            ->where('customer_id', $user->id)
+            ->where('refund_status', 'APPROVED')
+            ->sum('refund_amount');
+
+        $ridesCount = Trip::query()
+                ->where('customer_id', $user->id)
+                ->where('status', '!=', 'CANCELLED')
+                ->count()
+            + SeatReservation::query()
+                ->where('customer_id', $user->id)
+                ->where('status', '!=', 'CANCELLED')
+                ->count();
+
+        return [
+            'rides_count' => $ridesCount,
+            'total_paid' => round($soloPaid + $seatPaid, 2),
+            'total_refunded' => round($refunded, 2),
+            'refund_due' => round($refundDue, 2),
+        ];
     }
 
     public function importCsv(Request $request)

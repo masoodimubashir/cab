@@ -9,10 +9,11 @@ use Illuminate\Support\Facades\Hash;
 /**
  * Boarding OTP for fixed rides.
  *
- * Flow: driver taps "Board" → send() texts a 4-digit code to the customer
- * (SMS always — like the login OTP; email/push ride the operator toggles via
- * NotificationCenter) → driver types the code the customer reads out →
- * verify() confirms it and board() flips the seat to BOARDED.
+ * Flow: driver taps "Board" → send() generates a 4-digit code and shows it on
+ * the customer's OWN booking screen (the permanent channel — no SMS; email/push
+ * still ride the operator toggles via NotificationCenter) → driver types the
+ * code the customer reads out → verify() confirms it and board() flips the seat
+ * to BOARDED.
  *
  * Safety rails (mirrors PhoneOtpService): code stored hashed with a TTL,
  * 30s resend cooldown, and MAX_ATTEMPTS wrong tries locks the reservation
@@ -26,9 +27,9 @@ class FixedBoardingOtpService
     public const TTL_MINUTES = 10;
 
     /**
-     * Cache key for the plaintext code shown on the customer's booking screen
-     * while the boarding DLT template isn't approved yet (testing bridge —
-     * no SMS goes out, see Msg91Service::sendBoardingOtp).
+     * Cache key for the plaintext code shown on the customer's booking screen.
+     * This is the boarding code's delivery channel: the customer reads it off
+     * their own screen and tells it to the driver. No SMS is sent.
      */
     public static function codeCacheKey(int $reservationId): string
     {
@@ -36,7 +37,6 @@ class FixedBoardingOtpService
     }
 
     public function __construct(
-        private readonly Msg91Service $msg91,
         private readonly NotificationCenter $notifier,
     ) {
     }
@@ -76,17 +76,11 @@ class FixedBoardingOtpService
         $customer = $reservation->customer;
         $body = "Your boarding code is {$code}. Tell it to the driver only when you board the vehicle — do not share it with anyone before that.";
 
-        // SMS — no toggle, same policy as the login OTP, but only once the
-        // boarding DLT template is approved. Until then sendBoardingOtp is a
-        // no-op and the code is cached so the customer's booking screen can
-        // show it (testing bridge; disappears automatically once the
-        // template id is configured).
-        if ($customer?->phone) {
-            $this->msg91->sendBoardingOtp($customer->phone, $code, $body);
-        }
-        if (!$this->msg91->hasBoardingTemplate()) {
-            Cache::put(self::codeCacheKey($reservation->id), $code, now()->addMinutes(self::TTL_MINUTES));
-        }
+        // Delivery: the code is shown on the customer's OWN booking screen
+        // (FixedBookingService exposes it as `boarding_code`, read from this
+        // cache). This is the permanent channel — NO SMS is sent. The cache TTL
+        // matches the code's own expiry.
+        Cache::put(self::codeCacheKey($reservation->id), $code, now()->addMinutes(self::TTL_MINUTES));
 
         // In-app + push (per-user unsubscribe respected) + email (operator
         // fixed_* email toggles, via OperatorNotificationDeliveryService).
@@ -103,12 +97,7 @@ class FixedBoardingOtpService
             );
         }
 
-        return [
-            'sent' => true,
-            // Only leak the code when no real SMS went out (mock mode) so the
-            // full flow is testable without MSG91 credentials.
-            'dev_code' => $this->msg91->isLive() ? null : $code,
-        ];
+        return ['sent' => true];
     }
 
     /**

@@ -41,7 +41,12 @@ class RbacSeeder extends Seeder
         // ── Roles ───────────────────────────────────────────────────────
         $allSlugs = Permission::query()->pluck('slug')->all();
 
+        // Only Super Admin ships as a default role now. Any previously-seeded
+        // starter roles are cleaned up; managers holding them are unassigned
+        // (manager_role_id → null) so an operator re-grants a role explicitly.
         $removedRoleSlugs = [
+            'admin',
+            'city_manager',
             'manual_dispatch',
             'marketing',
             'franchise',
@@ -59,7 +64,6 @@ class RbacSeeder extends Seeder
             ['slug' => ManagerRole::SUPER_ADMIN_SLUG],
             [
                 'name' => 'Super Admin',
-                'description' => 'Full access to every page and every action. Cannot be suspended.',
                 'is_system' => true,
                 'is_suspendable' => false,
                 'requires_fleet' => false,
@@ -67,44 +71,6 @@ class RbacSeeder extends Seeder
             ]
         );
         $this->syncBySlug($superAdmin, $allSlugs);
-
-        $admin = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'admin'],
-            [
-                'name' => 'Admin',
-                'description' => 'City-wide admin. Manages drivers, trips, pricing, promotions.',
-                'is_system' => false,
-                'is_suspendable' => true,
-                'requires_fleet' => false,
-                'sort_order' => 10,
-            ]
-        );
-        $this->syncBySlug($admin, [
-            'dashboard', 'live_operations',
-            'drivers', 'contact_drivers',
-            'vehicles', 'pricing', 'app_assets', 'city_settings',
-            'coupons', 'subscriptions', 'fleets',
-            'rides', 'customers', 'safety',
-            'analytics', 'reports',
-            'operator_settings',
-        ]);
-
-        $cityManager = ManagerRole::query()->updateOrCreate(
-            ['slug' => 'city_manager'],
-            [
-                'name' => 'City Manager',
-                'description' => 'Day-to-day operations within a single city.',
-                'is_suspendable' => true,
-                'sort_order' => 20,
-            ]
-        );
-        $this->syncBySlug($cityManager, [
-            'dashboard', 'live_operations',
-            'drivers', 'rides',
-            'analytics', 'reports', 'safety',
-            'contact_drivers', 'subscriptions',
-        ]);
-
 
         // ── Bootstrap: pin admin@example.com as Super Admin ──────────────
         $bootstrap = User::query()->where('email', env('ADMIN_EMAIL', 'admin@example.com'))->first();
@@ -128,8 +94,10 @@ class RbacSeeder extends Seeder
     private function permissionCatalog(): array
     {
         return [
+            // NB: `dashboard` is intentionally NOT a grantable module — every
+            // role can always open the dashboard (see User::hasPermission), so
+            // it never appears as a checkbox in the role editor.
             'Home' => [
-                ['dashboard', 'Dashboard', 'Open the admin dashboard.'],
                 ['live_operations', 'Live Operations', 'Open the live operations map.'],
             ],
             'City Setup' => [
@@ -145,8 +113,12 @@ class RbacSeeder extends Seeder
                 ['rides', 'Rides', 'Open and manage rides.'],
                 ['customers', 'Customers', 'Open and manage customers.'],
                 ['drivers', 'Drivers', 'Open and manage drivers, approvals and document catalog.'],
+                ['manual_dispatch', 'Manual Dispatch', 'Book rides on behalf of customers from the admin panel.'],
                 ['contact_drivers', 'Contact Drivers', 'Send messages to drivers.'],
                 ['safety', 'Safety', 'Open SOS and safety events.'],
+            ],
+            'Finance' => [
+                ['finance', 'Finance', 'Open the Finance section — overview, money-in ledger and the customer refunds register.'],
             ],
             'Insights' => [
                 ['analytics', 'Analytics', 'Open real-time analytics and graphs.'],

@@ -51,7 +51,7 @@ class FixedStopAutomationService
         $approachingRadius = max($driverRadius, (int) ($citySettings?->fixed_vehicle_approaching_alert_radius_m ?? ($legacySettings['vehicle_approaching_alert_radius_m'] ?? 500)));
         $customerRadius = (int) ($citySettings?->fixed_customer_pickup_radius_m ?? ($legacySettings['customer_pickup_radius_m'] ?? 150));
         $arrivalDwellSeconds = max(0, (int) ($citySettings?->fixed_stop_arrival_dwell_seconds ?? ($legacySettings['stop_arrival_dwell_seconds'] ?? 20)));
-        $waitMinutes = max(0, (int) ($citySettings?->fixed_waiting_time_per_stop_minutes ?? ($route->waiting_time_per_stop_minutes ?? 0)));
+        $waitMinutes = FixedNoShowPolicy::waitMinutes($route, $citySettings);
         $customerGraceMinutes = max(0, (int) ($citySettings?->fixed_customer_grace_minutes ?? ($legacySettings['customer_grace_minutes'] ?? 2)));
         $driverMissedGraceMinutes = max(0, (int) ($citySettings?->fixed_driver_missed_stop_grace_minutes ?? ($legacySettings['driver_missed_stop_grace_minutes'] ?? 3)));
 

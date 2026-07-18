@@ -18,10 +18,14 @@ class FixedManifestService
         $this->availability->assertFixedDeparture($departure);
         $departure->loadMissing(['route.stops' => fn ($q) => $q->orderBy('seq'), 'driver:id,name']);
 
+        $waitMinutes = $departure->route
+            ? FixedNoShowPolicy::waitMinutes($departure->route)
+            : FixedNoShowPolicy::MIN_WAIT_MINUTES;
+
         $passengers = SeatReservation::query()
             ->where('route_departure_id', $departure->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
-            ->with(['customer:id,name,phone', 'boardStop:id,name,lat,lng', 'dropStop:id,name,lat,lng'])
+            ->with(['customer:id,name,phone', 'boardStop:id,name,lat,lng,seq', 'dropStop:id,name,lat,lng'])
             ->orderBy('id')
             ->get()
             ->map(fn (SeatReservation $reservation) => [
@@ -31,6 +35,7 @@ class FixedManifestService
                 'seats' => (int) $reservation->seats,
                 'status' => $reservation->status,
                 'fixed_live_status' => $this->bookings->fixedLiveStatus($reservation),
+                'no_show_unlock_at' => optional(FixedNoShowPolicy::unlockAt($reservation, $departure, $waitMinutes))->toIso8601String(),
                 'refund_status' => $reservation->refund_status,
                 'fixed_auto_outcome' => $reservation->fixed_auto_outcome,
                 'payment_status' => $reservation->payment_status,

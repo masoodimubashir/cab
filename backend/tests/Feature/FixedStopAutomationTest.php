@@ -102,6 +102,7 @@ class FixedStopAutomationTest extends TestCase
         $this->departure->update(['seats_taken' => 2, 'luggage_taken' => 1]);
 
         $service = $this->automation();
+        // Driver reaches the pickup stop; a 20s dwell must pass before "arrived".
         $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000, Carbon::parse('2026-06-19 10:00:00'));
 
         $reservation->refresh();
@@ -109,14 +110,26 @@ class FixedStopAutomationTest extends TestCase
         $this->assertNotNull($reservation->fixed_stop_arrival_started_at);
         $this->assertNull($reservation->fixed_stop_arrived_at);
 
+        // Dwell elapsed: arrival recorded and the waiting timer starts. With no
+        // configured wait the 2-minute minimum floor applies, so no-show is
+        // still ~2 minutes away and "leaving soon" has not fired yet.
         $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000, Carbon::parse('2026-06-19 10:00:21'));
 
         $reservation->refresh();
         $this->assertSame('CONFIRMED', $reservation->status);
         $this->assertNotNull($reservation->fixed_stop_arrived_at);
+        $this->assertNull($reservation->fixed_leaving_soon_notified_at);
+
+        // Within a minute of the deadline: the customer gets the "leaving soon"
+        // warning but is still not marked no-show.
+        $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000, Carbon::parse('2026-06-19 10:01:30'));
+
+        $reservation->refresh();
+        $this->assertSame('CONFIRMED', $reservation->status);
         $this->assertNotNull($reservation->fixed_leaving_soon_notified_at);
 
-        $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000, Carbon::parse('2026-06-19 10:01:00'));
+        // Past the 2-minute waiting window: now the customer is marked no-show.
+        $service->processDriverLocation($this->driver->id, 34.0001000, 74.0001000, Carbon::parse('2026-06-19 10:02:30'));
 
         $reservation->refresh();
         $this->assertSame('NO_SHOW', $reservation->status);

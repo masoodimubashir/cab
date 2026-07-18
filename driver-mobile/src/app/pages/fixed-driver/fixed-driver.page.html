@@ -3,7 +3,6 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/dashboard" text=""></ion-back-button>
     </ion-buttons>
-    <ion-title>Fixed vehicle</ion-title>
     <ion-buttons slot="end">
       <ion-button class="refresh-btn" fill="clear" (click)="refresh()" [disabled]="loading || busy">
         <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
@@ -117,11 +116,11 @@
           <ion-icon name="close-circle-outline"></ion-icon>
           <span>Close vehicle</span>
         </button>
-        <button class="dc-cta dc-press" (click)="startRide()" [disabled]="busy || !canStart(vehicle)">
+        <button class="dc-cta dc-press" *ngIf="canStart(vehicle)" (click)="startRide()" [disabled]="busy">
           <ion-icon name="play-outline"></ion-icon>
           <span>Start ride</span>
         </button>
-        <button class="dc-cta dc-cta--ghost dc-press" (click)="completeRide()" [disabled]="busy || !canComplete(vehicle)">
+        <button class="dc-cta dc-cta--ghost dc-press" *ngIf="canComplete(vehicle)" (click)="completeRide()" [disabled]="busy">
           <ion-icon name="checkmark-done-outline"></ion-icon>
           <span>Complete ride</span>
         </button>
@@ -219,13 +218,20 @@
               <span *ngIf="boardCooldown(passenger) <= 0">Board</span>
               <span *ngIf="boardCooldown(passenger) > 0">Board in {{ boardCooldown(passenger) }}s</span>
             </button>
-            <button class="dc-cta dc-cta--ghost passenger-action passenger-action--drop dc-press" (click)="drop(passenger)" [disabled]="busy || !canDropPassenger(passenger)">
+            <button class="dc-cta dc-cta--ghost passenger-action passenger-action--drop dc-press" *ngIf="canDropPassenger(passenger)" (click)="drop(passenger)" [disabled]="busy">
               <ion-icon name="log-out-outline"></ion-icon>
               <span>Drop off</span>
             </button>
-            <button class="dc-cta dc-cta--danger passenger-action passenger-action--noshow dc-press" (click)="noShow(passenger)" [disabled]="busy || !canNoShowPassenger(passenger)">
-              <ion-icon name="person-remove-outline"></ion-icon>
-              <span>No-show</span>
+            <button
+              *ngIf="noShowVisible(passenger)"
+              class="dc-cta dc-cta--danger passenger-action passenger-action--noshow dc-press"
+              [class.passenger-action--cooldown]="noShowCountdown(passenger) > 0"
+              (click)="noShow(passenger)"
+              [disabled]="busy || noShowCountdown(passenger) > 0"
+            >
+              <ion-icon [name]="noShowCountdown(passenger) > 0 ? 'time-outline' : 'person-remove-outline'"></ion-icon>
+              <span *ngIf="noShowCountdown(passenger) <= 0">No-show</span>
+              <span *ngIf="noShowCountdown(passenger) > 0">No-show in {{ noShowCountdownLabel(passenger) }}</span>
             </button>
           </div>
           <p class="action-hint">{{ passengerActionHint(passenger) }}</p>

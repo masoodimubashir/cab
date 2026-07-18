@@ -1481,7 +1481,7 @@
 
 .passenger-actions.passenger-actions--triple {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
   padding: 0 10px 10px 14px;
 }
@@ -2008,4 +2008,21 @@
     color: var(--fixed-muted);
     opacity: 0.75;
   }
+}
+
+/* --- Responsive action buttons ---------------------------------------------
+   The action buttons (Close vehicle / Start ride / Complete ride) flow to fill
+   the row and adapt to however many are actually visible — e.g. once "Start
+   ride" hides after the ride starts, the remaining buttons widen to fill.
+   Overrides the fixed 2-/4-column grids defined earlier; the narrow-screen
+   media query still stacks them vertically. */
+.action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-grid > .dc-cta {
+  flex: 1 1 0;
+  min-width: 120px;
 }

@@ -16,7 +16,8 @@ import { CityWorkspaceComponent } from './admin/city-workspace/city-workspace.co
 import { FleetsSettingsComponent } from './admin/settings/fleets.component';
 import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
-import { AppAssetsComponent } from './admin/settings/app-assets.component';
+// App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
+// import { AppAssetsComponent } from './admin/settings/app-assets.component';
 import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { VehicleFareSetupComponent } from './admin/settings/vehicle-fare-setup.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
@@ -106,7 +107,22 @@ export const routes: Routes = [
     path: 'refunds',
     loadComponent: () => import('./admin/refunds/refunds.component').then((m) => m.AdminRefundsComponent),
     canActivate: [adminAuthGuard],
-    data: { permission: 'rides' },
+    data: { permission: 'finance' },
+  },
+
+  // B6 — Finance: money-in ledger + financial-health overview.
+  { path: 'finance', redirectTo: 'finance/overview', pathMatch: 'full' },
+  {
+    path: 'finance/overview',
+    loadComponent: () => import('./admin/finance/finance-overview.component').then((m) => m.FinanceOverviewComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
+  {
+    path: 'finance/money-in',
+    loadComponent: () => import('./admin/finance/finance-money-in.component').then((m) => m.FinanceMoneyInComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
   },
 
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard], data: { permission: 'roles_permissions' } },
@@ -116,7 +132,8 @@ export const routes: Routes = [
   { path: 'settings/cities', component: CityWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
   { path: 'settings/city', component: SettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
   { path: 'settings/operator', component: OperatorSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'operator_settings' } },
-  { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard], data: { permission: 'app_assets' } },
+  // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting (and the import above).
+  // { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard], data: { permission: 'app_assets' } },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'fleets' } },
   { path: 'settings/vehicle-types/:vehicleRowId', component: VehicleTypeDetailsComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },

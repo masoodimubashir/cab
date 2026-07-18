@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'slug', 'name', 'description',
+    'slug', 'name',
     'is_system', 'is_suspendable', 'requires_fleet',
     'sort_order',
 ])]

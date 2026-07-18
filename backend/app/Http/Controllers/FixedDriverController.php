@@ -19,6 +19,7 @@ use App\Services\FixedBoardingOtpService;
 use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
 use App\Services\FixedManifestService;
+use App\Services\FixedNoShowPolicy;
 use App\Services\NotificationCenter;
 use App\Services\FixedRouteService;
 use App\Services\FixedRefundService;
@@ -293,10 +294,10 @@ class FixedDriverController extends Controller
     }
 
     /**
-     * Step 1 of boarding: generate + send the boarding code to the customer
-     * (SMS always, email/push per operator toggles). The driver app opens the
-     * code popup after this succeeds. Re-hitting it acts as "Resend" (30s
-     * cooldown enforced by the service).
+     * Step 1 of boarding: generate the boarding code and show it on the
+     * customer's own booking screen (no SMS; email/push per operator toggles).
+     * The driver app opens the code-entry popup after this succeeds. Re-hitting
+     * it acts as "Resend" (30s cooldown enforced by the service).
      */
     public function sendBoardingOtp(Request $request, SeatReservation $reservation)
     {
@@ -332,10 +333,8 @@ class FixedDriverController extends Controller
         }
 
         return response()->json([
-            'message' => 'Boarding code sent to the passenger.',
+            'message' => 'Boarding code is now showing on the passenger\'s screen.',
             'resend_after' => FixedBoardingOtpService::RESEND_COOLDOWN_SEC,
-            // Present only in SMS mock mode (no MSG91 key) for dev testing.
-            'dev_code' => $result['dev_code'] ?? null,
         ]);
     }
 
@@ -530,6 +529,18 @@ class FixedDriverController extends Controller
 
         $this->recordActionPing($request, $departure, (int) $request->user()->id);
         $this->ensureStopReachedForAction($departure, $reservation->boardStop, (int) $request->user()->id, 'Reach the passenger pickup stop before marking no-show.');
+
+        // Customer protection: the manual No-show button must respect the same
+        // waiting timer the automatic no-show uses, so a driver can't roll into
+        // the stop and instantly no-show a passenger who is walking up. Reload
+        // so we see the freshly recorded reach time / arrival timer.
+        $reservation->refresh()->loadMissing('boardStop:id,seq');
+        $departure->refresh()->loadMissing('route:id,city_id,waiting_time_per_stop_minutes');
+        $unlockAt = FixedNoShowPolicy::unlockAt($reservation, $departure);
+        if ($unlockAt && now()->lessThan($unlockAt)) {
+            $secs = abs(now()->diffInSeconds($unlockAt));
+            abort(422, "Waiting time isn't over yet — you can mark this passenger no-show in {$secs}s.");
+        }
 
         $updated = $this->refunds->markNoShow($reservation);
         $this->broadcastAvailability(RouteDeparture::query()->findOrFail($departure->id), 'passenger_no_show');

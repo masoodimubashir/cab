@@ -18,6 +18,6 @@ export const adminAuthGuard: CanActivateFn = (route) => {
   }
 
   return auth.ensureLoaded().pipe(
-    map(() => auth.hasPermission(permission) ? true : router.parseUrl('/dashboard')),
+    map(() => auth.hasPermission(permission) ? true : router.parseUrl(auth.landingRoute())),
   );
 };
