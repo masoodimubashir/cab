@@ -11,7 +11,7 @@
     "test": "ng test",
     "lint": "ng lint",
     "sync": "ng build && cap sync android",
-    "dev:device": "bash ../scripts/dev-device.sh 8200",
+    "dev:device": "node ../scripts/dev-device.mjs 8200",
     "go:wireless": "node ../scripts/go-wireless.mjs",
     "apk:debug": "ng build && cap sync android && cd android && ./gradlew assembleDebug",
     "apk:release": "ng build --configuration production && cap sync android && cd android && ./gradlew assembleRelease"
