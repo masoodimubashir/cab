@@ -56,6 +56,29 @@ function findAdb() {
 
 const ADB = findAdb();
 
+// Environment for the cap / ionic child processes. Windows machines often have
+// `adb` reachable but no ANDROID_HOME set — so `adb devices` works here while
+// Capacitor's own device list comes back empty ("phone attached but Capacitor
+// can't see it"). If we found adb inside an SDK, hand that SDK down to the
+// children via ANDROID_HOME / ANDROID_SDK_ROOT and platform-tools on PATH.
+function buildChildEnv() {
+  const env = { ...process.env };
+  const ptDir = path.dirname(ADB);
+  if (path.isAbsolute(ADB) && path.basename(ptDir).toLowerCase() === 'platform-tools') {
+    const root = path.dirname(ptDir);
+    if (!env.ANDROID_HOME) env.ANDROID_HOME = root;
+    if (!env.ANDROID_SDK_ROOT) env.ANDROID_SDK_ROOT = root;
+    const sep = IS_WIN ? ';' : ':';
+    const currentPath = env.PATH || env.Path || '';
+    if (!currentPath.split(sep).includes(ptDir)) {
+      env.PATH = ptDir + sep + currentPath;
+    }
+  }
+  return env;
+}
+
+const CHILD_ENV = buildChildEnv();
+
 // Run adb and return trimmed stdout. With allowFail, swallow non-zero exits.
 function adb(args, { allowFail = false } = {}) {
   try {
@@ -93,17 +116,31 @@ function capTarget() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       shell: IS_WIN, // Windows needs a shell to resolve npx.cmd
+      env: CHILD_ENV, // ensure Capacitor sees the same SDK/adb we found
     });
   } catch {
     return '';
   }
-  try {
-    const arr = JSON.parse(out);
-    const first = Array.isArray(arr) ? arr[0] : null;
-    return first && first.id ? first.id : '';
-  } catch {
-    return '';
-  }
+  return firstTargetId(out);
+}
+
+// Pull the first target id out of `cap ... --json` output. Tolerates stray log
+// lines some tools print before/after the JSON array on Windows.
+function firstTargetId(out) {
+  const parse = (s) => {
+    try {
+      const arr = JSON.parse(s);
+      const first = Array.isArray(arr) ? arr[0] : null;
+      return first && first.id ? first.id : '';
+    } catch {
+      return '';
+    }
+  };
+  const id = parse(out.trim());
+  if (id) return id;
+  const start = out.indexOf('[');
+  const end = out.lastIndexOf(']');
+  return start !== -1 && end > start ? parse(out.slice(start, end + 1)) : '';
 }
 
 // --- 1. make sure a phone is attached --------------------------------------
@@ -154,8 +191,14 @@ for (let i = 0; i < 10; i++) {
 }
 
 if (!target) {
-  console.error("❌ Phone is attached but Capacitor can't see it yet. Re-run the command,");
-  console.error('   or unplug/replug (USB) / re-run  adb connect <ip>:5555  (wireless).');
+  console.error("❌ Phone is attached but Capacitor can't see it.");
+  console.error('   adb devices sees:');
+  for (const d of listDevices()) console.error(`     • ${d.serial}  (${d.state})`);
+  console.error('   Most often this means Capacitor is using a different/empty Android SDK.');
+  console.error(`   Using SDK: ${CHILD_ENV.ANDROID_HOME || '(none — set ANDROID_HOME to your SDK)'}`);
+  console.error('   Fixes: set ANDROID_HOME to the SDK that owns this adb, make sure that');
+  console.error('   SDK\'s platform-tools is on PATH, then re-run. (USB: unplug/replug and');
+  console.error('   accept the prompt. Wireless: adb connect <ip>:5555.)');
   process.exit(1);
 }
 
@@ -167,6 +210,6 @@ console.log('   Press Ctrl+C to stop.');
 const run = spawnSync(
   NPX,
   ['ionic', 'cap', 'run', 'android', '-l', '--external', `--port=${PORT}`, `--target=${target}`],
-  { stdio: 'inherit', shell: IS_WIN }
+  { stdio: 'inherit', shell: IS_WIN, env: CHILD_ENV }
 );
 process.exit(run.status ?? 0);
