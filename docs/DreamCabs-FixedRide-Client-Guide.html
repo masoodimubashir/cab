@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DreamCabs — Fixed Ride Module · Client User Guide</title>
+<style>
+  /* ============ DreamCabs guide design system ============ */
+  :root {
+    --navy: #0D1B2A;
+    --navy-2: #16283C;
+    --green: #12B35B;
+    --green-deep: #0E8F47;
+    --green-tint: #E7F8EF;
+    --ink: #17202A;
+    --muted: #5B6672;
+    --soft: #93A0AD;
+    --line: #E6EAEF;
+    --canvas: #F6F8FA;
+    --amber: #E8A100;
+    --amber-tint: #FFF6E5;
+    --red: #D33651;
+    --red-tint: #FDEEF1;
+    --blue: #2563EB;
+    --blue-tint: #EAF1FE;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: #fff;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 56px;
+  }
+  @media print {
+    @page { size: A4; margin: 15mm 14mm; }
+    body { font-size: 12.2px; }
+    .page { max-width: none; padding: 0; }
+    .pb { page-break-before: always; }
+    .card, .callout, .status-table tr, .shot, .flow, .faq-item, .step { page-break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+  .pb { margin-top: 56px; }
+
+  /* ---------- Cover ---------- */
+  .cover {
+    background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 70%);
+    color: #fff;
+    border-radius: 22px;
+    padding: 72px 60px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+  @media print { .cover { border-radius: 0; padding: 60px 44px; } }
+  .cover::after {
+    content: "";
+    position: absolute; right: -120px; top: -120px;
+    width: 340px; height: 340px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(18,179,91,0.35), transparent 70%);
+  }
+  .cover-brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-weight: 800; font-size: 20px; letter-spacing: -0.3px;
+  }
+  .cover-brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); box-shadow: 0 0 14px rgba(18,179,91,.8); }
+  .cover-badge {
+    display: inline-block; margin-top: 34px;
+    background: var(--green); color: var(--navy);
+    font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+    padding: 5px 14px; border-radius: 999px;
+  }
+  .cover h1 { font-size: 44px; line-height: 1.12; font-weight: 800; letter-spacing: -1px; margin-top: 18px; max-width: 560px; }
+  .cover p.sub { margin-top: 16px; font-size: 16px; color: #B9C2CC; max-width: 520px; }
+  .cover-meta { margin-top: 54px; display: flex; gap: 40px; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,.14); padding-top: 22px; }
+  .cover-meta div span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: #8A96A3; }
+  .cover-meta div strong { font-size: 14px; font-weight: 700; color: #fff; }
+
+  /* ---------- Headings ---------- */
+  h2.sec {
+    font-size: 26px; font-weight: 800; letter-spacing: -0.5px; color: var(--navy);
+    display: flex; align-items: center; gap: 14px;
+    margin: 0 0 6px;
+  }
+  h2.sec .n {
+    flex: none; width: 40px; height: 40px; border-radius: 12px;
+    background: var(--navy); color: var(--green);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 800;
+  }
+  p.lede { color: var(--muted); font-size: 15px; margin: 6px 0 26px; max-width: 700px; }
+  h3 { font-size: 17.5px; font-weight: 800; color: var(--navy); margin: 30px 0 8px; letter-spacing: -0.2px; }
+  h4 { font-size: 14.5px; font-weight: 800; color: var(--ink); margin: 20px 0 6px; }
+  p + p { margin-top: 8px; }
+  section p, section li { color: #2A3540; }
+  ul, ol { margin: 8px 0 8px 22px; }
+  li { margin: 4px 0; }
+  strong { font-weight: 700; color: var(--ink); }
+  .money { font-weight: 800; color: var(--green-deep); white-space: nowrap; }
+
+  /* ---------- TOC ---------- */
+  .toc { border: 1px solid var(--line); border-radius: 16px; padding: 26px 30px; background: var(--canvas); }
+  .toc ol { list-style: none; margin: 0; counter-reset: toc; column-count: 2; column-gap: 40px; }
+  .toc li { counter-increment: toc; margin: 7px 0; break-inside: avoid; font-weight: 600; font-size: 13.5px; }
+  .toc li::before { content: counter(toc, decimal-leading-zero); color: var(--green-deep); font-weight: 800; margin-right: 10px; font-size: 12px; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--green-deep); }
+
+  /* ---------- Role chips ---------- */
+  .role {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    padding: 3px 10px; border-radius: 999px; vertical-align: 2px;
+  }
+  .role-cust { background: var(--green-tint); color: var(--green-deep); }
+  .role-drv { background: var(--blue-tint); color: var(--blue); }
+  .role-adm { background: #EFE9FD; color: #6D3FC0; }
+
+  /* ---------- Cards ---------- */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 700px) { .grid, .grid-3 { grid-template-columns: 1fr; } }
+  .card {
+    border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: #fff;
+  }
+  .card .k {
+    display: block; font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--soft); margin-bottom: 4px;
+  }
+  .card h4 { margin: 0 0 4px; }
+  .card p { font-size: 12.8px; color: var(--muted); }
+  .card.tone { background: var(--canvas); }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    display: flex; gap: 12px; align-items: flex-start;
+    border-radius: 12px; padding: 13px 16px; margin: 14px 0;
+    font-size: 13px; line-height: 1.55;
+  }
+  .callout .ic { flex: none; font-size: 15px; line-height: 1.4; }
+  .callout.note { background: var(--blue-tint); color: #1D3F8F; }
+  .callout.tip { background: var(--green-tint); color: #0B6B38; }
+  .callout.warn { background: var(--amber-tint); color: #7A5600; }
+  .callout.danger { background: var(--red-tint); color: #A02540; }
+  .callout strong { color: inherit; }
+
+  /* ---------- Tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th {
+    text-align: left; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--soft); font-weight: 800; padding: 9px 12px; border-bottom: 2px solid var(--line);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { white-space: nowrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .p-green { background: var(--green-tint); color: var(--green-deep); }
+  .p-amber { background: var(--amber-tint); color: #B07B00; }
+  .p-red { background: var(--red-tint); color: var(--red); }
+  .p-blue { background: var(--blue-tint); color: var(--blue); }
+  .p-grey { background: #EEF1F4; color: var(--muted); }
+  .p-navy { background: #E3E8EF; color: var(--navy); }
+
+  /* ---------- Steps ---------- */
+  .steps { margin: 18px 0; }
+  .step { display: flex; gap: 16px; padding: 14px 0; border-bottom: 1px dashed var(--line); }
+  .step:last-child { border-bottom: none; }
+  .step .num {
+    flex: none; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--navy); color: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13.5px;
+  }
+  .step h4 { margin: 2px 0 3px; }
+  .step p { font-size: 13px; color: var(--muted); }
+
+  /* ---------- Flow diagrams ---------- */
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    background: var(--canvas); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px; margin: 16px 0;
+  }
+  .fbox {
+    background: #fff; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 8px 13px; font-size: 12px; font-weight: 700; color: var(--navy); text-align: center;
+  }
+  .fbox small { display: block; font-weight: 600; font-size: 10.5px; color: var(--soft); }
+  .fbox.hl { border-color: var(--green); background: var(--green-tint); }
+  .fbox.bad { border-color: #F0BBC7; background: var(--red-tint); color: var(--red); }
+  .farr { color: var(--soft); font-weight: 800; font-size: 14px; }
+  .flow-title { width: 100%; font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--soft); margin-bottom: 2px; }
+
+  /* ---------- Timeline ---------- */
+  .timeline { margin: 20px 0 8px; position: relative; padding-left: 34px; }
+  .timeline::before { content: ""; position: absolute; left: 11px; top: 8px; bottom: 14px; width: 2px; background: var(--line); }
+  .tl { position: relative; padding: 0 0 20px; }
+  .tl::before {
+    content: ""; position: absolute; left: -30px; top: 5px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 0 3px var(--green-tint);
+  }
+  .tl.alt::before { background: var(--navy); box-shadow: 0 0 0 3px #E3E8EF; }
+  .tl h4 { margin: 0 0 2px; }
+  .tl p { font-size: 13px; color: var(--muted); }
+  .tl .who { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--green-deep); }
+
+  /* ---------- Screenshots ---------- */
+  .fig { margin: 22px 0; page-break-inside: avoid; }
+  .fig .frame {
+    background: var(--canvas); border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px; display: flex; justify-content: center; gap: 18px; flex-wrap: wrap;
+  }
+  .fig img {
+    display: block; max-width: 100%; height: auto;
+    border-radius: 10px; border: 1px solid var(--line);
+    box-shadow: 0 10px 28px rgba(13, 27, 42, 0.12);
+  }
+  .fig img.phone { width: 300px; }
+  .fig figcaption {
+    margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center;
+  }
+  .fig figcaption strong { color: var(--navy); }
+
+  /* Numbered legends matching the red callouts on each screenshot */
+  .legend {
+    list-style: none; margin: 14px 4px 0; padding: 0;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 22px;
+  }
+  @media (max-width: 640px) { .legend { grid-template-columns: 1fr; } }
+  .legend li { display: flex; gap: 9px; font-size: 12.5px; line-height: 1.5; color: #2A3540; page-break-inside: avoid; }
+  .legend .n {
+    flex: none; width: 21px; height: 21px; margin-top: 1px; border-radius: 50%;
+    background: #E8443A; color: #fff; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800;
+  }
+  .legend strong { color: var(--navy); }
+
+  /* ---------- FAQ ---------- */
+  .faq-item { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 10px 0; }
+  .faq-item .q { font-weight: 800; color: var(--navy); margin-bottom: 4px; }
+  .faq-item .a { font-size: 13px; color: #2A3540; }
+
+  /* ---------- Footer ---------- */
+  .doc-footer {
+    margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; font-size: 11.5px; color: var(--soft);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ==================================================== COVER -->
+  <div class="cover">
+    <div class="cover-brand"><span class="dot"></span> DreamCabs</div>
+    <div><span class="cover-badge">Official Client Manual</span></div>
+    <h1>Fixed Ride Module<br>User Guide &amp; Operating Manual</h1>
+    <p class="sub">Everything you and your team need to run scheduled, seat-by-seat cab services — bookings, boarding, payments, refunds and daily operations — explained in plain language.</p>
+    <div class="cover-meta">
+      <div><span>Module</span><strong>Fixed Rides</strong></div>
+      <div><span>Audience</span><strong>Business owner &amp; operations team</strong></div>
+      <div><span>Applies to</span><strong>Customer App · Driver App · Admin Panel</strong></div>
+      <div><span>Version</span><strong>1.0 — July 2026</strong></div>
+    </div>
+  </div>
+
+  <!-- ==================================================== TOC -->
+  <section class="pb">
+    <h2 class="sec"><span class="n">☰</span> Table of Contents</h2>
+    <p class="lede">The guide is organised so you can read it front-to-back for a presentation, or jump straight to one role's chapter when training staff.</p>
+    <div class="toc">
+      <ol>
+        <li><a href="#s1">What is a Fixed Ride?</a></li>
+        <li><a href="#s2">Who uses the system</a></li>
+        <li><a href="#s3">The customer's journey — booking a seat</a></li>
+        <li><a href="#s4">The customer's other screens</a></li>
+        <li><a href="#s5">The driver's journey — running a ride</a></li>
+        <li><a href="#s6">Driver earnings, commission &amp; wallet</a></li>
+        <li><a href="#s7">The admin panel — routes</a></li>
+        <li><a href="#s8">The admin panel — live vehicles &amp; bookings</a></li>
+        <li><a href="#s9">The admin panel — refund register</a></li>
+        <li><a href="#s10">The complete ride lifecycle</a></li>
+        <li><a href="#s11">Business rules, in plain language</a></li>
+        <li><a href="#s12">Every status explained</a></li>
+        <li><a href="#s13">How the money moves</a></li>
+        <li><a href="#s14">Running Fixed Ride operations (daily checklist)</a></li>
+        <li><a href="#s15">Frequently asked questions</a></li>
+        <li><a href="#s16">Future enhancements</a></li>
+      </ol>
+    </div>
+    <div class="callout tip"><span class="ic">💡</span><div><strong>How to read the examples.</strong> Throughout this guide we use one imaginary route — <strong>Srinagar → Baramulla, fare ₹500 per seat</strong> — so every rule is shown with real rupee numbers.</div></div>
+  </section>
+
+  <!-- ==================================================== 1. WHAT IS A FIXED RIDE -->
+  <section class="pb" id="s1">
+    <h2 class="sec"><span class="n">1</span> What is a Fixed Ride?</h2>
+    <p class="lede">A Fixed Ride is a cab that runs on a <strong>fixed route with fixed stops and a fixed fare</strong> — like a premium shared taxi. Passengers don't hire the whole car; they book <strong>individual seats</strong>.</p>
+
+    <p>Think of it like a small, well-run bus service using cabs:</p>
+    <ul>
+      <li>You (the operator) define a <strong>route</strong> — for example Srinagar → Baramulla — with its official pickup and drop stops along the way.</li>
+      <li>Each day, a <strong>vehicle</strong> is opened on that route with a departure time and a fixed number of seats (say 6).</li>
+      <li>Customers book <strong>one or more seats</strong> in advance from their phone, pay, and receive a <strong>4-digit boarding code</strong>.</li>
+      <li>The driver picks passengers up at their chosen stops, confirms each one with their boarding code, drops them at their chosen stops, and completes the ride.</li>
+    </ul>
+
+    <div class="grid grid-3">
+      <div class="card tone"><span class="k">Customers get</span><h4>Certainty</h4><p>A guaranteed seat, a fixed price known before booking, and live status of their vehicle.</p></div>
+      <div class="card tone"><span class="k">Drivers get</span><h4>A full car</h4><p>A pre-filled passenger list, stop-by-stop, with no haggling — the app tells them who boards where.</p></div>
+      <div class="card tone"><span class="k">You get</span><h4>Control</h4><p>Routes, fares, seats, commission and refunds are all set and monitored from one admin panel.</p></div>
+    </div>
+
+    <div class="callout note"><span class="ic">ℹ️</span><div><strong>Fixed Rides are the launch product.</strong> DreamCabs also contains Private (whole-car) and Shuttle modules, but the public launch is Fixed-only. This guide covers Fixed Rides and everything connected to them — payments, refunds, earnings, notifications and reports.</div></div>
+  </section>
+
+  <!-- ==================================================== 2. ROLES -->
+  <section class="pb" id="s2">
+    <h2 class="sec"><span class="n">2</span> Who uses the system</h2>
+    <p class="lede">Three apps, three audiences. Each person only sees what they need.</p>
+
+    <table>
+      <tr><th>Role</th><th>App they use</th><th>What they do with Fixed Rides</th></tr>
+      <tr>
+        <td><span class="role role-cust">Customer</span></td>
+        <td>DreamCabs Customer App</td>
+        <td>Browses routes, books seats, pays, tracks the vehicle, shows the boarding code, cancels if needed, sees refunds.</td>
+      </tr>
+      <tr>
+        <td><span class="role role-drv">Driver</span></td>
+        <td>DreamCabs Driver App</td>
+        <td>Opens a vehicle on a route, sees the passenger list stop-by-stop, boards passengers by code, marks drops and no-shows, completes the ride, tracks earnings.</td>
+      </tr>
+      <tr>
+        <td><span class="role role-adm">Administrator</span></td>
+        <td>Admin Panel (web)</td>
+        <td>Designs routes on a map, sets fares/seats/commission, opens and monitors live vehicles, manages bookings, sends refunds, reads reports.</td>
+      </tr>
+      <tr>
+        <td><span class="role role-adm">Support / staff</span></td>
+        <td>Admin Panel (limited)</td>
+        <td>Staff accounts can be given only the permissions they need (for example rides but not finance). Support notes can be attached to any booking so the whole team sees the history of an issue.</td>
+      </tr>
+    </table>
+
+    <div class="callout note"><span class="ic">ℹ️</span><div><strong>About staff permissions.</strong> The admin panel has role-based access: you create roles (e.g. "Dispatcher", "Accountant"), tick the modules each role may open, and assign staff. The owner account (super admin) always sees everything.</div></div>
+  </section>
+
+  <!-- ==================================================== 3. CUSTOMER BOOKING -->
+  <section class="pb" id="s3">
+    <h2 class="sec"><span class="n">3</span> The customer's journey — booking a seat <span class="role role-cust">Customer</span></h2>
+    <p class="lede">Booking is a five-screen flow inside the customer app. A first-time customer can finish it in under two minutes.</p>
+
+    <div class="steps">
+      <div class="step"><div class="num">1</div><div>
+        <h4>Choose a route</h4>
+        <p>The customer opens <strong>Fixed rides</strong> from the home screen or menu. They see the list of routes available in their city — each card shows the route name (e.g. <em>Srinagar → Baramulla</em>), the fare per seat, and where it starts and ends. Routes you have paused in the admin panel simply don't appear here.</p>
+      </div></div>
+      <div class="step"><div class="num">2</div><div>
+        <h4>Choose a boarding vehicle</h4>
+        <p>The app lists the vehicles currently open for booking on that route — the departure date and time, the driver's vehicle, and <strong>how many seats are still free</strong>. A vehicle that is full, already departed, or closed for boarding is not offered.</p>
+      </div></div>
+      <div class="step"><div class="num">3</div><div>
+        <h4>Stops &amp; seats</h4>
+        <p>The customer picks their <strong>pickup stop</strong> and <strong>drop stop</strong> from the route's official stops, then uses simple <strong>+ / − steppers</strong> to choose the number of seats and any <strong>extra luggage</strong>. The price updates live: seats × fare, plus the luggage charge you set on the route.</p>
+      </div></div>
+      <div class="step"><div class="num">4</div><div>
+        <h4>Review &amp; pay</h4>
+        <p>A summary shows the route, vehicle, stops, seats, luggage and total. The customer can <strong>apply a coupon</strong> here — the discount is shown before paying. They then pay by <strong>Wallet</strong> (instant, from their DreamCabs balance) or <strong>Online</strong> (UPI / card via the secure Razorpay page).</p>
+      </div></div>
+      <div class="step"><div class="num">5</div><div>
+        <h4>Booking confirmed</h4>
+        <p>A success screen confirms the seats. The booking appears under <strong>My bookings</strong>, a confirmation lands in their <strong>notifications</strong>, and their <strong>4-digit boarding code</strong> is now visible on the live ride screen.</p>
+      </div></div>
+    </div>
+
+    <div class="callout warn"><span class="ic">⏳</span><div><strong>The 5-minute seat hold.</strong> The moment a customer reaches payment, their seats are <strong>reserved for 5 minutes</strong> so nobody else can take them while they pay. If payment isn't completed in time, the hold expires and the seats are automatically released back for sale. No money is taken for an expired hold.</div></div>
+
+    <div class="callout note"><span class="ic">ℹ️</span><div><strong>Worked example.</strong> Srinagar → Baramulla, fare <span class="money">₹500</span>/seat, luggage charge <span class="money">₹100</span>/bag. A family books 3 seats + 1 extra bag = <span class="money">₹1,600</span>. With a ₹200 coupon, they pay <span class="money">₹1,400</span>.</div></div>
+
+    <figure class="fig">
+      <div class="frame"><img class="phone" src="screenshots/customer-fixed-book.png" alt="Customer app — Choose a fixed route step of the booking flow, with numbered callouts"></div>
+      <ol class="legend">
+        <li><span class="n">1</span><span><strong>Back button</strong> — leaves the booking flow and returns to the previous screen. Nothing is booked yet.</span></li>
+        <li><span class="n">2</span><span><strong>Route-type tabs</strong> — filter the list: <strong>All</strong>, <strong>Local</strong> (in-city) or <strong>Outstation</strong> (intercity). The little number shows how many routes are in each group.</span></li>
+        <li><span class="n">3</span><span><strong>Search box</strong> — type any route or stop name to jump straight to it.</span></li>
+        <li><span class="n">4</span><span><strong>Route card</strong> — one bookable route (start → end). Tapping it moves to the next step: choosing the departure vehicle.</span></li>
+        <li><span class="n">5</span><span><strong>Fare per seat</strong> — the fixed price of one seat, always visible <em>before</em> anything is booked.</span></li>
+      </ol>
+      <figcaption><strong>Customer app — step 1 of the booking flow</strong> (the route chooser over the live map).</figcaption>
+    </figure>
+  </section>
+
+  <!-- ==================================================== 4. CUSTOMER OTHER SCREENS -->
+  <section class="pb" id="s4">
+    <h2 class="sec"><span class="n">4</span> The customer's other screens <span class="role role-cust">Customer</span></h2>
+
+    <h3>My bookings</h3>
+    <p>A list of every fixed booking the customer has made — upcoming and past. Each card shows the route, travel date, seats, amount paid and the current status (Booked, Boarded, Completed, Cancelled, No-show…). Tapping a booking opens its live ride screen.</p>
+
+    <h3>The live ride screen</h3>
+    <p>This is the customer's companion for the day of travel. It shows:</p>
+    <ul>
+      <li><strong>Status banner</strong> — plain-language updates: "Vehicle is boarding", "Ride started", "You have boarded", "Booking cancelled", and so on.</li>
+      <li><strong>The boarding code</strong> — a large 4-digit code with the instruction: <em>"Tell this code to your driver only when you board the vehicle."</em> A warning reminds them not to share it earlier.</li>
+      <li><strong>Trip details</strong> — pickup and drop stop, seats, amount, payment status, departure status and refund status.</li>
+      <li><strong>Route map</strong> — the route path and stops, so they know exactly where to stand.</li>
+    </ul>
+
+    <div class="callout danger"><span class="ic">🔐</span><div><strong>The boarding code is the ticket.</strong> The driver cannot mark a passenger as boarded without it. It is shown only in the passenger's own app — staff can never read it from the admin panel, which prevents fraud.</div></div>
+
+    <h3>Cancelling a booking</h3>
+    <p>A customer can cancel from the booking screen. What happens next depends on <strong>when</strong> they cancel — the full rules are in <a href="#s11">section 11</a>, but in short: cancel <strong>more than 30 minutes before departure</strong> and the money comes back; later than that, the seat is forfeited.</p>
+
+    <h3>My Refunds</h3>
+    <p>A dedicated screen listing every rupee coming back to the customer. Each refund card shows the amount, the trip, <strong>why</strong> the refund exists, its status (<em>On its way / Refunded / No refund</em>), and — most importantly — <strong>how and when the money arrives</strong>:</p>
+    <ul>
+      <li><strong>Wallet refunds:</strong> "Credited instantly to your DreamCabs wallet."</li>
+      <li><strong>Refunds sent by the team:</strong> "Sent by GPay/UPI or bank transfer — usually within 24 hours," then, once sent, the payment reference and the team's note (e.g. <em>"Refunded to your GPay 98••••10"</em>).</li>
+    </ul>
+    <p>A filter button lets them view by status and date, exactly like their trip history.</p>
+
+    <h3>Notifications</h3>
+    <p>The bell icon collects every fixed-ride message: booking confirmed, ride reminders, "your vehicle is boarding", no-show notices, refund sent, and ride completed. The same messages are also sent as push notifications to the phone.</p>
+
+    <figure class="fig">
+      <div class="frame"><img class="phone" src="screenshots/customer-live-ride.png" alt="Customer app — live ride screen with the 4-digit boarding code, with numbered callouts"></div>
+      <ol class="legend">
+        <li><span class="n">1</span><span><strong>Status card</strong> — the booking's state in plain words ("Booking confirmed — your fixed ride seat is booked"). It updates live as the vehicle boards, starts and completes.</span></li>
+        <li><span class="n">2</span><span><strong>Boarding code</strong> — the passenger's private 4-digit ticket, with the built-in warning not to share it before boarding. The driver needs this exact code to mark them on board.</span></li>
+        <li><span class="n">3</span><span><strong>Journey card</strong> — the chosen pickup stop (green) and drop stop (orange), so the passenger knows exactly where to stand.</span></li>
+        <li><span class="n">4</span><span><strong>Driver &amp; vehicle card</strong> — the driver's name, car model, colour and number plate, so the right vehicle is easy to spot at the stop.</span></li>
+      </ol>
+      <figcaption><strong>Customer app — the live ride screen.</strong> Below the callouts sit date, seats, luggage, fare, coupon and payment details. This one screen answers 90% of "where is my cab?" calls.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ==================================================== 5. DRIVER JOURNEY -->
+  <section class="pb" id="s5">
+    <h2 class="sec"><span class="n">5</span> The driver's journey — running a ride <span class="role role-drv">Driver</span></h2>
+    <p class="lede">The driver's side lives in one screen called <strong>Fixed boarding</strong> — a control panel for the whole ride, from opening the vehicle to completing it.</p>
+
+    <div class="steps">
+      <div class="step"><div class="num">1</div><div>
+        <h4>Open a vehicle</h4>
+        <p>The driver picks one of the routes assigned to them and one of their vehicles, and taps <strong>Open vehicle</strong>. From that moment the vehicle appears in the customer app and seats can be sold. (The admin panel can also open vehicles centrally — drivers then just see theirs ready.)</p>
+      </div></div>
+      <div class="step"><div class="num">2</div><div>
+        <h4>Watch the passenger list fill</h4>
+        <p>The screen shows a live <strong>manifest, grouped stop-by-stop</strong>: at each pickup stop, the passengers boarding there, their seats, luggage and payment state. New bookings appear in real time. A map view shows the route and stops.</p>
+      </div></div>
+      <div class="step"><div class="num">3</div><div>
+        <h4>Close bookings &amp; start</h4>
+        <p>When it's time to go, the driver can <strong>Close bookings</strong> (stop new sales) and tap <strong>Start ride</strong>. Customers see the status change to "Ride started". Booking can be re-opened if plans change before departure.</p>
+      </div></div>
+      <div class="step"><div class="num">4</div><div>
+        <h4>Board each passenger by code</h4>
+        <p>At every stop, the driver taps <strong>Board</strong> next to a passenger and types the <strong>4-digit code the passenger reads out</strong>. Correct code → the passenger is marked Boarded and the customer's app updates instantly. On-the-spot walk-up passengers can also be added and paid in cash if a seat is free.</p>
+      </div></div>
+      <div class="step"><div class="num">5</div><div>
+        <h4>Handle absentees — the waiting timer</h4>
+        <p>If a passenger isn't at the stop, the driver waits. When the driver arrives at a stop, a <strong>waiting countdown</strong> begins for that stop's passengers (your configured waiting time — never less than 2 minutes). Only after it expires can the passenger be marked <strong>No-show</strong> — the button is locked until then, and the passenger is notified automatically.</p>
+      </div></div>
+      <div class="step"><div class="num">6</div><div>
+        <h4>Drop passengers &amp; complete</h4>
+        <p>At each drop stop the driver taps <strong>Drop</strong> for the alighting passengers. Once every passenger is Dropped, No-show or Cancelled, the driver taps <strong>Complete ride</strong>. The system refuses to complete while anyone is still unaccounted for — no passenger can be "forgotten".</p>
+      </div></div>
+    </div>
+
+    <div class="callout tip"><span class="ic">💡</span><div><strong>Boarding code safety net.</strong> A code entry allows 3 attempts, then locks briefly (5 minutes) to stop guessing. Codes can be re-issued with a 30-second cooldown. If a passenger's phone dies, support can verify identity another way and the admin can manage the booking centrally.</div></div>
+
+    <h3>Auto-pilot protections (nobody has to remember)</h3>
+    <ul>
+      <li><strong>Auto-start:</strong> a vehicle still "boarding" past its departure time is automatically started after a short grace (~15 minutes), so rides don't sit open forever.</li>
+      <li><strong>Auto-cancel + refund:</strong> a departure that never gets a driver is automatically cancelled about an hour past due, and every paid passenger is put into the refund flow. Customers are notified.</li>
+      <li><strong>GPS-driven waiting timer:</strong> the app detects the driver's arrival at a stop and starts the no-show countdown by itself, warning passengers a minute before time expires.</li>
+    </ul>
+
+    <h3>Trip refunds (driver view)</h3>
+    <p>The driver app includes a read-only <strong>Trip refunds</strong> page listing refunds on their trips — who was refunded, why and when. Its purpose is peace of mind: refunds are paid by DreamCabs from company money, <strong>never deducted from the driver</strong>, and this page proves it.</p>
+
+    <figure class="fig">
+      <div class="frame"><img class="phone" src="screenshots/driver-fixed-boarding.png" alt="Driver app — Fixed boarding console with numbered callouts on status, seats, Start ride and checklist"></div>
+      <ol class="legend">
+        <li><span class="n">1</span><span><strong>Vehicle status pill</strong> — "Boarding" while seats are on sale; it flips to "Started" once the ride begins.</span></li>
+        <li><span class="n">2</span><span><strong>Seat counters</strong> — filled / left / total at a glance (here 1 filled, 2 left of 3).</span></li>
+        <li><span class="n">3</span><span><strong>Seat fill meter</strong> — the same numbers as a progress bar, easy to read while driving up to a stop.</span></li>
+        <li><span class="n">4</span><span><strong>Start ride</strong> — begins the trip; every passenger's app switches to "Ride started". A <em>Close vehicle</em> button appears beside it to stop new bookings.</span></li>
+        <li><span class="n">5</span><span><strong>Completion checklist</strong> — live tally of Waiting / On vehicle / Dropped / No-show / Cancelled. "Action needed" means someone is still unresolved — the ride cannot be completed until this is clear.</span></li>
+        <li><span class="n">6</span><span><strong>Open route map</strong> — full-screen map with the route path and the next stop named.</span></li>
+      </ol>
+      <figcaption><strong>Driver app — the Fixed boarding console.</strong> Below the callouts, the stop-by-stop route progress list. The screen refreshes itself — the driver just keeps it open.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ==================================================== 6. DRIVER EARNINGS -->
+  <section class="pb" id="s6">
+    <h2 class="sec"><span class="n">6</span> Driver earnings, commission &amp; wallet <span class="role role-drv">Driver</span></h2>
+    <p class="lede">Fixed Rides use a simple, transparent money model: the driver collects the fares, and DreamCabs takes a small commission from the driver's prepaid wallet.</p>
+
+    <h3>The driver wallet is a prepaid float</h3>
+    <p>Every driver tops up a small balance (like a mobile recharge). That balance is used for two things only: <strong>platform commission</strong> and <strong>subscription plans</strong>. It is not an earnings account — fare money reaches the driver directly (cash) or via the operator's payouts.</p>
+
+    <h3>How commission works on a fixed ride</h3>
+    <p>You choose the commission style per route (or per city as a default):</p>
+    <table>
+      <tr><th>Style</th><th>How it's charged</th><th>Example (Srinagar → Baramulla, ₹500/seat)</th></tr>
+      <tr><td><strong>Percent</strong></td><td>A percentage of each booking's amount.</td><td>10% commission, booking of 3 seats = ₹1,500 → commission <span class="money">₹150</span>.</td></tr>
+      <tr><td><strong>Fixed per seat</strong></td><td>A flat rupee amount for every seat sold.</td><td>₹20/seat, 3 seats → commission <span class="money">₹60</span>.</td></tr>
+    </table>
+    <p>When the ride completes, the total commission for the vehicle's bookings is <strong>debited from the driver's wallet automatically</strong>, with a clear transaction entry the driver can see. Commission can never exceed the fare, and the system never pushes a wallet below its allowed limit — it's designed so a driver is never "in debt" from a ride.</p>
+
+    <div class="callout tip"><span class="ic">🎫</span><div><strong>Subscriptions override commission.</strong> If the driver has an active subscription plan, the plan's rate wins — typically <strong>0% (commission-free)</strong> for the rides included in the plan. Each completed ride consumes one ride from the plan. This is your loyalty lever: sell plans to busy drivers, and casual drivers pay per-ride commission.</div></div>
+
+    <h3>Payouts</h3>
+    <p>Where the operator owes a driver money (for example online-paid fares collected into the company account), payouts are made <strong>outside the app</strong> — by GPay or bank transfer — as part of your normal settlement routine. The app intentionally does not move payout money automatically; you stay in control of every rupee leaving the account.</p>
+
+    <h3>What the driver sees</h3>
+    <ul>
+      <li><strong>Earnings screen</strong> — daily/weekly totals of completed rides.</li>
+      <li><strong>Wallet screen</strong> — balance, top-ups, and every commission debit with the ride it belongs to.</li>
+      <li><strong>Subscriptions screen</strong> — active plan, rides remaining, expiry, and plans available to buy.</li>
+      <li><strong>Trip history</strong> — every past ride with fares and payment state.</li>
+    </ul>
+  </section>
+
+  <!-- ==================================================== 7. ADMIN ROUTES -->
+  <section class="pb" id="s7">
+    <h2 class="sec"><span class="n">7</span> The admin panel — routes <span class="role role-adm">Admin</span></h2>
+    <p class="lede">Routes are the foundation of the Fixed module. You design them once, on a map, and everything else — vehicles, bookings, fares, stops — flows from them.</p>
+
+    <h3>The Fixed Routes page</h3>
+    <p><strong>Where:</strong> Admin panel → City setup → Vehicles → open a vehicle type → <strong>Fixed</strong> tab. <strong>Who:</strong> admins with the vehicles permission. Each row shows the route's name, scope, fare, seats, luggage charge, commission, number of stops and status. You can search by route or stop name and filter by scope and status.</p>
+
+    <table>
+      <tr><th>Field</th><th>What it means</th></tr>
+      <tr><td>Route</td><td>The display name customers see, e.g. "Srinagar → Baramulla".</td></tr>
+      <tr><td>Scope</td><td><strong>Local</strong> (inside one city) or <strong>Outstation</strong> (intercity).</td></tr>
+      <tr><td>Fare</td><td>The price of <strong>one seat</strong>, end to end. This is the number customers see.</td></tr>
+      <tr><td>Seats</td><td>The default seat capacity of a vehicle on this route.</td></tr>
+      <tr><td>Luggage</td><td>The extra charge per additional luggage piece (optional).</td></tr>
+      <tr><td>Commission</td><td>The platform's cut on this route — percent of booking, or ₹ per seat.</td></tr>
+      <tr><td>Stops</td><td>How many official pickup/drop stops the route has.</td></tr>
+      <tr><td>Status</td><td>Active routes are bookable; paused routes vanish from the customer app instantly (existing bookings are untouched).</td></tr>
+    </table>
+
+    <h3>The map editor</h3>
+    <p>Creating or editing a route opens a live map with drawing tools:</p>
+    <ol>
+      <li><strong>Place origin</strong> and <strong>destination</strong> pins.</li>
+      <li><strong>Draw the route path</strong> the vehicle follows (with undo).</li>
+      <li><strong>Add stops</strong> along the path — each stop gets a name; these become the pickup/drop choices customers see.</li>
+      <li>Set fare, seats, luggage charge and commission, then save.</li>
+    </ol>
+    <p>A search box lets you jump the map to any place. What you draw here is exactly what customers and drivers see on their maps.</p>
+
+    <div class="callout warn"><span class="ic">⚠️</span><div><strong>Changing a live route.</strong> Fare and commission changes apply to <strong>new bookings only</strong> — money already collected is never re-priced. Prefer pausing a route over deleting it: paused routes preserve their booking history.</div></div>
+
+    <figure class="fig">
+      <div class="frame"><img src="screenshots/admin-fixed-routes.png" alt="Admin panel — Fixed Routes table with numbered callouts on tabs, Add route, search and a route row"></div>
+      <ol class="legend">
+        <li><span class="n">1</span><span><strong>Service tabs</strong> — each vehicle type can serve Normal (private), <strong>Fixed</strong> and Shuttle modes; the Fixed tab holds everything on this page.</span></li>
+        <li><span class="n">2</span><span><strong>Add fixed route</strong> — opens the map editor: place origin and destination, draw the path, drop the stops, then set fare, seats, luggage charge and commission.</span></li>
+        <li><span class="n">3</span><span><strong>Search</strong> — find a route by its name or any of its stops. The <em>All scopes</em> / <em>All statuses</em> dropdowns beside it narrow the list further.</span></li>
+        <li><span class="n">4</span><span><strong>Route row</strong> — one route's full commercial setup in a line: scope (Local/Outstation), fare per seat, seat capacity, luggage charge, commission and its Active/Paused status.</span></li>
+        <li><span class="n">5</span><span><strong>Edit</strong> — reopens this route in the map editor to adjust stops, path or pricing (new bookings only; past money is never re-priced).</span></li>
+      </ol>
+      <figcaption><strong>Admin panel — Fixed Routes</strong> (City setup → Vehicles → open a vehicle type → Fixed tab). Tip: draw a demo route live in the meeting — it lands very well.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ==================================================== 8. ADMIN LIVE VEHICLES -->
+  <section class="pb" id="s8">
+    <h2 class="sec"><span class="n">8</span> The admin panel — live vehicles &amp; bookings <span class="role role-adm">Admin</span></h2>
+    <p class="lede">The <strong>Live Fixed Vehicles</strong> page is your control tower: every vehicle on every route, today and in the past, with every passenger inside it.</p>
+
+    <h3>The vehicles table</h3>
+    <p><strong>Where:</strong> Admin panel → Operations → Rides → <strong>Active Vehicles</strong> tab. Each row is one departure (one vehicle, one route, one date/time): the route, driver, vehicle, departure time, seats sold vs capacity, and status. The toolbar gives you:</p>
+    <ul>
+      <li><strong>Search</strong> — by route, driver or vehicle ID.</li>
+      <li><strong>Route filter</strong> — a single route's departures.</li>
+      <li><strong>Status filter</strong> — Boarding / Started / Departed / Completed / Cancelled.</li>
+      <li><strong>Date range picker</strong> — today, last 7 days, this month, or any custom range.</li>
+      <li><strong>Open vehicle</strong> — create a departure centrally: pick the route, driver, vehicle and time. It appears in the customer app immediately.</li>
+    </ul>
+
+    <h3>Inside a vehicle — the passenger drawer</h3>
+    <p>Clicking a vehicle opens its passenger list, filterable by booking status (Booked / Confirmed / Boarded / Dropped / No-show / Cancelled), payment status (Paid / Pending / Failed / Refunded) and refund status. For each passenger you see stops, seats, luggage, amounts and the full <strong>event history</strong> of the booking — every step, who did it and when. Staff can attach <strong>support notes</strong> that stay with the booking.</p>
+
+    <h3>What an admin can do to a booking</h3>
+    <ul>
+      <li><strong>Cancel one passenger</strong> — e.g. on a customer's phone request. The refund rules run automatically and the customer is notified.</li>
+      <li><strong>Cancel a whole vehicle</strong> — e.g. breakdown. Every paid passenger goes into the refund flow at once, each with a notification.</li>
+      <li><strong>Close / reopen bookings</strong>, monitor boarding progress live, and see exactly which stop the ride has reached.</li>
+    </ul>
+
+    <div class="callout danger"><span class="ic">🔐</span><div><strong>What an admin can never do:</strong> see a passenger's boarding code. Codes exist only in the passenger's app, so a staff member can't board someone else's seat.</div></div>
+
+    <h3>Reports &amp; finance</h3>
+    <p>The admin panel's finance overview gives a date-filtered picture of money across the platform — bookings taken, refunds due and sent, commission earned. Together with the vehicles table's date filters, you can answer "how did this route perform last month?" in a few clicks.</p>
+
+    <figure class="fig">
+      <div class="frame"><img src="screenshots/admin-fixed-vehicles.png" alt="Admin panel — Live Fixed Vehicles with numbered callouts on Open vehicle, search, date filter and row actions"></div>
+      <ol class="legend">
+        <li><span class="n">1</span><span><strong>Open vehicle</strong> — create a departure centrally: pick the route, driver, vehicle and time. It appears in the customer app immediately.</span></li>
+        <li><span class="n">2</span><span><strong>Search</strong> — find a departure by route, driver or vehicle ID. The <em>All routes</em> / <em>All statuses</em> dropdowns beside it filter the table.</span></li>
+        <li><span class="n">3</span><span><strong>Ride date picker</strong> — today, last 7 days, this month or any custom range; your window into history.</span></li>
+        <li><span class="n">4</span><span><strong>"What admin should know"</strong> — a plain-language line per row: here <em>"Vehicle is open and waiting for passengers"</em> with a Live Booking chip; other rows explain completed and cancelled states.</span></li>
+        <li><span class="n">5</span><span><strong>Manifest</strong> — opens the vehicle's full passenger list: statuses, payments, refunds and each booking's event history.</span></li>
+        <li><span class="n">6</span><span><strong>Cancel vehicle</strong> — calls off the whole departure; every paid passenger automatically enters the refund flow and is notified. <em>Close bookings</em> above it just stops new sales.</span></li>
+      </ol>
+      <figcaption><strong>Admin panel — Live Fixed Vehicles</strong> (Operations → Rides → Active Vehicles tab). Columns: route &amp; driver, booking window, seat/luggage inventory, guidance, status.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ==================================================== 9. ADMIN REFUNDS -->
+  <section class="pb" id="s9">
+    <h2 class="sec"><span class="n">9</span> The admin panel — refund register <span class="role role-adm">Admin</span></h2>
+    <p class="lede">One page answers three questions forever: <strong>who is owed money, why, and has it been sent?</strong></p>
+
+    <h3>How refunds physically work</h3>
+    <p>DreamCabs deliberately keeps you in control of outgoing money:</p>
+    <ul>
+      <li><strong>Wallet-paid bookings</strong> refund <strong>automatically and instantly</strong> to the customer's DreamCabs wallet. They appear in the register as already settled.</li>
+      <li><strong>Online-paid (Razorpay) bookings</strong> are refunded <strong>manually by your team</strong> — you send the money by GPay/UPI, bank transfer, or from the Razorpay dashboard, then record it in the register. The app never auto-transfers money out of your account.</li>
+    </ul>
+
+    <h3>The Refunds page</h3>
+    <p><strong>Where:</strong> Admin panel → Finance → Refunds. The header shows the headline number — <strong>"Due to customers: ₹X"</strong> — and tabs for <strong>Due / Refunded / All</strong>. The toolbar has search (customer, phone, booking #), booking-type and payment filters, and a date-range picker. Each row shows the booking, the customer, <strong>why the refund exists</strong> in plain words ("Operator cancelled the departure", "Customer cancelled before the cutoff"…), the amount, and its status. A refund left due more than 24 hours turns <strong>red</strong> so it can't be ignored.</p>
+
+    <h3>Marking a refund as sent</h3>
+    <p>Clicking <strong>Mark refunded</strong> opens a side panel:</p>
+    <ol>
+      <li>The <strong>amount is locked</strong> to what is owed — it cannot be typed, so a typo can never over- or under-pay.</li>
+      <li>Your team fills three <strong>required</strong> fields: <strong>how it was sent</strong> (GPay/UPI, bank, Razorpay dashboard, cash, other), the <strong>payment reference</strong>, and a <strong>note</strong>. The save button stays disabled until all three are filled.</li>
+      <li>On save, the row flips to Refunded, the customer gets an instant notification — <em>"Your refund of ₹500 has been sent via GPay/UPI. Reference: …"</em> — and the reference + note appear on the customer's My Refunds screen.</li>
+    </ol>
+    <p>Settled rows <strong>never disappear</strong>. The register is a permanent audit trail: amount, method, reference, note, who marked it and when.</p>
+
+    <div class="callout note"><span class="ic">🛡️</span><div><strong>Privacy by design.</strong> The app never collects or stores customers' bank or UPI details. Your team sends money through channels you already trust, and the app keeps the proof.</div></div>
+
+    <figure class="fig">
+      <div class="frame"><img src="screenshots/admin-refunds.png" alt="Admin panel — Refund register with numbered callouts on tabs, total, search, filters and Mark refunded"></div>
+      <ol class="legend">
+        <li><span class="n">1</span><span><strong>Due / Refunded / All tabs</strong> — the working queue, the permanent proof archive, and both together. The red count on Due shows how many customers are still owed.</span></li>
+        <li><span class="n">2</span><span><strong>Due to customers</strong> — the headline number: total rupees still owed and how many refunds are pending. The morning goal is ₹0.</span></li>
+        <li><span class="n">3</span><span><strong>Search</strong> — find a refund by customer name, phone or booking number.</span></li>
+        <li><span class="n">4</span><span><strong>Filters</strong> — booking type (Fixed/Shuttle), how it was paid (Razorpay/Wallet) and a date range.</span></li>
+        <li><span class="n">5</span><span><strong>Why the refund</strong> — the reason in plain words ("Booking cancelled", "Operator cancelled the departure"), so nobody has to dig through history.</span></li>
+        <li><span class="n">6</span><span><strong>Mark refunded</strong> — opens the side panel after you've sent the money: amount locked, then method + reference + note (all required) before it can be saved. The row's red "Owed for 2 days" aging disappears once settled.</span></li>
+      </ol>
+      <figcaption><strong>Admin panel — the Refund Register</strong> (Finance → Refunds). Tip: the locked amount in the side panel is the anti-mistake feature owners ask about.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ==================================================== 10. LIFECYCLE -->
+  <section class="pb" id="s10">
+    <h2 class="sec"><span class="n">10</span> The complete ride lifecycle</h2>
+    <p class="lede">One booking, start to finish — who acts, and what the system does in between.</p>
+
+    <div class="timeline">
+      <div class="tl"><span class="who">Admin / Driver</span><h4>Vehicle opened on a route</h4><p>A departure is created (centrally or by the driver). It becomes visible in the customer app with its free seats.</p></div>
+      <div class="tl alt"><span class="who">Customer</span><h4>Seats booked &amp; paid</h4><p>Route → vehicle → stops &amp; seats → coupon → payment. Seats were held for 5 minutes during payment; on success the booking is <strong>Booked/Confirmed</strong> and the boarding code is issued.</p></div>
+      <div class="tl"><span class="who">System</span><h4>Reminders &amp; live status</h4><p>The customer's app shows vehicle status live; notifications announce boarding and departure. Booking closes automatically or when the driver closes it.</p></div>
+      <div class="tl alt"><span class="who">Driver</span><h4>Ride started</h4><p>The driver starts the ride; every passenger's app switches to "Ride started".</p></div>
+      <div class="tl"><span class="who">Driver + Customer</span><h4>Boarding at each stop</h4><p>The GPS waiting timer runs at each stop. Passengers read out their 4-digit code; the driver enters it → <strong>Boarded</strong>. Absent passengers can be marked <strong>No-show</strong> only after the timer expires.</p></div>
+      <div class="tl alt"><span class="who">Driver</span><h4>Drops along the route</h4><p>Passengers are marked <strong>Dropped</strong> at their chosen stops.</p></div>
+      <div class="tl"><span class="who">Driver</span><h4>Ride completed</h4><p>Allowed only when every passenger is resolved. Commission is settled from the driver's wallet (or the subscription absorbs it). Customers get a completion notification.</p></div>
+      <div class="tl alt"><span class="who">Admin</span><h4>After the ride</h4><p>The departure moves to history with its full passenger record; finance numbers update; any refunds owed appear in the register until sent.</p></div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-title">Booking status flow</div>
+      <span class="fbox hl">Booked</span><span class="farr">→</span>
+      <span class="fbox">Confirmed</span><span class="farr">→</span>
+      <span class="fbox hl">Boarded</span><span class="farr">→</span>
+      <span class="fbox">Dropped</span><span class="farr">→</span>
+      <span class="fbox hl">Completed</span>
+      <span class="farr" style="margin-left:12px">|</span>
+      <span class="fbox bad">Cancelled</span>
+      <span class="fbox bad">No-show</span>
+    </div>
+
+    <div class="flow">
+      <div class="flow-title">Vehicle (departure) status flow</div>
+      <span class="fbox hl">Boarding</span><span class="farr">→</span>
+      <span class="fbox">Started</span><span class="farr">→</span>
+      <span class="fbox">Departed</span><span class="farr">→</span>
+      <span class="fbox hl">Completed</span>
+      <span class="farr" style="margin-left:12px">|</span>
+      <span class="fbox bad">Cancelled</span>
+    </div>
+  </section>
+
+  <!-- ==================================================== 11. BUSINESS RULES -->
+  <section class="pb" id="s11">
+    <h2 class="sec"><span class="n">11</span> Business rules, in plain language</h2>
+    <p class="lede">These are the promises the system enforces automatically, so your team doesn't have to.</p>
+
+    <h3>Seats &amp; capacity</h3>
+    <ul>
+      <li>A vehicle can never be overbooked — seat counts are checked at booking time and while seats are held.</li>
+      <li>Seats held during payment are invisible to other customers for those 5 minutes, then auto-released if unpaid.</li>
+      <li>Luggage capacity is tracked alongside seats, using the per-route luggage charge.</li>
+    </ul>
+
+    <h3>Pricing</h3>
+    <ul>
+      <li>Price = <strong>seats × route fare + extra luggage × luggage charge − coupon discount</strong>. Nothing else. No surge, no hidden charges.</li>
+      <li>Coupons are validated and previewed <strong>before</strong> payment, so the customer always sees the final number first.</li>
+    </ul>
+
+    <h3>Cancellation &amp; refunds — the 30-minute rule</h3>
+    <table>
+      <tr><th>When the customer cancels</th><th>What happens</th></tr>
+      <tr><td>More than <strong>30 minutes</strong> before departure</td><td>Refund approved. Wallet payments → instant wallet credit. Online payments → the amount enters the refund register and your team sends it (usually same day).</td></tr>
+      <tr><td><strong>Within 30 minutes</strong> of departure</td><td>No refund — the seat was held too close to departure to resell. The booking shows "No refund" with the reason.</td></tr>
+      <tr><td>The <strong>operator</strong> cancels (any time)</td><td>Full refund, always — whether one passenger or the whole vehicle is cancelled.</td></tr>
+      <tr><td>Passenger is a <strong>no-show</strong></td><td>No refund. The waiting timer proves the vehicle waited the promised time.</td></tr>
+    </table>
+    <p>Example: a passenger cancels a <span class="money">₹500</span> wallet-paid seat 2 hours before departure → ₹500 is in their wallet the same second. If they'd paid online, the ₹500 appears as "Due" in your register and reaches them by GPay the same day.</p>
+
+    <h3>The no-show waiting promise</h3>
+    <ul>
+      <li>Every stop has a waiting time (you configure it per city; the system enforces a <strong>minimum of 2 minutes</strong> even if misconfigured).</li>
+      <li>The countdown starts when the driver <strong>actually arrives</strong> at the stop (GPS-detected) — not before.</li>
+      <li>The no-show button stays <strong>locked</strong> until the timer expires, on the server, so it cannot be bypassed with an old app.</li>
+      <li>The passenger is warned as time runs low, and notified if marked no-show.</li>
+    </ul>
+
+    <h3>Boarding verification</h3>
+    <ul>
+      <li>4-digit code, visible only in the passenger's app. 3 wrong attempts → 5-minute lock. Codes re-issue with a 30-second cooldown and expire after 10 minutes for safety.</li>
+    </ul>
+
+    <h3>Payments</h3>
+    <ul>
+      <li><strong>Wallet</strong> — instant, no processing delay, instant refunds.</li>
+      <li><strong>Online (Razorpay)</strong> — UPI and cards through the secure payment page. If money is captured but the booking could not be created (a rare payment race), the system detects it and reverses that payment automatically.</li>
+      <li><strong>Cash</strong> — for walk-up passengers boarded on the spot by the driver, and dispatcher-made bookings.</li>
+    </ul>
+
+    <h3>Commission &amp; subscriptions</h3>
+    <ul>
+      <li>Percent of booking <em>or</em> ₹ per seat, set per route (with a city default). Charged from the driver wallet at completion.</li>
+      <li>An active driver subscription overrides the rate (usually to 0%) and is consumed ride by ride.</li>
+      <li>Commission never exceeds the fare and never drives a wallet into forbidden debt.</li>
+    </ul>
+  </section>
+
+  <!-- ==================================================== 12. STATUSES -->
+  <section class="pb" id="s12">
+    <h2 class="sec"><span class="n">12</span> Every status explained</h2>
+    <p class="lede">Four small dictionaries — bookings, vehicles, payments and refunds. Staff can keep this section printed at the desk.</p>
+
+    <h3>Booking status (one passenger's seat)</h3>
+    <table>
+      <tr><th>Status</th><th>Meaning</th><th>Set by</th><th>What happens next</th></tr>
+      <tr><td><span class="pill p-blue">Booked</span></td><td>Seats reserved and paid.</td><td>System, on payment</td><td>Waits for travel day.</td></tr>
+      <tr><td><span class="pill p-blue">Confirmed</span></td><td>Booking locked in for the departure.</td><td>System</td><td>Passenger boards on travel day.</td></tr>
+      <tr><td><span class="pill p-green">Boarded</span></td><td>Passenger is in the vehicle (code verified).</td><td>Driver</td><td>Dropped at their stop.</td></tr>
+      <tr><td><span class="pill p-green">Dropped</span></td><td>Passenger delivered to their drop stop.</td><td>Driver</td><td>Counts toward ride completion.</td></tr>
+      <tr><td><span class="pill p-green">Completed</span></td><td>The journey finished normally.</td><td>System, at ride completion</td><td>Moves to history.</td></tr>
+      <tr><td><span class="pill p-amber">No-show</span></td><td>Passenger absent after the waiting timer.</td><td>Driver / automatic</td><td>No refund; passenger notified.</td></tr>
+      <tr><td><span class="pill p-red">Cancelled</span></td><td>Cancelled by customer, operator or system.</td><td>Any</td><td>Refund rules run automatically.</td></tr>
+    </table>
+
+    <h3>Vehicle status (one departure)</h3>
+    <table>
+      <tr><th>Status</th><th>Meaning</th></tr>
+      <tr><td><span class="pill p-blue">Boarding</span></td><td>Open for booking; seats on sale; passengers gathering.</td></tr>
+      <tr><td><span class="pill p-green">Started</span></td><td>The driver has started the ride; boarding along the route.</td></tr>
+      <tr><td><span class="pill p-green">Departed</span></td><td>On its way along the route.</td></tr>
+      <tr><td><span class="pill p-navy">Completed</span></td><td>Ride finished; all passengers resolved; commission settled.</td></tr>
+      <tr><td><span class="pill p-red">Cancelled</span></td><td>Called off; every paid passenger enters the refund flow.</td></tr>
+    </table>
+
+    <h3>Payment status</h3>
+    <table>
+      <tr><th>Status</th><th>Meaning</th></tr>
+      <tr><td><span class="pill p-amber">Pending</span></td><td>Payment started but not finished (e.g. UPI screen open).</td></tr>
+      <tr><td><span class="pill p-green">Paid</span></td><td>Money received; seats confirmed.</td></tr>
+      <tr><td><span class="pill p-red">Failed</span></td><td>Payment didn't go through; no seats taken; bank auto-reverses any deduction.</td></tr>
+      <tr><td><span class="pill p-navy">Refunded</span></td><td>Money returned to the customer (see refund status for how).</td></tr>
+    </table>
+
+    <h3>Refund status</h3>
+    <table>
+      <tr><th>Status</th><th>Meaning</th><th>Customer sees</th></tr>
+      <tr><td><span class="pill p-grey">None</span></td><td>No refund involved.</td><td>—</td></tr>
+      <tr><td><span class="pill p-amber">Approved</span></td><td>Refund owed; waiting for your team to send it. Shown as "Due" in the register.</td><td>"On its way — usually within 24 hours."</td></tr>
+      <tr><td><span class="pill p-green">Refunded</span></td><td>Money sent and recorded (method + reference + note).</td><td>"Refunded", with reference and your note.</td></tr>
+      <tr><td><span class="pill p-red">Rejected</span></td><td>Not eligible (late cancellation or no-show).</td><td>"No refund", with the reason.</td></tr>
+    </table>
+  </section>
+
+  <!-- ==================================================== 13. MONEY FLOWS -->
+  <section class="pb" id="s13">
+    <h2 class="sec"><span class="n">13</span> How the money moves</h2>
+    <p class="lede">Three flows cover every rupee in the Fixed module.</p>
+
+    <div class="flow">
+      <div class="flow-title">1 · Payment flow (customer pays)</div>
+      <span class="fbox">Customer books<small>3 seats = ₹1,500</small></span><span class="farr">→</span>
+      <span class="fbox">Seats held<small>5 minutes</small></span><span class="farr">→</span>
+      <span class="fbox hl">Pays<small>Wallet or UPI/card</small></span><span class="farr">→</span>
+      <span class="fbox hl">Booking confirmed<small>code issued</small></span>
+    </div>
+
+    <div class="flow">
+      <div class="flow-title">2 · Refund flow (money goes back)</div>
+      <span class="fbox">Cancellation<small>&gt;30 min before departure</small></span><span class="farr">→</span>
+      <span class="fbox">Refund approved<small>amount locked</small></span><span class="farr">→</span>
+      <span class="fbox hl">Wallet: instant credit</span>
+      <span class="farr">or</span>
+      <span class="fbox">Online: appears in register<small>"Due to customers"</small></span><span class="farr">→</span>
+      <span class="fbox hl">Team sends by GPay/bank<small>records ref + note</small></span><span class="farr">→</span>
+      <span class="fbox hl">Customer notified</span>
+    </div>
+
+    <div class="flow">
+      <div class="flow-title">3 · Driver earnings flow (ride completes)</div>
+      <span class="fbox">Ride completed<small>all passengers resolved</small></span><span class="farr">→</span>
+      <span class="fbox">Commission calculated<small>% of bookings or ₹/seat</small></span><span class="farr">→</span>
+      <span class="fbox hl">Debited from driver wallet<small>or covered by subscription</small></span><span class="farr">→</span>
+      <span class="fbox">Fares stay with driver / settled in payouts</span>
+    </div>
+
+    <p>Worked end-to-end: a 6-seat vehicle sells out at <span class="money">₹500</span>/seat = ₹3,000 in bookings. With 10% commission the driver's wallet is debited <span class="money">₹300</span> at completion — unless their subscription covers it, in which case the debit is ₹0 and one plan-ride is consumed.</p>
+  </section>
+
+  <!-- ==================================================== 14. DAILY OPS -->
+  <section class="pb" id="s14">
+    <h2 class="sec"><span class="n">14</span> Running Fixed Ride operations — the daily checklist</h2>
+    <p class="lede">Fifteen minutes, twice a day, keeps the whole operation healthy.</p>
+
+    <h3>Every morning</h3>
+    <table>
+      <tr><th>Check</th><th>Where</th><th>What good looks like</th></tr>
+      <tr><td>Today's vehicles</td><td>Live Fixed Vehicles → date = today</td><td>Every planned departure exists and has a driver and vehicle.</td></tr>
+      <tr><td>Seat sales</td><td>Same page — seats column</td><td>Vehicles filling as expected; open extra vehicles if a route is selling out.</td></tr>
+      <tr><td>Refunds due</td><td>Finance → Refunds → Due tab</td><td>The "Due to customers" total is ₹0 — or every due row gets sent this morning. <strong>Red rows are overdue.</strong></td></tr>
+      <tr><td>Notifications</td><td>Admin bell</td><td>No unread system alerts about failed payments or cancelled vehicles.</td></tr>
+    </table>
+
+    <h3>During the day</h3>
+    <table>
+      <tr><th>Check</th><th>Why</th></tr>
+      <tr><td>Vehicles stuck in "Boarding" past departure</td><td>The system auto-starts them after a grace period, but a stuck vehicle usually means a driver needs a phone call.</td></tr>
+      <tr><td>No-shows &amp; cancellations</td><td>A route with repeated no-shows may need a stop-location or timing fix.</td></tr>
+      <tr><td>Support notes</td><td>Complaints attached to bookings — reply while the trip context is fresh.</td></tr>
+    </table>
+
+    <h3>Every evening / weekly</h3>
+    <table>
+      <tr><th>Check</th><th>Where</th></tr>
+      <tr><td>Completed rides &amp; revenue for the day</td><td>Live Fixed Vehicles (Completed filter) + Finance overview</td></tr>
+      <tr><td>Driver payouts owed (online-paid fares)</td><td>Your settlement routine + finance overview</td></tr>
+      <tr><td>Driver wallets running low</td><td>Drivers section — nudge drivers to top up so commission never fails</td></tr>
+      <tr><td>Route performance (weekly)</td><td>Vehicles table with a 7-day range, per route — decide where to add or cut departures</td></tr>
+    </table>
+  </section>
+
+  <!-- ==================================================== 15. FAQ -->
+  <section class="pb" id="s15">
+    <h2 class="sec"><span class="n">15</span> Frequently asked questions</h2>
+
+    <div class="faq-item"><div class="q">How does a customer reserve a seat?</div><div class="a">They pick a route, pick a departure vehicle, choose pickup/drop stops and seat count, and pay by wallet or UPI/card. Their seats are protected for 5 minutes while they pay, so nobody can take them mid-payment.</div></div>
+    <div class="faq-item"><div class="q">Can two customers buy the same seat?</div><div class="a">No. Seat counts are enforced centrally, and held seats are invisible to everyone else until the hold expires.</div></div>
+    <div class="faq-item"><div class="q">What happens if a customer cancels?</div><div class="a">More than 30 minutes before departure: full refund (instant to wallet, or sent by your team for online payments). Within 30 minutes: no refund, and the app tells them why.</div></div>
+    <div class="faq-item"><div class="q">How are refunds actually paid?</div><div class="a">Wallet refunds are automatic and instant. Online-payment refunds appear in the admin Refund Register as "Due"; your team sends the money by GPay/bank/Razorpay dashboard and records the reference and a note. The customer is notified instantly and sees the proof in their app.</div></div>
+    <div class="faq-item"><div class="q">How does boarding verification work?</div><div class="a">Every booking has a private 4-digit code shown only in the passenger's app. The driver taps Board and types the code the passenger reads out. Three wrong attempts locks entry for 5 minutes.</div></div>
+    <div class="faq-item"><div class="q">What if the passenger isn't at the stop?</div><div class="a">A waiting countdown starts when the driver arrives at the stop (minimum 2 minutes, configurable). Only after it expires can the passenger be marked no-show — the button is locked until then, and the passenger is warned and then notified.</div></div>
+    <div class="faq-item"><div class="q">What if a driver never shows up for a departure?</div><div class="a">A departure that is still driverless about an hour past its time is automatically cancelled and every paid passenger is put into the refund flow with a notification. You'll see it in the register.</div></div>
+    <div class="faq-item"><div class="q">How is the driver paid?</div><div class="a">Fares belong to the driver (cash directly; online fares settled in your payout routine). DreamCabs' commission — a percent of bookings or ₹ per seat — is taken automatically from the driver's prepaid wallet when the ride completes. A subscription plan can make rides commission-free.</div></div>
+    <div class="faq-item"><div class="q">Does a refund cost the driver anything?</div><div class="a">No. Refunds are paid from company money. The driver app even has a "Trip refunds" page showing this, so drivers are never surprised or worried.</div></div>
+    <div class="faq-item"><div class="q">Can my staff see or use a passenger's boarding code?</div><div class="a">No. Codes are never shown in the admin panel — only the passenger has it. This is deliberate fraud protection.</div></div>
+    <div class="faq-item"><div class="q">Can I take bookings for walk-up passengers?</div><div class="a">Yes — the driver can add an on-the-spot passenger to a free seat (cash), and your dispatcher can create bookings centrally for phone-in customers.</div></div>
+    <div class="faq-item"><div class="q">How do I stop selling a route?</div><div class="a">Pause it in Fixed Routes — it disappears from the customer app instantly. Existing bookings are untouched, and you can un-pause any time.</div></div>
+    <div class="faq-item"><div class="q">How does the admin monitor everything at once?</div><div class="a">The Live Fixed Vehicles page: filter by date, route or status, and open any vehicle to see every passenger, payment and event. The Refund Register and Finance overview cover the money side.</div></div>
+  </section>
+
+  <!-- ==================================================== 16. FUTURE -->
+  <section class="pb" id="s16">
+    <h2 class="sec"><span class="n">16</span> Future enhancements</h2>
+    <p class="lede">Built or planned, but <strong>not part of the current Fixed Ride launch</strong>. Listed here so they're never mistaken for live features.</p>
+
+    <table>
+      <tr><th>Item</th><th>State</th><th>Plain-language description</th></tr>
+      <tr><td>Private rides module</td><td><span class="pill p-grey">Built, launching later</span></td><td>Whole-car on-demand bookings with fare negotiation. Fully built, held back for a later launch phase.</td></tr>
+      <tr><td>Shuttle module</td><td><span class="pill p-grey">Built, launching later</span></td><td>Corridor-based shared shuttles with journeys and passenger pickups. Same refund register already supports it.</td></tr>
+      <tr><td>Boarding code by SMS</td><td><span class="pill p-amber">Pending approval</span></td><td>Today the code lives in the app (which always works). Sending it additionally by SMS awaits telecom (DLT) template approval — switched on the day approval lands.</td></tr>
+      <tr><td>Late-cancellation fee</td><td><span class="pill p-amber">Awaiting policy</span></td><td>Charging a small fee (rather than zero refund) for late cancellations is supported by the design but waits on your business decision.</td></tr>
+      <tr><td>Toll auto-detection</td><td><span class="pill p-grey">Deferred</span></td><td>Automatic toll pricing is wired in, but current map data returns ₹0 for Kashmir routes, so tolls stay off until a manual fallback is added.</td></tr>
+      <tr><td>Unified transactions view</td><td><span class="pill p-grey">Optional idea</span></td><td>One combined ledger of every payment, refund and commission across modules. Today the same facts live in the finance overview + registers.</td></tr>
+    </table>
+
+    <div class="doc-footer">
+      <span>DreamCabs · Fixed Ride Module — Client User Guide v1.0</span>
+      <span>Prepared July 2026 · Confidential</span>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

@@ -7,6 +7,13 @@
       "runtimeArgs": ["start", "--", "--port", "8101", "--host", "0.0.0.0"],
       "cwd": "driver-mobile",
       "port": 8101
+    },
+    {
+      "name": "admin-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--", "--port", "4200"],
+      "cwd": "frontend",
+      "port": 4200
     }
   ]
 }
