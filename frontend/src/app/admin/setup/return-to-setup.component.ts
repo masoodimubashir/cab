@@ -37,8 +37,8 @@ export class ReturnToSetupComponent implements OnInit, OnDestroy {
       const from = p.get('from');
       if (from === 'fleet') {
         this.show = true;
-        this.targetUrl = '/fleet';
-        this.label = 'Back to Fleet Setup';
+        this.targetUrl = '/vehicles';
+        this.label = 'Back to Vehicles';
       } else if (from === 'setup') {
         this.show = true;
         this.targetUrl = '/setup';

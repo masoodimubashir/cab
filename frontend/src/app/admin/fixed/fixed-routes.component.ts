@@ -1,4 +1,4 @@
-import { Component, HostListener, Input, OnDestroy, OnInit } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -111,7 +111,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
   ],
   template: `
     <div class="page">
-      <header class="page__hero">
+      <header class="page__hero" *ngIf="!embedded">
         <div>
           <h1 class="page__title">Fixed Routes</h1>
           <p class="page__sub">Prepaid fixed routes with mapped stops, route path and booking controls.</p>
@@ -119,7 +119,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
         <tm-button *ngIf="cityId != null" variant="green" icon="plus" (clicked)="openCreate()">Add fixed route</tm-button>
       </header>
 
-      <div class="cue" *ngIf="cityId == null">
+      <div class="cue" *ngIf="cityId == null && !embedded">
         <tm-icon name="map-marker" [size]="24" />
         <p class="cue__title">No city selected</p>
         <p class="cue__text">Pick a city from the switcher in the top bar to manage fixed routes.</p>
@@ -587,6 +587,10 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
 })
 export class FixedRoutesComponent implements OnInit, OnDestroy {
   @Input() cityVehicleTypeId: number | null = null;
+  /** Hides the page hero so the table can sit inside a host page's own section. */
+  @Input() embedded = false;
+  /** Fires whenever the route list is (re)loaded, so hosts can refresh counts. */
+  @Output() routesChanged = new EventEmitter<void>();
   routes: FixedRouteRow[] = [];
   vehicleTypes: VehicleTypeOption[] = [];
   cities: CityOption[] = [];
@@ -870,7 +874,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (this.cityId == null) { this.routes = []; return; }
     this.loading = true;
     this.api.get<{ data: FixedRouteRow[] }>(`/admin/cities/${this.cityId}/fixed-routes`).subscribe({
-      next: (res) => { this.routes = res?.data || []; this.loading = false; },
+      next: (res) => { this.routes = res?.data || []; this.loading = false; this.routesChanged.emit(); },
       error: (err) => { this.loading = false; this.toast.error(err?.error?.message || 'Failed to load fixed routes'); },
     });
   }
