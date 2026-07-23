@@ -172,7 +172,7 @@ interface TabDef { key: string; label: string; count?: number; }
           </div>
 
           <button type="button" class="newrow" [disabled]="!vehicleTypeOptions.length" (click)="openCreate()">
-            + Add vehicle — vehicle type is required
+            + Add vehicle
           </button>
         </aside>
 
@@ -223,7 +223,7 @@ interface TabDef { key: string; label: string; count?: number; }
                 </p>
                 <div class="sec__actions">
                   <tm-button variant="green" size="sm" icon="check" [disabled]="savingCommon || !common.display_name.trim()" (clicked)="saveCommon()">
-                    {{ savingCommon ? 'Saving...' : 'Save common setup' }}
+                    {{ savingCommon ? 'Saving...' : 'Save' }}
                   </tm-button>
                 </div>
               </div>
@@ -360,35 +360,40 @@ interface TabDef { key: string; label: string; count?: number; }
                   <span class="hint">The driver picks this car when they sign up, and it locks once they're approved — so moving them is an operator-only action.</span>
                 </div>
 
-                <div class="grp" *ngFor="let d of selDrivers">
-                  <div class="grp__top">
-                    <span class="av">{{ initials(d.name) }}</span>
-                    <span class="grp__name">{{ d.name }}</span>
-                    <small class="muted">{{ d.phone || 'No phone' }}</small>
-                    <span class="ws__grow"></span>
-                    <button type="button" class="mini-btn" [disabled]="savingDriverId === d.id" (click)="movePickFor = movePickFor === d.id ? null : d.id">Move to another vehicle</button>
-                  </div>
-                  <p class="meta">{{ d.vehicle_model || 'Model not set' }} · {{ d.vehicle_color || 'Colour not set' }} · Reg no <b>{{ d.vehicle_reg_no || '—' }}</b></p>
+                <div class="cards">
+                  <article class="card" *ngFor="let d of selDrivers">
+                    <header class="card__head">
+                      <span class="av av--lg">{{ initials(d.name) }}</span>
+                      <span class="card__id">
+                        <span class="card__name">{{ d.name }}</span>
+                        <span class="card__meta">{{ d.phone || 'No phone' }} · {{ d.vehicle_model || 'Model not set' }} · {{ d.vehicle_color || 'Colour not set' }} · Reg no {{ d.vehicle_reg_no || '—' }}</span>
+                      </span>
+                      <button type="button" class="mini-btn" [disabled]="savingDriverId === d.id" (click)="movePickFor = movePickFor === d.id ? null : d.id">
+                        {{ movePickFor === d.id ? 'Cancel' : 'Change vehicle' }}
+                      </button>
+                    </header>
 
-                  <div class="picker" *ngIf="movePickFor === d.id">
-                    <button type="button" class="pick" *ngFor="let v of moveTargetsFor(d)" [disabled]="savingDriverId === d.id" (click)="setCar(d, v.id)">
-                      <span class="pick__main"><b>{{ v.display_name }}</b><small>{{ v.max_people }} seats · {{ v.luggage_capacity }} bags</small></span>
-                      <span class="mini-btn">Move here</span>
-                    </button>
-                    <p class="meta" *ngIf="!moveTargetsFor(d).length">
-                      No other {{ selected.vehicle_type_name || 'matching' }} vehicle in this city. A driver's car must stay within their own vehicle type.
-                    </p>
-                  </div>
+                    <div class="picker" *ngIf="movePickFor === d.id">
+                      <button type="button" class="pick" *ngFor="let v of moveTargetsFor(d)" [disabled]="savingDriverId === d.id" (click)="setCar(d, v.id)">
+                        <span class="pick__main"><b>{{ v.display_name }}</b><small>{{ v.max_people }} seats · {{ v.luggage_capacity }} bags</small></span>
+                        <span class="mini-btn">Move here</span>
+                      </button>
+                      <p class="meta" *ngIf="!moveTargetsFor(d).length">
+                        No other {{ selected.vehicle_type_name || 'matching' }} vehicle in this city. A driver's car must stay within their own vehicle type.
+                      </p>
+                    </div>
 
-                  <div class="sec__head sec__head--tight"><h4>Fixed route access</h4><span class="hint">Granted by route groups, not the car.</span></div>
-                  <div class="grp__drivers">
-                    <span class="drv drv--plain" *ngFor="let g of groupsForDriver(d.user_id)">{{ g.name }}</span>
-                    <span class="meta" *ngIf="!groupsForDriver(d.user_id).length">No routes — assign a group to give this driver work.</span>
-                  </div>
-                  <p class="meta" *ngIf="effectiveRoutes(d.user_id).length">
-                    Effective routes ({{ effectiveRoutes(d.user_id).length }}):
-                    <ng-container *ngFor="let r of effectiveRoutes(d.user_id); let last = last">{{ r.origin_name }} → {{ r.dest_name }}<ng-container *ngIf="!last"> · </ng-container></ng-container>
-                  </p>
+                    <div class="card__panel">
+                      <div class="card__panel-head">
+                        <h4>Fixed route access</h4>
+                        <span class="drv drv--plain" *ngFor="let g of groupsForDriver(d.user_id)">{{ g.name }}</span>
+                        <span class="meta" *ngIf="!groupsForDriver(d.user_id).length">No routes — assign a group to give this driver work.</span>
+                      </div>
+                      <ul class="routelist" *ngIf="effectiveRoutes(d.user_id).length">
+                        <li *ngFor="let r of effectiveRoutes(d.user_id)">{{ r.origin_name }} → {{ r.dest_name }}</li>
+                      </ul>
+                    </div>
+                  </article>
                 </div>
 
                 <div class="cue cue--flat" *ngIf="!selDrivers.length">
@@ -557,15 +562,34 @@ interface TabDef { key: string; label: string; count?: number; }
     .tab[aria-selected="true"] { color: var(--tm-green, #16a34a); border-bottom-color: var(--tm-green, #16a34a); }
     .tab__cnt { margin-left: 5px; font-size: 11px; opacity: .75; }
 
-    .pane { display: flex; flex-direction: column; gap: 18px; padding: 15px; }
-    .sec { display: flex; flex-direction: column; gap: 10px; }
-    .sec__head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    /* One spacing scale for the whole editor: 16 outside, 20 between sections,
+       12 inside a section, 14 inside a card. Nothing is bespoke. */
+    .pane { display: flex; flex-direction: column; gap: 20px; padding: 16px; }
+    .sec { display: flex; flex-direction: column; gap: 12px; }
+
+    /* Title and any actions share the first line; the hint always drops to its
+       own full-width line, so a long one can never crowd the heading. */
+    .sec__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 4px; }
     .sec__head h3 { margin: 0; font-size: 14px; font-weight: 800; color: var(--tm-text); }
-    .sec__head h4 { margin: 0; font-size: 12.5px; font-weight: 800; color: var(--tm-text); }
-    .sec__head--tight { margin-top: 2px; }
-    .sec__head .hint { font-size: 12px; color: var(--tm-text-muted); }
+    .sec__head .hint { flex: 1 0 100%; order: 99; margin: 0; font-size: 12px; line-height: 1.45; color: var(--tm-text-muted); }
     .sec__actions { display: flex; justify-content: flex-start; }
     .inline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+    /* Driver cards — each one a discrete block with identical padding, two per row. */
+    .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+    .card { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px; background: var(--tm-surface); min-width: 0; }
+    .card__head { display: flex; align-items: center; gap: 11px; }
+    .card__id { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+    .card__name { font-size: 13.5px; font-weight: 800; color: var(--tm-text); }
+    .card__meta { font-size: 11.5px; color: var(--tm-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card__panel { display: flex; flex-direction: column; gap: 8px; padding: 11px 12px; border-radius: 10px; background: var(--tm-canvas); }
+    /* Heading and the driver's group chips share one line. */
+    .card__panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
+    .card__panel-head h4 { margin: 0; font-size: 12px; font-weight: 800; color: var(--tm-text); }
+    .chips-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .routelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .routelist li { padding-left: 13px; position: relative; min-width: 0; font-size: 12px; color: var(--tm-text-muted); }
+    .routelist li::before { content: ''; position: absolute; left: 0; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tm-green, #16a34a); }
 
     .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 11px; }
     .f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -583,7 +607,7 @@ interface TabDef { key: string; label: string; count?: number; }
     .note { margin: 0; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; }
     .note b { color: var(--tm-text); }
 
-    .grp { display: flex; flex-direction: column; gap: 9px; padding: 11px 12px; border: 1px solid var(--tm-line); border-radius: 11px; }
+    .grp { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px; }
     .grp__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .grp__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .badge { padding: 1px 8px; border-radius: 999px; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 11px; font-weight: 800; }
@@ -596,6 +620,7 @@ interface TabDef { key: string; label: string; count?: number; }
     .drv { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px 2px 3px; border: 1px solid var(--tm-line); border-radius: 999px; font-size: 12px; color: var(--tm-text); }
     .drv--plain { padding: 3px 10px; }
     .av { display: inline-grid; place-items: center; width: 21px; height: 21px; flex: none; border-radius: 50%; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 10px; font-weight: 800; }
+    .av--lg { width: 34px; height: 34px; font-size: 12px; }
     .tag { padding: 2px 8px; border-radius: 999px; background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text-muted); font-size: 10px; font-weight: 800; text-transform: capitalize; }
     .tag[data-s="outstation"] { background: #fff7ed; color: #c2410c; }
 
@@ -616,7 +641,7 @@ interface TabDef { key: string; label: string; count?: number; }
     .pick__main b { font-size: 12.5px; font-weight: 800; color: var(--tm-text); }
     .pick__main small { font-size: 11px; color: var(--tm-text-muted); }
 
-    .layout { display: grid; grid-template-columns: 74px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 11px; }
+    .layout { display: grid; grid-template-columns: 74px 1fr auto; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px; }
     .layout__preview { width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
     .layout__preview :is(app-seat-grid) { transform: scale(0.4); transform-origin: top left; }
     .layout__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -634,6 +659,9 @@ interface TabDef { key: string; label: string; count?: number; }
       .split { grid-template-columns: 1fr; }
       .is-hidden-sm { display: none; }
       .backlink { display: inline-flex; }
+    }
+    @media (max-width: 860px) {
+      .cards { grid-template-columns: 1fr; }
     }
   `],
 })

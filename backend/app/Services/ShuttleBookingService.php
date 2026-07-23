@@ -319,7 +319,7 @@ class ShuttleBookingService
         $query = CityVehicleType::query()
             ->with('rideType:id,name')
             ->where('is_active', true)
-            ->whereHas('rideType', fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+            ->whereHas('rideType', fn ($q) => $q->where('mode', \App\Models\RideType::MODE_SHUTTLE));
 
         if (isset($data['city_vehicle_type_id'])) {
             $query->where('id', (int) $data['city_vehicle_type_id']);

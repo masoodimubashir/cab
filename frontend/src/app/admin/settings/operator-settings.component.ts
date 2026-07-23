@@ -248,8 +248,8 @@ interface SectionMeta {
             <!-- ============= SERVICES (ride catalogue) ============= -->
             <ng-container *ngIf="activeSection === 'services'">
               <div class="chan-note">
-                <span class="chan-note__title">Switches apply to both apps instantly</span>
-                <span class="chan-note__sub">Turning a service off hides it from the customer booking screen and from driver signup/profile. Every switch saves on its own — no Save button needed. At least one service must always stay on.</span>
+                <span class="chan-note__title">Switches apply to every city, in both apps, instantly</span>
+                <span class="chan-note__sub">These settings are global — turning a service off here hides it from the customer booking screen and from driver signup/profile in every city, not just the one selected above. Switching off Local or Outstation takes its three services with it. Every switch saves on its own — no Save button needed. At least one service must always stay on.</span>
               </div>
 
               <div class="loading" *ngIf="servicesLoading"><span class="spinner" aria-hidden="true"></span><span>Loading services…</span></div>
@@ -722,23 +722,24 @@ export class OperatorSettingsComponent implements OnInit {
     });
   }
 
+  // Both toggles address the catalogue by scope/mode key rather than row id —
+  // the settings are global now, so there are no per-city rows to point at. Each
+  // response returns the whole tree, which keeps the master switch and its three
+  // children in sync without a second request.
   toggleScope(scope: RideScope): void {
     if (this.servicesBusy) return;
-    const key = `scope-${scope.id}`;
-    this.servicesBusy = key;
+    this.servicesBusy = `scope-${scope.scope}`;
     this.api
-      .patch<{ scope: RideScope; message: string }>(
-        `/admin/cities/${this.servicesCityId}/ride-products/scopes/${scope.id}`,
+      .patch<{ scopes: RideScope[]; message: string }>(
+        `/admin/cities/${this.servicesCityId}/ride-products/scopes/${scope.scope}`,
         { is_active: !scope.is_active },
       )
       .subscribe({
         next: (res) => {
           this.servicesBusy = null;
-          const fresh = res?.scope;
-          if (fresh) {
-            this.servicesScopes = this.servicesScopes.map((s) => (s.id === fresh.id ? fresh : s));
-          }
-          this.toast.success(`${scope.name} ${fresh?.is_active ? 'enabled' : 'hidden'} in both apps`);
+          const wasActive = scope.is_active;
+          if (res?.scopes) this.servicesScopes = res.scopes;
+          this.toast.success(`${scope.name} ${wasActive ? 'hidden' : 'enabled'} in every city`);
         },
         error: (err) => {
           this.servicesBusy = null;
@@ -749,21 +750,17 @@ export class OperatorSettingsComponent implements OnInit {
 
   toggleMode(scope: RideScope, mode: RideMode): void {
     if (this.servicesBusy) return;
-    const key = `mode-${mode.id}`;
-    this.servicesBusy = key;
+    this.servicesBusy = `mode-${scope.scope}-${mode.mode}`;
     this.api
-      .patch<{ mode: RideMode; message: string }>(
-        `/admin/cities/${this.servicesCityId}/ride-products/modes/${mode.id}`,
+      .patch<{ mode: RideMode; scopes: RideScope[]; message: string }>(
+        `/admin/cities/${this.servicesCityId}/ride-products/scopes/${scope.scope}/modes/${mode.mode}`,
         { is_active: !mode.is_active },
       )
       .subscribe({
         next: (res) => {
           this.servicesBusy = null;
-          const fresh = res?.mode;
-          if (fresh) {
-            scope.modes = scope.modes.map((m) => (m.id === fresh.id ? fresh : m));
-          }
-          this.toast.success(`${scope.name} ${mode.name} ${fresh?.is_active ? 'enabled' : 'hidden'} in both apps`);
+          if (res?.scopes) this.servicesScopes = res.scopes;
+          this.toast.success(`${scope.name} ${mode.name} ${res?.mode?.is_active ? 'enabled' : 'hidden'} in every city`);
         },
         error: (err) => {
           this.servicesBusy = null;

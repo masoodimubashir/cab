@@ -524,8 +524,9 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     // Service catalogue: scope (Local/Outstation) → mode (Private/Fixed/Shuttle)
     // toggles that gate what BOTH apps offer (customer booking + driver signup).
     Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index']);
+    // Keyed by scope/mode strings, not row ids — the catalogue is global now.
     Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope']);
-    Route::patch('/admin/cities/{city}/ride-products/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
+    Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
 
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);

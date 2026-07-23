@@ -316,10 +316,10 @@ class TripsController extends Controller
             ->where('scope', $driverProfile->active_service_scope)
             ->where(function ($q) use ($driverProfile) {
                 if ($driverProfile->active_service_mode === Driver::SERVICE_MODE_SHUTTLE) {
-                    $q->whereHas('cityVehicleType.rideType', fn ($rt) => $rt->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+                    $q->whereHas('cityVehicleType.rideType', fn ($rt) => $rt->where('mode', \App\Models\RideType::MODE_SHUTTLE));
                 } else {
                     $q->whereNull('city_vehicle_type_id')
-                        ->orWhereDoesntHave('cityVehicleType.rideType', fn ($rt) => $rt->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+                        ->orWhereDoesntHave('cityVehicleType.rideType', fn ($rt) => $rt->where('mode', \App\Models\RideType::MODE_SHUTTLE));
                 }
             })
             ->where(function ($q) use ($user) {
@@ -367,7 +367,7 @@ class TripsController extends Controller
         $payload = $trips->map(function (Trip $t) use ($latestOffers, $user) {
             $negotiation = $latestOffers->get($t->id);
             $latestAmount = $negotiation?->offers?->first()?->amount;
-            $serviceMode = str_contains(strtolower((string) $t->cityVehicleType?->rideType?->name), 'shuttle') ? 'shuttle' : 'private';
+            $serviceMode = ($t->cityVehicleType?->rideType?->isShuttle() ?? false) ? 'shuttle' : 'private';
 
             return [
                 'id' => $t->id,
@@ -929,7 +929,7 @@ class TripsController extends Controller
         $limit = (int) ($data['limit'] ?? 20);
 
         $trip->loadMissing("cityVehicleType.rideType:id,name");
-        $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
+        $serviceMode = ($trip->cityVehicleType?->rideType?->isShuttle() ?? false)
             ? Driver::SERVICE_MODE_SHUTTLE
             : Driver::SERVICE_MODE_PRIVATE;
 
@@ -1078,7 +1078,7 @@ class TripsController extends Controller
         // not busy, matching vehicle type). Cheaper to re-check here than to
         // race the list endpoint.
         $trip->loadMissing("cityVehicleType.rideType:id,name");
-        $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
+        $serviceMode = ($trip->cityVehicleType?->rideType?->isShuttle() ?? false)
             ? Driver::SERVICE_MODE_SHUTTLE
             : Driver::SERVICE_MODE_PRIVATE;
 

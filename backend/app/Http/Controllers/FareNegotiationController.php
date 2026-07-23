@@ -300,7 +300,7 @@ class FareNegotiationController extends Controller
         // paid fare, but must not counter with a different price.
         if ($data['action'] === 'COUNTER') {
             $trip->loadMissing('cityVehicleType.rideType:id,name');
-            if (str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), 'shuttle')) {
+            if (($trip->cityVehicleType?->rideType?->isShuttle() ?? false)) {
                 return response()->json([
                     'message' => 'Shuttle bookings are prepaid. You can only accept this request.',
                 ], 422);

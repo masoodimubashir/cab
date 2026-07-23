@@ -35,16 +35,28 @@ class DatabaseSeeder extends Seeder
         // asks for a Normal fare setup — which then renders the outstation
         // package panel instead of the base fare card. Add it only alongside an
         // explicit rule for it in the mapping.
+        // Keyed by `mode`, not by name — the name is an operator-editable label
+        // (it is what the Vehicles tabs and the Services screen display), while
+        // `mode` is what the code branches on. Seeding by mode means a renamed
+        // row is updated in place instead of a duplicate being created.
         $rideTypes = [
-            ['name' => 'Fixed',  'description' => 'Regular point-to-point ride',            'sort_order' => 10],
-            ['name' => 'Fixed',   'description' => 'Prepaid fixed route with mapped stops',  'sort_order' => 20],
-            ['name' => 'Shuttle', 'description' => 'Shared shuttle service',                 'sort_order' => 30],
+            ['mode' => RideType::MODE_PRIVATE, 'name' => 'Private', 'description' => 'Normal solo rides booked with a driver.', 'sort_order' => 10],
+            ['mode' => RideType::MODE_FIXED,   'name' => 'Fixed',   'description' => 'Prepaid fixed route with mapped stops', 'sort_order' => 20],
+            ['mode' => RideType::MODE_SHUTTLE, 'name' => 'Shuttle', 'description' => 'Shared shuttle service',                'sort_order' => 30],
         ];
 
         foreach ($rideTypes as $rt) {
+            $existing = RideType::query()->where('mode', $rt['mode'])->first();
+
             RideType::updateOrCreate(
-                ['name' => $rt['name']],
-                ['description' => $rt['description'], 'sort_order' => $rt['sort_order']],
+                ['id' => $existing?->id],
+                [
+                    // Never overwrite a name the operator has already changed.
+                    'name' => $existing?->name ?? $rt['name'],
+                    'mode' => $rt['mode'],
+                    'description' => $rt['description'],
+                    'sort_order' => $rt['sort_order'],
+                ],
             );
         }
 
