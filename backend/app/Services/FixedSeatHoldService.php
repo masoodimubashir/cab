@@ -22,6 +22,7 @@ class FixedSeatHoldService
         private readonly FixedBookingEventService $events,
         private readonly NotificationCenter $notifier,
         private readonly SubscriptionService $subscriptions,
+        private readonly SeatMapService $seatMap,
     ) {}
 
     public function previewCoupon(User $customer, array $data): array
@@ -53,14 +54,37 @@ class FixedSeatHoldService
     public function createHold(User $customer, array $data): FixedSeatHold
     {
         $departure = RouteDeparture::query()->with('route')->findOrFail((int) $data['route_departure_id']);
-        $seats = max(1, (int) ($data['seats'] ?? 1));
+        // Preferred path: caller passes seat_labels[] (the customer picker in M5).
+        // Transition path: caller passes only `seats: N` — we auto-pick the first
+        // N AVAILABLE seats on the departure. TODO M5: remove auto-pick once every
+        // client sends explicit labels.
+        $seatLabels = array_values(array_unique(array_map('strval', (array) ($data['seat_labels'] ?? []))));
+        $requestedCount = max(0, (int) ($data['seats'] ?? 0));
+        if (empty($seatLabels)) {
+            if ($requestedCount < 1) {
+                throw new ReservationException('Pick at least one seat.', 422);
+            }
+            $this->seatMap->snapshotForDeparture($departure);
+            $picked = DB::table('departure_seats')
+                ->where('route_departure_id', $departure->id)
+                ->where('status', 'AVAILABLE')
+                ->orderBy('id')
+                ->limit($requestedCount)
+                ->pluck('label')
+                ->all();
+            if (count($picked) < $requestedCount) {
+                throw new ReservationException("Only ".count($picked)." seat(s) are available on this vehicle.", 422);
+            }
+            $seatLabels = $picked;
+        }
+        $seats = count($seatLabels);
         $extraLuggageCount = max(0, (int) ($data['extra_luggage_count'] ?? (!empty($data['has_extra_luggage']) ? 1 : 0)));
         $boardStopId = (int) $data['board_stop_id'];
         $dropStopId = (int) $data['drop_stop_id'];
         $hasExtraLuggage = $extraLuggageCount > 0;
         $couponTitle = $data["coupon_title"] ?? null;
 
-        $hold = DB::transaction(function () use ($customer, $departure, $seats, $extraLuggageCount, $hasExtraLuggage, $boardStopId, $dropStopId, $couponTitle) {
+        $hold = DB::transaction(function () use ($customer, $departure, $seats, $seatLabels, $extraLuggageCount, $hasExtraLuggage, $boardStopId, $dropStopId, $couponTitle) {
             $dep = RouteDeparture::query()->with('route')->lockForUpdate()->find($departure->id);
             if (!$dep) {
                 throw new ReservationException('This departure could not be found.', 404);
@@ -99,7 +123,10 @@ class FixedSeatHoldService
             $coupon = $this->resolveFixedCoupon($customer, $dep, $route, $boardStop, $dropStop, $baseAmount, $couponTitle);
             $amount = $coupon["final_amount"];
 
-            return FixedSeatHold::query()->create([
+            // Idempotent — safe to call before every hold in case snapshot hasn't run yet.
+            $this->seatMap->snapshotForDeparture($dep);
+
+            $newHold = FixedSeatHold::query()->create([
                 'route_departure_id' => $dep->id,
                 'customer_id' => $customer->id,
                 'board_stop_id' => $boardStop->id,
@@ -115,6 +142,11 @@ class FixedSeatHoldService
                 'status' => 'HELD',
                 'expires_at' => now()->addMinutes(5),
             ]);
+
+            // Locks the specific labels; throws 422 if any is unavailable.
+            $this->seatMap->markSeatsHeld($newHold, $seatLabels);
+
+            return $newHold;
         });
 
         $this->broadcastDepartureUpdate((int) $hold->route_departure_id, 'seat_hold_created');
@@ -234,6 +266,7 @@ class FixedSeatHoldService
                 'razorpay_signature' => $razorpaySignature,
             ]);
 
+            $this->seatMap->markSeatsBooked($lockedHold, $reservation);
             $this->markCouponRedeemed($lockedHold);
 
             $this->events->record(
@@ -386,6 +419,7 @@ class FixedSeatHoldService
                 'razorpay_signature' => 'server_verified:' . $source,
             ]);
 
+            $this->seatMap->markSeatsBooked($lockedHold, $reservation);
             $this->markCouponRedeemed($lockedHold);
 
             $this->events->record(
@@ -510,6 +544,7 @@ class FixedSeatHoldService
                 "razorpay_signature" => "test_bypass",
             ]);
 
+            $this->seatMap->markSeatsBooked($lockedHold, $reservation);
             $this->markCouponRedeemed($lockedHold);
 
             $this->events->record(

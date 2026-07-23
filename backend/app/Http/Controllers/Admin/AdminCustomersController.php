@@ -12,6 +12,7 @@ use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -187,6 +188,28 @@ class AdminCustomersController
                 ] : null,
             ],
         ]);
+    }
+
+    /**
+     * PATCH /admin/customers/{user} — update the customer's profile fields.
+     * Only touches the identity block (name/phone/email/dob/address); status
+     * changes stay on the dedicated block/unblock/unsubscribe endpoints.
+     */
+    public function update(Request $request, User $user)
+    {
+        $this->ensureCustomer($user);
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'phone')->ignore($user->id)],
+            'email' => ['sometimes', 'nullable', 'email', 'max:180', Rule::unique('users', 'email')->ignore($user->id)],
+            'dob' => ['sometimes', 'nullable', 'date', 'before:today'],
+            'address' => ['sometimes', 'nullable', 'string', 'max:500'],
+        ]);
+
+        $user->fill($data)->save();
+
+        return response()->json(['customer' => $user->fresh()]);
     }
 
     public function block(Request $request, User $user)

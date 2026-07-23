@@ -13,7 +13,6 @@ export interface DriverProfile {
   city_vehicle_type_id: number | null;
   city_vehicle_type_name: string | null;
   vehicle_reg_no: string | null;
-  vehicle_brand: string | null;
   vehicle_model: string | null;
   vehicle_color: string | null;
   approval_status: 'pending' | 'approved' | 'rejected';

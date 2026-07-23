@@ -127,19 +127,6 @@
           <span>{{ dropStopHelp }}</span>
         </div>
 
-        <div class="fb-field fb-seats">
-          <span class="fb-label">Seats</span>
-          <div class="fb-stepper">
-            <ion-button fill="clear" size="small" (click)="setSeats(seats - 1)" [disabled]="seats <= 1">
-              <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
-            </ion-button>
-            <span class="fb-seats__n">{{ seats }}</span>
-            <ion-button fill="clear" size="small" (click)="setSeats(seats + 1)" [disabled]="seats >= maxSeats">
-              <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
-            </ion-button>
-          </div>
-        </div>
-
         <div class="fb-field fb-luggage" [class.disabled]="!luggageAvailable">
           <div class="fb-luggage__label">
             <span class="fb-label">Extra luggage</span>
@@ -157,17 +144,65 @@
         </div>
 
 
-        <div class="fb-unavailable" *ngIf="bookingBlockReason">
+        <div class="fb-unavailable" *ngIf="!boardStopId || !dropStopId">
           <ion-icon name="information-circle-outline"></ion-icon>
-          <span>{{ bookingBlockReason }}</span>
+          <span>Pick your board and drop stops to continue.</span>
         </div>
-
-        <div class="fb-total"><span>Total prepaid</span><strong>₹{{ fareTotal | number: '1.0-2' }}</strong></div>
       </div>
 
       <div class="sheet-foot">
-        <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="reviewBooking()">
-          Confirm & pay
+        <button type="button" class="fb-cta dc-press"
+                [disabled]="!selectedDeparture || !boardStopId || !dropStopId || boardStopId === dropStopId"
+                (click)="proceedToPicker()">
+          Pick seats
+        </button>
+      </div>
+    </div>
+
+    <!-- Seat picker (M5): pick specific seats on the vehicle. -->
+    <div class="sheet-pane" *ngIf="step === 'seats' && !loading">
+      <div class="sheet-head">
+        <h3 class="sheet-title">Pick your seats</h3>
+      </div>
+      <div class="sheet-body">
+        <div class="fb-summary" *ngIf="selectedRoute && boardStopId && dropStopId">
+          <ion-icon name="location-outline"></ion-icon>
+          <span>{{ stopName(boardStopId) }} → {{ stopName(dropStopId) }}</span>
+        </div>
+
+        <div *ngIf="loadingSeatMap" class="fb-loading">Loading seat map…</div>
+        <div *ngIf="seatMapError" class="fb-unavailable">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span>{{ seatMapError }}</span>
+        </div>
+
+        <ng-container *ngIf="seatMap && !loadingSeatMap">
+          <app-seat-grid
+            [rows]="seatMap.layout.rows"
+            [cols]="seatMap.layout.cols"
+            [cells]="seatMap.cells"
+            [selectedLabels]="selectedLabels"
+            (seatTap)="toggleSeat($event)"
+          ></app-seat-grid>
+
+          <div class="fb-picker-status">
+            <span *ngIf="selectedLabels.length === 0">Tap a seat to select · up to {{ maxSeats }}</span>
+            <span *ngIf="selectedLabels.length > 0">
+              <strong>{{ selectedLabels.length }}/{{ maxSeats }}</strong> selected: {{ selectedLabels.join(', ') }}
+            </span>
+          </div>
+        </ng-container>
+
+        <div class="fb-total" *ngIf="selectedLabels.length > 0">
+          <span>Running total</span><strong>₹{{ fareTotal | number: '1.0-2' }}</strong>
+        </div>
+      </div>
+
+      <div class="sheet-foot">
+        <button type="button" class="fb-cta dc-press"
+                [disabled]="selectedLabels.length < 1"
+                (click)="reviewBooking()">
+          Continue with {{ selectedLabels.length || 0 }} seat{{ selectedLabels.length === 1 ? '' : 's' }}
         </button>
       </div>
     </div>
@@ -192,13 +227,14 @@
           </div>
           <div class="fb-review-meta">
             <span>{{ departureDriverName(selectedDeparture) }}</span>
-            <span>{{ seats }} seat{{ seats > 1 ? 's' : '' }}</span>
+            <span *ngIf="selectedLabels.length > 0">Seat{{ selectedLabels.length > 1 ? 's' : '' }} {{ selectedLabels.join(', ') }}</span>
             <span>{{ extraLuggageCount }} luggage</span>
           </div>
+          <app-hold-timer *ngIf="hold?.expires_at" [expiresAt]="hold?.expires_at || null" (expired)="onHoldExpired()"></app-hold-timer>
         </div>
 
         <div class="fb-price-card">
-          <div><span>Seat fare</span><strong>₹{{ (selectedRoute?.flat_fare || 0) * seats | number: '1.0-2' }}</strong></div>
+          <div><span>Seat fare</span><strong>₹{{ (selectedRoute?.flat_fare || 0) * (selectedLabels.length || seats) | number: '1.0-2' }}</strong></div>
           <div><span>Extra luggage</span><strong>₹{{ luggageTotal | number: '1.0-2' }}</strong></div>
           <div *ngIf="discountTotal > 0" class="is-discount"><span>Coupon discount</span><strong>-₹{{ discountTotal | number: '1.0-2' }}</strong></div>
           <div class="is-total"><span>Final price</span><strong>₹{{ payableTotal | number: '1.0-2' }}</strong></div>

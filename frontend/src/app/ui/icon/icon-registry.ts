@@ -14,7 +14,7 @@ export type IconName =
   | 'filter' | 'calendar' | 'pin' | 'phone' | 'star' | 'eye' | 'edit'
   | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal'
   | 'road' | 'driver-helmet' | 'rupee' | 'handshake' | 'key'
-  | 'expand' | 'compress';
+  | 'expand' | 'compress' | 'grid';
 
 export const ICONS: Record<IconName, string> = {
   'home': '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/>',
@@ -65,4 +65,5 @@ export const ICONS: Record<IconName, string> = {
   'key': '<circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 8-8"/><path d="m17 4 3 3"/><path d="m14 7 3 3"/>',
   'expand': '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
   'compress': '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>',
+  'grid': '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
 };

@@ -29,7 +29,7 @@
       <span>{{ message }}</span>
     </div>
 
-    <section class="fixed-panel open-panel" *ngIf="!activeVehicle">
+    <section class="fixed-panel open-panel" *ngIf="!activeVehicle && routes.length">
       <div class="panel-head">
         <div>
           <p>Step 1</p>
@@ -64,18 +64,45 @@
         </div>
       </div>
 
-      <label class="fixed-field fixed-field--split is-disabled">
-        <span>Vehicle seats</span>
-        <ion-input type="number" min="1" max="60" inputmode="numeric" [(ngModel)]="capacity" [disabled]="true"></ion-input>
+      <label class="fixed-field fixed-field--stack" *ngIf="selectedRouteId">
+        <span>Seat layout</span>
+        <ion-select
+          [(ngModel)]="selectedLayoutId"
+          (ionChange)="onLayoutChange()"
+          interface="action-sheet"
+          [placeholder]="layoutsLoading ? 'Loading…' : (layouts.length ? 'Pick layout' : 'No layouts yet')"
+          [disabled]="!layouts.length || layoutsLoading"
+        >
+          <ion-select-option *ngFor="let l of layouts" [value]="l.id">
+            {{ l.name }} · {{ l.seat_count }} seats
+          </ion-select-option>
+        </ion-select>
       </label>
 
-      <button class="dc-cta fixed-primary dc-press" (click)="openVehicle()" [disabled]="busy || !routes.length">
+      <p class="fixed-hint" *ngIf="selectedRouteId && !layouts.length && !layoutsLoading">
+        Your operator hasn't designed a seat layout for this city yet. Ask them to add one before you open a vehicle.
+      </p>
+
+      <button class="dc-cta fixed-primary dc-press" (click)="openVehicle()"
+              [disabled]="busy || !routes.length || !selectedLayoutId">
         <ion-icon name="add-circle-outline"></ion-icon>
         <span>Open vehicle</span>
       </button>
     </section>
 
-    <section class="empty-panel" *ngIf="!loading && !activeVehicle">
+    <section class="fixed-panel unassigned-panel" *ngIf="!loading && !activeVehicle && !routes.length">
+      <div class="unassigned-icon">
+        <ion-icon name="map-outline"></ion-icon>
+      </div>
+      <h2>No routes assigned yet</h2>
+      <p>Your operator hasn't added you to a route group. Contact them to get routes assigned so you can open a vehicle.</p>
+      <button class="dc-cta dc-cta--ghost dc-press" (click)="refresh()" [disabled]="loading">
+        <ion-icon name="refresh-outline"></ion-icon>
+        <span>Check again</span>
+      </button>
+    </section>
+
+    <section class="empty-panel" *ngIf="!loading && !activeVehicle && routes.length && !selectedRouteId">
       <ion-icon name="information-circle-outline"></ion-icon>
       <p>{{ setupHelp }}</p>
     </section>
@@ -201,7 +228,12 @@
           </div>
 
           <div class="meta-line">
-            <span>{{ passenger.seats }} seat{{ passenger.seats > 1 ? 's' : '' }}</span>
+            <span *ngIf="passenger.seat_labels?.length">
+              Seat{{ (passenger.seat_labels?.length || 0) > 1 ? 's' : '' }} {{ passenger.seat_labels?.join(', ') }}
+            </span>
+            <span *ngIf="!passenger.seat_labels?.length">
+              {{ passenger.seats }} seat{{ passenger.seats > 1 ? 's' : '' }}
+            </span>
             <span>{{ passenger.payment_status || 'payment' }}</span>
             <span *ngIf="passenger.fare_amount != null">INR {{ passenger.fare_amount }}</span>
           </div>

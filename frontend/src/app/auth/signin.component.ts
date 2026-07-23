@@ -21,53 +21,73 @@ import {
   styleUrl: './signin.component.scss',
   template: `
     <div class="auth">
-      <div class="auth__form-wrap">
-        <div class="auth__brand">
-          <tm-brand-mark />
+      <div class="auth__card">
+        <!-- Brand / hero panel (hidden on small screens) -->
+        <aside class="auth__hero">
+          <div class="auth__hero-top">
+            <tm-brand-mark tone="inverse" />
+          </div>
+
+          <div class="auth__hero-body">
+            <h2 class="auth__hero-title">Run your fleet<br />with confidence.</h2>
+            <p class="auth__hero-text">
+              Bookings, drivers, pricing and payouts — managed from one console.
+            </p>
+          </div>
+
+          <ul class="auth__hero-points">
+            <li><span class="dot"></span> Live ride &amp; driver tracking</li>
+            <li><span class="dot"></span> Fares, zones &amp; settlements</li>
+            <li><span class="dot"></span> Reports that actually add up</li>
+          </ul>
+        </aside>
+
+        <!-- Sign-in form -->
+        <div class="auth__panel">
+          <div class="auth__brand">
+            <tm-brand-mark size="lg" />
+          </div>
+
+          <header class="auth__head">
+            <span class="tm-overline auth__eyebrow">Admin Console</span>
+            <h1 class="tm-h1 auth__title">Welcome back</h1>
+            <p class="auth__subtitle">Sign in to start your session.</p>
+          </header>
+
+          <form class="auth__form" (ngSubmit)="login()" autocomplete="on">
+            <tm-input
+              label="Email"
+              type="email"
+              placeholder="admin@example.com"
+              icon="envelope"
+              [(ngModel)]="email"
+              name="email"
+            />
+
+            <tm-input
+              label="Password"
+              type="password"
+              placeholder="Enter password"
+              icon="shield"
+              [(ngModel)]="password"
+              name="password"
+            />
+
+            <tm-button
+              variant="green"
+              size="lg"
+              type="submit"
+              [loading]="loading"
+              [disabled]="!email || !password"
+              iconTrail="arrow-right"
+              block
+            >
+              {{ loading ? 'Signing in…' : 'Sign In' }}
+            </tm-button>
+          </form>
+
+          <p class="auth__foot">© {{ year }} DreamCabs · Admin Console</p>
         </div>
-
-        <header class="auth__head">
-          <span class="tm-overline auth__eyebrow">Admin Console</span>
-          <h1 class="tm-h1 auth__title">login to start your session...</h1>
-        
-        </header>
-
-        <form class="auth__form" (ngSubmit)="login()" autocomplete="on">
-          <tm-input
-            label="Email"
-            type="email"
-            placeholder="admin@example.com"
-            icon="envelope"
-            [(ngModel)]="email"
-            name="email"
-          />
-
-          <tm-input
-            label="Password"
-            type="password"
-            placeholder="Enter password"
-            icon="shield"
-            [(ngModel)]="password"
-            name="password"
-          />
-
-         
-
-          <tm-button
-            variant="green"
-            size="lg"
-            type="submit"
-            [loading]="loading"
-            [disabled]="!email || !password"
-            iconTrail="arrow-right"
-            block
-          >
-            {{ loading ? 'Signing in…' : 'Sign In' }}
-          </tm-button>
-
-        </form>
-
-       
       </div>
     </div>
   `,

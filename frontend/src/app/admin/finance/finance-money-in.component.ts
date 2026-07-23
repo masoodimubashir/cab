@@ -54,7 +54,7 @@ type SourceFilter = 'all' | 'fixed' | 'shuttle' | 'topup';
     <div class="page">
       <header class="page__hero">
         <div>
-          <h1 class="page__title">Money In</h1>
+          <h1 class="page__title">Payment In</h1>
           <p class="page__sub">
             Every payment that reached the company — paid bookings and wallet top-ups.
             Cash bookings are listed but counted separately (the driver holds that cash).
@@ -297,7 +297,7 @@ export class FinanceMoneyInComponent implements OnInit, AfterViewInit, OnDestroy
         this.loading = false;
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Could not load the money-in ledger.';
+        this.error = err?.error?.message || 'Could not load the payment-in ledger.';
         this.loading = false;
       },
     });

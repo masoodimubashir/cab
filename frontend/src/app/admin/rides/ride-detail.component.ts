@@ -25,7 +25,6 @@ interface Party {
 interface DriverProfile {
   user_id: number;
   vehicle_type?: string | null;
-  vehicle_brand?: string | null;
   vehicle_model?: string | null;
   vehicle_color?: string | null;
   vehicle_reg_no?: string | null;
@@ -1066,7 +1065,7 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   vehicleHeadline(): string {
     const dp = this.driverProfile;
     if (!dp) return '';
-    return [dp.vehicle_color, dp.vehicle_brand, dp.vehicle_model]
+    return [dp.vehicle_color, dp.vehicle_model]
       .filter((s) => !!s)
       .join(' ');
   }

@@ -55,7 +55,7 @@ interface FinanceOverview {
       <ng-container *ngIf="data as d">
         <!-- Money in flow -->
         <section class="band">
-          <span class="band__label">Money in — this range</span>
+          <span class="band__label">Payment in — this range</span>
           <div class="grid">
             <a class="tile tile--hero tile--link" routerLink="/finance/money-in">
               <span class="tile__label">Collected online</span>

@@ -18,12 +18,14 @@ import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
 // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
 // import { AppAssetsComponent } from './admin/settings/app-assets.component';
-import { VehicleTypeDetailsComponent } from './admin/settings/vehicle-type-details.component';
 import { VehicleFareSetupComponent } from './admin/settings/vehicle-fare-setup.component';
+import { SetupWizardComponent } from './admin/setup/setup-wizard.component';
+import { FleetSetupComponent } from './admin/fleet/fleet-setup.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
 import { FixedDeparturesComponent } from './admin/fixed/fixed-departures.component';
+import { FixedRoutesHubComponent } from './admin/fixed/fixed-routes-hub.component';
 import { ShuttleBookingsComponent } from './admin/shuttle/shuttle-bookings.component';
 import { RolesPermissionsComponent } from './admin/rbac/roles-permissions.component';
 import { ManagersComponent } from './admin/rbac/managers.component';
@@ -37,6 +39,8 @@ export const routes: Routes = [
   { path: '', redirectTo: 'signin', pathMatch: 'full' },
   { path: 'signin', component: SigninComponent },
   { path: 'dashboard', component: AdminDashboardComponent, canActivate: [adminAuthGuard], data: { permission: 'dashboard' } },
+  { path: 'setup', component: SetupWizardComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
+  { path: 'fleet', component: FleetSetupComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
   { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard], data: { permission: 'pricing' } },
   { path: 'vehicles/:vehicleRowId/fares', component: VehicleFareSetupComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
@@ -94,12 +98,33 @@ export const routes: Routes = [
 
   { path: 'vehicles', component: VehiclesComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
 
+  // Vehicle seat layouts — reusable seat maps per (city × vehicle-type).
+  {
+    path: 'vehicle-seat-layouts',
+    loadComponent: () => import('./admin/vehicle-seat-layouts/seat-layout-list.component').then((m) => m.SeatLayoutListComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'vehicles' },
+  },
+  {
+    path: 'vehicle-seat-layouts/new',
+    loadComponent: () => import('./admin/vehicle-seat-layouts/seat-layout-designer.component').then((m) => m.SeatLayoutDesignerComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'vehicles' },
+  },
+  {
+    path: 'vehicle-seat-layouts/:id',
+    loadComponent: () => import('./admin/vehicle-seat-layouts/seat-layout-designer.component').then((m) => m.SeatLayoutDesignerComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'vehicles' },
+  },
+
   { path: 'promotions', redirectTo: 'promotions/coupons', pathMatch: 'full' },
   { path: 'promotions/coupons', component: CouponsComponent, canActivate: [adminAuthGuard], data: { permission: 'coupons' } },
 
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard], data: { permission: 'subscriptions' } },
 
   { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
+  { path: 'fixed-routes', component: FixedRoutesHubComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
   { path: 'shuttle-bookings', component: ShuttleBookingsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
 
   // B5 — customer-refund register (fixed + shuttle, manual settlement).
@@ -136,7 +161,7 @@ export const routes: Routes = [
   // { path: 'settings/app-assets', component: AppAssetsComponent, canActivate: [adminAuthGuard], data: { permission: 'app_assets' } },
   { path: 'settings/general', redirectTo: 'settings/city', pathMatch: 'full' },
   { path: 'settings/fleets', component: FleetsSettingsComponent, canActivate: [adminAuthGuard], data: { permission: 'fleets' } },
-  { path: 'settings/vehicle-types/:vehicleRowId', component: VehicleTypeDetailsComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  { path: 'settings/vehicle-types/:vehicleRowId', redirectTo: '/setup', pathMatch: 'full' },
 
   { path: 'analytics', redirectTo: 'analytics/real-time', pathMatch: 'full' },
   { path: 'analytics/real-time', component: AnalyticsRealTimeComponent, canActivate: [adminAuthGuard], data: { permission: 'analytics' } },

@@ -165,9 +165,17 @@ class FixedRouteService
     {
         $fareConfig = is_array($data['fare_config'] ?? null) ? $data['fare_config'] : [];
         $fixedSettings = $this->fixedSettings($data['fixed_settings_json'] ?? null);
-        $vehicle = CityVehicleType::query()
-            ->where('city_id', $city->id)
-            ->findOrFail((int) $data['city_vehicle_type_id']);
+
+        // Vehicle is now OPTIONAL and allocation-irrelevant — kept only as a
+        // convenience prefill for capacity when provided. The route owns its own
+        // seats/luggage via explicit input (falling back to the vehicle, then a
+        // sensible default, only when input is absent).
+        $vehicle = isset($data['city_vehicle_type_id']) && $data['city_vehicle_type_id'] !== null
+            ? CityVehicleType::query()->where('city_id', $city->id)->find((int) $data['city_vehicle_type_id'])
+            : null;
+
+        $seats = $data['max_seats_per_booking'] ?? $vehicle?->max_people ?? 4;
+        $luggage = $data['max_luggage_per_vehicle'] ?? $vehicle?->luggage_capacity ?? 0;
 
         return [
             'city_id' => $city->id,
@@ -184,7 +192,7 @@ class FixedRouteService
             'dest_lng' => $data['dest_lng'],
             'path_polyline' => $data['path_polyline'] ?? null,
             'corridor_buffer_m' => $data['corridor_buffer_m'] ?? 300,
-            'city_vehicle_type_id' => $vehicle->id,
+            'city_vehicle_type_id' => $vehicle?->id,
             'fare_config' => [
                 'seat_fare' => isset($fareConfig['seat_fare']) ? (float) $fareConfig['seat_fare'] : null,
                 'commission_type' => ($fareConfig['commission_type'] ?? 'percent') === 'fixed' ? 'fixed' : 'percent',
@@ -192,10 +200,10 @@ class FixedRouteService
                 'fixed_commission' => isset($fareConfig['fixed_commission']) ? (float) $fareConfig['fixed_commission'] : null,
             ],
             'booking_window_hours' => (int) ($data['booking_window_hours'] ?? 6),
-            'max_seats_per_booking' => max(1, (int) $vehicle->max_people),
+            'max_seats_per_booking' => max(1, (int) $seats),
             'waiting_time_per_stop_minutes' => (int) ($data['waiting_time_per_stop_minutes'] ?? 0),
             'luggage_surcharge_amount' => (float) ($data['luggage_surcharge_amount'] ?? 0),
-            'max_luggage_per_vehicle' => max(0, (int) $vehicle->luggage_capacity),
+            'max_luggage_per_vehicle' => max(0, (int) $luggage),
             'requires_prepaid' => (bool) ($data['requires_prepaid'] ?? true),
             'fixed_settings_json' => $fixedSettings,
             'advance_required' => false,
@@ -308,9 +316,8 @@ class FixedRouteService
             return;
         }
 
-        if (array_key_exists('city_vehicle_type_id', $data) && (int) $data['city_vehicle_type_id'] !== (int) $route->city_vehicle_type_id) {
-            throw new ReservationException('This route has active fixed bookings. Vehicle type cannot be changed right now.', 422);
-        }
+        // Vehicle no longer participates in allocation, so changing it mid-bookings
+        // is harmless — the previous guard against it has been removed.
 
         foreach (['origin_lat', 'origin_lng', 'dest_lat', 'dest_lng'] as $coordinateField) {
             if (array_key_exists($coordinateField, $data) && round((float) $data[$coordinateField], 6) !== round((float) $route->{$coordinateField}, 6)) {

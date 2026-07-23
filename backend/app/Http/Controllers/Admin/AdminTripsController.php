@@ -55,6 +55,14 @@ class AdminTripsController
             $query->where('city_vehicle_type_id', (int) $cvtId);
         }
 
+        if ($cityId = $request->query('city_id')) {
+            // Additional narrowing on top of ManagerScope — safe because
+            // scoped managers' allowed set already limits which cities they
+            // can see; if they pass a city_id they're not allowed to see,
+            // the ManagerScope where-clause silently returns nothing.
+            $query->where('city_id', (int) $cityId);
+        }
+
         if ($phone = trim((string) $request->query('phone'))) {
             // Strip non-digits so "+91 90000-12345" matches "9000012345" in DB.
             $needle = preg_replace('/\D+/', '', $phone);
@@ -163,7 +171,7 @@ class AdminTripsController
             ? \App\Models\Driver::query()
                 ->where('user_id', $trip->driver_id)
                 ->first([
-                    'user_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model',
+                    'user_id', 'vehicle_type', 'vehicle_model',
                     'vehicle_color', 'vehicle_reg_no', 'rating_avg', 'rating_count',
                 ])
             : null;

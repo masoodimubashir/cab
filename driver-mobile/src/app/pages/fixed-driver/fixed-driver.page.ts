@@ -40,11 +40,20 @@ interface FixedVehicle {
   reservation_count?: number;
 }
 
+interface SeatLayout {
+  id: number;
+  name: string;
+  rows: number;
+  cols: number;
+  seat_count: number;
+}
+
 interface FixedPassenger {
   id: number;
   customer_name: string | null;
   customer_phone: string | null;
   seats: number;
+  seat_labels?: string[];
   status: string;
   no_show_unlock_at?: string | null;
   payment_status: string | null;
@@ -101,6 +110,13 @@ export class FixedDriverPage {
   vehicles: FixedVehicle[] = [];
   selectedRouteId: number | null = null;
   capacity = 4;
+
+  // Seat layouts (M6): fetched per selected route; driver picks which one to
+  // open the vehicle with. Capacity derives from the layout's seat_count so
+  // the seat map and the "seats total" counter can never disagree.
+  layouts: SeatLayout[] = [];
+  selectedLayoutId: number | null = null;
+  layoutsLoading = false;
 
   activeVehicle: FixedVehicle | null = null;
   passengers: FixedPassenger[] = [];
@@ -218,9 +234,41 @@ export class FixedDriverPage {
     });
   }
 
+  /**
+   * Route changed: reload the layouts for the new route and (re)derive the
+   * capacity. Called from the route <ion-select>'s (ionChange) hook.
+   */
   syncCapacity(): void {
-    const seats = Number(this.selectedRoute?.max_seats_per_booking ?? 0);
-    this.capacity = seats > 0 ? seats : 1;
+    this.selectedLayoutId = null;
+    this.layouts = [];
+    if (!this.selectedRouteId) {
+      this.capacity = 1;
+      return;
+    }
+    this.layoutsLoading = true;
+    this.api.get<{ data: SeatLayout[] }>(`/fixed/driver/routes/${this.selectedRouteId}/layouts`)
+      .pipe(finalize(() => this.layoutsLoading = false))
+      .subscribe({
+        next: (res) => {
+          this.layouts = res.data ?? [];
+          // Pre-select the first (usually only) layout so a single-tap Open works.
+          this.selectedLayoutId = this.layouts[0]?.id ?? null;
+          this.applyLayoutCapacity();
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not load seat layouts.';
+        },
+      });
+  }
+
+  onLayoutChange(): void {
+    this.applyLayoutCapacity();
+  }
+
+  private applyLayoutCapacity(): void {
+    const layout = this.layouts.find((l) => l.id === this.selectedLayoutId);
+    if (layout) this.capacity = layout.seat_count;
+    else this.capacity = Number(this.selectedRoute?.max_seats_per_booking ?? 1);
   }
 
   openVehicle(): void {
@@ -228,9 +276,8 @@ export class FixedDriverPage {
       this.error = 'Select a fixed route first.';
       return;
     }
-    this.syncCapacity();
-    if (!this.capacity || this.capacity < 1) {
-      this.error = 'Enter vehicle capacity.';
+    if (!this.selectedLayoutId) {
+      this.error = 'Pick a seat layout for this vehicle.';
       return;
     }
 
@@ -238,7 +285,7 @@ export class FixedDriverPage {
     this.error = null;
     this.api.post<{ vehicle: FixedVehicle; message: string }>('/fixed/driver/vehicles', {
       route_id: this.selectedRouteId,
-      capacity: this.capacity,
+      vehicle_seat_layout_id: this.selectedLayoutId,
     }).pipe(finalize(() => this.busy = false)).subscribe({
       next: (res) => {
         this.message = res.message || 'Fixed vehicle opened.';

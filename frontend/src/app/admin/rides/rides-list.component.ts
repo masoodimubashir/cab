@@ -19,7 +19,7 @@ import moment from 'moment';
 import 'daterangepicker';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { CityContextService } from '../../core/city-context.service';
+import { CityContextService, CityOption } from '../../core/city-context.service';
 import {
   ColumnComponent,
   DataTableComponent,
@@ -117,6 +117,46 @@ const STATUS_OPTIONS: { value: Exclude<StatusFilter, 'all'>; label: string }[] =
 
         <!-- Toolbar: filters on the RIGHT -->
         <ng-container slot="filters">
+          <!-- City -->
+          <div class="state-select" [class.has-value]="cityId != null" [class.is-open]="cityOpen" [class.is-locked]="cityLocked">
+            <button
+              type="button"
+              class="state-select__trigger"
+              (click)="toggleCityMenu($event)"
+              [attr.aria-expanded]="cityOpen"
+              [disabled]="cityLocked"
+              aria-haspopup="listbox"
+              aria-label="City filter"
+            >
+              <span class="state-select__icon" aria-hidden="true"><tm-icon name="map-marker" [size]="14" /></span>
+              <span class="state-select__value">{{ cityLabel() }}</span>
+              <tm-icon *ngIf="!cityLocked" name="chevron-down" [size]="12" class="state-select__caret" />
+            </button>
+            <ul class="state-select__menu" *ngIf="cityOpen" role="listbox" (click)="$event.stopPropagation()">
+              <li
+                class="state-select__option"
+                [class.is-selected]="cityId == null"
+                role="option"
+                [attr.aria-selected]="cityId == null"
+                (click)="selectCity(null)"
+              >
+                <tm-icon *ngIf="cityId == null" name="check" [size]="12" class="state-select__option-check" />
+                <span class="state-select__option-label">All cities</span>
+              </li>
+              <li
+                *ngFor="let c of cityOptions"
+                class="state-select__option"
+                [class.is-selected]="cityId === c.id"
+                role="option"
+                [attr.aria-selected]="cityId === c.id"
+                (click)="selectCity(c.id)"
+              >
+                <tm-icon *ngIf="cityId === c.id" name="check" [size]="12" class="state-select__option-check" />
+                <span class="state-select__option-label">{{ c.name }}</span>
+              </li>
+            </ul>
+          </div>
+
           <!-- Status -->
           <div class="state-select" [class.has-value]="status !== 'all'" [class.is-open]="statusOpen">
             <button
@@ -260,6 +300,14 @@ const STATUS_OPTIONS: { value: Exclude<StatusFilter, 'all'>; label: string }[] =
 
         <!-- Active filter pills below the toolbar -->
         <ng-container slot="banner">
+          <span class="filter-pill" *ngIf="cityId != null && !cityLocked">
+            <span class="filter-pill__icon"><tm-icon name="map-marker" [size]="11" /></span>
+            <span class="filter-pill__label">City</span>
+            <span class="filter-pill__value">{{ cityLabel() }}</span>
+            <button type="button" class="filter-pill__close" (click)="clearCity()" aria-label="Clear city filter">
+              <tm-icon name="x" [size]="12" />
+            </button>
+          </span>
           <span class="filter-pill" *ngIf="phone.trim()">
             <span class="filter-pill__icon"><tm-icon name="search" [size]="11" /></span>
             <span class="filter-pill__label">Phone</span>
@@ -417,6 +465,8 @@ const STATUS_OPTIONS: { value: Exclude<StatusFilter, 'all'>; label: string }[] =
     }
     .state-select.is-open .state-select__caret { transform: rotate(180deg); }
     .state-select.has-value .state-select__caret { color: var(--tm-green-deep); }
+    .state-select.is-locked .state-select__trigger { cursor: not-allowed; opacity: 0.85; }
+    .state-select.is-locked .state-select__trigger:hover { border-color: var(--tm-line-2); }
     .state-select__menu {
       position: absolute; top: calc(100% + 6px); left: 0; right: 0;
       min-width: 200px; margin: 0; padding: 6px;
@@ -614,6 +664,7 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
   status: StatusFilter = 'all';
   rideTypeId: number | null = null;
   cityVehicleTypeId: number | null = null;
+  cityId: number | null = null;
   dateFrom = '';
   dateTo = '';
 
@@ -621,12 +672,16 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
   statusOpen = false;
   rideTypeOpen = false;
   cvtOpen = false;
+  cityOpen = false;
 
   statusOptions = STATUS_OPTIONS;
   rideTypeOptions: RideTypeOption[] = [];
   cvtOptions: CityVehicleTypeOption[] = [];
+  cityOptions: CityOption[] = [];
+  cityLocked = false;
   private currentCityId: number | null = null;
   private citySub: Subscription | null = null;
+  private citiesSub: Subscription | null = null;
 
   // Pagination
   page = 1;
@@ -649,7 +704,16 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
 
   ngOnInit(): void {
     this.loadRideTypes();
+    this.cityLocked = this.cityCtx.isLocked;
     this.cityCtx.ensureCitiesLoaded().subscribe();
+    this.citiesSub = this.cityCtx.cities$.subscribe((list) => {
+      this.cityOptions = list ?? [];
+      // Scoped managers can only ever see their own city — lock the filter to it.
+      if (this.cityLocked && this.cityCtx.lockedCityId != null && this.cityId == null) {
+        this.cityId = this.cityCtx.lockedCityId;
+        this.fetch();
+      }
+    });
     this.citySub = this.cityCtx.cityId$.subscribe((id) => {
       this.currentCityId = id;
       // Reset CVT filter when city changes — the previous selection probably
@@ -675,6 +739,7 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     this.destroyDateRangePicker();
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
     this.citySub?.unsubscribe();
+    this.citiesSub?.unsubscribe();
   }
 
   // ── Status ──────────────────────────────────────────────────────
@@ -685,6 +750,8 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
   toggleStatusMenu(event: MouseEvent): void {
     event.stopPropagation();
     this.rideTypeOpen = false;
+    this.cvtOpen = false;
+    this.cityOpen = false;
     this.statusOpen = !this.statusOpen;
   }
   selectStatus(value: StatusFilter): void {
@@ -701,6 +768,34 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     this.fetch();
   }
 
+  // ── City ────────────────────────────────────────────────────────
+  cityLabel(): string {
+    if (this.cityId == null) return 'All cities';
+    return this.cityOptions.find((c) => c.id === this.cityId)?.name ?? 'All cities';
+  }
+  toggleCityMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.cityLocked) return;
+    this.statusOpen = false;
+    this.rideTypeOpen = false;
+    this.cvtOpen = false;
+    this.cityOpen = !this.cityOpen;
+  }
+  selectCity(id: number | null): void {
+    this.cityOpen = false;
+    if (this.cityId === id) return;
+    this.cityId = id;
+    this.page = 1;
+    this.fetch();
+  }
+  clearCity(): void {
+    if (this.cityLocked) return;
+    if (this.cityId == null) return;
+    this.cityId = null;
+    this.page = 1;
+    this.fetch();
+  }
+
   // ── City vehicle type ───────────────────────────────────────────
   cvtLabel(): string {
     if (this.cityVehicleTypeId == null) return 'All vehicles';
@@ -710,6 +805,7 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     event.stopPropagation();
     this.statusOpen = false;
     this.rideTypeOpen = false;
+    this.cityOpen = false;
     this.cvtOpen = !this.cvtOpen;
   }
   selectCvt(id: number | null): void {
@@ -735,6 +831,7 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     event.stopPropagation();
     this.statusOpen = false;
     this.cvtOpen = false;
+    this.cityOpen = false;
     this.rideTypeOpen = !this.rideTypeOpen;
   }
   selectRideType(id: number | null): void {
@@ -815,12 +912,14 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     if (this.statusOpen) this.statusOpen = false;
     if (this.rideTypeOpen) this.rideTypeOpen = false;
     if (this.cvtOpen) this.cvtOpen = false;
+    if (this.cityOpen) this.cityOpen = false;
   }
   @HostListener('document:keydown.escape')
   onDocumentEscape(): void {
     if (this.statusOpen) this.statusOpen = false;
     if (this.rideTypeOpen) this.rideTypeOpen = false;
     if (this.cvtOpen) this.cvtOpen = false;
+    if (this.cityOpen) this.cityOpen = false;
   }
 
   // ── Daterangepicker ─────────────────────────────────────────────
@@ -914,6 +1013,7 @@ export class RidesListComponent implements OnInit, OnChanges, AfterViewInit, OnD
     if (this.dateTo) params.set('date_to', this.dateTo);
     if (this.rideTypeId != null) params.set('ride_type_id', String(this.rideTypeId));
     if (this.cityVehicleTypeId != null) params.set('city_vehicle_type_id', String(this.cityVehicleTypeId));
+    if (this.cityId != null) params.set('city_id', String(this.cityId));
     if (this.phone.trim()) params.set('phone', this.phone.trim());
     if (this.status !== 'all') params.set('status', this.status);
     return `?${params.toString()}`;

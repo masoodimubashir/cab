@@ -10,6 +10,7 @@ import { ButtonComponent, IconComponent, IconName, StatusPillComponent } from '.
 import { OutstationPackagesComponent } from './outstation-packages.component';
 import { VehicleBasePricingComponent } from './vehicle-base-pricing.component';
 import { FixedRoutesComponent } from '../fixed/fixed-routes.component';
+import { ReturnToSetupComponent } from '../setup/return-to-setup.component';
 
 type ServiceMode = 'private' | 'fixed' | 'shuttle';
 
@@ -41,9 +42,10 @@ interface RideTypeRef { id: number; name: string; }
 @Component({
   selector: 'app-vehicle-fare-setup',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, StatusPillComponent, OutstationPackagesComponent, VehicleBasePricingComponent, FixedRoutesComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, StatusPillComponent, OutstationPackagesComponent, VehicleBasePricingComponent, FixedRoutesComponent, ReturnToSetupComponent],
   template: `
     <div class="page">
+      <app-return-to-setup></app-return-to-setup>
       <header class="hero">
         <button type="button" class="back" (click)="back()" aria-label="Back"><tm-icon name="chevron-left" [size]="18" /></button>
         <div class="heroMain">

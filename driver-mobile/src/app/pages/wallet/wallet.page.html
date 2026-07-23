@@ -4,7 +4,7 @@
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
     <ion-title class="pg-brandtitle">
-      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+      <span class="b-white">Earnings &amp;</span> <span class="b-green">Wallet</span>
     </ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
@@ -19,13 +19,12 @@
     <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <!-- Money hero: driver wallet balance in the green → navy gradient -->
+  <!-- Money hero: the real balance you hold -->
   <div class="pg-hero">
     <p class="pg-hero__label">Wallet balance</p>
     <h1 class="pg-hero__amount">₹{{ balance | number: '1.0-2' }}</h1>
-    <p class="pg-subtitle">Available to use for rides &amp; fees</p>
+    <p class="pg-subtitle">Money you hold — earnings, top-ups, minus commission</p>
 
-    <!-- Top up CTA sits inside the hero so money + action read as one unit -->
     <button class="dc-cta wallet-topup dc-press" [disabled]="toppingUp" (click)="promptTopUp()">
       <ion-spinner *ngIf="toppingUp" name="crescent"></ion-spinner>
       <ion-icon *ngIf="!toppingUp" name="add-circle-outline"></ion-icon>
@@ -39,49 +38,74 @@
       <span>{{ error }}</span>
     </div>
 
-    <!-- Recent activity -->
-    <div class="pg-card">
+    <!-- Loading skeleton -->
+    <div *ngIf="loading && !error" class="pg-card">
+      <div class="dc-skeleton" style="height:22px;width:55%;margin-bottom:16px"></div>
+      <div class="dc-skeleton" style="height:180px"></div>
+    </div>
+
+    <!-- Plain-language reconciliation: where the money came from -->
+    <div class="pg-card" *ngIf="!loading && !error">
       <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="receipt-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Recent activity</h2>
+        <div class="pg-card__icon"><ion-icon name="stats-chart-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Where your money comes from</h2>
       </div>
 
-      <!-- Loading skeletons -->
-      <div *ngIf="loading && !transactions.length" class="wallet-skel">
-        <div class="dc-skeleton" style="height:56px"></div>
-        <div class="dc-skeleton" style="height:56px"></div>
-        <div class="dc-skeleton" style="height:56px"></div>
-      </div>
+      <div class="sum">
+        <div class="sum__row">
+          <span class="sum__label">Total ride earnings <small>(before commission)</small></span>
+          <span class="sum__val">₹{{ totalEarnings | number: '1.0-2' }}</span>
+        </div>
+        <div class="sum__row">
+          <span class="sum__label">Commission taken</span>
+          <span class="sum__val sum__val--neg">−₹{{ totalCommission | number: '1.0-2' }}</span>
+        </div>
+        <div class="sum__row sum__row--total">
+          <span class="sum__label">Net from rides</span>
+          <span class="sum__val sum__val--pos">₹{{ netEarnings | number: '1.0-2' }}</span>
+        </div>
 
-      <!-- Empty state -->
-      <div *ngIf="!loading && !transactions.length && !error" class="dc-empty">
-        <div class="dc-empty__icon"><ion-icon name="receipt-outline"></ion-icon></div>
-        <strong>No transactions yet</strong>
-        <span>Your wallet credits and debits will show up here once you start earning.</span>
-      </div>
+        <div class="sum__divider"></div>
 
-      <!-- Transactions -->
-      <div *ngIf="transactions.length" class="dc-list dc-stagger">
-        <div class="dc-row" *ngFor="let t of transactions">
-          <span
-            class="dc-row__icon"
-            [class.dc-row__icon--danger]="!isCredit(t)"
-          >
-            <ion-icon [name]="isCredit(t) ? 'arrow-down-outline' : 'arrow-up-outline'"></ion-icon>
-          </span>
-          <span class="dc-row__text">
-            <strong>{{ txnLabel(t) }}</strong>
-            <small>{{ txnDate(t) }}</small>
-          </span>
-          <span
-            class="dc-row__value"
-            [class.wallet-amt--credit]="isCredit(t)"
-            [class.wallet-amt--debit]="!isCredit(t)"
-          >
-            {{ isCredit(t) ? '+' : '−' }}₹{{ t.amount | number: '1.0-2' }}
-          </span>
+        <div class="sum__row">
+          <span class="sum__label">You topped up</span>
+          <span class="sum__val">+₹{{ topupTotal | number: '1.0-2' }}</span>
+        </div>
+        <div class="sum__row sum__row--total">
+          <span class="sum__label">Wallet balance now</span>
+          <span class="sum__val">₹{{ balance | number: '1.0-2' }}</span>
         </div>
       </div>
     </div>
+
+    <!-- Drill-downs — detail lives behind these, keeping this page clean -->
+    <div class="pg-card pg-card--tight" *ngIf="!loading && !error">
+      <button class="nav-row dc-press" (click)="openRideBreakdown()">
+        <span class="dc-row__icon"><ion-icon name="bar-chart-outline"></ion-icon></span>
+        <span class="dc-row__text">
+          <strong>Ride earnings</strong>
+          <small>Chart &amp; per-ride commission breakdown</small>
+        </span>
+        <ion-icon class="nav-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
+
+      <button class="nav-row dc-press" (click)="openActivity()">
+        <span class="dc-row__icon"><ion-icon name="receipt-outline"></ion-icon></span>
+        <span class="dc-row__text">
+          <strong>Wallet activity</strong>
+          <small>Every credit &amp; debit</small>
+        </span>
+        <ion-icon class="nav-row__chev" name="chevron-forward-outline"></ion-icon>
+      </button>
+    </div>
+
+    <!-- Caps + subscription note -->
+    <button class="wallet-note dc-press" *ngIf="!loading && !error" (click)="explainLimits()">
+      <ion-icon name="information-circle-outline"></ion-icon>
+      <span>
+        Wallet limit ₹{{ caps.min }} – {{ caps.max > 0 ? '₹' + (caps.max | number: '1.0-0') : 'no cap' }}
+        <ng-container *ngIf="subscriptionActive"> · Subscription active</ng-container>
+      </span>
+    </button>
   </div>
 </ion-content>

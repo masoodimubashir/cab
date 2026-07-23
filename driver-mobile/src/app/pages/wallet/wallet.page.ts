@@ -1,22 +1,21 @@
 import { Component, OnInit } from '@angular/core';
-import { AlertController, ToastController } from '@ionic/angular';
+import { Router } from '@angular/router';
+import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { WalletActivityModalComponent } from './wallet-activity.modal';
 
 declare const Razorpay: any;
 
-interface Txn {
-  id: number;
-  type: string;
-  amount: number;
-  reason: string | null;
-  created_at: string | null;
-}
-
-interface WalletResponse {
-  balance: number;
+interface EarningsSummary {
+  total_earnings: number;
+  total_commission: number;
+  net_earnings: number;
+  topup_total: number;
+  wallet_balance: number;
   currency: string;
-  transactions: Txn[];
+  caps: { min: number; max: number };
+  subscription_active: boolean;
 }
 
 interface TopupOrder {
@@ -25,10 +24,15 @@ interface TopupOrder {
 }
 
 /**
- * My Wallet — shows the driver's balance and recent activity, and lets them
- * top up via Razorpay. Top-up is a 2-step flow: ask the backend for an order,
- * open Razorpay Checkout, then verify the signature so the backend credits the
- * wallet.
+ * Earnings & Wallet — one screen that reconciles the two so the numbers never
+ * look inconsistent. It shows, top-down:
+ *   • Wallet balance (the real money you hold) + top-up.
+ *   • A plain-language summary: gross earnings, commission taken, net, top-ups.
+ *   • Links out to the ride-by-ride breakdown and the full wallet ledger — the
+ *     detail lives there, so this page stays clean.
+ *
+ * All the numbers come from /drivers/me/earnings, which uses the SAME wallet
+ * balance formula as the ledger, so the two can't disagree.
  */
 @Component({
   selector: 'app-wallet',
@@ -41,15 +45,22 @@ export class WalletPage implements OnInit {
   error: string | null = null;
   toppingUp = false;
 
-  balance = 0;
   currency = 'INR';
-  transactions: Txn[] = [];
+  balance = 0;
+  totalEarnings = 0;
+  totalCommission = 0;
+  netEarnings = 0;
+  topupTotal = 0;
+  caps: { min: number; max: number } = { min: 0, max: 0 };
+  subscriptionActive = false;
 
   constructor(
     private api: ApiService,
     private auth: AuthService,
+    private router: Router,
     private toastCtrl: ToastController,
     private alertCtrl: AlertController,
+    private modalCtrl: ModalController,
   ) {}
 
   ngOnInit(): void { this.load(); }
@@ -58,11 +69,16 @@ export class WalletPage implements OnInit {
   load(): void {
     this.loading = true;
     this.error = null;
-    this.api.get<WalletResponse>('/drivers/me/wallet').subscribe({
+    this.api.get<EarningsSummary>('/drivers/me/earnings').subscribe({
       next: (res) => {
-        this.balance = res.balance ?? 0;
+        this.balance = res.wallet_balance ?? 0;
+        this.totalEarnings = res.total_earnings ?? 0;
+        this.totalCommission = res.total_commission ?? 0;
+        this.netEarnings = res.net_earnings ?? 0;
+        this.topupTotal = res.topup_total ?? 0;
+        this.caps = res.caps ?? { min: 0, max: 0 };
+        this.subscriptionActive = !!res.subscription_active;
         this.currency = res.currency || 'INR';
-        this.transactions = res.transactions ?? [];
         this.loading = false;
       },
       error: (err) => {
@@ -72,27 +88,31 @@ export class WalletPage implements OnInit {
     });
   }
 
-  isCredit(t: Txn): boolean {
-    return t.type !== 'debit';
+  openRideBreakdown(): void {
+    void this.router.navigateByUrl('/tabs/earnings');
   }
 
-  txnLabel(t: Txn): string {
-    if (t.reason) return t.reason;
-    switch (t.type) {
-      case 'credit': return 'Credit';
-      case 'debit': return 'Debit';
-      case 'cashback': return 'Cashback';
-      case 'driver_added_cash': return 'Cash added';
-      default: return t.type;
-    }
+  async openActivity(): Promise<void> {
+    const modal = await this.modalCtrl.create({ component: WalletActivityModalComponent });
+    await modal.present();
   }
 
-  txnDate(t: Txn): string {
-    if (!t.created_at) return '';
-    try {
-      const d = new Date(t.created_at);
-      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}, ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } catch { return ''; }
+  async explainLimits(): Promise<void> {
+    const max = this.caps.max > 0 ? `₹${this.caps.max}` : 'no upper limit';
+    const min = `₹${this.caps.min}`;
+    const sub = this.subscriptionActive
+      ? '\n\nYou have an active subscription, so eligible rides are commission-free.'
+      : '';
+    const alert = await this.alertCtrl.create({
+      header: 'How your wallet works',
+      message:
+        `Ride commission is taken from this wallet, and subscriptions (if you buy one) are paid from it too.\n\n` +
+        `• Maximum balance: ${max}\n` +
+        `• Minimum balance: ${min}` +
+        sub,
+      buttons: ['Got it'],
+    });
+    await alert.present();
   }
 
   async promptTopUp(): Promise<void> {

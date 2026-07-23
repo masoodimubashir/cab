@@ -17,6 +17,7 @@ import { AuthService } from '../../core/auth.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
 import { ToastService } from '../../core/toast.service';
+import { ReturnToSetupComponent } from '../setup/return-to-setup.component';
 import {
   ButtonComponent,
   DrawerComponent,
@@ -55,9 +56,11 @@ interface CityForm {
     ButtonComponent,
     DrawerComponent,
     ModalComponent,
+    ReturnToSetupComponent,
   ],
   template: `
     <div class="cw">
+      <app-return-to-setup></app-return-to-setup>
       <!-- ===== Header / city basics ===== -->
       <header class="cw__head">
         <div>

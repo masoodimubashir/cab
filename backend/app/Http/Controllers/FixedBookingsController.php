@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FixedSeatHold;
 use App\Models\SeatReservation;
+use App\Services\FixedAvailabilityService;
 use App\Services\FixedBookingService;
 use App\Services\FixedRefundService;
 use App\Services\FixedSeatHoldService;
@@ -16,6 +17,7 @@ class FixedBookingsController extends Controller
         private readonly FixedBookingService $bookings,
         private readonly FixedSeatHoldService $seatHolds,
         private readonly FixedRefundService $refunds,
+        private readonly FixedAvailabilityService $availability,
     ) {}
 
     public function index(Request $request)
@@ -60,7 +62,11 @@ class FixedBookingsController extends Controller
             'route_departure_id' => ['required', 'integer', 'exists:route_departures,id'],
             'board_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
             'drop_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
+            // The picker (M5) sends explicit labels; older clients still pass `seats: N`
+            // and the service auto-picks (transition helper — removed in M5).
             'seats' => ['nullable', 'integer', 'min:1'],
+            'seat_labels' => ['nullable', 'array', 'min:1', 'max:20'],
+            'seat_labels.*' => ['string', 'max:32'],
             'has_extra_luggage' => ['nullable', 'boolean'],
             'extra_luggage_count' => ['nullable', 'integer', 'min:0', 'max:200'],
             'coupon_title' => ['nullable', 'string', 'max:128'],
@@ -144,6 +150,20 @@ class FixedBookingsController extends Controller
         return response()->json([
             'hold' => $this->bookings->shapeSeatHold($fixedSeatHold->fresh('routeDeparture.route')),
             'razorpay' => $order,
+        ]);
+    }
+
+    public function releaseSeatHold(Request $request, FixedSeatHold $fixedSeatHold)
+    {
+        if ($fixedSeatHold->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $this->availability->releaseHold($fixedSeatHold);
+
+        return response()->json([
+            'hold' => $this->bookings->shapeSeatHold($fixedSeatHold->fresh('routeDeparture.route')),
+            'message' => 'Seat hold released.',
         ]);
     }
 

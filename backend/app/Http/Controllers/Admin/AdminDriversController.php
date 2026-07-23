@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminDriversController
@@ -291,7 +292,6 @@ class AdminDriversController
                 'city_vehicle_type_id' => $driver->city_vehicle_type_id,
                 'city_vehicle_type_name' => $driver->cityVehicleType?->display_name,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
-                'vehicle_brand' => $driver->vehicle_brand,
                 'vehicle_model' => $driver->vehicle_model,
                 'vehicle_color' => $driver->vehicle_color,
                 'approval_status' => $driver->approval_status,
@@ -347,7 +347,6 @@ class AdminDriversController
                 'city_vehicle_type_id' => $driver->city_vehicle_type_id,
                 'city_vehicle_type_name' => $driver->cityVehicleType?->display_name,
                 'vehicle_type' => $driver->vehicle_type,
-                'vehicle_brand' => $driver->vehicle_brand,
                 'vehicle_model' => $driver->vehicle_model,
                 'vehicle_color' => $driver->vehicle_color,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
@@ -875,17 +874,33 @@ class AdminDriversController
     {
         $data = $request->validate([
             'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
-            'vehicle_brand' => ['nullable', 'string', 'max:100'],
             'vehicle_model' => ['nullable', 'string', 'max:100'],
             'vehicle_color' => ['nullable', 'string', 'max:100'],
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            // Linked User profile fields — driver identity lives on User
+            'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'phone')->ignore($driver->user_id)],
+            'email' => ['sometimes', 'nullable', 'email', 'max:180', Rule::unique('users', 'email')->ignore($driver->user_id)],
+            'dob' => ['sometimes', 'nullable', 'date', 'before:today'],
+            'address' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
-        $driver->fill($data);
-        $driver->save();
+        // Split into driver-owned vs user-owned fields
+        $userKeys = ['name', 'phone', 'email', 'dob', 'address'];
+        $userData = array_intersect_key($data, array_flip($userKeys));
+        $driverData = array_diff_key($data, array_flip($userKeys));
 
-        return response()->json(['driver' => $driver->fresh()]);
+        if (!empty($driverData)) {
+            $driver->fill($driverData);
+            $driver->save();
+        }
+
+        if (!empty($userData) && $driver->user) {
+            $driver->user->fill($userData)->save();
+        }
+
+        return response()->json(['driver' => $driver->fresh()->load('user')]);
     }
 
     /**

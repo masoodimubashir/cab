@@ -3,9 +3,8 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import {
-  ButtonComponent,
   CardComponent,
-  IconComponent,
+  ChartComponent,
   IconTileComponent,
   StatusPillComponent,
 } from '../ui';
@@ -20,39 +19,50 @@ type KpiTile = {
   footnote?: string;
 };
 
+interface LabelValue {
+  label: string;
+  value: number;
+}
+
+interface DashboardCharts {
+  trips_by_status?: LabelValue[];
+  drivers_by_approval?: LabelValue[];
+  rides_last_7_days?: { labels: string[]; total: number[]; completed: number[]; cancelled: number[] };
+  revenue_last_7_days?: { labels: string[]; values: number[] };
+  top_ride_types?: LabelValue[];
+  payments_by_method?: LabelValue[];
+}
+
+// Shared palette. First three double as completed / pending / cancelled tones.
+const CAT_COLORS = ['#22C55E', '#F59E0B', '#EF4444', '#3B82F6', '#A855F7', '#14B8A6'];
+const GRID_COLOR = 'rgba(15, 23, 42, 0.06)';
+
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
   imports: [
     CommonModule,
-    ButtonComponent,
     CardComponent,
-    IconComponent,
+    ChartComponent,
     IconTileComponent,
     StatusPillComponent,
   ],
   template: `
     <div class="dashboard-page">
-    
-
       <section
         class="kpi-grid"
         *ngIf="!loading && !error"
         aria-label="Key performance indicators"
       >
         <tm-card
-          *ngFor="let tile of tiles; let i = index"
+          *ngFor="let tile of tiles"
           class="kpi-card"
           padding="compact"
           elevation="card"
         >
           <div class="kpi-card__head">
             <span class="kpi-card__label">{{ tile.label }}</span>
-            <tm-icon-tile
-              [icon]="tile.icon"
-              [tone]="tile.tone"
-              size="lg"
-            />
+            <tm-icon-tile [icon]="tile.icon" [tone]="tile.tone" size="lg" />
           </div>
           <div class="kpi-card__value">{{ tile.value() }}</div>
           <div class="kpi-card__foot" *ngIf="tile.footnote">
@@ -60,6 +70,67 @@ type KpiTile = {
           </div>
         </tm-card>
       </section>
+
+      <!-- ───────── Charts ───────── -->
+      <section class="charts" *ngIf="!loading && !error" aria-label="Analytics charts">
+        <div class="chart-row chart-row--3">
+          <tm-card class="chart-card" padding="compact" elevation="card">
+            <header class="chart-card__head">
+              <h3 class="chart-card__title">Trips by status</h3>
+              <span class="chart-card__sub">All time</span>
+            </header>
+            <tm-chart *ngIf="tripsStatusConfig; else noData" type="doughnut" [config]="tripsStatusConfig" [height]="240" />
+          </tm-card>
+
+          <tm-card class="chart-card" padding="compact" elevation="card">
+            <header class="chart-card__head">
+              <h3 class="chart-card__title">Driver approvals</h3>
+              <span class="chart-card__sub">Onboarding</span>
+            </header>
+            <tm-chart *ngIf="driversApprovalConfig; else noData" type="doughnut" [config]="driversApprovalConfig" [height]="240" />
+          </tm-card>
+
+          <tm-card class="chart-card" padding="compact" elevation="card">
+            <header class="chart-card__head">
+              <h3 class="chart-card__title">Payments by method</h3>
+              <span class="chart-card__sub">Successful</span>
+            </header>
+            <tm-chart *ngIf="paymentsMethodConfig; else noData" type="doughnut" [config]="paymentsMethodConfig" [height]="240" />
+          </tm-card>
+        </div>
+
+        <div class="chart-row chart-row--2">
+          <tm-card class="chart-card" padding="compact" elevation="card">
+            <header class="chart-card__head">
+              <h3 class="chart-card__title">Rides — last 7 days</h3>
+              <span class="chart-card__sub">Completed vs cancelled</span>
+            </header>
+            <tm-chart *ngIf="ridesWeekConfig; else noData" type="bar" [config]="ridesWeekConfig" [height]="280" />
+          </tm-card>
+
+          <tm-card class="chart-card" padding="compact" elevation="card">
+            <header class="chart-card__head">
+              <h3 class="chart-card__title">Revenue — last 7 days</h3>
+              <span class="chart-card__sub">Gross · ₹</span>
+            </header>
+            <tm-chart *ngIf="revenueWeekConfig; else noData" type="bar" [config]="revenueWeekConfig" [height]="280" />
+          </tm-card>
+        </div>
+
+        <div class="chart-row">
+          <tm-card class="chart-card" padding="compact" elevation="card">
+            <header class="chart-card__head">
+              <h3 class="chart-card__title">Top ride types</h3>
+              <span class="chart-card__sub">By trip volume</span>
+            </header>
+            <tm-chart *ngIf="rideTypesConfig; else noData" type="bar" [config]="rideTypesConfig" [height]="260" />
+          </tm-card>
+        </div>
+      </section>
+
+      <ng-template #noData>
+        <div class="chart-empty">No data yet</div>
+      </ng-template>
 
       <div *ngIf="loading" class="dash-loading" role="status">
         <span class="dash-spinner" aria-hidden="true"></span>
@@ -81,55 +152,6 @@ type KpiTile = {
       .dashboard-page {
         background: var(--tm-canvas);
         padding: var(--tm-space-2) 0 var(--tm-space-8);
-      }
-
-      /* ---------- Hero ---------- */
-      .dash-hero {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: var(--tm-space-6);
-        margin-bottom: var(--tm-space-6);
-        padding: var(--tm-space-6);
-        background: var(--tm-surface);
-        border-radius: var(--tm-radius-lg);
-        box-shadow: var(--tm-shadow-card);
-      }
-
-      .dash-hero__head { min-width: 0; }
-
-      .dash-eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: var(--tm-space-3);
-      }
-      .dash-eyebrow__dot {
-        width: 6px; height: 6px; border-radius: 50%;
-        background: var(--tm-green);
-        box-shadow: 0 0 0 3px var(--tm-green-soft);
-      }
-
-      .dash-title {
-        color: var(--tm-text);
-        margin: 0 0 var(--tm-space-2);
-      }
-
-      .dash-subtitle {
-        font-size: var(--tm-fs-body);
-        font-weight: 500;
-        color: var(--tm-text-muted);
-        line-height: 1.5;
-        max-width: 56ch;
-        margin: 0;
-      }
-
-      .dash-quick {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--tm-space-2);
-        justify-content: flex-end;
-        flex-shrink: 0;
       }
 
       /* ---------- KPI grid ---------- */
@@ -189,11 +211,55 @@ type KpiTile = {
         color: var(--tm-text-soft);
       }
 
-      /* Tighten the icon-tile so the glyph fills more of the dark square */
       :host ::ng-deep .kpi-card tm-icon-tile.size-lg {
         width: 40px;
         height: 40px;
         border-radius: 12px;
+      }
+
+      /* ---------- Charts ---------- */
+      .charts {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tm-space-4);
+        margin-top: var(--tm-space-6);
+      }
+
+      .chart-row {
+        display: grid;
+        gap: var(--tm-space-4);
+      }
+      .chart-row--3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .chart-row--2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+
+      .chart-card__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--tm-space-3);
+        margin-bottom: var(--tm-space-4);
+      }
+      .chart-card__title {
+        margin: 0;
+        font-size: var(--tm-fs-h3);
+        font-weight: 700;
+        color: var(--tm-text);
+      }
+      .chart-card__sub {
+        font-size: var(--tm-fs-small);
+        font-weight: 600;
+        color: var(--tm-text-soft);
+        white-space: nowrap;
+      }
+
+      .chart-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: var(--tm-text-soft);
+        font-weight: 600;
+        font-size: var(--tm-fs-body);
       }
 
       /* ---------- Loading ---------- */
@@ -234,12 +300,6 @@ type KpiTile = {
         .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
       @media (max-width: 720px) {
-        .dash-hero {
-          flex-direction: column;
-          align-items: stretch;
-          padding: var(--tm-space-5);
-        }
-        .dash-quick { justify-content: flex-start; }
         .kpi-grid { grid-template-columns: 1fr; }
       }
     `,
@@ -249,6 +309,15 @@ export class AdminDashboardComponent implements OnInit {
   kpis: any;
   error: string | null = null;
   loading = false;
+
+  // Chart.js configs — built once the dashboard payload arrives. null → the
+  // card shows an empty-state instead of a broken/empty canvas.
+  tripsStatusConfig: any = null;
+  driversApprovalConfig: any = null;
+  paymentsMethodConfig: any = null;
+  ridesWeekConfig: any = null;
+  revenueWeekConfig: any = null;
+  rideTypesConfig: any = null;
 
   readonly tiles: KpiTile[] = [
     {
@@ -309,9 +378,10 @@ export class AdminDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.loading = true;
-    this.api.get<{ kpis: any }>('/admin/dashboard').subscribe({
+    this.api.get<{ kpis: any; charts?: DashboardCharts }>('/admin/dashboard').subscribe({
       next: (res) => {
         this.kpis = res.kpis;
+        this.buildCharts(res.charts);
       },
       error: (err) => {
         this.error = err?.error?.message || 'Failed to load dashboard';
@@ -323,16 +393,151 @@ export class AdminDashboardComponent implements OnInit {
     });
   }
 
-  private formatInt(n: unknown): string {
+  // ───────── chart builders ─────────
+
+  private buildCharts(charts?: DashboardCharts): void {
+    // Trips / driver doughnuts fall back to KPI-derived splits if the backend
+    // doesn't send the richer `charts` payload yet.
+    const tripsByStatus = charts?.trips_by_status ?? [
+      { label: 'Completed', value: this.num(this.kpis?.completed_trips) },
+      { label: 'Ongoing', value: this.num(this.kpis?.active_trips) },
+    ];
+    const driversByApproval = charts?.drivers_by_approval ?? [
+      { label: 'Approved', value: this.num(this.kpis?.drivers_approved) },
+      {
+        label: 'Not approved',
+        value: Math.max(0, this.num(this.kpis?.drivers_total) - this.num(this.kpis?.drivers_approved)),
+      },
+    ];
+
+    this.tripsStatusConfig = this.doughnut(tripsByStatus);
+    this.driversApprovalConfig = this.doughnut(driversByApproval);
+    this.paymentsMethodConfig = this.doughnut(charts?.payments_by_method ?? []);
+    this.ridesWeekConfig = this.ridesBar(charts?.rides_last_7_days);
+    this.revenueWeekConfig = this.revenueBar(charts?.revenue_last_7_days);
+    this.rideTypesConfig = this.rideTypesBar(charts?.top_ride_types ?? []);
+  }
+
+  private doughnut(items: LabelValue[]): any {
+    if (!items?.length || this.sum(items) === 0) return null;
+    return {
+      data: {
+        labels: items.map((i) => i.label),
+        datasets: [
+          {
+            data: items.map((i) => i.value),
+            backgroundColor: items.map((_, idx) => CAT_COLORS[idx % CAT_COLORS.length]),
+            borderColor: '#fff',
+            borderWidth: 2,
+            hoverOffset: 6,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 14, font: { size: 12 } },
+          },
+        },
+      },
+    };
+  }
+
+  private ridesBar(d?: DashboardCharts['rides_last_7_days']): any {
+    if (!d?.labels?.length) return null;
+    return {
+      data: {
+        labels: d.labels,
+        datasets: [
+          { label: 'Completed', data: d.completed, backgroundColor: '#22C55E', borderRadius: 6, maxBarThickness: 20 },
+          { label: 'Cancelled', data: d.cancelled, backgroundColor: '#EF4444', borderRadius: 6, maxBarThickness: 20 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 14 } },
+          tooltip: { mode: 'index', intersect: false },
+        },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: GRID_COLOR }, ticks: { precision: 0 } },
+        },
+      },
+    };
+  }
+
+  private revenueBar(d?: DashboardCharts['revenue_last_7_days']): any {
+    if (!d?.labels?.length) return null;
+    return {
+      data: {
+        labels: d.labels,
+        datasets: [{ label: 'Revenue', data: d.values, backgroundColor: '#16A34A', borderRadius: 6, maxBarThickness: 26 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx: any) => '  ₹ ' + this.formatInt(ctx.parsed.y) } },
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            grid: { color: GRID_COLOR },
+            ticks: { callback: (v: any) => '₹' + this.formatInt(v) },
+          },
+        },
+      },
+    };
+  }
+
+  private rideTypesBar(items: LabelValue[]): any {
+    if (!items?.length || this.sum(items) === 0) return null;
+    return {
+      data: {
+        labels: items.map((i) => i.label),
+        datasets: [{ label: 'Trips', data: items.map((i) => i.value), backgroundColor: '#3B82F6', borderRadius: 6, maxBarThickness: 24 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, grid: { color: GRID_COLOR }, ticks: { precision: 0 } },
+          y: { grid: { display: false } },
+        },
+      },
+    };
+  }
+
+  // ───────── helpers ─────────
+
+  private sum(items: LabelValue[]): number {
+    return items.reduce((acc, i) => acc + this.num(i.value), 0);
+  }
+
+  private num(n: unknown): number {
     const v = typeof n === 'number' ? n : Number(n ?? 0);
-    return new Intl.NumberFormat('en-IN').format(isNaN(v) ? 0 : v);
+    return isNaN(v) ? 0 : v;
+  }
+
+  private formatInt(n: unknown): string {
+    return new Intl.NumberFormat('en-IN').format(Math.round(this.num(n)));
   }
 
   private formatCurrency(n: unknown): string {
-    const v = typeof n === 'number' ? n : Number(n ?? 0);
     return `₹ ${new Intl.NumberFormat('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(isNaN(v) ? 0 : v)}`;
+    }).format(this.num(n))}`;
   }
 }

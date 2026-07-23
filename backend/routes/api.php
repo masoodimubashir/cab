@@ -17,6 +17,7 @@ use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FixedRoutesController;
 use App\Http\Controllers\FixedBookingsController;
 use App\Http\Controllers\FixedDriverController;
+use App\Http\Controllers\FixedSeatMapController;
 use App\Http\Controllers\RefundsController;
 use App\Http\Controllers\DriverManifestController;
 use App\Http\Controllers\FareNegotiationController;
@@ -25,6 +26,7 @@ use App\Http\Controllers\Admin\AdminCitiesController;
 use App\Http\Controllers\Admin\AdminCityRideProductsController;
 use App\Http\Controllers\Admin\AdminDocumentsController;
 use App\Http\Controllers\Admin\AdminGlobalVehicleTypesController;
+use App\Http\Controllers\Admin\AdminSetupProgressController;
 use App\Http\Controllers\Admin\AdminRideTypesController;
 use App\Http\Controllers\Admin\AdminCitySettingsController;
 use App\Http\Controllers\Admin\AdminOperatorSettingsController;
@@ -56,6 +58,9 @@ use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
 use App\Http\Controllers\Admin\AdminVehicleTypesController;
 use App\Http\Controllers\Admin\AdminOutstationPackagesController;
 use App\Http\Controllers\Admin\AdminFixedRoutesController;
+use App\Http\Controllers\Admin\AdminRouteGroupsController;
+use App\Http\Controllers\Admin\AdminVehicleSeatLayoutsController;
+use App\Http\Controllers\Admin\AdminDriverRouteGroupsController;
 use App\Http\Controllers\Admin\AdminFixedDeparturesController;
 use App\Http\Controllers\Admin\AdminShuttleBookingsController;
 use App\Http\Controllers\Admin\AdminCouponsController;
@@ -243,6 +248,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/drivers/{driver}/send-otp', [AdminDriversController::class, 'sendOtp'])->middleware(['permission:drivers', 'throttle:otp']);
     Route::post('/admin/drivers/{driver}/block', [AdminDriversController::class, 'block'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/unblock', [AdminDriversController::class, 'unblock'])->middleware('permission:drivers');
+
+    // Fixed route allocation — assign route groups to a driver + read the resolved routes.
+    Route::get('/admin/drivers/{driver}/route-groups', [AdminDriverRouteGroupsController::class, 'index'])->middleware('permission:drivers');
+    Route::put('/admin/drivers/{driver}/route-groups', [AdminDriverRouteGroupsController::class, 'sync'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/effective-routes', [AdminDriverRouteGroupsController::class, 'effectiveRoutes'])->middleware('permission:drivers');
     Route::delete('/admin/drivers/{driver}', [AdminDriversController::class, 'destroy'])->middleware('permission:drivers');
     Route::patch('/admin/drivers/documents/{document}/status', [AdminDriversController::class, 'setDocumentStatus'])->middleware('permission:drivers');
     // Payouts: the money leaves by GPay/bank OUTSIDE the app (manual by
@@ -279,6 +289,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/lookup/driver', [AdminCustomersController::class, 'lookupByDriver']);
         Route::get('/lookup/ride', [AdminCustomersController::class, 'lookupByRide']);
         Route::get('/{user}', [AdminCustomersController::class, 'show']);
+        Route::patch('/{user}', [AdminCustomersController::class, 'update']);
         Route::delete('/{user}', [AdminCustomersController::class, 'destroy']);
         Route::post('/{user}/block', [AdminCustomersController::class, 'block']);
         Route::post('/{user}/unblock', [AdminCustomersController::class, 'unblock']);
@@ -298,6 +309,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/cities/{city}', [AdminCitiesController::class, 'update'])->middleware('permission:city_settings');
         Route::patch('/admin/cities/{city}/polygon', [AdminCitiesController::class, 'updatePolygon'])->middleware('permission:city_settings');
         Route::delete('/admin/cities/{city}', [AdminCitiesController::class, 'destroy'])->middleware('permission:city_settings');
+        Route::get('/admin/cities/{city}/setup-progress', [AdminSetupProgressController::class, 'show'])->middleware('permission:city_settings');
         // Operator-wide (global, non-city) settings.
         Route::get('/admin/operator-settings', [AdminOperatorSettingsController::class, 'show'])->middleware('permission:operator_settings');
         Route::patch('/admin/operator-settings', [AdminOperatorSettingsController::class, 'update'])->middleware('permission:operator_settings');
@@ -467,8 +479,10 @@ Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayW
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/routes', [FixedRoutesController::class, 'index']);
     Route::get('/fixed/routes/{route}/departures', [FixedRoutesController::class, 'departures']);
+    Route::get('/fixed/departures/{departure}/seat-map', [FixedSeatMapController::class, 'show']);
     Route::post('/fixed/coupon-preview', [FixedBookingsController::class, 'couponPreview'])->middleware('throttle:booking');
     Route::post('/fixed/seat-holds', [FixedBookingsController::class, 'storeSeatHold'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/fixed/seat-holds/{fixedSeatHold}/release', [FixedBookingsController::class, 'releaseSeatHold'])->middleware('throttle:booking');
     Route::post('/fixed/seat-holds/{fixedSeatHold}/razorpay-order', [FixedBookingsController::class, 'createSeatHoldRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/test-confirm-payment', [FixedBookingsController::class, 'confirmSeatHoldTestPayment'])->middleware(['throttle:booking', 'idempotent']);
@@ -492,6 +506,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/driver/refunds', [RefundsController::class, 'driverIndex']);
 
     Route::get('/fixed/driver/routes', [FixedDriverController::class, 'routes']);
+    Route::get('/fixed/driver/routes/{route}/layouts', [FixedDriverController::class, 'layouts']);
     Route::get('/fixed/driver/vehicles', [FixedDriverController::class, 'vehicles']);
     Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
     Route::get('/fixed/departures/{departure}/manifest', [FixedDriverController::class, 'manifest']);
@@ -515,6 +530,23 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
+
+    // Route Groups — reusable bundles of fixed routes; the unit of driver route allocation.
+    Route::get('/admin/cities/{city}/route-groups', [AdminRouteGroupsController::class, 'index']);
+    Route::post('/admin/cities/{city}/route-groups', [AdminRouteGroupsController::class, 'store']);
+    Route::patch('/admin/cities/{city}/route-groups/{routeGroup}', [AdminRouteGroupsController::class, 'update']);
+    Route::delete('/admin/cities/{city}/route-groups/{routeGroup}', [AdminRouteGroupsController::class, 'destroy']);
+    Route::put('/admin/cities/{city}/route-groups/{routeGroup}/drivers', [AdminRouteGroupsController::class, 'syncDrivers']);
+    Route::get('/admin/cities/{city}/route-group-drivers', [AdminRouteGroupsController::class, 'cityDrivers']);
+
+    // Vehicle Seat Layouts — reusable seat maps per (city, vehicle_type). Every
+    // fixed departure carries one; SeatMapService snapshots its cells into
+    // departure_seats when the driver opens the vehicle.
+    Route::get('/admin/cities/{city}/vehicle-seat-layouts', [AdminVehicleSeatLayoutsController::class, 'index']);
+    Route::post('/admin/cities/{city}/vehicle-seat-layouts', [AdminVehicleSeatLayoutsController::class, 'store']);
+    Route::get('/admin/cities/{city}/vehicle-seat-layouts/{vehicleSeatLayout}', [AdminVehicleSeatLayoutsController::class, 'show']);
+    Route::patch('/admin/cities/{city}/vehicle-seat-layouts/{vehicleSeatLayout}', [AdminVehicleSeatLayoutsController::class, 'update']);
+    Route::delete('/admin/cities/{city}/vehicle-seat-layouts/{vehicleSeatLayout}', [AdminVehicleSeatLayoutsController::class, 'destroy']);
     Route::get('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'index']);
     Route::get('/admin/cities/{city}/fixed-bookings', [AdminFixedDeparturesController::class, 'bookings']);
     Route::get('/admin/cities/{city}/shuttle-bookings', [AdminShuttleBookingsController::class, 'index']);

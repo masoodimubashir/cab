@@ -1,9 +1,7 @@
-/* Wallet page — driver money page. The header/hero + body shell come from the
-   shared pg- system (theme/pages.scss); these are small page-specific touches
-   only and never redefine a global class or its keyframes. */
+/* Earnings & Wallet page. The header/hero + body shell come from the shared
+   pg- system (theme/pages.scss); these are small page-specific touches only and
+   never redefine a global class or its keyframes. */
 
-/* Top-up CTA lives inside the gradient hero, so give it a touch of breathing
-   room from the subtitle and a glassy treatment that reads well on the navy. */
 .wallet-topup {
   margin-top: 18px;
 }
@@ -19,23 +17,67 @@
   ion-icon { font-size: 20px; flex-shrink: 0; }
 }
 
-.wallet-skel {
+/* ── Reconciliation summary rows ── */
+.sum { display: flex; flex-direction: column; }
+.sum__row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
 }
+.sum__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #475569;
+}
+.sum__label small { font-weight: 500; color: #94a3b8; font-size: 0.76rem; }
+.sum__val {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+.sum__val--neg { color: #ef4444; }
+.sum__val--pos { color: #0e8f47; }
+.sum__row--total .sum__label { color: #0f172a; font-weight: 800; }
+.sum__row--total .sum__val { font-size: 1.05rem; font-weight: 800; }
+.sum__divider { height: 1px; background: var(--dc-line, #e5e9f0); margin: 6px 0; }
 
-/* Transactions list sits inside a pg-card, so drop its own card chrome and let
-   the card own the border/shadow. */
-.pg-card .dc-list {
+/* ── Drill-down navigation rows ── */
+.pg-card--tight { padding-top: 6px; padding-bottom: 6px; }
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 2px;
   background: transparent;
-  border-radius: 0;
-  box-shadow: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
 }
-.pg-card .dc-row {
-  padding-inline: 0;
-}
+.nav-row + .nav-row { border-top: 1px solid var(--dc-line, #eef1f6); }
+.nav-row .dc-row__text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.nav-row .dc-row__text strong { font-size: 0.95rem; font-weight: 700; color: #0f172a; }
+.nav-row .dc-row__text small { font-size: 0.8rem; color: #94a3b8; }
+.nav-row__chev { font-size: 18px; color: #cbd5e1; flex: none; }
 
-/* Signed transaction amounts */
-.wallet-amt--credit { color: #0E8F47; }
-.wallet-amt--debit { color: var(--ion-color-danger, #eb445a); }
+/* ── Caps / subscription note ── */
+.wallet-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 4px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+}
+.wallet-note ion-icon { font-size: 18px; color: #94a3b8; flex: none; }
