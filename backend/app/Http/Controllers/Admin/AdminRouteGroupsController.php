@@ -113,9 +113,18 @@ class AdminRouteGroupsController
             ->with('user:id,name,phone')
             ->get()
             ->map(fn (Driver $d) => [
+                'id' => (int) $d->id,
                 'user_id' => (int) $d->user_id,
                 'name' => $d->user?->name ?: ('Driver #' . $d->user_id),
                 'phone' => $d->user?->phone,
+                // Vehicle fields live on the driver, so the vehicle workspace
+                // reads the driver ⇄ city-vehicle link from here. vehicle_type_id
+                // is needed to keep reassignment inside the driver's own type.
+                'city_vehicle_type_id' => $d->city_vehicle_type_id !== null ? (int) $d->city_vehicle_type_id : null,
+                'vehicle_type_id' => $d->vehicle_type_id !== null ? (int) $d->vehicle_type_id : null,
+                'vehicle_reg_no' => $d->vehicle_reg_no,
+                'vehicle_model' => $d->vehicle_model,
+                'vehicle_color' => $d->vehicle_color,
             ])
             ->filter(fn ($d) => $d['user_id'] > 0)
             ->sortBy('name')

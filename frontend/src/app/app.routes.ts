@@ -9,7 +9,7 @@ import { RidesAllComponent } from './admin/rides/rides-all.component';
 import { RidesShellComponent } from './admin/rides/rides-shell.component';
 import { AdminNotificationsComponent } from './admin/notifications/notifications.component';
 import { RideDetailComponent } from './admin/rides/ride-detail.component';
-import { VehiclesComponent } from './admin/vehicles/vehicles.component';
+import { VehicleWorkspaceComponent } from './admin/vehicles/vehicle-workspace.component';
 import { ContactDriversComponent } from './admin/contact-drivers/contact-drivers.component';
 import { MapsComponent } from './admin/maps/maps.component';
 import { CityWorkspaceComponent } from './admin/city-workspace/city-workspace.component';
@@ -18,9 +18,7 @@ import { SettingsComponent } from './admin/settings/settings.component';
 import { OperatorSettingsComponent } from './admin/settings/operator-settings.component';
 // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
 // import { AppAssetsComponent } from './admin/settings/app-assets.component';
-import { VehicleFareSetupComponent } from './admin/settings/vehicle-fare-setup.component';
 import { SetupWizardComponent } from './admin/setup/setup-wizard.component';
-import { FleetSetupComponent } from './admin/fleet/fleet-setup.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
@@ -40,9 +38,11 @@ export const routes: Routes = [
   { path: 'signin', component: SigninComponent },
   { path: 'dashboard', component: AdminDashboardComponent, canActivate: [adminAuthGuard], data: { permission: 'dashboard' } },
   { path: 'setup', component: SetupWizardComponent, canActivate: [adminAuthGuard], data: { permission: 'city_settings' } },
-  { path: 'fleet', component: FleetSetupComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  // Fleet Setup and the standalone fare page are now tabs of the vehicle
+  // workspace. Both legacy URLs land on the same page.
+  { path: 'fleet', redirectTo: 'vehicles', pathMatch: 'full' },
   { path: 'pricing', component: PricingComponent, canActivate: [adminAuthGuard], data: { permission: 'pricing' } },
-  { path: 'vehicles/:vehicleRowId/fares', component: VehicleFareSetupComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  { path: 'vehicles/:vehicleRowId/fares', redirectTo: 'vehicles/:vehicleRowId', pathMatch: 'full' },
   { path: 'trips', component: AdminTripsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
   { path: 'customers', component: CustomersListComponent, canActivate: [adminAuthGuard], data: { permission: 'customers' } },
   { path: 'customers/:id', component: CustomerDetailComponent, canActivate: [adminAuthGuard], data: { permission: 'customers' } },
@@ -96,7 +96,10 @@ export const routes: Routes = [
 
   { path: 'maps', component: MapsComponent, canActivate: [adminAuthGuard], data: { permission: 'live_operations' } },
 
-  { path: 'vehicles', component: VehiclesComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  // Vehicle workspace — city vehicle list + Common/Normal/Fixed/Shuttle/Drivers/
+  // Seat-layout tabs on one page. `:vehicleRowId` deep-links a single vehicle.
+  { path: 'vehicles', component: VehicleWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
+  { path: 'vehicles/:vehicleRowId', component: VehicleWorkspaceComponent, canActivate: [adminAuthGuard], data: { permission: 'vehicles' } },
 
   // Vehicle seat layouts — reusable seat maps per (city × vehicle-type).
   {

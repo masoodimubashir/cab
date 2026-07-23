@@ -19,28 +19,26 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Default city / ride type / vehicle type seed data disabled.
-        // Keep city and vehicle setup controlled from the admin panel when running
-        // `php artisan migrate:fresh --seed`.
-        /*
-        // Default city for fare estimation / booking during development.
-        $city = City::updateOrCreate(
-            ['name' => 'Default City'],
-            ['country_code' => 'IN'],
-        );
-
+        // Ride types ARE seeded. Unlike cities and vehicle types they have no
+        // admin screen — the CRUD API exists (/admin/ride-types-crud) but
+        // nothing in the panel calls it — so without this the three service
+        // modes cannot be created at all and "Create Normal/Shuttle fare setup"
+        // fails with "… ride type is not available".
+        //
+        // These three names are what the mode mapping keys off, everywhere:
+        // a name containing "shuttle" is Shuttle, one containing "fixed" is
+        // Fixed, anything else is Normal.
+        //
+        // "Outstation" is deliberately NOT seeded. That mapping would classify
+        // it as Normal, and since the lookup takes the first match by
+        // sort_order, an Outstation row could be attached when the operator
+        // asks for a Normal fare setup — which then renders the outstation
+        // package panel instead of the base fare card. Add it only alongside an
+        // explicit rule for it in the mapping.
         $rideTypes = [
-            ['name' => 'Shuttle', 'description' => 'Car rental service', 'sort_order' => 30],
-            ['name' => 'Outstation', 'description' => 'Package delivery', 'sort_order' => 40],
-            ['name' => 'Normal', 'description' => 'Regular ride', 'sort_order' => 50],
-        ];
-
-        $vehicleTypes = [
-            ['name' => 'Sedan', 'sort_order' => 10],
-            ['name' => 'SUV', 'sort_order' => 20],
-            ['name' => 'Hatchback', 'sort_order' => 30],
-            ['name' => 'Van', 'sort_order' => 40],
-            ['name' => 'Motorcycle', 'sort_order' => 50],
+            ['name' => 'Fixed',  'description' => 'Regular point-to-point ride',            'sort_order' => 10],
+            ['name' => 'Fixed',   'description' => 'Prepaid fixed route with mapped stops',  'sort_order' => 20],
+            ['name' => 'Shuttle', 'description' => 'Shared shuttle service',                 'sort_order' => 30],
         ];
 
         foreach ($rideTypes as $rt) {
@@ -49,6 +47,23 @@ class DatabaseSeeder extends Seeder
                 ['description' => $rt['description'], 'sort_order' => $rt['sort_order']],
             );
         }
+
+        // Cities and vehicle types stay disabled — both have admin screens, and
+        // seeding them would inject records the operator did not create.
+        /*
+        // Default city for fare estimation / booking during development.
+        $city = City::updateOrCreate(
+            ['name' => 'Default City'],
+            ['country_code' => 'IN'],
+        );
+
+        $vehicleTypes = [
+            ['name' => 'Sedan', 'sort_order' => 10],
+            ['name' => 'SUV', 'sort_order' => 20],
+            ['name' => 'Hatchback', 'sort_order' => 30],
+            ['name' => 'Van', 'sort_order' => 40],
+            ['name' => 'Motorcycle', 'sort_order' => 50],
+        ];
 
         foreach ($vehicleTypes as $vt) {
             VehicleType::updateOrCreate(

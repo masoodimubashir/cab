@@ -37,7 +37,6 @@ export class AppComponent implements OnInit {
     [/^\/contact-drivers/,          'Contact Drivers'],
     [/^\/pricing/,                  'Pricing'],
     [/^\/vehicles/,                 'Vehicles'],
-    [/^\/fleet/,                    'Fleet Setup'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
     [/^\/rides\/all/,               'All Rides'],
@@ -137,11 +136,11 @@ export class AppComponent implements OnInit {
     if (can('dashboard')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
     // --- City Setup (dependency order) ---
-    // Fleet Setup is the single page for Vehicle Types + Vehicles + Seat
-    // Layouts — the three concerns that used to sprawl across three pages.
-    // Everything is edited in place; no navigation between them.
+    // Vehicles is the single workspace for vehicle types, city vehicles, fares,
+    // fixed routes, route groups, drivers and seat layouts — the concerns that
+    // used to sprawl across several pages. Everything is edited in place.
     if (can('city_settings'))          citySetup.push({ label: 'Cities',        icon: 'map-marker', route: '/settings/cities' });
-    if (can('vehicles'))          citySetup.push({ label: 'Fleet Setup',   icon: 'car', route: '/fleet' });
+    if (can('vehicles'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
     if (can('pricing'))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
     // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.

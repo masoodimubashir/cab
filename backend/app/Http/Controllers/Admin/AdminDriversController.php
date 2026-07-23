@@ -878,6 +878,10 @@ class AdminDriversController
             'vehicle_color' => ['nullable', 'string', 'max:100'],
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            // The driver's "Car". Chosen by the driver at signup and frozen for
+            // them once approved, so the operator is the only one who can move
+            // it — that happens on the vehicle workspace's Drivers tab.
+            'city_vehicle_type_id' => ['sometimes', 'required', 'integer', 'exists:city_vehicle_types,id'],
             // Linked User profile fields — driver identity lives on User
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'phone')->ignore($driver->user_id)],
@@ -885,6 +889,22 @@ class AdminDriversController
             'dob' => ['sometimes', 'nullable', 'date', 'before:today'],
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
+
+        // Mirror the signup rule (DriversController::register): a driver's car
+        // must be a city vehicle in their own city, of their own vehicle type.
+        // Without this the admin path could silently create a pairing the
+        // driver app would have refused.
+        if (array_key_exists('city_vehicle_type_id', $data)) {
+            $cityVehicle = \App\Models\CityVehicleType::query()->find((int) $data['city_vehicle_type_id']);
+            if (! $cityVehicle
+                || ! $cityVehicle->is_active
+                || ($driver->city_id !== null && (int) $cityVehicle->city_id !== (int) $driver->city_id)
+                || ($driver->vehicle_type_id !== null && (int) $cityVehicle->vehicle_type_id !== (int) $driver->vehicle_type_id)) {
+                return response()->json([
+                    'message' => 'Selected city vehicle does not match this driver\'s city and vehicle type.',
+                ], 422);
+            }
+        }
 
         // Split into driver-owned vs user-owned fields
         $userKeys = ['name', 'phone', 'email', 'dob', 'address'];
