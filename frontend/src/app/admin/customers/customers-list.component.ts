@@ -100,27 +100,6 @@ interface CustomerRow {
 
         <!-- Toolbar: filters on the RIGHT -->
         <ng-container slot="filters">
-          <div class="seg">
-            <button
-              type="button"
-              class="seg__btn"
-              [class.is-active]="activeTab === 0"
-              (click)="setTab(0)"
-            >
-              All
-              <span class="seg__count" *ngIf="activeTab === 0">{{ total | number }}</span>
-            </button>
-            <button
-              type="button"
-              class="seg__btn"
-              [class.is-active]="activeTab === 1"
-              (click)="setTab(1)"
-            >
-              With docs
-              <span class="seg__count" *ngIf="activeTab === 1">{{ total | number }}</span>
-            </button>
-          </div>
-
           <!-- Date range picker (Dan Grossman daterangepicker) — filters by last_ride_at -->
           <div class="date-range" [class.has-value]="dateFrom || dateTo">
             <span class="date-range__icon" aria-hidden="true">
@@ -462,47 +441,6 @@ interface CustomerRow {
       gap: var(--tm-space-2);
       flex-wrap: wrap;
       justify-content: flex-end;
-    }
-
-    /* ---------- Segmented filter (tab toggle) ---------- */
-    .seg {
-      display: inline-flex;
-      background: transparent;
-      border: 1px solid var(--tm-line-2);
-      padding: 3px;
-      border-radius: var(--tm-radius-md);
-      gap: 2px;
-    }
-    .seg__btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 14px;
-      border-radius: var(--tm-radius-sm);
-      background: transparent;
-      font-weight: 700;
-      font-size: 12px;
-      color: var(--tm-text-muted);
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .seg__btn:hover { color: var(--tm-text); }
-    .seg__btn.is-active {
-      background: var(--tm-ink);
-      color: #fff;
-    }
-    .seg__count {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 6px;
-      min-width: 18px;
-      height: 18px;
-      border-radius: var(--tm-radius-pill);
-      background: rgba(255, 255, 255, 0.16);
-      font-family: var(--tm-font-mono);
-      font-size: 10px;
-      font-weight: 800;
     }
 
     /* ---------- Date range picker (daterangepicker) ---------- */
@@ -1044,7 +982,6 @@ interface CustomerRow {
         align-items: stretch;
       }
       .page__hero-right { justify-content: flex-start; }
-      .seg__btn { padding: 7px 10px; }
     }
   `],
 })
@@ -1055,7 +992,6 @@ export class CustomersListComponent implements OnInit, AfterViewInit, OnDestroy 
   total = 0;
   loading = false;
   search = '';
-  activeTab = 0;
 
   page = 1;
   pageSize = 25;
@@ -1160,10 +1096,9 @@ export class CustomersListComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   reload(): void {
-    const tab = this.activeTab === 1 ? 'with_docs' : 'all';
     const params = new URLSearchParams({
       page: String(this.page),
-      tab,
+      tab: 'all',
       search: this.search,
       per_page: String(this.pageSize),
     });
@@ -1188,13 +1123,6 @@ export class CustomersListComponent implements OnInit, AfterViewInit, OnDestroy 
           this.loading = false;
         },
       });
-  }
-
-  setTab(tab: number): void {
-    if (this.activeTab === tab) return;
-    this.activeTab = tab;
-    this.page = 1;
-    this.reload();
   }
 
   onSearchChange(): void {

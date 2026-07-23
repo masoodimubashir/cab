@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 #[Fillable([
     'route_id', 'route_schedule_id', 'trip_id', 'driver_id', 'city_vehicle_type_id',
+    'vehicle_seat_layout_id',
     'service_date', 'departure_kind', 'depart_at', 'announced_depart_at',
     'actual_depart_at', 'boarding_opened_at', 'boarding_closed_at',
     'visible_to_customers', 'wait_reminder_sent_at', 'fixed_last_reached_stop_seq', 'fixed_last_reached_stop_at', 'capacity', 'seats_taken',
@@ -64,6 +65,16 @@ class RouteDeparture extends Model
     public function cityVehicleType(): BelongsTo
     {
         return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
+    }
+
+    public function seatLayout(): BelongsTo
+    {
+        return $this->belongsTo(VehicleSeatLayout::class, 'vehicle_seat_layout_id');
+    }
+
+    public function departureSeats(): HasMany
+    {
+        return $this->hasMany(DepartureSeat::class);
     }
 
     public function seatReservations(): HasMany

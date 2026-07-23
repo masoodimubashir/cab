@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
+use Tests\Support\SeatLayoutFactory;
 use Tests\TestCase;
 
 class FixedBookingPhase3Test extends TestCase
@@ -38,6 +39,11 @@ class FixedBookingPhase3Test extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Ertiga', 'sort_order' => 1, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $layoutId = SeatLayoutFactory::standardErtiga6P($cityId, $vehicleTypeId);
 
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');
@@ -90,6 +96,7 @@ class FixedBookingPhase3Test extends TestCase
 
         $this->departure = RouteDeparture::query()->create([
             'route_id' => $this->route->id,
+            'vehicle_seat_layout_id' => $layoutId,
             'service_date' => now()->toDateString(),
             'departure_kind' => 'driver_opened',
             'depart_at' => now()->addHour(),

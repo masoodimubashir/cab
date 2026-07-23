@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DepartureSeat;
 use App\Models\FixedSeatHold;
 use App\Models\RouteDeparture;
 use App\Models\SeatReservation;
@@ -22,6 +23,16 @@ class FixedManifestService
             ? FixedNoShowPolicy::waitMinutes($departure->route)
             : FixedNoShowPolicy::MIN_WAIT_MINUTES;
 
+        // Map reservation_id → sorted seat labels (M6 — driver sees "2A, 2B"
+        // next to the passenger name).
+        $labelsByReservation = DepartureSeat::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereNotNull('seat_reservation_id')
+            ->orderBy('label')
+            ->get(['seat_reservation_id', 'label'])
+            ->groupBy('seat_reservation_id')
+            ->map(fn ($rows) => $rows->pluck('label')->all());
+
         $passengers = SeatReservation::query()
             ->where('route_departure_id', $departure->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
@@ -33,6 +44,7 @@ class FixedManifestService
                 'customer_name' => $reservation->customer?->name,
                 'customer_phone' => $reservation->customer?->phone,
                 'seats' => (int) $reservation->seats,
+                'seat_labels' => $labelsByReservation->get($reservation->id, []),
                 'status' => $reservation->status,
                 'fixed_live_status' => $this->bookings->fixedLiveStatus($reservation),
                 'no_show_unlock_at' => optional(FixedNoShowPolicy::unlockAt($reservation, $departure, $waitMinutes))->toIso8601String(),

@@ -11,6 +11,7 @@ import {
   ButtonComponent,
   ColumnComponent,
   DataTableComponent,
+  DrawerComponent,
   FilterPillComponent,
   FilterSelectComponent,
   IconComponent,
@@ -66,6 +67,7 @@ const BLOCK_REASONS = [
     ButtonComponent,
     ColumnComponent,
     DataTableComponent,
+    DrawerComponent,
     FilterPillComponent,
     FilterSelectComponent,
     IconComponent,
@@ -106,6 +108,9 @@ const BLOCK_REASONS = [
           </div>
 
           <div class="cover__actions">
+            <tm-button variant="outline" size="sm" icon="edit" (clicked)="openEditProfile()">
+              Edit profile
+            </tm-button>
             <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
               Send OTP
             </tm-button>
@@ -628,6 +633,38 @@ const BLOCK_REASONS = [
       </ng-container>
     </tm-modal>
 
+    <!-- ============= Edit profile drawer ============= -->
+    <tm-drawer [open]="editOpen" title="Edit profile" (closed)="editOpen = false">
+      <div slot="body" class="edit-form" *ngIf="editForm">
+        <label class="field">
+          <span class="field__lbl">Full name</span>
+          <input type="text" [(ngModel)]="editForm.name" maxlength="120" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Phone</span>
+          <input type="tel" [(ngModel)]="editForm.phone" maxlength="20" placeholder="e.g. 9000012345" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Email</span>
+          <input type="email" [(ngModel)]="editForm.email" maxlength="180" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Date of birth</span>
+          <input type="date" [(ngModel)]="editForm.dob" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Address</span>
+          <textarea rows="3" [(ngModel)]="editForm.address" maxlength="500"></textarea>
+        </label>
+      </div>
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="editOpen = false">Cancel</tm-button>
+        <tm-button variant="green" icon="check" [loading]="editSaving" (clicked)="submitEditProfile()">
+          Save profile
+        </tm-button>
+      </ng-container>
+    </tm-drawer>
+
   `,
   styles: [`
     :host { display: block; }
@@ -636,6 +673,12 @@ const BLOCK_REASONS = [
       flex-direction: column;
       gap: var(--tm-space-5);
     }
+    .edit-form { display: flex; flex-direction: column; gap: 12px; }
+    .edit-form .field { display: flex; flex-direction: column; gap: 5px; }
+    .edit-form .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .edit-form input, .edit-form textarea { padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; font-family: inherit; outline: none; }
+    .edit-form input:focus, .edit-form textarea:focus { border-color: var(--tm-green); }
+    .edit-form textarea { resize: vertical; min-height: 70px; }
 
     /* -------------------- Back link -------------------- */
     .back-link {
@@ -1829,6 +1872,11 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
   // Send OTP
   otpSending = false;
 
+  // Edit profile drawer
+  editOpen = false;
+  editSaving = false;
+  editForm: { name: string; phone: string; email: string; dob: string; address: string } | null = null;
+
   // Block / Delete modal
   blockDeleteOpen = false;
   blockMode: 'block' | 'delete' = 'block';
@@ -2176,6 +2224,44 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
       error: (err) => {
         this.toast.error(err?.error?.message || 'Could not send OTP', { title: 'OTP failed' });
         this.otpSending = false;
+      },
+    });
+  }
+
+  openEditProfile(): void {
+    if (!this.profile) return;
+    this.editForm = {
+      name: this.profile.name ?? '',
+      phone: this.profile.phone ?? '',
+      email: this.profile.email ?? '',
+      dob: this.profile.dob ?? '',
+      address: this.profile.address ?? '',
+    };
+    this.editOpen = true;
+  }
+
+  submitEditProfile(): void {
+    if (!this.customerId || !this.editForm || this.editSaving) return;
+    this.editSaving = true;
+    const payload = {
+      name: this.editForm.name.trim() || null,
+      phone: this.editForm.phone.trim() || null,
+      email: this.editForm.email.trim() || null,
+      dob: this.editForm.dob || null,
+      address: this.editForm.address.trim() || null,
+    };
+    this.api.patch<{ customer: CustomerProfile }>(`/admin/customers/${this.customerId}`, payload).subscribe({
+      next: (res) => {
+        this.editSaving = false;
+        this.editOpen = false;
+        if (res?.customer && this.profile) {
+          this.profile = { ...this.profile, ...res.customer };
+        }
+        this.toast.success('Profile updated');
+      },
+      error: (err) => {
+        this.editSaving = false;
+        this.toast.error(err?.error?.message || 'Could not update profile', { title: 'Update failed' });
       },
     });
   }

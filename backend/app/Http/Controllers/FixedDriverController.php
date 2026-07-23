@@ -12,6 +12,8 @@ use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
 use App\Models\Trip;
+use App\Models\VehicleSeatLayout;
+use App\Services\DriverRouteAccessService;
 use App\Services\DriverServiceModeService;
 use App\Services\CommissionSettlementService;
 use App\Services\FixedAvailabilityService;
@@ -23,6 +25,7 @@ use App\Services\FixedNoShowPolicy;
 use App\Services\NotificationCenter;
 use App\Services\FixedRouteService;
 use App\Services\FixedRefundService;
+use App\Services\SeatMapService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -40,6 +43,8 @@ class FixedDriverController extends Controller
         private readonly NotificationCenter $notifier,
         private readonly CommissionSettlementService $settlements,
         private readonly FixedBoardingOtpService $boardingOtp,
+        private readonly DriverRouteAccessService $routeAccess,
+        private readonly SeatMapService $seatMap,
     ) {}
 
     public function routes(Request $request)
@@ -49,25 +54,34 @@ class FixedDriverController extends Controller
             abort(422, 'Go online with your registered fixed service before choosing a fixed route.');
         }
 
-        if (!$driver->city_id || !$driver->city_vehicle_type_id) {
-            abort(422, 'Your registered city and car type are required before choosing a fixed route.');
+        if (!$driver->city_id) {
+            abort(422, 'Your registered city is required before choosing a fixed route.');
         }
 
         $scope = $driver->active_service_scope ?: $driver->service_scope ?: Driver::SERVICE_SCOPE_LOCAL;
 
-        $query = Route::query()
+        // Route allocation is driven by the driver's assigned route groups
+        // (DriverRouteAccessService) — NOT their vehicle. The driver sees the
+        // fixed routes their groups grant, still narrowed to their current online
+        // city + scope + active routes. No groups assigned => empty list.
+        $allowedRouteIds = $this->routeAccess->effectiveRouteIds((int) $request->user()->id);
+        if (empty($allowedRouteIds)) {
+            return response()->json(['data' => []]);
+        }
+
+        $routes = Route::query()
             ->with('stops')
+            ->whereIn('id', $allowedRouteIds)
             ->where('mode', 'fixed')
             ->where('scope', $scope)
             ->where('is_active', true)
+            ->where('city_id', (int) $driver->city_id)
             ->orderBy('sort_order')
-            ->orderBy('id');
-
-        $query->where('city_id', (int) $driver->city_id)
-            ->where('city_vehicle_type_id', (int) $driver->city_vehicle_type_id);
+            ->orderBy('id')
+            ->get();
 
         return response()->json([
-            'data' => $query->get()->map(fn (Route $route) => $this->routes->shapeCustomerRoute($route))->values(),
+            'data' => $routes->map(fn (Route $route) => $this->routes->shapeCustomerRoute($route))->values(),
         ]);
     }
 
@@ -87,16 +101,73 @@ class FixedDriverController extends Controller
         return response()->json(['data' => $rows]);
     }
 
+    /**
+     * List seat layouts the driver can pick from when opening a vehicle on
+     * this route. Scoped to the route's city; M6 stays with "any active in
+     * the city" — narrowing by driver vehicle-type waits until M7+ when the
+     * driver profile carries a trustworthy `vehicle_type_id`.
+     */
+    public function layouts(Request $request, Route $route)
+    {
+        $this->availability->assertFixedRoute($route);
+        if (!$this->routeAccess->canAccessRoute((int) $request->user()->id, (int) $route->id)) {
+            abort(403, 'This fixed route is not assigned to you.');
+        }
+
+        $layouts = VehicleSeatLayout::query()
+            ->where('city_id', $route->city_id)
+            ->where('is_active', true)
+            ->withCount(['cells as seat_count' => fn ($q) => $q->where('kind', 'seat')])
+            ->orderBy('name')
+            ->get(['id', 'name', 'rows', 'cols'])
+            ->map(fn (VehicleSeatLayout $l) => [
+                'id' => (int) $l->id,
+                'name' => $l->name,
+                'rows' => (int) $l->rows,
+                'cols' => (int) $l->cols,
+                'seat_count' => (int) $l->seat_count,
+            ])->values();
+
+        return response()->json(['data' => $layouts]);
+    }
+
     public function open(Request $request)
     {
         $data = $request->validate([
             'route_id' => ['required', 'integer', 'exists:routes,id'],
             'capacity' => ['nullable', 'integer', 'min:1', 'max:60'],
+            'vehicle_seat_layout_id' => ['nullable', 'integer', 'exists:vehicle_seat_layouts,id'],
         ]);
 
         $route = Route::query()->whereKey((int) $data['route_id'])->firstOrFail();
         $this->availability->assertFixedRoute($route);
+
+        // Allocation guard: a driver may only open a route granted by their
+        // assigned route groups (not their vehicle). Mirrors routes() — without
+        // this, the group filter on the list would be bypassable via direct call.
+        if (!$this->routeAccess->canAccessRoute((int) $request->user()->id, (int) $route->id)) {
+            abort(403, 'This fixed route is not assigned to you.');
+        }
+
         $this->serviceModes->assertFixedMode($this->driverProfile($request), $route->scope ?: Driver::SERVICE_SCOPE_LOCAL);
+
+        // Layout: driver's explicit pick if provided (must belong to this city),
+        // otherwise fall back to the resolver.
+        $layoutId = $this->seatMap->resolveDefaultLayoutForRoute($route);
+        if (!empty($data['vehicle_seat_layout_id'])) {
+            $picked = VehicleSeatLayout::query()->find((int) $data['vehicle_seat_layout_id']);
+            if (!$picked || (int) $picked->city_id !== (int) $route->city_id) {
+                abort(422, 'That seat layout is not available for this route\'s city.');
+            }
+            $layoutId = (int) $picked->id;
+        }
+
+        // Capacity now derives from the layout's seat count so the seat map
+        // and the "seats remaining" counter can never disagree.
+        $seatCount = (int) VehicleSeatLayout::query()
+            ->whereKey($layoutId)
+            ->withCount(['cells as seat_count' => fn ($q) => $q->where('kind', 'seat')])
+            ->value('seat_count');
 
         $departure = RouteDeparture::query()->create([
             'route_id' => $route->id,
@@ -104,6 +175,7 @@ class FixedDriverController extends Controller
             'trip_id' => null,
             'driver_id' => $request->user()->id,
             'city_vehicle_type_id' => $route->city_vehicle_type_id,
+            'vehicle_seat_layout_id' => $layoutId,
             'service_date' => now()->toDateString(),
             'departure_kind' => 'driver_opened',
             'depart_at' => null,
@@ -112,13 +184,14 @@ class FixedDriverController extends Controller
             'boarding_opened_at' => now(),
             'boarding_closed_at' => null,
             'visible_to_customers' => true,
-            'capacity' => max(1, (int) ($data['capacity'] ?? $route->max_seats_per_booking)),
+            'capacity' => max(1, $seatCount ?: (int) ($data['capacity'] ?? $route->max_seats_per_booking)),
             'seats_taken' => 0,
             'luggage_capacity' => (int) $route->max_luggage_per_vehicle,
             'luggage_taken' => 0,
             'status' => 'FORMING',
         ]);
 
+        $this->seatMap->snapshotForDeparture($departure);
         $this->broadcastAvailability($departure, 'vehicle_opened');
 
         return response()->json([

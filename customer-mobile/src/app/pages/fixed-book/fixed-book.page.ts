@@ -129,7 +129,22 @@ interface FixedReservation {
   drop_stop?: { id: number; name: string } | null;
 }
 
-type Step = 'routes' | 'vehicles' | 'details' | 'review' | 'done';
+type Step = 'routes' | 'vehicles' | 'details' | 'seats' | 'review' | 'done';
+
+interface SeatMapCell {
+  row: number;
+  col: number;
+  kind: 'seat' | 'blocked' | 'aisle';
+  label: string | null;
+  category: string | null;
+  price_delta: number;
+  status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'BLOCKED' | 'AISLE';
+}
+interface SeatMapResponse {
+  departure: { id: number; route_id: number; status: string };
+  layout: { id: number; name: string; rows: number; cols: number };
+  cells: SeatMapCell[];
+}
 type FixedScopeFilter = 'all' | 'local' | 'outstation';
 
 @Component({
@@ -159,6 +174,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
   dropStopId: number | null = null;
   seats = 1;
   extraLuggageCount = 0;
+
+  // Seat picker (M5) — replaces the counter with a real per-seat picker.
+  seatMap: SeatMapResponse | null = null;
+  selectedLabels: string[] = [];
+  loadingSeatMap = false;
+  seatMapError: string | null = null;
   couponTitle = '';
   couponPreview: FixedCouponPreview | null = null;
   couponMessage: string | null = null;
@@ -284,7 +305,11 @@ export class FixedBookPage implements OnInit, OnDestroy {
   get fareTotal(): number {
     const fare = this.selectedRoute?.flat_fare ?? 0;
     const luggage = this.extraLuggageCount * (this.selectedRoute?.luggage_surcharge_amount ?? 0);
-    return (fare * Math.max(1, this.seats)) + luggage;
+    const seatCount = Math.max(1, this.selectedLabels.length || this.seats);
+    const seatDeltas = this.selectedLabels
+      .map((lbl) => (this.seatMap?.cells.find((c) => c.label === lbl)?.price_delta ?? 0))
+      .reduce((a, b) => a + b, 0);
+    return (fare * seatCount) + seatDeltas + luggage;
   }
 
   get payableTotal(): number {
@@ -319,8 +344,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (!this.dropStopId) return 'Choose your drop stop.';
     if (this.boardStopId === this.dropStopId) return 'Boarding and drop stop must be different.';
     if (this.maxSeats < 1) return 'No seats are available for this vehicle.';
-    if (this.seats < 1) return 'Select at least one seat.';
-    if (this.seats > this.maxSeats) return 'Only ' + this.maxSeats + ' seat' + (this.maxSeats > 1 ? 's are' : ' is') + ' available for this vehicle.';
+    if (this.selectedLabels.length < 1) return 'Pick at least one seat.';
+    if (this.selectedLabels.length > this.maxSeats) return 'You can pick up to ' + this.maxSeats + ' seat' + (this.maxSeats > 1 ? 's' : '') + '.';
     return null;
   }
 
@@ -790,8 +815,53 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.clearCouponPreview();
   }
 
+  /** Details step Continue → move to the seat picker and fetch the map. */
+  proceedToPicker(): void {
+    if (!this.selectedDeparture || !this.boardStopId || !this.dropStopId) return;
+    this.step = 'seats';
+    this.loadSeatMap();
+  }
+
+  loadSeatMap(): void {
+    if (!this.selectedDeparture) return;
+    this.loadingSeatMap = true;
+    this.seatMapError = null;
+    this.api.get<SeatMapResponse>(`/fixed/departures/${this.selectedDeparture.id}/seat-map`).subscribe({
+      next: (res) => {
+        this.seatMap = res;
+        this.loadingSeatMap = false;
+        // Drop any labels that are no longer available (someone else grabbed them).
+        this.selectedLabels = this.selectedLabels.filter((lbl) =>
+          res.cells.some((c) => c.label === lbl && c.status === 'AVAILABLE'),
+        );
+      },
+      error: (err) => {
+        this.loadingSeatMap = false;
+        this.seatMapError = err?.error?.message || 'Could not load seat map.';
+      },
+    });
+  }
+
+  toggleSeat(label: string): void {
+    const i = this.selectedLabels.indexOf(label);
+    if (i >= 0) {
+      this.selectedLabels = this.selectedLabels.filter((_, idx) => idx !== i);
+    } else {
+      if (this.selectedLabels.length >= this.maxSeats) {
+        void this.showToast(`You can pick up to ${this.maxSeats} seat${this.maxSeats > 1 ? 's' : ''}.`);
+        return;
+      }
+      this.selectedLabels = [...this.selectedLabels, label];
+    }
+    // Keep this.seats in sync so any read-only bindings show the right count.
+    this.seats = Math.max(1, this.selectedLabels.length);
+    this.clearCouponPreview();
+  }
+
+  /** Seat picker Continue → move to review (no hold yet; hold is created on Confirm & pay). */
   reviewBooking(): void {
-    if (!this.canConfirm) return;
+    if (this.step !== 'seats' || this.selectedLabels.length < 1) return;
+    this.seats = this.selectedLabels.length;
     this.step = 'review';
   }
 
@@ -890,7 +960,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
       modal: {
         ondismiss: async () => {
           this.booking = false;
-          await this.showToast('Payment cancelled. Your seat hold will expire automatically.');
+          this.releaseCurrentHold();
+          await this.showToast('Payment cancelled. Your seat hold has been released.');
         },
       },
     });
@@ -951,6 +1022,15 @@ export class FixedBookPage implements OnInit, OnDestroy {
       return;
     }
     if (this.step === 'review') {
+      // If a hold was created for this review (payment aborted before the sheet),
+      // release it so the seat immediately frees up for other customers.
+      this.releaseCurrentHold();
+      this.step = 'seats';
+      return;
+    }
+    if (this.step === 'seats') {
+      this.selectedLabels = [];
+      this.seatMap = null;
       this.step = 'details';
       return;
     }
@@ -958,6 +1038,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
       this.step = 'vehicles';
       this.clearStopMarkers();
       this.hold = null;
+      this.selectedLabels = [];
+      this.seatMap = null;
       return;
     }
     if (this.step === 'vehicles') {
@@ -1129,7 +1211,28 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.dropStopId = null;
     this.seats = 1;
     this.extraLuggageCount = 0;
+    this.seatMap = null;
+    this.selectedLabels = [];
+    this.seatMapError = null;
     this.removeCoupon();
+  }
+
+  /** Fire-and-forget release when the user bails after the hold is created. */
+  private releaseCurrentHold(): void {
+    if (!this.hold) return;
+    const holdId = this.hold.id;
+    this.hold = null;
+    this.api.post(`/fixed/seat-holds/${holdId}/release`, {}).subscribe({
+      next: () => {},
+      error: () => {},
+    });
+  }
+
+  onHoldExpired(): void {
+    this.hold = null;
+    void this.showToast('Your seat hold expired. Please pick your seats again.');
+    this.step = 'seats';
+    this.loadSeatMap();
   }
 
   clearCouponPreview(): void {
@@ -1143,7 +1246,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
       route_departure_id: this.selectedDeparture?.id,
       board_stop_id: this.boardStopId,
       drop_stop_id: this.dropStopId,
-      seats: this.seats,
+      seat_labels: this.selectedLabels,
+      seats: this.selectedLabels.length || this.seats,
       has_extra_luggage: this.extraLuggageCount > 0,
       extra_luggage_count: this.extraLuggageCount,
     };

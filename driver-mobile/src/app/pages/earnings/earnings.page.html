@@ -1,9 +1,9 @@
 <ion-header class="ion-no-border">
   <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
-      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+      <ion-back-button defaultHref="/tabs/wallet"></ion-back-button>
     </ion-buttons>
-    <ion-title class="pg-brandtitle"><span class="b-white">Driver</span> <span class="b-green">Earnings</span></ion-title>
+    <ion-title class="pg-brandtitle"><span class="b-white">Ride</span> <span class="b-green">earnings</span></ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
@@ -14,24 +14,24 @@
 
 <ion-content class="pg-content">
 
-  <!-- ─── Money hero (headline number lives in the green→navy header) ─── -->
+  <!-- ─── Money hero: lifetime gross, with commission + net beside it ─── -->
   <div class="pg-hero ec-hero">
-    <p class="pg-hero__label">Total earnings</p>
+    <p class="pg-hero__label">Total ride earnings</p>
     <h1 class="pg-hero__amount">₹{{ total | number:'1.0-2' }}</h1>
 
     <div class="ec-hero__stats">
       <div class="ec-hstat">
-        <ion-icon name="wallet-outline"></ion-icon>
+        <ion-icon name="remove-circle-outline"></ion-icon>
         <div class="ec-hstat__body">
-          <span class="ec-hstat__label">Wallet balance</span>
-          <strong class="ec-hstat__value">₹{{ wallet | number:'1.0-2' }}</strong>
+          <span class="ec-hstat__label">Commission taken</span>
+          <strong class="ec-hstat__value">₹{{ totalCommission | number:'1.0-2' }}</strong>
         </div>
       </div>
       <div class="ec-hstat">
-        <ion-icon name="calendar-outline"></ion-icon>
+        <ion-icon name="checkmark-circle-outline"></ion-icon>
         <div class="ec-hstat__body">
-          <span class="ec-hstat__label">Showing</span>
-          <strong class="ec-hstat__value">{{ period === 'week' ? 'This week' : 'This month' }}</strong>
+          <span class="ec-hstat__label">Net earnings</span>
+          <strong class="ec-hstat__value">₹{{ net | number:'1.0-2' }}</strong>
         </div>
       </div>
     </div>
@@ -81,11 +81,11 @@
       </ng-container>
     </div>
 
-    <!-- ─── Weekly breakdown ─── -->
-    <div class="pg-card ec-week-card">
+    <!-- ─── Ride-by-ride: fare − commission = net for each trip ─── -->
+    <div class="pg-card ec-rides-card">
       <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="calendar-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Last 7 days</h2>
+        <div class="pg-card__icon"><ion-icon name="receipt-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Each ride <small class="ec-scope">· this {{ period }}</small></h2>
       </div>
 
       <div class="ec-week" *ngIf="loading">
@@ -95,24 +95,47 @@
       </div>
 
       <ng-container *ngIf="!loading">
-        <div class="dc-list ec-list" *ngIf="weekly.length; else noWeek">
-          <div class="dc-row" *ngFor="let d of weekly">
-            <span class="dc-row__icon" [class.dc-row__icon--muted]="d.amount <= 0">
-              <ion-icon name="calendar-outline"></ion-icon>
-            </span>
-            <span class="dc-row__text">
-              <strong>{{ d.weekday }}</strong>
-              <small>{{ d.date }}</small>
-            </span>
-            <span class="dc-row__value" [class.ec-value--zero]="d.amount <= 0">₹{{ d.amount | number:'1.0-2' }}</span>
+        <!-- Period totals strip -->
+        <div class="ec-totals" *ngIf="rides.length">
+          <div class="ec-total">
+            <span class="ec-total__label">Fare</span>
+            <strong class="ec-total__val">₹{{ periodFare | number:'1.0-0' }}</strong>
+          </div>
+          <div class="ec-total">
+            <span class="ec-total__label">Commission</span>
+            <strong class="ec-total__val ec-total__val--neg">−₹{{ periodCommission | number:'1.0-0' }}</strong>
+          </div>
+          <div class="ec-total">
+            <span class="ec-total__label">Net</span>
+            <strong class="ec-total__val ec-total__val--pos">₹{{ periodNet | number:'1.0-0' }}</strong>
           </div>
         </div>
 
-        <ng-template #noWeek>
+        <div class="ec-rides" *ngIf="rides.length; else noRides">
+          <div class="ec-ride" *ngFor="let r of rides">
+            <div class="ec-ride__top">
+              <span class="ec-ride__id">
+                Ride #{{ r.id }}
+                <ion-icon *ngIf="r.is_shared" name="people-outline" title="Shared ride"></ion-icon>
+              </span>
+              <span class="ec-ride__date">{{ rideDate(r) }}</span>
+            </div>
+            <div class="ec-ride__calc">
+              <span class="ec-chip">Fare ₹{{ r.fare | number:'1.0-2' }}</span>
+              <span class="ec-op">−</span>
+              <span class="ec-chip ec-chip--neg" *ngIf="!r.commission_free">Comm. ₹{{ r.commission | number:'1.0-2' }}</span>
+              <span class="ec-chip ec-chip--free" *ngIf="r.commission_free">No commission</span>
+              <span class="ec-op">=</span>
+              <span class="ec-chip ec-chip--net">₹{{ r.net | number:'1.0-2' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <ng-template #noRides>
           <div class="dc-empty">
-            <div class="dc-empty__icon"><ion-icon name="calendar-outline"></ion-icon></div>
-            <strong>Nothing this week</strong>
-            <span>You have no recorded earnings in the last 7 days.</span>
+            <div class="dc-empty__icon"><ion-icon name="receipt-outline"></ion-icon></div>
+            <strong>No rides in this period</strong>
+            <span>Completed rides for the selected week or month will be listed here.</span>
           </div>
         </ng-template>
       </ng-container>

@@ -62,51 +62,51 @@ class DatabaseSeeder extends Seeder
         // per vehicle). The seeder skips here in dev since vehicles are added
         // through the admin UI; PricingRule rows are created when the operator
         // saves the Base Pricing tab for each vehicle.
-        $pricing = [
-            'Sedan' => [
-                'base_fare' => 50,
-                'surge_multiplier' => 1.0, 'commission_percent' => 20,
-                'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 7,
-                'threshold_distance_2_km' => 20, 'fare_per_km_after_threshold_2' => 5,
-                'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 1.0,
-                'threshold_waiting_time_min' => 3, 'fare_per_waiting_minute' => 2,
-                'cancellation_charges' => 30, 'cancel_threshold_time_min' => 2,
-                'no_show_charges_per_minute' => 2, 'no_show_threshold_minutes' => 5,
-                'pickup_charge_before_threshold' => 0, 'pickup_charge_after_threshold' => 25,
-                'pickup_threshold_distance_km' => 3, 'tax_percent' => 5,
-            ],
-            'SUV' => [
-                'base_fare' => 80,
-                'surge_multiplier' => 1.0, 'commission_percent' => 20,
-                'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 10,
-                'threshold_distance_2_km' => 20, 'fare_per_km_after_threshold_2' => 8,
-                'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 1.5,
-                'threshold_waiting_time_min' => 3, 'fare_per_waiting_minute' => 3,
-                'cancellation_charges' => 50, 'tax_percent' => 5,
-            ],
-            'Hatchback' => [
-                'base_fare' => 40,
-                'surge_multiplier' => 1.0, 'commission_percent' => 18,
-                'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 6,
-                'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 0.8,
-                'cancellation_charges' => 20, 'tax_percent' => 5,
-            ],
-            'Van' => [
-                'base_fare' => 120,
-                'surge_multiplier' => 1.0, 'commission_percent' => 22,
-                'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 14,
-                'cancellation_charges' => 80, 'tax_percent' => 5,
-            ],
-            'Motorcycle' => [
-                'base_fare' => 20,
-                'surge_multiplier' => 1.0, 'commission_percent' => 15,
-                'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 4,
-                'cancellation_charges' => 10, 'tax_percent' => 5,
-            ],
-        ];
+        // $pricing = [
+        //     'Sedan' => [
+        //         'base_fare' => 50,
+        //         'surge_multiplier' => 1.0, 'commission_percent' => 20,
+        //         'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 7,
+        //         'threshold_distance_2_km' => 20, 'fare_per_km_after_threshold_2' => 5,
+        //         'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 1.0,
+        //         'threshold_waiting_time_min' => 3, 'fare_per_waiting_minute' => 2,
+        //         'cancellation_charges' => 30, 'cancel_threshold_time_min' => 2,
+        //         'no_show_charges_per_minute' => 2, 'no_show_threshold_minutes' => 5,
+        //         'pickup_charge_before_threshold' => 0, 'pickup_charge_after_threshold' => 25,
+        //         'pickup_threshold_distance_km' => 3, 'tax_percent' => 5,
+        //     ],
+        //     'SUV' => [
+        //         'base_fare' => 80,
+        //         'surge_multiplier' => 1.0, 'commission_percent' => 20,
+        //         'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 10,
+        //         'threshold_distance_2_km' => 20, 'fare_per_km_after_threshold_2' => 8,
+        //         'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 1.5,
+        //         'threshold_waiting_time_min' => 3, 'fare_per_waiting_minute' => 3,
+        //         'cancellation_charges' => 50, 'tax_percent' => 5,
+        //     ],
+        //     'Hatchback' => [
+        //         'base_fare' => 40,
+        //         'surge_multiplier' => 1.0, 'commission_percent' => 18,
+        //         'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 6,
+        //         'threshold_time_1_min' => 30, 'fare_per_min_after_threshold_time_1' => 0.8,
+        //         'cancellation_charges' => 20, 'tax_percent' => 5,
+        //     ],
+        //     'Van' => [
+        //         'base_fare' => 120,
+        //         'surge_multiplier' => 1.0, 'commission_percent' => 22,
+        //         'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 14,
+        //         'cancellation_charges' => 80, 'tax_percent' => 5,
+        //     ],
+        //     'Motorcycle' => [
+        //         'base_fare' => 20,
+        //         'surge_multiplier' => 1.0, 'commission_percent' => 15,
+        //         'threshold_distance_1_km' => 10, 'fare_per_km_after_threshold_1' => 4,
+        //         'cancellation_charges' => 10, 'tax_percent' => 5,
+        //     ],
+        // ];
 
         // Pricing seeding is intentionally skipped now — see comment above.
-        unset($pricing);
+        // unset($pricing);
 
         // Create a simple dev user for quick manual API testing (optional).
         // $testUser = User::query()->updateOrCreate(

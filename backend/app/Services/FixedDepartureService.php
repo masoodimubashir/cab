@@ -369,6 +369,8 @@ class FixedDepartureService
             'trip_id' => $existing?->trip_id,
             'driver_id' => $data['driver_id'] ?? $existing?->driver_id,
             'city_vehicle_type_id' => $vehicleTypeId,
+            'vehicle_seat_layout_id' => $existing?->vehicle_seat_layout_id
+                ?? app(SeatMapService::class)->resolveDefaultLayoutForRoute($route),
             'service_date' => $serviceDate,
             'departure_kind' => $data['departure_kind'] ?? ($existing?->departure_kind ?? 'driver_opened'),
             'depart_at' => $departAt,

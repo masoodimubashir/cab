@@ -15,6 +15,8 @@ class FixedAvailabilityService
 {
     private const CLOSED_DEPARTURE_STATUSES = ['COMPLETED', 'CANCELLED'];
 
+    public function __construct(private readonly SeatMapService $seatMap) {}
+
     public function assertFixedRoute(Route $route): void
     {
         if ($route->mode !== 'fixed') {
@@ -214,17 +216,40 @@ class FixedAvailabilityService
         if ($hold->status === 'HELD' && $hold->expires_at !== null && $hold->expires_at->isPast()) {
             $hold->update(['status' => 'EXPIRED']);
             $hold->refresh();
+            $this->seatMap->releaseSeats($hold);
         }
 
         return $hold;
     }
 
+    /**
+     * Release a specific hold — the customer hit "back" from the picker, or
+     * dropped payment. Frees the linked seats and marks the hold RELEASED.
+     * No-op if the hold is already past HELD.
+     */
+    public function releaseHold(FixedSeatHold $hold): void
+    {
+        if ($hold->status !== 'HELD') {
+            return;
+        }
+        $this->seatMap->releaseSeats($hold);
+        $hold->update(['status' => 'RELEASED']);
+    }
+
     public function releaseCustomerHeldSeats(int $customerId, int $routeDepartureId): void
     {
-        FixedSeatHold::query()
+        $holds = FixedSeatHold::query()
             ->where('customer_id', $customerId)
             ->where('route_departure_id', $routeDepartureId)
             ->where('status', 'HELD')
+            ->get();
+
+        foreach ($holds as $hold) {
+            $this->seatMap->releaseSeats($hold);
+        }
+
+        FixedSeatHold::query()
+            ->whereIn('id', $holds->pluck('id'))
             ->update(['status' => 'RELEASED']);
     }
 

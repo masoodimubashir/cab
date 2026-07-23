@@ -97,8 +97,10 @@ class FixedAdminRouteSettingsTest extends TestCase
         ])->assertCreated();
 
         $response
-            ->assertJsonPath('route.max_seats_per_booking', 6)
-            ->assertJsonPath('route.max_luggage_per_vehicle', 2)
+            // Route now owns its capacity from the payload (4 seats / 3 bags),
+            // independent of the vehicle's own 6/2 — vehicle no longer decides.
+            ->assertJsonPath('route.max_seats_per_booking', 4)
+            ->assertJsonPath('route.max_luggage_per_vehicle', 3)
             ->assertJsonPath('route.fixed_settings_json.stop_arrival_radius_m', 175)
             ->assertJsonPath('route.fixed_settings_json.driver_missed_stop_grace_minutes', 4)
             ->assertJsonPath('route.fixed_settings_json.customer_pickup_radius_m', 125)

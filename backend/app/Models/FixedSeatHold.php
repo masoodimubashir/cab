@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'route_departure_id',
@@ -53,5 +54,11 @@ class FixedSeatHold extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
+    }
+
+    /** The specific departure_seats this hold locks (link table rows). */
+    public function heldSeats(): HasMany
+    {
+        return $this->hasMany(FixedSeatHoldSeat::class, 'fixed_seat_hold_id');
     }
 }

@@ -912,3 +912,22 @@
   color: var(--dc-ink-soft, #6C757D);
   font-weight: 650;
 }
+
+.fb-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--dc-ink-soft, #6C757D);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fb-picker-status {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--dc-canvas, #F4F6F8);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--dc-ink, #0D1B2A);
+  font-weight: 600;
+  strong { color: #0e7a3d; }
+}

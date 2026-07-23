@@ -37,6 +37,7 @@ export class AppComponent implements OnInit {
     [/^\/contact-drivers/,          'Contact Drivers'],
     [/^\/pricing/,                  'Pricing'],
     [/^\/vehicles/,                 'Vehicles'],
+    [/^\/fleet/,                    'Fleet Setup'],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
     [/^\/rides\/all/,               'All Rides'],
@@ -51,7 +52,7 @@ export class AppComponent implements OnInit {
     [/^\/managers/,                 'Managers'],
     [/^\/roles-permissions/,        'Roles & Permissions'],
     [/^\/finance\/overview/,        'Financial Overview'],
-    [/^\/finance\/money-in/,        'Money In'],
+    [/^\/finance\/money-in/,        'Payment In'],
     [/^\/analytics\/real-time/,     'Real Time Analytics'],
     [/^\/analytics\/graphs/,        'Analytics Graphs'],
     [/^\/analytics\/reports/,       'Reports'],
@@ -79,12 +80,12 @@ export class AppComponent implements OnInit {
   private profileTick = signal(0);
 
   pageTitle = computed(() => {
-    // Topbar now greets the user. url()/profileTick() are read for reactivity.
-    void this.url();
+    // Show the current page's name (no personal greeting). profileTick() is
+    // still read so the title recomputes after the profile loads.
     void this.profileTick();
-    const name = this.auth.profile?.name?.trim() || '';
-    const first = name.split(/\s+/)[0];
-    return first ? `Welcome, ${first}` : 'Welcome';
+    const url = this.url();
+    const match = AppComponent.TITLES.find(([re]) => re.test(url));
+    return match ? match[1] : 'Dashboard';
   });
 
   /** True only on pages that genuinely re-scope to the switched city. */
@@ -136,8 +137,11 @@ export class AppComponent implements OnInit {
     if (can('dashboard')) home.push({ label: 'Dashboard', icon: 'home', route: '/dashboard' });
 
     // --- City Setup (dependency order) ---
+    // Fleet Setup is the single page for Vehicle Types + Vehicles + Seat
+    // Layouts — the three concerns that used to sprawl across three pages.
+    // Everything is edited in place; no navigation between them.
     if (can('city_settings'))          citySetup.push({ label: 'Cities',        icon: 'map-marker', route: '/settings/cities' });
-    if (can('vehicles'))          citySetup.push({ label: 'Vehicles',      icon: 'car', route: '/vehicles' });
+    if (can('vehicles'))          citySetup.push({ label: 'Fleet Setup',   icon: 'car', route: '/fleet' });
     if (can('pricing'))
                                        citySetup.push({ label: 'Pricing',       icon: 'tag', route: '/pricing' });
     // App Assets temporarily hidden (not part of the first release). Re-enable by uncommenting.
@@ -153,6 +157,7 @@ export class AppComponent implements OnInit {
 
     // --- Operations ---
     if (can('rides')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
+    if (can('rides')) operations.push({ label: 'Fixed Routes', icon: 'map', route: '/fixed-routes' });
     if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
 
     if (can('manual_dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
@@ -174,7 +179,7 @@ export class AppComponent implements OnInit {
 
     // --- Finance (money in, refunds out, financial health) ---
     if (can('finance')) finance.push({ label: 'Overview',  icon: 'chart-line', route: '/finance/overview' });
-    if (can('finance')) finance.push({ label: 'Money In',  icon: 'rupee',      route: '/finance/money-in' });
+    if (can('finance')) finance.push({ label: 'Payment In',  icon: 'rupee',      route: '/finance/money-in' });
     if (can('finance')) finance.push({ label: 'Refunds',   icon: 'send',       route: '/refunds' });
 
     // --- Insights ---

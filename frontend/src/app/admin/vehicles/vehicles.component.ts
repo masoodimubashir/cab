@@ -6,6 +6,7 @@ import { forkJoin, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
+import { ReturnToSetupComponent } from '../setup/return-to-setup.component';
 import {
   ButtonComponent,
   ColumnComponent,
@@ -21,7 +22,6 @@ import {
 interface VehicleTypeRow {
   id: number;
   name: string;
-  sort_order: number;
   is_active: boolean;
 }
 
@@ -75,9 +75,11 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
     IconComponent,
     InputComponent,
     StatusPillComponent,
+    ReturnToSetupComponent,
   ],
   template: `
     <div class="page">
+      <app-return-to-setup></app-return-to-setup>
       <header class="page__hero">
         <div>
           <h1 class="page__title">Vehicles</h1>
@@ -146,7 +148,6 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
               </div>
             </ng-template>
           </tm-column>
-          <tm-column key="sort_order" label="Order" width="90"><ng-template let-row><span class="mono">#{{ row.sort_order }}</span></ng-template></tm-column>
           <tm-column key="is_active" label="Status" width="130">
             <ng-template let-row><tm-status-pill [tone]="row.is_active ? 'success' : 'neutral'">{{ row.is_active ? 'Active' : 'Inactive' }}</tm-status-pill></ng-template>
           </tm-column>
@@ -230,8 +231,7 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
     <tm-drawer [open]="vehicleOpen" [title]="vehicleEditingId ? 'Edit vehicle type' : 'Add vehicle type'" (closed)="vehicleOpen = false">
       <div slot="body" class="form">
         <label class="field"><span class="field__lbl">Vehicle name <i>*</i></span><input type="text" [(ngModel)]="vehicleForm.name" (ngModelChange)="vTouched = true" placeholder="Auto / Bike / Sedan" /><span class="field__err" *ngIf="vTouched && !vehicleForm.name.trim()">Vehicle name is required.</span></label>
-        <label class="field"><span class="field__lbl">Sort order</span><input type="number" min="0" max="9999" [(ngModel)]="vehicleForm.sort_order" class="field--short" /></label>
-        <label class="toggle"><input type="checkbox" [(ngModel)]="vehicleForm.is_active" /><span>Active</span></label>
+        <label class="toggle" *ngIf="vehicleEditingId"><input type="checkbox" [(ngModel)]="vehicleForm.is_active" /><span>Active</span></label>
       </div>
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="vehicleOpen = false">Cancel</tm-button>
@@ -261,7 +261,6 @@ const CITY_VEHICLE_STATUS_OPTIONS = [
           <label class="field"><span class="field__lbl">Max people</span><input type="number" min="1" [(ngModel)]="create.max_people" /></label>
           <label class="field"><span class="field__lbl">Luggage capacity</span><input type="number" min="0" [(ngModel)]="create.luggage_capacity" /></label>
         </div>
-        <div class="toggles"><label><input type="checkbox" [(ngModel)]="create.is_active" /> Active</label></div>
       </div>
       <div slot="footer"><tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button><tm-button variant="green" [disabled]="creating || !createValid" (clicked)="submitCreateCityVehicle()">{{ creating ? 'Creating...' : 'Create vehicle' }}</tm-button></div>
     </tm-drawer>
@@ -438,19 +437,16 @@ export class VehiclesComponent implements OnInit, OnDestroy {
     });
   }
 
-  blankVehicleForm() { return { name: '', sort_order: 0, is_active: true }; }
+  blankVehicleForm() { return { name: '', is_active: true }; }
   openVehicleCreate(): void { this.vehicleEditingId = null; this.vTouched = false; this.vehicleForm = this.blankVehicleForm(); this.vehicleOpen = true; }
-  openVehicleEdit(v: VehicleTypeRow): void { this.vehicleEditingId = v.id; this.vTouched = false; this.vehicleForm = { name: v.name, sort_order: v.sort_order, is_active: v.is_active }; this.vehicleOpen = true; }
+  openVehicleEdit(v: VehicleTypeRow): void { this.vehicleEditingId = v.id; this.vTouched = false; this.vehicleForm = { name: v.name, is_active: v.is_active }; this.vehicleOpen = true; }
 
   submitVehicle(): void {
     this.vTouched = true;
     if (!this.vehicleForm.name.trim() || this.vehicleSaving) return;
     this.vehicleSaving = true;
-    const payload = {
-      name: this.vehicleForm.name.trim(),
-      sort_order: this.vehicleForm.sort_order ?? 0,
-      is_active: this.vehicleForm.is_active,
-    };
+    const payload: { name: string; is_active?: boolean } = { name: this.vehicleForm.name.trim() };
+    if (this.vehicleEditingId) payload.is_active = this.vehicleForm.is_active;
     const req = this.vehicleEditingId
       ? this.api.patch<{ vehicle_type: VehicleTypeRow }>(`/admin/vehicle-types-global/${this.vehicleEditingId}`, payload)
       : this.api.post<{ vehicle_type: VehicleTypeRow }>('/admin/vehicle-types-global', payload);

@@ -14,6 +14,7 @@ class FixedRefundService
         private readonly WalletService $wallet,
         private readonly FixedBookingEventService $events,
         private readonly NotificationCenter $notifier,
+        private readonly SeatMapService $seatMap,
     ) {}
 
     public function cancelByCustomer(SeatReservation $reservation): array
@@ -244,6 +245,9 @@ class FixedRefundService
             'seats_taken' => max(0, (int) $departure->seats_taken - (int) $reservation->seats),
             'luggage_taken' => max(0, (int) $departure->luggage_taken - max(0, (int) $reservation->extra_luggage_count)),
         ]);
+
+        // Per-seat release so the layout picker shows these seats as pickable again.
+        $this->seatMap->freeSeatsForReservation($reservation);
     }
 
     private function isRefundAllowed(?RouteDeparture $departure): bool

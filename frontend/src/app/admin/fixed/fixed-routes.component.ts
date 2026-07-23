@@ -364,7 +364,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
           </div>
 
           <div class="section-lbl">Fare, seats and luggage</div>
-          <div class="grid3">
+          <div class="grid2">
             <label class="field">
               <span class="field__lbl">Flat fare (₹) <i>*</i> <span class="help" data-tip="Seat fare charged to the customer before any luggage surcharge.">!</span></span>
               <input type="number" min="0" step="0.01" [(ngModel)]="form.seat_fare" placeholder="150" />
@@ -377,14 +377,23 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               <span class="field__lbl">Fixed commission (₹) <span class="help" data-tip="Flat platform cut per booked seat for this fixed route.">!</span></span>
               <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" placeholder="20" />
             </label>
-            <label class="field"><span class="field__lbl">Vehicle <i>*</i> <span class="help" data-tip="Vehicle type assigned to this fixed route. Seats and luggage capacity are taken from this vehicle.">!</span></span>
-              <select [(ngModel)]="form.city_vehicle_type_id" [disabled]="cityVehicleTypeId != null">
-                <option [ngValue]="null">Select vehicle</option>
+            <label class="field"><span class="field__lbl">Vehicle <span class="help" data-tip="Pick the vehicle running this route. Seats and luggage capacity below are derived from it.">!</span></span>
+              <select [(ngModel)]="form.city_vehicle_type_id" [disabled]="cityVehicleTypeId != null" (ngModelChange)="onVehiclePicked($event)">
+                <option [ngValue]="null">No vehicle</option>
                 <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.display_name }} - {{ v.max_people }} seats - {{ v.luggage_capacity }} bags</option>
               </select>
             </label>
             <label class="field"><span class="field__lbl">Booking window (hours) <span class="help" data-tip="How long before departure customers can book this route.">!</span></span><input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" /></label>
             <label class="field"><span class="field__lbl">Luggage surcharge (₹) <span class="help" data-tip="Extra amount charged for each additional luggage item.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
+          </div>
+
+          <div class="grid2">
+            <label class="field"><span class="field__lbl">Seats per vehicle <span class="help" data-tip="Set by the selected vehicle — pick a vehicle above to update.">!</span></span>
+              <input type="number" [ngModel]="form.max_seats_per_booking" readonly class="field--locked" />
+            </label>
+            <label class="field"><span class="field__lbl">Luggage capacity <span class="help" data-tip="Set by the selected vehicle — pick a vehicle above to update.">!</span></span>
+              <input type="number" [ngModel]="form.max_luggage_per_vehicle" readonly class="field--locked" />
+            </label>
           </div>
 
           <div class="toggles">
@@ -529,6 +538,8 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .stops-popover__line + .stops-popover__line { border-top: 1px solid rgba(255,255,255,0.1); }
     .field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; outline: none; font-family: inherit; }
     .field input:focus, .field select:focus { border-color: var(--tm-green); }
+    .field input.field--locked { background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text-muted); cursor: not-allowed; }
+    .field input.field--locked:focus { border-color: var(--tm-line); }
     .endpoints { display: flex; flex-direction: column; gap: 8px; }
     .endpoint { display: flex; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas); }
     .endpoint.set { border-color: var(--tm-green); }
@@ -760,7 +771,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (!f.name.trim() || !f.origin_name.trim() || !f.dest_name.trim()) return false;
     if (f.origin_lat == null || f.origin_lng == null || f.dest_lat == null || f.dest_lng == null) return false;
     if (f.seat_fare == null || f.seat_fare <= 0) return false;
-    if ((this.cityVehicleTypeId ?? f.city_vehicle_type_id) == null) return false;
+    if (f.max_seats_per_booking == null || f.max_seats_per_booking < 1) return false;
     if (f.scope === 'outstation' && (f.origin_city_id == null || f.dest_city_id == null)) return false;
     return true;
   }
@@ -786,7 +797,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       fixed_commission: (this.cityCommercials.commission_type === 'fixed' ? this.cityCommercials.fixed_commission : null) as number | null,
       city_vehicle_type_id: this.cityVehicleTypeId,
       booking_window_hours: 6,
-      max_seats_per_booking: null as number | null,
+      max_seats_per_booking: 4 as number | null,
       waiting_time_per_stop_minutes: 5,
       luggage_surcharge_amount: 0,
       max_luggage_per_vehicle: 0,
@@ -810,6 +821,16 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       next: (res) => { this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, display_name: v.display_name ?? v.name ?? ("#" + v.id), max_people: Number(v.max_people ?? 0), luggage_capacity: Number(v.luggage_capacity ?? 0) })); },
       error: () => (this.vehicleTypes = []),
     });
+  }
+
+  /** Optional convenience: picking a vehicle pre-fills the route's own capacity.
+   *  The vehicle is not required and no longer decides allocation. */
+  onVehiclePicked(id: number | null): void {
+    if (id == null) return;
+    const v = this.vehicleTypes.find((x) => x.id === id);
+    if (!v) return;
+    this.form.max_seats_per_booking = v.max_people || this.form.max_seats_per_booking;
+    this.form.max_luggage_per_vehicle = v.luggage_capacity ?? this.form.max_luggage_per_vehicle;
   }
 
   loadCityCommercials(): void {
@@ -1614,6 +1635,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lng: f.dest_lng,
       path_polyline,
       city_vehicle_type_id: this.cityVehicleTypeId ?? f.city_vehicle_type_id,
+      max_seats_per_booking: f.max_seats_per_booking,
+      max_luggage_per_vehicle: f.max_luggage_per_vehicle,
       booking_window_hours: f.booking_window_hours,
       waiting_time_per_stop_minutes: f.waiting_time_per_stop_minutes,
       luggage_surcharge_amount: f.luggage_surcharge_amount,

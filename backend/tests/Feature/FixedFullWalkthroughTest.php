@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\SeatLayoutFactory;
 use Tests\TestCase;
 
 class FixedFullWalkthroughTest extends TestCase
@@ -48,6 +49,11 @@ class FixedFullWalkthroughTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Ertiga', 'sort_order' => 1, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        SeatLayoutFactory::standardErtiga6P($cityId, $vehicleTypeId);
 
         $admin = User::factory()->create(['manager_all_cities' => true]);
         $admin->addRole('admin');
@@ -121,6 +127,21 @@ class FixedFullWalkthroughTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Walkthrough Fixed');
 
+        // Route allocation (group-based): grant the driver a route group holding
+        // this route so they may see and open it. The vehicle no longer decides.
+        $groupId = DB::table('route_groups')->insertGetId([
+            'city_id' => $cityId, 'name' => 'Walkthrough Group', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('route_group_route')->insert([
+            'route_group_id' => $groupId, 'route_id' => $routeId,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('driver_route_group')->insert([
+            'driver_user_id' => $driver->id, 'route_group_id' => $groupId,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
         Sanctum::actingAs($driver, ['act-as:driver']);
         $this->postJson('/api/drivers/service-mode', ['mode' => 'fixed'])
             ->assertOk()
@@ -142,10 +163,12 @@ class FixedFullWalkthroughTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.id', $routeId);
 
+        // Layout is now the source of truth for capacity — the standardErtiga6P
+        // layout has 6 seats, so the driver's `capacity: 4` is overridden.
         $this->getJson("/api/fixed/routes/{$routeId}/departures")
             ->assertOk()
             ->assertJsonPath('data.0.id', $departureId)
-            ->assertJsonPath('data.0.seats_remaining', 4);
+            ->assertJsonPath('data.0.seats_remaining', 6);
 
         $holdId = $this->withHeaders(['Idempotency-Key' => 'walkthrough-hold'])
             ->postJson('/api/fixed/seat-holds', [

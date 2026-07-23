@@ -340,7 +340,7 @@ class DriversController extends Controller
      *  - weekly           [{ date, amount, weekday }, ...] always the last 7 days
      *                     so the dashboard's "weekly earnings" list stays stable
      */
-    public function earnings(Request $request)
+    public function earnings(Request $request, WalletService $wallet)
     {
         $user = $request->user();
         $period = $request->query('period', 'week');
@@ -397,30 +397,85 @@ class DriversController extends Controller
             }
         }
 
+        // Per-ride breakdown for the selected window: fare − commission = net.
+        // This is what the driver sees as "how much was cut for each ride".
+        $rides = Trip::query()
+            ->where('driver_id', $user->id)
+            ->where('status', 'COMPLETED')
+            ->whereNotNull('completed_at')
+            ->where('completed_at', '>=', $windowStart)
+            ->orderByDesc('completed_at')
+            ->limit(200)
+            ->get(['id', 'completed_at', 'final_fare', 'commission_amount', 'route_departure_id'])
+            ->map(function (Trip $t) {
+                $fare = (float) ($t->final_fare ?? 0);
+                $commission = (float) ($t->commission_amount ?? 0);
+                return [
+                    'id' => $t->id,
+                    'date' => optional($t->completed_at)->toIso8601String(),
+                    'fare' => round($fare, 2),
+                    'commission' => round($commission, 2),
+                    'net' => round($fare - $commission, 2),
+                    'commission_free' => $commission <= 0 && $fare > 0,
+                    'is_shared' => $t->route_departure_id !== null,
+                ];
+            })
+            ->all();
+
+        // ── Lifetime money totals ──
+        // Gross fares across every completed trip.
         $totalEarnings = (float) Trip::query()
             ->where('driver_id', $user->id)
             ->where('status', 'COMPLETED')
             ->sum('final_fare');
 
-        // Net credits − debits from wallet_transactions. Tips, refunds, and
-        // operator adjustments all live in this ledger.
-        $credit = \App\Models\WalletTransaction::TYPE_CREDIT;
-        $debit = \App\Models\WalletTransaction::TYPE_DEBIT;
-        $walletBalance = (float) \App\Models\WalletTransaction::query()
+        // Platform commission taken across every completed trip.
+        $totalCommission = (float) Trip::query()
+            ->where('driver_id', $user->id)
+            ->where('status', 'COMPLETED')
+            ->sum('commission_amount');
+
+        // What the driver has added to their own wallet (successful Razorpay
+        // top-ups only) — the piece that makes the wallet differ from earnings.
+        $topupTotal = (float) \App\Models\WalletTopup::query()
             ->where('user_id', $user->id)
-            ->selectRaw(
-                "COALESCE(SUM(CASE WHEN type = ? THEN amount WHEN type = ? THEN -amount ELSE 0 END), 0) as bal",
-                [$credit, $debit],
-            )
-            ->value('bal');
+            ->where('status', \App\Models\WalletTopup::STATUS_SUCCESS)
+            ->sum('amount');
+
+        // Wallet balance uses the SAME formula as the wallet screen
+        // (credit + cashback + driver_added_cash − debit) so the two never
+        // disagree — this was the source of the 100-vs-140 confusion.
+        $walletBalance = $wallet->balance($user);
+
+        // Operator wallet caps — shown for transparency. Enforcement itself stays
+        // in WalletService (top-up / admin flows); this is display-only.
+        $settings = OperatorSetting::instance();
+
+        // Does the driver currently hold an active (non-queued, started) plan?
+        // Commission-free rides come from this — logic unchanged, just surfaced.
+        $subscriptionActive = \App\Models\DriverSubscription::query()
+            ->where('driver_user_id', $user->id)
+            ->where('status', \App\Models\DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
+            ->where('starts_at', '<=', now())
+            ->exists();
 
         return response()->json([
             'total_earnings' => round($totalEarnings, 2),
+            'total_commission' => round($totalCommission, 2),
+            'net_earnings' => round($totalEarnings - $totalCommission, 2),
+            'topup_total' => round($topupTotal, 2),
             'wallet_balance' => round($walletBalance, 2),
             'currency' => 'INR',
             'period' => $period,
             'buckets' => $buckets,
             'weekly' => $weekly,
+            'rides' => $rides,
+            'caps' => [
+                'min' => (int) $settings->wallet_cash_min_capping,
+                'max' => (int) $settings->wallet_cash_max_capping,
+            ],
+            'subscription_active' => $subscriptionActive,
         ]);
     }
 

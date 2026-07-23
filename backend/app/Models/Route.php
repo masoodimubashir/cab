@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -70,5 +71,15 @@ class Route extends Model
     public function departures(): HasMany
     {
         return $this->hasMany(RouteDeparture::class);
+    }
+
+    /**
+     * Route groups this route belongs to (many-to-many). Drivers are allocated
+     * groups, so a route becomes available to a driver when any group containing
+     * it is assigned to them. See DriverRouteAccessService.
+     */
+    public function groups(): BelongsToMany
+    {
+        return $this->belongsToMany(RouteGroup::class, 'route_group_route')->withTimestamps();
     }
 }

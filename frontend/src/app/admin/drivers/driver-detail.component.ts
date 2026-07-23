@@ -7,8 +7,10 @@ import moment from 'moment';
 import 'daterangepicker';
 import { ApiService } from '../../core/api.service';
 import { ToastService } from '../../core/toast.service';
+import { DriverRouteGroupsPanelComponent } from './driver-route-groups-panel.component';
 import {
   ButtonComponent,
+  DrawerComponent,
   FilterPillComponent,
   FilterSelectComponent,
   IconComponent,
@@ -37,7 +39,6 @@ interface DriverProfile {
   city_vehicle_type_id: number | null;
   city_vehicle_type_name: string | null;
   vehicle_type: string | null;
-  vehicle_brand: string | null;
   vehicle_model: string | null;
   vehicle_color: string | null;
   vehicle_reg_no: string | null;
@@ -77,12 +78,14 @@ const BLOCK_REASONS = [
     DatePipe,
     RouterLink,
     ButtonComponent,
+    DrawerComponent,
     FilterPillComponent,
     FilterSelectComponent,
     IconComponent,
     InputComponent,
     ModalComponent,
     StatusPillComponent,
+    DriverRouteGroupsPanelComponent,
   ],
   template: `
     <div class="page" *ngIf="profile; else loading">
@@ -118,6 +121,9 @@ const BLOCK_REASONS = [
           </div>
 
           <div class="cover__actions">
+            <tm-button variant="outline" size="sm" icon="edit" (clicked)="openEditProfile()">
+              Edit profile
+            </tm-button>
             <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
               Send OTP
             </tm-button>
@@ -204,7 +210,6 @@ const BLOCK_REASONS = [
                 <span class="detail-card__hint">Registration and type</span>
               </div>
               <div class="kv-list">
-                <div class="kv-row"><span>Brand</span><strong>{{ profile.vehicle_brand || '—' }}</strong></div>
                 <div class="kv-row"><span>Model</span><strong>{{ profile.vehicle_model || '—' }}</strong></div>
                 <div class="kv-row"><span>Colour</span><strong>{{ profile.vehicle_color || '—' }}</strong></div>
                 <div class="kv-row"><span>Reg no</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
@@ -265,6 +270,8 @@ const BLOCK_REASONS = [
           </section>
         </aside>
       </section>
+      <!-- Fixed route allocation — route groups grant this driver's fixed routes. -->
+      <app-driver-route-groups-panel [driverId]="driverId"></app-driver-route-groups-panel>
       <!-- ============= Activity feed ============= -->
       <section class="feed">
         <header class="feed__head">
@@ -736,9 +743,62 @@ const BLOCK_REASONS = [
       </ng-container>
     </tm-modal>
 
+    <!-- ============= Edit profile drawer ============= -->
+    <tm-drawer [open]="editOpen" title="Edit driver profile" (closed)="editOpen = false">
+      <div slot="body" class="edit-form" *ngIf="editForm">
+        <label class="field">
+          <span class="field__lbl">Full name</span>
+          <input type="text" [(ngModel)]="editForm.name" maxlength="120" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Phone</span>
+          <input type="tel" [(ngModel)]="editForm.phone" maxlength="20" placeholder="e.g. 9000012345" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Email</span>
+          <input type="email" [(ngModel)]="editForm.email" maxlength="180" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Date of birth</span>
+          <input type="date" [(ngModel)]="editForm.dob" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Address</span>
+          <textarea rows="3" [(ngModel)]="editForm.address" maxlength="500"></textarea>
+        </label>
+        <hr class="edit-form__sep" />
+        <label class="field">
+          <span class="field__lbl">Vehicle registration no.</span>
+          <input type="text" [(ngModel)]="editForm.vehicle_reg_no" maxlength="50" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Vehicle model</span>
+          <input type="text" [(ngModel)]="editForm.vehicle_model" maxlength="100" />
+        </label>
+        <label class="field">
+          <span class="field__lbl">Vehicle colour</span>
+          <input type="text" [(ngModel)]="editForm.vehicle_color" maxlength="100" />
+        </label>
+      </div>
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="editOpen = false">Cancel</tm-button>
+        <tm-button variant="green" icon="check" [loading]="editSaving" (clicked)="submitEditProfile()">
+          Save profile
+        </tm-button>
+      </ng-container>
+    </tm-drawer>
+
   `,
   styles: [`
     :host { display: block; }
+    .edit-form { display: flex; flex-direction: column; gap: 12px; }
+    .edit-form .field { display: flex; flex-direction: column; gap: 5px; }
+    .edit-form .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .edit-form input, .edit-form textarea { padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; font-family: inherit; outline: none; }
+    .edit-form input:focus, .edit-form textarea:focus { border-color: var(--tm-green); }
+    .edit-form textarea { resize: vertical; min-height: 70px; }
+    .edit-form__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .edit-form__sep { border: 0; border-top: 1px solid var(--tm-line); margin: 4px 0; }
     .page {
       display: flex;
       flex-direction: column;
@@ -1867,6 +1927,14 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Send OTP
   otpSending = false;
 
+  // Edit profile drawer
+  editOpen = false;
+  editSaving = false;
+  editForm: {
+    name: string; phone: string; email: string; dob: string; address: string;
+    vehicle_reg_no: string; vehicle_model: string; vehicle_color: string;
+  } | null = null;
+
   // Block / Delete modal
   blockDeleteOpen = false;
   blockMode: 'block' | 'delete' = 'block';
@@ -1998,7 +2066,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get vehicleDescription(): string {
-    const parts = [this.profile?.vehicle_brand, this.profile?.vehicle_model]
+    const parts = [this.profile?.vehicle_model]
       .filter((x) => !!x)
       .join(' ');
     const colour = this.profile?.vehicle_color ? ` (${this.profile.vehicle_color})` : '';
@@ -2137,6 +2205,49 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       error: (err) => {
         this.toast.error(err?.error?.message || 'Could not send OTP', { title: 'OTP failed' });
         this.otpSending = false;
+      },
+    });
+  }
+
+  openEditProfile(): void {
+    if (!this.profile) return;
+    this.editForm = {
+      name: this.profile.name ?? '',
+      phone: this.profile.phone ?? '',
+      email: this.profile.email ?? '',
+      dob: this.profile.dob ?? '',
+      address: this.profile.address ?? '',
+      vehicle_reg_no: this.profile.vehicle_reg_no ?? '',
+      vehicle_model: this.profile.vehicle_model ?? '',
+      vehicle_color: this.profile.vehicle_color ?? '',
+    };
+    this.editOpen = true;
+  }
+
+  submitEditProfile(): void {
+    if (!this.driverId || !this.editForm || this.editSaving) return;
+    this.editSaving = true;
+    const f = this.editForm;
+    const payload = {
+      name: f.name.trim() || null,
+      phone: f.phone.trim() || null,
+      email: f.email.trim() || null,
+      dob: f.dob || null,
+      address: f.address.trim() || null,
+      vehicle_reg_no: f.vehicle_reg_no.trim() || null,
+      vehicle_model: f.vehicle_model.trim() || null,
+      vehicle_color: f.vehicle_color.trim() || null,
+    };
+    this.api.patch<{ driver: any }>(`/admin/drivers/${this.driverId}`, payload).subscribe({
+      next: () => {
+        this.editSaving = false;
+        this.editOpen = false;
+        this.toast.success('Profile updated');
+        this.loadProfile();
+      },
+      error: (err) => {
+        this.editSaving = false;
+        this.toast.error(err?.error?.message || 'Could not update profile', { title: 'Update failed' });
       },
     });
   }

@@ -9,6 +9,7 @@ use App\Models\RouteStop;
 use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\User;
+use App\Services\SeatMapService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -139,6 +140,7 @@ class SeatReservationService
                 'route_id' => $route->id,
                 'route_schedule_id' => null,
                 'city_vehicle_type_id' => $route->city_vehicle_type_id,
+                'vehicle_seat_layout_id' => app(SeatMapService::class)->resolveDefaultLayoutForRoute($route),
                 'service_date' => now()->toDateString(),
                 'depart_at' => null,
                 'capacity' => max(1, (int) ($route->cityVehicleType?->max_people ?: 4)),

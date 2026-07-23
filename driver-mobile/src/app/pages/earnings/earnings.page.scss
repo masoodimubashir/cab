@@ -158,3 +158,71 @@
   color: var(--text-muted, #6C757D);
   font-weight: 600;
 }
+
+/* ── Ride-by-ride breakdown ── */
+.ec-rides-card { padding-bottom: 8px; }
+.ec-scope { font-weight: 600; color: #94a3b8; font-size: 0.8rem; }
+
+.ec-totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.ec-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f5f7fa;
+}
+.ec-total__label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; }
+.ec-total__val { font-size: 0.98rem; font-weight: 800; color: #0f172a; }
+.ec-total__val--neg { color: #ef4444; }
+.ec-total__val--pos { color: #0e8f47; }
+
+.ec-rides { display: flex; flex-direction: column; gap: 10px; }
+.ec-ride {
+  padding: 12px;
+  border: 1px solid #eef1f4;
+  border-radius: 14px;
+  background: #fff;
+}
+.ec-ride__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ec-ride__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.ec-ride__id ion-icon { font-size: 14px; color: #94a3b8; }
+.ec-ride__date { font-size: 0.76rem; color: #94a3b8; font-weight: 600; }
+
+.ec-ride__calc {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ec-op { color: #cbd5e1; font-weight: 700; }
+.ec-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+  white-space: nowrap;
+}
+.ec-chip--neg { background: #fee2e2; color: #b91c1c; }
+.ec-chip--free { background: #dcfce7; color: #15803d; }
+.ec-chip--net { background: #0e8f47; color: #fff; }
