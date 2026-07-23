@@ -25,12 +25,8 @@ class City extends Model
         return $this->hasMany(PricingRule::class, 'city_id');
     }
 
-    public function rideScopes(): HasMany
-    {
-        return $this->hasMany(CityRideScope::class, 'city_id')
-            ->orderBy('sort_order')
-            ->orderBy('id');
-    }
+    // The ride catalogue is no longer per city — Local/Outstation × Private/
+    // Fixed/Shuttle now live as switches on `ride_types`. See App\Support\RideCatalog.
 
     public function settings(): HasOne
     {

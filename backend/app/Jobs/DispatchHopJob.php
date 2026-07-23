@@ -125,7 +125,7 @@ class DispatchHopJob implements ShouldQueue
         $emptyRequeueCap = $maxHops;
 
         $trip->loadMissing("cityVehicleType.rideType:id,name");
-        $serviceMode = str_contains(strtolower((string) $trip->cityVehicleType?->rideType?->name), "shuttle")
+        $serviceMode = ($trip->cityVehicleType?->rideType?->isShuttle() ?? false)
             ? Driver::SERVICE_MODE_SHUTTLE
             : Driver::SERVICE_MODE_PRIVATE;
 

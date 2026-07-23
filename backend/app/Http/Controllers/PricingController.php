@@ -4,8 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\City;
 use App\Models\CitySetting;
-use App\Models\CityRideMode;
-use App\Models\CityRideScope;
 use App\Models\CityVehicleType;
 use App\Models\OperatorSetting;
 use App\Models\OutstationPackage;
@@ -15,6 +13,7 @@ use App\Models\Route;
 use App\Models\VehicleType;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
+use App\Support\RideCatalog;
 use Illuminate\Http\Request;
 
 class PricingController extends Controller
@@ -82,46 +81,23 @@ class PricingController extends Controller
             ->get(['scope', 'mode'])
             ->mapWithKeys(fn (Route $route) => [$route->scope . ':' . $route->mode => true]);
 
-        $scopes = CityRideScope::query()
-            ->where('city_id', $city->id)
-            ->where('is_active', true)
-            ->with(['modes' => fn ($q) => $q->where('is_active', true)])
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(function (CityRideScope $s) use ($activeSharedRouteKeys) {
-                $s->setRelation('modes', $s->modes
-                    ->filter(function (CityRideMode $m) use ($activeSharedRouteKeys, $s) {
-                        if ($m->mode === 'shuttle') {
-                            return true;
-                        }
+        // The catalogue itself is global (ride_types); only the readiness gate
+        // below is per city — a Fixed mode stays hidden until this city has an
+        // active fixed route to book. Shuttle is always shown (quote preview).
+        $tree = collect(RideCatalog::tree(
+            onlyActive: true,
+            modeFilter: function (RideType $rt, string $scope) use ($activeSharedRouteKeys) {
+                if ($rt->resolvedMode() !== RideType::MODE_FIXED) {
+                    return true;
+                }
 
-                        if ($m->mode !== 'fixed') {
-                            return true;
-                        }
-
-                        return $activeSharedRouteKeys->has($s->scope . ':' . $m->mode);
-                    })
-                    ->values());
-
-                return $s;
-            })
-            ->filter(fn (CityRideScope $s) => $s->modes->isNotEmpty())
-            ->values();
-
-        $tree = $scopes->map(fn (CityRideScope $s) => [
-            'scope' => $s->scope,
-            'name' => $s->name,
-            'sort_order' => (int) $s->sort_order,
-            'modes' => $s->modes->map(fn (CityRideMode $m) => [
-                'id' => $m->id,
-                'scope' => $s->scope,
-                'mode' => $m->mode,
-                'kind' => $m->mode === 'private' ? $s->scope : $m->mode, // compat
-                'name' => $m->name,
-                'image_url' => $m->image_url,
-                'sort_order' => (int) $m->sort_order,
-            ])->values(),
+                return $activeSharedRouteKeys->has($scope . ':fixed');
+            },
+        ))->map(fn (array $s) => [
+            'scope' => $s['scope'],
+            'name' => $s['name'],
+            'sort_order' => $s['sort_order'],
+            'modes' => collect($s['modes'])->values(),
         ]);
 
         // Flat list kept for older clients that haven't moved to the tree yet.
@@ -295,7 +271,7 @@ class PricingController extends Controller
         $query = CityVehicleType::query()
             ->with(['rideType:id,name', 'vehicleType:id,name'])
             ->where('is_active', true)
-            ->whereHas('rideType', fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', ['%shuttle%']));
+            ->whereHas('rideType', fn ($q) => $q->where('mode', RideType::MODE_SHUTTLE));
 
         if (isset($data['city_vehicle_type_id'])) {
             $query->where('id', (int) $data['city_vehicle_type_id']);
