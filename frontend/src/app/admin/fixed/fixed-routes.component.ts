@@ -125,7 +125,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
         <p class="cue__text">Pick a city from the switcher in the top bar to manage fixed routes.</p>
       </div>
 
-      <ng-container *ngIf="cityId != null">
+      <ng-container *ngIf="cityId != null && !hideTable">
         <tm-data-table
           [rows]="filteredRoutes" [total]="filteredRoutes.length" [loading]="loading"
           emptyTitle="No fixed routes yet"
@@ -222,7 +222,8 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
       </ng-container>
     </div>
 
-    <div class="rt-editor" *ngIf="open">
+    <div class="rt-scrim" *ngIf="open && drawerMode" (click)="closeEditor()"></div>
+    <div class="rt-editor" [class.rt-editor--drawer]="drawerMode" *ngIf="open">
       <div class="rt-map-wrap">
         <div id="fixed-rt-edit-map" class="rt-map"></div>
 
@@ -496,6 +497,12 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .rt-x { font-size: 20px; line-height: 1; font-weight: 700; }
     .rt-editor { position: fixed; inset: 0; height: 100dvh; overflow: hidden; z-index: 1000; display: grid; grid-template-columns: 1fr 620px; background: var(--tm-canvas); animation: rtFade 0.18s ease; }
     @keyframes rtFade { from { opacity: 0; } to { opacity: 1; } }
+    /* Drawer mode — a 90%-wide panel sliding in from the right over a scrim,
+       instead of the full-screen takeover. Used inside the vehicle workspace. */
+    .rt-scrim { position: fixed; inset: 0; z-index: 999; background: rgba(8,12,16,.5); animation: rtFade .18s ease; }
+    .rt-editor--drawer { left: auto; right: 0; width: 92vw; max-width: 1500px; box-shadow: -10px 0 40px rgba(8,12,16,.28); animation: rtSlide .2s ease; }
+    @keyframes rtSlide { from { transform: translateX(100%); } to { transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .rt-editor, .rt-editor--drawer, .rt-scrim { animation: none; } }
     .rt-map-wrap { position: relative; overflow: hidden; }
     .rt-map { position: absolute; inset: 0; width: 100%; height: 100%; }
     .rt-search { position: absolute; top: 14px; left: 14px; right: 14px; max-width: 460px; display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 44px; background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(13,27,42,0.16); color: var(--tm-text-muted); }
@@ -589,6 +596,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   @Input() cityVehicleTypeId: number | null = null;
   /** Hides the page hero so the table can sit inside a host page's own section. */
   @Input() embedded = false;
+  /** Hides the route table entirely, keeping only the create/edit map editor.
+   *  The host renders its own route list and drives editing via openEditById(). */
+  @Input() hideTable = false;
+  /** Renders the map editor as a 90%-wide right-side drawer over a scrim,
+   *  instead of the default full-screen takeover. */
+  @Input() drawerMode = false;
   /** Fires whenever the route list is (re)loaded, so hosts can refresh counts. */
   @Output() routesChanged = new EventEmitter<void>();
   routes: FixedRouteRow[] = [];
@@ -893,6 +906,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.tool = 'origin';
     this.open = true;
     this.scheduleMapInit();
+  }
+
+  /** Open the map editor for a route by id — the host list only has a lite row. */
+  openEditById(id: number): void {
+    const row = this.routes.find((r) => r.id === id);
+    if (row) this.openEdit(row);
   }
 
   openEdit(r: FixedRouteRow): void {
