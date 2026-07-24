@@ -191,7 +191,12 @@ class AdminVehicleSeatLayoutsController
             'row' => (int) $cell['row'],
             'col' => (int) $cell['col'],
             'kind' => $cell['kind'],
-            'label' => $cell['kind'] === 'seat' ? trim((string) $cell['label']) : null,
+            // Seats keep their label (validated unique). Blocked cells may carry
+            // a short label too — e.g. "D" for the driver seat in a top-view map;
+            // these never enter the departure snapshot (seatCells filters to
+            // kind=seat), so they only ever affect the visual grid. Aisles never
+            // carry a label.
+            'label' => $cell['kind'] === 'aisle' ? null : (($l = trim((string) ($cell['label'] ?? ''))) === '' ? null : $l),
             'category' => $cell['kind'] === 'seat' ? ($cell['category'] ?? null) : null,
             'price_delta' => (float) ($cell['price_delta'] ?? 0),
             'created_at' => $now,

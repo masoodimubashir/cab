@@ -12,6 +12,7 @@ import { FixedRoutesComponent } from '../fixed/fixed-routes.component';
 import { VehicleBasePricingComponent } from '../settings/vehicle-base-pricing.component';
 import { OutstationPackagesComponent } from '../settings/outstation-packages.component';
 import { SeatGridComponent } from '../vehicle-seat-layouts/seat-grid.component';
+import { SeatLayoutDesignerComponent } from '../vehicle-seat-layouts/seat-layout-designer.component';
 import { VehicleSeatLayout, VehicleSeatLayoutsService } from '../vehicle-seat-layouts/vehicle-seat-layouts.service';
 
 /** How a ride type behaves, derived from its name. Only the behaviour is
@@ -48,6 +49,9 @@ interface RouteLite {
   origin_name: string;
   dest_name: string;
   flat_fare: number | null;
+  max_seats_per_booking: number | null;
+  booking_window_hours: number | null;
+  stops?: { id: number }[];
   is_active: boolean;
   city_vehicle_type_id: number | null;
 }
@@ -108,6 +112,7 @@ interface TabDef { key: string; label: string; count?: number; }
     VehicleBasePricingComponent,
     OutstationPackagesComponent,
     SeatGridComponent,
+    SeatLayoutDesignerComponent,
   ],
   template: `
     <div class="ws">
@@ -152,6 +157,7 @@ interface TabDef { key: string; label: string; count?: number; }
               class="row"
               *ngFor="let v of visible; trackBy: trackVehicle"
               [attr.aria-current]="v.id === selectedId"
+              [class.is-off]="!v.is_active"
               (click)="select(v)"
             >
               <span class="row__main">
@@ -159,7 +165,6 @@ interface TabDef { key: string; label: string; count?: number; }
                 <span class="row__sub">{{ v.vehicle_type_name || 'Vehicle type not set' }} · {{ v.max_people }} seats · {{ v.luggage_capacity }} bags</span>
                 <span class="row__sub">{{ fareModesLabel(v) }}{{ driverCountLabel(v) }}</span>
               </span>
-              <tm-status-pill [tone]="v.is_active ? 'success' : 'neutral'">{{ v.is_active ? 'Enabled' : 'Disabled' }}</tm-status-pill>
             </button>
 
             <div class="empty" *ngIf="!visible.length && !loading">
@@ -189,7 +194,19 @@ interface TabDef { key: string; label: string; count?: number; }
               <button type="button" class="backlink" (click)="mobileEditor = false"><tm-icon name="chevron-left" [size]="14" /> List</button>
               <span class="ed__title">{{ selected.display_name }}</span>
               <span class="ed__type">{{ selected.vehicle_type_name || 'Vehicle type not set' }}</span>
-              <tm-status-pill [tone]="selected.is_active ? 'success' : 'neutral'">{{ selected.is_active ? 'Enabled' : 'Disabled' }}</tm-status-pill>
+              <button
+                type="button"
+                class="statustoggle"
+                [class.is-off]="!selected.is_active"
+                role="switch"
+                [attr.aria-checked]="selected.is_active"
+                [disabled]="savingActive"
+                title="Enable or disable this vehicle"
+                (click)="toggleActive()"
+              >
+                <span class="statustoggle__dot"></span>
+                {{ savingActive ? 'Saving…' : (selected.is_active ? 'Enabled' : 'Disabled') }}
+              </button>
               <span class="ws__grow"></span>
               <tm-button variant="outline" size="sm" icon="refresh" [disabled]="loading" (clicked)="refresh()">Refresh</tm-button>
             </header>
@@ -216,7 +233,6 @@ interface TabDef { key: string; label: string; count?: number; }
                   <label class="f"><span>Max people</span><input type="number" min="1" [(ngModel)]="common.max_people" /></label>
                   <label class="f"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="common.luggage_capacity" /></label>
                 </div>
-                <label class="check"><input type="checkbox" [(ngModel)]="common.is_active" /> <span>Active</span></label>
                 <p class="meta">
                   Depends on type: <b>{{ selected.vehicle_type_name || 'not set' }}</b> · Fare setup: <b>{{ fareModesLabel(selected) }}</b>.
                   Saving patches every mode row that shares this name and type.
@@ -261,36 +277,32 @@ interface TabDef { key: string; label: string; count?: number; }
               <ng-template #noFare>
                 <div class="cue cue--flat">
                   <tm-icon name="rupee" [size]="22" />
-                  <strong>{{ activeRideType.name }} fare is not configured yet</strong>
-                  <span>Create {{ activeRideType.name }} fare setup for {{ selected.display_name }}. It will copy the common vehicle fields and then open the fare card.</span>
-                  <tm-button variant="green" icon="plus" [disabled]="creatingRideTypeId === activeRideType.id" (clicked)="createFareSetup(activeRideType)">
-                    {{ creatingRideTypeId === activeRideType.id ? 'Creating...' : '+ Create ' + activeRideType.name + ' fare setup' }}
-                  </tm-button>
+                  <strong>Preparing {{ activeRideType.name }} fare form…</strong>
+                  <span>Setting up {{ activeRideType.name }} fare for {{ selected.display_name }}.</span>
                 </div>
               </ng-template>
             </div>
 
-            <!-- ── the fixed ride type: routes + route groups ── -->
+            <!-- ── the fixed ride type: routes live inside their groups ── -->
             <div class="pane" *ngIf="activeRideType && activeIsFixed">
               <div class="sec">
                 <div class="sec__head">
-                  <h3>{{ activeRideType.name }} routes</h3>
-                  <span class="hint">Prepaid routes with mapped stops and booking controls.</span>
-                  <span class="ws__grow"></span>
-                  <tm-button variant="green" size="sm" icon="plus" (clicked)="newRoute()">Add route</tm-button>
-                </div>
-                <app-fixed-routes [cityVehicleTypeId]="selected.id" [embedded]="true" (routesChanged)="loadRoutes()"></app-fixed-routes>
-              </div>
-
-              <div class="sec">
-                <div class="sec__head">
                   <h3>Route groups</h3>
-                  <span class="hint">Groups grant drivers permission to run these routes.</span>
                   <span class="ws__grow"></span>
-                  <tm-button variant="outline" size="sm" icon="plus" (clicked)="openGroupDrawer()">New group</tm-button>
+                  <tm-button variant="outline" size="sm" icon="plus" (clicked)="newRoute()">Add route</tm-button>
+                  <tm-button variant="green" size="sm" icon="plus" (clicked)="openGroupDrawer()">New group</tm-button>
+                  <span class="hint">A group grants its drivers permission to run the routes inside it. Add a route into a group, or leave it in “Needs a group” and assign it later.</span>
                 </div>
 
-                <div class="grp" *ngFor="let g of selGroups; trackBy: trackGroup">
+                <div class="toolbar" *ngIf="selGroups.length">
+                  <span class="search">
+                    <tm-icon name="search" [size]="14" />
+                    <input type="text" [(ngModel)]="groupSearch" (ngModelChange)="onGroupSearch()" placeholder="Search route groups..." aria-label="Search route groups" />
+                  </span>
+                  <span class="toolbar__count">{{ filteredGroups.length }} {{ filteredGroups.length === 1 ? 'group' : 'groups' }}</span>
+                </div>
+
+                <div class="grp" *ngFor="let g of pagedGroups; trackBy: trackGroup">
                   <div class="grp__top" *ngIf="renamingId !== g.id">
                     <span class="grp__name">{{ g.name }}</span>
                     <span class="badge">{{ g.route_ids.length }} {{ g.route_ids.length === 1 ? 'route' : 'routes' }}</span>
@@ -305,51 +317,76 @@ interface TabDef { key: string; label: string; count?: number; }
                     <button type="button" class="mini-btn" (click)="renamingId = null">Cancel</button>
                   </div>
 
-                  <div class="grp__routes">
-                    <div class="grp__route" *ngFor="let r of routesIn(g)">
-                      <span class="grp__route-name">{{ r.name }}</span>
+                  <div class="routes">
+                    <div class="rt" *ngFor="let r of routesIn(g)">
+                      <span class="rt__nm">
+                        <b>{{ r.name }}</b>
+                        <small>Booking window {{ r.booking_window_hours ?? 0 }}h · {{ r.stops?.length || 0 }} stops</small>
+                      </span>
                       <span class="tag" [attr.data-s]="r.scope">{{ r.scope }}</span>
-                      <button type="button" class="x" title="Remove from group" (click)="ungroupRoute(g, r.id)">×</button>
+                      <span class="rt__col">₹{{ r.flat_fare ?? '—' }}<small>fare</small></span>
+                      <span class="rt__col rt__col--sm">{{ r.max_seats_per_booking ?? '—' }}<small>seats</small></span>
+                      <span class="rt__acts">
+                        <button type="button" class="icon" title="Edit route" (click)="editRoute(r.id)">✎</button>
+                        <button type="button" class="icon icon--del" title="Remove from group" (click)="ungroupRoute(g, r.id)">×</button>
+                      </span>
                     </div>
-                    <div class="grp__empty" *ngIf="!g.route_ids.length">Add a route from the picker below.</div>
+                    <div class="grp__empty" *ngIf="!g.route_ids.length">No routes yet — add one below.</div>
                   </div>
 
                   <div class="grp__drivers">
+                    <span class="dlabel">Drivers</span>
                     <span class="drv" *ngFor="let d of driversIn(g)">
                       <span class="av">{{ initials(d.name) }}</span>{{ d.name }}
                       <button type="button" class="x" (click)="removeDriverFromGroup(g, d.user_id)">✕</button>
                     </span>
-                    <button type="button" class="mini-btn" (click)="driverPickFor = driverPickFor === g.id ? null : g.id">+ driver</button>
-                    <button type="button" class="mini-btn" (click)="routePickFor = routePickFor === g.id ? null : g.id">+ route</button>
-                  </div>
-
-                  <div class="picker" *ngIf="driverPickFor === g.id">
-                    <button type="button" class="pick" *ngFor="let d of driverOptions(g)" (click)="addDriverToGroup(g, d.user_id)">
-                      <span class="av">{{ initials(d.name) }}</span>
-                      <span class="pick__main"><b>{{ d.name }}</b><small>{{ d.phone || 'No phone' }}</small></span>
-                      <span class="mini-btn">+ Add</span>
-                    </button>
-                    <p class="meta" *ngIf="!driverOptions(g).length">No more drivers.</p>
-                  </div>
-
-                  <div class="picker" *ngIf="routePickFor === g.id">
-                    <button type="button" class="pick" *ngFor="let r of ungrouped" (click)="addRouteToGroup(g, r.id)">
-                      <span class="pick__main"><b>{{ r.name }}</b><small>{{ r.origin_name }} → {{ r.dest_name }}</small></span>
-                      <span class="mini-btn">Move here</span>
-                    </button>
-                    <p class="meta" *ngIf="!ungrouped.length">All routes are grouped 🎉</p>
+                    <span class="meta" *ngIf="!driversIn(g).length">None yet.</span>
+                    <span class="ws__grow"></span>
+                    <button type="button" class="mini-btn" (click)="openDriverDrawer(g)">+ driver</button>
+                    <button type="button" class="mini-btn" (click)="openRouteDrawer(g)">+ route</button>
                   </div>
                 </div>
 
-                <div class="cue cue--flat" *ngIf="!selGroups.length">
-                  <strong>No group covers this vehicle's routes</strong>
-                  <span>Create one so drivers can be given permission to run them.</span>
+                <div class="cue cue--flat" *ngIf="!selGroups.length && !ungrouped.length">
+                  <strong>No routes or groups yet</strong>
+                  <span>Add a route, then group it so drivers can be given permission to run it.</span>
+                </div>
+                <p class="meta" *ngIf="selGroups.length && !filteredGroups.length">No route group matches “{{ groupSearch }}”.</p>
+
+                <div class="pager" *ngIf="groupPages > 1">
+                  <button type="button" class="mini-btn" [disabled]="groupPage === 1" (click)="setGroupPage(groupPage - 1)">Prev</button>
+                  <span class="pager__label">Page {{ groupPage }} of {{ groupPages }}</span>
+                  <button type="button" class="mini-btn" [disabled]="groupPage === groupPages" (click)="setGroupPage(groupPage + 1)">Next</button>
                 </div>
 
-                <p class="meta warn" *ngIf="ungrouped.length">
-                  ⚠ {{ ungrouped.length }} {{ ungrouped.length === 1 ? 'route needs' : 'routes need' }} a group city-wide.
-                </p>
+                <!-- Routes with no group — the holding card that replaces the old table. -->
+                <div class="grp grp--orphan" *ngIf="ungrouped.length">
+                  <div class="grp__top">
+                    <span class="grp__name">Needs a group</span>
+                    <span class="badge badge--warn">{{ ungrouped.length }} {{ ungrouped.length === 1 ? 'route' : 'routes' }}</span>
+                    <span class="ws__grow"></span>
+                    <span class="meta warn">Not runnable until grouped</span>
+                  </div>
+                  <div class="routes">
+                    <div class="rt" *ngFor="let r of ungrouped">
+                      <span class="rt__nm">
+                        <b>{{ r.name }}</b>
+                        <small>{{ r.origin_name }} → {{ r.dest_name }}</small>
+                      </span>
+                      <span class="tag" [attr.data-s]="r.scope">{{ r.scope }}</span>
+                      <span class="rt__col">₹{{ r.flat_fare ?? '—' }}<small>fare</small></span>
+                      <span class="rt__col rt__col--sm">{{ r.max_seats_per_booking ?? '—' }}<small>seats</small></span>
+                      <span class="rt__acts">
+                        <button type="button" class="mini-btn" (click)="openAssignDrawer(r)">Assign</button>
+                        <button type="button" class="icon" title="Edit route" (click)="editRoute(r.id)">✎</button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              <!-- Map editor only; its table is hidden — the groups above are the list. -->
+              <app-fixed-routes [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="loadRoutes()"></app-fixed-routes>
             </div>
 
             <!-- ── Drivers ── -->
@@ -429,7 +466,7 @@ interface TabDef { key: string; label: string; count?: number; }
                 </div>
 
                 <div class="layout" *ngFor="let l of selLayouts">
-                  <div class="layout__preview"><app-seat-grid [rows]="l.rows" [cols]="l.cols" [cells]="l.cells"></app-seat-grid></div>
+                  <div class="layout__preview"><app-seat-grid [rows]="l.rows" [cols]="l.cols" [cells]="l.cells" [frame]="true" [showWheel]="false" [showLegend]="false"></app-seat-grid></div>
                   <div class="layout__meta">
                     <span class="layout__name">{{ l.name }}</span>
                     <span class="layout__sub">{{ l.rows }}×{{ l.cols }} · {{ l.seat_count }} seats<ng-container *ngIf="l.in_use"> · in use</ng-container></span>
@@ -442,7 +479,8 @@ interface TabDef { key: string; label: string; count?: number; }
 
                 <div class="cue cue--flat" *ngIf="!selLayouts.length">
                   <strong>No {{ selected.vehicle_type_name || 'vehicle' }} layouts yet</strong>
-                  <span>The seat-grid designer keeps its own page and returns here on save.</span>
+                  <span>A seat layout is the seat map a passenger taps to pick a seat. Hit “Design layout” to start from a ready-made template.</span>
+                  <tm-button variant="green" size="sm" icon="plus" [disabled]="selected.vehicle_type_id == null" (clicked)="openDesigner()">Design layout</tm-button>
                 </div>
               </div>
             </div>
@@ -508,6 +546,84 @@ interface TabDef { key: string; label: string; count?: number; }
         <tm-button variant="green" [disabled]="!groupName.trim() || groupSaving" (clicked)="createGroup()">{{ groupSaving ? 'Creating...' : 'Create group' }}</tm-button>
       </div>
     </tm-drawer>
+
+    <!-- Assign an ungrouped route into a group. -->
+    <tm-drawer [open]="!!assignDrawerRoute" title="Assign route to a group" [subtitle]="assignDrawerRoute?.name || ''" [width]="480" (closed)="assignDrawerRouteId = null">
+      <div slot="body" class="form" *ngIf="assignDrawerRoute as r">
+        <p class="meta">Adding this route to a group lets that group's drivers run it.</p>
+        <button type="button" class="pick pick--bd" *ngFor="let g of groups" (click)="assignRouteToGroup(r.id, g)">
+          <span class="pick__main">
+            <b>{{ g.name }}</b>
+            <span class="pick__row">
+              <span class="pick__lbl">Routes</span>
+              <span class="chip" *ngFor="let rt of routesIn(g)">{{ rt.name }}</span>
+              <span class="meta" *ngIf="!routesIn(g).length">None yet</span>
+            </span>
+            <span class="pick__row">
+              <span class="pick__lbl">Drivers</span>
+              <span class="drv drv--xs" *ngFor="let d of driversIn(g)"><span class="av">{{ initials(d.name) }}</span>{{ d.name }}</span>
+              <span class="meta" *ngIf="!driversIn(g).length">None yet</span>
+            </span>
+          </span>
+          <span class="mini-btn">Add here</span>
+        </button>
+        <p class="meta" *ngIf="!groups.length">No groups yet — create one below to assign this route.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="assignDrawerRouteId = null">Cancel</tm-button>
+        <tm-button variant="green" icon="plus" (clicked)="assignDrawerRouteId = null; openGroupDrawer()">New group</tm-button>
+      </div>
+    </tm-drawer>
+
+    <!-- Add an existing ungrouped route into this group. -->
+    <tm-drawer [open]="!!routeDrawerGroup" title="Add a route to this group" [subtitle]="routeDrawerGroup?.name || ''" [width]="480" (closed)="routeDrawerId = null">
+      <div slot="body" class="form" *ngIf="routeDrawerGroup as g">
+        <button type="button" class="pick pick--bd" *ngFor="let r of ungrouped" (click)="addRouteToGroup(g, r.id)">
+          <span class="pick__main"><b>{{ r.name }}</b><small>{{ r.origin_name }} → {{ r.dest_name }}</small></span>
+          <span class="mini-btn">Add here</span>
+        </button>
+        <p class="meta" *ngIf="!ungrouped.length">Every route is already in a group.</p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="routeDrawerId = null">Done</tm-button>
+        <tm-button variant="green" icon="plus" (clicked)="routeDrawerId = null; newRoute()">New route</tm-button>
+      </div>
+    </tm-drawer>
+
+    <!-- Add drivers to this group — pick several, then Save once. -->
+    <tm-drawer [open]="!!driverDrawerGroup" title="Group drivers" [subtitle]="driverDrawerGroup?.name || ''" [width]="480" (closed)="driverDrawerId = null">
+      <div slot="body" class="form" *ngIf="driverDrawerGroup">
+        <p class="meta">Tick the drivers who can run every route in this group, then Save.</p>
+        <label class="pickrow" *ngFor="let d of cityDrivers" [class.is-on]="pendingDriverIds.includes(d.user_id)">
+          <input type="checkbox" [checked]="pendingDriverIds.includes(d.user_id)" (change)="togglePendingDriver(d.user_id)" />
+          <span class="av">{{ initials(d.name) }}</span>
+          <span class="pick__main"><b>{{ d.name }}</b><small>{{ d.phone || 'No phone' }}</small></span>
+        </label>
+        <p class="meta" *ngIf="!cityDrivers.length">No drivers in this city yet.</p>
+      </div>
+      <div slot="footer">
+        <span class="drawer-count">{{ pendingDriverIds.length }} selected</span>
+        <span class="ws__grow"></span>
+        <tm-button variant="ghost" (clicked)="driverDrawerId = null">Cancel</tm-button>
+        <tm-button variant="green" icon="check" [disabled]="savingGroupDrivers" (clicked)="commitDrawerDrivers()">{{ savingGroupDrivers ? 'Saving...' : 'Save' }}</tm-button>
+      </div>
+    </tm-drawer>
+
+    <!-- Seat-layout designer — wide side drawer, opens over the workspace. -->
+    <div class="ldr-scrim" *ngIf="layoutDrawerOpen" (click)="closeLayoutDrawer()"></div>
+    <div class="ldr" *ngIf="layoutDrawerOpen && selected">
+      <app-seat-layout-designer
+        [embedded]="true"
+        [embeddedCityId]="cityId"
+        [embeddedVehicleTypeId]="selected.vehicle_type_id"
+        [embeddedVehicleTypeName]="selected.vehicle_type_name || ''"
+        [embeddedLayoutId]="editingLayoutId"
+        [editLayoutData]="editingLayout"
+        [existingLayouts]="selLayouts"
+        (saved)="onLayoutSaved()"
+        (cancelled)="closeLayoutDrawer()"
+      ></app-seat-layout-designer>
+    </div>
   `,
   styles: [`
     .ws { display: flex; flex-direction: column; gap: 14px; }
@@ -536,6 +652,9 @@ interface TabDef { key: string; label: string; count?: number; }
     .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; text-align: left; font: inherit; cursor: pointer; }
     .row:hover { background: var(--tm-canvas); }
     .row[aria-current="true"] { background: var(--tm-green-tint, #ecfdf5); border-color: var(--tm-green, #16a34a); }
+    /* Disabled vehicles read dimmer instead of carrying a status pill. */
+    .row.is-off .row__name { color: var(--tm-text-muted); }
+    .row.is-off .row__name::after { content: ' · disabled'; font-weight: 600; font-size: 11px; color: var(--tm-text-muted); }
     .row__main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
     .row__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .row__sub { font-size: 11.5px; color: var(--tm-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -600,6 +719,14 @@ interface TabDef { key: string; label: string; count?: number; }
     .f input:focus, .f select:focus { border-color: var(--tm-green, #16a34a); }
     .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--tm-text); }
     .check input { width: 16px; height: 16px; accent-color: var(--tm-green, #16a34a); }
+
+    /* Clickable enabled/disabled pill — same look as the ENABLED status pill in
+       the header, so this vehicle's on/off state reads identically wherever shown. */
+    .statustoggle { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font: inherit; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; transition: background .12s, color .12s; }
+    .statustoggle__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .statustoggle:hover:not(:disabled) { filter: brightness(.97); }
+    .statustoggle:disabled { opacity: .6; cursor: default; }
+    .statustoggle.is-off { background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text-muted); }
     .meta { margin: 0; font-size: 12px; color: var(--tm-text-muted); }
     .meta b { color: var(--tm-text); font-weight: 800; }
     .meta.warn { color: #9a6a11; }
@@ -607,16 +734,35 @@ interface TabDef { key: string; label: string; count?: number; }
     .note { margin: 0; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; }
     .note b { color: var(--tm-text); }
 
+    /* Shared search + pagination chrome for the route-groups section. */
+    .toolbar { display: flex; align-items: center; gap: 10px; }
+    .toolbar__count { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); white-space: nowrap; }
+    .pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 2px; }
+    .pager__label { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+
     .grp { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px; }
+    .grp--orphan { border-color: #fce4a6; background: var(--tm-canvas); }
     .grp__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .grp__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
-    .badge { padding: 1px 8px; border-radius: 999px; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 11px; font-weight: 800; }
+    .badge { padding: 1px 8px; border-radius: 999px; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
     .badge--mute { background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text-muted); }
-    .grp__routes { display: flex; flex-direction: column; gap: 5px; }
-    .grp__route { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 8px; background: var(--tm-canvas); font-size: 12.5px; color: var(--tm-text); }
-    .grp__route-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge--warn { background: #fef3c7; color: #b45309; }
     .grp__empty { padding: 6px 2px; font-size: 12px; color: var(--tm-text-muted); }
-    .grp__drivers { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .grp__drivers { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 11px; border-top: 1px solid var(--tm-line); }
+    .dlabel { font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: var(--tm-text-muted); }
+
+    /* Route row — carries the columns the old routes table showed. */
+    .routes { display: flex; flex-direction: column; gap: 6px; }
+    .rt { display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 12px; padding: 9px 11px; border-radius: 9px; background: var(--tm-canvas); }
+    .rt__nm { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .rt__nm b { font-size: 12.5px; font-weight: 700; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rt__nm small { font-size: 11px; color: var(--tm-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rt__col { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; color: var(--tm-text); white-space: nowrap; text-align: right; }
+    .rt__col small { display: block; font-size: 10px; font-weight: 600; color: var(--tm-text-muted); letter-spacing: .03em; text-transform: uppercase; }
+    .rt__acts { display: flex; align-items: center; gap: 6px; }
+    .icon { width: 28px; height: 28px; border-radius: 7px; border: 0; background: transparent; display: grid; place-items: center; color: var(--tm-text-muted); font-size: 13px; cursor: pointer; }
+    .icon:hover { background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text); }
+    .icon--del:hover { background: #fef2f2; color: #dc2626; }
     .drv { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px 2px 3px; border: 1px solid var(--tm-line); border-radius: 999px; font-size: 12px; color: var(--tm-text); }
     .drv--plain { padding: 3px 10px; }
     .av { display: inline-grid; place-items: center; width: 21px; height: 21px; flex: none; border-radius: 50%; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 10px; font-weight: 800; }
@@ -640,14 +786,35 @@ interface TabDef { key: string; label: string; count?: number; }
     .pick__main { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
     .pick__main b { font-size: 12.5px; font-weight: 800; color: var(--tm-text); }
     .pick__main small { font-size: 11px; color: var(--tm-text-muted); }
+    .pick__row { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    .pick__lbl { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--tm-text-muted); margin-right: 2px; }
+    .chip { padding: 2px 8px; border: 1px solid var(--tm-line); border-radius: 999px; background: var(--tm-canvas-2, #f3f4f6); font-size: 11px; color: var(--tm-text); }
+    .drv--xs { padding: 1px 7px 1px 2px; gap: 5px; font-size: 11px; }
+    .drv--xs .av { width: 17px; height: 17px; font-size: 8.5px; }
+    /* Bordered pick rows for use inside a drawer (no wrapping .picker box). */
+    .pick--bd { border: 1px solid var(--tm-line); border-radius: 10px; padding: 10px; }
+    .pick--bd:hover { border-color: var(--tm-green, #16a34a); background: var(--tm-canvas); }
+    /* Multi-select checklist row inside a drawer. */
+    .pickrow { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 10px; cursor: pointer; }
+    .pickrow:hover { border-color: var(--tm-text-muted); }
+    .pickrow.is-on { border-color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5); }
+    .pickrow input { width: 16px; height: 16px; accent-color: var(--tm-green, #16a34a); flex: none; }
+    .drawer-count { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
 
-    .layout { display: grid; grid-template-columns: 74px 1fr auto; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px; }
-    .layout__preview { width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-    .layout__preview :is(app-seat-grid) { transform: scale(0.4); transform-origin: top left; }
+    .layout { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px; }
+    .layout__preview { width: 88px; height: 96px; display: flex; align-items: flex-start; justify-content: center; overflow: hidden; }
+    .layout__preview :is(app-seat-grid) { transform: scale(0.34); transform-origin: top center; }
     .layout__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .layout__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .layout__sub { font-size: 11px; color: var(--tm-text-muted); }
     .layout__actions { display: inline-flex; align-items: center; gap: 6px; }
+
+    /* Seat-layout designer drawer */
+    .ldr-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, .38); z-index: 60; animation: ldr-fade 140ms ease-out; }
+    .ldr { position: fixed; top: 0; right: 0; bottom: 0; width: 92vw; max-width: 1500px; z-index: 61; background: var(--tm-canvas, #fff); box-shadow: -16px 0 40px rgba(15,23,42,.18); overflow-y: auto; padding: 22px 26px; animation: ldr-slide 180ms cubic-bezier(.22,.61,.36,1); }
+    @keyframes ldr-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes ldr-slide { from { transform: translateX(24px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
+    @media (max-width: 760px) { .ldr { width: 100vw; padding: 16px; } }
 
     .form { display: flex; flex-direction: column; gap: 12px; }
     .typerow { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--tm-line); border-radius: 9px; }
@@ -662,6 +829,10 @@ interface TabDef { key: string; label: string; count?: number; }
     }
     @media (max-width: 860px) {
       .cards { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .rt { grid-template-columns: 1fr auto auto; }
+      .rt__col--sm { display: none; }
     }
   `],
 })
@@ -708,8 +879,19 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   selDrivers: DriverOpt[] = [];
   otherDrivers: DriverOpt[] = [];
   selLayouts: VehicleSeatLayout[] = [];
+  // Seat-layout designer drawer (opens over the workspace, no page nav).
+  layoutDrawerOpen = false;
+  editingLayoutId: number | null = null;
+  editingLayout: VehicleSeatLayout | null = null;
   selGroups: GroupRow[] = [];
   ungrouped: RouteLite[] = [];
+  // Route-group search + pagination, derived from selGroups in recompute().
+  filteredGroups: GroupRow[] = [];
+  pagedGroups: GroupRow[] = [];
+  groupSearch = '';
+  groupPage = 1;
+  readonly groupPageSize = 6;
+  groupPages = 1;
 
   search = '';
   status: CityVehicleStatus = 'all';
@@ -722,9 +904,13 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   common = { display_name: '', max_people: 1, luggage_capacity: 0, is_active: true };
   savingCommon = false;
+  savingActive = false;
   reverseBidding = false;
   savingUnique = false;
   creatingRideTypeId: number | null = null;
+  /** vehicle+ride-type keys we've already tried to auto-create, so a failed
+   *  create can never loop into duplicate rows on the next recompute. */
+  private autoFareAttempted = new Set<string>();
 
   createOpen = false;
   creating = false;
@@ -740,10 +926,21 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   groupName = '';
   renamingId: number | null = null;
   renameValue = '';
-  driverPickFor: number | null = null;
-  routePickFor: number | null = null;
+  // Route-group pickers now open as side drawers. Each holds the id of its
+  // target so the drawer content stays live across a reload (the group/route
+  // objects are replaced on every load; ids are stable).
+  driverDrawerId: number | null = null;
+  routeDrawerId: number | null = null;
+  assignDrawerRouteId: number | null = null;
   movePickFor: number | null = null;
   savingDriverId: number | null = null;
+  /** Staged driver selection for the group-drivers drawer (committed on Save). */
+  pendingDriverIds: number[] = [];
+  savingGroupDrivers = false;
+
+  get driverDrawerGroup(): GroupRow | null { return this.groups.find((g) => g.id === this.driverDrawerId) ?? null; }
+  get routeDrawerGroup(): GroupRow | null { return this.groups.find((g) => g.id === this.routeDrawerId) ?? null; }
+  get assignDrawerRoute(): RouteLite | null { return this.routes.find((r) => r.id === this.assignDrawerRouteId) ?? null; }
 
   private subs: Subscription[] = [];
   private deepLinkId: number | null = null;
@@ -903,12 +1100,14 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (!v) {
       this.tabList = []; this.activeRideType = null; this.activeRow = null;
       this.selDrivers = []; this.otherDrivers = []; this.selLayouts = []; this.selGroups = [];
+      this.applyGroupView();
       return;
     }
 
     const myRoutes = this.routes.filter((r) => r.city_vehicle_type_id === v.id);
     const myRouteIds = new Set(myRoutes.map((r) => r.id));
     this.selGroups = this.groups.filter((g) => g.route_ids.some((id) => myRouteIds.has(id)));
+    this.applyGroupView();
     this.selDrivers = this.cityDrivers.filter((d) => d.city_vehicle_type_id === v.id);
     this.otherDrivers = this.cityDrivers.filter((d) =>
       d.city_vehicle_type_id !== v.id && (d.vehicle_type_id == null || d.vehicle_type_id === v.vehicle_type_id));
@@ -932,6 +1131,22 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.syncActiveMode();
   }
 
+  /** Filter + page the route groups for the current search and page. */
+  private applyGroupView(): void {
+    const q = this.groupSearch.trim().toLowerCase();
+    this.filteredGroups = q
+      ? this.selGroups.filter((g) => g.name.toLowerCase().includes(q))
+      : this.selGroups;
+
+    this.groupPages = Math.max(1, Math.ceil(this.filteredGroups.length / this.groupPageSize));
+    if (this.groupPage > this.groupPages) this.groupPage = this.groupPages;
+    const start = (this.groupPage - 1) * this.groupPageSize;
+    this.pagedGroups = this.filteredGroups.slice(start, start + this.groupPageSize);
+  }
+
+  onGroupSearch(): void { this.groupPage = 1; this.applyGroupView(); }
+  setGroupPage(p: number): void { this.groupPage = Math.min(Math.max(1, p), this.groupPages); this.applyGroupView(); }
+
   /** Resolves the currently open ride-type tab into the row that backs it. */
   private syncActiveMode(): void {
     if (!this.tab.startsWith('mode:') || !this.selected) {
@@ -950,13 +1165,25 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.fareSubtitle = this.activeKind === 'shuttle'
       ? 'Prepared Shuttle fare card. Customer and driver Shuttle booking is not active yet.'
       : 'Fare card used by the current customer and driver flow.';
+
+    // A non-fixed ride type with no fare row yet: create it automatically so the
+    // fare form is shown directly instead of a "create fare" button. Guarded so
+    // it runs at most once per vehicle+ride-type and never while data is loading.
+    if (!this.activeIsFixed && !this.activeRow && !this.loading && this.creatingRideTypeId == null) {
+      const attemptKey = key + ':' + id;
+      if (!this.autoFareAttempted.has(attemptKey)) {
+        this.autoFareAttempted.add(attemptKey);
+        this.createFareSetup(this.activeRideType, true);
+      }
+    }
   }
 
   select(v: CityVehicleRow): void {
     this.selectedId = v.id;
     this.mobileEditor = true;
-    this.driverPickFor = null;
-    this.routePickFor = null;
+    this.driverDrawerId = null;
+    this.routeDrawerId = null;
+    this.assignDrawerRouteId = null;
     this.movePickFor = null;
     this.renamingId = null;
     this.tab = this.tabByVehicle.get(v.id) ?? 'common';
@@ -1036,6 +1263,37 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Enable / disable the vehicle straight from the header. Persists immediately
+   * (no Save needed) by patching is_active on every mode row that shares this
+   * name + type, the same set Save touches. Optimistic: the pill flips at once
+   * and rolls back on error.
+   */
+  toggleActive(): void {
+    const v = this.selected;
+    if (!v || this.cityId == null || this.savingActive) return;
+    const next = !v.is_active;
+    const key = this.groupKey(v);
+    const siblings = this.rows.filter((r) => this.groupKey(r) === key);
+
+    this.savingActive = true;
+    v.is_active = next;
+    this.common.is_active = next;
+    forkJoin(siblings.map((r) => this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${r.id}`, { is_active: next }))).subscribe({
+      next: () => {
+        this.savingActive = false;
+        this.toast.success(next ? `${v.display_name} enabled` : `${v.display_name} disabled`);
+        this.load();
+      },
+      error: (err) => {
+        this.savingActive = false;
+        v.is_active = !next;
+        this.common.is_active = !next;
+        this.toast.error(err?.error?.message || 'Could not update availability');
+      },
+    });
+  }
+
   saveUniqueFields(): void {
     if (!this.activeRow || this.cityId == null || this.savingUnique) return;
     this.savingUnique = true;
@@ -1052,7 +1310,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
    * the tab, so this can never fail on a missing ride type — the tab only
    * exists because the row does.
    */
-  createFareSetup(rt: RideTypeRef): void {
+  createFareSetup(rt: RideTypeRef, silent = false): void {
     const v = this.selected;
     if (!v || this.cityId == null || this.creatingRideTypeId != null) return;
     this.creatingRideTypeId = rt.id;
@@ -1066,7 +1324,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     }).subscribe({
       next: (res) => {
         this.creatingRideTypeId = null;
-        this.toast.success(res.message || `${rt.name} fare setup created`);
+        if (!silent) this.toast.success(res.message || `${rt.name} fare setup created`);
         this.load();
       },
       error: (err) => {
@@ -1131,6 +1389,42 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   // ── fixed routes ───────────────────────────────────────────
   newRoute(): void { this.fixedRoutes?.openCreate(); }
 
+  /** Opens the map editor for a route shown in a group card. */
+  editRoute(routeId: number): void { this.fixedRoutes?.openEditById(routeId); }
+
+  /** Assign an ungrouped route into an existing group from the holding card.
+   *  The route leaves the "Needs a group" list, so the drawer closes. */
+  assignRouteToGroup(routeId: number, g: GroupRow): void {
+    this.assignDrawerRouteId = null;
+    this.saveGroupRoutes(g, [...g.route_ids, routeId], 'Route added to ' + g.name);
+  }
+
+  openAssignDrawer(r: RouteLite): void { this.assignDrawerRouteId = r.id; }
+  openRouteDrawer(g: GroupRow): void { this.routeDrawerId = g.id; }
+
+  /** Seed the checklist from the group's current drivers so it opens pre-ticked. */
+  openDriverDrawer(g: GroupRow): void {
+    this.driverDrawerId = g.id;
+    this.pendingDriverIds = [...g.driver_user_ids];
+  }
+
+  togglePendingDriver(userId: number): void {
+    this.pendingDriverIds = this.pendingDriverIds.includes(userId)
+      ? this.pendingDriverIds.filter((id) => id !== userId)
+      : [...this.pendingDriverIds, userId];
+  }
+
+  /** Commit the whole selection at once, replacing the group's driver set. */
+  commitDrawerDrivers(): void {
+    const g = this.driverDrawerGroup;
+    if (!g || this.cityId == null || this.savingGroupDrivers) return;
+    this.savingGroupDrivers = true;
+    this.api.put(`/admin/cities/${this.cityId}/route-groups/${g.id}/drivers`, { driver_user_ids: this.pendingDriverIds }).subscribe({
+      next: () => { this.savingGroupDrivers = false; this.driverDrawerId = null; this.toast.success('Group drivers updated'); this.loadGroups(); },
+      error: (err) => { this.savingGroupDrivers = false; this.toast.error(err?.error?.message || 'Could not update drivers'); },
+    });
+  }
+
   // ── route groups ───────────────────────────────────────────
   routesIn(g: GroupRow): RouteLite[] { return this.routes.filter((r) => g.route_ids.includes(r.id)); }
   driversIn(g: GroupRow): DriverOpt[] { return this.cityDrivers.filter((d) => g.driver_user_ids.includes(d.user_id)); }
@@ -1181,9 +1475,15 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.saveGroupRoutes(g, g.route_ids.filter((id) => id !== routeId), 'Route removed from ' + g.name);
   }
 
+  /**
+   * Optimistic write: apply the new route set to the local state first so the
+   * card updates the instant the button is pressed, then persist. Reload on
+   * either outcome to reconcile — on error that rolls the optimistic change back.
+   */
   private saveGroupRoutes(g: GroupRow, routeIds: number[], message: string): void {
     if (this.cityId == null) return;
-    this.routePickFor = null;
+    g.route_ids = routeIds;
+    this.recompute();
     this.api.patch(`/admin/cities/${this.cityId}/route-groups/${g.id}`, { name: g.name, route_ids: routeIds }).subscribe({
       next: () => { this.toast.success(message); this.loadGroups(); },
       error: (err) => { this.toast.error(err?.error?.message || 'Could not save group'); this.loadGroups(); },
@@ -1193,9 +1493,11 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   addDriverToGroup(g: GroupRow, userId: number): void { this.saveGroupDrivers(g, [...g.driver_user_ids, userId]); }
   removeDriverFromGroup(g: GroupRow, userId: number): void { this.saveGroupDrivers(g, g.driver_user_ids.filter((id) => id !== userId)); }
 
+  /** Optimistic, same as saveGroupRoutes — the chip disappears immediately. */
   private saveGroupDrivers(g: GroupRow, driverIds: number[]): void {
     if (this.cityId == null) return;
-    this.driverPickFor = null;
+    g.driver_user_ids = driverIds;
+    this.recompute();
     this.api.put(`/admin/cities/${this.cityId}/route-groups/${g.id}/drivers`, { driver_user_ids: driverIds }).subscribe({
       next: () => this.loadGroups(),
       error: (err) => { this.toast.error(err?.error?.message || 'Could not update drivers'); this.loadGroups(); },
@@ -1228,11 +1530,26 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   openDesigner(): void {
     const v = this.selected;
     if (!v || v.vehicle_type_id == null) return;
-    this.router.navigate(['/vehicle-seat-layouts/new'], { queryParams: { vehicle_type_id: v.vehicle_type_id, from: 'fleet' } });
+    this.editingLayoutId = null;
+    this.editingLayout = null;
+    this.layoutDrawerOpen = true;
   }
 
   editLayout(l: VehicleSeatLayout): void {
-    this.router.navigate([`/vehicle-seat-layouts/${l.id}`], { queryParams: { from: 'fleet' } });
+    this.editingLayoutId = l.id;
+    this.editingLayout = l;
+    this.layoutDrawerOpen = true;
+  }
+
+  closeLayoutDrawer(): void {
+    this.layoutDrawerOpen = false;
+    this.editingLayoutId = null;
+    this.editingLayout = null;
+  }
+
+  onLayoutSaved(): void {
+    this.closeLayoutDrawer();
+    this.load();
   }
 
   deleteLayout(l: VehicleSeatLayout): void {
