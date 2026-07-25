@@ -582,4 +582,11 @@ Route::middleware(['auth:sanctum', 'role:admin', 'permission:finance'])->group(f
     // trail once the operator sends it (GPay/bank, outside the app).
     Route::get('/admin/refunds', [RefundsController::class, 'adminIndex']);
     Route::post('/admin/refunds/{module}/{id}/mark-refunded', [RefundsController::class, 'adminMarkRefunded'])->whereIn('module', ['fixed', 'shuttle'])->whereNumber('id');
+
+    // Phase 4 — read-only monitors onto the auto-split engine. The driver-payout
+    // status monitor (Route paid / pending / failed / held) replaces the manual
+    // payout worklist, and the ledger is the single "where did every rupee go"
+    // source of truth with a per-trip reconciliation.
+    Route::get('/admin/payouts/monitor', [\App\Http\Controllers\Admin\PayoutMonitorController::class, 'payouts']);
+    Route::get('/admin/ledger', [\App\Http\Controllers\Admin\PayoutMonitorController::class, 'ledger']);
 });
