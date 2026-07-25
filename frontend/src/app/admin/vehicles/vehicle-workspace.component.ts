@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -119,8 +119,6 @@ interface TabDef { key: string; label: string; count?: number; }
       <app-return-to-setup></app-return-to-setup>
 
       <header class="ws__head">
-        <h1>Vehicles</h1>
-        <span class="ws__city" *ngIf="cityName"><tm-icon name="map-marker" [size]="13" /> {{ cityName }}</span>
         <span class="ws__grow"></span>
         <tm-button variant="outline" size="sm" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
         <tm-button variant="green" size="sm" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
@@ -132,360 +130,199 @@ interface TabDef { key: string; label: string; count?: number; }
         <span>Pick a city from the top bar to manage its vehicles.</span>
       </div>
 
-      <div class="split" *ngIf="cityId != null">
-        <!-- ─────────────── list ─────────────── -->
-        <aside class="panel list" [class.is-hidden-sm]="mobileEditor">
-          <div class="list__top">
-            <div class="list__bar">
-              <span class="search">
-                <tm-icon name="search" [size]="14" />
-                <input type="text" [(ngModel)]="search" (ngModelChange)="applyView()" placeholder="Search city vehicles..." aria-label="Search city vehicles" />
-              </span>
-              <select class="mini" [(ngModel)]="typeFilter" (ngModelChange)="applyView()" aria-label="Vehicle type filter">
-                <option value="all">All types</option>
-                <option *ngFor="let t of types" [value]="t.id">{{ t.name }}</option>
-              </select>
-            </div>
-            <div class="chips">
-              <button type="button" class="chip" *ngFor="let s of statusChips" [attr.aria-pressed]="status === s.value" (click)="setStatus(s.value)">{{ s.label }}</button>
-            </div>
+      <div class="grid" *ngIf="cityId != null">
+        <!-- ─────────────── spreadsheet ─────────────── -->
+        <!-- controls -->
+        <div class="controls">
+          <span class="search">
+            <tm-icon name="search" [size]="14" />
+            <input type="text" [(ngModel)]="search" (ngModelChange)="applyView()" placeholder="Search vehicles..." aria-label="Search vehicles" />
+          </span>
+          <div class="seg" role="tablist" aria-label="Status filter">
+            <button type="button" class="seg__btn" *ngFor="let s of statusChips" [class.on]="status === s.value" [attr.aria-pressed]="status === s.value" (click)="setStatus(s.value)">{{ s.label }}</button>
           </div>
-
-          <div class="rows">
-            <button
-              type="button"
-              class="row"
-              *ngFor="let v of visible; trackBy: trackVehicle"
-              [attr.aria-current]="v.id === selectedId"
-              [class.is-off]="!v.is_active"
-              (click)="select(v)"
-            >
-              <span class="row__main">
-                <span class="row__name">{{ v.display_name }}</span>
-                <span class="row__sub">{{ v.vehicle_type_name || 'Vehicle type not set' }} · {{ v.max_people }} seats · {{ v.luggage_capacity }} bags</span>
-                <span class="row__sub">{{ fareModesLabel(v) }}{{ driverCountLabel(v) }}</span>
-              </span>
+          <!-- Type filter — custom dropdown (matches the Drivers page state-select) -->
+          <div class="fsel" [class.has-value]="typeFilter !== 'all'" [class.is-open]="filterOpen === 'type'">
+            <button type="button" class="fsel__trigger" (click)="toggleFilter('type', $event)" [attr.aria-expanded]="filterOpen === 'type'" aria-haspopup="listbox" aria-label="Vehicle type filter">
+              <span class="fsel__icon"><tm-icon name="filter" [size]="14" /></span>
+              <span class="fsel__value">{{ typeFilterLabel }}</span>
+              <tm-icon name="chevron-down" [size]="12" class="fsel__caret" />
             </button>
-
-            <div class="empty" *ngIf="!visible.length && !loading">
-              <strong>No city vehicles</strong>
-              <span>Add a city vehicle after creating vehicle types.</span>
-            </div>
-            <div class="skeleton" *ngIf="loading">
-              <span class="sk" *ngFor="let i of [1,2,3,4]"></span>
-            </div>
+            <ul class="fsel__menu" *ngIf="filterOpen === 'type'" role="listbox" (click)="$event.stopPropagation()">
+              <li class="fsel__option" [class.is-selected]="typeFilter === 'all'" role="option" [attr.aria-selected]="typeFilter === 'all'" (click)="setTypeFilter('all')">
+                <tm-icon *ngIf="typeFilter === 'all'" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">All types</span>
+              </li>
+              <li *ngFor="let t of types" class="fsel__option" [class.is-selected]="typeFilter === (t.id + '')" role="option" [attr.aria-selected]="typeFilter === (t.id + '')" (click)="setTypeFilter(t.id + '')">
+                <tm-icon *ngIf="typeFilter === (t.id + '')" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">{{ t.name }}</span>
+              </li>
+            </ul>
           </div>
 
-          <button type="button" class="newrow" [disabled]="!vehicleTypeOptions.length" (click)="openCreate()">
-            + Add vehicle
+          <!-- Vehicle filter — custom dropdown -->
+          <div class="fsel" [class.has-value]="vehicleFilter !== 'all'" [class.is-open]="filterOpen === 'vehicle'">
+            <button type="button" class="fsel__trigger" (click)="toggleFilter('vehicle', $event)" [attr.aria-expanded]="filterOpen === 'vehicle'" aria-haspopup="listbox" aria-label="Vehicle filter">
+              <span class="fsel__icon"><tm-icon name="car" [size]="14" /></span>
+              <span class="fsel__value">{{ vehicleFilterLabel }}</span>
+              <tm-icon name="chevron-down" [size]="12" class="fsel__caret" />
+            </button>
+            <ul class="fsel__menu" *ngIf="filterOpen === 'vehicle'" role="listbox" (click)="$event.stopPropagation()">
+              <li class="fsel__option" [class.is-selected]="vehicleFilter === 'all'" role="option" [attr.aria-selected]="vehicleFilter === 'all'" (click)="setVehicleFilter('all')">
+                <tm-icon *ngIf="vehicleFilter === 'all'" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">All vehicles</span>
+              </li>
+              <li *ngFor="let name of vehicleNames" class="fsel__option" [class.is-selected]="vehicleFilter === name" role="option" [attr.aria-selected]="vehicleFilter === name" (click)="setVehicleFilter(name)">
+                <tm-icon *ngIf="vehicleFilter === name" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">{{ name }}</span>
+              </li>
+            </ul>
+          </div>
+          <button type="button" class="clearall" *ngIf="hasActiveFilters" (click)="clearAllFilters()">
+            <tm-icon name="x" [size]="13" /> Clear all
           </button>
-        </aside>
+          <span class="count-note"><b>{{ visible.length }}</b> of <b>{{ vehicles.length }}</b> vehicles · click a cell to edit</span>
+        </div>
 
-        <!-- ─────────────── editor ─────────────── -->
-        <section class="panel editor" [class.is-hidden-sm]="!mobileEditor">
-          <div class="cue cue--flat" *ngIf="!selected">
-            <tm-icon name="car" [size]="22" />
-            <strong>{{ loading ? 'Loading vehicles…' : 'Pick a city vehicle' }}</strong>
-            <span *ngIf="!loading">Choose one on the left to set its fares, routes, drivers and seat layouts.</span>
-          </div>
+        <!-- bulk bar -->
+        <div class="bulk" *ngIf="selectedIds.size">
+          <b>{{ selectedIds.size }} selected</b>
+          <span class="bulk__sep"></span>
+          <button type="button" class="bbtn" (click)="bulkSetActive(true)">Enable</button>
+          <button type="button" class="bbtn" (click)="bulkSetActive(false)">Disable</button>
+          <button type="button" class="bbtn" (click)="bulkExport()">Export CSV</button>
+          <button type="button" class="bulk__x" (click)="clearSel()" aria-label="Clear selection"><tm-icon name="x" [size]="16" /></button>
+        </div>
 
-          <ng-container *ngIf="selected">
-            <header class="ed__head">
-              <button type="button" class="backlink" (click)="mobileEditor = false"><tm-icon name="chevron-left" [size]="14" /> List</button>
-              <span class="ed__title">{{ selected.display_name }}</span>
-              <span class="ed__type">{{ selected.vehicle_type_name || 'Vehicle type not set' }}</span>
-              <button
-                type="button"
-                class="statustoggle"
-                [class.is-off]="!selected.is_active"
-                role="switch"
-                [attr.aria-checked]="selected.is_active"
-                [disabled]="savingActive"
-                title="Enable or disable this vehicle"
-                (click)="toggleActive()"
-              >
-                <span class="statustoggle__dot"></span>
-                {{ savingActive ? 'Saving…' : (selected.is_active ? 'Enabled' : 'Disabled') }}
-              </button>
-              <span class="ws__grow"></span>
-              <tm-button variant="outline" size="sm" icon="refresh" [disabled]="loading" (clicked)="refresh()">Refresh</tm-button>
-            </header>
-
-            <nav class="tabs" role="tablist">
-              <button
-                type="button"
-                class="tab"
-                role="tab"
-                *ngFor="let t of tabList; trackBy: trackTab"
-                [attr.aria-selected]="tab === t.key"
-                (click)="setTab(t.key)"
-              >
-                {{ t.label }}<span class="tab__cnt" *ngIf="t.count != null">{{ t.count }}</span>
-              </button>
-            </nav>
-
-            <!-- ── Common setup ── -->
-            <div class="pane" *ngIf="tab === 'common'">
-              <div class="sec">
-                <div class="sec__head"><h3>Common city vehicle setup</h3><span class="hint">Shared by every fare mode of this vehicle.</span></div>
-                <div class="fields">
-                  <label class="f f--wide"><span>Vehicle name <i>*</i></span><input type="text" [(ngModel)]="common.display_name" /></label>
-                  <label class="f"><span>Max people</span><input type="number" min="1" [(ngModel)]="common.max_people" /></label>
-                  <label class="f"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="common.luggage_capacity" /></label>
-                </div>
-                <p class="meta">
-                  Depends on type: <b>{{ selected.vehicle_type_name || 'not set' }}</b> · Fare setup: <b>{{ fareModesLabel(selected) }}</b>.
-                  Saving patches every mode row that shares this name and type.
-                </p>
-                <div class="sec__actions">
-                  <tm-button variant="green" size="sm" icon="check" [disabled]="savingCommon || !common.display_name.trim()" (clicked)="saveCommon()">
-                    {{ savingCommon ? 'Saving...' : 'Save' }}
-                  </tm-button>
-                </div>
-              </div>
-            </div>
-
-            <!-- ── a ride type that is NOT the fixed one: fare card ── -->
-            <div class="pane" *ngIf="activeRideType && !activeIsFixed">
-              <ng-container *ngIf="activeRow; else noFare">
-                <div class="sec" *ngIf="activeKind === 'private'">
-                  <div class="sec__head"><h3>{{ activeRideType.name }} unique fields</h3><span class="hint">Reverse bidding belongs only to this mode.</span></div>
-                  <div class="inline">
-                    <label class="check"><input type="checkbox" [(ngModel)]="reverseBidding" /> <span>Reverse bidding</span></label>
-                    <tm-button variant="outline" size="sm" icon="check" [disabled]="savingUnique" (clicked)="saveUniqueFields()">
-                      {{ savingUnique ? 'Saving...' : 'Save unique fields' }}
-                    </tm-button>
-                  </div>
-                </div>
-                <div class="sec" *ngIf="activeKind === 'shuttle'">
-                  <div class="sec__head"><h3>{{ activeRideType.name }} unique fields</h3></div>
-                  <p class="meta">No extra live vehicle-level Shuttle fields yet. Shuttle fare is prepared below; booking remains planned.</p>
-                </div>
-
-                <div class="sec">
-                  <app-vehicle-base-pricing
-                    *ngIf="!activeRow.is_outstation"
-                    [cityId]="cityId"
-                    [cityVehicleTypeId]="activeRow.id"
-                    [title]="activeRideType.name + ' Fare Settings'"
-                    [subtitle]="fareSubtitle"
-                  ></app-vehicle-base-pricing>
-                  <app-outstation-packages *ngIf="activeRow.is_outstation" [cityId]="cityId" [vehicleTypeId]="activeRow.id"></app-outstation-packages>
-                </div>
-              </ng-container>
-
-              <ng-template #noFare>
-                <div class="cue cue--flat">
-                  <tm-icon name="rupee" [size]="22" />
-                  <strong>Preparing {{ activeRideType.name }} fare form…</strong>
-                  <span>Setting up {{ activeRideType.name }} fare for {{ selected.display_name }}.</span>
-                </div>
-              </ng-template>
-            </div>
-
-            <!-- ── the fixed ride type: routes live inside their groups ── -->
-            <div class="pane" *ngIf="activeRideType && activeIsFixed">
-              <div class="sec">
-                <div class="sec__head">
-                  <h3>Route groups</h3>
-                  <span class="ws__grow"></span>
-                  <tm-button variant="outline" size="sm" icon="plus" (clicked)="newRoute()">Add route</tm-button>
-                  <tm-button variant="green" size="sm" icon="plus" (clicked)="openGroupDrawer()">New group</tm-button>
-                  <span class="hint">A group grants its drivers permission to run the routes inside it. Add a route into a group, or leave it in “Needs a group” and assign it later.</span>
-                </div>
-
-                <div class="toolbar" *ngIf="selGroups.length">
-                  <span class="search">
-                    <tm-icon name="search" [size]="14" />
-                    <input type="text" [(ngModel)]="groupSearch" (ngModelChange)="onGroupSearch()" placeholder="Search route groups..." aria-label="Search route groups" />
-                  </span>
-                  <span class="toolbar__count">{{ filteredGroups.length }} {{ filteredGroups.length === 1 ? 'group' : 'groups' }}</span>
-                </div>
-
-                <div class="grp" *ngFor="let g of pagedGroups; trackBy: trackGroup">
-                  <div class="grp__top" *ngIf="renamingId !== g.id">
-                    <span class="grp__name">{{ g.name }}</span>
-                    <span class="badge">{{ g.route_ids.length }} {{ g.route_ids.length === 1 ? 'route' : 'routes' }}</span>
-                    <span class="badge badge--mute">{{ g.driver_user_ids.length }} {{ g.driver_user_ids.length === 1 ? 'driver' : 'drivers' }}</span>
-                    <span class="ws__grow"></span>
-                    <button type="button" class="mini-btn" (click)="startRename(g)">Rename</button>
-                    <button type="button" class="mini-btn mini-btn--danger" (click)="deleteGroup(g)">Delete</button>
-                  </div>
-                  <div class="grp__top" *ngIf="renamingId === g.id">
-                    <input class="rename" type="text" [(ngModel)]="renameValue" aria-label="Group name" />
-                    <button type="button" class="mini-btn mini-btn--go" (click)="saveRename(g)">Save</button>
-                    <button type="button" class="mini-btn" (click)="renamingId = null">Cancel</button>
-                  </div>
-
-                  <div class="routes">
-                    <div class="rt" *ngFor="let r of routesIn(g)">
-                      <span class="rt__nm">
-                        <b>{{ r.name }}</b>
-                        <small>Booking window {{ r.booking_window_hours ?? 0 }}h · {{ r.stops?.length || 0 }} stops</small>
-                      </span>
-                      <span class="tag" [attr.data-s]="r.scope">{{ r.scope }}</span>
-                      <span class="rt__col">₹{{ r.flat_fare ?? '—' }}<small>fare</small></span>
-                      <span class="rt__col rt__col--sm">{{ r.max_seats_per_booking ?? '—' }}<small>seats</small></span>
-                      <span class="rt__acts">
-                        <button type="button" class="icon" title="Edit route" (click)="editRoute(r.id)">✎</button>
-                        <button type="button" class="icon icon--del" title="Remove from group" (click)="ungroupRoute(g, r.id)">×</button>
-                      </span>
-                    </div>
-                    <div class="grp__empty" *ngIf="!g.route_ids.length">No routes yet — add one below.</div>
-                  </div>
-
-                  <div class="grp__drivers">
-                    <span class="dlabel">Drivers</span>
-                    <span class="drv" *ngFor="let d of driversIn(g)">
-                      <span class="av">{{ initials(d.name) }}</span>{{ d.name }}
-                      <button type="button" class="x" (click)="removeDriverFromGroup(g, d.user_id)">✕</button>
+        <!-- spreadsheet -->
+        <div class="sheetwrap">
+          <table class="sheet">
+            <thead>
+              <tr>
+                <th class="col-gut"><span class="chk" [class.on]="allSelected" (click)="toggleSelectAll()"><tm-icon *ngIf="allSelected" name="check" [size]="11" /></span></th>
+                <th class="col-veh">Vehicle</th>
+                <th>Type</th>
+                <th class="center">Seats</th>
+                <th class="center">Bags</th>
+                <th class="center" *ngFor="let rt of fareRideTypes">{{ rt.name }}</th>
+                <th>Fixed groups</th>
+                <th>Seat layout</th>
+                <th>Drivers</th>
+                <th class="center">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <ng-container *ngFor="let v of visible; let i = index; trackBy: trackVehicle">
+                <tr class="srow" [class.sel]="isSel(v)" [class.off]="!v.is_active" [attr.aria-current]="v.id === selectedId">
+                  <td class="col-gut">
+                    <span class="chk" [class.on]="isSel(v)" (click)="toggleSel(v, $event)">
+                      <tm-icon *ngIf="isSel(v)" name="check" [size]="11" />
+                      <span class="rownum" *ngIf="!isSel(v)">{{ i + 1 }}</span>
                     </span>
-                    <span class="meta" *ngIf="!driversIn(g).length">None yet.</span>
-                    <span class="ws__grow"></span>
-                    <button type="button" class="mini-btn" (click)="openDriverDrawer(g)">+ driver</button>
-                    <button type="button" class="mini-btn" (click)="openRouteDrawer(g)">+ route</button>
-                  </div>
-                </div>
-
-                <div class="cue cue--flat" *ngIf="!selGroups.length && !ungrouped.length">
-                  <strong>No routes or groups yet</strong>
-                  <span>Add a route, then group it so drivers can be given permission to run it.</span>
-                </div>
-                <p class="meta" *ngIf="selGroups.length && !filteredGroups.length">No route group matches “{{ groupSearch }}”.</p>
-
-                <div class="pager" *ngIf="groupPages > 1">
-                  <button type="button" class="mini-btn" [disabled]="groupPage === 1" (click)="setGroupPage(groupPage - 1)">Prev</button>
-                  <span class="pager__label">Page {{ groupPage }} of {{ groupPages }}</span>
-                  <button type="button" class="mini-btn" [disabled]="groupPage === groupPages" (click)="setGroupPage(groupPage + 1)">Next</button>
-                </div>
-
-                <!-- Routes with no group — the holding card that replaces the old table. -->
-                <div class="grp grp--orphan" *ngIf="ungrouped.length">
-                  <div class="grp__top">
-                    <span class="grp__name">Needs a group</span>
-                    <span class="badge badge--warn">{{ ungrouped.length }} {{ ungrouped.length === 1 ? 'route' : 'routes' }}</span>
-                    <span class="ws__grow"></span>
-                    <span class="meta warn">Not runnable until grouped</span>
-                  </div>
-                  <div class="routes">
-                    <div class="rt" *ngFor="let r of ungrouped">
-                      <span class="rt__nm">
-                        <b>{{ r.name }}</b>
-                        <small>{{ r.origin_name }} → {{ r.dest_name }}</small>
-                      </span>
-                      <span class="tag" [attr.data-s]="r.scope">{{ r.scope }}</span>
-                      <span class="rt__col">₹{{ r.flat_fare ?? '—' }}<small>fare</small></span>
-                      <span class="rt__col rt__col--sm">{{ r.max_seats_per_booking ?? '—' }}<small>seats</small></span>
-                      <span class="rt__acts">
-                        <button type="button" class="mini-btn" (click)="openAssignDrawer(r)">Assign</button>
-                        <button type="button" class="icon" title="Edit route" (click)="editRoute(r.id)">✎</button>
-                      </span>
+                  </td>
+                  <td class="col-veh">
+                    <div class="veh">
+                      <button type="button" class="expcaret" [class.open]="isExpanded(v)" title="Fixed-route groups" (click)="toggleExpand(v, $event)"><tm-icon name="chevron-right" [size]="14" /></button>
+                      <span class="veh-ic"><tm-icon name="car" [size]="15" /></span>
+                      <span *ngIf="!isEditing(v, 'name')" class="veh-name ecell" (click)="startCellEdit(v, 'name', $event)">{{ v.display_name }}</span>
+                      <input *ngIf="isEditing(v, 'name')" class="cin" [(ngModel)]="editValue" (keydown.enter)="commitCellEdit(v)" (keydown.escape)="cancelCellEdit()" (blur)="commitCellEdit(v)" />
                     </div>
-                  </div>
-                </div>
-              </div>
+                  </td>
+                  <td><span class="tbadge">{{ v.vehicle_type_name || 'Not set' }}</span></td>
+                  <td class="center ecell" (click)="startCellEdit(v, 'seats', $event)">
+                    <b *ngIf="!isEditing(v, 'seats')">{{ v.max_people }}</b>
+                    <input *ngIf="isEditing(v, 'seats')" class="cin" type="number" [(ngModel)]="editValue" (keydown.enter)="commitCellEdit(v)" (keydown.escape)="cancelCellEdit()" (blur)="commitCellEdit(v)" />
+                  </td>
+                  <td class="center ecell" (click)="startCellEdit(v, 'bags', $event)">
+                    <b *ngIf="!isEditing(v, 'bags')">{{ v.luggage_capacity }}</b>
+                    <input *ngIf="isEditing(v, 'bags')" class="cin" type="number" [(ngModel)]="editValue" (keydown.enter)="commitCellEdit(v)" (keydown.escape)="cancelCellEdit()" (blur)="commitCellEdit(v)" />
+                  </td>
+                  <td class="center" *ngFor="let rt of fareRideTypes"><button type="button" class="farelink" [class.set]="fareConfigured(v, rt)" (click)="openFareDrawer(v, rt, $event)">{{ fareConfigured(v, rt) ? 'Edit' : 'Set up' }}</button></td>
+                  <td>
+                    <span class="gchips" *ngIf="groupsForVehicle(v).length; else noGrp">
+                      <button type="button" class="gchip" *ngFor="let g of groupsForVehicle(v).slice(0, 2)" (click)="toggleExpand(v, $event)">{{ g.name }}</button>
+                      <button type="button" class="gchip more" *ngIf="groupsForVehicle(v).length > 2" (click)="toggleExpand(v, $event)">+{{ groupsForVehicle(v).length - 2 }}</button>
+                    </span>
+                    <ng-template #noGrp><button type="button" class="addlink" (click)="toggleExpand(v, $event)">+ Group</button></ng-template>
+                  </td>
+                  <td>
+                    <button type="button" class="linkcell" (click)="openLayoutsList(v, $event)">
+                      <span *ngIf="layoutCountFor(v)">{{ layoutCountFor(v) }} {{ layoutCountFor(v) === 1 ? 'layout' : 'layouts' }}</span>
+                      <span *ngIf="!layoutCountFor(v)" class="muted-link">Design</span>
+                    </button>
+                  </td>
+                  <td>
+                    <span class="avstack" [title]="driversFor(v).length + ' drivers'" *ngIf="driversFor(v).length; else noDrv">
+                      <span class="av2" *ngFor="let d of driversFor(v).slice(0, 3)">{{ initials(d.name) }}</span>
+                      <span class="av2 more" *ngIf="driversFor(v).length > 3">+{{ driversFor(v).length - 3 }}</span>
+                    </span>
+                    <ng-template #noDrv><span class="muted-link">None</span></ng-template>
+                  </td>
+                  <td class="center"><button type="button" class="pill" [class.success]="v.is_active" [class.neutral]="!v.is_active" (click)="toggleActiveFor(v, $event)"><span class="led"></span>{{ v.is_active ? 'Enabled' : 'Disabled' }}</button></td>
+                  <td class="center"><button type="button" class="kebab" (click)="openRowMenu(v, $event)"><tm-icon name="more-horizontal" [size]="16" /></button></td>
+                </tr>
 
-              <!-- Map editor only; its table is hidden — the groups above are the list. -->
-              <app-fixed-routes [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="loadRoutes()"></app-fixed-routes>
-            </div>
-
-            <!-- ── Drivers ── -->
-            <div class="pane" *ngIf="tab === 'drivers'">
-              <div class="sec">
-                <div class="sec__head">
-                  <h3>Drivers on this vehicle</h3>
-                  <span class="hint">The driver picks this car when they sign up, and it locks once they're approved — so moving them is an operator-only action.</span>
-                </div>
-
-                <div class="cards">
-                  <article class="card" *ngFor="let d of selDrivers">
-                    <header class="card__head">
-                      <span class="av av--lg">{{ initials(d.name) }}</span>
-                      <span class="card__id">
-                        <span class="card__name">{{ d.name }}</span>
-                        <span class="card__meta">{{ d.phone || 'No phone' }} · {{ d.vehicle_model || 'Model not set' }} · {{ d.vehicle_color || 'Colour not set' }} · Reg no {{ d.vehicle_reg_no || '—' }}</span>
-                      </span>
-                      <button type="button" class="mini-btn" [disabled]="savingDriverId === d.id" (click)="movePickFor = movePickFor === d.id ? null : d.id">
-                        {{ movePickFor === d.id ? 'Cancel' : 'Change vehicle' }}
-                      </button>
-                    </header>
-
-                    <div class="picker" *ngIf="movePickFor === d.id">
-                      <button type="button" class="pick" *ngFor="let v of moveTargetsFor(d)" [disabled]="savingDriverId === d.id" (click)="setCar(d, v.id)">
-                        <span class="pick__main"><b>{{ v.display_name }}</b><small>{{ v.max_people }} seats · {{ v.luggage_capacity }} bags</small></span>
-                        <span class="mini-btn">Move here</span>
-                      </button>
-                      <p class="meta" *ngIf="!moveTargetsFor(d).length">
-                        No other {{ selected.vehicle_type_name || 'matching' }} vehicle in this city. A driver's car must stay within their own vehicle type.
-                      </p>
-                    </div>
-
-                    <div class="card__panel">
-                      <div class="card__panel-head">
-                        <h4>Fixed route access</h4>
-                        <span class="drv drv--plain" *ngFor="let g of groupsForDriver(d.user_id)">{{ g.name }}</span>
-                        <span class="meta" *ngIf="!groupsForDriver(d.user_id).length">No routes — assign a group to give this driver work.</span>
+                <tr class="detailrow" *ngIf="isExpanded(v)">
+                  <td class="col-gut"></td>
+                  <td [attr.colspan]="detailColspan">
+                    <div class="detailwrap">
+                      <div class="detailhead">
+                        <span class="ovl">Fixed-route groups · {{ v.display_name }}</span>
+                        <span class="ws__grow"></span>
+                        <tm-button variant="outline" size="sm" icon="plus" (clicked)="newRouteFor(v)">Add route</tm-button>
+                        <tm-button variant="green" size="sm" icon="plus" (clicked)="openGroupDrawerFor(v)">New group</tm-button>
                       </div>
-                      <ul class="routelist" *ngIf="effectiveRoutes(d.user_id).length">
-                        <li *ngFor="let r of effectiveRoutes(d.user_id)">{{ r.origin_name }} → {{ r.dest_name }}</li>
-                      </ul>
+
+                      <div class="gline" *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup">
+                        <div class="gline__head">
+                          <ng-container *ngIf="renamingId !== g.id; else renameG">
+                            <span class="gname">{{ g.name }}</span>
+                            <span class="gmeta">{{ g.route_ids.length }} {{ g.route_ids.length === 1 ? 'route' : 'routes' }} · {{ g.driver_user_ids.length }} {{ g.driver_user_ids.length === 1 ? 'driver' : 'drivers' }}</span>
+                            <span class="gline__acts"><button type="button" class="mini-btn" (click)="startRename(g)">Rename</button><button type="button" class="mini-btn mini-btn--danger" (click)="deleteGroup(g)">Delete</button></span>
+                          </ng-container>
+                          <ng-template #renameG>
+                            <input class="rename" type="text" [(ngModel)]="renameValue" aria-label="Group name" />
+                            <span class="gline__acts"><button type="button" class="mini-btn mini-btn--go" (click)="saveRename(g)">Save</button><button type="button" class="mini-btn" (click)="renamingId = null">Cancel</button></span>
+                          </ng-template>
+                        </div>
+                        <div class="gcol">
+                          <span class="gcol__lbl">Routes</span>
+                          <div class="gcol__body">
+                            <span class="rchip2" *ngFor="let r of routesIn(g)"><tm-icon name="map-marker" [size]="11" /><b>{{ r.name }}</b><button type="button" class="rx" title="Remove route" (click)="ungroupRoute(g, r.id)">×</button></span>
+                            <button type="button" class="addroutebtn" (click)="openRouteDrawer(g)"><tm-icon name="plus" [size]="12" /> Route</button>
+                          </div>
+                        </div>
+                        <div class="gcol">
+                          <span class="gcol__lbl">Drivers</span>
+                          <div class="gcol__body">
+                            <span class="dpill" *ngFor="let d of driversIn(g)"><span class="av">{{ initials(d.name) }}</span>{{ d.name }}<button type="button" class="rx" title="Remove driver" (click)="removeDriverFromGroup(g, d.user_id)">×</button></span>
+                            <button type="button" class="addroutebtn" (click)="openDriverDrawer(g)"><tm-icon name="plus" [size]="12" /> Assign driver</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length">No route groups yet. Add a route, then group it so drivers can be given permission to run it.</div>
+
+                      <div class="gline gline--orphan" *ngIf="ungroupedForVehicle(v).length">
+                        <div class="gline__head"><span class="gname">Needs a group</span><span class="gmeta warn">{{ ungroupedForVehicle(v).length }} {{ ungroupedForVehicle(v).length === 1 ? 'route' : 'routes' }} · not runnable until grouped</span></div>
+                        <div class="gcol"><span class="gcol__lbl">Routes</span><div class="gcol__body"><span class="rchip2 warn" *ngFor="let r of ungroupedForVehicle(v)"><b>{{ r.name }}</b><button type="button" class="mini-btn" (click)="openAssignDrawer(r)">Assign</button></span></div></div>
+                      </div>
                     </div>
-                  </article>
-                </div>
+                  </td>
+                </tr>
+              </ng-container>
+            </tbody>
+            <tfoot>
+              <tr class="addrow"><td [attr.colspan]="detailColspan + 1"><button type="button" class="addbtn" [disabled]="!vehicleTypeOptions.length" (click)="openCreate()"><tm-icon name="plus" [size]="16" /> Add vehicle</button></td></tr>
+            </tfoot>
+          </table>
 
-                <div class="cue cue--flat" *ngIf="!selDrivers.length">
-                  <strong>No driver has this as their car</strong>
-                  <span>Move one in below — the link is stored on the driver record.</span>
-                </div>
-              </div>
+          <div class="empty" *ngIf="!visible.length && !loading"><strong>No city vehicles</strong><span>Add a city vehicle after creating vehicle types.</span></div>
+          <div class="skeleton" *ngIf="loading"><span class="sk" *ngFor="let i of [1,2,3,4]"></span></div>
+        </div>
 
-              <div class="sec">
-                <div class="sec__head">
-                  <h3>Move a driver onto this vehicle</h3>
-                  <span class="hint">Only {{ selected.vehicle_type_name || 'matching' }} drivers are listed — a car must match the driver's own vehicle type.</span>
-                </div>
-                <div class="picker">
-                  <button type="button" class="pick" *ngFor="let d of otherDrivers" [disabled]="savingDriverId === d.id" (click)="setCar(d, selected.id)">
-                    <span class="av">{{ initials(d.name) }}</span>
-                    <span class="pick__main"><b>{{ d.name }}</b><small>{{ d.vehicle_reg_no || 'No reg no' }} · {{ carLabel(d) }}</small></span>
-                    <span class="mini-btn">Move here</span>
-                  </button>
-                  <p class="meta" *ngIf="!otherDrivers.length">No other {{ selected.vehicle_type_name || 'matching' }} driver in this city to move.</p>
-                </div>
-              </div>
-            </div>
+        <!-- Map route editor: hidden table, opens as a drawer via Add route / edit route. -->
+        <app-fixed-routes *ngIf="selected" [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="loadRoutes()"></app-fixed-routes>
 
-            <!-- ── Seat layouts ── -->
-            <div class="pane" *ngIf="tab === 'layouts'">
-              <div class="sec">
-                <div class="sec__head">
-                  <h3>Seat layouts</h3>
-                  <span class="hint">Shared by every {{ selected.vehicle_type_name || 'vehicle' }} vehicle in this city.</span>
-                  <span class="ws__grow"></span>
-                  <tm-button variant="green" size="sm" icon="plus" [disabled]="selected.vehicle_type_id == null" (clicked)="openDesigner()">Design layout</tm-button>
-                </div>
-
-                <div class="layout" *ngFor="let l of selLayouts">
-                  <div class="layout__preview"><app-seat-grid [rows]="l.rows" [cols]="l.cols" [cells]="l.cells" [frame]="true" [showWheel]="false" [showLegend]="false"></app-seat-grid></div>
-                  <div class="layout__meta">
-                    <span class="layout__name">{{ l.name }}</span>
-                    <span class="layout__sub">{{ l.rows }}×{{ l.cols }} · {{ l.seat_count }} seats<ng-container *ngIf="l.in_use"> · in use</ng-container></span>
-                  </div>
-                  <div class="layout__actions">
-                    <button type="button" class="mini-btn" (click)="editLayout(l)">Edit</button>
-                    <button type="button" class="x" *ngIf="!l.in_use" title="Delete layout" (click)="deleteLayout(l)">×</button>
-                  </div>
-                </div>
-
-                <div class="cue cue--flat" *ngIf="!selLayouts.length">
-                  <strong>No {{ selected.vehicle_type_name || 'vehicle' }} layouts yet</strong>
-                  <span>A seat layout is the seat map a passenger taps to pick a seat. Hit “Design layout” to start from a ready-made template.</span>
-                  <tm-button variant="green" size="sm" icon="plus" [disabled]="selected.vehicle_type_id == null" (clicked)="openDesigner()">Design layout</tm-button>
-                </div>
-              </div>
-            </div>
-          </ng-container>
-        </section>
+        <!-- (The old tabbed editor is gone — its fares, routes, groups, layouts
+             and drivers are reached from the spreadsheet cells + drawers above.) -->
       </div>
     </div>
 
@@ -508,6 +345,32 @@ interface TabDef { key: string; label: string; count?: number; }
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="createOpen = false">Cancel</tm-button>
         <tm-button variant="green" [disabled]="creating || !createValid" (clicked)="submitCreate()">{{ creating ? 'Creating...' : 'Create vehicle' }}</tm-button>
+      </div>
+    </tm-drawer>
+
+    <tm-drawer
+      [open]="commonDrawerOpen"
+      [title]="(commonDrawerVehicle?.display_name || 'Vehicle') + ' — edit vehicle'"
+      subtitle="Shared by every fare mode of this vehicle"
+      [width]="440"
+      (closed)="closeCommonDrawer()"
+    >
+      <div slot="body" class="form">
+        <div class="fields">
+          <label class="f f--wide"><span>Vehicle name <i>*</i></span><input type="text" [(ngModel)]="common.display_name" /></label>
+          <label class="f"><span>Max people</span><input type="number" min="1" [(ngModel)]="common.max_people" /></label>
+          <label class="f"><span>Luggage capacity</span><input type="number" min="0" [(ngModel)]="common.luggage_capacity" /></label>
+        </div>
+        <p class="meta" *ngIf="commonDrawerVehicle" style="margin-top: 12px;">
+          Depends on type: <b>{{ commonDrawerVehicle.vehicle_type_name || 'not set' }}</b> · Fare setup: <b>{{ fareModesLabel(commonDrawerVehicle) }}</b>.
+          Saving patches every mode row that shares this name and type.
+        </p>
+      </div>
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="closeCommonDrawer()">Cancel</tm-button>
+        <tm-button variant="green" icon="check" [disabled]="savingCommon || !common.display_name.trim()" (clicked)="saveCommon()">
+          {{ savingCommon ? 'Saving...' : 'Save' }}
+        </tm-button>
       </div>
     </tm-drawer>
 
@@ -609,6 +472,52 @@ interface TabDef { key: string; label: string; count?: number; }
       </div>
     </tm-drawer>
 
+    <!-- Fare editor — opens the real fare form for one vehicle + ride type. -->
+    <tm-drawer [open]="fareDrawerOpen" [title]="(selected?.display_name || 'Vehicle') + ' — ' + (activeRideType?.name || 'fare')" [subtitle]="fareSubtitle" [width]="620" (closed)="closeFareDrawer()">
+      <div slot="body" class="form" *ngIf="activeRideType && !activeIsFixed">
+        <ng-container *ngIf="activeRow; else preparingFare">
+          <div class="sec" *ngIf="activeKind === 'private'">
+            <div class="sec__head"><h3>{{ activeRideType.name }} unique fields</h3></div>
+            <div class="inline">
+              <label class="check"><input type="checkbox" [(ngModel)]="reverseBidding" /> <span>Reverse bidding</span></label>
+              <tm-button variant="outline" size="sm" icon="check" [disabled]="savingUnique" (clicked)="saveUniqueFields()">{{ savingUnique ? 'Saving...' : 'Save unique fields' }}</tm-button>
+            </div>
+          </div>
+          <div class="sec">
+            <app-vehicle-base-pricing *ngIf="!activeRow.is_outstation" [cityId]="cityId" [cityVehicleTypeId]="activeRow.id" [title]="activeRideType.name + ' Fare Settings'" [subtitle]="fareSubtitle"></app-vehicle-base-pricing>
+            <app-outstation-packages *ngIf="activeRow.is_outstation" [cityId]="cityId" [vehicleTypeId]="activeRow.id"></app-outstation-packages>
+          </div>
+        </ng-container>
+        <ng-template #preparingFare>
+          <div class="cue cue--flat"><tm-icon name="rupee" [size]="22" /><strong>Preparing {{ activeRideType.name }} fare form…</strong><span>Setting up {{ activeRideType.name }} fare for {{ selected?.display_name }}.</span></div>
+        </ng-template>
+      </div>
+      <div slot="footer"><tm-button variant="ghost" (clicked)="closeFareDrawer()">Done</tm-button></div>
+    </tm-drawer>
+
+    <!-- Seat layouts list for the selected vehicle's type. -->
+    <tm-drawer [open]="layoutsListOpen" [title]="(selected?.display_name || 'Vehicle') + ' — seat layouts'" [subtitle]="'Shared by every ' + (selected?.vehicle_type_name || 'vehicle') + ' in this city'" [width]="560" (closed)="closeLayoutsList()">
+      <div slot="body" class="form" *ngIf="selected">
+        <div class="layout" *ngFor="let l of selLayouts">
+          <div class="layout__preview"><app-seat-grid [rows]="l.rows" [cols]="l.cols" [cells]="l.cells" [frame]="true" [showWheel]="false" [showLegend]="false"></app-seat-grid></div>
+          <div class="layout__meta"><span class="layout__name">{{ l.name }}</span><span class="layout__sub">{{ l.rows }}×{{ l.cols }} · {{ l.seat_count }} seats<ng-container *ngIf="l.in_use"> · in use</ng-container></span></div>
+          <div class="layout__actions"><button type="button" class="mini-btn" (click)="editLayout(l)">Edit</button><button type="button" class="x" *ngIf="!l.in_use" title="Delete layout" (click)="deleteLayout(l)">×</button></div>
+        </div>
+        <div class="cue cue--flat" *ngIf="!selLayouts.length"><strong>No {{ selected.vehicle_type_name || 'vehicle' }} layouts yet</strong><span>A seat layout is the seat map a passenger taps to pick a seat.</span></div>
+      </div>
+      <div slot="footer"><tm-button variant="ghost" (clicked)="closeLayoutsList()">Done</tm-button><tm-button variant="green" icon="plus" [disabled]="selected?.vehicle_type_id == null" (clicked)="openDesigner()">Design layout</tm-button></div>
+    </tm-drawer>
+
+    <!-- Row kebab menu. -->
+    <div class="menu-scrim" *ngIf="menuId != null" (click)="closeRowMenu()"></div>
+    <div class="rowmenu" *ngIf="menuVehicle as v" [style.left.px]="menuX" [style.top.px]="menuY">
+      <button type="button" (click)="closeRowMenu(); openCommonDrawer(v)"><tm-icon name="edit" [size]="15" /> Edit vehicle</button>
+      <button type="button" (click)="closeRowMenu(); openLayoutsList(v)"><tm-icon name="grid" [size]="15" /> Seat layouts</button>
+      <button type="button" (click)="closeRowMenu(); toggleExpand(v)"><tm-icon name="road" [size]="15" /> Route groups</button>
+      <div class="rowmenu__div"></div>
+      <button type="button" (click)="closeRowMenu(); toggleActiveFor(v)"><tm-icon name="refresh" [size]="15" /> {{ v.is_active ? 'Disable' : 'Enable' }}</button>
+    </div>
+
     <!-- Seat-layout designer — wide side drawer, opens over the workspace. -->
     <div class="ldr-scrim" *ngIf="layoutDrawerOpen" (click)="closeLayoutDrawer()"></div>
     <div class="ldr" *ngIf="layoutDrawerOpen && selected">
@@ -649,12 +558,17 @@ interface TabDef { key: string; label: string; count?: number; }
     .chip[aria-pressed="true"] { border-color: transparent; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-weight: 800; }
 
     .rows { display: flex; flex-direction: column; gap: 4px; padding: 7px; max-height: 560px; overflow-y: auto; }
-    .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; text-align: left; font: inherit; cursor: pointer; }
+    .row { display: flex; align-items: center; gap: 4px; width: 100%; padding: 0 6px 0 0; border: 1px solid transparent; border-radius: 10px; background: transparent; }
     .row:hover { background: var(--tm-canvas); }
     .row[aria-current="true"] { background: var(--tm-green-tint, #ecfdf5); border-color: var(--tm-green, #16a34a); }
     /* Disabled vehicles read dimmer instead of carrying a status pill. */
     .row.is-off .row__name { color: var(--tm-text-muted); }
     .row.is-off .row__name::after { content: ' · disabled'; font-weight: 600; font-size: 11px; color: var(--tm-text-muted); }
+    .row__hit { flex: 1; min-width: 0; display: flex; padding: 9px 4px 9px 10px; border: 0; background: transparent; text-align: left; font: inherit; cursor: pointer; }
+    /* Pen sits on the same line as the name; visible on hover / when selected. */
+    .row__edit { flex: none; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--tm-text-muted); cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; }
+    .row:hover .row__edit, .row[aria-current="true"] .row__edit { opacity: 1; }
+    .row__edit:hover { background: var(--tm-surface); color: var(--tm-green, #16a34a); }
     .row__main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
     .row__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .row__sub { font-size: 11.5px; color: var(--tm-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -822,6 +736,148 @@ interface TabDef { key: string; label: string; count?: number; }
     .typeform { display: flex; flex-direction: column; gap: 9px; padding-top: 11px; border-top: 1px solid var(--tm-line); }
     .typeform__actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+    /* ─────────────── full-width spreadsheet ─────────────── */
+    .grid { display: flex; flex-direction: column; gap: 12px; }
+    .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .controls .search { flex: 0 1 300px; height: 38px; border-radius: 10px; }
+    .controls .mini { height: 38px; max-width: 160px; border-radius: 10px; padding: 0 12px; }
+    .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--tm-canvas-2, #eaeef4); border-radius: 10px; }
+    .seg__btn { padding: 7px 13px; border: 0; border-radius: 8px; background: transparent; color: var(--tm-text-muted); font: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; transition: background .15s, color .15s; }
+    .seg__btn:hover { color: var(--tm-text); }
+    .seg__btn.on { background: var(--tm-surface); color: var(--tm-green, #16a34a); box-shadow: var(--tm-shadow-sm, 0 1px 2px rgba(15,20,25,.05)); }
+
+    /* Custom filter dropdown — same look as the Drivers page state-select. */
+    .fsel { position: relative; display: inline-block; }
+    .fsel__trigger { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--tm-line-2, #e2e6ec); border-radius: 10px; background: var(--tm-surface); font: inherit; font-size: 13px; font-weight: 700; color: var(--tm-text); cursor: pointer; line-height: 1.2; transition: border-color .15s, background .15s; }
+    .fsel__trigger:hover { border-color: var(--tm-ink, #0f1419); }
+    .fsel.is-open .fsel__trigger { border-color: var(--tm-ink, #0f1419); }
+    .fsel.has-value .fsel__trigger { background: var(--tm-green-tint, #ecfdf5); border-color: var(--tm-green-deep, #16a34a); }
+    .fsel__icon { display: inline-flex; color: var(--tm-text-muted); }
+    .fsel.has-value .fsel__icon { color: var(--tm-green-deep, #16a34a); }
+    .fsel__value { min-width: 84px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+    .fsel__caret { color: var(--tm-text-soft, #94a0ad); transition: transform .15s; }
+    .fsel.is-open .fsel__caret { transform: rotate(180deg); }
+    .fsel.has-value .fsel__caret { color: var(--tm-green-deep, #16a34a); }
+    .fsel__menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; width: max-content; max-width: 260px; max-height: 320px; overflow-y: auto; margin: 0; padding: 6px; list-style: none; background: var(--tm-surface); border: 1px solid var(--tm-line-2, #e2e6ec); border-radius: 12px; box-shadow: var(--tm-shadow-pop, 0 12px 40px -16px rgba(15,20,25,.25)); z-index: 60; animation: fsel-in .14s var(--tm-ease, cubic-bezier(.4,0,.2,1)) both; }
+    @keyframes fsel-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .fsel__option { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--tm-text); cursor: pointer; transition: background .15s, color .15s; }
+    .fsel__option:hover { background: var(--tm-canvas-2, #eaeef4); }
+    .fsel__option.is-selected { background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green-deep, #16a34a); font-weight: 700; }
+    .fsel__option:not(.is-selected) .fsel__olabel { margin-left: 20px; }
+    .fsel__check { color: var(--tm-green-deep, #16a34a); flex: none; }
+    .fsel__olabel { flex: 1; white-space: nowrap; }
+
+    .clearall { display: inline-flex; align-items: center; gap: 5px; height: 38px; padding: 0 12px; border: 1px solid var(--tm-line-2, #e2e6ec); border-radius: 10px; background: var(--tm-surface); color: var(--tm-text-muted); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+    .clearall:hover { border-color: var(--tm-danger, #ef4444); color: var(--tm-danger, #ef4444); background: var(--tm-danger-bg, #fee2e2); }
+    .count-note { margin-left: auto; font-size: 12.5px; color: var(--tm-text-muted); font-weight: 600; }
+    .count-note b { color: var(--tm-text); }
+
+    .bulk { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: var(--tm-ink, #0f1419); color: #fff; border-radius: 11px; }
+    .bulk b { font-weight: 800; }
+    .bulk__sep { width: 1px; height: 18px; background: rgba(255,255,255,.2); }
+    .bbtn { padding: 6px 11px; border: 0; border-radius: 8px; background: rgba(255,255,255,.12); color: #fff; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .bbtn:hover { background: rgba(255,255,255,.22); }
+    .bulk__x { margin-left: auto; display: inline-flex; padding: 4px; border: 0; background: transparent; color: rgba(255,255,255,.7); cursor: pointer; }
+    .bulk__x:hover { color: #fff; }
+
+    .sheetwrap { overflow: auto; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg, 16px); }
+    table.sheet { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 900px; --frz1: 44px; --frz2: 236px; font-variant-numeric: tabular-nums; }
+    .sheet th, .sheet td { border-right: 1px solid var(--tm-line); border-bottom: 1px solid var(--tm-line); padding: 0 12px; height: 46px; text-align: left; white-space: nowrap; background: var(--tm-surface); }
+    .sheet thead th { position: sticky; top: 0; z-index: 6; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .sheet th.center, .sheet td.center { text-align: center; }
+    .col-gut { position: sticky; left: 0; z-index: 7; width: var(--frz1); min-width: var(--frz1); text-align: center; padding: 0; }
+    .col-veh { position: sticky; left: var(--frz1); z-index: 7; width: calc(var(--frz2) - var(--frz1)); min-width: calc(var(--frz2) - var(--frz1)); box-shadow: 6px 0 12px -10px rgba(15,20,25,.18); }
+    .sheet thead .col-gut, .sheet thead .col-veh { z-index: 9; }
+    .sheet tbody tr.srow:hover td { background: var(--tm-canvas); }
+    .sheet tbody tr.srow.sel td { background: var(--tm-green-tint, #ecfdf5); }
+    .sheet tbody tr.srow.off .veh-name { color: var(--tm-text-muted); }
+
+    .chk { width: 18px; height: 18px; margin: 0 auto; border-radius: 5px; border: 1.6px solid var(--tm-line-2, #e2e6ec); display: inline-grid; place-items: center; background: var(--tm-surface); color: #fff; cursor: pointer; vertical-align: middle; }
+    .chk.on { background: var(--tm-green, #16a34a); border-color: var(--tm-green, #16a34a); }
+    .rownum { font-size: 11px; color: var(--tm-text-soft, #94a0ad); font-weight: 700; }
+
+    .veh { display: flex; align-items: center; gap: 8px; }
+    .expcaret { width: 22px; height: 22px; flex: none; border: 0; border-radius: 7px; display: grid; place-items: center; background: transparent; color: var(--tm-text-soft, #94a0ad); cursor: pointer; transition: transform .15s, background .15s, color .15s; }
+    .expcaret:hover { background: var(--tm-canvas-2, #eaeef4); color: var(--tm-text); }
+    .expcaret.open { transform: rotate(90deg); color: var(--tm-green, #16a34a); }
+    .veh-ic { width: 28px; height: 28px; flex: none; border-radius: 8px; background: var(--tm-canvas-2, #eaeef4); color: var(--tm-text-muted); display: grid; place-items: center; }
+    .veh-name { font-size: 13px; font-weight: 800; color: var(--tm-text); cursor: text; }
+    .ecell { cursor: text; }
+    .ecell:hover { background: var(--tm-green-tint, #ecfdf5) !important; box-shadow: inset 0 0 0 1.5px var(--tm-green-soft, #dcfce7); }
+    .ecell b { font-weight: 700; }
+    .cin { width: 100%; height: 30px; border: 1px solid var(--tm-green, #16a34a); border-radius: 6px; padding: 0 8px; background: var(--tm-surface); color: var(--tm-text); font: inherit; font-weight: 700; font-size: 13px; outline: none; }
+    .tbadge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--tm-text-muted); padding: 2px 7px; border-radius: 6px; background: var(--tm-canvas-2, #eaeef4); }
+
+    .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 0; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+    .pill .led { width: 6px; height: 6px; border-radius: 50%; }
+    .pill.success { background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); } .pill.success .led { background: var(--tm-green, #16a34a); }
+    .pill.neutral { background: var(--tm-canvas-2, #eaeef4); color: var(--tm-text-muted); } .pill.neutral .led { background: var(--tm-text-soft, #94a0ad); }
+
+    .farelink { padding: 4px 10px; border: 1px dashed var(--tm-line-2, #e2e6ec); border-radius: 8px; background: var(--tm-surface); color: var(--tm-text-soft, #94a0ad); font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+    .farelink:hover { border-color: var(--tm-green, #16a34a); color: var(--tm-green, #16a34a); border-style: solid; }
+    .farelink.set { border-style: solid; border-color: var(--tm-line); color: var(--tm-text); }
+    .farelink.set:hover { border-color: var(--tm-green, #16a34a); color: var(--tm-green, #16a34a); }
+
+    .gchips { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+    .gchip { padding: 3px 9px; border: 0; border-radius: 999px; background: var(--tm-info-bg, #dbeafe); color: var(--tm-info-fg, #1e40af); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+    .gchip.more { background: var(--tm-canvas-2, #eaeef4); color: var(--tm-text-muted); }
+    .addlink { padding: 3px 4px; border: 0; background: transparent; color: var(--tm-text-soft, #94a0ad); font: inherit; font-size: 12px; font-weight: 700; font-style: italic; cursor: pointer; }
+    .addlink:hover { color: var(--tm-green, #16a34a); }
+    .linkcell { border: 0; background: transparent; color: var(--tm-green, #16a34a); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .linkcell:hover { text-decoration: underline; }
+    .muted-link { color: var(--tm-text-soft, #94a0ad); font-style: italic; }
+
+    .avstack { display: inline-flex; align-items: center; }
+    .av2 { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 9px; font-weight: 800; border: 2px solid var(--tm-surface); margin-left: -7px; }
+    .av2:first-child { margin-left: 0; }
+    .av2.more { background: var(--tm-canvas-2, #eaeef4); color: var(--tm-text-muted); }
+
+    .setup { display: flex; align-items: center; gap: 8px; justify-content: center; }
+    .setup .bar { width: 56px; height: 6px; border-radius: 999px; background: var(--tm-canvas-2, #eaeef4); overflow: hidden; }
+    .setup .bar i { display: block; height: 100%; border-radius: 999px; background: var(--tm-green, #16a34a); }
+    .setup .pc { font-size: 12px; font-weight: 800; color: var(--tm-text); }
+    .kebab { width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; display: grid; place-items: center; color: var(--tm-text-soft, #94a0ad); cursor: pointer; }
+    .kebab:hover { background: var(--tm-canvas-2, #eaeef4); color: var(--tm-text); }
+
+    .addrow td { padding: 0; }
+    .addbtn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px; border: 0; background: var(--tm-surface); color: var(--tm-text-muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .addbtn:hover:not(:disabled) { background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); }
+    .addbtn:disabled { opacity: .5; cursor: default; }
+
+    /* detail row */
+    .detailrow td { background: var(--tm-canvas) !important; padding: 0; }
+    .detailwrap { position: sticky; left: var(--frz1); width: calc(100vw - var(--tm-sidebar-w, 264px) - 120px); max-width: 1160px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .detailhead { display: flex; align-items: center; gap: 8px; }
+    .ovl { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--tm-text-soft, #94a0ad); }
+    .gline { display: grid; grid-template-columns: 210px 1fr; gap: 8px 18px; align-items: start; padding: 14px 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: 12px; }
+    .gline--orphan { border-color: #fce4a6; }
+    .gline__head { grid-column: 1; grid-row: 1 / span 2; display: flex; flex-direction: column; gap: 4px; padding-right: 16px; border-right: 1px solid var(--tm-line); }
+    .gline__acts { display: flex; gap: 6px; margin-top: 4px; }
+    .gname { font-size: 14px; font-weight: 800; color: var(--tm-text); }
+    .gmeta { font-size: 11px; color: var(--tm-text-muted); font-weight: 600; }
+    .gmeta.warn { color: #9a6a11; }
+    .gcol { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+    .gcol__lbl { flex: none; width: 52px; padding-top: 5px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--tm-text-soft, #94a0ad); }
+    .gcol__body { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+    .rchip2 { display: inline-flex; align-items: center; gap: 5px; padding: 4px 5px 4px 9px; border-radius: 8px; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 12px; font-weight: 700; }
+    .rchip2 b { font-weight: 700; }
+    .rchip2.warn { background: #fef3c7; color: #b45309; padding: 4px 8px; }
+    .rchip2 .rx { width: 16px; height: 16px; border: 0; border-radius: 5px; display: grid; place-items: center; background: transparent; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; opacity: .55; }
+    .rchip2 .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
+    .dpill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 3px; border-radius: 999px; background: var(--tm-canvas-2, #eaeef4); font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .dpill .rx { width: 15px; height: 15px; border: 0; border-radius: 5px; background: transparent; color: var(--tm-text-muted); font-size: 13px; line-height: 1; cursor: pointer; opacity: .6; }
+    .dpill .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
+    .addroutebtn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border: 1px dashed var(--tm-line-2, #e2e6ec); border-radius: 8px; background: var(--tm-surface); color: var(--tm-text-muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .addroutebtn:hover { border-color: var(--tm-green, #16a34a); color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5); border-style: solid; }
+    .emptybox { padding: 16px; border: 1px dashed var(--tm-line-2, #e2e6ec); border-radius: 12px; background: var(--tm-surface); color: var(--tm-text-muted); font-size: 12.5px; text-align: center; }
+
+    /* row kebab menu */
+    .menu-scrim { position: fixed; inset: 0; z-index: 70; }
+    .rowmenu { position: fixed; z-index: 71; min-width: 210px; padding: 6px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: 12px; box-shadow: var(--tm-shadow-pop, 0 12px 40px -16px rgba(15,20,25,.25)); display: flex; flex-direction: column; gap: 2px; }
+    .rowmenu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 11px; border: 0; border-radius: 9px; background: transparent; color: var(--tm-text); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+    .rowmenu button:hover { background: var(--tm-canvas); }
+    .rowmenu__div { height: 1px; margin: 5px 0; background: var(--tm-line); }
+
     @media (max-width: 940px) {
       .split { grid-template-columns: 1fr; }
       .is-hidden-sm { display: none; }
@@ -896,6 +952,10 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   search = '';
   status: CityVehicleStatus = 'all';
   typeFilter = 'all';
+  /** Filter to a single vehicle by display name ('all' = every vehicle). */
+  vehicleFilter = 'all';
+  /** Which custom filter dropdown is open (drivers-page style). */
+  filterOpen: 'type' | 'vehicle' | null = null;
   readonly statusChips: { label: string; value: CityVehicleStatus }[] = [
     { label: 'All statuses', value: 'all' },
     { label: 'Enabled', value: 'enabled' },
@@ -920,6 +980,39 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   typeSaving = false;
   editingTypeId: number | null = null;
   typeForm = { name: '', is_active: true };
+
+  // Common setup now lives in a right-side drawer opened by the row pen icon.
+  commonDrawerOpen = false;
+  commonDrawerVehicle: CityVehicleRow | null = null;
+
+  // ── spreadsheet UI state ───────────────────────────────────
+  /** Vehicles whose route-group detail row is expanded. */
+  expanded: Record<number, boolean> = {};
+  /** Checked rows for the bulk action bar. */
+  selectedIds = new Set<number>();
+  /** In-place cell edit (name / seats / bags). */
+  editId: number | null = null;
+  editField: '' | 'name' | 'seats' | 'bags' = '';
+  editValue = '';
+  savingCell = false;
+  /** Floating row kebab menu. */
+  menuId: number | null = null;
+  menuX = 0;
+  menuY = 0;
+  /** Fare editor drawer — hosts app-vehicle-base-pricing for one vehicle+ride type. */
+  fareDrawerOpen = false;
+  /** Seat-layouts list drawer. */
+  layoutsListOpen = false;
+
+  /** Ride types that own a fare column (everything except the fixed one). */
+  get fareRideTypes(): RideTypeRef[] { return this.rideTypes.filter((rt) => this.kindOf(rt.name) !== 'fixed'); }
+  /** Columns after the gutter — used for the detail row + footer colspans. */
+  get detailColspan(): number { return 9 + this.fareRideTypes.length; }
+  /** Distinct vehicle names for the vehicle filter dropdown. */
+  get vehicleNames(): string[] {
+    return Array.from(new Set(this.vehicles.map((v) => v.display_name))).sort((a, b) => a.localeCompare(b));
+  }
+  get menuVehicle(): CityVehicleRow | null { return this.vehicles.find((v) => v.id === this.menuId) ?? null; }
 
   groupOpen = false;
   groupSaving = false;
@@ -1076,6 +1169,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       if (this.status === 'enabled' && !v.is_active) return false;
       if (this.status === 'disabled' && v.is_active) return false;
       if (this.typeFilter !== 'all' && v.vehicle_type_id !== Number(this.typeFilter)) return false;
+      if (this.vehicleFilter !== 'all' && v.display_name !== this.vehicleFilter) return false;
       if (!q) return true;
       return `${v.display_name} ${v.vehicle_type_name ?? ''} ${this.fareModesLabel(v)}`.toLowerCase().includes(q);
     });
@@ -1088,6 +1182,39 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   setStatus(value: CityVehicleStatus): void { this.status = value; this.applyView(); }
+
+  // ── custom filter dropdowns (match the Drivers page's state-select) ─────────
+  get typeFilterLabel(): string {
+    if (this.typeFilter === 'all') return 'All types';
+    return this.types.find((t) => String(t.id) === this.typeFilter)?.name ?? 'All types';
+  }
+  get vehicleFilterLabel(): string { return this.vehicleFilter === 'all' ? 'All vehicles' : this.vehicleFilter; }
+
+  toggleFilter(which: 'type' | 'vehicle', ev: Event): void {
+    ev.stopPropagation();
+    this.menuId = null;
+    this.filterOpen = this.filterOpen === which ? null : which;
+  }
+  setTypeFilter(value: string): void { this.typeFilter = value; this.filterOpen = null; this.applyView(); }
+  setVehicleFilter(value: string): void { this.vehicleFilter = value; this.filterOpen = null; this.applyView(); }
+
+  /** True when any of search / status / type / vehicle is narrowing the list. */
+  get hasActiveFilters(): boolean {
+    return this.search.trim() !== '' || this.status !== 'all' || this.typeFilter !== 'all' || this.vehicleFilter !== 'all';
+  }
+  /** Reset every filter to its default and re-render the full list. */
+  clearAllFilters(): void {
+    this.search = '';
+    this.status = 'all';
+    this.typeFilter = 'all';
+    this.vehicleFilter = 'all';
+    this.filterOpen = null;
+    this.applyView();
+  }
+
+  /** Close the open filter dropdown on any outside click. */
+  @HostListener('document:click')
+  onDocumentClick(): void { this.filterOpen = null; }
 
   /** Rebuilds every per-selection slice in one pass. */
   private recompute(): void {
@@ -1113,20 +1240,19 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       d.city_vehicle_type_id !== v.id && (d.vehicle_type_id == null || d.vehicle_type_id === v.vehicle_type_id));
     this.selLayouts = v.vehicle_type_id == null ? [] : this.layouts.filter((l) => l.vehicle_type_id === v.vehicle_type_id);
 
-    // Tabs: Common, then one per ride type using its DB name, then Drivers + layouts.
+    // Tabs: one per ride type using its DB name, then Seat layouts. (Common
+    // setup moved to a per-row drawer opened by the pen icon in the list.)
     this.tabList = [
-      { key: 'common', label: 'Common setup' },
       ...this.rideTypes.map((rt) => ({
         key: 'mode:' + rt.id,
         label: rt.name,
         count: this.kindOf(rt.name) === 'fixed' ? myRoutes.length : undefined,
       })),
-      { key: 'drivers', label: 'Drivers', count: this.selDrivers.length },
       { key: 'layouts', label: 'Seat layouts', count: this.selLayouts.length },
     ];
 
     // A tab remembered for this vehicle may no longer exist (ride type removed).
-    if (!this.tabList.some((t) => t.key === this.tab)) this.tab = 'common';
+    if (!this.tabList.some((t) => t.key === this.tab)) this.tab = this.tabList[0]?.key ?? '';
 
     this.syncActiveMode();
   }
@@ -1163,7 +1289,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.activeRow = this.rows.find((r) => this.groupKey(r) === key && r.ride_type_id === id) ?? null;
     this.reverseBidding = !!this.activeRow?.reverse_bidding_enabled;
     this.fareSubtitle = this.activeKind === 'shuttle'
-      ? 'Prepared Shuttle fare card. Customer and driver Shuttle booking is not active yet.'
+      ? ''
       : 'Fare card used by the current customer and driver flow.';
 
     // A non-fixed ride type with no fare row yet: create it automatically so the
@@ -1186,7 +1312,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.assignDrawerRouteId = null;
     this.movePickFor = null;
     this.renamingId = null;
-    this.tab = this.tabByVehicle.get(v.id) ?? 'common';
+    this.tab = this.tabByVehicle.get(v.id) ?? '';
     this.loadSelectedForms();
     this.recompute();
   }
@@ -1245,6 +1371,23 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   // ── common setup ───────────────────────────────────────────
+  /**
+   * Opens the common-setup drawer for a vehicle straight from the list pen icon.
+   * Selects the vehicle first so `common` and the sibling set `saveCommon` patches
+   * are loaded, then shows the drawer. Stops the click from also toggling the row.
+   */
+  openCommonDrawer(v: CityVehicleRow, ev?: Event): void {
+    ev?.stopPropagation();
+    this.select(v);
+    this.commonDrawerVehicle = v;
+    this.commonDrawerOpen = true;
+  }
+
+  closeCommonDrawer(): void {
+    this.commonDrawerOpen = false;
+    this.commonDrawerVehicle = null;
+  }
+
   saveCommon(): void {
     const v = this.selected;
     if (!v || this.cityId == null || this.savingCommon) return;
@@ -1258,7 +1401,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     const siblings = this.rows.filter((r) => this.groupKey(r) === key);
     this.savingCommon = true;
     forkJoin(siblings.map((r) => this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${r.id}`, payload))).subscribe({
-      next: () => { this.savingCommon = false; this.toast.success('City vehicle saved'); this.load(); },
+      next: () => { this.savingCommon = false; this.commonDrawerOpen = false; this.commonDrawerVehicle = null; this.toast.success('City vehicle saved'); this.load(); },
       error: (err) => { this.savingCommon = false; this.toast.error(err?.error?.message || 'Failed to save city vehicle'); },
     });
   }
@@ -1560,6 +1703,149 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       error: (err) => this.toast.error(err?.error?.message || 'Failed to delete layout'),
     });
   }
+
+  // ── spreadsheet interactions ───────────────────────────────
+  isExpanded(v: CityVehicleRow): boolean { return !!this.expanded[v.id]; }
+
+  /** Expand/collapse a vehicle's route-group detail row. Expanding selects the
+   *  vehicle so `selected` (and the embedded map editor) bind to it. */
+  toggleExpand(v: CityVehicleRow, ev?: Event): void {
+    ev?.stopPropagation();
+    const open = !this.expanded[v.id];
+    // Accordion: only one vehicle's route-group detail is open at a time.
+    this.expanded = open ? { [v.id]: true } : {};
+    if (open) this.select(v);
+  }
+
+  // selection + bulk
+  isSel(v: CityVehicleRow): boolean { return this.selectedIds.has(v.id); }
+  toggleSel(v: CityVehicleRow, ev?: Event): void {
+    ev?.stopPropagation();
+    if (this.selectedIds.has(v.id)) this.selectedIds.delete(v.id); else this.selectedIds.add(v.id);
+  }
+  get allSelected(): boolean { return this.visible.length > 0 && this.visible.every((v) => this.selectedIds.has(v.id)); }
+  toggleSelectAll(): void {
+    if (this.allSelected) this.selectedIds.clear();
+    else this.visible.forEach((v) => this.selectedIds.add(v.id));
+  }
+  clearSel(): void { this.selectedIds.clear(); }
+
+  /** Enable/disable every checked vehicle by patching each one's sibling rows. */
+  bulkSetActive(active: boolean): void {
+    if (this.cityId == null || !this.selectedIds.size) return;
+    const keys = new Set(
+      [...this.selectedIds].map((id) => this.vehicles.find((x) => x.id === id)).filter(Boolean).map((v) => this.groupKey(v as CityVehicleRow)),
+    );
+    const targets = this.rows.filter((r) => keys.has(this.groupKey(r)));
+    const n = this.selectedIds.size;
+    forkJoin(targets.map((r) => this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${r.id}`, { is_active: active }))).subscribe({
+      next: () => { this.toast.success(`${n} ${n === 1 ? 'vehicle' : 'vehicles'} ${active ? 'enabled' : 'disabled'}`); this.clearSel(); this.load(); },
+      error: (err) => this.toast.error(err?.error?.message || 'Bulk update failed'),
+    });
+  }
+
+  /** Client-side CSV of the checked vehicles. */
+  bulkExport(): void {
+    const ids = new Set(this.selectedIds);
+    const rows = this.vehicles.filter((v) => ids.has(v.id));
+    const header = ['Vehicle', 'Type', 'Status', 'Seats', 'Bags', 'Fare modes'];
+    const body = rows.map((v) => [v.display_name, v.vehicle_type_name || '', v.is_active ? 'Enabled' : 'Disabled', v.max_people, v.luggage_capacity, this.fareModesLabel(v)]);
+    const csv = [header, ...body].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = 'vehicles.csv'; a.click();
+    URL.revokeObjectURL(url);
+    this.toast.success(`Exported ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`);
+  }
+
+  // inline cell edit — name / seats / bags patch every sibling mode row
+  isEditing(v: CityVehicleRow, field: string): boolean { return this.editId === v.id && this.editField === field; }
+  startCellEdit(v: CityVehicleRow, field: 'name' | 'seats' | 'bags', ev?: Event): void {
+    ev?.stopPropagation();
+    this.editId = v.id; this.editField = field;
+    this.editValue = field === 'name' ? v.display_name : String(field === 'seats' ? v.max_people : v.luggage_capacity);
+  }
+  cancelCellEdit(): void { this.editId = null; this.editField = ''; this.editValue = ''; }
+  commitCellEdit(v: CityVehicleRow): void {
+    const field = this.editField;
+    if (!field || this.cityId == null) { this.cancelCellEdit(); return; }
+    let payload: Record<string, unknown> | null = null;
+    if (field === 'name') { const name = this.editValue.trim(); if (name && name !== v.display_name) payload = { display_name: name }; }
+    else if (field === 'seats') { const num = Math.max(1, Math.round(+this.editValue) || v.max_people); if (num !== v.max_people) payload = { max_people: num }; }
+    else { const num = Math.max(0, Math.round(+this.editValue) || 0); if (num !== v.luggage_capacity) payload = { luggage_capacity: num }; }
+    this.cancelCellEdit();
+    if (!payload) return;
+    const key = this.groupKey(v);
+    const siblings = this.rows.filter((r) => this.groupKey(r) === key);
+    this.savingCell = true;
+    forkJoin(siblings.map((r) => this.api.patch(`/admin/cities/${this.cityId}/vehicle-types/${r.id}`, payload))).subscribe({
+      next: () => { this.savingCell = false; this.toast.success('Saved'); this.load(); },
+      error: (err) => { this.savingCell = false; this.toast.error(err?.error?.message || 'Could not save'); },
+    });
+  }
+
+  /** Per-row status toggle from the spreadsheet pill. */
+  toggleActiveFor(v: CityVehicleRow, ev?: Event): void {
+    ev?.stopPropagation();
+    this.select(v);
+    this.toggleActive();
+  }
+
+  // per-vehicle slices for the spreadsheet (independent of `selected`, so several
+  // detail rows can be open at once and still read correctly)
+  routesForVehicle(v: CityVehicleRow): RouteLite[] { return this.routes.filter((r) => r.city_vehicle_type_id === v.id); }
+  groupsForVehicle(v: CityVehicleRow): GroupRow[] {
+    const mine = new Set(this.routesForVehicle(v).map((r) => r.id));
+    return this.groups.filter((g) => g.route_ids.some((id) => mine.has(id)));
+  }
+  ungroupedForVehicle(v: CityVehicleRow): RouteLite[] {
+    const covered = new Set(this.groups.flatMap((g) => g.route_ids));
+    return this.routesForVehicle(v).filter((r) => !covered.has(r.id));
+  }
+  driversFor(v: CityVehicleRow): DriverOpt[] { return this.cityDrivers.filter((d) => d.city_vehicle_type_id === v.id); }
+  layoutCountFor(v: CityVehicleRow): number { return v.vehicle_type_id == null ? 0 : this.layouts.filter((l) => l.vehicle_type_id === v.vehicle_type_id).length; }
+
+  /** Setup completeness: type, a fare mode, routes, a group, drivers, a layout. */
+  setupPct(v: CityVehicleRow): number {
+    const routes = this.routesForVehicle(v);
+    const steps = [
+      v.vehicle_type_id != null,
+      (v.mode_ids ?? []).length > 0,
+      routes.length > 0,
+      this.groupsForVehicle(v).length > 0,
+      this.driversFor(v).length > 0,
+      this.layoutCountFor(v) > 0,
+    ];
+    return Math.round((steps.filter(Boolean).length / steps.length) * 100);
+  }
+
+  // fare column → real fare drawer (reuses the ride-type tab machinery)
+  fareConfigured(v: CityVehicleRow, rt: RideTypeRef): boolean { return (v.mode_ids ?? []).includes(rt.id); }
+  openFareDrawer(v: CityVehicleRow, rt: RideTypeRef, ev?: Event): void {
+    ev?.stopPropagation();
+    this.select(v);
+    this.setTab('mode:' + rt.id); // drives activeRideType/activeRow (+ auto-creates the fare row)
+    this.fareDrawerOpen = true;
+  }
+  closeFareDrawer(): void { this.fareDrawerOpen = false; }
+
+  // seat-layouts list drawer
+  openLayoutsList(v: CityVehicleRow, ev?: Event): void { ev?.stopPropagation(); this.select(v); this.layoutsListOpen = true; }
+  closeLayoutsList(): void { this.layoutsListOpen = false; }
+
+  // route map editor + group create, rebinding `selected` to the acted-on vehicle
+  newRouteFor(v: CityVehicleRow): void { this.select(v); setTimeout(() => this.newRoute()); }
+  editRouteFor(v: CityVehicleRow, routeId: number): void { this.select(v); setTimeout(() => this.editRoute(routeId)); }
+  openGroupDrawerFor(v: CityVehicleRow): void { this.select(v); this.openGroupDrawer(); }
+
+  // floating row kebab menu
+  openRowMenu(v: CityVehicleRow, ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.select(v);
+    this.menuId = v.id;
+    this.menuX = Math.min(ev.clientX, window.innerWidth - 230);
+    this.menuY = Math.min(ev.clientY, window.innerHeight - 250);
+  }
+  closeRowMenu(): void { this.menuId = null; }
 
   // ── helpers ────────────────────────────────────────────────
   private blankCreate() {
