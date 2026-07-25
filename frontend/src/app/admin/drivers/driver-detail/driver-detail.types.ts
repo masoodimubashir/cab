@@ -16,6 +16,9 @@ export interface DriverProfile {
   vehicle_model: string | null;
   vehicle_color: string | null;
   approval_status: 'pending' | 'approved' | 'rejected';
+  /** Driver payout account ("KYC"). Informational — never blocks approval. */
+  payout_account_status?: 'none' | 'pending' | 'verified' | 'rejected';
+  payout_can_receive?: boolean;
   deactivated_at: string | null;
   is_online: boolean;
   created_at: string | null;
