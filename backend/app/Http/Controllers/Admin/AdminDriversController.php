@@ -295,6 +295,10 @@ class AdminDriversController
                 'vehicle_model' => $driver->vehicle_model,
                 'vehicle_color' => $driver->vehicle_color,
                 'approval_status' => $driver->approval_status,
+                // Payout account ("driver KYC") — informational on the approval
+                // panel. Verification is skippable, so it never blocks approval.
+                'payout_account_status' => $driver->user?->payout_account_status ?? 'none',
+                'payout_can_receive' => (bool) $driver->user?->hasVerifiedPayoutAccount(),
                 'deactivated_at' => optional($driver->deactivated_at)->toIso8601String(),
                 'is_online' => $driver->isOnlineFresh(),
                 'created_at' => optional($driver->created_at)->toIso8601String(),
