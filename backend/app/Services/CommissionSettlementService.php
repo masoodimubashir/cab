@@ -82,7 +82,13 @@ class CommissionSettlementService
             $cut = $commissionableFare;
         }
 
-        if ($cut > 0 && $trip->driver) {
+        // Under the auto-split engine the commission is retained at the source of
+        // the customer's online payment (Route), so we must NOT also claw it back
+        // from the driver's wallet — that would double-charge them. We still record
+        // commission_amount/percent below for the split to read.
+        $splitEnabled = (bool) config('services.payments.split_enabled', false);
+
+        if (! $splitEnabled && $cut > 0 && $trip->driver) {
             $this->wallet->recordTransaction(
                 $trip->driver,
                 WalletTransaction::TYPE_DEBIT,
