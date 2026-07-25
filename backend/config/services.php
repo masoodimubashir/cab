@@ -42,6 +42,18 @@ return [
         'currency' => env('RAZORPAY_CURRENCY', 'INR'),
     ],
 
+    // Auto-split payment engine (Razorpay Route). While disabled the platform
+    // keeps the legacy flow: the driver's commission is clawed back from their
+    // wallet float at settlement. When enabled, commission is retained at the
+    // source of a captured online payment and the driver's share is transferred
+    // (or held, if their payout account isn't verified) — no wallet debit.
+    //
+    // Keep this OFF until cash is gone (Phase 4) and Razorpay Route is activated,
+    // otherwise cash rides would settle without collecting commission.
+    'payments' => [
+        'split_enabled' => (bool) env('PAYMENTS_SPLIT_ENABLED', false),
+    ],
+
     // MSG91 SMS gateway (login OTP). Leave MSG91_AUTH_KEY blank to run in MOCK
     // mode: no SMS is sent — the code is logged + returned in the API response
     // so you can test the whole flow. Fill the keys to send real SMS.

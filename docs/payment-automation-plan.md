@@ -166,8 +166,10 @@ Commission source is **per-city config** (already exists on `CitySetting`: `comm
 
 Ship the core on **Private only**, prove it, then roll Fixed & Shuttle onto the same engine.
 
-1. **Phase 1 — Payout accounts + KYC** (backend `PayoutAccountService`, driver app page + signup step, admin checklist). ~1.5–2 wks.
+1. **Phase 1 — Payout accounts + KYC** ✅ *(built; skippable signup KYC step still pending)* (backend `PayoutAccountService`, driver app page + signup step, admin checklist). ~1.5–2 wks.
 2. **Phase 2 — Shared payment engine + auto-split + prepay-at-booking (Private first)** (`PaymentsController` rework, `PaymentSplitService`, `RazorpayService` transfers, ledger). ~2–3 wks.
+   - ✅ **Core split engine built + tested** (flag-gated by `services.payments.split_enabled`, default off): `PaymentSplitService` (paise-exact split math), `LedgerService` (append-only ledger + per-trip reconciliation invariant), `HeldEarningsService` (park + auto-release on verification), `RazorpayService::createTransfer/reverseTransfer/fetchTransfer`, `held_earnings` + `ledger_entries` tables, payment split columns. Wired into the solo capture path (`verifyRazorpay` + webhook/sweeper `applySolo`), idempotent via `payments.split_at`. `CommissionSettlementService` no longer double-charges the wallet when the engine is on. Tests: `PaymentSplitMathTest` (unit) + `PaymentSplitEngineTest` (P1/P4/P7, F3, F6, C3 balance, K1 release) — all green.
+   - ⏳ **Remaining (needs booking-flow rework + live Route):** prepay/hold **at booking** for Private (currently the split runs on the existing post-completion charge), passing the split payload at order time, and the `transfer.processed`/`transfer.failed`/`account.activated` webhook events + sweeper transfer/held reconciliation. Repointing Fixed & Shuttle is Phase 5.
 3. **Phase 3 — Auto-refund rulebook + transfer reversal + held-earnings release** (`AutoRefundService`, `HeldEarningsService`). ~1–1.5 wks.
 4. **Phase 4 — Kill cash + rebuild admin payout/refund views into monitors.** ~1 wk.
 5. **Phase 5 — Roll Fixed & Shuttle onto the shared engine; ledger/reconciliation hardening.** ~1 wk.

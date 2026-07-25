@@ -289,6 +289,99 @@ class RazorpayService
     }
 
     /**
+     * Creates a Route transfer that moves the driver's share of a captured
+     * payment to their linked account. The commission portion is simply not
+     * transferred, so it stays with the operator. Fails soft (null) so a transfer
+     * outage never rolls back a captured payment — the share is held instead.
+     *
+     * @return array{id:string,status:string,amount:int}|null
+     */
+    public function createTransfer(string $paymentId, string $linkedAccountId, int $amountPaise, array $notes = []): ?array
+    {
+        if ($paymentId === '' || $linkedAccountId === '' || $amountPaise <= 0) {
+            return null;
+        }
+
+        try {
+            $payload = [
+                'transfers' => [[
+                    'account' => $linkedAccountId,
+                    'amount' => $amountPaise,
+                    'currency' => (string) config('services.razorpay.currency', 'INR'),
+                    'notes' => $notes,
+                ]],
+            ];
+
+            $result = $this->api->payment->fetch($paymentId)->transfer($payload);
+
+            // The SDK returns a collection of the transfers just created.
+            $item = $result->items[0] ?? ($result[0] ?? null);
+            if (!$item || empty($item->id)) {
+                return null;
+            }
+
+            return [
+                'id' => (string) $item->id,
+                'status' => (string) ($item->status ?? 'created'),
+                'amount' => (int) ($item->amount ?? $amountPaise),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Reverses a Route transfer (fully, or a partial amount) so a cancelled or
+     * refunded ride doesn't leave the driver paid. Fails soft (null).
+     *
+     * @return array{id:string,status:string,amount:int}|null
+     */
+    public function reverseTransfer(string $transferId, ?int $amountPaise = null): ?array
+    {
+        if ($transferId === '') {
+            return null;
+        }
+
+        try {
+            $payload = ($amountPaise !== null && $amountPaise > 0) ? ['amount' => $amountPaise] : [];
+            $reversal = $this->api->transfer->fetch($transferId)->reversals()->create($payload);
+
+            return [
+                'id' => (string) $reversal->id,
+                'status' => (string) ($reversal->status ?? 'processed'),
+                'amount' => (int) ($reversal->amount ?? ($amountPaise ?? 0)),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Fetches a transfer's current state (created | processed | failed | reversed).
+     * Used by the sweeper to reconcile transfers stuck without a webhook.
+     *
+     * @return array{id:string,status:string,amount:int}|null
+     */
+    public function fetchTransfer(string $transferId): ?array
+    {
+        if ($transferId === '') {
+            return null;
+        }
+
+        try {
+            $transfer = $this->api->transfer->fetch($transferId);
+
+            return [
+                'id' => (string) $transfer->id,
+                'status' => (string) ($transfer->status ?? 'created'),
+                'amount' => (int) ($transfer->amount ?? 0),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Low-level caller for the v2 onboarding API (basic-auth, JSON). Returns the
      * decoded body on 2xx, or null on any error so callers can degrade cleanly.
      */
