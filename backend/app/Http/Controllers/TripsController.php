@@ -451,6 +451,7 @@ class TripsController extends Controller
 
         $tripStateMachineService->transition($trip, 'CANCELLED', [
             'cancelled_reason' => $request->input('reason'),
+            'cancelled_by' => \App\Services\AutoRefundService::BY_CUSTOMER,
         ]);
         $shuttleRefunds->markCancelledForTrip($trip->fresh(), $request->input('reason'));
 
