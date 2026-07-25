@@ -42,7 +42,7 @@ import {
       </button>
 
       <div class="tb__title-block">
-        <h1 class="tm-h2 tb__title">{{ title }}</h1>
+        <h1 class="tm-h2 tb__title" *ngIf="title">{{ title }}</h1>
         <p class="tb__subtitle" *ngIf="subtitle">{{ subtitle }}</p>
         <ng-content select="[slot=lead]"></ng-content>
       </div>

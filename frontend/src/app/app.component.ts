@@ -36,7 +36,7 @@ export class AppComponent implements OnInit {
     [/^\/drivers\/documents/,       'Document Catalog'],
     [/^\/contact-drivers/,          'Contact Drivers'],
     [/^\/pricing/,                  'Pricing'],
-    [/^\/vehicles/,                 'Vehicles'],
+    [/^\/vehicles/,                 ''],
     [/^\/promotions\/coupons/,      'Coupons'],
     [/^\/subscriptions/,            'Subscriptions'],
     [/^\/rides\/all/,               'All Rides'],
