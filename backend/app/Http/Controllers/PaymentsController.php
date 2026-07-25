@@ -205,13 +205,17 @@ class PaymentsController extends Controller
 
             $this->markCouponRedeemed($payment, $trip);
 
+            // Auto-split at source (Route): driver share transferred/held,
+            // operator keeps commission. Idempotent + no-op while disabled.
+            app(\App\Services\PaymentSplitService::class)->applyCapturedSplit($payment);
+
             try {
                 app(InvoiceGeneratorService::class)->generateForTrip($trip);
             } catch (\Throwable) {
                 // Invoice generation is best-effort; webhook will retry.
             }
 
-            return response()->json(['payment' => $payment]);
+            return response()->json(['payment' => $payment->fresh()]);
         });
     }
 

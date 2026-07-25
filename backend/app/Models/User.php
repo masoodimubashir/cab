@@ -30,11 +30,23 @@ use App\Models\WalletTransaction;
     'suspended_reason', 'suspended_at',
     // Last-known location pinged from the mobile apps.
     'current_lat', 'current_lng', 'current_location_updated_at',
+    // Driver payout account (Razorpay Route linked account / "driver KYC").
+    'razorpay_linked_account_id', 'razorpay_route_product_id',
+    'payout_account_status', 'payout_method', 'payout_pan', 'payout_beneficiary_name',
+    'payout_account_number', 'payout_ifsc', 'payout_upi', 'payout_bank_last4',
+    'payout_verified_at', 'payout_reject_reason',
 ])]
-#[Hidden(['password', 'remember_token'])]
+#[Hidden(['password', 'remember_token', 'payout_pan', 'payout_account_number'])]
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory;
+
+    // Driver payout-account lifecycle. A driver is only paid automatically once
+    // their account is VERIFIED; before that their share is held.
+    public const PAYOUT_NONE = 'none';
+    public const PAYOUT_PENDING = 'pending';
+    public const PAYOUT_VERIFIED = 'verified';
+    public const PAYOUT_REJECTED = 'rejected';
 
     protected $casts = [
         'dob' => 'date',
@@ -50,7 +62,18 @@ class User extends Authenticatable
         'duplicate_registration' => 'boolean',
         'current_lat' => 'float',
         'current_lng' => 'float',
+        // Sensitive KYC values: ciphertext at rest, plaintext in-app.
+        'payout_pan' => 'encrypted',
+        'payout_account_number' => 'encrypted',
+        'payout_verified_at' => 'datetime',
     ];
+
+    /** True once the driver can receive automatic Route transfers. */
+    public function hasVerifiedPayoutAccount(): bool
+    {
+        return $this->payout_account_status === self::PAYOUT_VERIFIED
+            && ! empty($this->razorpay_linked_account_id);
+    }
 
     public function walletTransactions(): HasMany
     {

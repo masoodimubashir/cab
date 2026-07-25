@@ -127,6 +127,9 @@ class PaymentReconciliationService
                 $trip = $locked->trip()->first();
                 if ($trip) {
                     $this->markCouponRedeemed($locked, $trip->id);
+                    // Auto-split at source (Route). Idempotent via payments.split_at,
+                    // so a webhook + sweeper + client-verify race splits only once.
+                    app(PaymentSplitService::class)->applyCapturedSplit($locked);
                     try {
                         app(InvoiceGeneratorService::class)->generateForTrip($trip);
                     } catch (\Throwable) {

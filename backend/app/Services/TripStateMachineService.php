@@ -16,6 +16,7 @@ class TripStateMachineService
         private FareEstimationService $fareEstimationService,
         private CommissionSettlementService $commissionSettlementService,
         private MessageTemplateService $messageTemplates,
+        private AutoRefundService $autoRefunds,
     ) {
     }
 
@@ -106,6 +107,15 @@ class TripStateMachineService
             $this->commissionSettlementService->settle($trip);
         }
 
+        // On cancellation of a solo ride, run the automatic refund rulebook
+        // (§5) when the split engine is live: refund the customer per the rule,
+        // claw back the driver's share, keep only the cancel fee. Shared journeys
+        // (route_departure_id set) keep their own seat-level refund path. No-op
+        // while the engine is disabled, or when nothing was captured yet.
+        if ($to === 'CANCELLED' && $trip->route_departure_id === null && $this->autoRefunds->enabled()) {
+            $this->autoRefunds->refundForCancellation($trip, $this->cancelledBy($trip, $meta));
+        }
+
         $tripId = $trip->id;
         $customerId = $trip->customer_id;
 
@@ -156,6 +166,36 @@ class TripStateMachineService
         });
 
         return $trip->fresh();
+    }
+
+    /**
+     * Works out who a cancellation is attributed to, for the refund rulebook.
+     * An explicit meta['cancelled_by'] always wins; otherwise we read it off the
+     * no-show reason ("no_show_by:driver" means the customer didn't board, so
+     * it's on the customer; "no_show_by:customer" means the driver never showed,
+     * so it's on the driver). Everything else defaults to a customer cancel.
+     */
+    private function cancelledBy(Trip $trip, array $meta): string
+    {
+        $explicit = $meta['cancelled_by'] ?? null;
+        if (is_string($explicit) && in_array($explicit, [
+            AutoRefundService::BY_CUSTOMER,
+            AutoRefundService::BY_DRIVER,
+            AutoRefundService::BY_OPERATOR,
+            AutoRefundService::BY_SYSTEM,
+        ], true)) {
+            return $explicit;
+        }
+
+        $reason = (string) ($meta['cancelled_reason'] ?? $trip->cancelled_reason ?? '');
+        if ($reason === 'no_show_by:customer') {
+            return AutoRefundService::BY_DRIVER;   // driver never showed → not the customer's fault
+        }
+        if ($reason === 'no_show_by:driver') {
+            return AutoRefundService::BY_CUSTOMER;  // customer didn't board → on them
+        }
+
+        return AutoRefundService::BY_CUSTOMER;
     }
 
     private function syncShuttleJourney(Trip $trip, string $tripStatus): void

@@ -113,6 +113,7 @@ interface FullProfileResponse {
         <app-driver-approval-actions-pane
           *ngIf="!loading && driver"
           [approvalStatus]="driver.approval_status"
+          [payoutStatus]="driver.payout_account_status ?? 'none'"
           [busy]="busyApproval"
           (approve)="setApproval('approved')"
           (reject)="setApproval('rejected')"

@@ -1,0 +1,127 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+    </ion-buttons>
+    <ion-buttons slot="end">
+      <ion-button (click)="load()" aria-label="Reload">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="pg-content">
+  <div class="pg-hero">
+    <h1 class="pg-title">Payout account</h1>
+    <p class="pg-subtitle">Where we send your earnings</p>
+  </div>
+
+  <div class="pg-body pg-anim-body" *ngIf="!loading">
+    <!-- Verified -->
+    <div class="pg-card pa-status pa-status--ok" *ngIf="account?.status === 'verified' && !editing">
+      <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+      <div>
+        <strong>Verified — you're getting paid automatically</strong>
+        <small *ngIf="account?.method === 'bank'">Bank ••••{{ account?.bank_last4 }} · {{ account?.ifsc }}</small>
+        <small *ngIf="account?.method === 'upi'">UPI {{ account?.upi }}</small>
+      </div>
+    </div>
+
+    <!-- Pending review -->
+    <div class="pg-card pa-status pa-status--pending" *ngIf="account?.status === 'pending' && !editing">
+      <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
+      <div>
+        <strong>Under review</strong>
+        <small>We've submitted your details for verification. Your ride earnings are safely held until this is done.</small>
+      </div>
+    </div>
+
+    <!-- Rejected -->
+    <div class="pg-card pa-status pa-status--rejected" *ngIf="account?.status === 'rejected' && !editing">
+      <ion-icon name="alert-circle-outline" aria-hidden="true"></ion-icon>
+      <div>
+        <strong>Couldn't verify your details</strong>
+        <small>{{ account?.reject_reason || 'Please check your PAN and bank details and try again.' }}</small>
+      </div>
+    </div>
+
+    <!-- Not set up yet: the "you won't get paid until you do this" nudge -->
+    <div class="pg-card pa-status pa-status--none" *ngIf="account?.status === 'none' && !editing">
+      <ion-icon name="wallet-outline" aria-hidden="true"></ion-icon>
+      <div>
+        <strong>Add your bank details to get paid</strong>
+        <small>Until you do, your ride earnings are held and can't be paid out.</small>
+      </div>
+    </div>
+
+    <!-- Edit / re-submit button for non-form states -->
+    <ion-button
+      *ngIf="!editing"
+      expand="block"
+      class="pa-edit-btn"
+      [fill]="account?.status === 'verified' ? 'outline' : 'solid'"
+      (click)="startEdit()"
+    >
+      {{ account?.status === 'verified' ? 'Update payout details' : 'Add payout details' }}
+    </ion-button>
+
+    <!-- The form -->
+    <form *ngIf="editing" (ngSubmit)="submit()">
+      <div class="pg-card">
+        <div class="pg-card__head">
+          <span class="pg-card__icon"><ion-icon name="card-outline" aria-hidden="true"></ion-icon></span>
+          <h2 class="pg-card__title">Settlement method</h2>
+        </div>
+
+        <ion-segment [(ngModel)]="method" name="method" class="pa-segment">
+          <ion-segment-button value="bank"><ion-label>Bank account</ion-label></ion-segment-button>
+          <ion-segment-button value="upi"><ion-label>UPI</ion-label></ion-segment-button>
+        </ion-segment>
+
+        <ion-item lines="none" class="pa-field">
+          <ion-input
+            label="PAN"
+            labelPlacement="stacked"
+            [(ngModel)]="pan"
+            name="pan"
+            autocapitalize="characters"
+            maxlength="10"
+            placeholder="ABCDE1234F"
+          ></ion-input>
+        </ion-item>
+
+        <ng-container *ngIf="method === 'bank'">
+          <ion-item lines="none" class="pa-field">
+            <ion-input label="Account holder name" labelPlacement="stacked" [(ngModel)]="beneficiaryName" name="beneficiaryName" placeholder="As per bank records"></ion-input>
+          </ion-item>
+          <ion-item lines="none" class="pa-field">
+            <ion-input label="Account number" labelPlacement="stacked" [(ngModel)]="accountNumber" name="accountNumber" inputmode="numeric" placeholder="Bank account number"></ion-input>
+          </ion-item>
+          <ion-item lines="none" class="pa-field">
+            <ion-input label="IFSC" labelPlacement="stacked" [(ngModel)]="ifsc" name="ifsc" autocapitalize="characters" maxlength="11" placeholder="HDFC0001234"></ion-input>
+          </ion-item>
+        </ng-container>
+
+        <ng-container *ngIf="method === 'upi'">
+          <ion-item lines="none" class="pa-field">
+            <ion-input label="UPI ID" labelPlacement="stacked" [(ngModel)]="upi" name="upi" placeholder="yourname@bank"></ion-input>
+          </ion-item>
+        </ng-container>
+      </div>
+
+      <div class="pg-card pa-note">
+        <ion-icon name="shield-checkmark-outline" aria-hidden="true"></ion-icon>
+        <span>Your PAN and account number are encrypted. We use them only to verify you and pay your earnings.</span>
+      </div>
+
+      <ion-button expand="block" type="submit" [disabled]="!canSubmit || saving">
+        {{ saving ? 'Submitting…' : 'Submit for verification' }}
+      </ion-button>
+    </form>
+  </div>
+
+  <div class="pg-body" *ngIf="loading">
+    <div class="pg-card"><ion-spinner name="crescent"></ion-spinner></div>
+  </div>
+</ion-content>

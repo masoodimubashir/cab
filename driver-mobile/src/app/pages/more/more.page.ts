@@ -44,6 +44,10 @@ export class MorePage {
     this.router.navigateByUrl('/payment-methods');
   }
 
+  goPayoutAccount(): void {
+    this.router.navigateByUrl('/payout-account');
+  }
+
   goSubscriptions(): void {
     this.router.navigateByUrl('/subscriptions');
   }
