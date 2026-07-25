@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\DriverPayoutController;
 use App\Http\Controllers\EmergencyContactsController;
 use App\Http\Controllers\SavedLocationsController;
 use App\Http\Controllers\SupportInfoController;
@@ -112,6 +113,13 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::middleware('auth:sanctum')->post('/me/logout', [AccountController::class, 'logout']);
 Route::middleware('auth:sanctum')->delete('/me/account', [AccountController::class, 'destroy']);
 Route::middleware(['auth:sanctum', 'role:driver'])->patch('/me/driver/payment-methods', [AccountController::class, 'updateDriverPaymentMethods']);
+
+// Driver payout account ("driver KYC") — the Razorpay Route linked-account
+// details the driver must register to receive their share automatically.
+Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
+    Route::get('/me/driver/payout-account', [DriverPayoutController::class, 'show']);
+    Route::patch('/me/driver/payout-account', [DriverPayoutController::class, 'update']);
+});
 
 // Last-known location ping. Customer + driver apps POST { lat, lng } here.
 Route::middleware('auth:sanctum')->post('/me/location', [LocationController::class, 'store']);
