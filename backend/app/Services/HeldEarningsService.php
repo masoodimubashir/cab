@@ -95,6 +95,52 @@ class HeldEarningsService
     }
 
     /**
+     * Un-earmarks a driver's held share for a payment because the ride was
+     * cancelled/refunded (R9/K4). The money never left the operator's balance,
+     * so there's no transfer to reverse — we just flip the held row to REVERSED
+     * and record a ledger reversal so the driver's net drops to nothing.
+     * Row-locked and status-guarded so it can't race a release.
+     *
+     * @return int paise reversed (0 if nothing was held for this payment)
+     */
+    public function reverseHeldForPayment(Payment $payment): int
+    {
+        $reversed = 0;
+
+        HeldEarning::query()
+            ->where('payment_id', $payment->id)
+            ->where('status', HeldEarning::STATUS_HELD)
+            ->orderBy('id')
+            ->get()
+            ->each(function (HeldEarning $held) use (&$reversed) {
+                $amount = DB::transaction(function () use ($held) {
+                    $locked = HeldEarning::query()->lockForUpdate()->find($held->id);
+                    if (! $locked || $locked->status !== HeldEarning::STATUS_HELD) {
+                        return 0; // already released or reversed
+                    }
+                    $locked->update(['status' => HeldEarning::STATUS_REVERSED]);
+
+                    $this->ledger->record(
+                        LedgerEntry::TYPE_REVERSAL,
+                        LedgerEntry::PARTY_DRIVER,
+                        'in', // money conceptually returns to the operator's balance
+                        (int) $locked->amount_paise,
+                        $locked->trip_id,
+                        $locked->payment_id,
+                        null,
+                        ['held_earning_id' => $locked->id, 'reason' => 'ride_cancelled'],
+                    );
+
+                    return (int) $locked->amount_paise;
+                });
+
+                $reversed += $amount;
+            });
+
+        return $reversed;
+    }
+
+    /**
      * Releases a single held row. Row-locked and status-guarded so a concurrent
      * release (webhook + sweeper) can't double-pay.
      */

@@ -80,10 +80,44 @@ class PaymentSplitService
             }
 
             $trip = $locked->trip()->first();
-            if (! $trip instanceof Trip || ! $trip->driver_id) {
+            if (! $trip instanceof Trip) {
                 // Nothing to split against (e.g. a wallet top-up shouldn't reach
                 // here). Stamp split_at so we don't reconsider it every sweep.
                 $locked->forceFill(['split_at' => now()])->save();
+                return;
+            }
+
+            if (! $trip->driver_id) {
+                // Money landed but no driver is assigned yet (still searching, or
+                // nobody accepted). The operator holds all of it — record the
+                // capture so a subsequent auto-refund reconciles, and stamp
+                // split_at so we don't reconsider it.
+                $capturedPaise = self::toPaise($locked->amount);
+                $this->ledger->record(
+                    LedgerEntry::TYPE_CAPTURE,
+                    LedgerEntry::PARTY_CUSTOMER,
+                    'in',
+                    $capturedPaise,
+                    $trip->id,
+                    $locked->id,
+                    $locked->razorpay_payment_id,
+                );
+                if ($capturedPaise > 0) {
+                    $this->ledger->record(
+                        LedgerEntry::TYPE_RETAINED,
+                        LedgerEntry::PARTY_OPERATOR,
+                        'in',
+                        $capturedPaise,
+                        $trip->id,
+                        $locked->id,
+                    );
+                }
+                $locked->forceFill([
+                    'commission_amount' => $capturedPaise / 100,
+                    'driver_amount' => 0,
+                    'transfer_status' => null,
+                    'split_at' => now(),
+                ])->save();
                 return;
             }
 
