@@ -32,6 +32,15 @@ class PaymentModeService
      */
     public function allowedForTrip(Trip $trip): array
     {
+        // Once the auto-split engine is live, cash is dead: the customer always
+        // pays online so the fare can be split at source. This one gate makes
+        // both the customer payment screen and the payCash server guard drop
+        // cash together — no ride settles as cash while commission is collected
+        // by retaining it from an online payment.
+        if ((bool) config('services.payments.split_enabled', false)) {
+            return ['razorpay'];
+        }
+
         $city = $this->cityModes($trip->city_id);
 
         if ($this->driverManagesOwnModes()) {
