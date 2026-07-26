@@ -49,7 +49,6 @@ class CommissionSettlementService
         // them, so it is never commissionable — strip it before computing the cut.
         $fare = (float) ($trip->final_fare ?? 0);
         $toll = (float) ($trip->toll_amount ?? 0);
-        $commissionableFare = max(0.0, $fare - $toll);
 
         // City settings are the source of the standard commission rule.
         // Subscription plans can still override this per driver below.
@@ -62,25 +61,9 @@ class CommissionSettlementService
         // "no active sub" (default returned) apart from a real 0% sub rate.
         $subPct = $this->subscriptions->effectiveCommissionPercentForTrip($trip, -1.0);
 
-        if ($subPct >= 0.0) {
-            // Active subscription: its percent rate wins.
-            $percent = $subPct;
-            $cut = round($commissionableFare * $percent / 100, 2);
-        } elseif ($settings && $settings->commission_type === 'fixed') {
-            // Flat per-ride fee from the city.
-            $percent = 0.0;
-            $cut = round((float) $settings->fixed_commission, 2);
-        } else {
-            // Percentage of the fare from the city.
-            $percent = $settings ? (float) $settings->commission_percent : 0.0;
-            $cut = round($commissionableFare * $percent / 100, 2);
-        }
-
-        // A fixed fee can't exceed the ride fare; never push the driver into debt
-        // for a single ride, and never let it eat into the toll they're owed back.
-        if ($cut > $commissionableFare) {
-            $cut = $commissionableFare;
-        }
+        $commission = $this->commissionForFare($trip->city_id, $fare, $toll, $subPct, $settings);
+        $percent = $commission['percent'];
+        $cut = $commission['amount'];
 
         // Under the auto-split engine the commission is retained at the source of
         // the customer's online payment (Route), so we must NOT also claw it back
@@ -105,6 +88,45 @@ class CommissionSettlementService
 
         // Count this ride against any active subscription (expiring it when used up).
         $this->subscriptions->consume($trip);
+    }
+
+    /**
+     * The city's standard commission on a fare (Phase 5 extracted it so Fixed and
+     * Shuttle prepayments can snapshot the same number the solo path uses). Toll is
+     * never commissionable — it's the driver's booth payment passing back through —
+     * so it's stripped first. A subscription percent (>= 0) overrides the city
+     * rule; pass -1 for "no active subscription".
+     *
+     * @return array{percent:float,amount:float}
+     */
+    public function commissionForFare(?int $cityId, float $fare, float $toll = 0.0, float $subPercent = -1.0, ?CitySetting $settings = null): array
+    {
+        $commissionable = max(0.0, round($fare - $toll, 2));
+        $settings ??= $cityId
+            ? CitySetting::query()->firstOrCreate(['city_id' => $cityId])
+            : null;
+
+        if ($subPercent >= 0.0) {
+            // Active subscription: its percent rate wins.
+            $percent = max(0.0, $subPercent);
+            $cut = round($commissionable * $percent / 100, 2);
+        } elseif ($settings && $settings->commission_type === 'fixed') {
+            // Flat per-ride fee from the city.
+            $percent = 0.0;
+            $cut = round((float) $settings->fixed_commission, 2);
+        } else {
+            // Percentage of the fare from the city.
+            $percent = $settings ? (float) $settings->commission_percent : 0.0;
+            $cut = round($commissionable * $percent / 100, 2);
+        }
+
+        // A fixed fee can't exceed the fare; never push the driver into debt and
+        // never let it eat into the toll they're owed back.
+        if ($cut > $commissionable) {
+            $cut = $commissionable;
+        }
+
+        return ['percent' => round($percent, 2), 'amount' => $cut];
     }
 
     /**
@@ -153,7 +175,12 @@ class CommissionSettlementService
         $trip->commission_percent = 0.0;
         $trip->save();
 
-        if ($driverCredit > 0 && $trip->driver) {
+        // Under the auto-split engine the driver is paid their share directly via
+        // Route (BookingPaymentService::settleTrip, from the completion hook), so
+        // we must NOT also credit the legacy wallet — that would double-pay them.
+        $splitEnabled = (bool) config('services.payments.split_enabled', false);
+
+        if (! $splitEnabled && $driverCredit > 0 && $trip->driver) {
             $this->wallet->recordTransaction(
                 $trip->driver,
                 WalletTransaction::TYPE_CREDIT,

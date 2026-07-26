@@ -36,7 +36,7 @@ class FixedRefundService
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
             $eligibleForRefund = $this->isRefundAllowed($dep);
-            $refundOutcome = $this->applyRefundIfNeeded($res, $eligibleForRefund, $dep?->trip_id);
+            $refundOutcome = $this->applyRefundIfNeeded($res, $eligibleForRefund, $dep?->trip_id, AutoRefundService::BY_CUSTOMER);
 
             $this->releaseVehicleCapacity($dep, $res);
 

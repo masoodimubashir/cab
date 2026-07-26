@@ -154,51 +154,7 @@ class PaymentSplitService
 
             // 3) Driver's share: live transfer if verified, else held.
             $driver = $trip->driver()->first();
-            $transferStatus = Payment::TRANSFER_HELD;
-            $transferId = null;
-            $heldId = null;
-
-            if ($driverPaise > 0 && $driver && $driver->hasVerifiedPayoutAccount()) {
-                $transfer = $this->razorpay->createTransfer(
-                    (string) $locked->razorpay_payment_id,
-                    (string) $driver->razorpay_linked_account_id,
-                    $driverPaise,
-                    ['trip_id' => (string) $trip->id, 'reason' => 'driver_ride_share'],
-                );
-
-                if ($transfer) {
-                    $transferId = $transfer['id'];
-                    $transferStatus = $transfer['status'] === 'processed'
-                        ? Payment::TRANSFER_PROCESSED
-                        : Payment::TRANSFER_CREATED;
-
-                    $this->ledger->record(
-                        LedgerEntry::TYPE_TRANSFER,
-                        LedgerEntry::PARTY_DRIVER,
-                        'out',
-                        $driverPaise,
-                        $trip->id,
-                        $locked->id,
-                        $transferId,
-                    );
-                } else {
-                    // F3 — captured but the transfer to the driver failed. The
-                    // payment stands; park the share so the driver isn't shorted,
-                    // and alert. The sweeper/verification retries it as a release.
-                    $held = $this->heldEarnings->park($driver, $trip->id, $locked, $driverPaise);
-                    $heldId = $held->id;
-                    Log::error('DreamCabs driver transfer failed after capture — share held, needs attention', [
-                        'payment_id' => $locked->id,
-                        'trip_id' => $trip->id,
-                        'driver_id' => $driver->id,
-                        'amount_paise' => $driverPaise,
-                    ]);
-                }
-            } elseif ($driverPaise > 0 && $driver) {
-                // P4 — driver has no verified payout account; hold the share.
-                $held = $this->heldEarnings->park($driver, $trip->id, $locked, $driverPaise);
-                $heldId = $held->id;
-            }
+            [$transferId, $transferStatus, $heldId] = $this->placeDriverShare($locked, $driver, $trip->id, $driverPaise);
 
             $locked->forceFill([
                 'commission_amount' => $operatorPaise / 100,
@@ -209,6 +165,136 @@ class PaymentSplitService
                 'split_at' => now(),
             ])->save();
         });
+    }
+
+    /**
+     * Settles a Fixed/Shuttle prepay's split at trip completion (Phase 5). Unlike
+     * the solo path — which splits at capture because the customer pays after the
+     * ride, when the driver is already known — a Fixed/Shuttle customer prepays at
+     * booking, before a driver is assigned and before the ride happens. So its
+     * Payment row is recorded at capture with no split, and the money is divided
+     * here once the trip completes and $driver is known.
+     *
+     * The figures are passed explicitly (the per-seat/per-passenger fare and its
+     * commission snapshot) rather than read off the trip, because one Fixed
+     * departure or Shuttle journey carries many independent bookings on a single
+     * trip. Idempotent on payments.split_at; no-op while the engine is disabled.
+     */
+    public function settleBookingPayment(Payment $payment, ?User $driver, int $grossPaise, int $commissionPaise): void
+    {
+        if (! $this->enabled()) {
+            return;
+        }
+
+        DB::transaction(function () use ($payment, $driver, $grossPaise, $commissionPaise) {
+            /** @var Payment|null $locked */
+            $locked = Payment::query()->lockForUpdate()->find($payment->id);
+            if (! $locked || $locked->status !== 'SUCCESS' || $locked->split_at !== null) {
+                return; // gone, not captured, or already settled
+            }
+
+            $capturedPaise = self::toPaise($locked->amount);
+            $split = $this->computeSplit($capturedPaise, $grossPaise, $commissionPaise);
+            $driverPaise = $driver !== null ? $split['driver_paise'] : 0;
+            $operatorPaise = $capturedPaise - $driverPaise;
+
+            // 1) Money landed with the operator (recorded now, at settlement).
+            $this->ledger->record(
+                LedgerEntry::TYPE_CAPTURE,
+                LedgerEntry::PARTY_CUSTOMER,
+                'in',
+                $capturedPaise,
+                $locked->trip_id,
+                $locked->id,
+                $locked->razorpay_payment_id,
+            );
+
+            // 2) Operator retains its commission.
+            if ($operatorPaise > 0) {
+                $this->ledger->record(
+                    LedgerEntry::TYPE_RETAINED,
+                    LedgerEntry::PARTY_OPERATOR,
+                    'in',
+                    $operatorPaise,
+                    $locked->trip_id,
+                    $locked->id,
+                );
+            }
+
+            // 3) Driver's share: live transfer if verified, else held.
+            [$transferId, $transferStatus, $heldId] = $this->placeDriverShare($locked, $driver, (int) $locked->trip_id, $driverPaise);
+
+            $locked->forceFill([
+                'commission_amount' => $operatorPaise / 100,
+                'driver_amount' => $driverPaise / 100,
+                'driver_transfer_id' => $transferId,
+                'transfer_status' => $transferStatus,
+                'held_earning_id' => $heldId,
+                'split_at' => now(),
+            ])->save();
+        });
+    }
+
+    /**
+     * Moves the driver's share of a captured payment: a live Route transfer when
+     * the driver is verified (recording the TRANSFER on the ledger), otherwise the
+     * share is parked as a held earning — either because the driver has no verified
+     * payout account (P4) or because a live transfer failed and we don't want to
+     * short them (F3). Shared by the solo and booking settlement paths.
+     *
+     * @return array{0:?string,1:?string,2:?int} [transferId, transferStatus, heldId]
+     */
+    private function placeDriverShare(Payment $locked, ?User $driver, int $tripId, int $driverPaise): array
+    {
+        if ($driverPaise <= 0 || ! $driver) {
+            return [null, null, null];
+        }
+
+        if ($driver->hasVerifiedPayoutAccount()) {
+            $transfer = $this->razorpay->createTransfer(
+                (string) $locked->razorpay_payment_id,
+                (string) $driver->razorpay_linked_account_id,
+                $driverPaise,
+                ['trip_id' => (string) $tripId, 'reason' => 'driver_ride_share'],
+            );
+
+            if ($transfer) {
+                $transferId = $transfer['id'];
+                $transferStatus = $transfer['status'] === 'processed'
+                    ? Payment::TRANSFER_PROCESSED
+                    : Payment::TRANSFER_CREATED;
+
+                $this->ledger->record(
+                    LedgerEntry::TYPE_TRANSFER,
+                    LedgerEntry::PARTY_DRIVER,
+                    'out',
+                    $driverPaise,
+                    $tripId,
+                    $locked->id,
+                    $transferId,
+                );
+
+                return [$transferId, $transferStatus, null];
+            }
+
+            // F3 — captured but the transfer to the driver failed. The payment
+            // stands; park the share so the driver isn't shorted, and alert. The
+            // sweeper/verification retries it as a release.
+            $held = $this->heldEarnings->park($driver, $tripId, $locked, $driverPaise);
+            Log::error('DreamCabs driver transfer failed after capture — share held, needs attention', [
+                'payment_id' => $locked->id,
+                'trip_id' => $tripId,
+                'driver_id' => $driver->id,
+                'amount_paise' => $driverPaise,
+            ]);
+
+            return [null, Payment::TRANSFER_HELD, $held->id];
+        }
+
+        // P4 — driver has no verified payout account; hold the share.
+        $held = $this->heldEarnings->park($driver, $tripId, $locked, $driverPaise);
+
+        return [null, Payment::TRANSFER_HELD, $held->id];
     }
 
     private static function toPaise($rupees): int

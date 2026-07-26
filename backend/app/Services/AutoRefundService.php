@@ -112,6 +112,167 @@ class AutoRefundService
     }
 
     /**
+     * Executes a Fixed/Shuttle seat-release refund (Phase 5, rulebook R6/R7). The
+     * caller — which owns the seat-release timing — has already decided the binary
+     * outcome: a full refund when the seat went back to inventory in time or the
+     * cancel isn't the customer's fault ($refundFull = true), or no refund on a
+     * no-show / too-late cancel where the seat was held and lost ($refundFull =
+     * false).
+     *
+     * A Fixed/Shuttle booking is always cancelled BEFORE the trip completes, so its
+     * split was never settled and the driver was never paid — the whole captured
+     * amount rests with the operator. We record that capture-to-operator on the
+     * ledger (so it reconciles) and, on a full refund, return the money to the
+     * customer. Idempotent: a double-cancel race or replayed webhook is a no-op
+     * once the refund is recorded. No-op while the split engine is disabled.
+     *
+     * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string}|null
+     */
+    public function refundBookingCancellation(Payment $payment, bool $refundFull, string $cancelledBy = self::BY_SYSTEM): ?array
+    {
+        if (! $this->enabled()) {
+            return null;
+        }
+
+        $capturedPaise = self::toPaise($payment->amount);
+        $refundPaise = $refundFull ? $capturedPaise : 0;
+
+        // Claim + record the capture-to-operator atomically. Returns the locked
+        // payment to act on, or null when there's nothing to do (already refunded
+        // or a refund is in flight).
+        $claimed = DB::transaction(function () use ($payment, $capturedPaise, $refundPaise) {
+            /** @var Payment|null $locked */
+            $locked = Payment::query()->lockForUpdate()->find($payment->id);
+            if (! $locked) {
+                return null;
+            }
+
+            $alreadyDone = $locked->refund_id !== null || $this->ledger->hasRefund($locked);
+            $inFlight = $locked->refund_status === Payment::REFUND_PENDING;
+            if ($alreadyDone || $inFlight) {
+                return null;
+            }
+
+            // A cancelled-before-ride booking never pays the driver, so the whole
+            // captured amount rests with the operator until (if) it's refunded.
+            // Record it once — idempotent on the presence of a capture row — so the
+            // ledger reconciles whether or not a refund follows.
+            if (! $this->ledger->hasCapture($locked)) {
+                $this->ledger->record(
+                    LedgerEntry::TYPE_CAPTURE,
+                    LedgerEntry::PARTY_CUSTOMER,
+                    'in',
+                    $capturedPaise,
+                    $locked->trip_id,
+                    $locked->id,
+                    $locked->razorpay_payment_id,
+                );
+                if ($capturedPaise > 0) {
+                    $this->ledger->record(
+                        LedgerEntry::TYPE_RETAINED,
+                        LedgerEntry::PARTY_OPERATOR,
+                        'in',
+                        $capturedPaise,
+                        $locked->trip_id,
+                        $locked->id,
+                    );
+                }
+                $locked->forceFill([
+                    'commission_amount' => $capturedPaise / 100,
+                    'driver_amount' => 0,
+                    'transfer_status' => null,
+                    'split_at' => $locked->split_at ?? now(),
+                ])->save();
+            }
+
+            // Stake a pending claim on the refund case so a racing cancel backs off.
+            if ($refundPaise > 0) {
+                $locked->forceFill(['refund_status' => Payment::REFUND_PENDING])->save();
+            }
+
+            return $locked;
+        });
+
+        if ($claimed === null) {
+            return [
+                'refunded_paise' => 0,
+                'reversed_paise' => 0,
+                'reason' => 'already_refunded',
+                'status' => 'skipped',
+            ];
+        }
+
+        // R7 — no refund: the operator keeps the fare as the no-show penalty. The
+        // capture-to-operator ledger recorded above is the whole story.
+        if ($refundPaise <= 0) {
+            return [
+                'refunded_paise' => 0,
+                'reversed_paise' => 0,
+                'reason' => 'no_refund_seat_lost',
+                'status' => 'no_refund',
+            ];
+        }
+
+        // R6 / not-the-customer's-fault — full refund. Claw back any driver share
+        // that was already settled (normally none for a pre-completion cancel),
+        // then return the money to the customer. Fail-soft on the Razorpay call.
+        $reversedPaise = $this->reverseDriverShare($claimed);
+
+        try {
+            $refund = $this->razorpay->refundPayment(
+                (string) $claimed->razorpay_payment_id,
+                $refundPaise,
+                ['trip_id' => (string) $claimed->trip_id, 'reason' => 'booking_cancelled'],
+            );
+        } catch (\Throwable $e) {
+            $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
+            Log::error('DreamCabs booking auto-refund failed at Razorpay — needs attention', [
+                'payment_id' => $claimed->id,
+                'trip_id' => $claimed->trip_id,
+                'amount_paise' => $refundPaise,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'refunded_paise' => 0,
+                'reversed_paise' => $reversedPaise,
+                'reason' => 'booking_cancelled',
+                'status' => 'refund_failed',
+            ];
+        }
+
+        $this->ledger->record(
+            LedgerEntry::TYPE_REFUND,
+            LedgerEntry::PARTY_CUSTOMER,
+            'out',
+            $refundPaise,
+            $claimed->trip_id,
+            $claimed->id,
+            $refund['id'],
+            ['reason' => 'booking_cancelled', 'cancelled_by' => $cancelledBy],
+        );
+
+        $status = ($refund['status'] ?? 'processed') === 'processed'
+            ? Payment::REFUND_PROCESSED
+            : Payment::REFUND_PENDING;
+
+        $claimed->forceFill([
+            'status' => 'REFUNDED',
+            'refund_id' => $refund['id'],
+            'refund_amount' => $refundPaise / 100,
+            'refund_status' => $status,
+            'refunded_at' => now(),
+        ])->save();
+
+        return [
+            'refunded_paise' => $refundPaise,
+            'reversed_paise' => $reversedPaise,
+            'reason' => 'booking_cancelled',
+            'status' => $status === Payment::REFUND_PROCESSED ? 'refunded' : 'refund_pending',
+        ];
+    }
+
+    /**
      * The refund transaction for one captured payment. Row-locked and guarded on
      * payments.refunded_at so a concurrent cancel can't double-refund (R12).
      *

@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'transfer_status',
     'held_earning_id',
     'split_at',
+    'settlement_mode',
     'refund_id',
     'refund_amount',
     'refund_status',
@@ -42,6 +43,12 @@ class Payment extends Model
     public const TRANSFER_FAILED = 'failed';
     public const TRANSFER_HELD = 'held';
     public const TRANSFER_REVERSED = 'reversed';
+
+    /**
+     * Settlement timing (payments.settlement_mode). A Fixed/Shuttle prepay is
+     * settled at trip completion, not at capture — see the migration.
+     */
+    public const SETTLE_BOOKING = 'booking';
 
     /** Auto-refund state (payments.refund_status). */
     public const REFUND_PENDING = 'pending';
