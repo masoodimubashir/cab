@@ -149,6 +149,8 @@ class ShuttleBookingService
                 $dispatch = [$trip->id, (float) $locked->fare_amount];
             }
 
+            $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
+
             return $locked->fresh();
         });
 
@@ -198,6 +200,8 @@ class ShuttleBookingService
                 $dispatch = [$trip->id, (float) $locked->fare_amount];
             }
 
+            $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
+
             return $locked->fresh();
         });
 
@@ -206,6 +210,27 @@ class ShuttleBookingService
         }
 
         return $confirmed;
+    }
+
+    /**
+     * Phase 5 — mirror a confirmed Shuttle prepayment onto the shared money engine
+     * so the driver's share is split via Route at trip completion. The commission
+     * is snapshotted from the city's standard rule (the driver isn't assigned yet,
+     * so no subscription override applies). No-op while the split engine is off,
+     * in which case the legacy settlement path stays in charge.
+     */
+    private function recordSplitCapture(ShuttlePassengerBooking $booking, Trip $trip, string $razorpayPaymentId): void
+    {
+        $commission = app(CommissionSettlementService::class)
+            ->commissionForFare($booking->city_id, (float) $booking->fare_amount);
+
+        app(BookingPaymentService::class)->recordCapture(
+            $trip->id,
+            $razorpayPaymentId,
+            (float) $booking->fare_amount,
+            (float) $commission['amount'],
+            (string) ($booking->currency ?: 'INR'),
+        );
     }
 
     public function shapeBooking(ShuttlePassengerBooking $booking): array
