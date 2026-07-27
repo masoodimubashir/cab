@@ -19,12 +19,12 @@ import {
 } from '../../ui';
 
 type MeterType = 'rides' | 'days' | 'daily' | 'earnings';
-type PlanType = 'normal' | 'new_registration' | 'renewal' | 'targeted';
 type PricingModel = 'subscription' | 'commission' | 'hybrid';
 
 interface SubscriptionPlan {
   id: number;
   city_id: number;
+  city_name: string | null;
   vehicle_type_id: number | null;
   vehicle_type_name: string | null;
   title: string;
@@ -36,12 +36,16 @@ interface SubscriptionPlan {
   rides_count: number | null;
   days_count: number | null;
   earnings_threshold: number | null;
-  plan_type: PlanType;
   terms: string | null;
   available_from: string | null;
   available_to: string | null;
   is_active: boolean;
   active_subscribers_count: number;
+}
+
+interface CityOption {
+  id: number;
+  name: string;
 }
 
 interface VehicleTypeOption {
@@ -58,18 +62,6 @@ const METER_OPTIONS: { label: string; value: MeterType }[] = [
   { label: 'Based on earnings', value: 'earnings' },
 ];
 
-const PLAN_TYPE_OPTIONS: { label: string; value: PlanType }[] = [
-  { label: 'Normal', value: 'normal' },
-  { label: 'New Registration', value: 'new_registration' },
-  { label: 'Subscription Renewal', value: 'renewal' },
-  { label: 'Targeted', value: 'targeted' },
-];
-
-/**
- * The three ways a plan can charge a driver. The chosen model locks the money
- * fields: a subscription is commission-free, a commission plan has no up-front
- * amount, and a hybrid keeps both. Order matches the product spec.
- */
 const PRICING_MODEL_OPTIONS: {
   value: PricingModel; label: string; short: string; desc: string; icon: IconName;
 }[] = [
@@ -87,13 +79,6 @@ const PRICING_MODEL_OPTIONS: {
   },
 ];
 
-/**
- * Subscriptions — driver subscription plans for the city chosen in the topbar
- * switcher. A plan lets a driver pay up front and keep (usually) 100% of their
- * fares for a window metered by rides / days / a daily pass / an earnings cap.
- * Layout mirrors Fleets: tm-data-table with search + filters, a right-side
- * drawer for create/edit, and a confirm modal for delete.
- */
 @Component({
   selector: 'app-subscriptions',
   standalone: true,
@@ -105,157 +90,178 @@ const PRICING_MODEL_OPTIONS: {
   ],
   template: `
     <div class="page">
+      <!-- Hero Header -->
       <header class="page__hero">
         <div>
           <h1 class="page__title">Subscriptions</h1>
-          <p class="page__sub">Driver plans sold in this city — subscription, commission, or hybrid.</p>
+          <p class="page__sub">Manage driver subscription plans, commission models & pricing tiers across cities.</p>
         </div>
         <tm-button
-          *ngIf="cityId != null"
           variant="green" icon="plus"
           (clicked)="openCreate()"
         >Add subscription</tm-button>
       </header>
 
-      <!-- No city -->
-      <div class="cue" *ngIf="cityId == null">
-        <tm-icon name="map-marker" [size]="24" />
-        <p class="cue__title">No city selected</p>
-        <p class="cue__text">Pick a city from the switcher in the top bar to manage its subscription plans.</p>
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <tm-input
+          icon="search"
+          placeholder="Search by title or subtitle."
+          [(ngModel)]="search"
+          (ngModelChange)="onSearchChange()"
+        />
+
+        <div class="filter-selects">
+          <tm-filter-select
+            icon="map-marker"
+            ariaLabel="Location filter"
+            allLabel="All cities"
+            [options]="cityFilterOptions"
+            [value]="selectedCityTab"
+            (valueChange)="selectCityTab($event)"
+          />
+          <tm-filter-select
+            icon="car"
+            ariaLabel="Vehicle filter"
+            allLabel="All vehicles"
+            [options]="vehicleFilterOptions"
+            [value]="vehicleFilter"
+            (valueChange)="onVehicleFilterChange($event)"
+          />
+          <tm-filter-select
+            icon="tag"
+            ariaLabel="Model filter"
+            allLabel="All models"
+            [options]="modelFilterOptions"
+            [value]="model"
+            (valueChange)="onModelChange($event)"
+          />
+          <tm-filter-select
+            icon="shield"
+            ariaLabel="Status filter"
+            allLabel="All statuses"
+            [options]="statusFilterOptions"
+            [value]="status"
+            (valueChange)="onStatusChange($event)"
+          />
+          <tm-filter-select
+            icon="bolt"
+            ariaLabel="Plan type filter"
+            allLabel="All types"
+            [options]="meterFilterOptions"
+            [value]="meter"
+            (valueChange)="onMeterChange($event)"
+          />
+        </div>
       </div>
 
-      <ng-container *ngIf="cityId != null">
-        <tm-data-table
-          [rows]="plans"
-          [total]="plans.length"
-          [loading]="loading"
-          emptyTitle="No subscription plans"
-          emptyHint="Create a plan, or clear the filters."
-        >
-          <tm-input
-            slot="search"
-            icon="search"
-            placeholder="Search by title or subtitle."
-            [(ngModel)]="search"
-            (ngModelChange)="onSearchChange()"
-          />
+      <!-- Active Filter Pills Banner -->
+      <div class="banner-row" *ngIf="search.trim() || selectedCityTab !== 'all' || vehicleFilter !== 'all' || model !== 'all' || status !== 'all' || meter !== 'all'">
+        <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
+        <tm-filter-pill *ngIf="selectedCityTab !== 'all'" icon="map-marker" label="Location" [value]="cityTabLabel()" (clear)="selectCityTab('all')" />
+        <tm-filter-pill *ngIf="vehicleFilter !== 'all'" icon="car" label="Vehicle" [value]="vehicleFilterLabel()" (clear)="clearVehicleFilter()" />
+        <tm-filter-pill *ngIf="model !== 'all'" icon="tag" label="Model" [value]="modelShort(model)" (clear)="clearModel()" />
+        <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
+        <tm-filter-pill *ngIf="meter !== 'all'" icon="bolt" label="Type" [value]="meterLabel(meter)" (clear)="clearMeter()" />
+      </div>
 
-          <ng-container slot="filters">
-            <tm-filter-select
-              icon="tag"
-              ariaLabel="Model filter"
-              allLabel="All models"
-              [options]="modelFilterOptions"
-              [value]="model"
-              (valueChange)="onModelChange($event)"
-            />
-            <tm-filter-select
-              icon="shield"
-              ariaLabel="Status filter"
-              allLabel="All statuses"
-              [options]="statusFilterOptions"
-              [value]="status"
-              (valueChange)="onStatusChange($event)"
-            />
-            <tm-filter-select
-              icon="bolt"
-              ariaLabel="Plan type filter"
-              allLabel="All types"
-              [options]="meterFilterOptions"
-              [value]="meter"
-              (valueChange)="onMeterChange($event)"
-            />
-          </ng-container>
-
-          <ng-container slot="banner">
-            <tm-filter-pill *ngIf="search.trim()" icon="search" label="Search" [value]="search" (clear)="clearSearch()" />
-            <tm-filter-pill *ngIf="model !== 'all'" icon="tag" label="Model" [value]="modelShort(model)" (clear)="clearModel()" />
-            <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatus()" />
-            <tm-filter-pill *ngIf="meter !== 'all'" icon="bolt" label="Type" [value]="meterLabel(meter)" (clear)="clearMeter()" />
-          </ng-container>
-
-          <!-- ============ Columns ============ -->
-          <tm-column key="title" label="Plan">
-            <ng-template let-row>
-              <div class="cell-id">
-                <span class="cell-name-row">
-                  <span class="cell-name">{{ row.title }}</span>
-                  <span class="model-chip" [attr.data-m]="row.pricing_model">{{ modelShort(row.pricing_model) }}</span>
-                </span>
-                <span class="cell-sub">{{ row.subtitle || planTypeLabel(row.plan_type) }}</span>
+      <!-- Single Data Table -->
+      <tm-data-table
+        [rows]="filteredPlans"
+        [total]="filteredPlans.length"
+        [loading]="loading"
+        emptyTitle="No subscription plans"
+        emptyHint="Create a plan, or clear the active filters."
+      >
+        <tm-column key="title" label="Plan Group">
+          <ng-template let-row let-i="index">
+            <div class="group-cell" [class.group-start]="isFirstInTitleGroup(i)">
+              <div class="group-header-pill" *ngIf="isFirstInTitleGroup(i)">
+                <span class="group-header-title">{{ row.title }}</span>
+                <span class="model-chip" [attr.data-m]="row.pricing_model">{{ modelShort(row.pricing_model) }}</span>
               </div>
-            </ng-template>
-          </tm-column>
+              <span class="cell-sub" *ngIf="row.subtitle && isFirstInTitleGroup(i)">{{ row.subtitle }}</span>
+            </div>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="meter" label="Type" width="190">
-            <ng-template let-row>
-              <div class="cell-id">
-                <span class="cell-name">{{ meterLabel(row.meter_type) }}</span>
-                <span class="cell-sub">{{ limitLabel(row) }}</span>
-              </div>
-            </ng-template>
-          </tm-column>
+        <tm-column key="city" label="Location" width="140">
+          <ng-template let-row>
+            <div class="cell-location">
+              <tm-icon name="map-marker" [size]="13" class="loc-icon" />
+              <span class="cell-location__name">{{ row.city_name || 'All cities' }}</span>
+            </div>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="amount" label="Price" width="110">
-            <ng-template let-row>
-              <span class="cell-amt">₹{{ row.amount | number: '1.0-2' }}</span>
-            </ng-template>
-          </tm-column>
+        <tm-column key="vehicle" label="Vehicle" width="130">
+          <ng-template let-row>
+            <span *ngIf="row.vehicle_type_name" class="cell-name">{{ row.vehicle_type_name }}</span>
+            <span *ngIf="!row.vehicle_type_name" class="muted">All vehicles</span>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="commission" label="Commission" width="120">
-            <ng-template let-row>
-              <span *ngIf="row.commission_percent > 0">{{ row.commission_percent }}%</span>
-              <span *ngIf="row.commission_percent <= 0" class="cell-free">Commission-free</span>
-            </ng-template>
-          </tm-column>
+        <tm-column key="meter" label="Type" width="180">
+          <ng-template let-row>
+            <div class="cell-id">
+              <span class="cell-name">{{ meterLabel(row.meter_type) }}</span>
+              <span class="cell-sub">{{ limitLabel(row) }}</span>
+            </div>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="vehicle" label="Vehicle" width="130">
-            <ng-template let-row>
-              <span *ngIf="row.vehicle_type_name">{{ row.vehicle_type_name }}</span>
-              <span *ngIf="!row.vehicle_type_name" class="muted">All vehicles</span>
-            </ng-template>
-          </tm-column>
+        <tm-column key="amount" label="Price" width="110">
+          <ng-template let-row>
+            <span class="cell-amt">₹{{ row.amount | number: '1.0-2' }}</span>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="subscribers" label="Active" width="90" align="right">
-            <ng-template let-row>
-              <span class="muted">{{ row.active_subscribers_count }}</span>
-            </ng-template>
-          </tm-column>
+        <tm-column key="commission" label="Commission" width="120">
+          <ng-template let-row>
+            <span *ngIf="row.commission_percent > 0">{{ row.commission_percent }}%</span>
+            <span *ngIf="row.commission_percent <= 0" class="cell-free">Commission-free</span>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="status" label="Status" width="110">
-            <ng-template let-row>
-              <span class="status-pill" [attr.data-s]="row.is_active ? 'active' : 'inactive'">
-                {{ row.is_active ? 'active' : 'inactive' }}
-              </span>
-            </ng-template>
-          </tm-column>
+        <tm-column key="subscribers" label="Active" width="90" align="right">
+          <ng-template let-row>
+            <span class="muted">{{ row.active_subscribers_count }}</span>
+          </ng-template>
+        </tm-column>
 
-          <tm-column key="actions" label="" width="100" align="right">
-            <ng-template let-row>
-              <div class="cell-actions">
-                <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit plan">
-                  <tm-icon name="edit" [size]="14" />
-                </button>
-                <button class="icon-btn icon-btn--danger" (click)="deleteTarget = row" aria-label="Delete plan">
-                  <tm-icon name="trash" [size]="14" />
-                </button>
-              </div>
-            </ng-template>
-          </tm-column>
-        </tm-data-table>
-      </ng-container>
+        <tm-column key="status" label="Status" width="100">
+          <ng-template let-row>
+            <span class="status-pill" [attr.data-s]="row.is_active ? 'active' : 'inactive'">
+              {{ row.is_active ? 'active' : 'inactive' }}
+            </span>
+          </ng-template>
+        </tm-column>
+
+        <tm-column key="actions" label="" width="90" align="right">
+          <ng-template let-row>
+            <div class="cell-actions">
+              <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit plan">
+                <tm-icon name="edit" [size]="14" />
+              </button>
+              <button class="icon-btn icon-btn--danger" (click)="deleteTarget = row" aria-label="Delete plan">
+                <tm-icon name="trash" [size]="14" />
+              </button>
+            </div>
+          </ng-template>
+        </tm-column>
+      </tm-data-table>
     </div>
 
-    <!-- Create / edit drawer -->
+    <!-- Create / Edit Drawer -->
     <tm-drawer
       [open]="open"
       [title]="editingId ? 'Edit subscription' : 'Add subscription'"
-      [subtitle]="cityName"
-      [width]="560"
+      subtitle="Configure plan details, location & vehicles"
+      [width]="580"
       (closed)="open = false"
     >
       <div slot="body" class="form">
-        <!-- Pricing model selector — drives which money fields are editable. -->
+        <!-- Pricing model selector -->
         <div class="model-pick" role="radiogroup" aria-label="Pricing model">
           <button
             *ngFor="let m of pricingModelOptions"
@@ -273,6 +279,62 @@ const PRICING_MODEL_OPTIONS: {
             <span class="model-card__label">{{ m.label }}</span>
             <span class="model-card__desc">{{ m.desc }}</span>
           </button>
+        </div>
+
+        <!-- Location (Cities) Multi-Select -->
+        <div class="field">
+          <span class="field__lbl">Locations / Cities <i>*</i></span>
+          <div class="multi-box">
+            <button
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="isAllCitiesSelected"
+              (click)="toggleAllCities()"
+            >
+              <tm-icon [name]="isAllCitiesSelected ? 'check' : 'plus'" [size]="12" />
+              All Cities
+            </button>
+            <button
+              *ngFor="let c of cities"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="!isAllCitiesSelected && isCitySelected(c.id)"
+              (click)="toggleCity(c.id)"
+            >
+              <tm-icon [name]="!isAllCitiesSelected && isCitySelected(c.id) ? 'check' : 'plus'" [size]="12" />
+              {{ c.name }}
+            </button>
+          </div>
+          <span class="field__hint" *ngIf="isAllCitiesSelected">Applies to all active cities in the system.</span>
+          <span class="field__hint" *ngIf="!isAllCitiesSelected">{{ selectedCityIds.length }} city(ies) selected.</span>
+        </div>
+
+        <!-- Vehicle Types Multi-Select -->
+        <div class="field">
+          <span class="field__lbl">Vehicle Types</span>
+          <div class="multi-box">
+            <button
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="isAllVehiclesSelected"
+              (click)="toggleAllVehicles()"
+            >
+              <tm-icon [name]="isAllVehiclesSelected ? 'check' : 'plus'" [size]="12" />
+              All Vehicle Types
+            </button>
+            <button
+              *ngFor="let v of vehicleTypes"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="!isAllVehiclesSelected && isVehicleSelected(v.id)"
+              (click)="toggleVehicle(v.id)"
+            >
+              <tm-icon [name]="!isAllVehiclesSelected && isVehicleSelected(v.id) ? 'check' : 'plus'" [size]="12" />
+              {{ v.name }}
+            </button>
+          </div>
+          <span class="field__hint" *ngIf="isAllVehiclesSelected">Applies to all vehicle types in the city.</span>
+          <span class="field__hint" *ngIf="!isAllVehiclesSelected">{{ selectedVehicleTypeIds.length }} vehicle type(s) selected.</span>
         </div>
 
         <div class="grid2">
@@ -318,7 +380,6 @@ const PRICING_MODEL_OPTIONS: {
             </select>
           </label>
 
-          <!-- Conditional limit field driven by Type -->
           <label class="field" *ngIf="form.meter_type === 'rides'">
             <span class="field__lbl">No. of rides <i>*</i></span>
             <input type="number" min="1" [(ngModel)]="form.rides_count" (ngModelChange)="touched.limit = true" />
@@ -337,22 +398,6 @@ const PRICING_MODEL_OPTIONS: {
             <span class="field__lbl">Earnings threshold <i>*</i></span>
             <input type="number" min="1" step="0.01" [(ngModel)]="form.earnings_threshold" (ngModelChange)="touched.limit = true" />
             <span class="field__err" *ngIf="touched.limit && !form.earnings_threshold">Required.</span>
-          </label>
-        </div>
-
-        <div class="grid2">
-          <label class="field">
-            <span class="field__lbl">Plan type</span>
-            <select [(ngModel)]="form.plan_type">
-              <option *ngFor="let p of planTypeOptions" [value]="p.value">{{ p.label }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field__lbl">Vehicle type</span>
-            <select [(ngModel)]="form.vehicle_type_id">
-              <option [ngValue]="null">All vehicle types</option>
-              <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.name }}</option>
-            </select>
           </label>
         </div>
 
@@ -399,25 +444,37 @@ const PRICING_MODEL_OPTIONS: {
     </tm-modal>
   `,
   styles: [`
-    .page { display: flex; flex-direction: column; gap: 16px; }
-    .page__hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .page { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 100%; box-sizing: border-box; }
+    .page__hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
     .page__title { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
     .page__sub { margin: 4px 0 0; font-size: 13px; color: var(--tm-text-muted); }
 
-    .cue {
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
-      padding: 48px 24px; text-align: center;
-      background: var(--tm-surface); border: 1px dashed var(--tm-line);
-      border-radius: var(--tm-radius-lg); color: var(--tm-text-muted);
+    /* ---------- Filter bar ---------- */
+    .filter-bar {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+      background: var(--tm-surface); border: 1px solid var(--tm-line); padding: 12px 14px;
+      border-radius: var(--tm-radius-lg); width: 100%; box-sizing: border-box;
     }
-    .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
-    .cue__text { margin: 0; font-size: 13px; }
+    .filter-selects { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+    .banner-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -6px; }
 
+    /* ---------- Cells ---------- */
+    .cell-location { display: inline-flex; align-items: center; gap: 5px; }
+    .loc-icon { color: var(--tm-green); flex-shrink: 0; }
     .cell-id { display: flex; flex-direction: column; min-width: 0; }
     .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .cell-sub { font-size: 11px; color: var(--tm-text-muted); }
     .cell-amt { font-family: var(--tm-font-mono); font-weight: 700; color: var(--tm-text); }
     .cell-free { color: var(--tm-green-deep); font-weight: 700; font-size: 12px; }
+
+    /* ---------- Single Table Grouping ---------- */
+    .group-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .group-cell.group-start { margin-top: 4px; padding-top: 6px; border-top: 2px solid var(--tm-line); }
+    .group-header-pill { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .group-header-title { font-size: 14px; font-weight: 800; color: var(--tm-text); }
+
+    .cell-location { display: inline-flex; align-items: center; gap: 6px; }
+    .cell-location__name { font-size: 13px; font-weight: 700; color: var(--tm-text); }
 
     .status-pill {
       display: inline-flex; align-items: center;
@@ -440,6 +497,21 @@ const PRICING_MODEL_OPTIONS: {
     }
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
+
+    /* ---------- Multi-select chips ---------- */
+    .multi-box { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .multi-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px; border: 1.5px solid var(--tm-line);
+      background: var(--tm-canvas); color: var(--tm-text); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all .15s ease;
+    }
+    .multi-chip:hover { border-color: var(--tm-text-muted); }
+    .multi-chip.is-selected {
+      background: var(--tm-success-bg); border-color: var(--tm-green);
+      color: var(--tm-green-deep); font-weight: 700;
+    }
+    .field__hint { font-size: 11px; color: var(--tm-text-muted); margin-top: 2px; }
 
     /* ---------- Drawer form ---------- */
     .form { display: flex; flex-direction: column; gap: 14px; }
@@ -480,7 +552,7 @@ const PRICING_MODEL_OPTIONS: {
     .model-card__label { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .model-card__desc { font-size: 11px; line-height: 1.4; color: var(--tm-text-muted); }
 
-    /* Locked money field (greyed, not editable for the chosen model) */
+    /* Locked money field */
     .field.is-locked .field__lbl { color: var(--tm-text-muted); }
     .field__tag {
       margin-left: 6px; font-size: 10px; font-weight: 800; letter-spacing: .3px;
@@ -505,24 +577,37 @@ const PRICING_MODEL_OPTIONS: {
 })
 export class SubscriptionsComponent implements OnInit, OnDestroy {
   plans: SubscriptionPlan[] = [];
+  cities: CityOption[] = [];
   vehicleTypes: VehicleTypeOption[] = [];
   loading = false;
-  cityId: number | null = null;
-  cityName = '';
 
-  // ── Filter state ────────────────────────────────────────────────
+  // ── Tab & Filter state ──────────────────────────────────────────
+  selectedCityTab = 'all';
   search = '';
+  vehicleFilter = 'all';
   status: StatusFilter = 'all';
   meter: MeterType | 'all' = 'all';
   model: PricingModel | 'all' = 'all';
 
   meterOptions = METER_OPTIONS;
-  planTypeOptions = PLAN_TYPE_OPTIONS;
   pricingModelOptions = PRICING_MODEL_OPTIONS;
   statusFilterOptions: { label: string; value: string }[] = [
     { label: 'Active', value: 'active' },
     { label: 'Inactive', value: 'inactive' },
   ];
+
+  get cityFilterOptions(): { label: string; value: string }[] {
+    return this.cities.map((c) => ({ label: c.name, value: String(c.id) }));
+  }
+
+  cityTabLabel(): string {
+    return this.cities.find((c) => String(c.id) === this.selectedCityTab)?.name ?? 'All cities';
+  }
+
+  get vehicleFilterOptions(): { label: string; value: string }[] {
+    return this.vehicleTypes.map((v) => ({ label: v.name, value: String(v.id) }));
+  }
+
   get meterFilterOptions(): { label: string; value: string }[] {
     return METER_OPTIONS.map((m) => ({ label: m.label, value: m.value }));
   }
@@ -530,11 +615,41 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     return PRICING_MODEL_OPTIONS.map((m) => ({ label: m.short, value: m.value }));
   }
 
-  // ── Drawer / delete state ───────────────────────────────────────
+  /** Sorted and grouped by Plan Title */
+  get filteredPlans(): SubscriptionPlan[] {
+    let list = this.plans;
+    if (this.selectedCityTab !== 'all') {
+      const targetCityId = Number(this.selectedCityTab);
+      list = list.filter((p) => p.city_id === targetCityId);
+    }
+    return list.slice().sort((a, b) => {
+      const titleCompare = a.title.localeCompare(b.title);
+      if (titleCompare !== 0) return titleCompare;
+      return (a.city_name || '').localeCompare(b.city_name || '');
+    });
+  }
+
+  isFirstInTitleGroup(index: number): boolean {
+    if (index === 0) return true;
+    const list = this.filteredPlans;
+    return list[index - 1]?.title?.trim() !== list[index]?.title?.trim();
+  }
+
+  selectCityTab(tab: string | number): void {
+    this.selectedCityTab = String(tab);
+  }
+
+  // ── Drawer / multi-select state ───────────────────────────────
   open = false;
   editingId: number | null = null;
   saving = false;
   deleteTarget: SubscriptionPlan | null = null;
+
+  selectedCityIds: number[] = [];
+  isAllCitiesSelected = true;
+
+  selectedVehicleTypeIds: number[] = [];
+  isAllVehiclesSelected = true;
 
   form = this.blankForm();
   touched = { title: false, amount: false, commission: false, limit: false };
@@ -552,14 +667,11 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     this.cityCtx.ensureCitiesLoaded().subscribe();
     this.loadVehicleTypes();
     this.subs.push(
-      this.cityCtx.cityId$.subscribe((id) => {
-        this.cityId = id;
-        this.fetchPlans();
-      }),
       this.cityCtx.cities$.subscribe((list) => {
-        this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
+        this.cities = list;
       }),
     );
+    this.fetchPlans();
   }
 
   ngOnDestroy(): void {
@@ -567,7 +679,6 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
   }
 
-  // ── Fetch ───────────────────────────────────────────────────────
   loadVehicleTypes(): void {
     this.api.get<{ data: VehicleTypeOption[] }>('/admin/vehicle-types-global?active_only=1').subscribe({
       next: (res) => (this.vehicleTypes = res?.data || []),
@@ -576,11 +687,8 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   }
 
   fetchPlans(): void {
-    if (this.cityId == null) {
-      this.plans = [];
-      return;
-    }
     const params = new URLSearchParams();
+    if (this.vehicleFilter !== 'all') params.set('vehicle_type_id', this.vehicleFilter);
     if (this.status !== 'all') params.set('is_active', this.status === 'active' ? '1' : '0');
     if (this.meter !== 'all') params.set('meter_type', this.meter);
     if (this.model !== 'all') params.set('pricing_model', this.model);
@@ -589,7 +697,7 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
     this.loading = true;
     const qs = params.toString();
-    this.api.get<{ data: SubscriptionPlan[] }>(`/admin/cities/${this.cityId}/subscription-plans${qs ? '?' + qs : ''}`).subscribe({
+    this.api.get<{ data: SubscriptionPlan[] }>(`/admin/subscription-plans${qs ? '?' + qs : ''}`).subscribe({
       next: (res) => {
         this.plans = res?.data || [];
         this.loading = false;
@@ -610,6 +718,19 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     if (!this.search) return;
     this.search = '';
     this.fetchPlans();
+  }
+
+  onVehicleFilterChange(value: string): void {
+    this.vehicleFilter = value;
+    this.fetchPlans();
+  }
+  clearVehicleFilter(): void {
+    if (this.vehicleFilter === 'all') return;
+    this.vehicleFilter = 'all';
+    this.fetchPlans();
+  }
+  vehicleFilterLabel(): string {
+    return this.vehicleTypes.find((v) => String(v.id) === this.vehicleFilter)?.name ?? 'All vehicles';
   }
 
   statusLabel(): string {
@@ -655,27 +776,19 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
     return PRICING_MODEL_OPTIONS.find((o) => o.value === m)?.short ?? 'Subscription';
   }
 
-  /** Commission is fixed at 0 for a pure subscription plan. */
   get commissionLocked(): boolean {
     return this.form.pricing_model === 'subscription';
   }
-  /** There is no up-front amount for a pure commission plan. */
   get amountLocked(): boolean {
     return this.form.pricing_model === 'commission';
   }
 
-  /**
-   * Switch the pricing model and zero out whichever money field the model
-   * disables, so a locked field can never carry a stale value into the payload.
-   */
   setPricingModel(model: PricingModel): void {
     this.form.pricing_model = model;
     if (model === 'subscription') this.form.commission_percent = 0;
     if (model === 'commission') this.form.amount = 0;
   }
-  planTypeLabel(p: PlanType): string {
-    return PLAN_TYPE_OPTIONS.find((o) => o.value === p)?.label ?? '';
-  }
+
   limitLabel(row: SubscriptionPlan): string {
     switch (row.meter_type) {
       case 'rides': return `${row.rides_count ?? 0} rides`;
@@ -683,6 +796,59 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
       case 'daily': return 'Per-day pass';
       case 'earnings': return `Up to ₹${row.earnings_threshold ?? 0}`;
       default: return '';
+    }
+  }
+
+  // ── Multi-select logic ──────────────────────────────────────────
+  toggleAllCities(): void {
+    this.isAllCitiesSelected = true;
+    this.selectedCityIds = [];
+  }
+
+  isCitySelected(id: number): boolean {
+    return this.selectedCityIds.includes(id);
+  }
+
+  toggleCity(id: number): void {
+    if (this.isAllCitiesSelected) {
+      this.isAllCitiesSelected = false;
+      this.selectedCityIds = [id];
+    } else {
+      const idx = this.selectedCityIds.indexOf(id);
+      if (idx >= 0) {
+        this.selectedCityIds.splice(idx, 1);
+        if (this.selectedCityIds.length === 0) {
+          this.isAllCitiesSelected = true;
+        }
+      } else {
+        this.selectedCityIds.push(id);
+      }
+    }
+  }
+
+  toggleAllVehicles(): void {
+    this.isAllVehiclesSelected = true;
+    this.selectedVehicleTypeIds = [];
+  }
+
+  isVehicleSelected(id: number): boolean {
+    return this.selectedVehicleTypeIds.includes(id);
+  }
+
+  toggleVehicle(id: number): void {
+    if (this.isAllVehiclesSelected) {
+      this.isAllVehiclesSelected = false;
+      this.selectedVehicleTypeIds = [id];
+    } else {
+      const idx = this.selectedVehicleTypeIds.indexOf(id);
+      if (idx >= 0) {
+        this.selectedVehicleTypeIds.splice(idx, 1);
+        if (this.selectedVehicleTypeIds.length === 0) {
+          this.isAllVehiclesSelected = true;
+        }
+      } else {
+        this.selectedVehicleTypeIds.push(id);
+      }
     }
   }
 
@@ -698,8 +864,6 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
       rides_count: null as number | null,
       days_count: null as number | null,
       earnings_threshold: null as number | null,
-      plan_type: 'normal' as PlanType,
-      vehicle_type_id: null as number | null,
       terms: '',
       available_from: '' as string | null,
       available_to: '' as string | null,
@@ -710,6 +874,10 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.editingId = null;
     this.form = this.blankForm();
+    this.isAllCitiesSelected = true;
+    this.selectedCityIds = [];
+    this.isAllVehiclesSelected = true;
+    this.selectedVehicleTypeIds = [];
     this.touched = { title: false, amount: false, commission: false, limit: false };
     this.open = true;
   }
@@ -717,6 +885,10 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
   openEdit(p: SubscriptionPlan): void {
     this.editingId = p.id;
     this.touched = { title: false, amount: false, commission: false, limit: false };
+    this.isAllCitiesSelected = false;
+    this.selectedCityIds = [p.city_id];
+    this.isAllVehiclesSelected = p.vehicle_type_id == null;
+    this.selectedVehicleTypeIds = p.vehicle_type_id != null ? [p.vehicle_type_id] : [];
     this.form = {
       title: p.title,
       subtitle: p.subtitle || '',
@@ -727,8 +899,6 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
       rides_count: p.rides_count,
       days_count: p.days_count,
       earnings_threshold: p.earnings_threshold,
-      plan_type: p.plan_type,
-      vehicle_type_id: p.vehicle_type_id,
       terms: p.terms || '',
       available_from: p.available_from || '',
       available_to: p.available_to || '',
@@ -739,7 +909,6 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
   get formValid(): boolean {
     if (!this.form.title.trim()) return false;
-    // The chosen pricing model decides which money fields must be positive.
     if (!this.amountLocked && (this.form.amount == null || this.form.amount <= 0)) return false;
     if (!this.commissionLocked && (this.form.commission_percent == null || this.form.commission_percent <= 0)) return false;
     if (this.form.meter_type === 'rides' && !this.form.rides_count) return false;
@@ -750,39 +919,41 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
   submit(): void {
     this.touched = { title: true, amount: true, commission: true, limit: true };
-    if (!this.formValid || this.saving || this.cityId == null) return;
+    if (!this.formValid || this.saving) return;
 
     const f = this.form;
     const body: Record<string, unknown> = {
       title: f.title.trim(),
       subtitle: f.subtitle?.trim() || null,
-      // A locked field never reaches the server with a value — the model owns it.
       amount: this.amountLocked ? 0 : f.amount,
       commission_percent: this.commissionLocked ? 0 : (f.commission_percent ?? 0),
       pricing_model: f.pricing_model,
       meter_type: f.meter_type,
-      plan_type: f.plan_type,
-      vehicle_type_id: f.vehicle_type_id,
+      city_ids: this.isAllCitiesSelected ? ['all'] : this.selectedCityIds,
+      vehicle_type_ids: this.isAllVehiclesSelected ? ['all'] : this.selectedVehicleTypeIds,
       terms: f.terms?.trim() || null,
       available_from: f.available_from || null,
       available_to: f.available_to || null,
       is_active: f.is_active,
-      // Only the limit field relevant to the chosen meter type.
       rides_count: f.meter_type === 'rides' ? f.rides_count : null,
       days_count: f.meter_type === 'days' ? f.days_count : (f.meter_type === 'daily' ? 1 : null),
       earnings_threshold: f.meter_type === 'earnings' ? f.earnings_threshold : null,
     };
 
     this.saving = true;
-    const base = `/admin/cities/${this.cityId}/subscription-plans`;
     const req = this.editingId
-      ? this.api.patch<{ plan: SubscriptionPlan }>(`${base}/${this.editingId}`, body)
-      : this.api.post<{ plan: SubscriptionPlan }>(base, body);
+      ? this.api.patch<{ plan: SubscriptionPlan }>(`/admin/subscription-plans/${this.editingId}`, {
+          ...body,
+          city_id: this.selectedCityIds[0] || null,
+          vehicle_type_id: this.selectedVehicleTypeIds[0] || null,
+        })
+      : this.api.post<{ plan: SubscriptionPlan }>(`/admin/subscription-plans`, body);
+
     req.subscribe({
-      next: () => {
+      next: (res: any) => {
         this.saving = false;
         this.open = false;
-        this.toast.success(this.editingId ? 'Subscription updated' : 'Subscription created');
+        this.toast.success(res?.message || (this.editingId ? 'Subscription updated' : 'Subscription created'));
         this.fetchPlans();
       },
       error: (err) => {
@@ -794,9 +965,9 @@ export class SubscriptionsComponent implements OnInit, OnDestroy {
 
   confirmDelete(): void {
     const p = this.deleteTarget;
-    if (!p || this.saving || this.cityId == null) return;
+    if (!p || this.saving) return;
     this.saving = true;
-    this.api.delete(`/admin/cities/${this.cityId}/subscription-plans/${p.id}`).subscribe({
+    this.api.delete(`/admin/subscription-plans/${p.id}`).subscribe({
       next: () => {
         this.saving = false;
         this.deleteTarget = null;

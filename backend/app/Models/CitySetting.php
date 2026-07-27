@@ -12,8 +12,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'chat_enabled',
     'show_region_specific_fare',
     'show_vehicle_make_model',
-    'customer_login_otp_message',
-    'customer_login_otp_message_ios',
     'allowed_driver_payment_modes',
     'negotiation_floor_percent',
     'commission_type',

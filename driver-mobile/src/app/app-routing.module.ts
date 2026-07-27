@@ -61,12 +61,6 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
-    path: 'payment-methods',
-    loadChildren: () =>
-      import('./pages/payment-methods/payment-methods.module').then((m) => m.PaymentMethodsPageModule),
-    canActivate: [AuthGuard],
-  },
-  {
     path: 'payout-account',
     loadChildren: () =>
       import('./pages/payout-account/payout-account.module').then((m) => m.PayoutAccountPageModule),

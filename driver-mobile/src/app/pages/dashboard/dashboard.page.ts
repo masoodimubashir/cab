@@ -140,7 +140,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Profile', sub: 'Name, email & photo', icon: 'person-outline', path: '/profile' },
         { label: 'Documents', sub: 'Vehicle details & uploads', icon: 'document-text-outline', path: '/driver-registration' },
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
-        { label: 'Payment methods', sub: 'Cash & Razorpay', icon: 'card-outline', path: '/payment-methods' },
         { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
       ],
     },

@@ -173,6 +173,10 @@ class AdminCouponsController
         $assignedAt = now();
         $expiresAt = !empty($data['expires_at']) ? Carbon::parse($data['expires_at']) : null;
         $created = 0;
+
+        /** @var \App\Services\NotificationCenter $notifier */
+        $notifier = app(\App\Services\NotificationCenter::class);
+
         foreach ($validUserIds as $uid) {
             CouponAssignment::query()->updateOrCreate(
                 ['coupon_id' => $coupon->id, 'user_id' => $uid],
@@ -184,6 +188,23 @@ class AdminCouponsController
                     'assigned_by_admin_id' => $request->user()?->id,
                 ],
             );
+
+            $msgBody = !empty($data['push_message']) ? $data['push_message'] : "You've received a new discount coupon: {$coupon->title}!";
+
+            $notifier->notifyUserId(
+                $uid,
+                'COUPON_ASSIGNED',
+                'New Discount Coupon!',
+                $msgBody,
+                [
+                    'coupon_id' => $coupon->id,
+                    'coupon_title' => $coupon->title,
+                    'discount_value' => $coupon->discount_value,
+                ],
+                'pricetag-outline',
+                push: true
+            );
+
             $created++;
         }
 

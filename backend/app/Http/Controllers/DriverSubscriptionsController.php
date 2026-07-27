@@ -164,7 +164,6 @@ class DriverSubscriptionsController
             'rides_count' => $p->rides_count,
             'days_count' => $p->days_count,
             'earnings_threshold' => $p->earnings_threshold !== null ? (float) $p->earnings_threshold : null,
-            'plan_type' => $p->plan_type,
             'vehicle_type_name' => $p->vehicleType?->name,
             'terms' => $p->terms,
         ];

@@ -16,9 +16,6 @@ interface OperatorSettings {
   customer_tip_value_1: number;
   customer_tip_value_2: number;
   customer_tip_value_3: number;
-  corporate_tip_value_1: number;
-  corporate_tip_value_2: number;
-  corporate_tip_value_3: number;
   tip_in_percentage: boolean;
 
   check_destination_outside_geofence: boolean;
@@ -140,14 +137,6 @@ interface SectionMeta {
                     <tm-input type="number" [(ngModel)]="settings.customer_tip_value_1" />
                     <tm-input type="number" [(ngModel)]="settings.customer_tip_value_2" />
                     <tm-input type="number" [(ngModel)]="settings.customer_tip_value_3" />
-                  </div>
-                </div>
-                <div class="field">
-                  <span class="field__label">Corporate tip presets</span>
-                  <div class="triple">
-                    <tm-input type="number" [(ngModel)]="settings.corporate_tip_value_1" />
-                    <tm-input type="number" [(ngModel)]="settings.corporate_tip_value_2" />
-                    <tm-input type="number" [(ngModel)]="settings.corporate_tip_value_3" />
                   </div>
                 </div>
               </div>
@@ -590,9 +579,6 @@ export class OperatorSettingsComponent implements OnInit {
       'customer_tip_value_1',
       'customer_tip_value_2',
       'customer_tip_value_3',
-      'corporate_tip_value_1',
-      'corporate_tip_value_2',
-      'corporate_tip_value_3',
       'tip_in_percentage',
     ],
     geofence: [

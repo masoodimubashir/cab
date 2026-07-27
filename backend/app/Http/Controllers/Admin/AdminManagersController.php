@@ -150,6 +150,7 @@ class AdminManagersController
             $user->manager_fleet_id = null;
         }
         $user->save();
+        $user->addRole('admin');
 
         return response()->json([
             'manager' => $this->shape($user->fresh(['managerRole', 'managerCity', 'managerFleet'])),

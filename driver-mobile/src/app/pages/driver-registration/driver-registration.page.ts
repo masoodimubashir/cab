@@ -1,6 +1,6 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Location } from '@angular/common';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
@@ -54,20 +54,6 @@ interface DocUploadState {
   labelValues: Record<string, string>;
 }
 
-/**
- * Driver onboarding wizard (after phone OTP signup).
- *
- *   Step 1 — Scope: city + permanent Local/Outstation choice.
- *   Step 2 — Mode: Private/Fixed/Shuttle under the selected scope.
- *   Step 3 — Profile + Vehicle: vehicle type, fleet, vehicle details.
- *            Saves the locked service and driver row (POST /drivers/register).
- *   Step 4 — Documents: catalog of required docs, each with an upload button.
- *            Driver cannot reach the dashboard until at least the mandatory
- *            docs are uploaded (status: uploaded/approved counts).
- *
- * Both steps are auth-gated by AuthGuard on the route; this component itself
- * enforces document-completion before allowing exit to /tabs/dashboard.
- */
 @Component({
   selector: 'app-driver-registration',
   templateUrl: './driver-registration.page.html',
@@ -119,6 +105,7 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     private auth: AuthService,
     private draft: DriverOnboardingDraftService,
     private router: Router,
+    private route: ActivatedRoute,
     private nav: NavController,
     private location: Location,
     private gestures: GestureController,
@@ -127,6 +114,9 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   ) {}
 
   ngOnInit(): void {
+    const qStep = this.route.snapshot.queryParamMap.get('step');
+    const requestedStep = qStep ? Number(qStep) : null;
+
     forkJoin({
       cities: this.api.get<{ data: CityOpt[] }>('/catalog/cities').pipe(
         catchError(() => of({ data: [] as CityOpt[] })),
@@ -164,25 +154,22 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
           this.service_mode = (d['service_mode'] as ServiceMode | null) ?? null;
           this.driverApproved = (d['approval_status'] as string | null) === 'approved';
 
-          // Keep the guard cache fresh so /tabs navigation stays snappy, but
-          // do NOT auto-redirect — an approved driver who lands here on
-          // purpose (e.g. from More → Registration & documents) wants to
-          // view/download their documents. The "Go to Dashboard" button at
-          // the bottom of the page is enabled for approved drivers, so there
-          // is always a visible way out.
           if (this.driverApproved) {
             ApprovedDriverGuard.setStateApproved();
           }
 
           if (this.city_id) this.loadRideProducts();
           if (this.city_id && this.vehicle_type_id) this.loadCityVehicles();
-
-          if (this.hasSavedDriverDetails(d)) {
-            this.step = 4;
-          }
         } else {
           this.restoreRegistrationDraft();
         }
+
+        if (requestedStep && [1, 2, 3, 4].includes(requestedStep)) {
+          this.step = requestedStep as 1 | 2 | 3 | 4;
+        } else {
+          this.step = 1;
+        }
+
         if (!d && !this.city_id && this.cities.length === 1) {
           this.city_id = this.cities[0].id;
           this.persistRegistrationDraft();
@@ -418,7 +405,6 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     if (scope) return scope.name;
     return 'Not selected';
   }
-
   get step1Valid(): boolean {
     return !!this.city_id && !!this.service_scope && this.modeOptions.length > 0 && !this.loadingRideProducts;
   }
@@ -428,14 +414,17 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
   }
 
   get step3Valid(): boolean {
+    if (this.driverApproved || (this.city_id && this.vehicle_type_id && this.city_vehicle_type_id)) {
+      return true;
+    }
     const fleetOk = this.fleetsForCurrentCity.length === 0 || !!this.fleet_id;
     return !!this.city_id
       && fleetOk
       && !!this.vehicle_type_id
       && !!this.city_vehicle_type_id
-      && /^\d{4}$/.test(this.vehicle_model_year.trim())
-      && !!this.vehicle_color.trim()
-      && !!this.vehicle_reg_no.trim();
+      && /^\d{4}$/.test((this.vehicle_model_year || '').trim())
+      && !!(this.vehicle_color || '').trim()
+      && !!(this.vehicle_reg_no || '').trim();
   }
 
   get modelYearDate(): string | null {
@@ -474,12 +463,18 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
 
   submitStep1(): void {
     this.error = null;
+
+    if (this.driverApproved || (this.city_id && this.vehicle_type_id && this.city_vehicle_type_id)) {
+      this.step = 4;
+      this.refreshDocumentStep(true);
+      return;
+    }
+
     if (!this.service_scope) { this.error = 'Please choose Local or Outstation.'; this.step = 1; return; }
     if (!this.service_mode) { this.error = 'Please choose the service type you will provide.'; this.step = 2; return; }
     if (!this.city_id) { this.error = 'Please pick your city.'; return; }
     if (!this.vehicle_type_id) { this.error = 'Please pick your vehicle type.'; return; }
     if (!this.city_vehicle_type_id) { this.error = 'Please pick the city vehicle.'; return; }
-    if (this.fleetsForCurrentCity.length > 0 && !this.fleet_id) { this.error = 'Please pick your fleet.'; return; }
     if (!/^\d{4}$/.test(this.vehicle_model_year.trim())) { this.error = 'Please select the model year.'; return; }
     if (!this.vehicle_color.trim()) { this.error = 'Please enter the vehicle color.'; return; }
     if (!this.vehicle_reg_no.trim()) { this.error = 'Please enter the registration number.'; return; }
@@ -518,6 +513,12 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
         this.refreshDocumentStep(true);
       },
       error: (err) => {
+        if (this.city_id && this.vehicle_type_id && this.city_vehicle_type_id) {
+          this.step = 4;
+          this.busy = false;
+          this.refreshDocumentStep(true);
+          return;
+        }
         this.error = err?.error?.message || 'Could not save vehicle details.';
         this.busy = false;
       },
@@ -611,7 +612,6 @@ export class DriverRegistrationPage implements OnInit, AfterViewInit, OnDestroy 
     if (status === 'approved') {
       this.driverApproved = true;
       ApprovedDriverGuard.setStateApproved();
-      this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
       return;
     }
 

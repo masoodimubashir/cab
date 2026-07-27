@@ -290,6 +290,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/users', [AdminUsersController::class, 'index'])->middleware('permission:managers');
     Route::patch('/admin/users/{user}/role', [AdminUsersController::class, 'updateRole'])->middleware('permission:managers');
 
+    // ── Global Subscription Plans Management ────────────────────────
+    Route::get('/admin/subscription-plans', [AdminSubscriptionsController::class, 'globalIndex'])->middleware('permission:subscriptions');
+    Route::post('/admin/subscription-plans', [AdminSubscriptionsController::class, 'globalStore'])->middleware('permission:subscriptions');
+    Route::get('/admin/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'globalShow'])->middleware('permission:subscriptions');
+    Route::patch('/admin/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'globalUpdate'])->middleware('permission:subscriptions');
+    Route::delete('/admin/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'globalDestroy'])->middleware('permission:subscriptions');
+
     // ── Customer Management ─────────────────────────────────────────
     Route::prefix('admin/customers')->middleware('permission:customers')->group(function () {
         Route::get('/', [AdminCustomersController::class, 'index']);

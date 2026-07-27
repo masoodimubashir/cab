@@ -100,9 +100,6 @@ interface RoleRow {
               <button type="button" class="secondary-btn" (click)="openEdit(selected)">
                 <tm-icon name="edit" [size]="15" /> Edit
               </button>
-              <button type="button" class="danger-btn" [disabled]="selected.managers_count > 0" (click)="remove(selected)">
-                <tm-icon name="trash" [size]="15" /> Delete
-              </button>
             </div>
           </section>
 
@@ -485,26 +482,6 @@ export class RolesPermissionsComponent implements OnInit {
       error: (e) => {
         this.saving = false;
         this.msg.add({ severity: 'error', summary: e?.error?.message || 'Save failed' });
-      },
-    });
-  }
-
-  remove(r: RoleRow): void {
-    if (r.managers_count > 0) {
-      this.msg.add({ severity: 'warn', summary: 'Reassign managers before deleting.' });
-      return;
-    }
-    this.confirm.confirm({
-      message: `Delete role "${r.name}"? This cannot be undone.`,
-      accept: () => {
-        this.api.delete(`/admin/manager-roles/${r.id}`).subscribe({
-          next: () => {
-            this.msg.add({ severity: 'success', summary: 'Role deleted' });
-            this.selected = null;
-            this.loadRoles();
-          },
-          error: (e) => this.msg.add({ severity: 'error', summary: e?.error?.message || 'Delete failed' }),
-        });
       },
     });
   }

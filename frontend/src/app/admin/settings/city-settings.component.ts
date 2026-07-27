@@ -51,9 +51,6 @@ interface CitySettings {
   show_region_specific_fare: boolean;
   show_vehicle_make_model: boolean;
 
-  customer_login_otp_message: string | null;
-  customer_login_otp_message_ios: string | null;
-
   allowed_driver_payment_modes: string[];
   negotiation_floor_percent: number | null;
   commission_type: 'percent' | 'fixed';
@@ -173,7 +170,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="tgl"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Low wallet alert</span><span class="tgl__hint">Show wallet warning on the driver app for this city.</span></span></label>
               </div>
             </div>
-            <div class="subsec"><h4 class="subsec__title">Customer messaging</h4><div class="grid grid-2"><label class="field"><span class="field__lbl">Login OTP message - Android<span class="info" tabindex="0" aria-label="Message shown with the OTP when an Android customer logs in." data-tip="Message shown with the OTP when an Android customer logs in.">!</span></span><textarea rows="3" [(ngModel)]="form.customer_login_otp_message"></textarea></label><label class="field"><span class="field__lbl">Login OTP message - iOS<span class="info" tabindex="0" aria-label="Message shown with the OTP when an iOS customer logs in." data-tip="Message shown with the OTP when an iOS customer logs in.">!</span></span><textarea rows="3" [(ngModel)]="form.customer_login_otp_message_ios"></textarea></label></div></div>
             <div class="subsec"><h4 class="subsec__title">Support contacts</h4><div class="grid grid-3"><label class="field"><span class="field__lbl">Emergency no.<span class="info" tabindex="0" aria-label="Emergency contact number shown to users in this city." data-tip="Emergency contact number shown to users in this city.">!</span></span><input type="text" [(ngModel)]="form.emergency_no" /></label><label class="field"><span class="field__lbl">Police no.<span class="info" tabindex="0" aria-label="Police contact number shown for safety help in this city." data-tip="Police contact number shown for safety help in this city.">!</span></span><input type="text" [(ngModel)]="form.emergency_police_no" /></label><label class="field"><span class="field__lbl">Driver support no.<span class="info" tabindex="0" aria-label="Support number drivers can use for this city." data-tip="Support number drivers can use for this city.">!</span></span><input type="text" [(ngModel)]="form.driver_support_no" /></label><label class="field"><span class="field__lbl">Customer support no.<span class="info" tabindex="0" aria-label="Support number customers can use for this city." data-tip="Support number customers can use for this city.">!</span></span><input type="text" [(ngModel)]="form.customer_support_no" /></label><label class="field"><span class="field__lbl">Support email<span class="info" tabindex="0" aria-label="Support email shown to users for this city." data-tip="Support email shown to users for this city.">!</span></span><input type="email" [(ngModel)]="form.support_email" /></label></div></div>
           </div>
         </section>
@@ -626,9 +622,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     append('chat_enabled', f.chat_enabled);
     append('show_region_specific_fare', f.show_region_specific_fare);
     append('show_vehicle_make_model', f.show_vehicle_make_model);
-
-    append('customer_login_otp_message', f.customer_login_otp_message);
-    append('customer_login_otp_message_ios', f.customer_login_otp_message_ios);
 
     fd.append(
       'allowed_driver_payment_modes',

@@ -25,9 +25,6 @@ return new class extends Migration {
             $table->unsignedInteger('days_count')->nullable();    // meter_type=days|daily (daily=1)
             $table->decimal('earnings_threshold', 10, 2)->nullable(); // meter_type=earnings
 
-            // Who/when the plan targets.
-            $table->enum('plan_type', ['normal', 'new_registration', 'renewal', 'targeted'])->default('normal');
-
             $table->text('terms')->nullable();
             $table->date('available_from')->nullable();
             $table->date('available_to')->nullable();

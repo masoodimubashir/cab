@@ -273,7 +273,7 @@ class AdminCustomersController
         ]);
     }
 
-    public function sendOtp(User $user)
+    public function sendOtp(User $user, \App\Services\PhoneOtpService $phoneOtpService)
     {
         $this->ensureCustomer($user);
 
@@ -281,15 +281,12 @@ class AdminCustomersController
             return response()->json(['message' => 'Customer has no phone on file.'], 422);
         }
 
-        // Generate a 6-digit code and SMS it. We do NOT verify it here — the
-        // actual app login still uses Firebase. This is an admin convenience
-        // for support flows ("read me the code you just got").
-        $code = (string) random_int(100000, 999999);
-        $body = "Your DreamCabs verification code is {$code}. Do not share it.";
-
-        $sent = $this->smsService->send($user->phone, $body);
-        if (!$sent) {
-            return response()->json(['message' => 'Failed to send OTP.'], 502);
+        $res = $phoneOtpService->start($user->phone, 'customer');
+        if (!($res['sent'] ?? false)) {
+            $cooldown = $res['cooldown'] ?? 30;
+            return response()->json([
+                'message' => "Please wait {$cooldown} seconds before resending OTP.",
+            ], 429);
         }
 
         Log::info('admin.customer.send_otp', [
@@ -297,7 +294,10 @@ class AdminCustomersController
             'phone' => $user->phone,
         ]);
 
-        return response()->json(['message' => 'OTP sent.']);
+        return response()->json([
+            'message' => 'OTP sent successfully.',
+            'dev_code' => $res['dev_code'] ?? null,
+        ]);
     }
 
     public function walletTransactions(User $user)
