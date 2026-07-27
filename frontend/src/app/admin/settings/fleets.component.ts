@@ -27,8 +27,6 @@ interface Fleet {
   address: string | null;
   vat_enabled: boolean;
   vat_number: string | null;
-  logo_path: string | null;
-  logo_url: string | null;
   status: string;
   is_active: boolean;
 }
@@ -127,10 +125,6 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
           <tm-column key="name" label="Fleet">
             <ng-template let-row>
               <div class="cell-fleet">
-                <span class="cell-logo">
-                  <img *ngIf="row.logo_url" [src]="row.logo_url" alt="" />
-                  <tm-icon *ngIf="!row.logo_url" name="car" [size]="16" />
-                </span>
                 <div class="cell-id">
                   <span class="cell-name">{{ row.name }}</span>
                   <span class="cell-sub">{{ row.phone_number || 'No phone' }}</span>
@@ -234,15 +228,6 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
             <option *ngFor="let s of statusOptions" [value]="s.value">{{ s.label }}</option>
           </select>
         </label>
-
-        <div class="field">
-          <span class="field__lbl">Logo (optional)</span>
-          <label class="upload">
-            <tm-icon name="upload" [size]="13" /> Choose image
-            <input type="file" accept="image/*" (change)="onLogo($event)" hidden />
-          </label>
-          <img *ngIf="logoPreview" [src]="logoPreview" class="preview" alt="logo preview" />
-        </div>
       </div>
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="open = false">Cancel</tm-button>
@@ -284,14 +269,7 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
        tm-filter-select / tm-filter-pill primitives. */
 
     /* ---------- Cell renderers ---------- */
-    .cell-fleet { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
-    .cell-logo {
-      width: 36px; height: 36px; border-radius: 9px; flex: none; overflow: hidden;
-      display: inline-flex; align-items: center; justify-content: center;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-      border: 1px solid var(--tm-line);
-    }
-    .cell-logo img { width: 100%; height: 100%; object-fit: cover; }
+    .cell-fleet { display: inline-flex; align-items: center; min-width: 0; }
     .cell-id { display: flex; flex-direction: column; min-width: 0; }
     .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .cell-sub { font-size: 11px; color: var(--tm-text-muted); }
@@ -350,14 +328,6 @@ const STATUS_OPTIONS: { label: string; value: Exclude<StatusFilter, 'all'> }[] =
     .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--tm-green); }
     .field textarea { resize: vertical; }
     .field__err { font-size: 11px; font-weight: 600; color: var(--tm-danger, #ef4444); }
-    .upload {
-      display: inline-flex; align-items: center; gap: 6px; justify-content: center;
-      padding: 8px 12px; border-radius: 8px;
-      background: var(--tm-canvas-2); color: var(--tm-text);
-      font-size: 12px; font-weight: 700; cursor: pointer; width: fit-content;
-    }
-    .upload:hover { background: var(--tm-line); }
-    .preview { width: 96px; height: 96px; object-fit: cover; border-radius: 9px; border: 1px solid var(--tm-line); margin-top: 4px; }
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
   `],
@@ -393,8 +363,6 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
 
   form = this.blankForm();
   touched = { name: false, phone: false };
-  logoFile: File | null = null;
-  logoPreview: string | null = null;
 
   private subs: Subscription[] = [];
   private searchDebounce: any = null;
@@ -506,8 +474,6 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
     this.editingId = null;
     this.form = this.blankForm();
     this.touched = { name: false, phone: false };
-    this.logoFile = null;
-    this.logoPreview = null;
     this.open = true;
   }
 
@@ -524,19 +490,7 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
       status: f.status || 'active',
       is_active: f.is_active,
     };
-    this.logoFile = null;
-    this.logoPreview = f.logo_url;
     this.open = true;
-  }
-
-  onLogo(ev: Event): void {
-    const file = (ev.target as HTMLInputElement).files?.[0];
-    this.logoFile = file ?? null;
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => (this.logoPreview = reader.result as string);
-      reader.readAsDataURL(file);
-    }
   }
 
   get formValid(): boolean {
@@ -547,24 +501,22 @@ export class FleetsSettingsComponent implements OnInit, OnDestroy {
     this.touched = { name: true, phone: true };
     if (!this.formValid || this.saving || this.cityId == null) return;
 
-    const fd = new FormData();
-    if (this.editingId) fd.append('_method', 'PATCH');
-    fd.append('city_id', String(this.cityId));
-    fd.append('name', this.form.name.trim());
-    fd.append('phone_number', this.form.phone_number.trim());
-    if (this.form.bank) fd.append('bank', this.form.bank);
-    if (this.form.address) fd.append('address', this.form.address);
-    fd.append('vat_enabled', this.form.vat_enabled ? '1' : '0');
-    if (this.form.vat_enabled && this.form.vat_number) {
-      fd.append('vat_number', this.form.vat_number);
-    }
-    fd.append('status', this.form.status);
-    fd.append('is_active', this.form.is_active ? '1' : '0');
-    if (this.logoFile) fd.append('logo', this.logoFile);
+    const payload = {
+      city_id: this.cityId,
+      name: this.form.name.trim(),
+      phone_number: this.form.phone_number.trim(),
+      bank: this.form.bank || null,
+      address: this.form.address || null,
+      vat_enabled: this.form.vat_enabled,
+      vat_number: this.form.vat_enabled && this.form.vat_number ? this.form.vat_number : null,
+      status: this.form.status,
+    };
 
     this.saving = true;
-    const path = this.editingId ? `/admin/fleets/${this.editingId}` : '/admin/fleets';
-    this.api.postMultipart<{ fleet: Fleet }>(path, fd).subscribe({
+    const request = this.editingId
+      ? this.api.patch<{ fleet: Fleet }>(`/admin/fleets/${this.editingId}`, payload)
+      : this.api.post<{ fleet: Fleet }>('/admin/fleets', payload);
+    request.subscribe({
       next: () => {
         this.saving = false;
         this.open = false;

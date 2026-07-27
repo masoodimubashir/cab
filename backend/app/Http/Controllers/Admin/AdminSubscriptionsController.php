@@ -6,24 +6,39 @@ use App\Models\City;
 use App\Models\DriverSubscription;
 use App\Models\SubscriptionPlan;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
- * CRUD for driver subscription plans within a city. Mirrors the other
- * city-scoped admin modules (promotions, coupons): nested under
- * /admin/cities/{city}/subscription-plans and guarded by manager.city.
+ * CRUD for driver subscription plans.
+ * Supports both city-scoped and global endpoints with multi-city / multi-vehicle support.
  */
 class AdminSubscriptionsController
 {
-    public function index(Request $request, City $city)
+    /** Global index across all cities or filtered by city_id / vehicle_type_id */
+    public function globalIndex(Request $request)
     {
         $q = SubscriptionPlan::query()
-            ->where('city_id', $city->id)
-            ->with('vehicleType')
+            ->with(['city', 'vehicleType'])
             ->withCount(['driverSubscriptions as active_subscribers_count' => function ($w) {
-                // Count only live subscribers, not prepaid plans still queued.
                 $w->where('status', DriverSubscription::STATUS_ACTIVE)->where('is_queued', false);
             }]);
+
+        if ($cityId = $request->query('city_id')) {
+            if ($cityId !== 'all') {
+                $q->where('city_id', (int) $cityId);
+            }
+        }
+
+        if ($vehicleTypeId = $request->query('vehicle_type_id')) {
+            if ($vehicleTypeId !== 'all') {
+                if ($vehicleTypeId === 'null') {
+                    $q->whereNull('vehicle_type_id');
+                } else {
+                    $q->where('vehicle_type_id', (int) $vehicleTypeId);
+                }
+            }
+        }
 
         if ($request->has('is_active') && $request->query('is_active') !== '') {
             $q->where('is_active', $request->boolean('is_active'));
@@ -47,44 +62,122 @@ class AdminSubscriptionsController
         $rows = $q->orderByDesc('id')->limit(500)->get()
             ->map(fn (SubscriptionPlan $p) => $this->shape($p));
 
-        return response()->json(['city_id' => $city->id, 'data' => $rows]);
+        return response()->json(['data' => $rows]);
+    }
+
+    /** Global batch store — allows creating a plan for all/multiple cities and all/multiple vehicle types */
+    public function globalStore(Request $request)
+    {
+        $data = $this->validatePayload($request, partial: false);
+
+        // Resolve cities
+        $cityIdsRaw = $request->input('city_ids', []);
+        if (! is_array($cityIdsRaw)) {
+            $cityIdsRaw = [$cityIdsRaw];
+        }
+        if (empty($cityIdsRaw) || in_array('all', $cityIdsRaw, true)) {
+            $cityIds = City::query()->pluck('id')->all();
+        } else {
+            $cityIds = array_map('intval', array_filter($cityIdsRaw, fn ($v) => $v !== null && $v !== ''));
+        }
+
+        if (empty($cityIds)) {
+            abort(422, 'At least one valid city must be selected.');
+        }
+
+        // Resolve vehicle types
+        $vehicleTypeIdsRaw = $request->input('vehicle_type_ids', []);
+        if (! is_array($vehicleTypeIdsRaw)) {
+            $vehicleTypeIdsRaw = [$vehicleTypeIdsRaw];
+        }
+        if (empty($vehicleTypeIdsRaw) || in_array('all', $vehicleTypeIdsRaw, true)) {
+            $vehicleTypeIds = [null];
+        } else {
+            $vehicleTypeIds = array_map(fn ($v) => ($v === null || $v === '' || $v === 'null') ? null : (int) $v, $vehicleTypeIdsRaw);
+        }
+
+        $createdPlans = [];
+        DB::transaction(function () use ($data, $cityIds, $vehicleTypeIds, &$createdPlans) {
+            foreach ($cityIds as $cityId) {
+                foreach ($vehicleTypeIds as $vtId) {
+                    $payload = array_merge($data, [
+                        'city_id' => $cityId,
+                        'vehicle_type_id' => $vtId,
+                    ]);
+                    $row = SubscriptionPlan::query()->create($payload);
+                    $createdPlans[] = $this->shape($row->fresh(['city', 'vehicleType']));
+                }
+            }
+        });
+
+        return response()->json([
+            'plans' => $createdPlans,
+            'plan' => $createdPlans[0] ?? null,
+            'message' => count($createdPlans) > 1
+                ? count($createdPlans) . ' subscription plans created across cities/vehicles.'
+                : 'Subscription plan created.',
+        ], 201);
+    }
+
+    public function globalShow(SubscriptionPlan $plan)
+    {
+        return response()->json(['plan' => $this->shape($plan->load(['city', 'vehicleType']))]);
+    }
+
+    public function globalUpdate(Request $request, SubscriptionPlan $plan)
+    {
+        $data = $this->validatePayload($request, partial: true, plan: $plan);
+
+        if ($request->has('city_id')) {
+            $data['city_id'] = $request->input('city_id');
+        }
+        if ($request->has('vehicle_type_id')) {
+            $data['vehicle_type_id'] = $request->input('vehicle_type_id');
+        }
+
+        $plan->fill($data)->save();
+
+        return response()->json([
+            'plan' => $this->shape($plan->fresh(['city', 'vehicleType'])),
+            'message' => 'Subscription plan updated.',
+        ]);
+    }
+
+    public function globalDestroy(SubscriptionPlan $plan)
+    {
+        $plan->delete();
+        return response()->json(['message' => 'Subscription plan deleted.']);
+    }
+
+    // ── City-scoped legacy routes (backwards compatibility) ───────────
+    public function index(Request $request, City $city)
+    {
+        $request->merge(['city_id' => $city->id]);
+        return $this->globalIndex($request);
     }
 
     public function store(Request $request, City $city)
     {
-        $data = $this->validatePayload($request, partial: false);
-        $data['city_id'] = $city->id;
-        $row = SubscriptionPlan::query()->create($data);
-
-        return response()->json([
-            'plan' => $this->shape($row->fresh('vehicleType')),
-            'message' => 'Subscription plan created.',
-        ], 201);
+        $request->merge(['city_ids' => [$city->id]]);
+        return $this->globalStore($request);
     }
 
     public function show(City $city, SubscriptionPlan $plan)
     {
         $this->guard($city, $plan);
-        return response()->json(['plan' => $this->shape($plan->load('vehicleType'))]);
+        return $this->globalShow($plan);
     }
 
     public function update(Request $request, City $city, SubscriptionPlan $plan)
     {
         $this->guard($city, $plan);
-        $data = $this->validatePayload($request, partial: true, plan: $plan);
-        $plan->fill($data)->save();
-
-        return response()->json([
-            'plan' => $this->shape($plan->fresh('vehicleType')),
-            'message' => 'Subscription plan updated.',
-        ]);
+        return $this->globalUpdate($request, $plan);
     }
 
     public function destroy(City $city, SubscriptionPlan $plan)
     {
         $this->guard($city, $plan);
-        $plan->delete();
-        return response()->json(['message' => 'Subscription plan deleted.']);
+        return $this->globalDestroy($plan);
     }
 
     private function guard(City $city, SubscriptionPlan $plan): void
@@ -106,20 +199,13 @@ class AdminSubscriptionsController
             'rides_count' => ['nullable', 'integer', 'min:1', 'max:100000'],
             'days_count' => ['nullable', 'integer', 'min:1', 'max:3650'],
             'earnings_threshold' => ['nullable', 'numeric', 'min:1', 'max:100000000'],
-            'plan_type' => ['nullable', Rule::in(SubscriptionPlan::PLAN_TYPES)],
-            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'vehicle_type_id' => ['nullable'],
             'terms' => ['nullable', 'string', 'max:5000'],
             'available_from' => ['nullable', 'date'],
             'available_to' => ['nullable', 'date', 'after_or_equal:available_from'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
-        // The pricing model dictates which money fields are usable. Keep the
-        // stored row consistent regardless of what the client sent: a
-        // subscription is commission-free, a commission plan has no upfront
-        // amount, a hybrid keeps both. Resolve the model and money values the
-        // SAVED row will end up with by merging the request over the existing
-        // plan (so a partial PATCH can't sneak the row into an invalid state).
         $model = $data['pricing_model']
             ?? $plan?->pricing_model
             ?? SubscriptionPlan::MODEL_SUBSCRIPTION;
@@ -130,8 +216,6 @@ class AdminSubscriptionsController
         $amount = $hasAmount ? (float) $data['amount'] : (float) ($plan?->amount ?? 0);
         $commission = $hasCommission ? (float) ($data['commission_percent'] ?? 0) : (float) ($plan?->commission_percent ?? 0);
 
-        // 1) Always normalise the locked field for the model — this is what makes
-        //    the lock authoritative on the server, not just in the UI.
         if ($model === SubscriptionPlan::MODEL_SUBSCRIPTION) {
             $data['commission_percent'] = 0;
             $commission = 0.0;
@@ -140,10 +224,6 @@ class AdminSubscriptionsController
             $amount = 0.0;
         }
 
-        // 2) Require the model's meaningful field(s) to be positive. Enforce on
-        //    create, when the model is (re)set, or when that field is being
-        //    edited — but don't retroactively reject a legacy row the caller
-        //    isn't touching.
         $modelGiven = array_key_exists('pricing_model', $request->all());
         $checkRequired = ! $partial || $modelGiven;
         $needsAmount = in_array($model, [SubscriptionPlan::MODEL_SUBSCRIPTION, SubscriptionPlan::MODEL_HYBRID], true);
@@ -160,8 +240,6 @@ class AdminSubscriptionsController
                 : 'A commission plan needs a commission percentage greater than zero.');
         }
 
-        // The meter type dictates which limit field is required. Only enforce
-        // when the meter type is actually present in this request.
         $meter = $data['meter_type'] ?? null;
         if ($meter === SubscriptionPlan::METER_RIDES && empty($data['rides_count'])) {
             abort(422, 'Number of rides is required for a ride-based plan.');
@@ -172,7 +250,6 @@ class AdminSubscriptionsController
         if ($meter === SubscriptionPlan::METER_EARNINGS && empty($data['earnings_threshold'])) {
             abort(422, 'Earnings threshold is required for an earnings-based plan.');
         }
-        // A daily plan is always a single day.
         if ($meter === SubscriptionPlan::METER_DAILY) {
             $data['days_count'] = 1;
         }
@@ -185,6 +262,7 @@ class AdminSubscriptionsController
         return [
             'id' => $p->id,
             'city_id' => $p->city_id,
+            'city_name' => $p->city?->name ?? 'All cities',
             'vehicle_type_id' => $p->vehicle_type_id,
             'vehicle_type_name' => $p->vehicleType?->name,
             'title' => $p->title,
@@ -196,7 +274,6 @@ class AdminSubscriptionsController
             'rides_count' => $p->rides_count,
             'days_count' => $p->days_count,
             'earnings_threshold' => $p->earnings_threshold !== null ? (float) $p->earnings_threshold : null,
-            'plan_type' => $p->plan_type,
             'terms' => $p->terms,
             'available_from' => optional($p->available_from)->toDateString(),
             'available_to' => optional($p->available_to)->toDateString(),

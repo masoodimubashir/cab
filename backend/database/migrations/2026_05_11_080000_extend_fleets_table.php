@@ -23,13 +23,10 @@ return new class extends Migration {
             if (! Schema::hasColumn('fleets', 'vat_number')) {
                 $table->string('vat_number', 80)->nullable()->after('vat_enabled');
             }
-            if (! Schema::hasColumn('fleets', 'logo_path')) {
-                $table->string('logo_path')->nullable()->after('vat_number');
-            }
             // Free-form status string; defaults to 'active'. is_active is preserved as a quick
             // toggle but `status` lets ops mark fleets as 'suspended', 'pending', etc.
             if (! Schema::hasColumn('fleets', 'status')) {
-                $table->string('status', 32)->default('active')->after('logo_path');
+                $table->string('status', 32)->default('active')->after('vat_number');
             }
         });
     }
@@ -37,7 +34,7 @@ return new class extends Migration {
     public function down(): void
     {
         Schema::table('fleets', function (Blueprint $table) {
-            foreach (['status', 'logo_path', 'vat_number', 'vat_enabled', 'address', 'bank', 'phone_number'] as $col) {
+            foreach (['status', 'vat_number', 'vat_enabled', 'address', 'bank', 'phone_number'] as $col) {
                 if (Schema::hasColumn('fleets', $col)) {
                     $table->dropColumn($col);
                 }

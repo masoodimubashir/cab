@@ -1259,9 +1259,12 @@ export class CustomersListComponent implements OnInit, AfterViewInit, OnDestroy 
 
   sendOtp(row: CustomerRow, onDone?: () => void): void {
     this.otpSending = true;
-    this.api.post(`/admin/customers/${row.id}/send-otp`, {}).subscribe({
-      next: () => {
-        this.toast.success('OTP sent successfully');
+    this.api.post<{ message?: string; dev_code?: string }>(`/admin/customers/${row.id}/send-otp`, {}).subscribe({
+      next: (res) => {
+        const msg = res?.dev_code
+          ? `OTP sent: ${res.dev_code}`
+          : (res?.message || 'OTP sent successfully');
+        this.toast.success(msg);
         this.otpSending = false;
         onDone?.();
       },

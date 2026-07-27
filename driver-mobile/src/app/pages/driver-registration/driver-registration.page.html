@@ -21,7 +21,7 @@
 
     <!-- Stepper -->
     <div class="reg-stepper" *ngIf="!initLoading">
-      <div class="reg-step" [class.is-active]="step === 1" [class.is-done]="step > 1">
+      <div class="reg-step dc-press" [class.is-active]="step === 1" [class.is-done]="step > 1" (click)="goToStep(1)">
         <div class="reg-step__dot">
           <ion-icon name="checkmark-outline" *ngIf="step > 1"></ion-icon>
           <span *ngIf="step === 1">1</span>
@@ -29,7 +29,7 @@
         <span class="reg-step__label">Area</span>
       </div>
       <div class="reg-step__line" [class.is-done]="step > 1"></div>
-      <div class="reg-step" [class.is-active]="step === 2" [class.is-done]="step > 2">
+      <div class="reg-step dc-press" [class.is-active]="step === 2" [class.is-done]="step > 2" (click)="goToStep(2)">
         <div class="reg-step__dot">
           <ion-icon name="checkmark-outline" *ngIf="step > 2"></ion-icon>
           <span *ngIf="step <= 2">2</span>
@@ -37,7 +37,7 @@
         <span class="reg-step__label">Type</span>
       </div>
       <div class="reg-step__line" [class.is-done]="step > 2"></div>
-      <div class="reg-step" [class.is-active]="step === 3" [class.is-done]="step > 3">
+      <div class="reg-step dc-press" [class.is-active]="step === 3" [class.is-done]="step > 3" (click)="goToStep(3)">
         <div class="reg-step__dot">
           <ion-icon name="checkmark-outline" *ngIf="step > 3"></ion-icon>
           <span *ngIf="step <= 3">3</span>
@@ -45,7 +45,7 @@
         <span class="reg-step__label">Vehicle</span>
       </div>
       <div class="reg-step__line" [class.is-done]="step > 3"></div>
-      <div class="reg-step" [class.is-active]="step === 4">
+      <div class="reg-step dc-press" [class.is-active]="step === 4" (click)="goToStep(4)">
         <div class="reg-step__dot"><span>4</span></div>
         <span class="reg-step__label">Docs</span>
       </div>
@@ -152,16 +152,17 @@
         <div class="pg-card reg-card">
           <div class="pg-card__head">
             <div class="pg-card__icon"><ion-icon name="business-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Fleet <span class="req">*</span></h2>
+            <h2 class="pg-card__title">Fleet <small style="font-size:12px;font-weight:normal;opacity:0.7;">(Optional)</small></h2>
           </div>
 
           <p class="card__hint" *ngIf="!fleetsForCurrentCity.length">No active fleets are configured for this city. You can continue without a fleet.</p>
 
           <div class="field">
-            <label class="field__label">Fleet <span class="req">*</span></label>
+            <label class="field__label">Fleet</label>
             <div class="field__control" [class.is-disabled]="busy || driverApproved || !fleetsForCurrentCity.length">
               <ion-select [(ngModel)]="fleet_id" [disabled]="busy || driverApproved || !fleetsForCurrentCity.length"
-                          (ionChange)="persistRegistrationDraft()" interface="action-sheet" placeholder="Pick your fleet" class="select">
+                          (ionChange)="persistRegistrationDraft()" interface="action-sheet" placeholder="Pick your fleet (Optional)" class="select">
+                <ion-select-option [value]="null">None (Independent Driver)</ion-select-option>
                 <ion-select-option *ngFor="let f of fleetsForCurrentCity" [value]="f.id">{{ f.name }}</ion-select-option>
               </ion-select>
             </div>

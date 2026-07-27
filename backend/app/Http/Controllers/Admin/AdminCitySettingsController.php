@@ -25,9 +25,6 @@ class AdminCitySettingsController
             'show_region_specific_fare' => ['nullable', 'boolean'],
             'show_vehicle_make_model' => ['nullable', 'boolean'],
 
-            'customer_login_otp_message' => ['nullable', 'string', 'max:500'],
-            'customer_login_otp_message_ios' => ['nullable', 'string', 'max:500'],
-
             'allowed_driver_payment_modes' => ['nullable'],
             'negotiation_floor_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'commission_type' => ['nullable', 'in:percent,fixed'],
@@ -136,9 +133,6 @@ class AdminCitySettingsController
             'chat_enabled' => (bool) $s->chat_enabled,
             'show_region_specific_fare' => (bool) $s->show_region_specific_fare,
             'show_vehicle_make_model' => (bool) $s->show_vehicle_make_model,
-
-            'customer_login_otp_message' => $s->customer_login_otp_message,
-            'customer_login_otp_message_ios' => $s->customer_login_otp_message_ios,
 
             'allowed_driver_payment_modes' => $s->allowed_driver_payment_modes ?? [],
             'negotiation_floor_percent' => round((float) ($s->negotiation_floor_percent ?? 10), 2),

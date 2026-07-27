@@ -18,12 +18,14 @@ class AdminAuthController extends Controller
 
         $user = User::query()->where('email', $data['email'])->first();
 
-        if (
-            !$user ||
-            !$user->hasRole('admin') ||
-            !Hash::check($data['password'], $user->password)
-        ) {
+        if (!$user || !Hash::check($data['password'], $user->password)) {
             return response()->json(['message' => 'Invalid credentials.'], 401);
+        }
+
+        if ($user->manager_role_id === null && !$user->hasRole('admin')) {
+            return response()->json([
+                'message' => 'This account does not have admin access. Please assign a Manager Role to this user under Managers.',
+            ], 403);
         }
 
         if ($user->is_suspended) {

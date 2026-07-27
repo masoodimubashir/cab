@@ -38,7 +38,7 @@ export class AppComponent implements OnInit {
     [/^\/pricing/,                  'Pricing'],
     [/^\/vehicles/,                 ''],
     [/^\/promotions\/coupons/,      'Coupons'],
-    [/^\/subscriptions/,            'Subscriptions'],
+    [/^\/subscriptions/,            ''],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
     [/^\/rides\/manual-dispatch/,   'Manual Dispatch'],
@@ -70,7 +70,6 @@ export class AppComponent implements OnInit {
     /^\/pricing\b/,
     /^\/vehicles\b/,
     /^\/promotions\/coupons\b/,
-    /^\/subscriptions\b/,
     /^\/settings\/(cities|city|app-assets|fleets|vehicle-types)\b/,
   ];
 
@@ -78,14 +77,7 @@ export class AppComponent implements OnInit {
   /** Bumped whenever the auth profile is (re)loaded so pageTitle recomputes. */
   private profileTick = signal(0);
 
-  pageTitle = computed(() => {
-    // Show the current page's name (no personal greeting). profileTick() is
-    // still read so the title recomputes after the profile loads.
-    void this.profileTick();
-    const url = this.url();
-    const match = AppComponent.TITLES.find(([re]) => re.test(url));
-    return match ? match[1] : 'Dashboard';
-  });
+  pageTitle = computed(() => '');
 
   /** True only on pages that genuinely re-scope to the switched city. */
   showCitySwitcher = computed(() =>

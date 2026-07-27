@@ -398,7 +398,6 @@ _Fleet operator accounts managing groups of drivers; includes tax/banking detail
 | address | text | Yes | Fleet's physical address or headquarters location |
 | vat_enabled | tinyint(1) | No | Boolean: if true, fleet is VAT-registered and invoices include VAT; defaults to false |
 | vat_number | varchar(80) | Yes | VAT/Tax registration number if applicable |
-| logo_path | varchar(255) | Yes | Storage path to fleet's logo/branding image |
 | status | varchar(32) | No | Operational status (e.g., 'active', 'suspended', 'pending'); defaults to 'active' |
 | is_active | tinyint(1) | No | Boolean: quick toggle for fleet visibility/availability; defaults to true |
 | created_at | timestamp | Yes | Record creation timestamp |
@@ -1048,7 +1047,6 @@ _Configuration templates for driver subscription plans (commission, metering, av
 | rides_count | int unsigned | Yes | Number of rides allowed (when meter_type='rides'). |
 | days_count | int unsigned | Yes | Number of days in the subscription (when meter_type='days' or 'daily'). |
 | earnings_threshold | decimal(10,2) | Yes | Earnings cap in currency (when meter_type='earnings'). |
-| plan_type | enum('normal','new_registration','renewal','targeted') | No | Target audience: 'normal' (general), 'new_registration' (new drivers), 'renewal' (expiring drivers), 'targeted' (specific campaigns); default='normal'. |
 | terms | text | Yes | Terms and conditions text. |
 | available_from | date | Yes | Date from which the plan can be purchased; null = available immediately. |
 | available_to | date | Yes | Date on which the plan becomes unavailable; null = always available. |

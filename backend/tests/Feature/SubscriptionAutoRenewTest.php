@@ -69,7 +69,6 @@ class SubscriptionAutoRenewTest extends TestCase
             'rides_count' => $meter === SubscriptionPlan::METER_RIDES ? 1 : null,
             'days_count' => $meter === SubscriptionPlan::METER_DAYS ? 30 : null,
             'earnings_threshold' => null,
-            'plan_type' => 'normal',
             'terms' => null,
             'available_from' => null,
             'available_to' => null,

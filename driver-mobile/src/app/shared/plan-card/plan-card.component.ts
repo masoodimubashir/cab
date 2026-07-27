@@ -12,7 +12,6 @@ export interface SubscriptionPlan {
   rides_count: number | null;
   days_count: number | null;
   earnings_threshold: number | null;
-  plan_type: string;
   vehicle_type_name: string | null;
   terms: string | null;
 }
@@ -176,21 +175,9 @@ export class PlanCardComponent {
       text: p.vehicle_type_name ? `For ${p.vehicle_type_name}` : 'Works on all your vehicles',
     });
 
-    const perk = this.planPerk(p.plan_type);
-    if (perk) list.push({ icon: 'gift-outline', text: perk });
-    else list.push({ icon: 'flash-outline', text: 'Activates instantly from your wallet' });
+    list.push({ icon: 'flash-outline', text: 'Activates instantly from your wallet' });
 
     return list;
-  }
-
-  /** Optional perk label derived from plan_type — never fabricated. */
-  private planPerk(type: string | null | undefined): string | null {
-    switch ((type || '').toLowerCase()) {
-      case 'new_registration': return 'New-driver welcome offer';
-      case 'renewal': return 'Renewal price';
-      case 'targeted': return 'Special offer for you';
-      default: return null;
-    }
   }
 
   get walletCovers(): boolean {

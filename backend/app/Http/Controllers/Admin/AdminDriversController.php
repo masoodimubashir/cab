@@ -400,19 +400,19 @@ class AdminDriversController
      * Admin convenience OTP ("read me the code you just got") — mirrors the
      * customer flow. Does NOT verify anything; app login is unaffected.
      */
-    public function sendOtp(Driver $driver)
+    public function sendOtp(Driver $driver, \App\Services\PhoneOtpService $phoneOtpService)
     {
         $user = $driver->user;
         if (!$user?->phone) {
             return response()->json(['message' => 'Driver has no phone on file.'], 422);
         }
 
-        $code = (string) random_int(100000, 999999);
-        $body = "Your DreamCabs verification code is {$code}. Do not share it.";
-
-        $sent = $this->smsService->send($user->phone, $body);
-        if (!$sent) {
-            return response()->json(['message' => 'Failed to send OTP.'], 502);
+        $res = $phoneOtpService->start($user->phone, 'driver');
+        if (!($res['sent'] ?? false)) {
+            $cooldown = $res['cooldown'] ?? 30;
+            return response()->json([
+                'message' => "Please wait {$cooldown} seconds before resending OTP.",
+            ], 429);
         }
 
         Log::info('admin.driver.send_otp', [
@@ -420,7 +420,10 @@ class AdminDriversController
             'phone' => $user->phone,
         ]);
 
-        return response()->json(['message' => 'OTP sent.']);
+        return response()->json([
+            'message' => 'OTP sent successfully.',
+            'dev_code' => $res['dev_code'] ?? null,
+        ]);
     }
 
     public function block(Request $request, Driver $driver)

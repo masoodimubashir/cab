@@ -20,7 +20,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'rides_count',
     'days_count',
     'earnings_threshold',
-    'plan_type',
     'terms',
     'available_from',
     'available_to',
@@ -41,8 +40,6 @@ class SubscriptionPlan extends Model
         self::METER_DAILY,
         self::METER_EARNINGS,
     ];
-
-    public const PLAN_TYPES = ['normal', 'new_registration', 'renewal', 'targeted'];
 
     // Pricing model — how the driver is charged for the plan.
     public const MODEL_SUBSCRIPTION = 'subscription'; // one-time amount, no commission

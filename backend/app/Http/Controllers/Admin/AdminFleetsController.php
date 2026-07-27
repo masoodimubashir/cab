@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Models\Fleet;
 use App\Services\ManagerScope;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class AdminFleetsController
@@ -49,13 +48,7 @@ class AdminFleetsController
         $data = $this->validatePayload($request, partial: false);
         // Block creating a fleet outside the manager's city scope.
         ManagerScope::assertCityAllowed((int) $data['city_id']);
-        $file = $request->file('logo');
-
-        $fleet = Fleet::query()->create($this->withoutLogo($this->deriveActive($data)));
-        if ($file) {
-            $fleet->logo_path = $file->store('fleets/logos', 'public');
-            $fleet->save();
-        }
+        $fleet = Fleet::query()->create($this->deriveActive($data));
 
         return response()->json([
             'fleet' => $this->shape($fleet->fresh('city')),
@@ -70,15 +63,7 @@ class AdminFleetsController
         if (! empty($data['city_id'])) {
             ManagerScope::assertCityAllowed((int) $data['city_id']);
         }
-        $file = $request->file('logo');
-
-        $fleet->fill($this->withoutLogo($this->deriveActive($data)));
-        if ($file) {
-            if ($fleet->logo_path && Storage::disk('public')->exists($fleet->logo_path)) {
-                Storage::disk('public')->delete($fleet->logo_path);
-            }
-            $fleet->logo_path = $file->store('fleets/logos', 'public');
-        }
+        $fleet->fill($this->deriveActive($data));
         $fleet->save();
 
         return response()->json([
@@ -90,9 +75,6 @@ class AdminFleetsController
     public function destroy(Fleet $fleet)
     {
         ManagerScope::assertCityAllowed((int) $fleet->city_id);
-        if ($fleet->logo_path && Storage::disk('public')->exists($fleet->logo_path)) {
-            Storage::disk('public')->delete($fleet->logo_path);
-        }
         $fleet->delete();
         return response()->json(['message' => 'Fleet deleted.']);
     }
@@ -117,7 +99,6 @@ class AdminFleetsController
             'vat_enabled' => ['nullable', 'boolean'],
             'vat_number' => ['nullable', 'string', 'max:80'],
             'status' => ['nullable', 'string', 'in:active,inactive,suspended,pending'],
-            'logo' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
     }
 
@@ -135,11 +116,6 @@ class AdminFleetsController
         return $data;
     }
 
-    private function withoutLogo(array $data): array
-    {
-        unset($data['logo']);
-        return $data;
-    }
 
     private function shape(Fleet $f): array
     {
@@ -153,8 +129,6 @@ class AdminFleetsController
             'address' => $f->address,
             'vat_enabled' => (bool) $f->vat_enabled,
             'vat_number' => $f->vat_number,
-            'logo_path' => $f->logo_path,
-            'logo_url' => $f->logo_url,
             'status' => $f->status ?? 'active',
             'is_active' => (bool) $f->is_active,
             'created_at' => optional($f->created_at)->toIso8601String(),

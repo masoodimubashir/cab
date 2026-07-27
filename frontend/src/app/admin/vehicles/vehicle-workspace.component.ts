@@ -266,44 +266,44 @@ interface TabDef { key: string; label: string; count?: number; }
                       <div class="detailhead">
                         <span class="ovl">Fixed-route groups · {{ v.display_name }}</span>
                         <span class="ws__grow"></span>
+                        <tm-button variant="green" size="sm" icon="plus" (clicked)="openUnifiedGroupDrawer(v)">Manage Routes & Groups</tm-button>
                         <tm-button variant="outline" size="sm" icon="plus" (clicked)="newRouteFor(v)">Add route</tm-button>
-                        <tm-button variant="green" size="sm" icon="plus" (clicked)="openGroupDrawerFor(v)">New group</tm-button>
                       </div>
 
                       <div class="gline" *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup">
                         <div class="gline__head">
-                          <ng-container *ngIf="renamingId !== g.id; else renameG">
-                            <span class="gname">{{ g.name }}</span>
-                            <span class="gmeta">{{ g.route_ids.length }} {{ g.route_ids.length === 1 ? 'route' : 'routes' }} · {{ g.driver_user_ids.length }} {{ g.driver_user_ids.length === 1 ? 'driver' : 'drivers' }}</span>
-                            <span class="gline__acts"><button type="button" class="mini-btn" (click)="startRename(g)">Rename</button><button type="button" class="mini-btn mini-btn--danger" (click)="deleteGroup(g)">Delete</button></span>
-                          </ng-container>
-                          <ng-template #renameG>
-                            <input class="rename" type="text" [(ngModel)]="renameValue" aria-label="Group name" />
-                            <span class="gline__acts"><button type="button" class="mini-btn mini-btn--go" (click)="saveRename(g)">Save</button><button type="button" class="mini-btn" (click)="renamingId = null">Cancel</button></span>
-                          </ng-template>
+                          <span class="gname">{{ g.name }}</span>
+                          <span class="gmeta">{{ g.route_ids.length }} {{ g.route_ids.length === 1 ? 'route' : 'routes' }} · {{ g.driver_user_ids.length }} {{ g.driver_user_ids.length === 1 ? 'driver' : 'drivers' }}</span>
+                          <span class="gline__acts">
+                            <button type="button" class="mini-btn mini-btn--go" (click)="openUnifiedGroupDrawer(v, g)"><tm-icon name="edit" [size]="12" /> Edit group</button>
+                            <button type="button" class="mini-btn mini-btn--danger" (click)="deleteGroup(g)">Delete</button>
+                          </span>
                         </div>
                         <div class="gcol">
                           <span class="gcol__lbl">Routes</span>
                           <div class="gcol__body">
-                            <span class="rchip2" *ngFor="let r of routesIn(g)"><tm-icon name="map-marker" [size]="11" /><b>{{ r.name }}</b><button type="button" class="rx" title="Remove route" (click)="ungroupRoute(g, r.id)">×</button></span>
-                            <button type="button" class="addroutebtn" (click)="openRouteDrawer(g)"><tm-icon name="plus" [size]="12" /> Route</button>
+                            <span class="rchip2" *ngFor="let r of routesIn(g)">
+                              <tm-icon name="map-marker" [size]="11" />
+                              <b>{{ r.name }}</b>
+                              <button type="button" class="rx" title="Remove route" (click)="ungroupRoute(g, r.id)">×</button>
+                            </span>
+                            <span class="gcol__empty" *ngIf="!routesIn(g).length">No routes in this group yet.</span>
                           </div>
                         </div>
                         <div class="gcol">
                           <span class="gcol__lbl">Drivers</span>
                           <div class="gcol__body">
-                            <span class="dpill" *ngFor="let d of driversIn(g)"><span class="av">{{ initials(d.name) }}</span>{{ d.name }}<button type="button" class="rx" title="Remove driver" (click)="removeDriverFromGroup(g, d.user_id)">×</button></span>
-                            <button type="button" class="addroutebtn" (click)="openDriverDrawer(g)"><tm-icon name="plus" [size]="12" /> Assign driver</button>
+                            <span class="dpill" *ngFor="let d of driversIn(g)">
+                              <span class="av">{{ initials(d.name) }}</span>
+                              {{ d.name }}
+                              <button type="button" class="rx" title="Remove driver" (click)="removeDriverFromGroup(g, d.user_id)">×</button>
+                            </span>
+                            <span class="gcol__empty" *ngIf="!driversIn(g).length">No drivers assigned to this group yet.</span>
                           </div>
                         </div>
                       </div>
 
-                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length">No route groups yet. Add a route, then group it so drivers can be given permission to run it.</div>
-
-                      <div class="gline gline--orphan" *ngIf="ungroupedForVehicle(v).length">
-                        <div class="gline__head"><span class="gname">Needs a group</span><span class="gmeta warn">{{ ungroupedForVehicle(v).length }} {{ ungroupedForVehicle(v).length === 1 ? 'route' : 'routes' }} · not runnable until grouped</span></div>
-                        <div class="gcol"><span class="gcol__lbl">Routes</span><div class="gcol__body"><span class="rchip2 warn" *ngFor="let r of ungroupedForVehicle(v)"><b>{{ r.name }}</b><button type="button" class="mini-btn" (click)="openAssignDrawer(r)">Assign</button></span></div></div>
-                      </div>
+                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length">No route groups yet. Click Manage Routes & Groups to create a group and assign routes and drivers all at once.</div>
                     </div>
                   </td>
                 </tr>
@@ -399,6 +399,111 @@ interface TabDef { key: string; label: string; count?: number; }
       <div slot="footer"><tm-button variant="ghost" (clicked)="typesOpen = false">Done</tm-button></div>
     </tm-drawer>
 
+    <!-- Unified Multi-Group, Multi-Route, Multi-Driver Drawer -->
+    <tm-drawer
+      [open]="unifiedDrawerOpen"
+      [title]="editingGroup ? ('Edit group · ' + editingGroup.name) : 'Manage Route Groups & Permissions'"
+      subtitle="Assign routes and drivers to multiple groups at once"
+      [width]="580"
+      (closed)="unifiedDrawerOpen = false"
+    >
+      <div slot="body" class="form">
+        <!-- Rename Group Input Field (shown when editing a group) -->
+        <label class="f" *ngIf="editingGroup">
+          <span>Rename Group <i>*</i></span>
+          <input type="text" [(ngModel)]="unifiedForm.edit_group_name" placeholder="Group name" />
+        </label>
+
+        <!-- 1. Groups Selection (shown when batch-managing via top button, hidden when editing a specific group) -->
+        <div class="f" *ngIf="!editingGroup">
+          <div class="f__head-row">
+            <span>Select Target Group(s)</span>
+            <button
+              type="button"
+              class="mini-btn mini-btn--go"
+              (click)="unifiedForm.is_creating_group = !unifiedForm.is_creating_group"
+            >
+              <tm-icon [name]="unifiedForm.is_creating_group ? 'x' : 'plus'" [size]="12" />
+              {{ unifiedForm.is_creating_group ? 'Cancel New Group' : 'New Group' }}
+            </button>
+          </div>
+
+          <label class="f" *ngIf="unifiedForm.is_creating_group" style="margin-top: 6px;">
+            <span>New Group Name <i>*</i></span>
+            <input type="text" [(ngModel)]="unifiedForm.new_group_name" placeholder="e.g. Sopore Morning Express" />
+          </label>
+
+          <div class="chip-grid" *ngIf="availableGroupsForUnifiedDrawer.length; else noUnifiedGroups">
+            <button
+              *ngFor="let g of availableGroupsForUnifiedDrawer"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="unifiedForm.group_ids.includes(g.id)"
+              (click)="toggleUnifiedGroup(g.id)"
+            >
+              <tm-icon [name]="unifiedForm.group_ids.includes(g.id) ? 'check' : 'plus'" [size]="12" />
+              <span>{{ g.name }}</span>
+            </button>
+          </div>
+          <ng-template #noUnifiedGroups>
+            <p class="meta" *ngIf="!unifiedForm.is_creating_group">No groups created yet. Click <b>+ New Group</b> above to create one.</p>
+          </ng-template>
+        </div>
+
+        <!-- 2. Routes Selection (Chips) -->
+        <div class="f">
+          <span>Assign Routes</span>
+          <div class="chip-grid" *ngIf="availableRoutesForUnifiedDrawer.length; else noUnifiedRoutes">
+            <button
+              *ngFor="let r of availableRoutesForUnifiedDrawer"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="unifiedForm.route_ids.includes(r.id)"
+              (click)="toggleUnifiedRoute(r.id)"
+            >
+              <tm-icon [name]="unifiedForm.route_ids.includes(r.id) ? 'check' : 'plus'" [size]="12" />
+              <span>{{ r.name }}</span>
+            </button>
+          </div>
+          <ng-template #noUnifiedRoutes>
+            <p class="meta">No pre-existing routes created for this vehicle yet.</p>
+          </ng-template>
+        </div>
+
+        <!-- 3. Drivers Selection (Chips) -->
+        <div class="f">
+          <span>Assign Drivers</span>
+          <div class="chip-grid" *ngIf="availableDriversForUnifiedDrawer.length; else noUnifiedDrivers">
+            <button
+              *ngFor="let d of availableDriversForUnifiedDrawer"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="unifiedForm.driver_user_ids.includes(d.user_id)"
+              (click)="toggleUnifiedDriver(d.user_id)"
+            >
+              <tm-icon [name]="unifiedForm.driver_user_ids.includes(d.user_id) ? 'check' : 'plus'" [size]="12" />
+              <span class="av-mini">{{ initials(d.name) }}</span>
+              <span>{{ d.name }}</span>
+            </button>
+          </div>
+          <ng-template #noUnifiedDrivers>
+            <p class="meta">No pre-existing drivers registered for this vehicle type.</p>
+          </ng-template>
+        </div>
+      </div>
+
+      <div slot="footer">
+        <tm-button variant="ghost" (clicked)="unifiedDrawerOpen = false">Cancel</tm-button>
+        <tm-button
+          variant="green"
+          [disabled]="(!unifiedForm.group_ids.length && (!unifiedForm.is_creating_group || !unifiedForm.new_group_name.trim())) || savingUnifiedGroup"
+          (clicked)="saveUnifiedGroup()"
+        >
+          {{ savingUnifiedGroup ? 'Saving…' : 'Save Assignments' }}
+        </tm-button>
+      </div>
+    </tm-drawer>
+
     <tm-drawer [open]="groupOpen" title="New route group" [width]="480" (closed)="groupOpen = false">
       <div slot="body" class="form">
         <label class="f"><span>Group name <i>*</i></span><input type="text" [(ngModel)]="groupName" placeholder="e.g. Sopore town" /></label>
@@ -438,14 +543,14 @@ interface TabDef { key: string; label: string; count?: number; }
       </div>
     </tm-drawer>
 
-    <!-- Add an existing ungrouped route into this group. -->
+    <!-- Add an existing route into this group. -->
     <tm-drawer [open]="!!routeDrawerGroup" title="Add a route to this group" [subtitle]="routeDrawerGroup?.name || ''" [width]="480" (closed)="routeDrawerId = null">
       <div slot="body" class="form" *ngIf="routeDrawerGroup as g">
-        <button type="button" class="pick pick--bd" *ngFor="let r of ungrouped" (click)="addRouteToGroup(g, r.id)">
+        <button type="button" class="pick pick--bd" *ngFor="let r of routesForRouteDrawer" (click)="addRouteToGroup(g, r.id)">
           <span class="pick__main"><b>{{ r.name }}</b><small>{{ r.origin_name }} → {{ r.dest_name }}</small></span>
           <span class="mini-btn">Add here</span>
         </button>
-        <p class="meta" *ngIf="!ungrouped.length">Every route is already in a group.</p>
+        <p class="meta" *ngIf="!routesForRouteDrawer.length">All vehicle routes are already in this group.</p>
       </div>
       <div slot="footer">
         <tm-button variant="ghost" (clicked)="routeDrawerId = null">Done</tm-button>
@@ -647,6 +752,33 @@ interface TabDef { key: string; label: string; count?: number; }
     .muted { color: var(--tm-text-muted); font-size: 11.5px; }
     .note { margin: 0; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; }
     .note b { color: var(--tm-text); }
+
+    .chip-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .multi-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px; border-radius: 20px; border: 1.5px solid var(--tm-line);
+      background: var(--tm-canvas); color: var(--tm-text); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all .15s ease;
+    }
+    .multi-chip:hover { border-color: var(--tm-text-muted); }
+    .multi-chip.is-selected {
+      background: var(--tm-success-bg, #ecfdf5); border-color: var(--tm-green, #16a34a);
+      color: var(--tm-green-deep, #15803d); font-weight: 700;
+    }
+    .av-mini {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; border-radius: 50%; background: var(--tm-canvas-2, #e5e7eb);
+      font-size: 10px; font-weight: 700; color: var(--tm-text-muted);
+    }
+
+    .mini-select {
+      padding: 2px 6px; border-radius: 6px; border: 1px solid var(--tm-line);
+      background: var(--tm-canvas); color: var(--tm-text); font-size: 11px; font-weight: 700;
+      cursor: pointer; outline: none;
+    }
+    .mini-select:focus { border-color: var(--tm-green); }
+    .gcol__empty { font-size: 11.5px; color: var(--tm-text-muted); padding: 2px 0; }
+    .f__head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
 
     /* Shared search + pagination chrome for the route-groups section. */
     .toolbar { display: flex; align-items: center; gap: 10px; }
@@ -1019,6 +1151,208 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   groupName = '';
   renamingId: number | null = null;
   renameValue = '';
+
+  // ── Unified Group Drawer state & methods ──────────────────────────
+  unifiedDrawerOpen = false;
+  editingGroup: GroupRow | null = null;
+  targetVehicleForGroup: CityVehicleRow | null = null;
+  unifiedForm: {
+    group_ids: number[];
+    edit_group_name: string;
+    new_group_name: string;
+    is_creating_group: boolean;
+    route_ids: number[];
+    driver_user_ids: number[];
+  } = {
+    group_ids: [],
+    edit_group_name: '',
+    new_group_name: '',
+    is_creating_group: false,
+    route_ids: [],
+    driver_user_ids: [],
+  };
+  savingUnifiedGroup = false;
+
+  openUnifiedGroupDrawer(v: CityVehicleRow, g?: GroupRow): void {
+    this.targetVehicleForGroup = v;
+    this.editingGroup = g ?? null;
+    const vGroups = this.groupsForVehicle(v);
+
+    if (g) {
+      this.unifiedForm = {
+        group_ids: [g.id],
+        edit_group_name: g.name,
+        new_group_name: '',
+        is_creating_group: false,
+        route_ids: [...g.route_ids],
+        driver_user_ids: [...g.driver_user_ids],
+      };
+    } else {
+      const allGroupIds = vGroups.map((x) => x.id);
+      const allRouteIds = Array.from(new Set(vGroups.flatMap((x) => x.route_ids)));
+      const allDriverIds = Array.from(new Set(vGroups.flatMap((x) => x.driver_user_ids)));
+      this.unifiedForm = {
+        group_ids: allGroupIds,
+        edit_group_name: '',
+        new_group_name: '',
+        is_creating_group: !vGroups.length,
+        route_ids: allRouteIds,
+        driver_user_ids: allDriverIds,
+      };
+    }
+    this.unifiedDrawerOpen = true;
+  }
+
+  toggleUnifiedGroup(groupId: number): void {
+    const idx = this.unifiedForm.group_ids.indexOf(groupId);
+    if (idx >= 0) {
+      this.unifiedForm.group_ids.splice(idx, 1);
+    } else {
+      this.unifiedForm.group_ids.push(groupId);
+    }
+    const selectedGroups = this.groups.filter((g) => this.unifiedForm.group_ids.includes(g.id));
+    if (selectedGroups.length > 0) {
+      this.unifiedForm.route_ids = Array.from(new Set(selectedGroups.flatMap((g) => g.route_ids)));
+      this.unifiedForm.driver_user_ids = Array.from(new Set(selectedGroups.flatMap((g) => g.driver_user_ids)));
+    }
+  }
+
+  toggleUnifiedRoute(routeId: number): void {
+    const idx = this.unifiedForm.route_ids.indexOf(routeId);
+    if (idx >= 0) {
+      this.unifiedForm.route_ids.splice(idx, 1);
+    } else {
+      this.unifiedForm.route_ids.push(routeId);
+    }
+  }
+
+  toggleUnifiedDriver(userId: number): void {
+    const idx = this.unifiedForm.driver_user_ids.indexOf(userId);
+    if (idx >= 0) {
+      this.unifiedForm.driver_user_ids.splice(idx, 1);
+    } else {
+      this.unifiedForm.driver_user_ids.push(userId);
+    }
+  }
+
+  get availableGroupsForUnifiedDrawer(): GroupRow[] {
+    const v = this.targetVehicleForGroup;
+    if (!v) return [];
+    return this.groupsForVehicle(v);
+  }
+
+  get availableRoutesForUnifiedDrawer(): RouteLite[] {
+    const v = this.targetVehicleForGroup;
+    if (!v) return this.routes;
+    return this.routesForVehicle(v);
+  }
+
+  get availableDriversForUnifiedDrawer(): DriverOpt[] {
+    const v = this.targetVehicleForGroup;
+    if (!v) return this.cityDrivers;
+    return this.driversFor(v);
+  }
+
+  saveUnifiedGroup(): void {
+    if (this.cityId == null || this.savingUnifiedGroup) return;
+
+    const targetGroupIds = [...this.unifiedForm.group_ids];
+    const newName = this.unifiedForm.new_group_name.trim();
+
+    if (!targetGroupIds.length && (!this.unifiedForm.is_creating_group || !newName)) {
+      this.toast.error('Select at least one group or enter a new group name');
+      return;
+    }
+
+    this.savingUnifiedGroup = true;
+
+    const syncGroups = (gIds: number[]) => {
+      if (!gIds.length) {
+        this.savingUnifiedGroup = false;
+        this.unifiedDrawerOpen = false;
+        this.toast.success('Saved successfully');
+        this.loadGroups();
+        return;
+      }
+
+      let done = 0;
+      gIds.forEach((id) => {
+        const existingGroup = this.groups.find((g) => g.id === id);
+        let name = existingGroup ? existingGroup.name : newName;
+        if (this.editingGroup && this.editingGroup.id === id && this.unifiedForm.edit_group_name.trim()) {
+          name = this.unifiedForm.edit_group_name.trim();
+        }
+        this.api.patch(`/admin/cities/${this.cityId}/route-groups/${id}`, {
+          name,
+          route_ids: this.unifiedForm.route_ids,
+        }).subscribe({
+          next: () => {
+            this.api.put(`/admin/cities/${this.cityId}/route-groups/${id}/drivers`, {
+              driver_user_ids: this.unifiedForm.driver_user_ids,
+            }).subscribe({
+              next: () => {
+                done++;
+                if (done === gIds.length) {
+                  this.savingUnifiedGroup = false;
+                  this.unifiedDrawerOpen = false;
+                  this.toast.success('Assignments saved');
+                  this.loadGroups();
+                }
+              },
+              error: () => {
+                done++;
+                if (done === gIds.length) {
+                  this.savingUnifiedGroup = false;
+                  this.unifiedDrawerOpen = false;
+                  this.loadGroups();
+                }
+              },
+            });
+          },
+          error: () => {
+            done++;
+            if (done === gIds.length) {
+              this.savingUnifiedGroup = false;
+              this.unifiedDrawerOpen = false;
+              this.loadGroups();
+            }
+          },
+        });
+      });
+    };
+
+    if (this.unifiedForm.is_creating_group && newName) {
+      this.api.post<{ route_group: GroupRow }>(`/admin/cities/${this.cityId}/route-groups`, {
+        name: newName,
+        route_ids: this.unifiedForm.route_ids,
+      }).subscribe({
+        next: (res) => {
+          const newId = res?.route_group?.id;
+          if (newId) {
+            targetGroupIds.push(newId);
+          }
+          syncGroups(targetGroupIds);
+        },
+        error: (err) => {
+          this.savingUnifiedGroup = false;
+          this.toast.error(err?.error?.message || 'Could not create new group');
+        },
+      });
+    } else {
+      syncGroups(targetGroupIds);
+    }
+  }
+
+  quickAssignRoute(routeId: number, event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const groupId = Number(select.value);
+    if (!groupId) return;
+    const g = this.groups.find((x) => x.id === groupId);
+    if (!g) return;
+    this.assignRouteToGroup(routeId, g);
+    select.value = '';
+  }
+
   // Route-group pickers now open as side drawers. Each holds the id of its
   // target so the drawer content stays live across a reload (the group/route
   // objects are replaced on every load; ids are stable).
@@ -1034,6 +1368,18 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   get driverDrawerGroup(): GroupRow | null { return this.groups.find((g) => g.id === this.driverDrawerId) ?? null; }
   get routeDrawerGroup(): GroupRow | null { return this.groups.find((g) => g.id === this.routeDrawerId) ?? null; }
   get assignDrawerRoute(): RouteLite | null { return this.routes.find((r) => r.id === this.assignDrawerRouteId) ?? null; }
+
+  get routesForRouteDrawer(): RouteLite[] {
+    const g = this.routeDrawerGroup;
+    if (!g) return [];
+    const sampleRoute = this.routes.find((r) => g.route_ids.includes(r.id));
+    const vehicleId = sampleRoute?.city_vehicle_type_id ?? this.selectedId;
+    const vRoutes = vehicleId
+      ? this.routes.filter((r) => r.city_vehicle_type_id === vehicleId)
+      : this.routes;
+    const alreadyInThisGroup = new Set<number>(g.route_ids);
+    return vRoutes.filter((r) => !alreadyInThisGroup.has(r.id));
+  }
 
   private subs: Subscription[] = [];
   private deepLinkId: number | null = null;
@@ -1532,8 +1878,14 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   // ── fixed routes ───────────────────────────────────────────
   newRoute(): void { this.fixedRoutes?.openCreate(); }
 
-  /** Opens the map editor for a route shown in a group card. */
-  editRoute(routeId: number): void { this.fixedRoutes?.openEditById(routeId); }
+  /** Opens the map editor for a route shown in a group card.
+   *  Accepts either a `RouteLite` or a numeric id; optional MouseEvent stops propagation.
+   */
+  editRoute(arg: RouteLite | number, ev?: MouseEvent): void {
+    ev?.stopPropagation();
+    const id = typeof arg === 'number' ? arg : arg.id;
+    this.fixedRoutes?.openEditById(id);
+  }
 
   /** Assign an ungrouped route into an existing group from the holding card.
    *  The route leaves the "Needs a group" list, so the drawer closes. */
@@ -1795,7 +2147,12 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   routesForVehicle(v: CityVehicleRow): RouteLite[] { return this.routes.filter((r) => r.city_vehicle_type_id === v.id); }
   groupsForVehicle(v: CityVehicleRow): GroupRow[] {
     const mine = new Set(this.routesForVehicle(v).map((r) => r.id));
-    return this.groups.filter((g) => g.route_ids.some((id) => mine.has(id)));
+    return this.groups.filter((g) => {
+      if ((g as any).city_vehicle_type_id != null) {
+        return (g as any).city_vehicle_type_id === v.id;
+      }
+      return g.route_ids.length === 0 || g.route_ids.some((id) => mine.has(id));
+    });
   }
   ungroupedForVehicle(v: CityVehicleRow): RouteLite[] {
     const covered = new Set(this.groups.flatMap((g) => g.route_ids));

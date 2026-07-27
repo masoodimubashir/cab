@@ -158,21 +158,30 @@ export class EmergencyContactsPage implements OnInit {
       return;
     }
     try {
-      const status = await Contacts.requestPermissions();
+      let status = await Contacts.checkPermissions();
+      if (status.contacts !== 'granted' && status.contacts !== 'limited') {
+        status = await Contacts.requestPermissions();
+      }
       if (status.contacts !== 'granted' && status.contacts !== 'limited') {
         await this.pickerToast('Contacts permission is blocked. Allow Contacts for this app in your phone Settings, then try again.');
         return;
       }
-      const res = await Contacts.pickContact({ projection: { name: true, phones: true } });
+      let res: any;
+      try {
+        res = await Contacts.pickContact({ projection: { name: true, phones: true } });
+      } catch (pickErr) {
+        res = await Contacts.pickContact({ projection: {} });
+      }
       const c = res?.contact;
       if (!c) return; // cancelled
-      const name = c.name?.display ?? '';
-      const rawPhone = (c.phones?.find((p) => p.number)?.number) ?? '';
+      const name = c.name?.display ?? c.name?.given ?? '';
+      const rawPhone = (c.phones?.find((p: any) => p?.number)?.number) ?? c.phones?.[0]?.number ?? '';
       const { countryCode, local } = this.splitPhone(rawPhone);
       this.form = { id: null, name, countryCode, phone: local, relationship: '', is_primary: false };
       this.dialogOpen = true;
-    } catch {
-      await this.pickerToast('Could not open the contacts picker on this device.');
+    } catch (err: any) {
+      console.error('[pickFromPhone] error:', err);
+      await this.pickerToast(err?.message || 'Could not open the contacts picker on this device.');
     }
   }
 

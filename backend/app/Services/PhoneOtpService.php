@@ -112,11 +112,7 @@ class PhoneOtpService
      */
     private function buildMessage(string $code, ?string $platform, int $ttlMin): string
     {
-        $column = $platform === 'ios' ? 'customer_login_otp_message_ios' : 'customer_login_otp_message';
-
-        $template = CitySetting::query()->whereNotNull($column)->value($column)
-            ?: CitySetting::query()->whereNotNull('customer_login_otp_message')->value('customer_login_otp_message')
-            ?: (string) config('services.msg91.default_message');
+        $template = (string) config('services.msg91.default_message');
 
         return str_replace(
             ['{otp}', '##OTP##', '{{otp}}', '{ttl}'],

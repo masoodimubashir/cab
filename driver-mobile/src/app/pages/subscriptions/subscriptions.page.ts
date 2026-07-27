@@ -13,7 +13,6 @@ interface Plan {
   rides_count: number | null;
   days_count: number | null;
   earnings_threshold: number | null;
-  plan_type: string;
   vehicle_type_name: string | null;
   terms: string | null;
 }
