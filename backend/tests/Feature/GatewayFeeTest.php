@@ -343,4 +343,56 @@ class GatewayFeeTest extends TestCase
         $this->assertSame(0, $balance['gateway_fee']);
         $this->assertSame(80000, $balance['to_driver']);
     }
+
+    /* ---- the quote-time fee, shown before a method is picked ---------- */
+
+    public function test_a_quote_shows_the_upi_fee_and_the_ceiling(): void
+    {
+        $quote = app(GatewayFeeService::class)->quote(1000);
+
+        // UPI: (2 + 0.1) × 1.18 = 2.478%
+        $this->assertTrue($quote['enabled']);
+        $this->assertSame(24.78, $quote['fee']);
+        $this->assertSame(1024.78, $quote['total']);
+        // Amex/EMI/international: (3 + 0.1) × 1.18 = 3.658%
+        $this->assertSame(36.58, $quote['max_fee']);
+        $this->assertSame(1036.58, $quote['max_total']);
+        $this->assertTrue($quote['varies'], 'the app needs to know to print the "up to" caveat');
+        $this->assertSame('upi', $quote['default_method']);
+    }
+
+    public function test_a_quote_charges_nothing_while_the_fee_is_off(): void
+    {
+        config()->set('services.payments.gateway_fee.enabled', false);
+
+        $quote = app(GatewayFeeService::class)->quote(1000);
+
+        $this->assertFalse($quote['enabled']);
+        $this->assertSame(0.0, $quote['fee']);
+        $this->assertSame(0.0, $quote['max_fee']);
+        $this->assertSame(1000.0, $quote['total']);
+        $this->assertFalse($quote['varies'], 'nothing varies when nothing is charged');
+    }
+
+    public function test_the_quoted_fee_is_the_fee_actually_charged_for_that_method(): void
+    {
+        $fees = app(GatewayFeeService::class);
+        $quote = $fees->quote(1000);
+
+        // The promise the quote screen makes: pay by UPI and you pay this.
+        $this->assertSame($fees->feeFor(1000, 'upi'), $quote['fee']);
+        // And the ceiling it warns about is a fee that really exists.
+        $this->assertSame($fees->feeFor(1000, 'premium_card'), $quote['max_fee']);
+    }
+
+    public function test_a_zero_fare_quotes_no_fee(): void
+    {
+        $quote = app(GatewayFeeService::class)->quote(0);
+
+        // A zero fare must not produce a fee, or an empty quote screen would
+        // still print "Payment fee ₹0.00".
+        $this->assertSame(0.0, $quote['fee']);
+        $this->assertSame(0.0, $quote['max_fee']);
+        $this->assertFalse($quote['varies']);
+    }
 }

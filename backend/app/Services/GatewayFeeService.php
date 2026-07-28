@@ -124,6 +124,48 @@ class GatewayFeeService
     }
 
     /**
+     * The fee line a fare quote can show BEFORE the customer has picked how
+     * they'll pay.
+     *
+     * {@see breakdown()} needs a method; a quote doesn't have one yet, because
+     * the chooser only appears at checkout. So this answers the honest version
+     * of the question: what the fee is for the method most people use, and how
+     * high it can go if they reach for Amex, EMI or an international card.
+     *
+     * `fee`/`total` are the default-method figures — safe to show as the
+     * headline, since that is what the majority are actually charged. `varies`
+     * tells the app whether to bother printing the "up to" caveat at all; when
+     * every configured method happens to share a rate, it doesn't.
+     *
+     * @return array{enabled:bool,fare:float,fee:float,total:float,rate:float,max_fee:float,max_total:float,max_rate:float,varies:bool,default_method:string}
+     */
+    public function quote(float $fare): array
+    {
+        $fee = $this->feeFor($fare, self::DEFAULT_METHOD);
+        $rate = $this->enabled() ? round($this->effectiveRate(self::DEFAULT_METHOD), 4) : 0.0;
+
+        $rates = array_map(
+            fn (array $m) => (float) $m['rate'],
+            $this->enabled() ? $this->methods() : [],
+        );
+        $maxRate = $rates === [] ? $rate : round(max($rates), 4);
+        $maxFee = $this->enabled() && $fare > 0 ? round($fare * $maxRate / 100, 2) : 0.0;
+
+        return [
+            'enabled' => $this->enabled(),
+            'fare' => round($fare, 2),
+            'fee' => $fee,
+            'total' => round($fare + $fee, 2),
+            'rate' => $rate,
+            'max_fee' => $maxFee,
+            'max_total' => round($fare + $maxFee, 2),
+            'max_rate' => $maxRate,
+            'varies' => $maxFee > $fee,
+            'default_method' => self::DEFAULT_METHOD,
+        ];
+    }
+
+    /**
      * A method's all-in percentage: the gateway's cut plus the Route split fee,
      * both grossed up by GST. Configured as the headline rates Razorpay quotes,
      * so the numbers in config match the numbers on their pricing page.
