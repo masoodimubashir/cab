@@ -469,6 +469,9 @@ Route::get('/trip-share/{token}', [TripTrackingController::class, 'showShare']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/coupon-preview', [PaymentsController::class, 'couponPreview']);
+    // The method chooser the customer app shows before checkout — Razorpay fixes
+    // an order's amount up front, so the fee has to be priced before it opens.
+    Route::get('/payments/methods', [PaymentsController::class, 'paymentMethods']);
     Route::post('/trips/{trip}/pay/razorpay', [PaymentsController::class, 'payRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/razorpay/verify', [PaymentsController::class, 'verifyRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash'])->middleware('idempotent');

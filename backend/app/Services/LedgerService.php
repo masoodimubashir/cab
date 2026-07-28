@@ -43,7 +43,7 @@ class LedgerService
      * accounted for as allocated to exactly one party — driver, operator, or
      * refunded back to the customer — with nothing created or lost:
      *
-     *   captured = driver_net + operator_net + refunded
+     *   captured = driver_net + operator_net + refunded + gateway_fee
      *
      * A refund is an internal redistribution: the driver's share is clawed back
      * (a transfer reversal, or un-earmarking a held row) and/or the operator
@@ -67,6 +67,7 @@ class LedgerService
         $toOperator = 0;
         $refunded = 0;
         $reversed = 0;
+        $gatewayFee = 0;
 
         foreach ($rows as $row) {
             $amt = (int) $row->amount_paise;
@@ -78,24 +79,31 @@ class LedgerService
                 LedgerEntry::TYPE_RETAINED => $toOperator += $amt,
                 LedgerEntry::TYPE_REFUND => $refunded += $amt,
                 LedgerEntry::TYPE_REVERSAL => $reversed += $amt,
+                LedgerEntry::TYPE_GATEWAY_FEE => $gatewayFee += $amt,
                 default => null,
             };
         }
 
         // What the driver is left with (paid or still held) once clawbacks are
-        // applied, and what the operator keeps as the residual.
+        // applied, and what the operator keeps as the residual. The gateway's
+        // cut never belonged to either of them, so it comes off the top.
         $driverNet = $toDriver + $held - $reversed;
-        $operatorNet = $captured - $driverNet - $refunded;
+        $operatorNet = $captured - $gatewayFee - $driverNet - $refunded;
 
         // The capture identity is the true conservation check: the split at
         // capture never invents or drops a paise. Refunds net out of it.
-        $imbalance = $captured - ($toDriver + $held + $toOperator);
+        //
+        // When the customer bears the gateway fee, `captured` is fare + fee but
+        // only the fare is ever split — so the fee has to be named here or every
+        // trip would read as short by exactly Razorpay's cut.
+        $imbalance = $captured - ($toDriver + $held + $toOperator + $gatewayFee);
 
         return [
             'captured' => $captured,
             'to_driver' => $toDriver,
             'held' => $held,
             'to_operator' => $toOperator,
+            'gateway_fee' => $gatewayFee,
             'refunded' => $refunded,
             'reversed' => $reversed,
             'driver_net' => $driverNet,

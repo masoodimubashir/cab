@@ -14,8 +14,8 @@ interface LedgerRow {
   id: number;
   trip_id: number | null;
   payment_id: number | null;
-  type: 'capture' | 'transfer' | 'held' | 'release' | 'retained' | 'refund' | 'reversal' | string;
-  party: 'customer' | 'driver' | 'operator' | string;
+  type: 'capture' | 'transfer' | 'held' | 'release' | 'retained' | 'refund' | 'reversal' | 'gateway_fee' | string;
+  party: 'customer' | 'driver' | 'operator' | 'gateway' | string;
   direction: 'in' | 'out';
   amount: number;
   razorpay_ref: string | null;
@@ -27,9 +27,32 @@ interface TripBalance {
   captured: number;
   driver_net: number;
   operator_net: number;
+  gateway_fee: number;
   refunded: number;
   balanced: boolean;
   imbalance_paise: number;
+}
+
+/**
+ * A row as the table actually renders it. A shared journey (one Fixed vehicle,
+ * many passengers) produces a movement per passenger, which buries the thing an
+ * operator is looking for. So consecutive movements on the same trip collapse
+ * into a single summary line carrying the trip's totals, expandable to the real
+ * rows underneath. Grouping is purely presentational — the underlying entries
+ * and their amounts are untouched.
+ */
+interface DisplayRow extends LedgerRow {
+  /** Set on a summary line; absent on real ledger rows. */
+  group?: {
+    key: string;
+    count: number;
+    captured: number;
+    toDriver: number;
+    commission: number;
+    refunded: number;
+  };
+  /** Set on a real row that sits underneath an expanded summary line. */
+  child?: boolean;
 }
 
 interface LedgerResponse {
@@ -40,6 +63,7 @@ interface LedgerResponse {
     to_driver: number;
     held: number;
     to_operator: number;
+    gateway_fee: number;
     refunded: number;
     trips: number;
     unbalanced: number;
@@ -124,6 +148,11 @@ interface LedgerResponse {
           <span class="card__value">₹ {{ summary.to_operator | number:'1.2-2' }}</span>
           <span class="card__meta">retained</span>
         </div>
+        <div class="card card--fee" *ngIf="summary.gateway_fee > 0">
+          <span class="card__label">Gateway fee</span>
+          <span class="card__value">₹ {{ summary.gateway_fee | number:'1.2-2' }}</span>
+          <span class="card__meta">paid by riders, kept by Razorpay</span>
+        </div>
         <div class="card card--refund" *ngIf="summary.refunded > 0">
           <span class="card__label">Refunded</span>
           <span class="card__value">₹ {{ summary.refunded | number:'1.2-2' }}</span>
@@ -145,6 +174,11 @@ interface LedgerResponse {
             <span>Only trips that don't balance</span>
           </label>
 
+          <label class="check">
+            <input type="checkbox" [ngModel]="groupByTrip" (ngModelChange)="setGrouping($event)" />
+            <span>Group by trip</span>
+          </label>
+
           <div class="search">
             <span class="search__icon"><tm-icon name="search" [size]="15" /></span>
             <input type="text" class="search__input" placeholder="Trip ID"
@@ -160,7 +194,7 @@ interface LedgerResponse {
 
       <tm-data-table
         [rows]="pagedRows"
-        [total]="filtered.length"
+        [total]="display.length"
         [page]="page"
         [pageSize]="pageSize"
         [loading]="loading"
@@ -172,22 +206,40 @@ interface LedgerResponse {
       >
         <tm-column key="created_at" label="When" width="150">
           <ng-template let-row>
-            <div class="stack">
+            <div class="stack" [class.stack--child]="row.child">
               <span class="strong">{{ row.created_at | date:'d MMM y' }}</span>
               <span class="muted">{{ row.created_at | date:'h:mm a' }}</span>
             </div>
           </ng-template>
         </tm-column>
 
-        <tm-column key="type" label="Movement" width="150">
+        <tm-column key="type" label="Movement" width="180">
           <ng-template let-row>
-            <span class="mv" [ngClass]="'mv--' + row.type">{{ typeLabel(row.type) }}</span>
+            <button
+              *ngIf="row.group; else plainType"
+              type="button" class="grouptoggle"
+              (click)="toggleGroup(row.group.key)"
+              [attr.aria-expanded]="isExpanded(row.group.key)"
+            >
+              <tm-icon [name]="isExpanded(row.group.key) ? 'chevron-down' : 'chevron-right'" [size]="14" />
+              <span>{{ row.group.count }} movements</span>
+            </button>
+            <ng-template #plainType>
+              <span class="mv" [ngClass]="'mv--' + row.type" [class.mv--child]="row.child">{{ typeLabel(row.type) }}</span>
+            </ng-template>
           </ng-template>
         </tm-column>
 
-        <tm-column key="party" label="Party" width="120">
+        <tm-column key="party" label="Party" width="150">
           <ng-template let-row>
-            <span class="party">{{ row.party }}</span>
+            <span class="party" *ngIf="!row.group">{{ row.party }}</span>
+            <span class="groupmeta" *ngIf="row.group">
+              <span>driver ₹ {{ row.group.toDriver | number:'1.2-2' }}</span>
+              <span>commission ₹ {{ row.group.commission | number:'1.2-2' }}</span>
+              <span class="groupmeta--refund" *ngIf="row.group.refunded > 0">
+                refunded ₹ {{ row.group.refunded | number:'1.2-2' }}
+              </span>
+            </span>
           </ng-template>
         </tm-column>
 
@@ -214,13 +266,15 @@ interface LedgerResponse {
 
         <tm-column key="razorpay_ref" label="Reference" width="190">
           <ng-template let-row>
-            <span class="ref">{{ row.razorpay_ref || '—' }}</span>
+            <span class="ref" *ngIf="!row.group">{{ row.razorpay_ref || '—' }}</span>
+            <span class="muted" *ngIf="row.group">{{ row.group.count }} references</span>
           </ng-template>
         </tm-column>
 
-        <tm-column key="amount" label="Amount" width="130" align="right">
+        <tm-column key="amount" label="Amount" width="140" align="right">
           <ng-template let-row>
-            <span class="amount" [class.amount--out]="row.direction === 'out'">
+            <span class="amount" *ngIf="row.group">₹ {{ row.group.captured | number:'1.2-2' }}</span>
+            <span class="amount" *ngIf="!row.group" [class.amount--out]="row.direction === 'out'">
               {{ row.direction === 'out' ? '−' : '+' }} ₹ {{ row.amount | number:'1.2-2' }}
             </span>
           </ng-template>
@@ -254,6 +308,7 @@ interface LedgerResponse {
     .card--operator .card__value { color: var(--tm-green-deep); }
     .card--held .card__value { color: var(--tm-warning-fg, #92400e); }
     .card--refund .card__value { color: var(--tm-danger, #B42318); }
+    .card--fee .card__value { color: var(--tm-text-muted); }
 
     .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .toolbar__right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -292,6 +347,7 @@ interface LedgerResponse {
     .mv--capture { background: var(--tm-green-tint); color: var(--tm-green-deep); }
     .mv--transfer { background: var(--tm-info-bg, #eef4ff); color: var(--tm-info-fg, #1d4ed8); }
     .mv--retained { background: var(--tm-canvas-2); color: var(--tm-text); }
+    .mv--gateway_fee { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .mv--held { background: var(--tm-warning-bg, #fff4e5); color: var(--tm-warning-fg, #92400e); }
     .mv--refund, .mv--reversal { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
 
@@ -302,13 +358,22 @@ interface LedgerResponse {
       font-size: 11.5px; font-weight: 800; background: var(--tm-green-tint); color: var(--tm-green-deep); white-space: nowrap; }
     .bal__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
     .bal--bad { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
+
+    .grouptoggle { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent;
+      padding: 0; font: inherit; font-size: 12.5px; font-weight: 800; color: var(--tm-text); cursor: pointer; }
+    .grouptoggle tm-icon { color: var(--tm-text-muted); display: inline-flex; }
+    .groupmeta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--tm-text-muted);
+      font-variant-numeric: tabular-nums; }
+    .groupmeta--refund { color: var(--tm-danger, #B42318); }
+    .stack--child { padding-left: 14px; border-left: 2px solid var(--tm-line); }
+    .mv--child { opacity: 0.85; }
   `],
 })
 export class FinanceLedgerComponent implements OnInit {
   rows: LedgerRow[] = [];
   reconciliation: Record<string, TripBalance> = {};
   summary: LedgerResponse['summary'] = {
-    captured: 0, to_driver: 0, held: 0, to_operator: 0, refunded: 0, trips: 0, unbalanced: 0,
+    captured: 0, to_driver: 0, held: 0, to_operator: 0, gateway_fee: 0, refunded: 0, trips: 0, unbalanced: 0,
   };
 
   loading = false;
@@ -318,6 +383,11 @@ export class FinanceLedgerComponent implements OnInit {
   tripFilter = '';
   unbalancedOnly = false;
 
+  /** Collapse each trip's movements into one line — on by default. */
+  groupByTrip = true;
+  /** Which summary lines are opened, keyed by group key. */
+  expanded: Record<string, boolean> = {};
+
   page = 1;
   pageSize = 25;
 
@@ -325,6 +395,7 @@ export class FinanceLedgerComponent implements OnInit {
     { key: 'capture', label: 'Captured' },
     { key: 'transfer', label: 'To driver' },
     { key: 'retained', label: 'Commission' },
+    { key: 'gateway_fee', label: 'Gateway fee' },
     { key: 'held', label: 'Held' },
     { key: 'refund', label: 'Refunds' },
     { key: 'reversal', label: 'Reversals' },
@@ -351,6 +422,7 @@ export class FinanceLedgerComponent implements OnInit {
         this.rows = res.rows ?? [];
         this.reconciliation = res.reconciliation ?? {};
         if (res.summary) this.summary = res.summary;
+        this.expanded = {};
         this.page = 1;
         this.loading = false;
       },
@@ -382,9 +454,79 @@ export class FinanceLedgerComponent implements OnInit {
     return this.rows.filter((r) => r.type === this.type);
   }
 
-  get pagedRows(): LedgerRow[] {
+  /**
+   * The filtered rows with same-trip runs collapsed into summary lines. A run of
+   * one is left as a plain row — wrapping a single movement in a "1 movement"
+   * header would be noise. Rows with no trip (nothing to group by) always stay
+   * flat.
+   */
+  get display(): DisplayRow[] {
+    const rows = this.filtered;
+    if (!this.groupByTrip) return rows;
+
+    const out: DisplayRow[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const tripId = rows[i].trip_id;
+      if (tripId == null) {
+        out.push(rows[i]);
+        continue;
+      }
+
+      // Rows arrive newest-first and a journey's movements land together, so a
+      // run is the journey. Scan to the end of it.
+      let end = i;
+      while (end + 1 < rows.length && rows[end + 1].trip_id === tripId) end++;
+
+      const run = rows.slice(i, end + 1);
+      i = end;
+
+      if (run.length === 1) {
+        out.push(run[0]);
+        continue;
+      }
+
+      const key = `${tripId}:${run[0].id}`;
+      out.push({
+        ...run[0],
+        group: {
+          key,
+          count: run.length,
+          captured: this.sumOf(run, 'capture'),
+          toDriver: this.sumOf(run, 'transfer') + this.sumOf(run, 'release'),
+          commission: this.sumOf(run, 'retained'),
+          refunded: this.sumOf(run, 'refund'),
+        },
+      });
+
+      if (this.isExpanded(key)) {
+        for (const row of run) out.push({ ...row, child: true });
+      }
+    }
+
+    return out;
+  }
+
+  private sumOf(rows: LedgerRow[], type: string): number {
+    return rows.reduce((total, r) => (r.type === type ? total + Number(r.amount || 0) : total), 0);
+  }
+
+  get pagedRows(): DisplayRow[] {
     const start = (this.page - 1) * this.pageSize;
-    return this.filtered.slice(start, start + this.pageSize);
+    return this.display.slice(start, start + this.pageSize);
+  }
+
+  setGrouping(on: boolean): void {
+    this.groupByTrip = on;
+    this.expanded = {};
+    this.page = 1;
+  }
+
+  toggleGroup(key: string): void {
+    this.expanded[key] = !this.expanded[key];
+  }
+
+  isExpanded(key: string): boolean {
+    return !!this.expanded[key];
   }
 
   balanceFor(tripId: number | null): TripBalance | null {
@@ -397,6 +539,7 @@ export class FinanceLedgerComponent implements OnInit {
       case 'capture': return 'Captured';
       case 'transfer': return 'To driver';
       case 'retained': return 'Commission';
+      case 'gateway_fee': return 'Gateway fee';
       case 'held': return 'Held';
       case 'release': return 'Released';
       case 'refund': return 'Refunded';

@@ -346,6 +346,11 @@ class AutoRefundService
             return;
         }
 
+        // Whatever of the capture was the gateway's cut never rested with the
+        // operator, so it's named separately or the trip reads as short by it.
+        $feePaise = max(0, min($capturedPaise, self::toPaise($locked->gateway_fee_amount)));
+        $farePaise = $capturedPaise - $feePaise;
+
         $this->ledger->record(
             LedgerEntry::TYPE_CAPTURE,
             LedgerEntry::PARTY_CUSTOMER,
@@ -355,19 +360,30 @@ class AutoRefundService
             $locked->id,
             $locked->razorpay_payment_id,
         );
-        if ($capturedPaise > 0) {
+        if ($feePaise > 0) {
+            $this->ledger->record(
+                LedgerEntry::TYPE_GATEWAY_FEE,
+                LedgerEntry::PARTY_GATEWAY,
+                'out',
+                $feePaise,
+                $locked->trip_id,
+                $locked->id,
+                $locked->razorpay_payment_id,
+            );
+        }
+        if ($farePaise > 0) {
             $this->ledger->record(
                 LedgerEntry::TYPE_RETAINED,
                 LedgerEntry::PARTY_OPERATOR,
                 'in',
-                $capturedPaise,
+                $farePaise,
                 $locked->trip_id,
                 $locked->id,
             );
         }
 
         $locked->forceFill([
-            'commission_amount' => $capturedPaise / 100,
+            'commission_amount' => $farePaise / 100,
             'driver_amount' => 0,
             'transfer_status' => null,
             'split_at' => $locked->split_at ?? now(),

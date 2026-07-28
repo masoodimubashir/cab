@@ -138,6 +138,47 @@
   }
 }
 
+/* Payout reminder — sits where the error banner would, amber rather than red:
+   it's a "do this soon", not a failure. */
+.payout-banner {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 68px);
+  left: 14px;
+  right: 14px;
+  z-index: 49;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  background: #FFB020;
+  color: #1B1200;
+  box-shadow: 0 8px 24px rgba(255, 176, 32, 0.28);
+  animation: dashDrop 0.25s ease;
+
+  > ion-icon { font-size: 20px; flex-shrink: 0; }
+
+  &__text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+
+    strong { font-size: 0.88rem; font-weight: 700; }
+    small { font-size: 0.75rem; opacity: 0.78; }
+  }
+
+  &__close {
+    display: flex;
+    padding: 2px;
+    color: rgba(27, 18, 0, 0.65);
+    ion-icon { font-size: 20px; }
+  }
+}
+
 /* ------------------------------------------------------------- recenter FAB -- */
 .recenter-fab {
   position: absolute;

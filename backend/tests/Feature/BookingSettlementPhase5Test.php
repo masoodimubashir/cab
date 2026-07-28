@@ -466,7 +466,7 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertSame(0, LedgerEntry::query()->where('type', 'refund')->count());
     }
 
-    public function test_r7_a_late_cancel_forfeits_the_fare_too(): void
+    public function test_cancelling_once_a_driver_is_running_the_departure_forfeits_the_fare(): void
     {
         $this->mockRazorpay();
         $driver = $this->makeDriver();
@@ -474,11 +474,9 @@ class BookingSettlementPhase5Test extends TestCase
         $customer = $this->makeCustomer();
         $reservation = $this->bookSeats($customer, $departure, ['2A'], 'r7-late');
 
-        // Inside the 30-minute cutoff: the seat can no longer be resold.
-        $departure->fresh()->update([
-            'depart_at' => now()->addMinutes(10),
-            'announced_depart_at' => now()->addMinutes(10),
-        ]);
+        // The driver has set off on the strength of the seats sold — pulling out
+        // now costs them the trip, so the fare is forfeited however early it is.
+        $trip = $this->startDeparture($driver, $departure);
 
         Sanctum::actingAs($customer, ['act-as:customer']);
         $this->postJson("/api/fixed/bookings/{$reservation->id}/cancel")
@@ -489,7 +487,27 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertNull($payment->refund_id);
         $this->assertSame(self::SEAT_FARE, (float) $payment->commission_amount);
         $this->assertSame(0, LedgerEntry::query()->where('type', 'refund')->count());
-        $this->assertSame(12000, (int) LedgerEntry::query()->where('type', 'retained')->sum('amount_paise'));
+        $this->assertBalanced($trip->id, captured: 12000, refunded: 0, driverNet: 0, operatorNet: 12000);
+    }
+
+    public function test_cancelling_while_the_vehicle_is_still_forming_is_refunded_in_full(): void
+    {
+        $this->mockRazorpay();
+        $driver = $this->makeDriver();
+        $departure = $this->openDeparture($driver);
+        $customer = $this->makeCustomer();
+        $reservation = $this->bookSeats($customer, $departure, ['2A'], 'forming');
+
+        // A driver is attached to the vehicle, but hasn't started it — nothing is
+        // owed to anyone yet, so the seat money goes straight back.
+        $this->assertNull($departure->fresh()->trip_id);
+
+        Sanctum::actingAs($customer, ['act-as:customer']);
+        $this->postJson("/api/fixed/bookings/{$reservation->id}/cancel")
+            ->assertOk()
+            ->assertJsonPath('refund_status', 'REFUNDED');
+
+        $this->assertSame(self::SEAT_FARE, (float) $this->paymentFor($reservation)->refund_amount);
     }
 
     public function test_operator_cancelling_a_booking_refunds_it_in_full(): void

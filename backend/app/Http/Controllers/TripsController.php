@@ -792,6 +792,12 @@ class TripsController extends Controller
             'location.lng' => ['nullable', 'numeric', 'between:-180,180'],
             // Start-ride OTP — required only for the "Start ride" transition.
             'code' => ['nullable', 'required_if:status,EN_ROUTE_DROP', 'digits:6'],
+            // Extras the meter can't know about, declared by the driver as they
+            // finish: a toll they paid at a booth, or waiting the rider asked for
+            // that the automatic timer didn't capture. Both are ON TOP of the
+            // agreed fare. Only read on COMPLETED.
+            'extra_toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            'extra_waiting_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
         ]);
 
         $user = $request->user();
@@ -844,6 +850,12 @@ class TripsController extends Controller
             ]);
         }
 
+        // Driver-declared extras have to land BEFORE the transition: completion
+        // recomputes the final fare, and these are part of what the ride cost.
+        if ($data['status'] === 'COMPLETED') {
+            $this->applyDriverExtras($trip, $data);
+        }
+
         $tripStateMachineService->transition($trip, $data['status']);
         $fresh = $trip->fresh()->appendDriverRiderContact();
 
@@ -851,16 +863,83 @@ class TripsController extends Controller
         // summary modal without an extra round-trip.
         $payload = ['trip' => $fresh];
         if ($data['status'] === 'COMPLETED') {
+            $commission = (float) ($fresh->commission_amount ?? 0);
+            $finalFare = (float) ($fresh->final_fare ?? 0);
+
             $payload['breakdown'] = [
-                'final_fare' => (float) ($fresh->final_fare ?? 0),
+                'final_fare' => $finalFare,
                 'waiting_charge_amount' => (float) ($fresh->waiting_charge_amount ?? 0),
+                'toll_amount' => (float) ($fresh->toll_amount ?? 0),
                 'tip_amount' => (float) ($fresh->tip_amount ?? 0),
                 'estimated_fare' => (float) ($fresh->estimated_fare ?? 0),
                 'payment_method' => $fresh->payment_method,
+                // What the driver actually takes home, so the summary can stop
+                // showing them the fare and calling it their earnings.
+                'commission_amount' => round($commission, 2),
+                'driver_net' => round(max(0.0, $finalFare - $commission), 2),
             ];
+            // What the rider still owes after their prepayment — the driver's
+            // cue to have them settle the balance before everyone drives off.
+            $payload['balance_due'] = $this->balanceDue($fresh);
         }
 
         return response()->json($payload);
+    }
+
+    /**
+     * Folds the driver's declared extras into the trip just before it completes.
+     *
+     * The meter can measure distance and time; it cannot know the driver handed
+     * over cash at a toll booth, or that the rider asked them to wait outside a
+     * shop. Those are declared here, and because the fare is recomputed on
+     * completion they flow through into what the rider owes.
+     *
+     * Both are ADDITIONS to the agreed fare, and both work the same way: raise
+     * the negotiated floor by the extra, because `recomputeFinal` floors the ride
+     * at what was agreed — lifting that floor is what actually makes the extra
+     * billable. Each also lands in its own column so the fare breaks down
+     * honestly, and so the toll stays out of the commission base (it's the
+     * driver's own booth payment coming back to them, never commissionable).
+     */
+    private function applyDriverExtras(Trip $trip, array $data): void
+    {
+        $extraToll = max(0.0, round((float) ($data['extra_toll_amount'] ?? 0), 2));
+        $extraWaiting = max(0.0, round((float) ($data['extra_waiting_amount'] ?? 0), 2));
+        $total = $extraToll + $extraWaiting;
+
+        if ($total <= 0) {
+            return;
+        }
+
+        $fields = [
+            'estimated_fare' => round((float) ($trip->estimated_fare ?? 0) + $total, 2),
+        ];
+        if ($trip->final_fare !== null) {
+            $fields['final_fare'] = round((float) $trip->final_fare + $total, 2);
+        }
+        if ($extraToll > 0) {
+            $fields['toll_amount'] = round((float) ($trip->toll_amount ?? 0) + $extraToll, 2);
+        }
+        if ($extraWaiting > 0) {
+            $fields['waiting_charge_amount'] = round((float) ($trip->waiting_charge_amount ?? 0) + $extraWaiting, 2);
+        }
+
+        $trip->forceFill($fields)->save();
+    }
+
+    /**
+     * What the rider still owes on a completed trip: the final fare less
+     * everything already captured. Zero on a fully prepaid ride that came in at
+     * or under the quote — which is the normal case.
+     */
+    private function balanceDue(Trip $trip): float
+    {
+        $paid = (float) \App\Models\Payment::query()
+            ->where('trip_id', $trip->id)
+            ->whereIn('status', ['SUCCESS', 'REFUNDED'])
+            ->sum('amount');
+
+        return round(max(0.0, (float) ($trip->final_fare ?? 0) - $paid), 2);
     }
 
     /**
