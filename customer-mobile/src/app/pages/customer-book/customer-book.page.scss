@@ -2461,6 +2461,15 @@
   color: var(--dc-ink, #0D1B2A);
   font-size: 15px;
 }
+/* The caveat under the payment-fee line: quieter than a breakdown row, since
+   it explains the number above rather than adding one. */
+.review-modal .breakdown-note {
+  margin: 0 0 2px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--dc-ink-soft, #6C757D);
+  opacity: 0.85;
+}
 .review-modal .review-done { --background: var(--dc-green, #12B35B); --border-radius: 16px; font-weight: 800; height: 52px; margin: 0; }
 
 /* ── Book for a friend / family (offer step) ── */
@@ -2592,6 +2601,17 @@
   font-size: 20px;
   font-weight: 900;
   color: var(--dc-ink, #0D1B2A);
+}
+/* The fee sits under the fare as a secondary line — same row, smaller voice,
+   no divider, so it reads as an addition to the fare above and not a rival. */
+.sp-fare--fee {
+  padding-top: 4px;
+  border-top: 0;
+}
+.sp-fare--fee strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--dc-ink-soft, #6C757D);
 }
 .sp-note {
   margin: 0;
