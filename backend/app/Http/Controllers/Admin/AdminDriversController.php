@@ -370,6 +370,12 @@ class AdminDriversController
                 'current_lat' => $user?->current_lat,
                 'current_lng' => $user?->current_lng,
                 'current_location_updated_at' => $user?->current_location_updated_at,
+                'payout_account_status' => $user?->payout_account_status ?? 'none',
+                'payout_method' => $user?->payout_method,
+                'payout_beneficiary_name' => $user?->payout_beneficiary_name,
+                'payout_bank_last4' => $user?->payout_bank_last4,
+                'payout_ifsc' => $user?->payout_ifsc,
+                'payout_upi' => $user?->payout_upi,
             ],
         ]);
     }
@@ -462,6 +468,29 @@ class AdminDriversController
         $user->save();
 
         return response()->json(['message' => 'Driver unblocked.', 'driver' => $driver->fresh('user')]);
+    }
+
+    public function verifyPayoutAccount(Driver $driver)
+    {
+        $user = $driver->user;
+        if (! $user) {
+            abort(404, 'Driver user account not found.');
+        }
+
+        /** @var \App\Services\PayoutAccountService $payoutService */
+        $payoutService = app(\App\Services\PayoutAccountService::class);
+        $payoutService->markVerified($user);
+
+        /** @var \App\Services\HeldEarningsService $heldService */
+        $heldService = app(\App\Services\HeldEarningsService::class);
+        $res = $heldService->releaseAllForDriver($user);
+
+        return response()->json([
+            'message' => 'Driver payout account verified and held earnings released.',
+            'released_count' => $res['released'] ?? 0,
+            'released_amount' => ($res['amount_paise'] ?? 0) / 100,
+            'payout_status' => $user->fresh()->payout_account_status,
+        ]);
     }
 
     public function destroy(Request $request, Driver $driver)

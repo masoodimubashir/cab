@@ -20,6 +20,10 @@ interface LedgerRow {
   amount: number;
   razorpay_ref: string | null;
   created_at: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  driver_name?: string | null;
+  driver_phone?: string | null;
 }
 
 /** Per-trip proof that nothing was invented or lost. */
@@ -34,12 +38,7 @@ interface TripBalance {
 }
 
 /**
- * A row as the table actually renders it. A shared journey (one Fixed vehicle,
- * many passengers) produces a movement per passenger, which buries the thing an
- * operator is looking for. So consecutive movements on the same trip collapse
- * into a single summary line carrying the trip's totals, expandable to the real
- * rows underneath. Grouping is purely presentational — the underlying entries
- * and their amounts are untouched.
+ * A row as the table actually renders it.
  */
 interface DisplayRow extends LedgerRow {
   /** Set on a summary line; absent on real ledger rows. */
@@ -50,6 +49,8 @@ interface DisplayRow extends LedgerRow {
     toDriver: number;
     commission: number;
     refunded: number;
+    customer_name?: string | null;
+    driver_name?: string | null;
   };
   /** Set on a real row that sits underneath an expanded summary line. */
   child?: boolean;
@@ -70,20 +71,6 @@ interface LedgerResponse {
   };
 }
 
-/**
- * The money ledger — every rupee that moved, and the proof each trip adds up.
- *
- * This is the operator's answer to "where did the money go?". Under the
- * auto-split engine nobody moves money by hand, so the only useful questions
- * are what happened and whether it balances. Both are answered here:
- *
- *   captured = to driver + held + to operator     (nothing invented or lost)
- *
- * A trip that fails that check is the one thing on this screen that needs a
- * human, so it's filterable in one click and flagged in red.
- *
- * Strictly read-only. Nothing here can change a balance.
- */
 @Component({
   selector: 'app-finance-ledger',
   standalone: true,
@@ -160,12 +147,23 @@ interface LedgerResponse {
         </div>
       </div>
 
-      <!-- Filters -->
+      <!-- Movement & Party Filter Toolbars -->
       <div class="toolbar">
-        <div class="tabs">
-          <button type="button" class="tab" [class.tab--on]="type === 'all'" (click)="setType('all')">All movements</button>
-          <button type="button" class="tab" *ngFor="let t of types"
-            [class.tab--on]="type === t.key" (click)="setType(t.key)">{{ t.label }}</button>
+        <div class="tabs-group">
+          <div class="tabs">
+            <span class="tabs-label">Movement:</span>
+            <button type="button" class="tab" [class.tab--on]="type === 'all'" (click)="setType('all')">All movements</button>
+            <button type="button" class="tab" *ngFor="let t of types"
+              [class.tab--on]="type === t.key" (click)="setType(t.key)">{{ t.label }}</button>
+          </div>
+
+          <div class="tabs">
+            <span class="tabs-label">Party (Payer/Recipient):</span>
+            <button type="button" class="tab" [class.tab--on]="partyFilter === 'all'" (click)="setPartyFilter('all')">All parties</button>
+            <button type="button" class="tab" [class.tab--on]="partyFilter === 'customer'" (click)="setPartyFilter('customer')">Customer (Payer)</button>
+            <button type="button" class="tab" [class.tab--on]="partyFilter === 'driver'" (click)="setPartyFilter('driver')">Driver (Recipient)</button>
+            <button type="button" class="tab" [class.tab--on]="partyFilter === 'operator'" (click)="setPartyFilter('operator')">Operator (Company)</button>
+          </div>
         </div>
 
         <div class="toolbar__right">
@@ -181,9 +179,9 @@ interface LedgerResponse {
 
           <div class="search">
             <span class="search__icon"><tm-icon name="search" [size]="15" /></span>
-            <input type="text" class="search__input" placeholder="Trip ID"
-              [(ngModel)]="tripFilter" (keyup.enter)="load()" />
-            <button *ngIf="tripFilter" type="button" class="search__clear" (click)="tripFilter=''; load()" aria-label="Clear">
+            <input type="text" class="search__input" placeholder="Search name, phone, trip #..."
+              [(ngModel)]="searchFilter" />
+            <button *ngIf="searchFilter" type="button" class="search__clear" (click)="searchFilter=''" aria-label="Clear">
               <tm-icon name="x" [size]="13" />
             </button>
           </div>
@@ -204,7 +202,7 @@ interface LedgerResponse {
         (pageChange)="page = $event"
         (pageSizeChange)="pageSize = $event; page = 1"
       >
-        <tm-column key="created_at" label="When" width="150">
+        <tm-column key="created_at" label="When" width="140">
           <ng-template let-row>
             <div class="stack" [class.stack--child]="row.child">
               <span class="strong">{{ row.created_at | date:'d MMM y' }}</span>
@@ -213,7 +211,7 @@ interface LedgerResponse {
           </ng-template>
         </tm-column>
 
-        <tm-column key="type" label="Movement" width="180">
+        <tm-column key="type" label="Movement" width="160">
           <ng-template let-row>
             <button
               *ngIf="row.group; else plainType"
@@ -230,20 +228,43 @@ interface LedgerResponse {
           </ng-template>
         </tm-column>
 
-        <tm-column key="party" label="Party" width="150">
+        <tm-column key="party" label="Party (Payer / Recipient)" width="260">
           <ng-template let-row>
-            <span class="party" *ngIf="!row.group">{{ row.party }}</span>
-            <span class="groupmeta" *ngIf="row.group">
-              <span>driver ₹ {{ row.group.toDriver | number:'1.2-2' }}</span>
-              <span>commission ₹ {{ row.group.commission | number:'1.2-2' }}</span>
+            <ng-container *ngIf="!row.group">
+              <div class="party-info" *ngIf="row.party === 'customer'">
+                <span class="party-badge party-badge--customer">Customer (Payer)</span>
+                <strong class="party-name">{{ row.customer_name || 'Rider' }}</strong>
+                <small class="party-phone" *ngIf="row.customer_phone">{{ row.customer_phone }}</small>
+              </div>
+
+              <div class="party-info" *ngIf="row.party === 'driver'">
+                <span class="party-badge party-badge--driver">Driver (Recipient)</span>
+                <strong class="party-name">{{ row.driver_name || 'Driver' }}</strong>
+                <small class="party-phone" *ngIf="row.driver_phone">{{ row.driver_phone }}</small>
+              </div>
+
+              <div class="party-info" *ngIf="row.party === 'operator'">
+                <span class="party-badge party-badge--operator">Company (Operator)</span>
+                <strong class="party-name">Platform Commission</strong>
+              </div>
+
+              <div class="party-info" *ngIf="row.party !== 'customer' && row.party !== 'driver' && row.party !== 'operator'">
+                <span class="party-badge">{{ row.party }}</span>
+              </div>
+            </ng-container>
+
+            <div class="groupmeta" *ngIf="row.group">
+              <span *ngIf="row.group.customer_name">Rider: <strong>{{ row.group.customer_name }}</strong></span>
+              <span *ngIf="row.group.driver_name">Driver: <strong>{{ row.group.driver_name }}</strong></span>
+              <span>Driver ₹ {{ row.group.toDriver | number:'1.2-2' }} · Commission ₹ {{ row.group.commission | number:'1.2-2' }}</span>
               <span class="groupmeta--refund" *ngIf="row.group.refunded > 0">
-                refunded ₹ {{ row.group.refunded | number:'1.2-2' }}
+                Refunded ₹ {{ row.group.refunded | number:'1.2-2' }}
               </span>
-            </span>
+            </div>
           </ng-template>
         </tm-column>
 
-        <tm-column key="trip_id" label="Trip" width="110">
+        <tm-column key="trip_id" label="Trip" width="100">
           <ng-template let-row>
             <button type="button" class="triplink" *ngIf="row.trip_id" (click)="focusTrip(row.trip_id)">
               #{{ row.trip_id }}
@@ -252,7 +273,7 @@ interface LedgerResponse {
           </ng-template>
         </tm-column>
 
-        <tm-column key="balance" label="Trip balances?" width="190">
+        <tm-column key="balance" label="Trip balances?" width="150">
           <ng-template let-row>
             <ng-container *ngIf="balanceFor(row.trip_id) as b; else noBal">
               <span class="bal" [class.bal--bad]="!b.balanced">
@@ -271,7 +292,7 @@ interface LedgerResponse {
           </ng-template>
         </tm-column>
 
-        <tm-column key="amount" label="Amount" width="140" align="right">
+        <tm-column key="amount" label="Amount" width="130" align="right">
           <ng-template let-row>
             <span class="amount" *ngIf="row.group">₹ {{ row.group.captured | number:'1.2-2' }}</span>
             <span class="amount" *ngIf="!row.group" [class.amount--out]="row.direction === 'out'">
@@ -310,43 +331,40 @@ interface LedgerResponse {
     .card--refund .card__value { color: var(--tm-danger, #B42318); }
     .card--fee .card__value { color: var(--tm-text-muted); }
 
-    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .toolbar { display: flex; flex-direction: column; gap: 12px; }
     .toolbar__right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tabs-group { display: flex; flex-direction: column; gap: 8px; }
+    .tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .tabs-label { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); margin-right: 4px; }
     .tab { border: 1px solid var(--tm-line); background: var(--tm-surface); color: var(--tm-text-muted);
-      border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; }
+      border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
     .tab--on { background: var(--tm-text); color: var(--tm-surface); border-color: var(--tm-text); }
 
+    .party-info { display: flex; flex-direction: column; gap: 2px; }
+    .party-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .party-phone { font-size: 11.5px; color: var(--tm-text-muted); }
+    .party-badge { display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--tm-text-muted); }
+    .party-badge--customer { color: var(--tm-green-deep); }
+    .party-badge--driver { color: var(--tm-info-fg, #1d4ed8); }
+    .party-badge--operator { color: var(--tm-text); }
+
     .check { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700;
-      color: var(--tm-text-muted); cursor: pointer; white-space: nowrap; }
-    .check input { accent-color: var(--tm-ink); }
+      color: var(--tm-text-muted); cursor: pointer; }
+    .search { position: relative; display: flex; align-items: center; min-width: 220px; }
+    .search__icon { position: absolute; left: 10px; color: var(--tm-text-muted); display: inline-flex; pointer-events: none; }
+    .search__input { width: 100%; height: 34px; padding: 0 28px 0 32px; font: inherit; font-size: 12.5px;
+      color: var(--tm-text); background: var(--tm-surface); border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-md); outline: none; }
+    .search__input:focus { border-color: var(--tm-text); }
+    .search__clear { position: absolute; right: 6px; border: 0; background: transparent; padding: 4px;
+      color: var(--tm-text-muted); cursor: pointer; display: inline-flex; }
 
-    .search { display: inline-flex; align-items: center; gap: 8px; min-width: 150px; max-width: 200px;
-      padding: 8px 10px 8px 12px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md); }
-    .search:focus-within { border-color: var(--tm-ink); }
-    .search__icon { color: var(--tm-text-muted); display: inline-flex; }
-    .search__input { flex: 1; min-width: 0; appearance: none; background: transparent; border: 0; outline: 0;
-      font-family: var(--tm-font-body); font-size: 13px; font-weight: 600; color: var(--tm-text); padding: 0; }
-    .search__clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
-      border-radius: 50%; background: var(--tm-canvas-2); color: var(--tm-text-muted); }
-
-    .state { padding: 16px; text-align: center; color: var(--tm-text-muted); font-size: 13px;
-      background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); }
-    .state--error { color: var(--tm-danger, #B42318); }
-
-    .stack { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-    .strong { font-weight: 800; color: var(--tm-text); }
-    .muted { color: var(--tm-text-muted); font-size: 11px; }
-    .ref { font-family: var(--tm-font-mono); font-size: 11.5px; color: var(--tm-text-muted); overflow-wrap: anywhere; }
-    .party { font-size: 12.5px; font-weight: 700; color: var(--tm-text-muted); text-transform: capitalize; }
-    .amount { font-weight: 800; color: var(--tm-green-deep); white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .amount--out { color: var(--tm-text); }
-
-    .mv { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 800;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted); white-space: nowrap; }
+    .mv { display: inline-flex; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800;
+      letter-spacing: 0.02em; background: var(--tm-canvas); color: var(--tm-text); }
     .mv--capture { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .mv--transfer { background: var(--tm-info-bg, #eef4ff); color: var(--tm-info-fg, #1d4ed8); }
-    .mv--retained { background: var(--tm-canvas-2); color: var(--tm-text); }
+    .mv--transfer { background: var(--tm-info-bg, #eff6ff); color: var(--tm-info-fg, #1d4ed8); }
+    .mv--retained { background: var(--tm-canvas); color: var(--tm-text); }
     .mv--gateway_fee { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .mv--held { background: var(--tm-warning-bg, #fff4e5); color: var(--tm-warning-fg, #92400e); }
     .mv--refund, .mv--reversal { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
@@ -379,8 +397,9 @@ export class FinanceLedgerComponent implements OnInit {
   loading = false;
   error = '';
 
-  type: string = 'all';
-  tripFilter = '';
+  type = 'all';
+  partyFilter = 'all';
+  searchFilter = '';
   unbalancedOnly = false;
 
   /** Collapse each trip's movements into one line — on by default. */
@@ -412,8 +431,6 @@ export class FinanceLedgerComponent implements OnInit {
     this.error = '';
 
     const params: string[] = [];
-    const trip = this.tripFilter.trim();
-    if (trip) params.push(`trip_id=${encodeURIComponent(trip)}`);
     if (this.unbalancedOnly) params.push('unbalanced=1');
     const qs = params.length ? `?${params.join('&')}` : '';
 
@@ -438,28 +455,40 @@ export class FinanceLedgerComponent implements OnInit {
     this.page = 1;
   }
 
+  setPartyFilter(party: string): void {
+    this.partyFilter = party;
+    this.page = 1;
+  }
+
   setUnbalanced(on: boolean): void {
     this.unbalancedOnly = on;
     this.load();
   }
 
-  /** Jump the whole view to one trip — the usual next step after spotting a row. */
   focusTrip(tripId: number): void {
-    this.tripFilter = String(tripId);
-    this.load();
+    this.searchFilter = String(tripId);
   }
 
   get filtered(): LedgerRow[] {
-    if (this.type === 'all') return this.rows;
-    return this.rows.filter((r) => r.type === this.type);
+    return this.rows.filter((r) => {
+      if (this.type !== 'all' && r.type !== this.type) return false;
+      if (this.partyFilter !== 'all' && r.party !== this.partyFilter) return false;
+      if (this.searchFilter.trim()) {
+        const q = this.searchFilter.trim().toLowerCase();
+        const tripStr = r.trip_id ? `#${r.trip_id}` : '';
+        const cName = (r.customer_name || '').toLowerCase();
+        const cPhone = (r.customer_phone || '').toLowerCase();
+        const dName = (r.driver_name || '').toLowerCase();
+        const dPhone = (r.driver_phone || '').toLowerCase();
+        const ref = (r.razorpay_ref || '').toLowerCase();
+        const match = tripStr.includes(q) || String(r.trip_id || '').includes(q) ||
+          cName.includes(q) || cPhone.includes(q) || dName.includes(q) || dPhone.includes(q) || ref.includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
   }
 
-  /**
-   * The filtered rows with same-trip runs collapsed into summary lines. A run of
-   * one is left as a plain row — wrapping a single movement in a "1 movement"
-   * header would be noise. Rows with no trip (nothing to group by) always stay
-   * flat.
-   */
   get display(): DisplayRow[] {
     const rows = this.filtered;
     if (!this.groupByTrip) return rows;
@@ -472,8 +501,6 @@ export class FinanceLedgerComponent implements OnInit {
         continue;
       }
 
-      // Rows arrive newest-first and a journey's movements land together, so a
-      // run is the journey. Scan to the end of it.
       let end = i;
       while (end + 1 < rows.length && rows[end + 1].trip_id === tripId) end++;
 
@@ -486,6 +513,9 @@ export class FinanceLedgerComponent implements OnInit {
       }
 
       const key = `${tripId}:${run[0].id}`;
+      const firstCustomer = run.find((r) => r.customer_name)?.customer_name;
+      const firstDriver = run.find((r) => r.driver_name)?.driver_name;
+
       out.push({
         ...run[0],
         group: {
@@ -495,6 +525,8 @@ export class FinanceLedgerComponent implements OnInit {
           toDriver: this.sumOf(run, 'transfer') + this.sumOf(run, 'release'),
           commission: this.sumOf(run, 'retained'),
           refunded: this.sumOf(run, 'refund'),
+          customer_name: firstCustomer,
+          driver_name: firstDriver,
         },
       });
 
