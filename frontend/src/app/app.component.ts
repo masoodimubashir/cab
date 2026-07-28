@@ -52,6 +52,7 @@ export class AppComponent implements OnInit {
     [/^\/roles-permissions/,        'Roles & Permissions'],
     [/^\/finance\/overview/,        'Financial Overview'],
     [/^\/finance\/money-in/,        'Payment In'],
+    [/^\/finance\/ledger/,          'Money Ledger'],
     [/^\/analytics\/real-time/,     'Real Time Analytics'],
     [/^\/analytics\/graphs/,        'Analytics Graphs'],
     [/^\/analytics\/reports/,       'Reports'],
@@ -168,8 +169,9 @@ export class AppComponent implements OnInit {
 
     if (can('safety'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
 
-    // --- Finance (money in, refunds out) ---
+    // --- Finance (money in, where it went, refunds out) ---
     if (can('finance')) finance.push({ label: 'Payment In',  icon: 'rupee',      route: '/finance/money-in' });
+    if (can('finance')) finance.push({ label: 'Money Ledger', icon: 'chart-line', route: '/finance/ledger' });
     if (can('finance')) finance.push({ label: 'Refunds',   icon: 'send',       route: '/refunds' });
 
     // --- Insights ---
