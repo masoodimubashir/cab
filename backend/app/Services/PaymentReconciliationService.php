@@ -129,7 +129,14 @@ class PaymentReconciliationService
                     $this->markCouponRedeemed($locked, $trip->id);
                     // Auto-split at source (Route). Idempotent via payments.split_at,
                     // so a webhook + sweeper + client-verify race splits only once.
+                    // A prepayment is skipped here — it settles at completion.
                     app(PaymentSplitService::class)->applyCapturedSplit($locked);
+
+                    // …unless the ride is already over, which is the case for a
+                    // balance paid after the fact.
+                    if ($trip->status === 'COMPLETED') {
+                        app(BookingPaymentService::class)->settleTrip($trip);
+                    }
                     try {
                         app(InvoiceGeneratorService::class)->generateForTrip($trip);
                     } catch (\Throwable) {

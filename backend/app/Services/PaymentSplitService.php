@@ -79,6 +79,12 @@ class PaymentSplitService
             if ($locked->split_at !== null) {
                 return; // already split
             }
+            if ($locked->settlement_mode === Payment::SETTLE_BOOKING) {
+                // Prepaid before the ride ran — Fixed/Shuttle seats, or a Private
+                // ride paid at booking. The driver isn't owed anything until the
+                // trip completes, so settlement waits for the completion hook.
+                return;
+            }
 
             $trip = $locked->trip()->first();
             if (! $trip instanceof Trip) {

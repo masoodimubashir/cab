@@ -153,37 +153,7 @@ class AutoRefundService
                 return null;
             }
 
-            // A cancelled-before-ride booking never pays the driver, so the whole
-            // captured amount rests with the operator until (if) it's refunded.
-            // Record it once — idempotent on the presence of a capture row — so the
-            // ledger reconciles whether or not a refund follows.
-            if (! $this->ledger->hasCapture($locked)) {
-                $this->ledger->record(
-                    LedgerEntry::TYPE_CAPTURE,
-                    LedgerEntry::PARTY_CUSTOMER,
-                    'in',
-                    $capturedPaise,
-                    $locked->trip_id,
-                    $locked->id,
-                    $locked->razorpay_payment_id,
-                );
-                if ($capturedPaise > 0) {
-                    $this->ledger->record(
-                        LedgerEntry::TYPE_RETAINED,
-                        LedgerEntry::PARTY_OPERATOR,
-                        'in',
-                        $capturedPaise,
-                        $locked->trip_id,
-                        $locked->id,
-                    );
-                }
-                $locked->forceFill([
-                    'commission_amount' => $capturedPaise / 100,
-                    'driver_amount' => 0,
-                    'transfer_status' => null,
-                    'split_at' => $locked->split_at ?? now(),
-                ])->save();
-            }
+            $this->recordUnsettledCapture($locked, $capturedPaise);
 
             // Stake a pending claim on the refund case so a racing cancel backs off.
             if ($refundPaise > 0) {
@@ -277,6 +247,134 @@ class AutoRefundService
     }
 
     /**
+     * Returns the part of a prepayment the ride turned out not to cost. Unlike a
+     * cancellation this is not a rulebook decision — the amount is arithmetic
+     * (prepaid − final fare) and the ride still happened, so the driver keeps
+     * their share of what the ride WAS worth and nothing is clawed back.
+     *
+     * Deliberately leaves the payment SUCCESS and split_at null: this runs just
+     * before settlement, which then divides the fare that actually stands.
+     *
+     * @return array{refunded_paise:int,status:string,refund_id:?string}|null
+     */
+    public function refundOverpayment(Payment $payment, int $refundPaise): ?array
+    {
+        if (! $this->enabled() || $refundPaise <= 0) {
+            return null;
+        }
+
+        $claimed = DB::transaction(function () use ($payment) {
+            /** @var Payment|null $locked */
+            $locked = Payment::query()->lockForUpdate()->find($payment->id);
+            if (! $locked || $locked->status !== 'SUCCESS') {
+                return null;
+            }
+            // Anything already refunded (or in flight) means this has been
+            // handled — a replayed completion must not give the money back twice.
+            if ($locked->refund_id !== null || $locked->refund_status === Payment::REFUND_PENDING) {
+                return null;
+            }
+            $locked->forceFill(['refund_status' => Payment::REFUND_PENDING])->save();
+
+            return $locked;
+        });
+
+        if ($claimed === null) {
+            return ['refunded_paise' => 0, 'status' => 'skipped', 'refund_id' => null];
+        }
+
+        try {
+            $refund = $this->razorpay->refundPayment(
+                (string) $claimed->razorpay_payment_id,
+                $refundPaise,
+                ['trip_id' => (string) $claimed->trip_id, 'reason' => 'prepaid_above_final_fare'],
+            );
+        } catch (\Throwable $e) {
+            $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
+            Log::error('DreamCabs overpayment refund failed at Razorpay — customer is owed the difference', [
+                'payment_id' => $claimed->id,
+                'trip_id' => $claimed->trip_id,
+                'amount_paise' => $refundPaise,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['refunded_paise' => 0, 'status' => 'refund_failed', 'refund_id' => null];
+        }
+
+        $this->ledger->record(
+            LedgerEntry::TYPE_REFUND,
+            LedgerEntry::PARTY_CUSTOMER,
+            'out',
+            $refundPaise,
+            $claimed->trip_id,
+            $claimed->id,
+            $refund['id'],
+            ['reason' => 'prepaid_above_final_fare'],
+        );
+
+        $status = ($refund['status'] ?? 'processed') === 'processed'
+            ? Payment::REFUND_PROCESSED
+            : Payment::REFUND_PENDING;
+
+        $claimed->forceFill([
+            'refund_id' => $refund['id'],
+            'refund_amount' => $refundPaise / 100,
+            'refund_status' => $status,
+            'refunded_at' => now(),
+        ])->save();
+
+        return [
+            'refunded_paise' => $refundPaise,
+            'status' => $status === Payment::REFUND_PROCESSED ? 'refunded' : 'refund_pending',
+            'refund_id' => (string) $refund['id'],
+        ];
+    }
+
+    /**
+     * Books a prepayment that was captured but never split to the operator, so a
+     * refund on it still reconciles. This is the shape of every cancel that
+     * happens BEFORE the ride runs — a Fixed/Shuttle seat, or a Private ride paid
+     * at booking: the driver was never paid, so the whole captured amount rests
+     * with the operator until (if) it goes back to the customer.
+     *
+     * Idempotent on the presence of a capture row, and a no-op once the split has
+     * actually settled. Must be called inside the caller's transaction.
+     */
+    private function recordUnsettledCapture(Payment $locked, int $capturedPaise): void
+    {
+        if ($this->ledger->hasCapture($locked)) {
+            return;
+        }
+
+        $this->ledger->record(
+            LedgerEntry::TYPE_CAPTURE,
+            LedgerEntry::PARTY_CUSTOMER,
+            'in',
+            $capturedPaise,
+            $locked->trip_id,
+            $locked->id,
+            $locked->razorpay_payment_id,
+        );
+        if ($capturedPaise > 0) {
+            $this->ledger->record(
+                LedgerEntry::TYPE_RETAINED,
+                LedgerEntry::PARTY_OPERATOR,
+                'in',
+                $capturedPaise,
+                $locked->trip_id,
+                $locked->id,
+            );
+        }
+
+        $locked->forceFill([
+            'commission_amount' => $capturedPaise / 100,
+            'driver_amount' => 0,
+            'transfer_status' => null,
+            'split_at' => $locked->split_at ?? now(),
+        ])->save();
+    }
+
+    /**
      * The refund transaction for one captured payment. Row-locked and guarded on
      * payments.refunded_at so a concurrent cancel can't double-refund (R12).
      *
@@ -315,6 +413,13 @@ class AutoRefundService
             if ($alreadyDone || $inFlight) {
                 return null;
             }
+
+            // A ride cancelled after the customer prepaid but before it ran was
+            // never split, so nothing is on the ledger yet. Book it to the
+            // operator first, or the refund below would have no capture to net
+            // against and the trip would never reconcile.
+            $this->recordUnsettledCapture($locked, self::toPaise($locked->amount));
+
             // Stake a claim so a racing transaction backs off.
             $locked->forceFill(['refund_status' => Payment::REFUND_PENDING])->save();
 

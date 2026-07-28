@@ -203,6 +203,15 @@
   ion-icon { font-size: 17px; flex-shrink: 0; }
 }
 
+/* Reassurance under the pay bar when the ride is being paid for up front. */
+.prepay-hint {
+  display: flex; align-items: center; gap: 7px;
+  margin: 8px 0 0; padding: 9px 11px;
+  background: rgba(18, 179, 91, 0.08); border-radius: var(--dc-r-md, 14px);
+  font-size: 12.5px; font-weight: 600; color: var(--dc-green-ink, #0B7A3E);
+  ion-icon { font-size: 17px; flex-shrink: 0; }
+}
+
 /* Coupon */
 .coupon-card {
   .coupon-row {
