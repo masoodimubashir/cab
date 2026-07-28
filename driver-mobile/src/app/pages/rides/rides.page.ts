@@ -122,6 +122,8 @@ export class RidesPage implements OnInit, OnDestroy {
   // Last breakdown returned by /driver-progress when status=COMPLETED — fed
   // into the summary modal in phase 3.
   completionBreakdown: Record<string, unknown> | null = null;
+  /** What the rider still owes after their prepayment. 0 on a normal ride. */
+  balanceDue = 0;
 
   get offers(): Record<string, unknown>[] {
     const raw = this.negotiation?.['offers'];
@@ -549,8 +551,19 @@ export class RidesPage implements OnInit, OnDestroy {
     const body: Record<string, unknown> = { status: nextStatus };
     if (location) body['location'] = location;
 
+    // Finishing the ride is the driver's one chance to declare what the meter
+    // couldn't see — a toll they paid, or waiting the rider asked for.
+    if (nextStatus === 'COMPLETED') {
+      const extras = await this.askForExtras();
+      if (extras === null) {
+        this.progressBusy = false;
+        return; // driver backed out of the prompt
+      }
+      Object.assign(body, extras);
+    }
+
     this.api
-      .patch<{ trip: Record<string, unknown>; breakdown?: Record<string, unknown> }>(
+      .patch<{ trip: Record<string, unknown>; breakdown?: Record<string, unknown>; balance_due?: number }>(
         `/trips/${tripId}/driver-progress`,
         body,
       )
@@ -560,6 +573,7 @@ export class RidesPage implements OnInit, OnDestroy {
           if (res.breakdown) {
             this.completionBreakdown = res.breakdown;
           }
+          this.balanceDue = res.balance_due ?? 0;
           if (nextStatus === 'COMPLETED') {
             void this.bgLocation.stop();
             this.onTripCompleted();
@@ -575,6 +589,43 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   /**
+   * Asks the driver for anything the meter couldn't see before the ride closes:
+   * a toll they paid out of pocket, or waiting the rider asked for beyond the
+   * automatic timer. Both optional — the common case is tapping Finish and
+   * leaving them blank.
+   *
+   * Returns the fields to send, or null if the driver dismissed the prompt (in
+   * which case the ride is NOT completed — better to ask again than to close a
+   * trip they didn't mean to close).
+   */
+  private async askForExtras(): Promise<Record<string, unknown> | null> {
+    const alert = await this.alertCtrl.create({
+      header: 'Anything to add?',
+      message: 'Leave blank if not. The rider pays any extra online — never in cash.',
+      inputs: [
+        { name: 'toll', type: 'number', placeholder: 'Toll you paid (₹)', min: 0 },
+        { name: 'waiting', type: 'number', placeholder: 'Extra waiting charge (₹)', min: 0 },
+      ],
+      buttons: [
+        { text: 'Back', role: 'cancel' },
+        { text: 'Finish ride', role: 'confirm' },
+      ],
+    });
+
+    await alert.present();
+    const { data, role } = await alert.onDidDismiss();
+    if (role === 'cancel' || role === 'backdrop') return null;
+
+    const body: Record<string, unknown> = {};
+    const toll = Number(data?.values?.toll);
+    const waiting = Number(data?.values?.waiting);
+    if (Number.isFinite(toll) && toll > 0) body['extra_toll_amount'] = toll;
+    if (Number.isFinite(waiting) && waiting > 0) body['extra_waiting_amount'] = waiting;
+
+    return body;
+  }
+
+  /**
    * Open the trip summary modal, then clear active-trip state on dismiss so
    * the rides list refreshes and the driver can pick up the next ride.
    */
@@ -584,6 +635,7 @@ export class RidesPage implements OnInit, OnDestroy {
       componentProps: {
         trip: this.lastTrip,
         breakdown: this.completionBreakdown,
+        balanceDue: this.balanceDue,
       },
       breakpoints: [0, 0.7, 1],
       initialBreakpoint: 0.7,

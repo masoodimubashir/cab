@@ -198,19 +198,29 @@ class BookingPaymentService
             return;
         }
 
-        // The ride is worth its final fare — never more than was actually paid.
-        $fareTotal = min(self::toPaise($trip->final_fare), $capturedTotal);
-        $commissionTotal = min(self::toPaise($trip->commission_amount), max(0, $fareTotal));
+        // The ride is worth its final fare — deliberately NOT capped at what was
+        // captured. If the rider never settled a balance, the driver is still
+        // owed their share of the full fare; computeSplit then pays them as much
+        // of it as exists and the operator's commission absorbs the shortfall.
+        // Capping here instead would quietly take that hit out of the driver.
+        $fareTotal = max(0, self::toPaise($trip->final_fare));
+        $commissionTotal = max(0, min(self::toPaise($trip->commission_amount), $fareTotal));
 
-        $fareLeft = max(0, $fareTotal);
-        $commissionLeft = max(0, $commissionTotal);
+        // A balance paid after the ride settles on its own, later, so whatever
+        // the prepayment already claimed has to come off the totals first —
+        // otherwise the second capture would hand the driver a second full share.
+        [$usedGross, $usedCommission] = $this->alreadyAllocated($trip);
+
+        $fareLeft = max(0, $fareTotal - $usedGross);
+        $commissionLeft = max(0, $commissionTotal - $usedCommission);
         $last = $payments->count() - 1;
 
         foreach ($payments->values() as $i => $payment) {
-            $captured = self::toPaise($payment->amount);
-            $grossShare = min($captured, $fareLeft);
+            // The last capture takes whatever fare is left, so nothing goes
+            // unallocated when the captures don't cover the whole fare.
+            $grossShare = $i === $last ? $fareLeft : min(self::toPaise($payment->amount), $fareLeft);
 
-            $commissionShare = $i === $last || $fareLeft <= 0
+            $commissionShare = $i === $last
                 ? $commissionLeft
                 : (int) round($commissionTotal * $grossShare / max(1, $fareTotal));
             $commissionShare = min($commissionShare, $commissionLeft, $grossShare);
@@ -220,6 +230,33 @@ class BookingPaymentService
 
             $this->split->settleBookingPayment($payment, $driver, $grossShare, $commissionShare);
         }
+    }
+
+    /**
+     * How much of this trip's fare and commission earlier captures have already
+     * taken. Read off what settlement actually stamped rather than recomputed,
+     * so the two can never drift.
+     *
+     * @return array{0:int,1:int} [grossPaise, commissionPaise]
+     */
+    private function alreadyAllocated(Trip $trip): array
+    {
+        $settled = Payment::query()
+            ->where('trip_id', $trip->id)
+            ->where('settlement_mode', Payment::SETTLE_BOOKING)
+            ->whereNotNull('split_at')
+            ->get(['driver_amount', 'commission_amount']);
+
+        $commission = 0;
+        $gross = 0;
+        foreach ($settled as $payment) {
+            $driverPaise = self::toPaise($payment->driver_amount);
+            $commissionPaise = self::toPaise($payment->commission_amount);
+            $commission += $commissionPaise;
+            $gross += $driverPaise + $commissionPaise;
+        }
+
+        return [$gross, $commission];
     }
 
     /**

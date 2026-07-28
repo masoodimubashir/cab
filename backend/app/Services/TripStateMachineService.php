@@ -111,10 +111,18 @@ class TripStateMachineService
 
         // On cancellation of a solo ride, run the automatic refund rulebook
         // (§5) when the split engine is live: refund the customer per the rule,
-        // claw back the driver's share, keep only the cancel fee. Shared journeys
-        // (route_departure_id set) keep their own seat-level refund path. No-op
-        // while the engine is disabled, or when nothing was captured yet.
-        if ($to === 'CANCELLED' && $trip->route_departure_id === null && $this->autoRefunds->enabled()) {
+        // claw back the driver's share, keep only the cancel fee. No-op while the
+        // engine is disabled, or when nothing was captured yet.
+        //
+        // Shared journeys are excluded because they decide their own refunds per
+        // seat/passenger, on a different rule (driver committed or not). Fixed is
+        // recognisable by route_departure_id; Shuttle carries none, so it has to
+        // be identified by its journey row — without that check a cancelled
+        // shuttle would be refunded twice, once by each rulebook.
+        $isShared = $trip->route_departure_id !== null
+            || ShuttleJourney::query()->where('trip_id', $trip->id)->exists();
+
+        if ($to === 'CANCELLED' && ! $isShared && $this->autoRefunds->enabled()) {
             $this->autoRefunds->refundForCancellation($trip, $this->cancelledBy($trip, $meta));
         }
 

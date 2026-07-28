@@ -229,6 +229,49 @@ class ShuttleSettlementPhase5Test extends TestCase
         $this->assertSame(0, LedgerEntry::query()->where('type', 'transfer')->count());
     }
 
+    public function test_cancelling_once_a_driver_is_assigned_forfeits_the_fare(): void
+    {
+        $booking = $this->bookAndPay();
+        $trip = Trip::query()->findOrFail($booking->journey->trip_id);
+
+        // A driver has taken this journey on the strength of the seats sold.
+        $trip->forceFill(['driver_id' => $this->makeVerifiedDriver()->id])->save();
+
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/cancel", [])->assertOk();
+
+        $payment = $this->payment();
+        $this->assertNull($payment->refund_id, 'nothing goes back once a driver is committed');
+        $this->assertNotNull($payment->split_at, 'the forfeited fare is booked, not left dangling');
+
+        $booking->refresh();
+        $this->assertSame('CANCELLED', $booking->status);
+        $this->assertSame('REJECTED', $booking->refund_status);
+        $this->assertSame('PAID', $booking->payment_status);
+
+        $this->assertSame(0, LedgerEntry::query()->where('type', 'refund')->count());
+        $this->assertBalanced(
+            $trip->id,
+            (int) round((float) $booking->fare_amount * 100),
+            refunded: 0,
+            driverNet: 0,
+            operatorNet: (int) round((float) $booking->fare_amount * 100),
+        );
+    }
+
+    public function test_an_operator_cancel_refunds_in_full_even_with_a_driver_assigned(): void
+    {
+        $booking = $this->bookAndPay();
+        $trip = Trip::query()->findOrFail($booking->journey->trip_id);
+        $trip->forceFill(['driver_id' => $this->makeVerifiedDriver()->id])->save();
+
+        // Not the customer's fault, so the driver-assigned rule doesn't apply.
+        app(ShuttleRefundService::class)->markCancelledForTrip($trip->fresh(), 'vehicle_broke_down');
+
+        $this->assertSame((float) $booking->fare_amount, (float) $this->payment()->refund_amount);
+        $this->assertSame('REFUNDED', $booking->fresh()->refund_status);
+    }
+
     public function test_r6_a_replayed_cancel_refunds_only_once(): void
     {
         $booking = $this->bookAndPay();

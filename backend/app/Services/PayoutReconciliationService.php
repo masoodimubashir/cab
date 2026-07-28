@@ -30,7 +30,33 @@ class PayoutReconciliationService
         private readonly HeldEarningsService $heldEarnings,
         private readonly PayoutAccountService $payoutAccounts,
         private readonly AutoRefundService $refunds,
+        private readonly NotificationCenter $notifier,
     ) {}
+
+    /**
+     * Tells the driver their money bounced, and what to do about it. Without
+     * this a failed payout is only an error in a log file — the driver just sees
+     * money that never arrives and has no idea why, or that it's still theirs.
+     */
+    private function notifyPayoutFailed(?int $driverId, int $amountPaise, bool $blockedByKyc): void
+    {
+        if (! $driverId || $amountPaise <= 0) {
+            return;
+        }
+
+        $amount = number_format($amountPaise / 100, 2);
+
+        $this->notifier->notifyUserId(
+            $driverId,
+            'driver_payout_failed',
+            'Payout could not be sent',
+            $blockedByKyc
+                ? "₹{$amount} is waiting for you. Add your bank or UPI details in Profile and we'll send it automatically."
+                : "₹{$amount} didn't reach your bank. Check your bank or UPI details in Profile — we keep retrying, and the money stays yours.",
+            ['amount_paise' => $amountPaise, 'reason' => $blockedByKyc ? 'no_payout_account' : 'transfer_failed'],
+            'alert-circle',
+        );
+    }
 
     public function enabled(): bool
     {
@@ -119,6 +145,13 @@ class PayoutReconciliationService
                     'transfer_status' => Payment::TRANSFER_HELD,
                     'held_earning_id' => $held->id,
                 ])->save();
+
+                // The driver is the one person who can fix this, so tell them.
+                $this->notifyPayoutFailed(
+                    $driver->id,
+                    $amountPaise,
+                    ! $driver->hasVerifiedPayoutAccount(),
+                );
             } else {
                 $locked->forceFill(['transfer_status' => Payment::TRANSFER_HELD])->save();
             }
@@ -157,6 +190,12 @@ class PayoutReconciliationService
                 'transfer_id' => null,
                 'released_at' => null,
             ]);
+
+            $this->notifyPayoutFailed(
+                (int) $locked->driver_id,
+                (int) $locked->amount_paise,
+                ! ($locked->driver()->first()?->hasVerifiedPayoutAccount() ?? false),
+            );
 
             Log::error('DreamCabs held-earnings release failed at Razorpay — back in the payout queue', [
                 'held_earning_id' => $locked->id,

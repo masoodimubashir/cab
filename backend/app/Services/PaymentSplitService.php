@@ -298,10 +298,38 @@ class PaymentSplitService
             return [null, Payment::TRANSFER_HELD, $held->id];
         }
 
-        // P4 — driver has no verified payout account; hold the share.
+        // P4 — driver has no verified payout account; hold the share. Tell them,
+        // because they're the only one who can unlock it and the money is
+        // otherwise invisible to them.
         $held = $this->heldEarnings->park($driver, $tripId, $locked, $driverPaise);
+        $this->notifyShareHeld($driver, $driverPaise);
 
         return [null, Payment::TRANSFER_HELD, $held->id];
+    }
+
+    /**
+     * Nudges a driver whose earnings can't be sent yet because they have no
+     * verified payout account. Deliberately once per parked share rather than a
+     * daily digest: the ride just happened, so this is the moment it makes sense
+     * to them. Best-effort — a notification failure must never fail a split.
+     */
+    private function notifyShareHeld(User $driver, int $amountPaise): void
+    {
+        try {
+            app(NotificationCenter::class)->notifyUserId(
+                (int) $driver->id,
+                'driver_earnings_held',
+                'Your earnings are waiting',
+                '₹' . number_format($amountPaise / 100, 2) . " is yours, but we have nowhere to send it. Add your bank or UPI details in Profile and we'll pay it out automatically.",
+                ['amount_paise' => $amountPaise, 'reason' => 'no_payout_account'],
+                'alert-circle',
+            );
+        } catch (\Throwable $e) {
+            Log::warning('DreamCabs could not notify driver about held earnings', [
+                'driver_id' => $driver->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private static function toPaise($rupees): int
