@@ -51,3 +51,11 @@ Schedule::command('payments:reconcile-pending')
     ->everyTenMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Payout side of the same safety net: Route transfers with no webhook, shares
+// parked for a driver who is verified now, payout accounts still pending KYC,
+// and refunds Razorpay rejected. No-op while the split engine is off.
+Schedule::command('payments:reconcile-payouts')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

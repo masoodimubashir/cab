@@ -332,6 +332,16 @@ class PaymentReconciliationService
      */
     public function applyRefund(string $refundId, string $paymentId, int $amountPaise, bool $processed): array
     {
+        // The auto-refund engine's own claim comes first: it stamps payments
+        // .refund_id when it issues the refund, so this is the exact row that is
+        // waiting to hear back. Matching it here (rather than falling through to
+        // the booking tables below) is what closes the loop on R11 — a failure
+        // marks the claim retryable instead of leaving it PENDING forever.
+        $claimed = Payment::query()->where('refund_id', $refundId)->first();
+        if ($claimed) {
+            return ['matched' => 'engine', 'action' => $this->applyEngineRefund($claimed, $amountPaise, $processed)];
+        }
+
         // Fixed bookings
         $reservation = SeatReservation::query()
             ->where('refund_reference', $refundId)
@@ -412,6 +422,87 @@ class PaymentReconciliationService
         ]);
 
         return ['matched' => null, 'action' => 'unmatched'];
+    }
+
+    /**
+     * Settles the auto-refund engine's own claim once Razorpay confirms it.
+     * Success promotes the claim to PROCESSED and mirrors the outcome onto the
+     * Fixed/Shuttle booking row the payment was mirrored from, so the customer's
+     * booking screen and the admin register agree with the money. A failure
+     * clears refund_id, which is what makes the sweeper pick it up again (R11).
+     */
+    private function applyEngineRefund(Payment $payment, int $amountPaise, bool $processed): string
+    {
+        return DB::transaction(function () use ($payment, $amountPaise, $processed) {
+            /** @var Payment|null $locked */
+            $locked = Payment::query()->lockForUpdate()->find($payment->id);
+            if (! $locked) {
+                return 'gone';
+            }
+
+            if (! $processed) {
+                $locked->forceFill([
+                    'refund_status' => Payment::REFUND_FAILED,
+                    'refund_id' => null,        // retryable again
+                    'refunded_at' => null,
+                    'status' => $locked->status === 'REFUNDED' ? 'SUCCESS' : $locked->status,
+                ])->save();
+
+                Log::error('DreamCabs auto-refund FAILED at Razorpay — re-queued for retry', [
+                    'payment_id' => $locked->id,
+                    'trip_id' => $locked->trip_id,
+                    'amount_paise' => $amountPaise,
+                ]);
+
+                return 'refund_failed_requeued';
+            }
+
+            if ($locked->refund_status === Payment::REFUND_PROCESSED) {
+                return 'already_settled';
+            }
+
+            $locked->forceFill([
+                'refund_status' => Payment::REFUND_PROCESSED,
+                'refund_amount' => $amountPaise / 100,
+                'refunded_at' => $locked->refunded_at ?? now(),
+            ])->save();
+
+            $this->mirrorRefundOntoBooking($locked, $amountPaise);
+
+            return 'marked_refunded';
+        });
+    }
+
+    /**
+     * Copies a settled engine refund back onto the Fixed/Shuttle booking row it
+     * came from, matched on the Razorpay payment id both sides share. Best-effort
+     * and idempotent — the refund path usually stamped these already.
+     */
+    private function mirrorRefundOntoBooking(Payment $payment, int $amountPaise): void
+    {
+        if ($payment->settlement_mode !== Payment::SETTLE_BOOKING) {
+            return;
+        }
+
+        $fields = [
+            'refund_status' => 'REFUNDED',
+            'payment_status' => 'REFUNDED',
+            'refund_reference' => $payment->refund_id,
+            'refund_amount' => $amountPaise / 100,
+            'refund_method' => 'razorpay',
+            'refunded_at' => now(),
+        ];
+
+        SeatReservation::query()
+            ->where('payment_reference', $payment->razorpay_payment_id)
+            ->whereNot('refund_status', 'REFUNDED')
+            ->update($fields);
+
+        ShuttlePassengerBooking::query()
+            ->where(fn ($q) => $q->where('razorpay_payment_id', $payment->razorpay_payment_id)
+                ->orWhere('payment_reference', $payment->razorpay_payment_id))
+            ->whereNot('refund_status', 'REFUNDED')
+            ->update($fields);
     }
 
     /* ------------------------------------------------------------------ */

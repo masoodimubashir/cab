@@ -326,6 +326,10 @@ class FixedRefundService
                 $reservation->forceFill([
                     'refund_amount' => (float) $reservation->fare_amount,
                     'refund_method' => 'razorpay',
+                    // Keep Razorpay's own refund id on the booking so the
+                    // refund.processed/failed webhook can find it, and the admin
+                    // register can show what to look up in the dashboard.
+                    'refund_reference' => $outcome['refund_id'] ?: $reservation->refund_reference,
                     'refunded_at' => now(),
                 ])->save();
 

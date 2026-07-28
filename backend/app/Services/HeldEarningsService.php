@@ -49,6 +49,26 @@ class HeldEarningsService
         return $held;
     }
 
+    /**
+     * Parks a share that was ALREADY allocated on the ledger but bounced on its
+     * way to the driver — Razorpay accepted the transfer, then told us later
+     * (transfer.failed) that it didn't land. Deliberately writes no ledger row:
+     * the original TYPE_TRANSFER already says "this money is the driver's", which
+     * is still true — it just hasn't physically arrived. Writing a HELD row too
+     * would count the same paise twice and break the reconciliation invariant.
+     * The row exists purely so the sweeper knows to retry the payout.
+     */
+    public function parkFailedTransfer(User $driver, ?int $tripId, Payment $payment, int $amountPaise): HeldEarning
+    {
+        return HeldEarning::query()->create([
+            'driver_id' => $driver->id,
+            'trip_id' => $tripId,
+            'payment_id' => $payment->id,
+            'amount_paise' => max(0, $amountPaise),
+            'status' => HeldEarning::STATUS_HELD,
+        ]);
+    }
+
     /** Total paise a driver still has parked. */
     public function heldTotalPaise(int $driverId): int
     {
