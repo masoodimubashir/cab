@@ -85,6 +85,10 @@ export class TripActivePage implements OnInit, OnDestroy {
   // city∩driver fallback when present.
   serverAllowedMethods: PaymentMethod[] | null = null;
   selectedPaymentMethod: PaymentMethod | null = null;
+  // What the server says is still owed on this trip, and whether it's payable
+  // yet. `prepay` means the ride hasn't run — the rider is paying up front.
+  // Absent on older backends, where the page falls back to "pay once completed".
+  paymentDue: { amount: number; payable: boolean; prepay: boolean } | null = null;
   // Per-city "Vehicle make & model" toggle (default ON). When false, the rider
   // sees only the number plate — the make/model line is hidden.
   showVehicleMakeModel = true;
@@ -384,6 +388,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         negotiation?: { final_amount: number };
         city_payment_modes?: string[];
         available_payment_methods?: string[];
+        payment_due?: { amount: number; payable: boolean; prepay: boolean };
         show_vehicle_make_model?: boolean;
         cancel_block_radius_m?: number;
         driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
@@ -410,6 +415,9 @@ export class TripActivePage implements OnInit, OnDestroy {
             }
             if (typeof res.cancel_block_radius_m === 'number') {
               this.cancelBlockRadiusM = res.cancel_block_radius_m;
+            }
+            if (res.payment_due) {
+              this.paymentDue = res.payment_due;
             }
             if (this.selectedPaymentMethod == null && this.trip.payment_method) {
               this.selectedPaymentMethod = this.trip.payment_method;
@@ -452,7 +460,23 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   get payableAmount(): number | null {
     if (this.couponPreview) return this.couponPreview.final_amount;
+    // What the server says is still owed — this already nets off a prepayment,
+    // so after a longer-than-quoted ride it's the balance, not the whole fare.
+    if (this.paymentDue) return this.paymentDue.amount;
     return this.trip?.final_fare ?? null;
+  }
+
+  /** Is there money to collect right now (before the ride, or after it)? */
+  get canPayNow(): boolean {
+    return this.paymentDue ? this.paymentDue.payable : this.isCompleted();
+  }
+
+  /**
+   * True while the rider is paying for a ride that hasn't happened yet. Only the
+   * wording changes — it's the same charge, taken up front.
+   */
+  get isPrepaying(): boolean {
+    return !!this.paymentDue?.prepay;
   }
 
   async applyCoupon(): Promise<void> {

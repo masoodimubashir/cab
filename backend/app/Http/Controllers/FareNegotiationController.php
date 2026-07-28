@@ -131,7 +131,47 @@ class FareNegotiationController extends Controller
             'driver_location' => $driverLocation,
             // City-level negotiation floor used by both customer and driver apps.
             'negotiation_config' => $this->negotiationConfig($trip),
+            // What the rider still owes and whether it's payable yet. The app
+            // shows its pay bar off this rather than guessing from the trip
+            // status, so prepay-at-booking and pay-after-the-ride are one code
+            // path on both sides. The pay endpoint enforces the same rules.
+            'payment_due' => $this->paymentDue($trip),
         ]);
+    }
+
+    /**
+     * How much is still owed on this trip, and whether the rider can pay it now.
+     *
+     * Under the auto-split engine the ride is PREPAID: the fare is payable the
+     * moment it's agreed (CONFIRMED), and after the ride only a shortfall over
+     * what was prepaid remains. With the engine off, nothing is payable until
+     * the trip completes — the legacy behaviour.
+     *
+     * @return array{amount:float,payable:bool,prepay:bool}
+     */
+    private function paymentDue(Trip $trip): array
+    {
+        $prepayEnabled = (bool) config('services.payments.split_enabled', false);
+        $prepay = $prepayEnabled && in_array($trip->status, [
+            'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP',
+        ], true);
+
+        $fare = $prepay
+            ? (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0)
+            : (float) ($trip->final_fare ?? 0);
+
+        $paid = (float) \App\Models\Payment::query()
+            ->where('trip_id', $trip->id)
+            ->whereIn('status', ['SUCCESS', 'REFUNDED'])
+            ->sum('amount');
+
+        $due = round(max(0.0, $fare - $paid), 2);
+
+        return [
+            'amount' => $due,
+            'payable' => $due > 0 && ($prepay || $trip->status === 'COMPLETED'),
+            'prepay' => $prepay,
+        ];
     }
 
     public function customerOffer(Request $request, Trip $trip, \App\Services\SchedulingPolicyService $scheduling)

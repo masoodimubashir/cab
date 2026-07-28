@@ -151,13 +151,112 @@ class BookingPaymentService
             ->where('settlement_mode', Payment::SETTLE_BOOKING)
             ->where('status', 'SUCCESS')
             ->whereNull('split_at')
+            ->orderBy('id')
             ->get();
 
-        foreach ($payments as $payment) {
-            $grossPaise = self::toPaise($payment->amount);
-            $commissionPaise = self::toPaise($payment->commission_amount);
-            $this->split->settleBookingPayment($payment, $driver, $grossPaise, $commissionPaise);
+        if ($payments->isEmpty()) {
+            return;
         }
+
+        // A shared journey carries many independent bookings on one trip, so each
+        // payment settles against its own seat fare and commission snapshot.
+        if ($trip->route_departure_id !== null) {
+            foreach ($payments as $payment) {
+                $this->split->settleBookingPayment(
+                    $payment,
+                    $driver,
+                    self::toPaise($payment->amount),
+                    self::toPaise($payment->commission_amount),
+                );
+            }
+
+            return;
+        }
+
+        $this->settleSoloPrepayments($trip, $driver, $payments);
+    }
+
+    /**
+     * A private ride is ONE fare that may have been captured more than once — the
+     * prepayment at booking, plus a balance if the final fare came in higher. So
+     * the trip's fare and commission are spread across the captures rather than
+     * read off each payment: each takes as much of the fare as it actually paid,
+     * and the commission is apportioned to match, with the last capture absorbing
+     * the rounding so not a paise is invented or dropped.
+     *
+     * When the ride came in CHEAPER than the prepayment, the fare runs out before
+     * the captures do: the surplus is already on its way back to the customer
+     * (see refundOverpayment) and simply stays with the operator here, which is
+     * what makes the trip still reconcile.
+     *
+     * @param  \Illuminate\Support\Collection<int,Payment>  $payments
+     */
+    private function settleSoloPrepayments(Trip $trip, ?User $driver, $payments): void
+    {
+        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::toPaise($p->amount));
+        if ($capturedTotal <= 0) {
+            return;
+        }
+
+        // The ride is worth its final fare — never more than was actually paid.
+        $fareTotal = min(self::toPaise($trip->final_fare), $capturedTotal);
+        $commissionTotal = min(self::toPaise($trip->commission_amount), max(0, $fareTotal));
+
+        $fareLeft = max(0, $fareTotal);
+        $commissionLeft = max(0, $commissionTotal);
+        $last = $payments->count() - 1;
+
+        foreach ($payments->values() as $i => $payment) {
+            $captured = self::toPaise($payment->amount);
+            $grossShare = min($captured, $fareLeft);
+
+            $commissionShare = $i === $last || $fareLeft <= 0
+                ? $commissionLeft
+                : (int) round($commissionTotal * $grossShare / max(1, $fareTotal));
+            $commissionShare = min($commissionShare, $commissionLeft, $grossShare);
+
+            $fareLeft -= $grossShare;
+            $commissionLeft -= $commissionShare;
+
+            $this->split->settleBookingPayment($payment, $driver, $grossShare, $commissionShare);
+        }
+    }
+
+    /**
+     * Gives back whatever the customer prepaid over the ride's actual final fare
+     * — a shorter route, waiting time that never happened, a fare corrected down.
+     * Runs at completion, BEFORE the split, so the driver's share is worked out
+     * on the fare that stands rather than on the larger sum we happened to hold.
+     * Private rides only: a shared journey has no single trip-level fare.
+     */
+    public function refundOverpayment(Trip $trip): ?array
+    {
+        if (! $this->split->enabled() || $trip->route_departure_id !== null) {
+            return null;
+        }
+
+        $finalPaise = self::toPaise($trip->final_fare);
+        if ($finalPaise <= 0) {
+            return null; // no settled fare to compare against
+        }
+
+        $payments = Payment::query()
+            ->where('trip_id', $trip->id)
+            ->where('settlement_mode', Payment::SETTLE_BOOKING)
+            ->where('status', 'SUCCESS')
+            ->whereNull('split_at')
+            ->orderBy('id')
+            ->get();
+
+        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::toPaise($p->amount));
+        $excess = $capturedTotal - $finalPaise;
+        if ($excess <= 0 || $payments->isEmpty()) {
+            return null;
+        }
+
+        // Take it off the last capture — the one most likely to still be
+        // refundable in full at Razorpay.
+        return $this->refunds->refundOverpayment($payments->last(), $excess);
     }
 
     /**
