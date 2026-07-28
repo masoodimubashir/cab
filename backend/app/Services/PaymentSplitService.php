@@ -100,6 +100,8 @@ class PaymentSplitService
                 // capture so a subsequent auto-refund reconciles, and stamp
                 // split_at so we don't reconsider it.
                 $capturedPaise = self::toPaise($locked->amount);
+                $feePaise = $this->feePaise($locked, $capturedPaise);
+                $farePaise = $capturedPaise - $feePaise;
                 $this->ledger->record(
                     LedgerEntry::TYPE_CAPTURE,
                     LedgerEntry::PARTY_CUSTOMER,
@@ -109,18 +111,19 @@ class PaymentSplitService
                     $locked->id,
                     $locked->razorpay_payment_id,
                 );
-                if ($capturedPaise > 0) {
+                $this->recordGatewayFee($locked, $trip->id, $feePaise);
+                if ($farePaise > 0) {
                     $this->ledger->record(
                         LedgerEntry::TYPE_RETAINED,
                         LedgerEntry::PARTY_OPERATOR,
                         'in',
-                        $capturedPaise,
+                        $farePaise,
                         $trip->id,
                         $locked->id,
                     );
                 }
                 $locked->forceFill([
-                    'commission_amount' => $capturedPaise / 100,
+                    'commission_amount' => $farePaise / 100,
                     'driver_amount' => 0,
                     'transfer_status' => null,
                     'split_at' => now(),
@@ -132,7 +135,11 @@ class PaymentSplitService
             $capturedPaise = self::toPaise($locked->amount);
             $commissionPaise = self::toPaise($trip->commission_amount);
 
-            $split = $this->computeSplit($capturedPaise, $grossPaise, $commissionPaise);
+            // Razorpay's cut was never the ride's value — the split runs on the
+            // fare inside the capture, so the driver's share is unaffected by
+            // how the customer chose to pay.
+            $feePaise = $this->feePaise($locked, $capturedPaise);
+            $split = $this->computeSplit($capturedPaise - $feePaise, $grossPaise, $commissionPaise);
             $driverPaise = $split['driver_paise'];
             $operatorPaise = $split['operator_paise'];
 
@@ -146,6 +153,9 @@ class PaymentSplitService
                 $locked->id,
                 $locked->razorpay_payment_id,
             );
+
+            // 1b) Straight back out to the gateway.
+            $this->recordGatewayFee($locked, $trip->id, $feePaise);
 
             // 2) Operator retains its commission.
             if ($operatorPaise > 0) {
@@ -201,9 +211,10 @@ class PaymentSplitService
             }
 
             $capturedPaise = self::toPaise($locked->amount);
-            $split = $this->computeSplit($capturedPaise, $grossPaise, $commissionPaise);
+            $feePaise = $this->feePaise($locked, $capturedPaise);
+            $split = $this->computeSplit($capturedPaise - $feePaise, $grossPaise, $commissionPaise);
             $driverPaise = $driver !== null ? $split['driver_paise'] : 0;
-            $operatorPaise = $capturedPaise - $driverPaise;
+            $operatorPaise = $capturedPaise - $feePaise - $driverPaise;
 
             // 1) Money landed with the operator (recorded now, at settlement).
             $this->ledger->record(
@@ -215,6 +226,9 @@ class PaymentSplitService
                 $locked->id,
                 $locked->razorpay_payment_id,
             );
+
+            // 1b) Straight back out to the gateway.
+            $this->recordGatewayFee($locked, (int) $locked->trip_id, $feePaise);
 
             // 2) Operator retains its commission.
             if ($operatorPaise > 0) {
@@ -251,6 +265,41 @@ class PaymentSplitService
      *
      * @return array{0:?string,1:?string,2:?int} [transferId, transferStatus, heldId]
      */
+    /**
+     * How much of a capture was Razorpay's cut rather than the ride's fare.
+     *
+     * Read off what was actually stamped on the payment at order time, never
+     * recomputed from a rate — the rate can be reconfigured between charging and
+     * settling, and the customer was charged the old one. Clamped to the capture
+     * so a bad figure can never make the fare negative.
+     */
+    private function feePaise(Payment $payment, int $capturedPaise): int
+    {
+        return max(0, min($capturedPaise, self::toPaise($payment->gateway_fee_amount)));
+    }
+
+    /**
+     * Names the gateway's cut on the ledger. Without this row the trip reads as
+     * short by exactly the fee, because the money came in but was never split.
+     * Direction is 'out': it left on the way in and reached neither party.
+     */
+    private function recordGatewayFee(Payment $payment, ?int $tripId, int $feePaise): void
+    {
+        if ($feePaise <= 0) {
+            return;
+        }
+
+        $this->ledger->record(
+            LedgerEntry::TYPE_GATEWAY_FEE,
+            LedgerEntry::PARTY_GATEWAY,
+            'out',
+            $feePaise,
+            $tripId,
+            $payment->id,
+            $payment->razorpay_payment_id,
+        );
+    }
+
     private function placeDriverShare(Payment $locked, ?User $driver, int $tripId, int $driverPaise): array
     {
         if ($driverPaise <= 0 || ! $driver) {
@@ -298,10 +347,38 @@ class PaymentSplitService
             return [null, Payment::TRANSFER_HELD, $held->id];
         }
 
-        // P4 — driver has no verified payout account; hold the share.
+        // P4 — driver has no verified payout account; hold the share. Tell them,
+        // because they're the only one who can unlock it and the money is
+        // otherwise invisible to them.
         $held = $this->heldEarnings->park($driver, $tripId, $locked, $driverPaise);
+        $this->notifyShareHeld($driver, $driverPaise);
 
         return [null, Payment::TRANSFER_HELD, $held->id];
+    }
+
+    /**
+     * Nudges a driver whose earnings can't be sent yet because they have no
+     * verified payout account. Deliberately once per parked share rather than a
+     * daily digest: the ride just happened, so this is the moment it makes sense
+     * to them. Best-effort — a notification failure must never fail a split.
+     */
+    private function notifyShareHeld(User $driver, int $amountPaise): void
+    {
+        try {
+            app(NotificationCenter::class)->notifyUserId(
+                (int) $driver->id,
+                'driver_earnings_held',
+                'Your earnings are waiting',
+                '₹' . number_format($amountPaise / 100, 2) . " is yours, but we have nowhere to send it. Add your bank or UPI details in Profile and we'll pay it out automatically.",
+                ['amount_paise' => $amountPaise, 'reason' => 'no_payout_account'],
+                'alert-circle',
+            );
+        } catch (\Throwable $e) {
+            Log::warning('DreamCabs could not notify driver about held earnings', [
+                'driver_id' => $driver->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private static function toPaise($rupees): int

@@ -1,0 +1,129 @@
+/* Post-approval payout nudge — same navy surface and brand-green accent as the
+   app-open mode chooser, so the two app-open prompts read as one family. */
+
+.pay-content {
+  --background: var(--dreamcab-dark-blue, #0D1B2A);
+}
+
+.pay-wrap {
+  position: relative;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 26px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  background:
+    radial-gradient(110% 60% at 50% 24%, rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.20) 0%, rgba(13, 27, 42, 0) 58%),
+    var(--dreamcab-dark-blue, #0D1B2A);
+}
+
+/* Card icon in a soft green disc. */
+.pay-icon {
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-bottom: 20px;
+  background: rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.16);
+  border: 1px solid rgba(var(--ion-color-primary-rgb, 18, 179, 91), 0.34);
+
+  ion-icon {
+    font-size: 44px;
+    color: var(--ion-color-primary, #12B35B);
+  }
+}
+
+.pay-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.07);
+
+  ion-icon { font-size: 14px; }
+}
+
+.pay-title {
+  margin: 14px 0 8px;
+  font-size: 1.55rem;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.pay-subtitle {
+  margin: 0 0 20px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+/* The honest part: you can skip, and here's what skipping costs you. */
+.pay-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  padding: 12px 14px;
+  margin-bottom: 26px;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid rgba(255, 176, 32, 0.3);
+
+  ion-icon {
+    flex-shrink: 0;
+    font-size: 19px;
+    margin-top: 1px;
+    color: #FFB020;
+  }
+}
+
+.pay-actions {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: 14px;
+  border: none;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  ion-icon { font-size: 20px; }
+
+  &--primary {
+    background: var(--ion-color-primary, #12B35B);
+    color: #ffffff;
+    box-shadow: 0 10px 26px rgba(18, 179, 91, 0.32);
+  }
+
+  &--ghost {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+}

@@ -17,7 +17,31 @@ declare const Razorpay: any;
 
 type UpiOrderResponse = {
   payment: { id: number };
-  razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
+  breakdown?: { fare: number; gateway_fee: number; total: number; payment_method: string | null };
+  razorpay: {
+    key_id: string;
+    order_id: string;
+    amount_paise: number;
+    currency: string;
+    /** Set when a gateway fee was priced — checkout is locked to this method. */
+    method?: string | null;
+  };
+};
+
+/** One row of the pre-checkout method chooser, priced for this fare. */
+type GatewayMethod = {
+  key: string;
+  label: string;
+  hint: string;
+  rate: number;
+  fee?: number;
+  total?: number;
+};
+
+type GatewayMethodsResponse = {
+  fee_enabled: boolean;
+  fare: number | null;
+  methods: GatewayMethod[];
 };
 
 type TripDetail = {
@@ -1332,6 +1356,79 @@ export class TripActivePage implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Asks the customer how they want to pay, showing what each option costs.
+   *
+   * Only appears when the platform charges the gateway fee on to the customer —
+   * the rate differs by method (UPI and ordinary cards are cheaper than Amex or
+   * EMI), and Razorpay needs the order's amount fixed before its checkout opens,
+   * so the choice can't wait until the payment screen.
+   *
+   * Returns the chosen method key, `null` when there's no fee to price (skip the
+   * chooser entirely), or 'cancelled' when the customer backed out.
+   */
+  private async chooseGatewayMethod(): Promise<string | null | 'cancelled'> {
+    let config: GatewayMethodsResponse;
+    try {
+      const fare = this.couponPreview?.final_amount ?? this.trip?.final_fare ?? null;
+      const query = fare !== null ? `?fare=${encodeURIComponent(String(fare))}` : '';
+      config = (await this.api
+        .get<GatewayMethodsResponse>(`/payments/methods${query}`)
+        .toPromise()) as GatewayMethodsResponse;
+    } catch {
+      // The chooser is an enhancement, not a gate — if it can't load, fall back
+      // to letting Razorpay price whatever the customer picks at its own screen.
+      return null;
+    }
+
+    if (!config?.fee_enabled || !(config.methods?.length)) {
+      return null;
+    }
+
+    const alert = await this.alertCtrl.create({
+      header: 'How would you like to pay?',
+      subHeader: 'The payment fee depends on the method you choose.',
+      inputs: config.methods.map((m, i) => ({
+        type: 'radio' as const,
+        label: m.fee !== undefined ? `${m.label} — ₹${m.fee.toFixed(2)} fee` : m.label,
+        value: m.key,
+        checked: i === 0,
+      })),
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Continue', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+
+    const { role, data } = await alert.onWillDismiss();
+    if (role === 'cancel') {
+      return 'cancelled';
+    }
+
+    return (data?.values as string) || config.methods[0].key;
+  }
+
+  /**
+   * Razorpay's checkout takes a map of which methods to offer. Our keys are
+   * coarser than theirs — 'premium_card' and 'international' are still cards —
+   * so they collapse back to the checkout's own vocabulary here.
+   */
+  private checkoutMethodFlags(method: string): Record<string, boolean> {
+    const target = ['premium_card', 'international'].includes(method) ? 'card'
+      : method === 'emi' ? 'emi'
+      : method;
+
+    return {
+      upi: target === 'upi',
+      card: target === 'card',
+      netbanking: target === 'netbanking',
+      wallet: target === 'wallet',
+      emi: target === 'emi',
+      paylater: target === 'emi',
+    };
+  }
+
   private async doPayRazorpay(): Promise<void> {
     if (typeof Razorpay === 'undefined') {
       const t = await this.toastCtrl.create({
@@ -1343,11 +1440,21 @@ export class TripActivePage implements OnInit, OnDestroy {
       return;
     }
 
+    // Razorpay fixes an order's amount before checkout opens, and the fee it
+    // charges us depends on how the customer pays — so the method has to be
+    // picked here, priced, and then locked at checkout. Returns null when the
+    // fee is switched off (no chooser shown) or the customer backed out.
+    const method = await this.chooseGatewayMethod();
+    if (method === 'cancelled') {
+      return;
+    }
+
     let order: UpiOrderResponse;
     try {
       order = (await this.api
         .post<UpiOrderResponse>(`/trips/${this.tripId}/pay/razorpay`, {
           coupon_title: this.couponPreview?.coupon.title ?? null,
+          payment_method: method,
         })
         .toPromise()) as UpiOrderResponse;
     } catch (e: any) {
@@ -1374,6 +1481,9 @@ export class TripActivePage implements OnInit, OnDestroy {
         contact: user?.phone || '',
       },
       theme: { color: '#000000' },
+      // Lock checkout to the method the fee was priced for — switching at
+      // Razorpay's screen would charge a fee we didn't collect.
+      ...(order.razorpay.method ? { method: this.checkoutMethodFlags(order.razorpay.method) } : {}),
       handler: (resp: {
         razorpay_payment_id: string;
         razorpay_order_id: string;

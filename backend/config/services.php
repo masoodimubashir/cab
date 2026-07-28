@@ -52,6 +52,34 @@ return [
     // otherwise cash rides would settle without collecting commission.
     'payments' => [
         'split_enabled' => (bool) env('PAYMENTS_SPLIT_ENABLED', false),
+
+        // The gateway fee the customer pays on top of the fare, so Razorpay's
+        // cut doesn't come out of commission. Rates below are Razorpay's own
+        // headline percentages; the service adds the Route split fee and GST on
+        // top, so 'rate' here matches their pricing page line for line.
+        //
+        // Because the rate depends on the payment method and Razorpay fixes an
+        // order's amount before checkout opens, the customer picks their method
+        // in our app first and the order is created for that method.
+        //
+        // OFF by default: every quote and charge is then exactly the fare.
+        'gateway_fee' => [
+            'enabled' => (bool) env('PAYMENTS_GATEWAY_FEE_ENABLED', false),
+            'default_rate' => (float) env('PAYMENTS_GATEWAY_FEE_DEFAULT_RATE', 2.0),
+            'route_rate' => (float) env('PAYMENTS_GATEWAY_ROUTE_RATE', 0.1),
+            'gst_rate' => (float) env('PAYMENTS_GATEWAY_GST_RATE', 18.0),
+
+            // Keys are what the customer app sends back as `payment_method`.
+            'methods' => [
+                'upi' => ['label' => 'UPI', 'hint' => 'GPay, PhonePe, Paytm & more', 'rate' => 2.0],
+                'card' => ['label' => 'Debit / Credit card', 'hint' => 'Visa, Mastercard, RuPay', 'rate' => 2.0],
+                'netbanking' => ['label' => 'Net banking', 'hint' => '70+ banks', 'rate' => 2.0],
+                'wallet' => ['label' => 'Wallet', 'hint' => 'Paytm, Mobikwik & more', 'rate' => 2.0],
+                'premium_card' => ['label' => 'Amex / Diners / corporate card', 'hint' => 'Higher gateway charge', 'rate' => 3.0],
+                'emi' => ['label' => 'EMI / Pay Later', 'hint' => 'Higher gateway charge', 'rate' => 3.0],
+                'international' => ['label' => 'International card', 'hint' => 'Higher gateway charge', 'rate' => 3.0],
+            ],
+        ],
     ],
 
     // MSG91 SMS gateway (login OTP). Leave MSG91_AUTH_KEY blank to run in MOCK

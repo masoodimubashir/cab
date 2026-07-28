@@ -24,8 +24,9 @@ interface PayoutAccount {
  * share automatically. Until this is verified, ride earnings are held.
  *
  * Replaces the old cash/Razorpay toggle page as the thing a driver actually
- * needs to do to get paid. Reachable any time from the More menu, and the same
- * form is shown as a skippable step at signup.
+ * needs to do to get paid. Reachable any time from the navigation drawer
+ * (Account → Payout account); an approved driver without one is also nudged
+ * here once by a skippable dashboard prompt, then by a standing banner.
  */
 @Component({
   selector: 'app-payout-account',

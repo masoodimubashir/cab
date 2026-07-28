@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Payment;
 use App\Models\Trip;
 use App\Services\CouponService;
+use App\Services\GatewayFeeService;
 use App\Services\InvoiceGeneratorService;
 use App\Services\PaymentModeService;
 use App\Services\PaymentReconciliationService;
@@ -107,6 +108,10 @@ class PaymentsController extends Controller
 
         $data = $request->validate([
             'coupon_title' => ['nullable', 'string', 'max:128'],
+            // Which method the customer picked in our app. Razorpay fixes an
+            // order's amount before checkout opens, so the fee — which differs
+            // by method — has to be known here, not at the payment screen.
+            'payment_method' => ['nullable', 'string', 'max:32'],
         ]);
 
         $couponAssignmentId = null;
@@ -135,13 +140,24 @@ class PaymentsController extends Controller
 
         // Anything already captured against this trip comes off what's owed, so
         // the post-ride call bills only the shortfall over the prepayment.
+        // Fare only — the gateway fee on an earlier capture paid Razorpay, not
+        // the ride, so it must not count against what's still owed on the fare.
         $alreadyPaid = (float) Payment::query()
             ->where('trip_id', $trip->id)
             ->whereIn('status', ['SUCCESS', 'REFUNDED'])
-            ->sum('amount');
+            ->sum(DB::raw('amount - COALESCE(gateway_fee_amount, 0)'));
         $payableAmount = round($payableAmount - $alreadyPaid, 2);
 
-        $amountPaise = (int) round($payableAmount * 100);
+        // The gateway's cut rides on top of the fare, so the customer covers it
+        // and commission stays whole. Zero while the fee is switched off.
+        $gatewayFees = app(GatewayFeeService::class);
+        $methodGroup = $gatewayFees->isKnownMethod($data['payment_method'] ?? null)
+            ? (string) $data['payment_method']
+            : null;
+        $gatewayFeeAmount = $gatewayFees->feeFor($payableAmount, $methodGroup);
+        $chargeAmount = round($payableAmount + $gatewayFeeAmount, 2);
+
+        $amountPaise = (int) round($chargeAmount * 100);
         if ($amountPaise <= 0) {
             return response()->json([
                 'message' => $alreadyPaid > 0
@@ -153,7 +169,7 @@ class PaymentsController extends Controller
 
         $receipt = 'trip_' . $trip->id . '_' . now()->format('YmdHis');
 
-        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
+        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $gatewayFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
             // Reuse an abandoned checkout for this trip rather than piling up
             // rows; a settled payment is never touched (there may now be several
             // per trip: the prepayment plus a balance).
@@ -168,7 +184,12 @@ class PaymentsController extends Controller
                 'method' => 'RAZORPAY',
                 'provider' => 'RAZORPAY',
                 'status' => 'PENDING',
-                'amount' => $payableAmount,
+                // What the customer is charged — fare plus the gateway's cut.
+                // The fare inside it is amount − gateway_fee_amount, which is
+                // what the split runs on.
+                'amount' => $chargeAmount,
+                'gateway_fee_amount' => $gatewayFeeAmount > 0 ? $gatewayFeeAmount : null,
+                'payment_method_group' => $methodGroup,
                 'currency' => 'INR',
                 'paid_at' => null,
                 'razorpay_payment_id' => null,
@@ -176,9 +197,13 @@ class PaymentsController extends Controller
                 'provider_response' => null,
                 'coupon_assignment_id' => $couponAssignmentId,
                 'discount_amount' => $discountAmount,
-                // A prepayment is settled at completion, not at capture: the ride
-                // hasn't happened yet, so the driver isn't owed anything.
-                'settlement_mode' => $prepay ? Payment::SETTLE_BOOKING : null,
+                // Every online payment on a private ride settles through the
+                // booking engine once the engine is on — a prepayment because the
+                // ride hasn't happened yet, and a post-ride balance because it is
+                // the SECOND capture against ONE fare and must be divided against
+                // what the prepayment already took, not against the whole fare
+                // again. Null keeps the legacy split-at-capture path.
+                'settlement_mode' => $this->prepaymentsEnabled() ? Payment::SETTLE_BOOKING : null,
             ];
 
             if ($payment) {
@@ -201,14 +226,56 @@ class PaymentsController extends Controller
             return response()->json([
                 'payment' => $payment,
                 'prepaid' => $prepay,
+                // What the customer is about to be charged, itemised — the app
+                // shows this as the fare with a "Payment fee" line beneath it.
+                'breakdown' => [
+                    'fare' => $payableAmount,
+                    'gateway_fee' => $gatewayFeeAmount,
+                    'total' => $chargeAmount,
+                    'payment_method' => $methodGroup,
+                ],
                 'razorpay' => [
                     'key_id' => env('RAZORPAY_KEY_ID'),
                     'order_id' => $order['order_id'],
                     'amount_paise' => $order['amount'],
                     'currency' => $order['currency'],
+                    // Checkout is locked to the method the fee was priced for —
+                    // switching at the payment screen would charge the wrong fee.
+                    'method' => $methodGroup,
                 ],
             ]);
         });
+    }
+
+    /**
+     * GET /payments/methods — the payment methods a customer may choose from,
+     * with the fee each attracts. Optionally pass ?fare= to get the exact rupee
+     * fee and total per method, which is what the chooser renders.
+     *
+     * With the fee switched off every method costs nothing extra and the app can
+     * skip the chooser entirely.
+     */
+    public function paymentMethods(Request $request, GatewayFeeService $gatewayFees)
+    {
+        $data = $request->validate([
+            'fare' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
+        ]);
+        $fare = isset($data['fare']) ? (float) $data['fare'] : null;
+
+        $methods = array_map(function (array $method) use ($gatewayFees, $fare) {
+            if ($fare !== null) {
+                $method['fee'] = $gatewayFees->feeFor($fare, $method['key']);
+                $method['total'] = $gatewayFees->totalFor($fare, $method['key']);
+            }
+
+            return $method;
+        }, $gatewayFees->methods());
+
+        return response()->json([
+            'fee_enabled' => $gatewayFees->enabled(),
+            'fare' => $fare,
+            'methods' => $methods,
+        ]);
     }
 
     /** Is the customer expected to pay up front on a private ride? */
