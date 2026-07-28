@@ -36,7 +36,11 @@ export class SupportPage implements OnInit {
     },
     {
       q: 'When and how do I get paid?',
-      a: 'Cash fares are collected directly from the rider. Online (Razorpay) fares settle to your wallet — open the Wallet page to see your balance and payouts.',
+      a: 'Riders pay online before or after the ride — never in cash. Your share of each fare is sent straight to your own bank account once the trip is complete, with the commission already deducted. Open Ride earnings to see what has been paid and what is still on its way.',
+    },
+    {
+      q: 'Why is some of my money “waiting to be released”?',
+      a: 'We can only send money to a verified payout account. Add your bank or UPI details on the Payout account page and everything held is released automatically — nothing is ever lost.',
     },
     {
       q: 'My documents are still under review. What now?',

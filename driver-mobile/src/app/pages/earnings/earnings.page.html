@@ -43,6 +43,53 @@
       <p class="dc-error">{{ error }}</p>
     </ion-text>
 
+    <!-- ─── Payouts: what has actually reached the bank, and what hasn't ─── -->
+    <div class="pg-card ec-payout-card" *ngIf="payout">
+      <div class="pg-card__head">
+        <div class="pg-card__icon"><ion-icon name="wallet-outline"></ion-icon></div>
+        <h2 class="pg-card__title">Paid to your bank</h2>
+      </div>
+
+      <div class="ec-payout">
+        <div class="ec-payout__row">
+          <span class="ec-payout__label">
+            <ion-icon name="checkmark-circle" class="is-paid"></ion-icon> Received
+          </span>
+          <strong class="ec-payout__val">₹{{ payout.paid | number:'1.0-2' }}</strong>
+        </div>
+        <div class="ec-payout__row" *ngIf="payout.pending > 0">
+          <span class="ec-payout__label">
+            <ion-icon name="time-outline" class="is-pending"></ion-icon> On its way
+          </span>
+          <strong class="ec-payout__val">₹{{ payout.pending | number:'1.0-2' }}</strong>
+        </div>
+        <div class="ec-payout__row" *ngIf="payout.held > 0">
+          <span class="ec-payout__label">
+            <ion-icon name="lock-closed-outline" class="is-held"></ion-icon> Waiting to be released
+          </span>
+          <strong class="ec-payout__val ec-payout__val--held">₹{{ payout.held | number:'1.0-2' }}</strong>
+        </div>
+      </div>
+
+      <p class="ec-payout__note" *ngIf="payoutBlockedReason">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        <span>{{ payoutBlockedReason }}</span>
+      </p>
+
+      <ion-button
+        *ngIf="payout.blocked_by_kyc"
+        expand="block"
+        class="ec-payout__cta"
+        routerLink="/payout-account"
+      >
+        Add payout account
+      </ion-button>
+
+      <p class="ec-payout__hint" *ngIf="!payoutBlockedReason">
+        Your share of each fare goes straight to your bank after the ride — no collecting, no waiting for us.
+      </p>
+    </div>
+
     <!-- ─── Overview / bar chart ─── -->
     <div class="pg-card ec-chart-card">
       <div class="pg-card__head">
