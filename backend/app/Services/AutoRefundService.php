@@ -126,7 +126,7 @@ class AutoRefundService
      * customer. Idempotent: a double-cancel race or replayed webhook is a no-op
      * once the refund is recorded. No-op while the split engine is disabled.
      *
-     * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string}|null
+     * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string,refund_id:?string}|null
      */
     public function refundBookingCancellation(Payment $payment, bool $refundFull, string $cancelledBy = self::BY_SYSTEM): ?array
     {
@@ -199,6 +199,7 @@ class AutoRefundService
                 'reversed_paise' => 0,
                 'reason' => 'already_refunded',
                 'status' => 'skipped',
+                'refund_id' => $payment->fresh()?->refund_id,
             ];
         }
 
@@ -210,6 +211,7 @@ class AutoRefundService
                 'reversed_paise' => 0,
                 'reason' => 'no_refund_seat_lost',
                 'status' => 'no_refund',
+                'refund_id' => null,
             ];
         }
 
@@ -238,6 +240,7 @@ class AutoRefundService
                 'reversed_paise' => $reversedPaise,
                 'reason' => 'booking_cancelled',
                 'status' => 'refund_failed',
+                'refund_id' => null,
             ];
         }
 
@@ -269,6 +272,7 @@ class AutoRefundService
             'reversed_paise' => $reversedPaise,
             'reason' => 'booking_cancelled',
             'status' => $status === Payment::REFUND_PROCESSED ? 'refunded' : 'refund_pending',
+            'refund_id' => (string) $refund['id'],
         ];
     }
 

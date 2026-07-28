@@ -318,8 +318,12 @@ class PaymentsController extends Controller
      * Unmatched events return 200 on purpose: Razorpay disables webhooks that
      * keep failing, and the scheduled sweeper re-checks anything we missed.
      */
-    public function razorpayWebhook(Request $request, RazorpayService $razorpayService, PaymentReconciliationService $reconciler)
-    {
+    public function razorpayWebhook(
+        Request $request,
+        RazorpayService $razorpayService,
+        PaymentReconciliationService $reconciler,
+        \App\Services\PayoutReconciliationService $payouts,
+    ) {
         $signature = (string) $request->header('X-Razorpay-Signature', '');
         $body = $request->getContent();
 
@@ -353,6 +357,51 @@ class PaymentsController extends Controller
             Log::info('DreamCabs Razorpay refund webhook processed', [
                 'event' => $event,
                 'refund_id' => $refund['id'],
+            ] + $result);
+
+            return response()->json(['ok' => true] + $result);
+        }
+
+        // Route transfer lifecycle: the driver's share either landed or bounced.
+        // A bounce re-queues their money for payout — it never disappears.
+        if (in_array($event, ['transfer.processed', 'transfer.failed'], true)) {
+            $transfer = $payload['payload']['transfer']['entity'] ?? null;
+            if (!is_array($transfer) || empty($transfer['id'])) {
+                return response()->json(['message' => 'Webhook missing transfer entity.'], 400);
+            }
+
+            $result = $payouts->applyTransfer(
+                (string) $transfer['id'],
+                $event === 'transfer.processed',
+                $transfer['error']['description'] ?? ($transfer['failure_reason'] ?? null),
+            );
+
+            Log::info('DreamCabs Razorpay transfer webhook processed', [
+                'event' => $event,
+                'transfer_id' => $transfer['id'],
+            ] + $result);
+
+            return response()->json(['ok' => true] + $result);
+        }
+
+        // Linked-account lifecycle: activation is what lets us pay a driver at
+        // all, so it also releases whatever they had parked waiting for it.
+        if (str_starts_with($event, 'account.')) {
+            $account = $payload['payload']['account']['entity'] ?? null;
+            if (!is_array($account) || empty($account['id'])) {
+                return response()->json(['message' => 'Webhook missing account entity.'], 400);
+            }
+
+            // Prefer the entity's own status; fall back to the event name
+            // ("account.activated" → "activated") when Razorpay omits it.
+            $status = (string) ($account['status'] ?? substr($event, strlen('account.')));
+
+            $result = $payouts->applyLinkedAccount((string) $account['id'], $status);
+
+            Log::info('DreamCabs Razorpay linked-account webhook processed', [
+                'event' => $event,
+                'account_id' => $account['id'],
+                'status' => $status,
             ] + $result);
 
             return response()->json(['ok' => true] + $result);
