@@ -32,7 +32,9 @@ class PayoutMonitorController extends Controller
         $tripId = $request->query('trip_id');
 
         return response()->json($this->monitor->ledger(
-            $tripId !== null ? (int) $tripId : null,
+            $tripId !== null && $tripId !== '' ? (int) $tripId : null,
+            (int) $request->query('limit', 500),
+            $request->boolean('unbalanced'),
         ));
     }
 }
