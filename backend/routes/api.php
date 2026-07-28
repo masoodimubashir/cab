@@ -256,6 +256,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/drivers/{driver}/send-otp', [AdminDriversController::class, 'sendOtp'])->middleware(['permission:drivers', 'throttle:otp']);
     Route::post('/admin/drivers/{driver}/block', [AdminDriversController::class, 'block'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/unblock', [AdminDriversController::class, 'unblock'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/verify-payout-account', [AdminDriversController::class, 'verifyPayoutAccount'])->middleware('permission:drivers');
 
     // Fixed route allocation — assign route groups to a driver + read the resolved routes.
     Route::get('/admin/drivers/{driver}/route-groups', [AdminDriverRouteGroupsController::class, 'index'])->middleware('permission:drivers');

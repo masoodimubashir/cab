@@ -112,7 +112,9 @@ class PayoutMonitorService
      */
     public function ledger(?int $tripId = null, int $limit = 500, bool $unbalancedOnly = false): array
     {
-        $query = LedgerEntry::query()->orderByDesc('id');
+        $query = LedgerEntry::query()
+            ->with(['trip:id,customer_id,driver_id', 'trip.customer:id,name,phone', 'trip.driver:id,name,phone'])
+            ->orderByDesc('id');
         if ($tripId !== null) {
             $query->where('trip_id', $tripId);
         }
@@ -147,6 +149,10 @@ class PayoutMonitorService
             'amount' => round(((int) $e->amount_paise) / 100, 2),
             'razorpay_ref' => $e->razorpay_ref,
             'created_at' => optional($e->created_at)->toIso8601String(),
+            'customer_name' => $e->trip?->customer?->name,
+            'customer_phone' => $e->trip?->customer?->phone,
+            'driver_name' => $e->trip?->driver?->name,
+            'driver_phone' => $e->trip?->driver?->phone,
         ])->all();
 
         // Reconcile each trip that appears in this slice.

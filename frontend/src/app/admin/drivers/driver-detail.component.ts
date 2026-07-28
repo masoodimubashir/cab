@@ -58,6 +58,12 @@ interface DriverProfile {
   current_lng?: number | null;
   current_location_updated_at?: string | null;
   push_unsubscribed: boolean;
+  payout_account_status?: string | null;
+  payout_method?: string | null;
+  payout_beneficiary_name?: string | null;
+  payout_bank_last4?: string | null;
+  payout_ifsc?: string | null;
+  payout_upi?: string | null;
 }
 
 type TabKey = 'rides' | 'wallet' | 'cancelled';
@@ -253,6 +259,34 @@ const BLOCK_REASONS = [
               <div class="kv-row"><span>Account</span><strong>{{ profile.is_active ? 'Active' : 'Inactive' }}</strong></div>
               <div class="kv-row" *ngIf="!profile.is_active"><span>Reason</span><strong>{{ profile.deactivated_reason || '—' }}</strong></div>
               <div class="kv-row"><span>Registered</span><strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong></div>
+            </div>
+          </section>
+
+          <section class="detail-card">
+            <div class="detail-card__head">
+              <h3 class="detail-card__title">Payout & Bank Account</h3>
+              <span class="detail-card__hint">Direct bank transfer verification</span>
+            </div>
+            <div class="kv-list">
+              <div class="kv-row">
+                <span>Bank Status</span>
+                <tm-status-pill [tone]="profile.payout_account_status === 'verified' ? 'success' : (profile.payout_account_status === 'pending' ? 'warning' : 'neutral')">
+                  {{ profile.payout_account_status || 'none' | titlecase }}
+                </tm-status-pill>
+              </div>
+              <div class="kv-row" *ngIf="profile.payout_method"><span>Method</span><strong>{{ profile.payout_method | uppercase }}</strong></div>
+              <div class="kv-row" *ngIf="profile.payout_beneficiary_name"><span>Beneficiary</span><strong>{{ profile.payout_beneficiary_name }}</strong></div>
+              <div class="kv-row" *ngIf="profile.payout_bank_last4"><span>Account (Last 4)</span><strong class="mono">•••• {{ profile.payout_bank_last4 }}</strong></div>
+              <div class="kv-row" *ngIf="profile.payout_ifsc"><span>IFSC</span><strong class="mono">{{ profile.payout_ifsc }}</strong></div>
+              <div class="kv-row" *ngIf="profile.payout_upi"><span>UPI VPA</span><strong class="mono">{{ profile.payout_upi }}</strong></div>
+            </div>
+            <div style="margin-top: 12px;" *ngIf="profile.payout_account_status !== 'verified'">
+              <tm-button variant="green" size="sm" icon="check" [loading]="verifyingPayout" (clicked)="verifyPayoutAccount()">
+                Verify & Approve Bank Account
+              </tm-button>
+            </div>
+            <div *ngIf="verifyPayoutSuccessMsg" class="notice notice--success" style="margin-top: 8px;">
+              <span>{{ verifyPayoutSuccessMsg }}</span>
             </div>
           </section>
 
@@ -1959,6 +1993,28 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   payoutNote = '';
   payoutSaving = false;
   payoutError: string | null = null;
+
+  verifyingPayout = false;
+  verifyPayoutSuccessMsg = '';
+
+  verifyPayoutAccount(): void {
+    if (!this.driverId) return;
+    this.verifyingPayout = true;
+    this.verifyPayoutSuccessMsg = '';
+    this.api.post<{ message: string; released_count: number; released_amount: number; payout_status: string }>(
+      `/admin/drivers/${this.driverId}/verify-payout-account`, {}
+    ).subscribe({
+      next: (res) => {
+        this.verifyingPayout = false;
+        this.verifyPayoutSuccessMsg = res.message || 'Payout account verified and held earnings released.';
+        this.loadProfile();
+      },
+      error: (err) => {
+        this.verifyingPayout = false;
+        alert(err?.error?.message || 'Could not verify payout account.');
+      }
+    });
+  }
 
 
   readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' }[] = [

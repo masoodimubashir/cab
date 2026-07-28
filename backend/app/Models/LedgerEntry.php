@@ -42,4 +42,14 @@ class LedgerEntry extends Model
         'amount_paise' => 'integer',
         'meta' => 'array',
     ];
+
+    public function trip()
+    {
+        return $this->belongsTo(Trip::class, 'trip_id');
+    }
+
+    public function payment()
+    {
+        return $this->belongsTo(Payment::class, 'payment_id');
+    }
 }
