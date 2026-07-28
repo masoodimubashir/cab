@@ -69,6 +69,19 @@ type EstimateResponse = {
     // Toll passed through from Google; 0 when the route has none.
     toll_amount?: number;
   };
+  // The payment-gateway fee, quoted before the customer picks how they'll pay.
+  // `fee`/`total` assume the default method (UPI); `max_fee` is the ceiling if
+  // they pay by Amex, EMI or an international card. Absent or `enabled:false`
+  // when the operator hasn't turned the fee on — then the fare is the total.
+  gateway_fee?: {
+    enabled?: boolean;
+    fee?: number;
+    total?: number;
+    rate?: number;
+    max_fee?: number;
+    max_total?: number;
+    varies?: boolean;
+  };
 };
 
 type ShuttleBooking = {
@@ -1464,6 +1477,34 @@ export class CustomerBookPage implements OnDestroy {
 
   get rideListContinueLabel(): string {
     return this.isShuttleSelected ? 'Confirm Shuttle' : 'Set your fare';
+  }
+
+  /**
+   * The payment fee to show on the quote, or null when there's nothing to say —
+   * the operator has it switched off, or the quote predates the field. Null is
+   * the signal to render the fare alone, exactly as before the fee existed.
+   */
+  get gatewayFee(): number | null {
+    const g = this.estimate?.gateway_fee;
+    return g?.enabled && (g.fee ?? 0) > 0 ? (g.fee ?? 0) : null;
+  }
+
+  /** Fare + fee — what the customer will actually be charged paying by UPI. */
+  get gatewayTotal(): number | null {
+    const g = this.estimate?.gateway_fee;
+    return this.gatewayFee === null ? null : (g?.total ?? null);
+  }
+
+  /**
+   * The caveat under the fee line. The exact fee isn't knowable until checkout,
+   * where the customer picks a method, so we name the assumption rather than
+   * quietly quoting the cheapest case.
+   */
+  get gatewayFeeNote(): string {
+    const g = this.estimate?.gateway_fee;
+    if (this.gatewayFee === null) return '';
+    if (!g?.varies) return 'Charged by the payment provider.';
+    return `Paying by UPI or card. Up to ₹${(g.max_fee ?? 0).toFixed(2)} on Amex, EMI or international cards.`;
   }
 
   pickScope(scope: 'local' | 'outstation'): void {
