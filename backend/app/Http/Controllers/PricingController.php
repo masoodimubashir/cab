@@ -13,6 +13,7 @@ use App\Models\Route;
 use App\Models\VehicleType;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
+use App\Services\GatewayFeeService;
 use App\Support\RideCatalog;
 use Illuminate\Http\Request;
 
@@ -145,6 +146,7 @@ class PricingController extends Controller
         Request $request,
         FareEstimationService $fareEstimationService,
         DynamicPricingService $dynamicPricingService,
+        GatewayFeeService $gatewayFees,
     ) {
         $data = $request->validate([
             // Primary axis: the exact per-city vehicle the customer picked.
@@ -245,6 +247,7 @@ class PricingController extends Controller
         return response()->json([
             'currency' => 'INR',
             ...$estimate,
+            'gateway_fee' => $gatewayFees->quote((float) ($estimate['estimated_fare'] ?? 0)),
         ]);
     }
 
@@ -253,6 +256,7 @@ class PricingController extends Controller
         Request $request,
         FareEstimationService $fareEstimationService,
         DynamicPricingService $dynamicPricingService,
+        GatewayFeeService $gatewayFees,
     ) {
         $data = $request->validate([
             'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
@@ -360,6 +364,7 @@ class PricingController extends Controller
             'vehicle_name' => $cvt->display_name,
             'vehicle_type_name' => $cvt->vehicleType?->name,
             ...$estimate,
+            'gateway_fee' => $gatewayFees->quote((float) ($estimate['estimated_fare'] ?? 0)),
         ]);
     }
 
@@ -372,6 +377,7 @@ class PricingController extends Controller
     public function seatEstimate(
         Request $request,
         FareEstimationService $fareEstimationService,
+        GatewayFeeService $gatewayFees,
     ) {
         $data = $request->validate([
             'route_id' => ['required', 'integer', 'exists:routes,id'],
@@ -397,6 +403,7 @@ class PricingController extends Controller
             'route_id' => $route->id,
             'mode' => $route->mode,
             ...$estimate,
+            'gateway_fee' => $gatewayFees->quote((float) ($estimate['estimated_fare'] ?? 0)),
         ]);
     }
 }

@@ -369,6 +369,10 @@
             <span>Estimated fare</span>
             <strong>&#8377;{{ estimate?.estimated_fare }}</strong>
           </div>
+          <div class="sp-fare sp-fare--fee" *ngIf="estimate?.available !== false && gatewayFee !== null">
+            <span>Payment fee</span>
+            <strong>+&#8377;{{ gatewayFee.toFixed(2) }}</strong>
+          </div>
           <p class="sp-note">{{ shuttleQuoteNotice }}</p>
         </div>
       </div>
@@ -657,9 +661,16 @@
           <span>Toll</span>
           <span>₹{{ estimate?.fare_breakdown?.toll_amount }}</span>
         </div>
+        <!-- Payment fee — its own line, never folded into the fare. Hidden
+             entirely while the operator has the fee switched off. -->
+        <div class="breakdown-row" *ngIf="gatewayFee !== null">
+          <span>Payment fee</span>
+          <span>₹{{ gatewayFee.toFixed(2) }}</span>
+        </div>
+        <p class="breakdown-note" *ngIf="gatewayFee !== null">{{ gatewayFeeNote }}</p>
         <div class="breakdown-row total">
           <span>Estimated total</span>
-          <span>₹{{ estimate?.estimated_fare }}</span>
+          <span>₹{{ gatewayTotal !== null ? gatewayTotal.toFixed(2) : estimate?.estimated_fare }}</span>
         </div>
       </div>
     </div>
