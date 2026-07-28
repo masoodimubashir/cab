@@ -17,6 +17,20 @@ interface RideRow {
   is_shared: boolean;
 }
 
+/**
+ * Where the driver's money actually is. Under the auto-split model their share
+ * of every fare goes straight to their own bank account, so "earned" and
+ * "received" stop being the same number — this is the difference.
+ */
+interface PayoutSummary {
+  enabled: boolean;
+  paid: number;
+  pending: number;
+  held: number;
+  account_status: string;
+  blocked_by_kyc: boolean;
+}
+
 interface EarningsResponse {
   total_earnings: number;
   total_commission: number;
@@ -27,6 +41,7 @@ interface EarningsResponse {
   buckets: Bucket[];
   weekly: Bucket[];
   rides: RideRow[];
+  payout?: PayoutSummary;
 }
 
 /**
@@ -57,6 +72,7 @@ export class EarningsPage implements OnInit {
   period: 'week' | 'month' = 'week';
   buckets: Bucket[] = [];
   rides: RideRow[] = [];
+  payout: PayoutSummary | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -74,6 +90,8 @@ export class EarningsPage implements OnInit {
         this.currency = res.currency || 'INR';
         this.buckets = res.buckets ?? [];
         this.rides = res.rides ?? [];
+        // Absent on older backends — the payout card simply stays hidden.
+        this.payout = res.payout?.enabled ? res.payout : null;
         this.loading = false;
       },
       error: (err) => {
@@ -119,6 +137,27 @@ export class EarningsPage implements OnInit {
   get periodFare(): number { return this.rides.reduce((s, r) => s + (r.fare || 0), 0); }
   get periodCommission(): number { return this.rides.reduce((s, r) => s + (r.commission || 0), 0); }
   get periodNet(): number { return this.rides.reduce((s, r) => s + (r.net || 0), 0); }
+
+  // ── Payouts ──
+  /** Money earned that hasn't reached the bank yet — held plus in-flight. */
+  get payoutOnTheWay(): number {
+    return (this.payout?.held ?? 0) + (this.payout?.pending ?? 0);
+  }
+
+  /**
+   * Why money is stuck, in words the driver can act on. Null when nothing is
+   * stuck — the card then just shows what's been paid.
+   */
+  get payoutBlockedReason(): string | null {
+    if (!this.payout) return null;
+    if (this.payout.blocked_by_kyc) {
+      return 'Add your payout account to release this money. It is yours — it just has nowhere to go yet.';
+    }
+    if (this.payout.held > 0) {
+      return 'A transfer to your bank did not go through. We retry automatically — nothing is lost.';
+    }
+    return null;
+  }
 
   rideDate(r: RideRow): string {
     if (!r.date) return '';

@@ -131,7 +131,91 @@ class FareNegotiationController extends Controller
             'driver_location' => $driverLocation,
             // City-level negotiation floor used by both customer and driver apps.
             'negotiation_config' => $this->negotiationConfig($trip),
+            // What the rider still owes and whether it's payable yet. The app
+            // shows its pay bar off this rather than guessing from the trip
+            // status, so prepay-at-booking and pay-after-the-ride are one code
+            // path on both sides. The pay endpoint enforces the same rules.
+            'payment_due' => $this->paymentDue($trip),
+            // The driver's side of the same money: what the ride pays THEM, and
+            // whether there's anything to collect at the kerb (there isn't, once
+            // the engine is on — the fare is already paid and split).
+            'driver_payout' => $this->driverPayout($trip),
         ]);
+    }
+
+    /**
+     * What this trip pays the driver, and whether they collect anything in
+     * person. Under the auto-split engine the answer to the second question is
+     * always no: the rider paid online and the driver's share lands in their own
+     * bank account after the ride. Saying so on the trip screen is what stops a
+     * driver asking for cash they must not take.
+     *
+     * @return array{fare:float,commission:float,net:float,collect_cash:bool,prepaid:bool,label:string}
+     */
+    private function driverPayout(Trip $trip): array
+    {
+        $engineOn = (bool) config('services.payments.split_enabled', false);
+        $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+
+        // Before completion the commission may not be stamped yet; fall back to
+        // the city's standard rule so the driver still sees a real number.
+        $commission = $trip->commission_amount !== null
+            ? (float) $trip->commission_amount
+            : (float) app(\App\Services\CommissionSettlementService::class)
+                ->commissionForFare($trip->city_id, $fare, (float) ($trip->toll_amount ?? 0))['amount'];
+
+        $paid = (float) \App\Models\Payment::query()
+            ->where('trip_id', $trip->id)
+            ->whereIn('status', ['SUCCESS', 'REFUNDED'])
+            ->sum('amount');
+
+        $prepaid = $engineOn && $paid > 0;
+
+        return [
+            'fare' => round($fare, 2),
+            'commission' => round(min($commission, $fare), 2),
+            'net' => round(max(0.0, $fare - min($commission, $fare)), 2),
+            'collect_cash' => ! $engineOn && $trip->payment_method === 'cash',
+            'prepaid' => $prepaid,
+            'label' => $engineOn
+                ? ($prepaid ? 'Paid online' : 'Pays online')
+                : strtoupper((string) ($trip->payment_method ?: '—')),
+        ];
+    }
+
+    /**
+     * How much is still owed on this trip, and whether the rider can pay it now.
+     *
+     * Under the auto-split engine the ride is PREPAID: the fare is payable the
+     * moment it's agreed (CONFIRMED), and after the ride only a shortfall over
+     * what was prepaid remains. With the engine off, nothing is payable until
+     * the trip completes — the legacy behaviour.
+     *
+     * @return array{amount:float,payable:bool,prepay:bool}
+     */
+    private function paymentDue(Trip $trip): array
+    {
+        $prepayEnabled = (bool) config('services.payments.split_enabled', false);
+        $prepay = $prepayEnabled && in_array($trip->status, [
+            'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP',
+        ], true);
+
+        $fare = $prepay
+            ? (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0)
+            : (float) ($trip->final_fare ?? 0);
+
+        $paid = (float) \App\Models\Payment::query()
+            ->where('trip_id', $trip->id)
+            ->whereIn('status', ['SUCCESS', 'REFUNDED'])
+            ->sum('amount');
+
+        $due = round(max(0.0, $fare - $paid), 2);
+
+        return [
+            'amount' => $due,
+            'payable' => $due > 0 && ($prepay || $trip->status === 'COMPLETED'),
+            'prepay' => $prepay,
+        ];
     }
 
     public function customerOffer(Request $request, Trip $trip, \App\Services\SchedulingPolicyService $scheduling)

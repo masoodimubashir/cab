@@ -476,7 +476,60 @@ class DriversController extends Controller
                 'max' => (int) $settings->wallet_cash_max_capping,
             ],
             'subscription_active' => $subscriptionActive,
+            'payout' => $this->payoutSummary($user),
         ]);
+    }
+
+    /**
+     * Where the driver's money actually IS, under the auto-split engine: their
+     * share of each fare is transferred straight to their own bank account, so
+     * "earnings" and "money you have" are no longer the same question.
+     *
+     * Three numbers matter to them:
+     *   paid    — reached their account (or is on its way).
+     *   held    — earned, but stuck: usually payout KYC isn't verified yet,
+     *             sometimes a transfer bounced. Never lost, always retried.
+     *   pending — split, but Razorpay hasn't confirmed the transfer landed.
+     *
+     * `enabled` is false on the legacy model, where the wallet is still the
+     * source of truth and the app hides this whole section.
+     *
+     * @return array{enabled:bool,paid:float,pending:float,held:float,account_status:string,blocked_by_kyc:bool}
+     */
+    private function payoutSummary(\App\Models\User $user): array
+    {
+        $enabled = (bool) config('services.payments.split_enabled', false);
+        if (! $enabled) {
+            return [
+                'enabled' => false,
+                'paid' => 0.0, 'pending' => 0.0, 'held' => 0.0,
+                'account_status' => (string) ($user->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
+                'blocked_by_kyc' => false,
+            ];
+        }
+
+        $transferred = \App\Models\Payment::query()
+            ->whereIn('transfer_status', [
+                \App\Models\Payment::TRANSFER_CREATED,
+                \App\Models\Payment::TRANSFER_PROCESSED,
+            ])
+            ->whereIn('trip_id', Trip::query()->where('driver_id', $user->id)->select('id'))
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as paid,
+                COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as pending
+            ", [\App\Models\Payment::TRANSFER_PROCESSED, \App\Models\Payment::TRANSFER_CREATED])
+            ->first();
+
+        $heldPaise = app(\App\Services\HeldEarningsService::class)->heldTotalPaise((int) $user->id);
+
+        return [
+            'enabled' => true,
+            'paid' => round((float) ($transferred->paid ?? 0), 2),
+            'pending' => round((float) ($transferred->pending ?? 0), 2),
+            'held' => round($heldPaise / 100, 2),
+            'account_status' => (string) ($user->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
+            'blocked_by_kyc' => $heldPaise > 0 && ! $user->hasVerifiedPayoutAccount(),
+        ];
     }
 
     /**

@@ -226,3 +226,60 @@
 .ec-chip--neg { background: #fee2e2; color: #b91c1c; }
 .ec-chip--free { background: #dcfce7; color: #15803d; }
 .ec-chip--net { background: #0e8f47; color: #fff; }
+
+/* ── Payouts: what actually reached the bank ───────────────────────── */
+.ec-payout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ec-payout__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  & + .ec-payout__row { border-top: 1px solid #f1f5f9; }
+}
+.ec-payout__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+  ion-icon { font-size: 17px; flex-shrink: 0; }
+  ion-icon.is-paid { color: #0e8f47; }
+  ion-icon.is-pending { color: #b45309; }
+  ion-icon.is-held { color: #b91c1c; }
+}
+.ec-payout__val {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+}
+.ec-payout__val--held { color: #b91c1c; }
+
+.ec-payout__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 10px 11px;
+  background: #fef3c7;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #92400e;
+  ion-icon { font-size: 17px; flex-shrink: 0; margin-top: 1px; }
+}
+.ec-payout__cta { margin-top: 10px; --border-radius: 12px; }
+.ec-payout__hint {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #94a3b8;
+}

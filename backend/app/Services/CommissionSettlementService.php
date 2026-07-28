@@ -27,12 +27,16 @@ class CommissionSettlementService
         private WalletService $wallet,
         private SubscriptionService $subscriptions,
         private FixedPricingService $fixedPricing,
+        private BookingPaymentService $bookingPayments,
     ) {
     }
 
     public function settle(Trip $trip): void
     {
         if (! $trip->driver_id) {
+            // Nothing to charge or credit, but a prepayment may still be sitting
+            // on this trip — book it so the ledger closes.
+            $this->settleBookingPayments($trip);
             return;
         }
 
@@ -40,6 +44,7 @@ class CommissionSettlementService
         // debit), so they have their own path.
         if ($trip->route_departure_id !== null) {
             $this->settleShared($trip);
+            $this->settleBookingPayments($trip);
             return;
         }
 
@@ -86,8 +91,25 @@ class CommissionSettlementService
         $trip->commission_amount = $cut;
         $trip->save();
 
+        // Only now is the ride's real worth known, so this is the earliest point
+        // a prepayment can be divided correctly.
+        $this->settleBookingPayments($trip);
+
         // Count this ride against any active subscription (expiring it when used up).
         $this->subscriptions->consume($trip);
+    }
+
+    /**
+     * Settles any prepayment riding on this trip through the shared engine: hand
+     * back whatever the ride turned out not to cost, then divide the rest into
+     * the driver's Route share and the operator's commission. Deliberately runs
+     * AFTER the trip's own figures are final — they are what the split is
+     * computed from. No-op while the split engine is disabled.
+     */
+    private function settleBookingPayments(Trip $trip): void
+    {
+        $this->bookingPayments->refundOverpayment($trip);
+        $this->bookingPayments->settleTrip($trip);
     }
 
     /**

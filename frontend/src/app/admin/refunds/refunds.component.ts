@@ -83,20 +83,40 @@ const PAID_OPTIONS = [
       <header class="page__hero">
         <div>
           <h1 class="page__title">Refunds</h1>
-          <p class="page__sub">
+          <p class="page__sub" *ngIf="!autoRefunds">
             Customers owed money from cancelled fixed &amp; shuttle bookings. Send the money by
             GPay/bank as usual, then <strong>Mark refunded</strong> — the row stays here forever as proof.
+          </p>
+          <p class="page__sub" *ngIf="autoRefunds">
+            Refunds go back to the customer's card automatically. This is the audit trail —
+            and, at the top, the handful of <strong>exceptions</strong> that didn't go through.
           </p>
         </div>
         <div class="hero__side">
           <div class="total" *ngIf="!loading">
-            <span class="total__label">Due to customers</span>
+            <span class="total__label">{{ autoRefunds ? 'Needs a human' : 'Due to customers' }}</span>
             <span class="total__value" [class.total__value--zero]="totalDue === 0">₹ {{ totalDue | number:'1.2-2' }}</span>
-            <span class="total__count">{{ dueCount }} pending</span>
+            <span class="total__count">{{ dueCount }} {{ autoRefunds ? 'exceptions' : 'pending' }}</span>
           </div>
           <tm-button variant="outline" size="sm" icon="refresh" [loading]="loading" (clicked)="load()">Refresh</tm-button>
         </div>
       </header>
+
+      <!-- What this screen is FOR, once refunds stopped being manual work. -->
+      <div class="auto-banner" [class.auto-banner--clear]="dueCount === 0" *ngIf="autoRefunds && !loading">
+        <span class="auto-banner__icon"><tm-icon [name]="dueCount === 0 ? 'check' : 'bell'" [size]="17" /></span>
+        <div class="auto-banner__body">
+          <strong *ngIf="dueCount === 0">Nothing needs you. Every refund went back automatically.</strong>
+          <strong *ngIf="dueCount > 0">{{ dueCount }} refund(s) did not complete automatically.</strong>
+          <span *ngIf="dueCount === 0">
+            Cancellations refund the rider's card without anyone touching this screen. Rows below are history.
+          </span>
+          <span *ngIf="dueCount > 0">
+            Either Razorpay rejected the refund, or these predate automatic refunds. Send the money
+            the usual way and record it with <strong>Mark refunded</strong>.
+          </span>
+        </div>
+      </div>
 
       <!-- Status tabs -->
       <div class="tabs">
@@ -349,6 +369,16 @@ const PAID_OPTIONS = [
     .page__hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
     .page__title { margin: 0; font-size: 24px; line-height: 1.1; font-weight: 850; color: var(--tm-text); }
     .page__sub { margin: 6px 0 0; max-width: 640px; color: var(--tm-text-muted); font-size: 13px; line-height: 1.45; }
+
+    .auto-banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      border: 1px solid var(--tm-warning-fg, #92400e); border-radius: var(--tm-radius-lg);
+      background: var(--tm-warning-bg, #fff4e5); }
+    .auto-banner--clear { border-color: var(--tm-line); background: var(--tm-green-tint); }
+    .auto-banner__icon { display: inline-flex; flex: none; color: var(--tm-warning-fg, #92400e); }
+    .auto-banner--clear .auto-banner__icon { color: var(--tm-green-deep); }
+    .auto-banner__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .auto-banner__body strong { font-size: 13.5px; font-weight: 800; color: var(--tm-text); }
+    .auto-banner__body span { font-size: 12px; color: var(--tm-text-muted); }
     .hero__side { display: flex; align-items: center; gap: 14px; }
     .total { text-align: right; display: flex; flex-direction: column; }
     .total__label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tm-text-muted); }
@@ -527,6 +557,8 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   rows: RefundRow[] = [];
   totalDue = 0;
   dueCount = 0;
+  /** True once refunds are automatic — turns this page from worklist to audit trail. */
+  autoRefunds = false;
   loading = false;
   error: string | null = null;
   filter: 'due' | 'refunded' | 'all' = 'due';
@@ -567,11 +599,12 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   load(): void {
     this.loading = true;
     this.error = null;
-    this.api.get<{ rows: RefundRow[]; total_due: number; due_count: number }>('/admin/refunds?status=all').subscribe({
+    this.api.get<{ rows: RefundRow[]; total_due: number; due_count: number; auto_refunds?: boolean }>('/admin/refunds?status=all').subscribe({
       next: (res) => {
         this.rows = res?.rows ?? [];
         this.totalDue = res?.total_due ?? 0;
         this.dueCount = res?.due_count ?? 0;
+        this.autoRefunds = !!res?.auto_refunds;
         this.loading = false;
       },
       error: (err) => {
