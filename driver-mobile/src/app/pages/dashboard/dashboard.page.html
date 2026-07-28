@@ -60,6 +60,25 @@
     </button>
   </div>
 
+  <!-- ===== Payout-account reminder =====
+       Standing nudge for a driver who skipped the one-time prompt: without a
+       payout account their earnings are held, and nothing else would say so. -->
+  <button
+    class="payout-banner dc-press"
+    *ngIf="payoutNeeded && !payoutBannerDismissed && !error && !drawerOpen"
+    (click)="goPayoutAccount()"
+    type="button"
+  >
+    <ion-icon name="card-outline" aria-hidden="true"></ion-icon>
+    <span class="payout-banner__text">
+      <strong>Add your payout account</strong>
+      <small>We can’t pay you until you do — earnings are being held.</small>
+    </span>
+    <span class="payout-banner__close" (click)="dismissPayoutBanner(); $event.stopPropagation()" aria-label="Dismiss">
+      <ion-icon name="close-outline"></ion-icon>
+    </span>
+  </button>
+
   <!-- ===== Recenter / my-location FAB ===== -->
   <button
     class="recenter-fab dc-press"

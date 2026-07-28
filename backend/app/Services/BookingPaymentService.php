@@ -162,10 +162,12 @@ class BookingPaymentService
         // payment settles against its own seat fare and commission snapshot.
         if ($trip->route_departure_id !== null) {
             foreach ($payments as $payment) {
+                // The seat's fare, not the charge: a customer-borne gateway fee
+                // rides inside `amount` and belongs to Razorpay, not the seat.
                 $this->split->settleBookingPayment(
                     $payment,
                     $driver,
-                    self::toPaise($payment->amount),
+                    self::farePaise($payment),
                     self::toPaise($payment->commission_amount),
                 );
             }
@@ -193,7 +195,7 @@ class BookingPaymentService
      */
     private function settleSoloPrepayments(Trip $trip, ?User $driver, $payments): void
     {
-        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::toPaise($p->amount));
+        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::farePaise($p));
         if ($capturedTotal <= 0) {
             return;
         }
@@ -218,7 +220,7 @@ class BookingPaymentService
         foreach ($payments->values() as $i => $payment) {
             // The last capture takes whatever fare is left, so nothing goes
             // unallocated when the captures don't cover the whole fare.
-            $grossShare = $i === $last ? $fareLeft : min(self::toPaise($payment->amount), $fareLeft);
+            $grossShare = $i === $last ? $fareLeft : min(self::farePaise($payment), $fareLeft);
 
             $commissionShare = $i === $last
                 ? $commissionLeft
@@ -285,7 +287,9 @@ class BookingPaymentService
             ->orderBy('id')
             ->get();
 
-        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::toPaise($p->amount));
+        // Compare fare against fare: the gateway fee isn't an overpayment of the
+        // ride, so it must not inflate the excess we hand back.
+        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::farePaise($p));
         $excess = $capturedTotal - $finalPaise;
         if ($excess <= 0 || $payments->isEmpty()) {
             return null;
@@ -329,5 +333,18 @@ class BookingPaymentService
     private static function toPaise($rupees): int
     {
         return (int) round(((float) ($rupees ?? 0)) * 100);
+    }
+
+    /**
+     * The ride's share of a capture — what the customer paid, less whatever of
+     * it was the payment gateway's cut. With the fee switched off this is just
+     * the captured amount.
+     */
+    private static function farePaise(Payment $payment): int
+    {
+        $captured = self::toPaise($payment->amount);
+        $fee = max(0, min($captured, self::toPaise($payment->gateway_fee_amount)));
+
+        return $captured - $fee;
     }
 }
