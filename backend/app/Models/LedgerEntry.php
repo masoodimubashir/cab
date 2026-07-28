@@ -30,10 +30,13 @@ class LedgerEntry extends Model
     public const TYPE_RELEASE = 'release';
     public const TYPE_REFUND = 'refund';
     public const TYPE_REVERSAL = 'reversal';
+    /** Razorpay's cut of a capture — money that reaches neither driver nor operator. */
+    public const TYPE_GATEWAY_FEE = 'gateway_fee';
 
     public const PARTY_CUSTOMER = 'customer';
     public const PARTY_DRIVER = 'driver';
     public const PARTY_OPERATOR = 'operator';
+    public const PARTY_GATEWAY = 'gateway';
 
     protected $casts = [
         'amount_paise' => 'integer',

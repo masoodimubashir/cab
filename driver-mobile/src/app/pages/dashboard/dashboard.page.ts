@@ -10,6 +10,7 @@ import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
 import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
+import { PayoutPromptModalComponent } from '../../shared/payout-prompt-modal/payout-prompt-modal.component';
 
 declare const google: any;
 
@@ -91,6 +92,15 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   walletBalance = 0;
 
   /**
+   * True when an approved driver has no usable payout account, so their share
+   * of every fare is piling up as held earnings. Drives the dashboard banner —
+   * the standing reminder for anyone who skipped the one-time prompt.
+   */
+  payoutNeeded = false;
+  /** Banner hidden for this app session only; it returns on the next launch. */
+  payoutBannerDismissed = false;
+
+  /**
    * Full-screen cold-start skeleton — covers the whole dashboard (map + top
    * bar + sheet) until BOTH the driver profile and the map are ready, then it
    * fades out to reveal the live screen.
@@ -138,6 +148,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       items: [
         { label: 'Performance', sub: 'Rating & trip metrics', icon: 'stats-chart-outline', path: '/performance' },
         { label: 'Profile', sub: 'Name, vehicle & documents', icon: 'person-outline', path: '/profile' },
+        { label: 'Payout account', sub: 'Bank or UPI details — we pay you here', icon: 'card-outline', path: '/payout-account' },
         { label: 'Documents', sub: 'Verification & uploads', icon: 'document-text-outline', path: '/profile' },
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
         { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
@@ -276,6 +287,80 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     } finally {
       this.subPromptBusy = false;
     }
+  }
+
+  // ------------------------------------------------------------ payout setup --
+
+  /** Set once the driver has seen (and answered) the one-time payout prompt. */
+  private static readonly PAYOUT_PROMPT_KEY = 'dc_payout_prompt_seen';
+  /** Guards against a second fire while the first is still in flight. */
+  private payoutPromptBusy = false;
+
+  /**
+   * Works out whether this driver still needs a payout account, then nudges them
+   * about it. Runs after the profile loads, because the nudge only applies to an
+   * approved driver — someone still under review has nothing to be paid yet.
+   *
+   * First time: a full-screen skippable prompt. Every time after: the banner.
+   * Best-effort throughout — a failure here must never disturb the dashboard.
+   */
+  private async refreshPayoutState(): Promise<void> {
+    if (!this.isApproved || this.payoutPromptBusy) return;
+    this.payoutPromptBusy = true;
+    try {
+      const account = await firstValueFrom(
+        this.api.get<{ status: string; can_receive_payouts: boolean }>('/me/driver/payout-account'),
+      ).catch(() => null);
+      if (!account) return;
+
+      // 'pending' counts as done — the details are in, verification is ours to
+      // finish, and nagging them about our own queue would just be noise.
+      this.payoutNeeded = account.status === 'none' || account.status === 'rejected';
+      if (!this.payoutNeeded) return;
+
+      if (this.readPayoutPromptSeen()) return;
+      await this.showPayoutPrompt();
+    } catch {
+      /* best-effort — never block the dashboard */
+    } finally {
+      this.payoutPromptBusy = false;
+    }
+  }
+
+  /**
+   * The one-time full-screen prompt. Marked seen before it opens so a slow
+   * render can't present it twice, and so a driver who dismisses it by gesture
+   * isn't shown it again — the banner covers them from then on.
+   */
+  private async showPayoutPrompt(): Promise<void> {
+    this.writePayoutPromptSeen();
+
+    const modal = await this.modalCtrl.create({ component: PayoutPromptModalComponent });
+    await modal.present();
+    const { data } = await modal.onWillDismiss<{ add?: boolean }>();
+    if (data?.add) this.goPayoutAccount();
+  }
+
+  /** Open the payout form — from the banner or the prompt's primary action. */
+  goPayoutAccount(): void {
+    void this.router.navigateByUrl('/payout-account');
+  }
+
+  /** Hide the banner until the next app launch. */
+  dismissPayoutBanner(): void {
+    this.payoutBannerDismissed = true;
+  }
+
+  private readPayoutPromptSeen(): boolean {
+    try {
+      return localStorage.getItem(DashboardPage.PAYOUT_PROMPT_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  private writePayoutPromptSeen(): void {
+    try { localStorage.setItem(DashboardPage.PAYOUT_PROMPT_KEY, '1'); } catch { /* ignore */ }
   }
 
   /** The driver's last-picked mode, if any (used to highlight it on reopen). */
@@ -603,6 +688,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         this.loading = false;
         this.profileReady = true;
         this.maybeFinishHome();
+        // Approval status is known now, so the payout nudge can decide.
+        void this.refreshPayoutState();
       },
     });
   }

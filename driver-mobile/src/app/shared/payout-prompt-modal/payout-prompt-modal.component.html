@@ -1,0 +1,32 @@
+<ion-content class="pay-content">
+  <div class="pay-wrap">
+    <div class="pay-icon">
+      <ion-icon name="card-outline"></ion-icon>
+    </div>
+
+    <span class="pay-tag"><ion-icon name="shield-checkmark-outline"></ion-icon> One-time setup</span>
+
+    <h1 class="pay-title">Where should we send your money?</h1>
+    <p class="pay-subtitle">
+      Add your bank account or UPI so your earnings reach you automatically after
+      every ride. It takes a minute.
+    </p>
+
+    <div class="pay-warn">
+      <ion-icon name="alert-circle-outline"></ion-icon>
+      <span>
+        You can start driving without this — but we can’t pay you until it’s added.
+        Your earnings will be held until then.
+      </span>
+    </div>
+
+    <div class="pay-actions">
+      <button type="button" class="pay-btn pay-btn--primary dc-press" (click)="add()">
+        <ion-icon name="card-outline"></ion-icon> Add payout details
+      </button>
+      <button type="button" class="pay-btn pay-btn--ghost dc-press" (click)="skip()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+</ion-content>
