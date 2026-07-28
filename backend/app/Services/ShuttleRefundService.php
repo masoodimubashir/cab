@@ -37,13 +37,19 @@ class ShuttleRefundService
                 throw new ReservationException('This Shuttle trip has already started and cannot be cancelled from the app.', 422);
             }
 
+            // The whole rule, read BEFORE the cancel transition touches the trip:
+            // no driver committed yet → the money goes back in full; a driver is
+            // already coming → the fare is forfeited, because they took this
+            // journey on the strength of the seats sold.
+            $refundFull = $trip?->driver_id === null;
+
             if ($trip && in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
                 app(TripStateMachineService::class)->transition($trip, 'CANCELLED', [
                     'cancelled_reason' => $reason,
                 ]);
             }
 
-            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER);
+            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER, $refundFull);
 
             return [
                 'booking' => $locked->fresh(['journey:id,status,capacity,seats_taken,trip_id']),
@@ -131,18 +137,33 @@ class ShuttleRefundService
         });
     }
 
-    private function markCancelled(ShuttlePassengerBooking $booking, ?string $reason, string $cancelledBy = AutoRefundService::BY_SYSTEM): void
-    {
-        $refundStatus = $booking->payment_status === 'PAID' ? 'APPROVED' : 'NONE';
+    /**
+     * $refundFull null means "not the customer's fault" — an operator or system
+     * cancel, which is always returned in full whatever stage the journey reached.
+     * A customer cancel passes the answer to the one question that decides it:
+     * was a driver already committed?
+     */
+    private function markCancelled(
+        ShuttlePassengerBooking $booking,
+        ?string $reason,
+        string $cancelledBy = AutoRefundService::BY_SYSTEM,
+        ?bool $refundFull = null,
+    ): void {
+        $paid = $booking->payment_status === 'PAID';
+        $refundFull ??= true;
+
+        // Forfeited: the money stays with the operator, so the booking is closed
+        // out as rejected rather than left owing.
+        $refundStatus = $paid ? ($refundFull ? 'APPROVED' : 'REJECTED') : 'NONE';
         $paymentStatus = $booking->payment_status;
         $refundReference = $booking->refund_reference;
 
-        // R6 — a Shuttle booking is always cancelled before the journey completes,
-        // so its split never settled and the driver was never paid: the whole
-        // prepayment goes straight back to the customer through the shared engine.
-        // Falls through to the legacy manual register when the engine is off.
-        $outcome = $refundStatus === 'APPROVED' ? $this->autoRefunded($booking, true, $cancelledBy) : null;
-        if ($outcome !== null) {
+        // Either way the prepayment has to be booked through the shared engine —
+        // a refund when one is due, otherwise a capture-to-operator so the
+        // journey's ledger still closes. Falls through to the legacy manual
+        // register when the engine is off.
+        $outcome = $paid ? $this->autoRefunded($booking, $refundFull, $cancelledBy) : null;
+        if ($outcome !== null && $refundFull) {
             $refundStatus = 'REFUNDED';
             $paymentStatus = 'REFUNDED';
             // Razorpay's own refund id, so the refund.processed/failed webhook can

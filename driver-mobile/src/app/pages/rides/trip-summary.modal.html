@@ -5,22 +5,32 @@
 </ion-header>
 
 <ion-content class="ion-padding trip-summary">
+  <!-- What the DRIVER takes home — not the fare, which is the rider's number. -->
   <div class="hero">
-    <small>You earned</small>
-    <h1>₹{{ finalFare | number:'1.0-2' }}</h1>
-    <p *ngIf="estimatedFare && estimatedFare !== finalFare" class="estimate-note">
-      Estimated was ₹{{ estimatedFare | number:'1.0-2' }} — settled from your actual route.
+    <small>You earn</small>
+    <h1>₹{{ driverNet | number:'1.0-2' }}</h1>
+    <p class="estimate-note">
+      Fare ₹{{ finalFare | number:'1.0-2' }}<span *ngIf="commission"> − ₹{{ commission | number:'1.0-2' }} commission</span>
     </p>
   </div>
 
+  <!-- The only thing on this screen that needs the driver to do anything. -->
+  <div class="balance" *ngIf="hasBalance">
+    <ion-icon name="card-outline" aria-hidden="true"></ion-icon>
+    <div>
+      <strong>₹{{ balanceDue | number:'1.0-2' }} left to pay</strong>
+      <span>The ride came to more than the rider prepaid. They pay it in their app — never in cash.</span>
+    </div>
+  </div>
+
   <ion-list lines="full" class="ion-margin-top">
-    <ion-item>
+    <ion-item *ngIf="waitingCharge">
       <ion-label>Waiting charge</ion-label>
       <ion-note slot="end">₹{{ waitingCharge | number:'1.0-2' }}</ion-note>
     </ion-item>
-    <ion-item>
-      <ion-label>Customer pays via</ion-label>
-      <ion-note slot="end">{{ paymentMethod }}</ion-note>
+    <ion-item *ngIf="tollAmount">
+      <ion-label>Toll</ion-label>
+      <ion-note slot="end">₹{{ tollAmount | number:'1.0-2' }}</ion-note>
     </ion-item>
     <ion-item *ngIf="tipAmount">
       <ion-label>Tip</ion-label>
@@ -30,7 +40,8 @@
 
   <ion-text color="medium">
     <p class="hint">
-      A tip from the customer (if any) will appear in your earnings after they confirm payment.
+      Your share goes straight to your bank account. A tip from the rider (if any) will
+      appear in your earnings after they add it.
     </p>
   </ion-text>
 

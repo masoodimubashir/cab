@@ -256,14 +256,25 @@ class FixedRefundService
         $this->seatMap->freeSeatsForReservation($reservation);
     }
 
+    /**
+     * The whole fixed-route cancellation rule: is a driver committed to running
+     * this vehicle yet?
+     *
+     * Not committed  → nothing has been promised to anyone, so the seat money
+     *                  goes straight back in full.
+     * Committed      → a driver is running this departure on the strength of the
+     *                  seats sold. Pulling out now costs them the trip, so the
+     *                  fare is forfeited.
+     *
+     * `trip_id` is the exact moment of commitment for both routes into a
+     * departure: the auto-dispatcher stamps it when it assigns a driver, and a
+     * driver opening their own vehicle stamps it when they tap Start. Before
+     * that a departure is only "forming" — a driver may be attached to it, but
+     * they haven't set off and nothing is owed to them.
+     */
     private function isRefundAllowed(?RouteDeparture $departure): bool
     {
-        $cutoffTarget = $departure?->depart_at ?? $departure?->announced_depart_at;
-        if (!$cutoffTarget) {
-            return true;
-        }
-
-        return $cutoffTarget->greaterThan(now()->addMinutes(30));
+        return $departure?->trip_id === null;
     }
 
     /**

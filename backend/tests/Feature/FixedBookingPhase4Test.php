@@ -6,6 +6,7 @@ use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
+use App\Models\Trip;
 use App\Models\User;
 use App\Services\FixedStopAutomationService;
 use App\Services\RazorpayService;
@@ -142,11 +143,34 @@ class FixedBookingPhase4Test extends TestCase
         $this->assertSame(0, $this->departure->fresh()->luggage_taken);
     }
 
-    public function test_customer_cancel_inside_30_minutes_rejects_refund_but_releases_capacity(): void
+    /**
+     * The cancellation rule is no longer a clock — it's whether a driver is
+     * already running this departure. Once a trip exists the vehicle has set off
+     * on the strength of the seats sold, so the fare is forfeited however long
+     * there is until the scheduled departure time.
+     */
+    public function test_customer_cancel_after_the_vehicle_started_rejects_refund_but_releases_capacity(): void
     {
+        $rideTypeId = DB::table('ride_types')->insertGetId([
+            'name' => 'Fixed', 'mode' => 'fixed', 'description' => 'Fixed', 'sort_order' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $trip = Trip::query()->create([
+            'customer_id' => null,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->route->city_id,
+            'ride_type_id' => $rideTypeId,
+            'route_id' => $this->route->id,
+            'route_departure_id' => $this->departure->id,
+            'status' => 'EN_ROUTE_PICKUP',
+            'estimated_fare' => 120, 'final_fare' => 120, 'currency' => 'INR',
+            'pickup_lat' => 34.0, 'pickup_lng' => 74.0,
+            'drop_lat' => 34.1, 'drop_lng' => 74.1,
+        ]);
         $this->departure->update([
-            'depart_at' => now()->addMinutes(20),
-            'announced_depart_at' => now()->addMinutes(20),
+            'trip_id' => $trip->id,
+            'status' => 'DEPARTED',
             'seats_taken' => 1,
         ]);
         $reservation = $this->createReservation(['seats' => 1, 'fare_amount' => 120]);

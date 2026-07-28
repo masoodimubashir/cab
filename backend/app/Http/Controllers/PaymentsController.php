@@ -176,9 +176,13 @@ class PaymentsController extends Controller
                 'provider_response' => null,
                 'coupon_assignment_id' => $couponAssignmentId,
                 'discount_amount' => $discountAmount,
-                // A prepayment is settled at completion, not at capture: the ride
-                // hasn't happened yet, so the driver isn't owed anything.
-                'settlement_mode' => $prepay ? Payment::SETTLE_BOOKING : null,
+                // Every online payment on a private ride settles through the
+                // booking engine once the engine is on — a prepayment because the
+                // ride hasn't happened yet, and a post-ride balance because it is
+                // the SECOND capture against ONE fare and must be divided against
+                // what the prepayment already took, not against the whole fare
+                // again. Null keeps the legacy split-at-capture path.
+                'settlement_mode' => $this->prepaymentsEnabled() ? Payment::SETTLE_BOOKING : null,
             ];
 
             if ($payment) {

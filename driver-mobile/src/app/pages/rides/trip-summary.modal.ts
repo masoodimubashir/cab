@@ -16,11 +16,32 @@ import { ModalController } from '@ionic/angular';
 export class TripSummaryModal {
   @Input() trip: Record<string, unknown> | null = null;
   @Input() breakdown: Record<string, unknown> | null = null;
+  /** Left to collect after the rider's prepayment. 0 on a normal ride. */
+  @Input() balanceDue = 0;
 
   constructor(private modalCtrl: ModalController) {}
 
+  /** Did the ride cost more than the rider already paid? */
+  get hasBalance(): boolean {
+    return this.balanceDue > 0;
+  }
+
   get finalFare(): number {
     return Number(this.breakdown?.['final_fare'] ?? this.trip?.['final_fare'] ?? 0);
+  }
+
+  get commission(): number {
+    return Number(this.breakdown?.['commission_amount'] ?? 0);
+  }
+
+  /** What the driver takes home — the fare is the RIDER's number, not theirs. */
+  get driverNet(): number {
+    const net = this.breakdown?.['driver_net'];
+    return net != null ? Number(net) : Math.max(0, this.finalFare - this.commission);
+  }
+
+  get tollAmount(): number {
+    return Number(this.breakdown?.['toll_amount'] ?? 0);
   }
 
   get waitingCharge(): number {
