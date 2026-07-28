@@ -59,6 +59,20 @@ type ManifestPassenger = {
 
 type ManifestStop = { id: number; seq: number; name: string; lat: number; lng: number };
 
+/**
+ * What this trip pays the driver, from the server. `collect_cash` is the one
+ * that changes behaviour: once fares are paid online and split automatically,
+ * there is nothing to take at the kerb and the app must stop implying there is.
+ */
+type DriverPayout = {
+  fare: number;
+  commission: number;
+  net: number;
+  collect_cash: boolean;
+  prepaid: boolean;
+  label: string;
+};
+
 @Component({
   selector: 'app-rides',
   templateUrl: './rides.page.html',
@@ -81,6 +95,9 @@ export class RidesPage implements OnInit, OnDestroy {
   // Shared (fixed/shuttle) journey manifest — passengers + ordered stops.
   // Null for a private trip.
   sharedManifest: { route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] } | null = null;
+
+  /** Server's view of what this trip pays the driver. Null on older backends. */
+  driverPayout: DriverPayout | null = null;
 
   negotiation: Record<string, unknown> | null = null;
   counterAmount: number | null = null;
@@ -162,6 +179,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   get activePaymentLabel(): string {
+    if (this.driverPayout) return this.driverPayout.label;
     if (this.isShuttleTrip(this.lastTrip)) return 'PREPAID RAZORPAY';
     return (this.tripPaymentMethod || '—').toUpperCase();
   }
@@ -634,6 +652,7 @@ export class RidesPage implements OnInit, OnDestroy {
         trip?: Record<string, unknown>;
         negotiation?: Record<string, unknown>;
         negotiation_config?: { min_amount?: number; floor_percent?: number; estimated_fare?: number };
+        driver_payout?: DriverPayout;
       }>(
         `/trips/${id}/negotiation`
       )
@@ -641,6 +660,8 @@ export class RidesPage implements OnInit, OnDestroy {
         next: (res) => {
           this.lastTrip = res.trip || null;
           this.negotiation = res.negotiation || null;
+          // Absent on older backends — the card falls back to the fare alone.
+          this.driverPayout = res.driver_payout ?? null;
           // Latch the vehicle's reverse-bidding rule from the loaded trip.
           this.allowCountering = this.readReverseBidding(this.lastTrip);
           this.maybeRefreshManifest();
@@ -680,6 +701,16 @@ export class RidesPage implements OnInit, OnDestroy {
   get tripPaymentMethod(): PaymentMethod | null {
     const m = this.lastTrip?.['payment_method'];
     return m === 'cash' || m === 'razorpay' ? m : null;
+  }
+
+  /**
+   * Is there money to take at the kerb? The server decides — under the
+   * auto-split model the answer is always no, because the rider paid online and
+   * the driver's share is transferred to their bank after the ride.
+   */
+  get collectsCash(): boolean {
+    if (this.driverPayout) return this.driverPayout.collect_cash;
+    return this.tripPaymentMethod === 'cash';
   }
 
   get acceptsTripPayment(): boolean {
