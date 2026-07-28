@@ -168,8 +168,7 @@ export class AppComponent implements OnInit {
 
     if (can('safety'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
 
-    // --- Finance (money in, refunds out, financial health) ---
-    if (can('finance')) finance.push({ label: 'Overview',  icon: 'chart-line', route: '/finance/overview' });
+    // --- Finance (money in, refunds out) ---
     if (can('finance')) finance.push({ label: 'Payment In',  icon: 'rupee',      route: '/finance/money-in' });
     if (can('finance')) finance.push({ label: 'Refunds',   icon: 'send',       route: '/refunds' });
 

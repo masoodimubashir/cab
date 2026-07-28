@@ -1,5 +1,4 @@
 import { Component, OnInit } from '@angular/core';
-import { DevLocationService } from './core/dev-location.service';
 import { AuthService } from './core/auth.service';
 import { PushService } from './core/push.service';
 
@@ -10,17 +9,12 @@ import { PushService } from './core/push.service';
   standalone: false,
 })
 export class AppComponent implements OnInit {
-  showDevBadge = false;
-
   // Startup routing (session check + active-trip resume) lives in the splash
   // page, which is the app's root route — see pages/splash/splash.page.ts.
   constructor(
-    private devLocation: DevLocationService,
     private auth: AuthService,
     private push: PushService,
-  ) {
-    this.showDevBadge = this.devLocation.isEnabled();
-  }
+  ) {}
 
   ngOnInit(): void {
     // Re-register the FCM device token on every app open (not just at login),

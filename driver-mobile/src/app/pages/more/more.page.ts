@@ -33,7 +33,7 @@ export class MorePage {
   }
 
   goDocuments(): void {
-    this.router.navigateByUrl('/driver-registration');
+    this.router.navigateByUrl('/profile');
   }
 
   goPerformance(): void {

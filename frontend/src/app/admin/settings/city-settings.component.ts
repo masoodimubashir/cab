@@ -250,12 +250,189 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
 
         <!-- Sticky save bar -->
         <div class="savebar">
-          <span class="savebar__hint">Changes apply to the selected city only.</span>
-          <tm-button variant="green" icon="check" [disabled]="saving" (clicked)="save()">
-            {{ saving ? 'Saving…' : 'Save settings' }}
-          </tm-button>
+          <span class="savebar__hint">Changes apply to {{ currentCityName }} only.</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <tm-button variant="outline" icon="copy" (clicked)="openCopyModal()">
+              Copy settings
+            </tm-button>
+            <tm-button variant="green" icon="check" [disabled]="saving" (clicked)="save()">
+              {{ saving ? 'Saving…' : 'Save settings' }}
+            </tm-button>
+          </div>
         </div>
       </div>
+    </div>
+
+    <!-- Granular Copy Settings Modal -->
+    <div class="modal-backdrop" *ngIf="showCopyModal" (click)="closeCopyModal()"></div>
+    <div class="modal-card" *ngIf="showCopyModal">
+      <header class="modal-card__head">
+        <div>
+          <h3 class="modal-card__title">Copy Settings into {{ currentCityName }}</h3>
+          <p class="modal-card__sub">Pick a source city and choose specifically which setting categories to copy.</p>
+        </div>
+        <button type="button" class="modal-card__close" (click)="closeCopyModal()">×</button>
+      </header>
+
+      <div class="modal-card__body">
+        <div class="field">
+          <label class="field__lbl">Select Source City to copy FROM</label>
+          <select [ngModel]="sourceCityId" (ngModelChange)="onSourceCityChange($event)" class="modal-select">
+            <option [ngValue]="null" disabled>-- Choose a source city --</option>
+            <option *ngFor="let c of availableSourceCities" [ngValue]="c.id">
+              {{ c.name }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Loading spinner for preview -->
+        <div class="preview-loading" *ngIf="loadingSourcePreview">
+          <tm-icon name="refresh" [size]="16" /> Loading settings preview from selected city…
+        </div>
+
+        <!-- Live Preview Box -->
+        <div class="source-preview-box" *ngIf="sourceCityId && sourcePreview">
+          <div class="spb-head">
+            <span class="spb-title">Live Preview of Values from <strong>{{ sourcePreview.city_name }}</strong>:</span>
+          </div>
+
+          <div class="spb-content">
+            <!-- General & Contacts Preview -->
+            <div class="spb-group" *ngIf="copyOpts.general">
+              <span class="spb-lbl">⚙️ General & Contacts:</span>
+              <div class="spb-pills">
+                <span class="spb-pill">Chat: {{ sourcePreview.settings.chat_enabled ? 'ON' : 'OFF' }}</span>
+                <span class="spb-pill">Region Fares: {{ sourcePreview.settings.show_region_specific_fare ? 'ON' : 'OFF' }}</span>
+                <span class="spb-pill">Make/Model: {{ sourcePreview.settings.show_vehicle_make_model ? 'ON' : 'OFF' }}</span>
+                <span class="spb-pill" *ngIf="sourcePreview.settings.emergency_no">Emergency: {{ sourcePreview.settings.emergency_no }}</span>
+                <span class="spb-pill" *ngIf="sourcePreview.settings.driver_support_no">Driver Support: {{ sourcePreview.settings.driver_support_no }}</span>
+                <span class="spb-pill" *ngIf="sourcePreview.settings.support_email">Email: {{ sourcePreview.settings.support_email }}</span>
+              </div>
+            </div>
+
+            <!-- Private Taxi Preview -->
+            <div class="spb-group" *ngIf="copyOpts.private">
+              <span class="spb-lbl">🚕 Private Taxi Settings:</span>
+              <div class="spb-pills">
+                <span class="spb-pill">Commission: {{ sourcePreview.settings.commission_type === 'percent' ? sourcePreview.settings.commission_percent + '%' : '₹' + sourcePreview.settings.fixed_commission }}</span>
+                <span class="spb-pill">Floor Discount: {{ sourcePreview.settings.negotiation_floor_percent }}%</span>
+                <span class="spb-pill">Payments: {{ (sourcePreview.settings.allowed_driver_payment_modes || []).join(', ') || 'CASH' }}</span>
+                <span class="spb-pill">Tolls: {{ sourcePreview.settings.toll_mode }}</span>
+              </div>
+            </div>
+
+            <!-- Fixed Rides Preview -->
+            <div class="spb-group" *ngIf="copyOpts.fixed">
+              <span class="spb-lbl">📍 Fixed Route Settings:</span>
+              <div class="spb-pills">
+                <span class="spb-pill">Wait Time: {{ sourcePreview.settings.fixed_waiting_time_per_stop_minutes }} min</span>
+                <span class="spb-pill">Arrival Radius: {{ sourcePreview.settings.fixed_stop_arrival_radius_m }}m</span>
+                <span class="spb-pill">Dwell: {{ sourcePreview.settings.fixed_stop_arrival_dwell_seconds }}s</span>
+                <span class="spb-pill">Boarding: {{ sourcePreview.settings.fixed_boarding_confirmation_mode }}</span>
+              </div>
+            </div>
+
+            <!-- Shuttle Rides Preview -->
+            <div class="spb-group" *ngIf="copyOpts.shuttle">
+              <span class="spb-lbl">🚌 Shuttle Settings:</span>
+              <div class="spb-pills">
+                <span class="spb-pill">Match Radius: {{ sourcePreview.settings.shuttle_pickup_match_distance_km }} km</span>
+                <span class="spb-pill">Max Delay: {{ sourcePreview.settings.shuttle_max_passenger_delay_minutes }} min</span>
+                <span class="spb-pill">Fare Lock: {{ sourcePreview.settings.shuttle_fare_lock_enabled ? 'Yes' : 'No' }}</span>
+                <span class="spb-pill">Privacy: {{ sourcePreview.settings.shuttle_customer_privacy_rule }}</span>
+              </div>
+            </div>
+
+            <!-- Auto-Dispatcher Preview -->
+            <div class="spb-group" *ngIf="copyOpts.dispatchers">
+              <span class="spb-lbl">⚡ Auto-Dispatcher Rules:</span>
+              <div class="spb-pills">
+                <span class="spb-pill" *ngFor="let d of sourcePreview.dispatchers">
+                  {{ d.kind === 'outstation' ? 'Outstation' : 'Local' }}: {{ d.automatic_dispatcher_type ? 'Auto' : 'Manual' }} ({{ d.request_radius_m }}m radius, {{ d.max_hops }} hops)
+                </span>
+                <span class="spb-pill" *ngIf="!sourcePreview.dispatchers?.length">Default dispatcher rules</span>
+              </div>
+            </div>
+
+            <!-- Vehicle Types Preview -->
+            <div class="spb-group" *ngIf="copyOpts.vehicleTypes">
+              <span class="spb-lbl">🚘 Vehicle Types &amp; Pricing:</span>
+              <div class="spb-pills">
+                <span class="spb-pill" *ngFor="let v of sourcePreview.vehicle_types">
+                  {{ v.display_name }}: Base ₹{{ v.base_fare }}, Per KM ₹{{ v.per_km_rate }}
+                </span>
+                <span class="spb-pill" *ngIf="!sourcePreview.vehicle_types?.length">No custom vehicle types configured</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-quick-actions">
+          <span class="modal-section-label">Choose Sections to Copy:</span>
+          <div class="modal-quick-btns">
+            <button type="button" class="btn-text" (click)="toggleAllCopyOpts(true)">Select All</button>
+            <span>•</span>
+            <button type="button" class="btn-text" (click)="toggleAllCopyOpts(false)">Deselect All</button>
+          </div>
+        </div>
+
+        <div class="copy-opts-grid">
+          <label class="copy-opt-card" [class.is-selected]="copyOpts.general">
+            <input type="checkbox" [(ngModel)]="copyOpts.general" />
+            <div class="copy-opt-meta">
+              <span class="copy-opt-title">⚙️ General & Contacts</span>
+              <span class="copy-opt-desc">In-app chat, region fares, emergency/police/support phone numbers & emails.</span>
+            </div>
+          </label>
+
+          <label class="copy-opt-card" [class.is-selected]="copyOpts.private">
+            <input type="checkbox" [(ngModel)]="copyOpts.private" />
+            <div class="copy-opt-meta">
+              <span class="copy-opt-title">🚕 Private Taxi Settings</span>
+              <span class="copy-opt-desc">Commission %, floor discount %, payment modes (Cash/Razorpay), toll mode & cancellation rules.</span>
+            </div>
+          </label>
+
+          <label class="copy-opt-card" [class.is-selected]="copyOpts.fixed">
+            <input type="checkbox" [(ngModel)]="copyOpts.fixed" />
+            <div class="copy-opt-meta">
+              <span class="copy-opt-title">📍 Fixed Route Settings</span>
+              <span class="copy-opt-desc">Wait times per stop, arrival radiuses, dwell seconds, boarding confirmation mode.</span>
+            </div>
+          </label>
+
+          <label class="copy-opt-card" [class.is-selected]="copyOpts.shuttle">
+            <input type="checkbox" [(ngModel)]="copyOpts.shuttle" />
+            <div class="copy-opt-meta">
+              <span class="copy-opt-title">🚌 Shuttle Settings</span>
+              <span class="copy-opt-desc">Match distances, max passenger delay, fare lock, capacity source, privacy rules, payout share.</span>
+            </div>
+          </label>
+
+          <label class="copy-opt-card" [class.is-selected]="copyOpts.dispatchers">
+            <input type="checkbox" [(ngModel)]="copyOpts.dispatchers" />
+            <div class="copy-opt-meta">
+              <span class="copy-opt-title">⚡ Auto-Dispatcher Rules</span>
+              <span class="copy-opt-desc">Hop intervals, request radiuses, max hops, driver accept window & scheduled ride rules (Local & Outstation).</span>
+            </div>
+          </label>
+
+          <label class="copy-opt-card" [class.is-selected]="copyOpts.vehicleTypes">
+            <input type="checkbox" [(ngModel)]="copyOpts.vehicleTypes" />
+            <div class="copy-opt-meta">
+              <span class="copy-opt-title">🚘 Vehicle Types & Pricing</span>
+              <span class="copy-opt-desc">Vehicle categories (Hatchback/Sedan/SUV), base fares, per-km rates & minute rates.</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <footer class="modal-card__foot">
+        <tm-button variant="outline" (clicked)="closeCopyModal()">Cancel</tm-button>
+        <tm-button variant="green" icon="copy" [disabled]="!sourceCityId || copying" (clicked)="executeCopySettings()">
+          {{ copying ? 'Copying…' : 'Copy Selected Settings' }}
+        </tm-button>
+      </footer>
     </div>
   `,
   styles: [`
@@ -451,9 +628,79 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
       .rail__nav { flex-direction: row; flex-wrap: wrap; }
       .grid-3, .grid-4, .toggles, .media-grid { grid-template-columns: 1fr 1fr; }
     }
-    @media (max-width: 600px) {
-      .grid-2, .grid-3, .grid-4, .toggles, .media-grid { grid-template-columns: 1fr; }
+    /* Modal styles */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(4px); z-index: 998;
     }
+    .modal-card {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: min(640px, 92vw); max-height: 88vh;
+      background: var(--tm-surface); border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-lg, 14px); box-shadow: var(--tm-shadow-pop);
+      display: flex; flex-direction: column; z-index: 999; overflow: hidden;
+    }
+    .modal-card__head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding: 16px 20px; border-bottom: 1px solid var(--tm-line);
+    }
+    .modal-card__title { margin: 0; font-size: 16px; font-weight: 800; color: var(--tm-text); }
+    .modal-card__sub { margin: 4px 0 0; font-size: 12px; color: var(--tm-text-muted); }
+    .modal-card__close {
+      background: transparent; border: none; font-size: 20px; color: var(--tm-text-muted);
+      cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .modal-card__close:hover { color: var(--tm-text); }
+    .modal-card__body { padding: 18px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    .modal-card__foot {
+      padding: 12px 20px; border-top: 1px solid var(--tm-line);
+      display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+      background: var(--tm-canvas);
+    }
+    .modal-select {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--tm-line);
+      border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text);
+      font-size: 13.5px; font-weight: 700; outline: none;
+    }
+    .preview-loading {
+      display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700;
+      color: var(--tm-green); padding: 8px 12px; background: var(--tm-green-tint, #e0f7fa);
+      border-radius: 8px;
+    }
+    .source-preview-box {
+      background: var(--tm-canvas-2, #f8fafc); border: 1px solid var(--tm-line);
+      border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .spb-head { display: flex; align-items: center; justify-content: space-between; }
+    .spb-title { font-size: 12px; color: var(--tm-text); }
+    .spb-content { display: flex; flex-direction: column; gap: 8px; }
+    .spb-group { display: flex; flex-direction: column; gap: 4px; }
+    .spb-lbl { font-size: 11.5px; font-weight: 800; color: var(--tm-text); }
+    .spb-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .spb-pill {
+      font-size: 11px; font-weight: 700; color: var(--tm-text-muted);
+      background: var(--tm-surface); border: 1px solid var(--tm-line);
+      padding: 3px 8px; border-radius: 6px;
+    }
+    .modal-quick-actions { display: flex; align-items: center; justify-content: space-between; }
+    .modal-section-label { font-size: 12px; font-weight: 800; color: var(--tm-text); }
+    .modal-quick-btns { display: flex; align-items: center; gap: 6px; }
+    .btn-text { background: transparent; border: none; color: var(--tm-green); font-size: 12px; font-weight: 700; cursor: pointer; padding: 0; }
+    .btn-text:hover { text-decoration: underline; }
+    .copy-opts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .copy-opt-card {
+      display: flex; align-items: flex-start; gap: 10px; padding: 12px;
+      border: 1.5px solid var(--tm-line); border-radius: 10px;
+      background: var(--tm-canvas); cursor: pointer; transition: all 0.2s ease;
+    }
+    .copy-opt-card.is-selected {
+      border-color: var(--tm-green); background: var(--tm-green-tint, #e0f7fa);
+    }
+    .copy-opt-card input { margin-top: 2px; }
+    .copy-opt-meta { display: flex; flex-direction: column; gap: 2px; }
+    .copy-opt-title { font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .copy-opt-desc { font-size: 11px; color: var(--tm-text-muted); line-height: 1.35; }
+    @media (max-width: 600px) { .copy-opts-grid { grid-template-columns: 1fr; } }
   `],
 })
 export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -463,6 +710,20 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
   saving = false;
   dispatcherSettings: DispatcherSetting[] = [];
   activeDispatcherKind: 'local' | 'outstation' = 'local';
+
+  showCopyModal = false;
+  sourceCityId: number | null = null;
+  copying = false;
+  allCities: { id: number; name: string }[] = [];
+
+  copyOpts = {
+    general: true,
+    private: true,
+    fixed: true,
+    shuttle: true,
+    dispatchers: true,
+    vehicleTypes: true,
+  };
 
   paymentModeOptions = PAYMENT_MODE_OPTIONS;
   dispatchModes = DISPATCH_MODES;
@@ -481,6 +742,86 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     private cdr: ChangeDetectorRef,
   ) {}
 
+  sourcePreview: any = null;
+  loadingSourcePreview = false;
+
+  get availableSourceCities() {
+    return this.allCities.filter((c) => c.id !== this.cityId);
+  }
+
+  get currentCityName(): string {
+    return this.allCities.find((c) => c.id === this.cityId)?.name || 'Selected City';
+  }
+
+  openCopyModal(): void {
+    this.sourceCityId = null;
+    this.sourcePreview = null;
+    this.showCopyModal = true;
+  }
+
+  closeCopyModal(): void {
+    this.showCopyModal = false;
+    this.sourcePreview = null;
+  }
+
+  onSourceCityChange(sourceId: number | null): void {
+    this.sourceCityId = sourceId;
+    this.sourcePreview = null;
+    if (!sourceId) return;
+
+    this.loadingSourcePreview = true;
+    this.api.get<any>(`/admin/cities/${sourceId}/preview-settings`).subscribe({
+      next: (res) => {
+        this.loadingSourcePreview = false;
+        this.sourcePreview = res;
+      },
+      error: () => {
+        this.loadingSourcePreview = false;
+        this.toast.error('Failed to load settings preview for selected city');
+      },
+    });
+  }
+
+  toggleAllCopyOpts(select: boolean): void {
+    this.copyOpts = {
+      general: select,
+      private: select,
+      fixed: select,
+      shuttle: select,
+      dispatchers: select,
+      vehicleTypes: select,
+    };
+  }
+
+  executeCopySettings(): void {
+    if (!this.cityId || !this.sourceCityId || this.copying) return;
+    this.copying = true;
+
+    const payload = {
+      source_city_id: this.sourceCityId,
+      copy_general: this.copyOpts.general,
+      copy_private: this.copyOpts.private,
+      copy_fixed: this.copyOpts.fixed,
+      copy_shuttle: this.copyOpts.shuttle,
+      copy_dispatchers: this.copyOpts.dispatchers,
+      copy_vehicle_types: this.copyOpts.vehicleTypes,
+    };
+
+    this.api.post<{ settings: CitySettings; message: string }>(`/admin/cities/${this.cityId}/copy-settings`, payload).subscribe({
+      next: (res) => {
+        this.copying = false;
+        this.showCopyModal = false;
+        this.toast.success(res.message || 'Settings copied successfully');
+        this.fetch();
+        this.fetchDispatcherSettings();
+      },
+      error: (err) => {
+        this.copying = false;
+        this.toast.error(err?.error?.message || 'Failed to copy settings');
+      },
+    });
+  }
+
   ngOnInit(): void {
     this.cityCtx.ensureCitiesLoaded().subscribe();
     this.sub = this.cityCtx.cityId$.subscribe((id) => {
@@ -490,6 +831,9 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
         this.fetch();
         this.fetchDispatcherSettings();
       }
+    });
+    this.cityCtx.cities$.subscribe((list) => {
+      this.allCities = list || [];
     });
   }
 

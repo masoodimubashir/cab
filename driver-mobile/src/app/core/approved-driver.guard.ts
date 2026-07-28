@@ -63,7 +63,7 @@ export class ApprovedDriverGuard implements CanActivate {
   private toDecision(state: DriverState): boolean | UrlTree {
     if (state === 'approved') return true;
     if (state === 'pending') return this.router.parseUrl('/driver-pending-review');
-    return this.router.parseUrl('/driver-registration');
+    return this.router.parseUrl('/profile');
   }
 
   /**

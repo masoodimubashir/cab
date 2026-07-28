@@ -137,8 +137,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       title: 'Account',
       items: [
         { label: 'Performance', sub: 'Rating & trip metrics', icon: 'stats-chart-outline', path: '/performance' },
-        { label: 'Profile', sub: 'Name, email & photo', icon: 'person-outline', path: '/profile' },
-        { label: 'Documents', sub: 'Vehicle details & uploads', icon: 'document-text-outline', path: '/driver-registration' },
+        { label: 'Profile', sub: 'Name, vehicle & documents', icon: 'person-outline', path: '/profile' },
+        { label: 'Documents', sub: 'Verification & uploads', icon: 'document-text-outline', path: '/profile' },
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
         { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
       ],
@@ -711,7 +711,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         maximumAge: 4000,
         timeout: 15000,
       });
-      this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing, true);
+      if (fix) this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing, true);
     } catch (e) {
       this.error = `Could not read GPS: ${(e as Error)?.message || 'permission denied'}`;
     }
@@ -752,7 +752,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.locating = true;
     try {
       const fix = await this.geo.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
-      this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing, true);
+      if (fix) this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing, true);
     } catch (e) {
       this.error = `Could not read GPS: ${(e as Error)?.message || 'permission denied'}`;
     } finally {

@@ -107,7 +107,7 @@ export class AuthService {
       ['drivers', '/drivers'],
       ['customers', '/customers'],
       ['manual_dispatch', '/rides/manual-dispatch'],
-      ['finance', '/finance/overview'],
+      ['finance', '/finance/money-in'],
       ['analytics', '/analytics/real-time'],
       ['reports', '/analytics/reports'],
       ['live_operations', '/maps'],

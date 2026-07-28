@@ -40,11 +40,8 @@ const routes: Routes = [
   },
   {
     path: 'driver-registration',
-    loadChildren: () =>
-      import('./pages/driver-registration/driver-registration.module').then(
-        (m) => m.DriverRegistrationPageModule
-      ),
-    canActivate: [AuthGuard],
+    redirectTo: 'profile',
+    pathMatch: 'full',
   },
   {
     path: 'driver-pending-review',

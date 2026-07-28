@@ -65,7 +65,7 @@ export class DriverPendingReviewPage implements OnInit, OnDestroy {
           // Edge case: somehow they reached this page without uploading anything.
           // Send them back to the documents step.
           ApprovedDriverGuard.setStateRegistering();
-          this.router.navigateByUrl('/driver-registration', { replaceUrl: true });
+          this.router.navigateByUrl('/profile', { replaceUrl: true });
           return;
         }
         ApprovedDriverGuard.setStatePending();
@@ -82,9 +82,9 @@ export class DriverPendingReviewPage implements OnInit, OnDestroy {
     this.router.navigateByUrl('/auth/login', { replaceUrl: true });
   }
 
-  // Driver fixes a rejected doc → bounces them back to the documents step.
+  // Driver fixes a rejected doc → bounces them back to profile.
   // Approval check on the next /drivers/me brings them back here automatically.
   fixDocuments(): void {
-    this.router.navigateByUrl('/driver-registration', { replaceUrl: true });
+    this.router.navigateByUrl('/profile', { replaceUrl: true });
   }
 }

@@ -437,8 +437,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     const needsProfile = this.isSyntheticEmail(user.email) || !user.name || user.name === 'User';
     if (needsProfile) {
       ApprovedDriverGuard.setStateRegistering();
-      const profileDraft = this.draft.getProfile();
-      this.router.navigateByUrl(profileDraft ? '/driver-registration' : '/profile?next=registration', { replaceUrl: true });
+      this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
       return;
     }
 
@@ -457,7 +456,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
           this.router.navigateByUrl('/driver-pending-review', { replaceUrl: true });
         } else {
           ApprovedDriverGuard.setStateRegistering();
-          this.router.navigateByUrl('/driver-registration', { replaceUrl: true });
+          this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
         }
       },
       error: () => {
