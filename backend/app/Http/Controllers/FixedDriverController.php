@@ -270,6 +270,11 @@ class FixedDriverController extends Controller
                 ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
                 ->update(['trip_id' => $trip->id]);
 
+            // Phase 5 — these riders prepaid into a forming departure, so their
+            // mirrored payments have no trip yet. Attach them now that the vehicle
+            // journey exists. No-op while the split engine is disabled.
+            app(\App\Services\BookingPaymentService::class)->linkDepartureBookings($trip, $dep->id);
+
             $dep->update([
                 'trip_id' => $trip->id,
                 'driver_id' => $request->user()->id,

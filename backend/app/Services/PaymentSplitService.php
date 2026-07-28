@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LedgerEntry;
 use App\Models\Payment;
 use App\Models\Trip;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 

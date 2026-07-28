@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 class ShuttleRefundService
 {
+    public function __construct(
+        private readonly BookingPaymentService $bookingPayments,
+    ) {}
+
     public function cancelByCustomer(ShuttlePassengerBooking $booking, ?string $reason = null): array
     {
         return DB::transaction(function () use ($booking, $reason) {
@@ -39,7 +43,7 @@ class ShuttleRefundService
                 ]);
             }
 
-            $this->markCancelled($locked, $reason);
+            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER);
 
             return [
                 'booking' => $locked->fresh(['journey:id,status,capacity,seats_taken,trip_id']),
@@ -69,7 +73,7 @@ class ShuttleRefundService
 
             foreach ($bookings as $booking) {
                 $booking->setRelation('journey', $journey);
-                $this->markCancelled($booking, $reason);
+                $this->markCancelled($booking, $reason, AutoRefundService::BY_OPERATOR);
             }
         });
     }
@@ -86,6 +90,10 @@ class ShuttleRefundService
             if (!in_array($locked->status, ['CONFIRMED', 'BOARDED'], true)) {
                 throw new ReservationException('This Shuttle booking cannot be marked no-show.', 422);
             }
+
+            // R7 — the customer didn't board: nothing is refunded and the forfeited
+            // fare is booked to the operator so the journey's ledger still closes.
+            $this->autoRefunded($locked, false, AutoRefundService::BY_CUSTOMER);
 
             $locked->update([
                 'status' => 'NO_SHOW',
@@ -123,20 +131,34 @@ class ShuttleRefundService
         });
     }
 
-    private function markCancelled(ShuttlePassengerBooking $booking, ?string $reason): void
+    private function markCancelled(ShuttlePassengerBooking $booking, ?string $reason, string $cancelledBy = AutoRefundService::BY_SYSTEM): void
     {
         $refundStatus = $booking->payment_status === 'PAID' ? 'APPROVED' : 'NONE';
+        $paymentStatus = $booking->payment_status;
+
+        // R6 — a Shuttle booking is always cancelled before the journey completes,
+        // so its split never settled and the driver was never paid: the whole
+        // prepayment goes straight back to the customer through the shared engine.
+        // Falls through to the legacy manual register when the engine is off.
+        if ($refundStatus === 'APPROVED' && $this->autoRefunded($booking, true, $cancelledBy)) {
+            $refundStatus = 'REFUNDED';
+            $paymentStatus = 'REFUNDED';
+        }
 
         $booking->update([
             'status' => 'CANCELLED',
             'cancelled_at' => now(),
             'cancelled_reason' => $reason,
             'refund_status' => $refundStatus,
+            'payment_status' => $paymentStatus,
             // APPROVED = owed; record how much so the Refunds register can
             // lock the amount when the operator marks it paid.
-            'refund_amount' => $refundStatus === 'APPROVED'
+            'refund_amount' => in_array($refundStatus, ['APPROVED', 'REFUNDED'], true)
                 ? ($booking->refund_amount ?? (float) $booking->fare_amount)
                 : $booking->refund_amount,
+            'refunded_at' => $refundStatus === 'REFUNDED'
+                ? ($booking->refunded_at ?? now())
+                : $booking->refunded_at,
         ]);
 
         if ($booking->journey) {
@@ -145,5 +167,24 @@ class ShuttleRefundService
                 'status' => 'CANCELLED',
             ]);
         }
+    }
+
+    /**
+     * Runs the shared seat-release rulebook against the prepayment mirrored for
+     * this booking at confirmation, keyed by its Razorpay payment id. Returns true
+     * only when the engine actually settled it (refunded, in flight, or already
+     * done) — false means the caller should keep the legacy manual-register path.
+     */
+    private function autoRefunded(ShuttlePassengerBooking $booking, bool $refundFull, string $cancelledBy): bool
+    {
+        $paymentId = (string) ($booking->razorpay_payment_id ?: $booking->payment_reference);
+        if ($paymentId === '') {
+            return false;
+        }
+
+        $outcome = $this->bookingPayments->refundForBooking($paymentId, $refundFull, $cancelledBy);
+
+        return $outcome !== null
+            && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true);
     }
 }

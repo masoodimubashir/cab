@@ -17,7 +17,6 @@ class TripStateMachineService
         private CommissionSettlementService $commissionSettlementService,
         private MessageTemplateService $messageTemplates,
         private AutoRefundService $autoRefunds,
-        private BookingPaymentService $bookingPayments,
     ) {
     }
 
@@ -105,13 +104,9 @@ class TripStateMachineService
         // On completion, settle the operator's commission (honouring any
         // active subscription) and draw down the driver's subscription usage.
         if ($to === 'COMPLETED') {
+            // settle() also runs the Phase 5 booking-payment split for Fixed and
+            // Shuttle prepayments riding on this trip.
             $this->commissionSettlementService->settle($trip);
-
-            // Now that the driver is known and the ride happened, settle any
-            // Fixed/Shuttle prepayments on this trip through the shared engine:
-            // divide each into the driver's Route share and the operator's
-            // commission. No-op while the split engine is disabled.
-            $this->bookingPayments->settleTrip($trip);
         }
 
         // On cancellation of a solo ride, run the automatic refund rulebook
