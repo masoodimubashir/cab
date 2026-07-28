@@ -138,14 +138,9 @@ export const routes: Routes = [
     data: { permission: 'finance' },
   },
 
-  // B6 — Finance: money-in ledger + financial-health overview.
-  { path: 'finance', redirectTo: 'finance/overview', pathMatch: 'full' },
-  {
-    path: 'finance/overview',
-    loadComponent: () => import('./admin/finance/finance-overview.component').then((m) => m.FinanceOverviewComponent),
-    canActivate: [adminAuthGuard],
-    data: { permission: 'finance' },
-  },
+  // B6 — Finance: money-in ledger (overview screen removed per operator request).
+  { path: 'finance', redirectTo: 'finance/money-in', pathMatch: 'full' },
+  { path: 'finance/overview', redirectTo: 'finance/money-in', pathMatch: 'full' },
   {
     path: 'finance/money-in',
     loadComponent: () => import('./admin/finance/finance-money-in.component').then((m) => m.FinanceMoneyInComponent),

@@ -1,3 +1,65 @@
+/* ---------------------------------------------------------- header action */
+.header-refresh-btn {
+  --background: transparent;
+  --background-hover: rgba(255, 255, 255, 0.15);
+  --background-focused: rgba(255, 255, 255, 0.15);
+  --background-activated: rgba(255, 255, 255, 0.2);
+  --box-shadow: none;
+  --border-radius: 50%;
+  --padding-start: 0;
+  --padding-end: 0;
+  color: #fff;
+  font-size: 1.25rem;
+  width: 38px;
+  height: 38px;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------- segment switcher */
+.segment-wrap {
+  margin: 16px 16px 20px;
+}
+
+.segment-bar {
+  display: flex;
+  background: #EBF0F5;
+  padding: 4px;
+  border-radius: 16px;
+  gap: 4px;
+}
+
+.seg-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted, #6C757D);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+
+  ion-icon {
+    font-size: 17px;
+  }
+
+  &.is-active {
+    background: #fff;
+    color: var(--text-main, #0D1B2A);
+    box-shadow: 0 4px 12px rgba(13, 27, 42, 0.08);
+
+    ion-icon {
+      color: var(--ion-color-primary, #12B35B);
+    }
+  }
+}
+
 /* ---------------------------------------------------------- profile header */
 .pf-head {
   display: flex;
@@ -62,11 +124,9 @@
   color: var(--text-muted, #6C757D);
 }
 
-/* Driver status chip sits a touch tighter under the name. */
 .pf-head .drv-status {
   margin-top: 2px;
 }
-
 
 .pf-service {
   display: flex;
@@ -164,9 +224,6 @@
   &:disabled { opacity: 0.65; }
 }
 
-/* Locked (read-only) value display in edit mode. */
-/* ----------------------------------------------- locked / verified info card */
-/* dc-list rows are read-only here — neutralise the tap affordance. */
 .pf-locked .dc-list { box-shadow: none; }
 
 .pf-row {
@@ -185,7 +242,6 @@
     white-space: nowrap;
   }
 }
-
 
 .pf-address-input {
   position: relative;
@@ -217,10 +273,8 @@
 
 .pf-field--address {
   scroll-margin-bottom: 46vh;
+  position: relative;
 }
-
-/* --------------------------------------------------------- address suggest */
-.pf-field--address { position: relative; }
 
 .pf-suggestions {
   margin: 8px 0 0;
@@ -278,7 +332,6 @@
   font-style: italic;
 }
 
-/* -------------------------------------------------------------- error + cta */
 .pf-error {
   display: flex;
   align-items: center;
@@ -298,6 +351,149 @@
   margin-top: 22px;
 }
 
+/* Document cards & Read-only View Labels */
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.doc-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.doc-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  strong { font-size: 0.95rem; font-weight: 800; color: var(--text-main, #0D1B2A); }
+}
+
+.doc-card__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(18, 179, 91, 0.1);
+  color: var(--ion-color-primary, #12B35B);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  ion-icon { font-size: 18px; }
+}
+
+.doc-view-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: #F8FAFC;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+}
+
+.doc-view-label-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+
+  &__key {
+    color: var(--text-muted, #6C757D);
+    font-weight: 600;
+  }
+  &__val {
+    color: var(--text-main, #0D1B2A);
+    font-weight: 700;
+  }
+}
+
+.doc-card__images {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.doc-image {
+  padding: 12px;
+  border-radius: 14px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.doc-image__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.doc-image__title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted, #6C757D);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+
+  ion-icon { font-size: 13px; }
+
+  &--ok { background: rgba(18, 179, 91, 0.12); color: #12B35B; }
+  &--pending { background: rgba(245, 158, 11, 0.12); color: #D97706; }
+  &--bad { background: rgba(239, 68, 68, 0.12); color: #EF4444; }
+}
+
+.doc-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-preview__date {
+  font-size: 0.72rem;
+  color: var(--text-muted, #6C757D);
+  margin-left: auto;
+}
+
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-main, #0D1B2A);
+  cursor: pointer;
+
+  ion-icon { font-size: 15px; }
+
+  &--danger {
+    color: #EF4444;
+    border-color: rgba(239, 68, 68, 0.2);
+    background: rgba(239, 68, 68, 0.04);
+  }
+}
 
 /* ------------------------------------------------------------- map picker */
 .pf-map-content {

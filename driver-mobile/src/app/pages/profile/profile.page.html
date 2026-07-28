@@ -7,197 +7,352 @@
       <span class="b-white">Dream</span><span class="b-green">Cabs</span>
     </ion-title>
     <ion-buttons slot="end" *ngIf="!onboarding">
-      <ion-button class="pg-action" (click)="reload()" aria-label="Reload">
-        <ion-icon name="refresh-outline" slot="start"></ion-icon>
-        Refresh
+      <ion-button class="header-refresh-btn" (click)="reloadAll()" aria-label="Reload profile">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
 <ion-content class="pg-content">
+  <!-- Hero Section -->
   <div class="pg-hero">
-    <h1 class="pg-title">{{ onboarding ? 'Set up your profile' : 'Profile' }}</h1>
+    <h1 class="pg-title">{{ onboarding ? 'Set up your profile' : 'Driver Profile' }}</h1>
     <p class="pg-subtitle">
       {{ onboarding
-          ? 'Tell us who you are. You can update this later from the More tab.'
-          : 'Manage your photo and personal details.' }}
+          ? 'Tell us who you are and save your personal details.'
+          : 'Manage your profile details, view vehicle configuration &amp; verification documents.' }}
     </p>
+  </div>
+
+  <!-- 3-Tab Segment Switcher -->
+  <div class="segment-wrap" *ngIf="!onboarding">
+    <div class="segment-bar">
+      <button
+        type="button"
+        class="seg-btn"
+        [class.is-active]="activeSegment === 'profile'"
+        (click)="switchSegment('profile')"
+      >
+        <ion-icon name="person-circle-outline"></ion-icon>
+        <span>Profile</span>
+      </button>
+
+      <button
+        type="button"
+        class="seg-btn"
+        [class.is-active]="activeSegment === 'vehicle'"
+        (click)="switchSegment('vehicle')"
+      >
+        <ion-icon name="car-sport-outline"></ion-icon>
+        <span>Vehicle &amp; Service</span>
+      </button>
+
+      <button
+        type="button"
+        class="seg-btn"
+        [class.is-active]="activeSegment === 'documents'"
+        (click)="switchSegment('documents')"
+      >
+        <ion-icon name="document-text-outline"></ion-icon>
+        <span>Documents</span>
+      </button>
+    </div>
   </div>
 
   <div class="pg-body pg-anim-body">
 
-    <!-- Profile header card: avatar (with edit) + name + driver status -->
-    <div class="pg-card pf-head">
-      <label class="pf-avatar dc-press">
-        <img
-          class="pf-avatar__img"
-          [src]="photoPreview || defaultAvatar"
-          (error)="onPhotoError($event)"
-          alt=""
-        />
-        <span class="pf-avatar__edit"><ion-icon name="camera-outline"></ion-icon></span>
-        <input type="file" accept="image/*" hidden (change)="onPhotoChange($event)" [disabled]="busy" />
-      </label>
-      <div class="pf-head__meta">
-        <strong class="pf-head__name">{{ name || 'Your name' }}</strong>
-        <small class="pf-head__sub" *ngIf="phone">{{ phone }}</small>
-        <small class="pf-head__sub" *ngIf="onboarding && !phone">Add a photo &amp; your details</small>
-        <span class="drv-status" *ngIf="!onboarding">
-          <span class="drv-status__dot"></span>Driver account
-        </span>
-      </div>
+    <!-- Messages / Alerts -->
+    <div class="pf-message" *ngIf="message">
+      <ion-icon name="checkmark-circle-outline"></ion-icon>
+      <span>{{ message }}</span>
     </div>
-
-    <div class="pg-card pf-service" *ngIf="!onboarding">
-      <div class="pf-service__icon"><ion-icon name="briefcase-outline"></ion-icon></div>
-      <div class="pf-service__text">
-        <strong>Registered service</strong>
-        <small>{{ registeredServiceLoading ? 'Loading…' : registeredServiceLabel }}</small>
-      </div>
-      <ion-icon class="pf-service__lock" name="lock-closed-outline"></ion-icon>
-    </div>
-
-    <!-- Personal details -->
-    <div class="pg-card pf-form">
-      <div class="pg-card__head" *ngIf="!onboarding">
-        <div class="pg-card__icon"><ion-icon name="person-circle-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Your details</h2>
-      </div>
-
-      <label class="pf-field">
-        <span class="pf-field__label">Name <em>*</em></span>
-        <input
-          class="pf-input"
-          [(ngModel)]="name"
-          [disabled]="busy"
-          autocomplete="name"
-          placeholder="Full name"
-          required
-        />
-      </label>
-
-      <label class="pf-field">
-        <span class="pf-field__label">
-          Email <em *ngIf="onboarding">*</em><small *ngIf="!onboarding">(optional)</small>
-        </span>
-        <input
-          class="pf-input"
-          type="email"
-          [(ngModel)]="email"
-          [disabled]="busy"
-          [required]="onboarding"
-          autocomplete="email"
-          placeholder="you@example.com"
-        />
-      </label>
-
-      <!-- Onboarding (editable): native date picker + Places autocomplete -->
-      <ng-container *ngIf="onboarding">
-        <label class="pf-field">
-          <span class="pf-field__label">Date of birth <em>*</em></span>
-          <input
-            class="pf-input"
-            type="date"
-            [(ngModel)]="dob"
-            [max]="maxDob"
-            [disabled]="busy"
-            required
-          />
-        </label>
-
-        <div class="pf-field pf-field--address" #addressFieldWrap>
-          <span class="pf-field__label">Address <em>*</em></span>
-          <div class="pf-address-input">
-            <input
-              class="pf-input"
-              type="text"
-              [(ngModel)]="addressQuery"
-              (input)="onAddressQueryChange($any($event.target).value)"
-              (focus)="scrollAddressFieldIntoView()"
-              [disabled]="busy"
-              placeholder="Search your address"
-              autocomplete="street-address"
-              required
-            />
-            <button
-              type="button"
-              class="pf-map-btn dc-press"
-              (click)="openAddressMap()"
-              [disabled]="busy"
-              aria-label="Pick address from map"
-            >
-              <ion-icon name="map-outline"></ion-icon>
-            </button>
-          </div>
-          <ul class="pf-suggestions" *ngIf="addressSuggestions.length && !address">
-            <li
-              *ngFor="let s of addressSuggestions"
-              class="pf-suggestion dc-press"
-              (click)="pickAddress(s)"
-            >
-              <ion-icon name="location-outline"></ion-icon>
-              <div class="pf-suggestion__text">
-                <span class="pf-suggestion__main">{{ s.main_text }}</span>
-                <span class="pf-suggestion__sub" *ngIf="s.secondary_text">{{ s.secondary_text }}</span>
-              </div>
-            </li>
-          </ul>
-          <div class="pf-searching" *ngIf="!addressSuggestions.length && addressLoading">Searching…</div>
-        </div>
-      </ng-container>
-    </div>
-
-    <!-- Edit mode (locked): captured once at signup, not editable later -->
-    <div class="pg-card pf-locked" *ngIf="!onboarding">
-      <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Verified information</h2>
-      </div>
-
-      <div class="dc-list">
-        <div class="dc-row pf-row">
-          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="calendar-outline"></ion-icon></span>
-          <span class="dc-row__text">
-            <strong>Date of birth</strong>
-            <small>{{ dobDisplay || '—' }}</small>
-          </span>
-          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
-        </div>
-
-        <div class="dc-row pf-row">
-          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="location-outline"></ion-icon></span>
-          <span class="dc-row__text">
-            <strong>Address</strong>
-            <small>{{ address || '—' }}</small>
-          </span>
-          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
-        </div>
-
-        <div class="dc-row pf-row" *ngIf="phone">
-          <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="call-outline"></ion-icon></span>
-          <span class="dc-row__text">
-            <strong>Phone</strong>
-            <small>{{ phone }}</small>
-          </span>
-          <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
-        </div>
-      </div>
-    </div>
-
     <div class="pf-error" *ngIf="error">
       <ion-icon name="alert-circle-outline"></ion-icon>
       <span>{{ error }}</span>
     </div>
 
-    <button class="dc-cta pf-save" (click)="submit()" [disabled]="busy">
-      <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
-      {{ busy ? 'Saving…' : (onboarding ? 'Continue' : 'Save changes') }}
-    </button>
+    <!-- ==================== TAB 1: PROFILE DETAILS ==================== -->
+    <ng-container *ngIf="activeSegment === 'profile' || onboarding">
+      <div class="pg-card pf-head">
+        <label class="pf-avatar dc-press">
+          <img
+            class="pf-avatar__img"
+            [src]="photoPreview || defaultAvatar"
+            (error)="onPhotoError($event)"
+            alt=""
+          />
+          <span class="pf-avatar__edit"><ion-icon name="camera-outline"></ion-icon></span>
+          <input type="file" accept="image/*" hidden (change)="onPhotoChange($event)" [disabled]="busy" />
+        </label>
+        <div class="pf-head__meta">
+          <strong class="pf-head__name">{{ name || 'Your name' }}</strong>
+          <small class="pf-head__sub" *ngIf="phone">{{ phone }}</small>
+          <span class="drv-status" *ngIf="!onboarding">
+            <span class="drv-status__dot" [class.is-approved]="driverApproved"></span>
+            {{ driverApproved ? 'Verified Driver' : 'Account under review' }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Personal Details Form -->
+      <div class="pg-card pf-form">
+        <div class="pg-card__head" *ngIf="!onboarding">
+          <div class="pg-card__icon"><ion-icon name="person-circle-outline"></ion-icon></div>
+          <h2 class="pg-card__title">Personal Details</h2>
+        </div>
+
+        <label class="pf-field">
+          <span class="pf-field__label">Name <em>*</em></span>
+          <input
+            class="pf-input"
+            [(ngModel)]="name"
+            [disabled]="busy"
+            autocomplete="name"
+            placeholder="Full name"
+            required
+          />
+        </label>
+
+        <label class="pf-field">
+          <span class="pf-field__label">
+            Email <em *ngIf="onboarding">*</em><small *ngIf="!onboarding">(optional)</small>
+          </span>
+          <input
+            class="pf-input"
+            type="email"
+            [(ngModel)]="email"
+            [disabled]="busy"
+            [required]="onboarding"
+            autocomplete="email"
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <!-- Onboarding: date picker + Places autocomplete -->
+        <ng-container *ngIf="onboarding">
+          <label class="pf-field">
+            <span class="pf-field__label">Date of birth <em>*</em></span>
+            <input
+              class="pf-input"
+              type="date"
+              [(ngModel)]="dob"
+              [max]="maxDob"
+              [disabled]="busy"
+              required
+            />
+          </label>
+
+          <div class="pf-field pf-field--address" #addressFieldWrap>
+            <span class="pf-field__label">Address <em>*</em></span>
+            <div class="pf-address-input">
+              <input
+                class="pf-input"
+                type="text"
+                [(ngModel)]="addressQuery"
+                (input)="onAddressQueryChange($any($event.target).value)"
+                (focus)="scrollAddressFieldIntoView()"
+                [disabled]="busy"
+                placeholder="Search your address"
+                autocomplete="street-address"
+                required
+              />
+              <button
+                type="button"
+                class="pf-map-btn dc-press"
+                (click)="openAddressMap()"
+                [disabled]="busy"
+                aria-label="Pick address from map"
+              >
+                <ion-icon name="map-outline"></ion-icon>
+              </button>
+            </div>
+            <ul class="pf-suggestions" *ngIf="addressSuggestions.length && !address">
+              <li
+                *ngFor="let s of addressSuggestions"
+                class="pf-suggestion dc-press"
+                (click)="pickAddress(s)"
+              >
+                <ion-icon name="location-outline"></ion-icon>
+                <div class="pf-suggestion__text">
+                  <span class="pf-suggestion__main">{{ s.main_text }}</span>
+                  <span class="pf-suggestion__sub" *ngIf="s.secondary_text">{{ s.secondary_text }}</span>
+                </div>
+              </li>
+            </ul>
+            <div class="pf-searching" *ngIf="!addressSuggestions.length && addressLoading">Searching…</div>
+          </div>
+        </ng-container>
+      </div>
+
+      <!-- Verified Personal Information Card -->
+      <div class="pg-card pf-locked" *ngIf="!onboarding">
+        <div class="pg-card__head">
+          <div class="pg-card__icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+          <h2 class="pg-card__title">Verified Information</h2>
+        </div>
+
+        <div class="dc-list">
+          <div class="dc-row pf-row">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="calendar-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Date of Birth</strong>
+              <small>{{ dobDisplay || '—' }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+
+          <div class="dc-row pf-row">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="location-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Address</strong>
+              <small>{{ address || '—' }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+
+          <div class="dc-row pf-row" *ngIf="phone">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="call-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Phone Number</strong>
+              <small>{{ phone }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+        </div>
+      </div>
+
+      <button class="dc-cta pf-save" (click)="submitProfile()" [disabled]="busy">
+        <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
+        {{ busy ? 'Saving…' : (onboarding ? 'Continue' : 'Save Personal Details') }}
+      </button>
+    </ng-container>
+
+    <!-- ==================== TAB 2: VEHICLE & SERVICE (READ-ONLY) ==================== -->
+    <ng-container *ngIf="activeSegment === 'vehicle' && !onboarding">
+      <div class="pg-card pf-registered-card">
+        <div class="pg-card__head">
+          <div class="pg-card__icon"><ion-icon name="car-sport-outline"></ion-icon></div>
+          <h2 class="pg-card__title">Registered Vehicle &amp; Service</h2>
+        </div>
+
+        <div class="dc-list">
+          <!-- Service City & Scope -->
+          <div class="dc-row pf-row">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="location-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Service City &amp; Scope</strong>
+              <small>{{ cityNameDisplay }} · {{ serviceScopeDisplay }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+
+          <!-- Registered Service Type -->
+          <div class="dc-row pf-row">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon [name]="serviceModeIcon"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Service Type</strong>
+              <small>{{ serviceModeDisplay }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+
+          <!-- Assigned Fleet -->
+          <div class="dc-row pf-row">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="business-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Assigned Fleet</strong>
+              <small>{{ fleetNameDisplay }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+
+          <!-- Vehicle Model -->
+          <div class="dc-row pf-row" *ngIf="vehicle_type_id || selectedCityVehicleOpt">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="car-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Vehicle Model</strong>
+              <small>{{ selectedVehicleTypeOpt?.name || 'Vehicle' }} <ng-container *ngIf="selectedCityVehicleOpt">({{ selectedCityVehicleOpt.display_name }})</ng-container></small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+
+          <!-- Vehicle Details (Registration, Color, Model Year) -->
+          <div class="dc-row pf-row" *ngIf="vehicle_reg_no || vehicle_color || vehicle_model_year">
+            <span class="dc-row__icon dc-row__icon--muted"><ion-icon name="construct-outline"></ion-icon></span>
+            <span class="dc-row__text">
+              <strong>Registration &amp; Specs</strong>
+              <small>{{ vehicle_reg_no || 'No Reg No' }} · {{ vehicle_color || 'Color' }} · {{ vehicle_model_year || 'Year' }}</small>
+            </span>
+            <ion-icon class="pf-row__lock" name="lock-closed-outline"></ion-icon>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- ==================== TAB 3: VERIFICATION DOCUMENTS (READ-ONLY VIEW) ==================== -->
+    <ng-container *ngIf="activeSegment === 'documents' && !onboarding">
+      <div class="doc-list pg-anim-body">
+        <div class="pg-card doc-card" *ngFor="let slot of docs">
+
+          <div class="doc-card__head">
+            <div class="doc-card__title">
+              <div class="doc-card__icon"><ion-icon name="document-text-outline"></ion-icon></div>
+              <strong>{{ slot.doc.name }}</strong>
+            </div>
+          </div>
+
+          <!-- Label Values View (e.g. License Number, Expiry Date) -->
+          <div class="doc-view-labels" *ngIf="slot.doc.labels.length">
+            <div class="doc-view-label-item" *ngFor="let l of slot.doc.labels">
+              <span class="doc-view-label-item__key">{{ l.label }}:</span>
+              <strong class="doc-view-label-item__val">{{ slot.labelValues[l.label] || '—' }}</strong>
+            </div>
+          </div>
+
+          <!-- Uploaded Images & Action Buttons (View & Download) -->
+          <div class="doc-card__images">
+            <div class="doc-image" *ngFor="let image of slot.uploads">
+              <div class="doc-image__head">
+                <span class="doc-image__title">Image {{ image.index }} / {{ slot.doc.no_of_images }}</span>
+                <ng-container *ngIf="image.existing as ex">
+                  <span *ngIf="ex.status === 'approved'" class="badge badge--ok">
+                    <ion-icon name="checkmark-circle"></ion-icon>Approved
+                  </span>
+                  <span *ngIf="ex.status === 'uploaded'" class="badge badge--pending">
+                    <ion-icon name="time-outline"></ion-icon>Pending
+                  </span>
+                  <span *ngIf="ex.status === 'rejected'" class="badge badge--bad">
+                    <ion-icon name="close-circle"></ion-icon>Rejected
+                  </span>
+                </ng-container>
+                <span *ngIf="!image.existing" class="badge badge--pending">
+                  <ion-icon name="help-circle-outline"></ion-icon>Not Uploaded
+                </span>
+              </div>
+
+              <!-- Document File Actions -->
+              <div class="doc-preview" *ngIf="image.existing as ex">
+                <button type="button" class="ghost-btn dc-press" (click)="viewDoc(image)">
+                  <ion-icon name="eye-outline"></ion-icon>View Document
+                </button>
+                <button type="button" class="ghost-btn dc-press" (click)="downloadDoc(image)">
+                  <ion-icon name="download-outline"></ion-icon>Download
+                </button>
+                <span class="doc-preview__date" *ngIf="ex.uploaded_at">
+                  Uploaded {{ ex.uploaded_at | date:'dd MMM yyyy' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ng-container>
 
   </div>
 </ion-content>
 
+<!-- Google Map Address Picker Modal -->
 <ion-modal [isOpen]="mapPickerOpen" (didDismiss)="closeAddressMap()" cssClass="pf-map-modal">
   <ng-template>
     <ion-header class="ion-no-border">
@@ -207,7 +362,7 @@
             <ion-icon name="close-outline" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title class="pg-brandtitle">Pick address</ion-title>
+        <ion-title class="pg-brandtitle">Pick Address</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -220,7 +375,7 @@
         </div>
       </div>
       <div class="pf-map-summary">
-        <strong>Selected address</strong>
+        <strong>Selected Address</strong>
         <p>{{ mapSelectedAddress || 'Tap the map to choose your address.' }}</p>
         <small *ngIf="mapError">{{ mapError }}</small>
       </div>

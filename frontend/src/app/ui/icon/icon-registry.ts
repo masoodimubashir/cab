@@ -12,11 +12,12 @@ export type IconName =
   | 'search' | 'bell' | 'chevron-down' | 'chevron-right' | 'chevron-left'
   | 'chevron-up' | 'menu' | 'x' | 'plus' | 'check' | 'arrow-right'
   | 'filter' | 'calendar' | 'pin' | 'phone' | 'star' | 'eye' | 'edit'
-  | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal'
+  | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal' | 'copy'
   | 'road' | 'driver-helmet' | 'rupee' | 'handshake' | 'key'
   | 'expand' | 'compress' | 'grid';
 
 export const ICONS: Record<IconName, string> = {
+  'copy': '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   'home': '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/>',
   'map': '<path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3-6-3z"/><path d="M9 3v15"/><path d="M15 6v15"/>',
   'map-marker': '<path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/>',

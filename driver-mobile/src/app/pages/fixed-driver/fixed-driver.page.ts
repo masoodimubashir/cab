@@ -165,7 +165,7 @@ export class FixedDriverPage {
   private async actionCoords(): Promise<{ lat?: number; lng?: number }> {
     try {
       const fix = await this.geo.getCurrentPosition({ timeout: 8000, maximumAge: 15000 });
-      return { lat: fix.lat, lng: fix.lng };
+      return fix ? { lat: fix.lat, lng: fix.lng } : {};
     } catch {
       return {};
     }

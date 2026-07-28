@@ -48,11 +48,7 @@ export class SplashPage implements OnInit {
 
     const roles = this.auth.getUser()?.roles ?? [];
     if (!roles.includes('driver')) {
-      if (this.draft.getProfile() || this.draft.getRegistration()) {
-        void this.router.navigateByUrl(this.draft.getProfile() ? '/driver-registration' : '/profile?next=registration', { replaceUrl: true });
-      } else {
-        void this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
-      }
+      void this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
       return;
     }
 

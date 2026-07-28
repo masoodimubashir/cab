@@ -244,7 +244,7 @@ export class RidesPage implements OnInit, OnDestroy {
         timeout: 5000,
         maximumAge: 10_000,
       });
-      return { lat: fix.lat, lng: fix.lng };
+      return fix ? { lat: fix.lat, lng: fix.lng } : null;
     } catch {
       return null;
     }

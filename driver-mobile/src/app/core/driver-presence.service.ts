@@ -92,8 +92,10 @@ export class DriverPresenceService {
         maximumAge: 0,
         timeout: 20000,
       });
-      this.notifyLocated(fix);
-      this.postLocation(fix);
+      if (fix) {
+        this.notifyLocated(fix);
+        this.postLocation(fix);
+      }
     } catch (err) {
       this.handlePositionError(err, 'initial');
     }

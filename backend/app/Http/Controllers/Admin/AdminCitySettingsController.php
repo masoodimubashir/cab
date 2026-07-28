@@ -124,6 +124,132 @@ class AdminCitySettingsController
         ]);
     }
 
+    public function preview(City $city)
+    {
+        $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id])->fresh();
+        $dispatchers = \App\Models\DispatcherSetting::query()->where('city_id', $city->id)->get();
+        $vehicleTypes = \App\Models\CityVehicleType::query()->where('city_id', $city->id)->get();
+
+        return response()->json([
+            'city_id' => $city->id,
+            'city_name' => $city->name,
+            'settings' => $this->shape($settings),
+            'dispatchers' => $dispatchers,
+            'vehicle_types' => $vehicleTypes,
+        ]);
+    }
+
+    public function copySettings(Request $request, City $city)
+    {
+        $data = $request->validate([
+            'source_city_id' => ['required', 'integer', 'exists:cities,id', 'different:city'],
+            'copy_general' => ['nullable', 'boolean'],
+            'copy_private' => ['nullable', 'boolean'],
+            'copy_fixed' => ['nullable', 'boolean'],
+            'copy_shuttle' => ['nullable', 'boolean'],
+            'copy_dispatchers' => ['nullable', 'boolean'],
+            'copy_vehicle_types' => ['nullable', 'boolean'],
+        ]);
+
+        $sourceCity = City::query()->findOrFail($data['source_city_id']);
+        $sourceSettings = CitySetting::query()->where('city_id', $sourceCity->id)->first();
+        $targetSettings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
+
+        if ($sourceSettings) {
+            // General Settings (chat, fare features, emergency/support contacts)
+            if ($request->boolean('copy_general')) {
+                $targetSettings->chat_enabled = $sourceSettings->chat_enabled;
+                $targetSettings->show_region_specific_fare = $sourceSettings->show_region_specific_fare;
+                $targetSettings->show_vehicle_make_model = $sourceSettings->show_vehicle_make_model;
+                $targetSettings->emergency_no = $sourceSettings->emergency_no;
+                $targetSettings->emergency_police_no = $sourceSettings->emergency_police_no;
+                $targetSettings->driver_support_no = $sourceSettings->driver_support_no;
+                $targetSettings->customer_support_no = $sourceSettings->customer_support_no;
+                $targetSettings->support_email = $sourceSettings->support_email;
+            }
+
+            // Private Rides Settings (commission, floor, payment modes, cancellation)
+            if ($request->boolean('copy_private')) {
+                $targetSettings->allowed_driver_payment_modes = $sourceSettings->allowed_driver_payment_modes;
+                $targetSettings->negotiation_floor_percent = $sourceSettings->negotiation_floor_percent;
+                $targetSettings->commission_type = $sourceSettings->commission_type;
+                $targetSettings->commission_percent = $sourceSettings->commission_percent;
+                $targetSettings->fixed_commission = $sourceSettings->fixed_commission;
+                $targetSettings->toll_mode = $sourceSettings->toll_mode;
+                $targetSettings->show_low_wallet_alert = $sourceSettings->show_low_wallet_alert;
+                $targetSettings->private_no_show_threshold_minutes = $sourceSettings->private_no_show_threshold_minutes;
+                $targetSettings->private_no_show_charge_per_minute = $sourceSettings->private_no_show_charge_per_minute;
+                $targetSettings->private_driver_no_show_grace_minutes = $sourceSettings->private_driver_no_show_grace_minutes;
+                $targetSettings->private_cancellation_rule = $sourceSettings->private_cancellation_rule;
+            }
+
+            // Fixed Rides Settings (waiting times, radiuses, dwell times, boarding mode)
+            if ($request->boolean('copy_fixed')) {
+                $targetSettings->fixed_waiting_time_per_stop_minutes = $sourceSettings->fixed_waiting_time_per_stop_minutes;
+                $targetSettings->fixed_stop_arrival_radius_m = $sourceSettings->fixed_stop_arrival_radius_m;
+                $targetSettings->fixed_stop_arrival_dwell_seconds = $sourceSettings->fixed_stop_arrival_dwell_seconds;
+                $targetSettings->fixed_driver_missed_stop_grace_minutes = $sourceSettings->fixed_driver_missed_stop_grace_minutes;
+                $targetSettings->fixed_customer_pickup_radius_m = $sourceSettings->fixed_customer_pickup_radius_m;
+                $targetSettings->fixed_vehicle_approaching_alert_radius_m = $sourceSettings->fixed_vehicle_approaching_alert_radius_m;
+                $targetSettings->fixed_customer_grace_minutes = $sourceSettings->fixed_customer_grace_minutes;
+                $targetSettings->fixed_boarding_confirmation_mode = $sourceSettings->fixed_boarding_confirmation_mode;
+            }
+
+            // Shuttle Rides Settings (match distance, delay, fare lock, privacy, payout share)
+            if ($request->boolean('copy_shuttle')) {
+                $targetSettings->shuttle_pickup_match_distance_km = $sourceSettings->shuttle_pickup_match_distance_km;
+                $targetSettings->shuttle_drop_match_distance_km = $sourceSettings->shuttle_drop_match_distance_km;
+                $targetSettings->shuttle_max_passenger_delay_minutes = $sourceSettings->shuttle_max_passenger_delay_minutes;
+                $targetSettings->shuttle_join_after_start_enabled = $sourceSettings->shuttle_join_after_start_enabled;
+                $targetSettings->shuttle_fare_lock_enabled = $sourceSettings->shuttle_fare_lock_enabled;
+                $targetSettings->shuttle_driver_waiting_time_minutes = $sourceSettings->shuttle_driver_waiting_time_minutes;
+                $targetSettings->shuttle_pickup_arrival_radius_m = $sourceSettings->shuttle_pickup_arrival_radius_m;
+                $targetSettings->shuttle_driver_missed_pickup_grace_minutes = $sourceSettings->shuttle_driver_missed_pickup_grace_minutes;
+                $targetSettings->shuttle_customer_pickup_radius_m = $sourceSettings->shuttle_customer_pickup_radius_m;
+                $targetSettings->shuttle_approaching_alert_radius_m = $sourceSettings->shuttle_approaching_alert_radius_m;
+                $targetSettings->shuttle_customer_grace_minutes = $sourceSettings->shuttle_customer_grace_minutes;
+                $targetSettings->shuttle_capacity_source = $sourceSettings->shuttle_capacity_source;
+                $targetSettings->shuttle_customer_privacy_rule = $sourceSettings->shuttle_customer_privacy_rule;
+                $targetSettings->shuttle_cancellation_refund_rule = $sourceSettings->shuttle_cancellation_refund_rule;
+                $targetSettings->shuttle_no_show_charge_rule = $sourceSettings->shuttle_no_show_charge_rule;
+                $targetSettings->shuttle_driver_payout_share_percent = $sourceSettings->shuttle_driver_payout_share_percent;
+            }
+
+            $targetSettings->save();
+        }
+
+        // Copy Dispatcher Settings (Local & Outstation)
+        if ($request->boolean('copy_dispatchers')) {
+            $sourceDispatchers = \App\Models\DispatcherSetting::query()->where('city_id', $sourceCity->id)->get();
+            foreach ($sourceDispatchers as $sd) {
+                $attributes = $sd->toArray();
+                unset($attributes['id'], $attributes['city_id'], $attributes['created_at'], $attributes['updated_at']);
+                \App\Models\DispatcherSetting::query()->updateOrCreate(
+                    ['city_id' => $city->id, 'kind' => $sd->kind],
+                    $attributes
+                );
+            }
+        }
+
+        // Copy Vehicle Types & Pricing Configuration
+        if ($request->boolean('copy_vehicle_types')) {
+            $sourceVehicleTypes = \App\Models\CityVehicleType::query()->where('city_id', $sourceCity->id)->get();
+            foreach ($sourceVehicleTypes as $vt) {
+                $attributes = $vt->toArray();
+                unset($attributes['id'], $attributes['city_id'], $attributes['created_at'], $attributes['updated_at']);
+                \App\Models\CityVehicleType::query()->updateOrCreate(
+                    ['city_id' => $city->id, 'display_name' => $vt->display_name],
+                    $attributes
+                );
+            }
+        }
+
+        return response()->json([
+            'settings' => $this->shape($targetSettings->fresh()),
+            'message' => "Selected settings copied successfully from {$sourceCity->name} to {$city->name}.",
+        ]);
+    }
+
     private function shape(CitySetting $s): array
     {
         return [

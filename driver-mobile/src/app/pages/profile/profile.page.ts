@@ -1,42 +1,76 @@
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
+import { forkJoin, of, Subscription } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { DriverOnboardingDraftService } from '../../core/driver-onboarding-draft.service';
 import { GeolocationService } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
+import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 
 declare const google: any;
 
+type DocStatus = 'idle' | 'uploading' | 'done' | 'error';
 type ServiceScope = 'local' | 'outstation';
 type ServiceMode = 'private' | 'fixed' | 'shuttle';
-interface DriverProfile { city_id?: number | null; service_scope?: ServiceScope | null; service_mode?: ServiceMode | null; }
-interface RideModeOption { scope: ServiceScope; mode: ServiceMode; name: string; }
-interface RideScopeOption { scope: ServiceScope; name: string; modes: RideModeOption[]; }
+type LabelType = 'text' | 'number' | 'date' | 'url';
 
-/**
- * Driver profile page — photo, name, email (optional).
- *
- * Used in two contexts:
- *   1. First-time onboarding: a brand-new driver lands here straight after OTP
- *      and on Continue is forwarded to /driver-registration to set up their
- *      vehicle + upload documents.
- *   2. From the More tab: existing drivers edit their profile and return.
- *
- * The `?next=registration` query param flag is set by login.routeAfterAuth so
- * we know to forward on Continue instead of bouncing back to /tabs/more.
- */
+interface CityOpt { id: number; name: string; country_code: string | null; }
+interface VehicleTypeOpt { id: number; name: string; description: string | null; image_url: string | null; }
+interface CityVehicleOpt { id: number; display_name: string; max_people: number; luggage_capacity: number; vehicle_type_id: number; }
+interface FleetOpt { id: number; name: string; city_id: number | null; }
+interface DocumentLabelDef { id: number; label: string; label_type: LabelType; mandatory: boolean; sort_order: number; }
+interface RideModeOption { id: number; scope: ServiceScope; mode: ServiceMode; name: string; image_url: string | null; sort_order: number; }
+interface RideScopeOption { id: number; scope: ServiceScope; name: string; sort_order: number; modes: RideModeOption[]; }
+interface CatalogDoc {
+  id: number;
+  name: string;
+  no_of_images: number;
+  category: string;
+  required: string | null;
+  gallery_restricted: boolean;
+  instructions: string | null;
+  labels: DocumentLabelDef[];
+}
+interface ExistingUpload {
+  id: number;
+  document_id: number | null;
+  image_index: number | null;
+  status: 'uploaded' | 'approved' | 'rejected';
+  rejection_reason: string | null;
+  file_url: string;
+  uploaded_at: string | null;
+}
+interface DocImageSlot {
+  index: number;
+  file: File | null;
+  status: DocStatus;
+  error?: string;
+  existing: ExistingUpload | null;
+}
+interface DocUploadState {
+  doc: CatalogDoc;
+  uploads: DocImageSlot[];
+  labelValues: Record<string, string>;
+}
+
 @Component({
   selector: 'app-profile',
   templateUrl: './profile.page.html',
   styleUrls: ['./profile.page.scss'],
   standalone: false,
 })
-export class ProfilePage implements OnInit {
+export class ProfilePage implements OnInit, OnDestroy {
   @ViewChild('addressFieldWrap') addressFieldWrap?: ElementRef<HTMLElement>;
   @ViewChild('addressMapEl') addressMapEl?: ElementRef<HTMLElement>;
+
+  // Tab segment switcher: 'profile' | 'vehicle' | 'documents'
+  activeSegment: 'profile' | 'vehicle' | 'documents' = 'profile';
+
+  // Personal Profile fields
   photoFile: File | null = null;
   photoPreview: string | null = null;
   readonly defaultAvatar = 'assets/default-avatar.svg';
@@ -44,13 +78,26 @@ export class ProfilePage implements OnInit {
   email = '';
   phone = '';
   dob = '';
-  /** Picked address (the Place's formatted_address) — used during onboarding,
-   *  shown read-only on the edit screen. */
   address = '';
-  registeredServiceLabel = 'Not selected';
-  registeredServiceLoading = false;
 
-  // Address autocomplete (Google Places) — onboarding only.
+  // Registered Area & Vehicle data (read-only view)
+  cities: CityOpt[] = [];
+  vehicleTypes: VehicleTypeOpt[] = [];
+  cityVehicles: CityVehicleOpt[] = [];
+  fleets: FleetOpt[] = [];
+  rideScopes: RideScopeOption[] = [];
+
+  city_id: number | null = null;
+  service_scope: ServiceScope | null = null;
+  service_mode: ServiceMode | null = null;
+  vehicle_type_id: number | null = null;
+  city_vehicle_type_id: number | null = null;
+  vehicle_model_year = '';
+  vehicle_color = '';
+  vehicle_reg_no = '';
+  fleet_id: number | null = null;
+
+  // Address autocomplete (Google Places)
   addressQuery = '';
   addressSuggestions: PlaceSuggestion[] = [];
   addressLoading = false;
@@ -64,23 +111,24 @@ export class ProfilePage implements OnInit {
   private addressMapClickListener: any = null;
   private addressSkipNextQueryEmit = false;
   private addressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private routeSub?: Subscription;
 
-  // Yesterday — server validator is `before:today` (strict), so today would 422.
   readonly maxDob = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
     return d.toISOString().slice(0, 10);
   })();
 
-  // Captured once on init; sent silently with the profile payload so the
-  // admin Customer module shows device + app metadata without asking.
   private deviceInfo: { app_version?: string; os_version?: string; device_type?: string } = {};
+
+  // Verification Documents fields
+  docs: DocUploadState[] = [];
+  driverApproved = false;
+  documentsRefreshInFlight = false;
 
   busy = false;
   error: string | null = null;
-
-  // True when we're inside the onboarding flow — affects header copy and the
-  // destination on Continue.
+  message: string | null = null;
   onboarding = false;
 
   constructor(
@@ -88,127 +136,258 @@ export class ProfilePage implements OnInit {
     private auth: AuthService,
     private draft: DriverOnboardingDraftService,
     private router: Router,
+    private route: ActivatedRoute,
     private geo: GeolocationService,
     private places: PlacesService,
   ) {}
 
   ngOnInit(): void {
     this.onboarding = window.location.search.includes('next=registration');
+
+    this.routeSub = this.route.queryParams.subscribe((params) => {
+      if (params['tab'] === 'documents') {
+        this.activeSegment = 'documents';
+      } else if (params['tab'] === 'vehicle') {
+        this.activeSegment = 'vehicle';
+      } else if (params['tab'] === 'profile') {
+        this.activeSegment = 'profile';
+      }
+    });
+
     const me = this.auth.getUser();
     if (me) {
       this.name = me.name && me.name !== 'User' ? me.name : '';
       this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
-      this.phone = me.phone ?? '';
-      this.photoPreview = this.auth.resolveAvatarUrl(me);
-      // Prefill the read-only DOB + Address on the edit screen. Backend
-      // returns dob as an ISO date string (YYYY-MM-DD); we keep the ISO form
-      // for the native picker (onboarding) and a separately formatted display
-      // string. Address is whatever the user picked in Places.
-      this.dob = me.dob ?? '';
-      this.address = me.address ?? '';
-      this.addressQuery = this.address;
+      this.phone = me.phone || '';
+      if (me.avatar_url) this.photoPreview = this.auth.resolveAvatarUrl(me);
     }
-    if (!this.onboarding) {
-      this.loadRegisteredService();
-    }
-    // Onboarding needs Places autocomplete — warm the SDK in the background.
+
     if (this.onboarding) {
-      void this.places.ensureLoaded().catch(() => {});
-    }
-    void this.captureDeviceInfo();
-  }
-
-  /** Header reload button — re-sync the form from the latest stored user. */
-  reload(): void {
-    const me = this.auth.getUser();
-    if (me) {
-      this.name = me.name && me.name !== 'User' ? me.name : '';
-      this.email = me.email && !me.email.endsWith('@otp.local') ? me.email : '';
-      this.phone = me.phone ?? '';
-      this.photoPreview = this.auth.resolveAvatarUrl(me);
-      this.dob = me.dob ?? '';
-      this.address = me.address ?? '';
-      this.addressQuery = this.address;
-    }
-    if (!this.onboarding) {
-      this.loadRegisteredService();
-    }
-    this.photoFile = null;
-    this.error = null;
-  }
-
-
-  private loadRegisteredService(): void {
-    this.registeredServiceLoading = true;
-    this.api.get<{ driver: DriverProfile | null }>('/drivers/me').subscribe({
-      next: (res) => {
-        const driver = res.driver;
-        if (!driver?.service_scope || !driver?.service_mode) {
-          this.registeredServiceLabel = 'Not selected';
-          return;
+      const draftData = this.draft.getProfile();
+      if (draftData) {
+        if (draftData.name) this.name = draftData.name;
+        if (draftData.email) this.email = draftData.email;
+        if (draftData.dob) this.dob = draftData.dob;
+        if (draftData.address) {
+          this.address = draftData.address;
+          this.addressQuery = draftData.address;
+          this.addressSkipNextQueryEmit = true;
         }
+      }
+      const draftPhoto = this.draft.getPhotoFile();
+      if (draftPhoto) {
+        this.photoFile = draftPhoto;
+        const reader = new FileReader();
+        reader.onload = () => { this.photoPreview = reader.result as string; };
+        reader.readAsDataURL(draftPhoto);
+      }
+    }
 
-        this.registeredServiceLabel = this.fallbackServiceLabel(driver.service_scope, driver.service_mode);
-        if (!driver.city_id) return;
+    void this.initDeviceInfo();
+    this.loadCatalogData();
+    this.reload();
+  }
 
-        this.api.get<{ scopes: RideScopeOption[] }>(`/catalog/cities/${driver.city_id}/driver-ride-products`).subscribe({
-          next: (catalog) => {
-            const scope = (catalog.scopes ?? []).find((row) => row.scope === driver.service_scope);
-            const mode = scope?.modes?.find((row) => row.mode === driver.service_mode);
-            if (scope && mode) {
-              this.registeredServiceLabel = `${scope.name} ${mode.name}`;
-            }
-          },
-        });
-      },
-      complete: () => { this.registeredServiceLoading = false; },
-      error: () => {
-        this.registeredServiceLabel = 'Not selected';
-        this.registeredServiceLoading = false;
+  ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
+    if (this.addressDebounceTimer) clearTimeout(this.addressDebounceTimer);
+  }
+
+  switchSegment(seg: 'profile' | 'vehicle' | 'documents'): void {
+    this.activeSegment = seg;
+    this.error = null;
+    this.message = null;
+  }
+
+  loadCatalogData(): void {
+    forkJoin({
+      cities: this.api.get<{ data: CityOpt[] }>('/catalog/cities').pipe(catchError(() => of({ data: [] as CityOpt[] }))),
+      vehicleTypes: this.api.get<{ data: VehicleTypeOpt[] }>('/catalog/vehicle-types').pipe(catchError(() => of({ data: [] as VehicleTypeOpt[] }))),
+      fleets: this.api.get<{ data: FleetOpt[] }>('/catalog/fleets').pipe(catchError(() => of({ data: [] as FleetOpt[] }))),
+    }).subscribe({
+      next: ({ cities, vehicleTypes, fleets }) => {
+        this.cities = cities.data ?? [];
+        this.vehicleTypes = vehicleTypes.data ?? [];
+        this.fleets = fleets.data ?? [];
+
+        if (this.city_id && this.vehicle_type_id) {
+          this.loadCityVehicles();
+        }
       },
     });
   }
 
-  private fallbackServiceLabel(scope: ServiceScope, mode: ServiceMode): string {
-    const scopeLabel = scope === 'outstation' ? 'Outstation' : 'Local';
-    const modeLabel = mode === 'fixed' ? 'Fixed' : mode === 'shuttle' ? 'Shuttle' : 'Private';
-    return `${scopeLabel} ${modeLabel}`;
+  reloadAll(): void {
+    this.reload();
+    this.refreshDocumentStep(true);
   }
 
-  /** Pretty form for the locked edit screen (e.g. "12 Apr 1997"). */
+  reload(): void {
+    this.error = null;
+    this.message = null;
+    this.busy = true;
+
+    this.api.get<{
+      driver: {
+        city_id?: number | null;
+        vehicle_type_id?: number | null;
+        city_vehicle_type_id?: number | null;
+        fleet_id?: number | null;
+        vehicle_model?: string | null;
+        vehicle_color?: string | null;
+        vehicle_reg_no?: string | null;
+        service_scope?: ServiceScope | null;
+        service_mode?: ServiceMode | null;
+        approval_status?: string;
+        dob?: string | null;
+        address?: string | null;
+      } | null;
+      user: AuthUser;
+      documents?: ExistingUpload[];
+    }>('/drivers/me').subscribe({
+      next: (res) => {
+        this.busy = false;
+        if (res.user) {
+          this.auth.updateUser(res.user);
+          this.name = res.user.name && res.user.name !== 'User' ? res.user.name : this.name;
+          this.email = res.user.email && !res.user.email.endsWith('@otp.local') ? res.user.email : '';
+          this.phone = res.user.phone || this.phone;
+          if (res.user.avatar_url && !this.photoFile) {
+            this.photoPreview = this.auth.resolveAvatarUrl(res.user);
+          }
+        }
+        if (res.driver) {
+          if (res.driver.dob) this.dob = res.driver.dob;
+          if (res.driver.address) this.address = res.driver.address;
+          this.city_id = res.driver.city_id ?? this.city_id;
+          this.vehicle_type_id = res.driver.vehicle_type_id ?? this.vehicle_type_id;
+          this.city_vehicle_type_id = res.driver.city_vehicle_type_id ?? this.city_vehicle_type_id;
+          this.fleet_id = res.driver.fleet_id ?? this.fleet_id;
+          this.vehicle_model_year = res.driver.vehicle_model ?? this.vehicle_model_year;
+          this.vehicle_color = res.driver.vehicle_color ?? this.vehicle_color;
+          this.vehicle_reg_no = res.driver.vehicle_reg_no ?? this.vehicle_reg_no;
+          this.service_scope = res.driver.service_scope ?? this.service_scope;
+          this.service_mode = res.driver.service_mode ?? this.service_mode;
+          this.driverApproved = res.driver.approval_status === 'approved';
+
+          if (this.city_id && this.vehicle_type_id) this.loadCityVehicles();
+        }
+        this.refreshDocumentStep(false);
+      },
+      error: () => {
+        this.busy = false;
+      },
+    });
+  }
+
+  // ── Computed Registered Info for Clean Read-Only View ──────
+
+  get cityNameDisplay(): string {
+    if (!this.city_id) return 'Not registered';
+    const c = this.cities.find((city) => city.id === this.city_id);
+    return c ? c.name : 'Registered City';
+  }
+
+  get serviceScopeDisplay(): string {
+    if (!this.service_scope) return 'Not registered';
+    return this.service_scope === 'outstation' ? 'Outstation Service' : 'Local Service';
+  }
+
+  get serviceModeDisplay(): string {
+    if (!this.service_mode) return 'Not registered';
+    if (this.service_mode === 'fixed') return 'Fixed Route';
+    if (this.service_mode === 'shuttle') return 'Shared Shuttle';
+    return 'Private Taxi';
+  }
+
+  get serviceModeIcon(): string {
+    if (this.service_mode === 'fixed') return 'git-branch-outline';
+    if (this.service_mode === 'shuttle') return 'bus-outline';
+    return 'car-outline';
+  }
+
+  get fleetNameDisplay(): string {
+    if (!this.fleet_id) return 'Independent Driver (No Fleet)';
+    const f = this.fleets.find((fl) => fl.id === this.fleet_id);
+    return f ? f.name : 'Assigned Fleet';
+  }
+
+  get selectedVehicleTypeOpt(): VehicleTypeOpt | undefined {
+    return this.vehicleTypes.find((v) => v.id === this.vehicle_type_id);
+  }
+
+  get selectedCityVehicleOpt(): CityVehicleOpt | undefined {
+    return this.cityVehicles.find((v) => v.id === this.city_vehicle_type_id);
+  }
+
+  private loadCityVehicles(): void {
+    if (!this.city_id || !this.vehicle_type_id) return;
+    this.api.get<{ data: CityVehicleOpt[] }>(`/catalog/cities/${this.city_id}/vehicles?vehicle_type_id=${this.vehicle_type_id}`).pipe(
+      catchError(() => of({ data: [] as CityVehicleOpt[] })),
+    ).subscribe({
+      next: (res) => {
+        this.cityVehicles = res.data ?? [];
+      },
+    });
+  }
+
   get dobDisplay(): string {
     if (!this.dob) return '';
-    const d = new Date(this.dob);
-    if (Number.isNaN(d.getTime())) return this.dob;
-    return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+    try {
+      const d = new Date(this.dob + 'T00:00:00');
+      if (isNaN(d.getTime())) return this.dob;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch {
+      return this.dob;
+    }
   }
 
-  onAddressQueryChange(value: string | null | undefined): void {
-    const q = (value ?? '').toString();
-    this.addressQuery = q;
+  // ── Address Autocomplete & Map ─────────────────────────────
+
+  async onAddressQueryChange(val: string): Promise<void> {
     if (this.addressSkipNextQueryEmit) {
       this.addressSkipNextQueryEmit = false;
       return;
     }
-    if (this.address && q !== this.address) {
-      this.address = '';
-    }
+    this.address = '';
+    const q = val.trim();
     if (this.addressDebounceTimer) clearTimeout(this.addressDebounceTimer);
-    if (!q.trim()) {
+    if (!q || q.length < 3) {
       this.addressSuggestions = [];
+      this.addressLoading = false;
       return;
     }
-    this.scrollAddressFieldIntoView();
-    this.addressDebounceTimer = setTimeout(() => {
-      this.fetchAddressSuggestions(q);
-    }, 220);
+    this.addressLoading = true;
+    this.addressDebounceTimer = setTimeout(async () => {
+      try {
+        this.addressSuggestions = await this.places.autocompleteSearch(q);
+      } catch {
+        this.addressSuggestions = [];
+      } finally {
+        this.addressLoading = false;
+      }
+    }, 250);
   }
 
-  private async fetchAddressSuggestions(q: string): Promise<void> {
+  async pickAddress(s: PlaceSuggestion): Promise<void> {
     this.addressLoading = true;
     try {
-      this.addressSuggestions = await this.places.autocompleteSearch(q);
+      const d = await this.places.getPlaceDetail(s.place_id);
+      if (d?.description) {
+        this.address = d.description;
+        this.addressSkipNextQueryEmit = true;
+        this.addressQuery = d.description;
+        this.addressSuggestions = [];
+      } else {
+        this.address = s.description;
+        this.addressSkipNextQueryEmit = true;
+        this.addressQuery = s.description;
+        this.addressSuggestions = [];
+      }
     } catch {
+      this.address = s.description;
+      this.addressSkipNextQueryEmit = true;
+      this.addressQuery = s.description;
       this.addressSuggestions = [];
     } finally {
       this.addressLoading = false;
@@ -217,166 +396,104 @@ export class ProfilePage implements OnInit {
 
   scrollAddressFieldIntoView(): void {
     setTimeout(() => {
-      this.addressFieldWrap?.nativeElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, 120);
+      this.addressFieldWrap?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
   }
 
-  async pickAddress(s: PlaceSuggestion): Promise<void> {
-    this.addressLoading = true;
-    try {
-      const detail = await this.places.getPlaceDetail(s.place_id);
-      const formatted = detail?.description || s.description;
-      this.address = formatted;
-      this.addressQuery = formatted;
-      this.addressSkipNextQueryEmit = true;
-      this.addressSuggestions = [];
-    } finally {
-      this.addressLoading = false;
-    }
-  }
-
-  openAddressMap(): void {
-    if (this.busy) return;
+  async openAddressMap(): Promise<void> {
     this.mapPickerOpen = true;
+    this.mapLoading = true;
     this.mapError = null;
-    this.mapSelectedAddress = this.address || this.addressQuery || '';
+    this.mapSelectedAddress = '';
     this.mapSelectedPosition = null;
-    setTimeout(() => void this.initAddressMap(), 120);
+
+    let lat = 34.0837;
+    let lng = 74.7973;
+    try {
+      const pos = await this.geo.getCurrentPosition({ timeout: 5000, enableHighAccuracy: true });
+      if (pos) { lat = pos.lat; lng = pos.lng; }
+    } catch { /* ignore fallback */ }
+
+    this.mapSelectedPosition = { lat, lng };
+    setTimeout(() => this.initAddressMap(lat, lng), 250);
   }
 
   closeAddressMap(): void {
     this.mapPickerOpen = false;
+    if (this.addressMapClickListener && typeof google !== 'undefined') {
+      google.maps.event.removeListener(this.addressMapClickListener);
+      this.addressMapClickListener = null;
+    }
   }
 
   confirmMapAddress(): void {
-    let picked = this.mapSelectedAddress.trim();
-    if (!picked && this.mapSelectedPosition) {
-      picked = `${this.mapSelectedPosition.lat.toFixed(6)}, ${this.mapSelectedPosition.lng.toFixed(6)}`;
-    }
-    if (!picked) {
-      this.mapError = 'Tap a place on the map first.';
+    const chosen = this.mapSelectedAddress.trim();
+    if (!chosen && !this.mapSelectedPosition) return;
+    this.address = chosen || `${this.mapSelectedPosition!.lat.toFixed(5)}, ${this.mapSelectedPosition!.lng.toFixed(5)}`;
+    this.addressSkipNextQueryEmit = true;
+    this.addressQuery = this.address;
+    this.addressSuggestions = [];
+    this.closeAddressMap();
+  }
+
+  private initAddressMap(lat: number, lng: number): void {
+    if (!this.addressMapEl?.nativeElement) return;
+    if (typeof google === 'undefined' || !google.maps) {
+      this.mapLoading = false;
+      this.mapError = 'Google Maps SDK not loaded.';
       return;
     }
-    this.address = picked;
-    this.addressQuery = picked;
-    this.addressSkipNextQueryEmit = true;
-    this.addressSuggestions = [];
-    this.mapPickerOpen = false;
+    const center = { lat, lng };
+    this.addressMap = new google.maps.Map(this.addressMapEl.nativeElement, {
+      center,
+      zoom: 16,
+      disableDefaultUI: true,
+      zoomControl: true,
+    });
+    this.addressMapMarker = new google.maps.Marker({
+      position: center,
+      map: this.addressMap,
+      draggable: true,
+    });
+
+    this.reverseGeocodeMapPosition(lat, lng);
+    this.addressMapClickListener = this.addressMap.addListener('click', (e: any) => {
+      if (!e.latLng) return;
+      const p = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      this.addressMapMarker.setPosition(p);
+      this.mapSelectedPosition = p;
+      this.reverseGeocodeMapPosition(p.lat, p.lng);
+    });
+
+    this.addressMapMarker.addListener('dragend', () => {
+      const pos = this.addressMapMarker.getPosition();
+      if (!pos) return;
+      const p = { lat: pos.lat(), lng: pos.lng() };
+      this.mapSelectedPosition = p;
+      this.reverseGeocodeMapPosition(p.lat, p.lng);
+    });
+
+    this.mapLoading = false;
   }
 
-  private async initAddressMap(): Promise<void> {
-    const el = this.addressMapEl?.nativeElement;
-    if (!el) return;
+  private reverseGeocodeMapPosition(lat: number, lng: number): void {
+    if (typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) {
+      this.mapSelectedAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      return;
+    }
     this.mapLoading = true;
-    this.mapError = null;
-    try {
-      await this.places.ensureLoaded();
-      const center = await this.initialMapCenter();
-      this.addressMap = new google.maps.Map(el, {
-        center,
-        zoom: 15,
-        disableDefaultUI: true,
-        zoomControl: true,
-        gestureHandling: 'greedy',
-      });
-      if (this.addressMapClickListener?.remove) this.addressMapClickListener.remove();
-      this.addressMapClickListener = this.addressMap.addListener('click', (ev: any) => {
-        const latLng = ev?.latLng;
-        if (!latLng) return;
-        void this.pickAddressFromMap({ lat: latLng.lat(), lng: latLng.lng() });
-      });
-      await this.pickAddressFromMap(center);
-    } catch {
-      this.mapError = 'Could not load the map. Type and pick your address instead.';
-    } finally {
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ location: { lat, lng } }, (results: any[], status: string) => {
       this.mapLoading = false;
-    }
-  }
-
-  private async initialMapCenter(): Promise<{ lat: number; lng: number }> {
-    const current = await this.currentPosition();
-    if (current) return current;
-
-    const typed = (this.address || this.addressQuery).trim();
-    if (typed) {
-      const geocoded = await this.geocodeAddress(typed);
-      if (geocoded) return geocoded;
-    }
-    return { lat: 20.5937, lng: 78.9629 };
-  }
-
-  private async currentPosition(): Promise<{ lat: number; lng: number } | null> {
-    try {
-      const perm = await this.geo.checkPermissions();
-      if (perm?.location === 'prompt' || perm?.coarseLocation === 'prompt') {
-        await this.geo.requestPermissions();
+      if (status === 'OK' && results && results[0]) {
+        this.mapSelectedAddress = results[0].formatted_address;
+      } else {
+        this.mapSelectedAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       }
-    } catch {
-      /* continue to location request; web may prompt lazily */
-    }
-
-    try {
-      const fix = await this.geo.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      });
-      return { lat: fix.lat, lng: fix.lng };
-    } catch {
-      return null;
-    }
-  }
-
-  private geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-    return new Promise((resolve) => {
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ address }, (results: any[], status: string) => {
-        const loc = status === 'OK' ? results?.[0]?.geometry?.location : null;
-        resolve(loc ? { lat: loc.lat(), lng: loc.lng() } : null);
-      });
     });
   }
 
-  private async pickAddressFromMap(position: { lat: number; lng: number }): Promise<void> {
-    this.mapLoading = true;
-    this.mapError = null;
-    this.mapSelectedPosition = position;
-    this.mapSelectedAddress = `${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`;
-    this.setAddressMapMarker(position);
-    try {
-      const label = await this.reverseGeocode(position);
-      if (label) this.mapSelectedAddress = label;
-    } catch {
-      /* coordinates remain selected */
-    } finally {
-      this.mapLoading = false;
-    }
-  }
-
-  private reverseGeocode(position: { lat: number; lng: number }): Promise<string | null> {
-    return new Promise((resolve) => {
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ location: position }, (results: any[], status: string) => {
-        resolve(status === 'OK' ? (results?.[0]?.formatted_address ?? null) : null);
-      });
-    });
-  }
-
-  private setAddressMapMarker(position: { lat: number; lng: number }): void {
-    if (!this.addressMap) return;
-    if (!this.addressMapMarker) {
-      this.addressMapMarker = new google.maps.Marker({
-        map: this.addressMap,
-        position,
-        draggable: false,
-      });
-    } else {
-      this.addressMapMarker.setPosition(position);
-    }
-    this.addressMap.panTo(position);
-  }
-
-  private async captureDeviceInfo(): Promise<void> {
+  private async initDeviceInfo(): Promise<void> {
     try { this.deviceInfo.device_type = Capacitor.getPlatform(); } catch { /* ignore */ }
     try {
       if (typeof navigator !== 'undefined') {
@@ -406,15 +523,13 @@ export class ProfilePage implements OnInit {
     reader.readAsDataURL(file);
   }
 
-  submit(): void {
+  submitProfile(): void {
     this.error = null;
     const name = this.name.trim();
     const email = this.email.trim();
     if (!name) { this.error = 'Please enter your name.'; return; }
     if (this.onboarding && !email) { this.error = 'Please enter your email address.'; return; }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.error = 'Please enter a valid email address.'; return; }
-    // DOB + Address are required during onboarding only — on the edit screen
-    // they're locked and we don't send them.
     if (this.onboarding) {
       if (!this.dob) { this.error = 'Please select your date of birth.'; return; }
       if (!this.address) { this.error = 'Please pick your address from the suggestions.'; return; }
@@ -430,7 +545,7 @@ export class ProfilePage implements OnInit {
         os_version: this.deviceInfo.os_version?.slice(0, 32),
         device_type: this.deviceInfo.device_type?.slice(0, 64),
       }, this.photoFile);
-      this.router.navigateByUrl('/driver-registration', { replaceUrl: true });
+      this.message = 'Profile details draft saved.';
       return;
     }
 
@@ -444,7 +559,7 @@ export class ProfilePage implements OnInit {
       next: (res) => {
         this.auth.updateUser(res.user);
         this.busy = false;
-        this.router.navigateByUrl('/tabs/more');
+        this.message = 'Profile updated successfully.';
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not save profile.';
@@ -452,10 +567,154 @@ export class ProfilePage implements OnInit {
       },
     });
   }
+
+  // ── Document View & Download Logic ─────────────────────────
+
+  refreshDocuments(): void {
+    this.refreshDocumentStep(true);
+  }
+
+  private refreshDocumentStep(showErrors: boolean): void {
+    if (this.documentsRefreshInFlight) return;
+    this.documentsRefreshInFlight = true;
+
+    forkJoin({
+      docs: this.api.get<{ data: CatalogDoc[] }>('/catalog/documents').pipe(
+        catchError((err) => {
+          if (showErrors) this.error = err?.error?.message || 'Could not refresh required documents.';
+          return of({ data: this.docs.map((slot) => slot.doc) });
+        }),
+      ),
+      driver: this.api
+        .get<{ driver: Record<string, unknown> | null; documents: ExistingUpload[] }>('/drivers/me')
+        .pipe(catchError((err) => {
+          if (showErrors) this.error = err?.error?.message || 'Could not refresh your verification status.';
+          const fallbackDocs: ExistingUpload[] = [];
+          for (const slot of this.docs) {
+            for (const upload of slot.uploads) {
+              if (upload.existing) fallbackDocs.push(upload.existing);
+            }
+          }
+          return of({ driver: null, documents: fallbackDocs });
+        })),
+    }).subscribe({
+      next: ({ docs, driver }) => {
+        this.mergeDocumentStep(docs.data ?? [], driver.documents ?? []);
+        this.applyDriverApprovalRefresh(driver.driver);
+      },
+      complete: () => { this.documentsRefreshInFlight = false; },
+    });
+  }
+
+  private mergeDocumentStep(catalogDocs: CatalogDoc[], uploads: ExistingUpload[]): void {
+    const previousByDocId = new Map<number, DocUploadState>();
+    for (const slot of this.docs) previousByDocId.set(slot.doc.id, slot);
+
+    const existingByDocId = new Map<number, ExistingUpload[]>();
+    for (const upload of uploads) {
+      if (upload.document_id == null) continue;
+      const list = existingByDocId.get(upload.document_id) ?? [];
+      list.push(upload);
+      existingByDocId.set(upload.document_id, list);
+    }
+    existingByDocId.forEach((list) => {
+      list.sort((a, b) => (a.image_index ?? 999) - (b.image_index ?? 999) || a.id - b.id);
+    });
+
+    this.docs = catalogDocs.map((doc) => {
+      const previous = previousByDocId.get(doc.id);
+      const existingList = [...(existingByDocId.get(doc.id) ?? [])];
+      const slotCount = Math.max(1, doc.no_of_images || 1);
+      const uploadsState: DocImageSlot[] = Array.from({ length: slotCount }, (_, idx) => {
+        const imageIndex = idx + 1;
+        const exact = existingList.find((row) => (row.image_index ?? imageIndex) === imageIndex) ?? null;
+        const fallback = !exact && existingList[idx] ? existingList[idx] : null;
+        return {
+          index: imageIndex,
+          file: previous?.uploads[idx]?.file ?? null,
+          status: previous?.uploads[idx]?.status ?? 'idle',
+          error: previous?.uploads[idx]?.error,
+          existing: exact ?? fallback,
+        };
+      });
+
+      return {
+        doc,
+        uploads: uploadsState,
+        labelValues: this.mergeLabelValues(doc, previous?.labelValues),
+      };
+    });
+  }
+
+  private mergeLabelValues(doc: CatalogDoc, current: Record<string, string> | undefined): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const label of doc.labels) out[label.label] = current?.[label.label] ?? '';
+    return out;
+  }
+
+  private applyDriverApprovalRefresh(driver: Record<string, unknown> | null): void {
+    if (!driver) return;
+    const status = driver?.['approval_status'] as string | null | undefined;
+    if (status === 'approved') {
+      this.driverApproved = true;
+      ApprovedDriverGuard.setStateApproved();
+      return;
+    }
+    this.driverApproved = false;
+  }
+
+  viewDoc(upload: DocImageSlot): void {
+    this.fetchDoc(upload, false);
+  }
+
+  downloadDoc(upload: DocImageSlot): void {
+    this.fetchDoc(upload, true);
+  }
+
+  private fetchDoc(upload: DocImageSlot, asDownload: boolean): void {
+    if (!upload.existing?.file_url) return;
+    let apiPath = this.toApiPath(upload.existing.file_url);
+    if (!apiPath) return;
+    if (asDownload) {
+      apiPath += apiPath.includes('?') ? '&download=1' : '?download=1';
+    }
+    this.api.getBlob(apiPath).subscribe({
+      next: (blob) => {
+        const objectUrl = URL.createObjectURL(blob);
+        if (asDownload) {
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          const safeName = `doc-${upload.existing!.id}-image-${upload.index}`.replace(/[^a-z0-9._-]+/gi, '_');
+          a.download = safeName.includes('.')
+            ? safeName
+            : `${safeName}.${(blob.type || 'application/octet-stream').split('/')[1] || 'bin'}`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } else {
+          window.open(objectUrl, '_blank');
+        }
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      },
+      error: (err) => {
+        this.error = err?.status === 401 ? 'Session expired — sign in again.' : 'Could not load the file. Please try again.';
+      },
+    });
+  }
+
+  private toApiPath(absoluteUrl: string): string | null {
+    try {
+      const parsed = new URL(absoluteUrl);
+      let p = parsed.pathname + parsed.search;
+      if (p.startsWith('/api/')) p = p.slice(4);
+      else if (p.startsWith('/api')) p = p.slice(4);
+      return p || null;
+    } catch {
+      return null;
+    }
+  }
 }
 
-// Extract a short OS label ("Android 7.0", "iOS 17.4", "Windows 10", …) from a
-// User-Agent string so we stay well under the users.os_version varchar(32).
 function parseOsVersion(ua: string | undefined | null): string | undefined {
   if (!ua) return undefined;
   const patterns: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
