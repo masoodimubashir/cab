@@ -299,7 +299,11 @@ class ShuttleBookingService
             'city_id' => $booking->city_id,
             'scope' => $booking->scope ?? 'local',
             'ride_type_id' => $cvt->ride_type_id,
-            'vehicle_type_id' => $cvt->vehicle_type_id,
+            // trips.vehicle_type_id FKs to city_vehicle_types (the per-city
+            // catalogue row), NOT to the global vehicle_types lookup — that one is
+            // requested_vehicle_type_id. Passing the global id here only happened
+            // to work while the two id sequences overlapped.
+            'vehicle_type_id' => $cvt->id,
             'requested_vehicle_type_id' => $cvt->vehicle_type_id,
             'city_vehicle_type_id' => $booking->city_vehicle_type_id,
             'pricing_rule_id' => $booking->pricing_rule_id,

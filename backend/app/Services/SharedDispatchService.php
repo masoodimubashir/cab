@@ -100,6 +100,12 @@ class SharedDispatchService
 
             $dep->update(['trip_id' => $trip->id, 'driver_id' => $driverId, 'status' => 'DISPATCHED']);
 
+            // Phase 5 — these riders prepaid into a forming departure, so their
+            // mirrored payments have no trip yet. Now that the vehicle journey
+            // exists, attach them so the split settles at completion. No-op while
+            // the split engine is disabled.
+            app(BookingPaymentService::class)->linkDepartureBookings($trip, $dep->id);
+
             $this->notifyDriver($driverId, $route, $activeSeats->count());
             $this->notifyRiders($activeSeats, 'shared_assigned', 'Driver on the way', "A driver is assigned to your {$route->name} ride.");
 
@@ -152,7 +158,15 @@ class SharedDispatchService
 
             foreach ($seats as $seat) {
                 if (($seat->fare_amount ?? 0) > 0) {
-                    $rider = $seat->customer()->first();
+                    // Nobody's fault but ours, so the whole prepayment goes back.
+                    // With the split engine live that's an automatic Razorpay
+                    // refund of the money the rider actually paid online; the
+                    // legacy wallet credit stays the fallback when the engine is
+                    // off, nothing was mirrored (e.g. a wallet-paid seat), or the
+                    // refund call failed.
+                    $refunded = $this->autoRefundExpiredSeat($seat);
+
+                    $rider = $refunded ? null : $seat->customer()->first();
                     if ($rider) {
                         $this->wallet->recordTransaction(
                             $rider,
@@ -162,6 +176,16 @@ class SharedDispatchService
                             null,
                             null,
                         );
+                    }
+
+                    if ($refunded) {
+                        $seat->forceFill([
+                            'refund_status' => 'REFUNDED',
+                            'payment_status' => 'REFUNDED',
+                            'refund_amount' => (float) $seat->fare_amount,
+                            'refund_method' => 'razorpay',
+                            'refunded_at' => now(),
+                        ])->save();
                     }
                 }
                 $seat->update(['status' => 'CANCELLED', 'cancelled_at' => now()]);
@@ -177,6 +201,29 @@ class SharedDispatchService
 
             return true;
         });
+    }
+
+    /**
+     * Phase 5 — returns the rider's online prepayment through the shared engine
+     * when a forming departure expires with no driver. False means the caller
+     * should fall back to the legacy wallet credit: the engine is off, the seat
+     * wasn't paid online, nothing was mirrored, or Razorpay rejected the refund
+     * (which leaves the payment marked failed for the sweeper/admin to retry).
+     */
+    private function autoRefundExpiredSeat(SeatReservation $seat): bool
+    {
+        if ($seat->payment_method !== 'razorpay') {
+            return false;
+        }
+
+        $outcome = app(BookingPaymentService::class)->refundForBooking(
+            (string) $seat->payment_reference,
+            true,
+            AutoRefundService::BY_SYSTEM,
+        );
+
+        return $outcome !== null
+            && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true);
     }
 
     /** Driver ids who already rejected a trip for this departure (don't re-offer). */

@@ -27,11 +27,19 @@ class CommissionSettlementService
         private WalletService $wallet,
         private SubscriptionService $subscriptions,
         private FixedPricingService $fixedPricing,
+        private BookingPaymentService $bookingPayments,
     ) {
     }
 
     public function settle(Trip $trip): void
     {
+        // Phase 5 — now that the driver is known and the ride happened, settle any
+        // Fixed/Shuttle prepayments riding on this trip through the shared engine:
+        // divide each into the driver's Route share and the operator's commission.
+        // This sits ahead of the driver guard (and of the shared/solo fork) because
+        // every completion path funnels through here. No-op while the engine is off.
+        $this->bookingPayments->settleTrip($trip);
+
         if (! $trip->driver_id) {
             return;
         }

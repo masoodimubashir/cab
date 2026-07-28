@@ -566,6 +566,16 @@ class FixedSeatHoldService
             $this->seatMap->markSeatsBooked($lockedHold, $reservation);
             $this->markCouponRedeemed($lockedHold);
 
+            // Phase 5 — mirror the prepayment onto the shared money engine so the
+            // driver's share is split at trip completion. No-op while the split
+            // engine is disabled (the legacy wallet credit still applies then).
+            app(\App\Services\BookingPaymentService::class)->recordCapture(
+                $reservation->trip_id,
+                $paymentReference,
+                (float) $reservation->fare_amount,
+                (float) $reservation->commission_amount,
+            );
+
             $this->events->record(
                 $reservation,
                 "booking_confirmed",

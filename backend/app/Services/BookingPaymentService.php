@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Payment;
+use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -33,8 +34,12 @@ class BookingPaymentService
     /**
      * Mirrors a confirmed Fixed/Shuttle prepayment as a Payment row so the shared
      * engine owns it from here on. Idempotent on the Razorpay payment id (a
-     * duplicate webhook / double client-verify returns the existing row). Returns
-     * null while the engine is disabled or when there's nothing to key against.
+     * duplicate webhook / double client-verify returns the existing row).
+     *
+     * $tripId is genuinely null for a Fixed booking: the customer pays while the
+     * departure is still forming, and the trip only exists once a driver is
+     * dispatched — {@see linkTrip()} backfills it there. Returns null while the
+     * engine is disabled or when there's no payment id to key against.
      */
     public function recordCapture(
         ?int $tripId,
@@ -47,7 +52,7 @@ class BookingPaymentService
             return null;
         }
         $razorpayPaymentId = trim($razorpayPaymentId);
-        if ($tripId === null || $razorpayPaymentId === '') {
+        if ($razorpayPaymentId === '') {
             return null;
         }
 
@@ -73,6 +78,57 @@ class BookingPaymentService
                 'settlement_mode' => Payment::SETTLE_BOOKING,
             ]);
         });
+    }
+
+    /**
+     * Attaches already-mirrored prepayments to the trip that will actually run
+     * them. Fixed passengers pay into a forming departure, so their Payment rows
+     * start with no trip; the moment a driver is dispatched and the Trip exists,
+     * this stamps it on so the completion hook can find and settle them, and so
+     * the trip's ledger reconciles. Only ever fills a blank — an already-linked
+     * payment is left alone.
+     *
+     * @param  iterable<string|null>  $razorpayPaymentIds  the bookings' payment references
+     */
+    public function linkTrip(Trip $trip, iterable $razorpayPaymentIds): void
+    {
+        if (! $this->split->enabled()) {
+            return;
+        }
+
+        $ids = [];
+        foreach ($razorpayPaymentIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+        if ($ids === []) {
+            return;
+        }
+
+        Payment::query()
+            ->whereIn('razorpay_payment_id', array_unique($ids))
+            ->where('settlement_mode', Payment::SETTLE_BOOKING)
+            ->whereNull('trip_id')
+            ->update(['trip_id' => $trip->id]);
+    }
+
+    /**
+     * {@see linkTrip()} for a whole fixed departure — every seat still live on it
+     * when the vehicle journey is materialised. Both dispatch paths (the automatic
+     * dispatcher and a driver starting the departure themselves) call this.
+     */
+    public function linkDepartureBookings(Trip $trip, ?int $routeDepartureId): void
+    {
+        if (! $this->split->enabled() || $routeDepartureId === null) {
+            return;
+        }
+
+        $this->linkTrip($trip, SeatReservation::query()
+            ->where('route_departure_id', $routeDepartureId)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->pluck('payment_reference'));
     }
 
     /**
