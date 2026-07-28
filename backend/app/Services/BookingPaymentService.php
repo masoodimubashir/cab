@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Payment;
+use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -33,8 +34,12 @@ class BookingPaymentService
     /**
      * Mirrors a confirmed Fixed/Shuttle prepayment as a Payment row so the shared
      * engine owns it from here on. Idempotent on the Razorpay payment id (a
-     * duplicate webhook / double client-verify returns the existing row). Returns
-     * null while the engine is disabled or when there's nothing to key against.
+     * duplicate webhook / double client-verify returns the existing row).
+     *
+     * $tripId is genuinely null for a Fixed booking: the customer pays while the
+     * departure is still forming, and the trip only exists once a driver is
+     * dispatched — {@see linkTrip()} backfills it there. Returns null while the
+     * engine is disabled or when there's no payment id to key against.
      */
     public function recordCapture(
         ?int $tripId,
@@ -47,7 +52,7 @@ class BookingPaymentService
             return null;
         }
         $razorpayPaymentId = trim($razorpayPaymentId);
-        if ($tripId === null || $razorpayPaymentId === '') {
+        if ($razorpayPaymentId === '') {
             return null;
         }
 
@@ -76,6 +81,57 @@ class BookingPaymentService
     }
 
     /**
+     * Attaches already-mirrored prepayments to the trip that will actually run
+     * them. Fixed passengers pay into a forming departure, so their Payment rows
+     * start with no trip; the moment a driver is dispatched and the Trip exists,
+     * this stamps it on so the completion hook can find and settle them, and so
+     * the trip's ledger reconciles. Only ever fills a blank — an already-linked
+     * payment is left alone.
+     *
+     * @param  iterable<string|null>  $razorpayPaymentIds  the bookings' payment references
+     */
+    public function linkTrip(Trip $trip, iterable $razorpayPaymentIds): void
+    {
+        if (! $this->split->enabled()) {
+            return;
+        }
+
+        $ids = [];
+        foreach ($razorpayPaymentIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+        if ($ids === []) {
+            return;
+        }
+
+        Payment::query()
+            ->whereIn('razorpay_payment_id', array_unique($ids))
+            ->where('settlement_mode', Payment::SETTLE_BOOKING)
+            ->whereNull('trip_id')
+            ->update(['trip_id' => $trip->id]);
+    }
+
+    /**
+     * {@see linkTrip()} for a whole fixed departure — every seat still live on it
+     * when the vehicle journey is materialised. Both dispatch paths (the automatic
+     * dispatcher and a driver starting the departure themselves) call this.
+     */
+    public function linkDepartureBookings(Trip $trip, ?int $routeDepartureId): void
+    {
+        if (! $this->split->enabled() || $routeDepartureId === null) {
+            return;
+        }
+
+        $this->linkTrip($trip, SeatReservation::query()
+            ->where('route_departure_id', $routeDepartureId)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->pluck('payment_reference'));
+    }
+
+    /**
      * Settles every unsettled booking payment on a completed trip: now that the
      * driver is known and the ride happened, divide each seat/passenger fare into
      * the driver's share (live transfer or held) and the operator's commission.
@@ -95,13 +151,112 @@ class BookingPaymentService
             ->where('settlement_mode', Payment::SETTLE_BOOKING)
             ->where('status', 'SUCCESS')
             ->whereNull('split_at')
+            ->orderBy('id')
             ->get();
 
-        foreach ($payments as $payment) {
-            $grossPaise = self::toPaise($payment->amount);
-            $commissionPaise = self::toPaise($payment->commission_amount);
-            $this->split->settleBookingPayment($payment, $driver, $grossPaise, $commissionPaise);
+        if ($payments->isEmpty()) {
+            return;
         }
+
+        // A shared journey carries many independent bookings on one trip, so each
+        // payment settles against its own seat fare and commission snapshot.
+        if ($trip->route_departure_id !== null) {
+            foreach ($payments as $payment) {
+                $this->split->settleBookingPayment(
+                    $payment,
+                    $driver,
+                    self::toPaise($payment->amount),
+                    self::toPaise($payment->commission_amount),
+                );
+            }
+
+            return;
+        }
+
+        $this->settleSoloPrepayments($trip, $driver, $payments);
+    }
+
+    /**
+     * A private ride is ONE fare that may have been captured more than once — the
+     * prepayment at booking, plus a balance if the final fare came in higher. So
+     * the trip's fare and commission are spread across the captures rather than
+     * read off each payment: each takes as much of the fare as it actually paid,
+     * and the commission is apportioned to match, with the last capture absorbing
+     * the rounding so not a paise is invented or dropped.
+     *
+     * When the ride came in CHEAPER than the prepayment, the fare runs out before
+     * the captures do: the surplus is already on its way back to the customer
+     * (see refundOverpayment) and simply stays with the operator here, which is
+     * what makes the trip still reconcile.
+     *
+     * @param  \Illuminate\Support\Collection<int,Payment>  $payments
+     */
+    private function settleSoloPrepayments(Trip $trip, ?User $driver, $payments): void
+    {
+        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::toPaise($p->amount));
+        if ($capturedTotal <= 0) {
+            return;
+        }
+
+        // The ride is worth its final fare — never more than was actually paid.
+        $fareTotal = min(self::toPaise($trip->final_fare), $capturedTotal);
+        $commissionTotal = min(self::toPaise($trip->commission_amount), max(0, $fareTotal));
+
+        $fareLeft = max(0, $fareTotal);
+        $commissionLeft = max(0, $commissionTotal);
+        $last = $payments->count() - 1;
+
+        foreach ($payments->values() as $i => $payment) {
+            $captured = self::toPaise($payment->amount);
+            $grossShare = min($captured, $fareLeft);
+
+            $commissionShare = $i === $last || $fareLeft <= 0
+                ? $commissionLeft
+                : (int) round($commissionTotal * $grossShare / max(1, $fareTotal));
+            $commissionShare = min($commissionShare, $commissionLeft, $grossShare);
+
+            $fareLeft -= $grossShare;
+            $commissionLeft -= $commissionShare;
+
+            $this->split->settleBookingPayment($payment, $driver, $grossShare, $commissionShare);
+        }
+    }
+
+    /**
+     * Gives back whatever the customer prepaid over the ride's actual final fare
+     * — a shorter route, waiting time that never happened, a fare corrected down.
+     * Runs at completion, BEFORE the split, so the driver's share is worked out
+     * on the fare that stands rather than on the larger sum we happened to hold.
+     * Private rides only: a shared journey has no single trip-level fare.
+     */
+    public function refundOverpayment(Trip $trip): ?array
+    {
+        if (! $this->split->enabled() || $trip->route_departure_id !== null) {
+            return null;
+        }
+
+        $finalPaise = self::toPaise($trip->final_fare);
+        if ($finalPaise <= 0) {
+            return null; // no settled fare to compare against
+        }
+
+        $payments = Payment::query()
+            ->where('trip_id', $trip->id)
+            ->where('settlement_mode', Payment::SETTLE_BOOKING)
+            ->where('status', 'SUCCESS')
+            ->whereNull('split_at')
+            ->orderBy('id')
+            ->get();
+
+        $capturedTotal = (int) $payments->sum(fn (Payment $p) => self::toPaise($p->amount));
+        $excess = $capturedTotal - $finalPaise;
+        if ($excess <= 0 || $payments->isEmpty()) {
+            return null;
+        }
+
+        // Take it off the last capture — the one most likely to still be
+        // refundable in full at Razorpay.
+        return $this->refunds->refundOverpayment($payments->last(), $excess);
     }
 
     /**

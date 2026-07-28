@@ -53,7 +53,54 @@ class PayoutMonitorService
         return [
             'summary' => $summary,
             'rows' => array_slice($rows, 0, $limit),
+            'owed' => $this->owedByDriver(),
         ];
+    }
+
+    /**
+     * "Who is owed money" — held shares rolled up per driver, worst first. The
+     * per-payment rows above answer "what happened to this ride"; this answers
+     * the question an operator actually acts on, which is which PEOPLE are
+     * waiting and why. `blocked_by_kyc` separates the two causes: a driver with
+     * no verified payout account needs chasing, whereas a verified driver whose
+     * transfer bounced is already being retried by the sweeper.
+     *
+     * @return array<int,array{driver_id:int,driver_name:?string,driver_phone:?string,amount:float,rides:int,account_status:string,blocked_by_kyc:bool,oldest_at:?string}>
+     */
+    public function owedByDriver(int $limit = 100): array
+    {
+        $held = HeldEarning::query()
+            ->where('status', HeldEarning::STATUS_HELD)
+            ->selectRaw('driver_id, SUM(amount_paise) as paise, COUNT(*) as rides, MIN(created_at) as oldest_at')
+            ->groupBy('driver_id')
+            ->orderByDesc('paise')
+            ->limit($limit)
+            ->get();
+
+        if ($held->isEmpty()) {
+            return [];
+        }
+
+        $drivers = \App\Models\User::query()
+            ->whereIn('id', $held->pluck('driver_id'))
+            ->get(['id', 'name', 'phone', 'payout_account_status', 'razorpay_linked_account_id'])
+            ->keyBy('id');
+
+        return $held->map(function ($row) use ($drivers) {
+            $driver = $drivers->get($row->driver_id);
+            $verified = $driver?->hasVerifiedPayoutAccount() ?? false;
+
+            return [
+                'driver_id' => (int) $row->driver_id,
+                'driver_name' => $driver?->name,
+                'driver_phone' => $driver?->phone,
+                'amount' => round(((int) $row->paise) / 100, 2),
+                'rides' => (int) $row->rides,
+                'account_status' => (string) ($driver?->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
+                'blocked_by_kyc' => ! $verified,
+                'oldest_at' => $row->oldest_at ? \Illuminate\Support\Carbon::parse($row->oldest_at)->toIso8601String() : null,
+            ];
+        })->all();
     }
 
     /**
@@ -63,11 +110,29 @@ class PayoutMonitorService
      *
      * @return array{rows:array,reconciliation:array}
      */
-    public function ledger(?int $tripId = null, int $limit = 500): array
+    public function ledger(?int $tripId = null, int $limit = 500, bool $unbalancedOnly = false): array
     {
         $query = LedgerEntry::query()->orderByDesc('id');
         if ($tripId !== null) {
             $query->where('trip_id', $tripId);
+        }
+
+        // "Show me only what doesn't add up" — the single question worth asking
+        // of a ledger this size. Scanning recent trips is enough: an imbalance is
+        // created at settlement, so it shows up immediately or not at all.
+        if ($unbalancedOnly) {
+            $recentTripIds = LedgerEntry::query()
+                ->whereNotNull('trip_id')
+                ->orderByDesc('id')
+                ->limit(2000)
+                ->pluck('trip_id')
+                ->unique();
+
+            $broken = $recentTripIds
+                ->filter(fn ($id) => ! $this->ledger->tripBalance((int) $id)['balanced'])
+                ->values();
+
+            $query->whereIn('trip_id', $broken);
         }
 
         $entries = $query->limit($limit)->get();
@@ -103,7 +168,37 @@ class PayoutMonitorService
             })
             ->all();
 
-        return ['rows' => $rows, 'reconciliation' => $reconciliation];
+        return [
+            'rows' => $rows,
+            'reconciliation' => $reconciliation,
+            'summary' => $this->ledgerSummary($entries, $reconciliation),
+        ];
+    }
+
+    /**
+     * Headline figures for the slice on screen, plus the one number that matters
+     * beyond it: how many of these trips don't balance. Anything other than zero
+     * means money was invented or dropped and needs a human.
+     *
+     * @param  \Illuminate\Support\Collection<int,LedgerEntry>  $entries
+     * @return array{captured:float,to_driver:float,held:float,to_operator:float,refunded:float,trips:int,unbalanced:int}
+     */
+    private function ledgerSummary($entries, array $reconciliation): array
+    {
+        $sum = fn (string $type) => round(
+            $entries->where('type', $type)->sum('amount_paise') / 100,
+            2,
+        );
+
+        return [
+            'captured' => $sum(LedgerEntry::TYPE_CAPTURE),
+            'to_driver' => $sum(LedgerEntry::TYPE_TRANSFER),
+            'held' => $sum(LedgerEntry::TYPE_HELD),
+            'to_operator' => $sum(LedgerEntry::TYPE_RETAINED),
+            'refunded' => $sum(LedgerEntry::TYPE_REFUND),
+            'trips' => count($reconciliation),
+            'unbalanced' => count(array_filter($reconciliation, fn ($r) => ! $r['balanced'])),
+        ];
     }
 
     /* ------------------------------------------------------------------ */

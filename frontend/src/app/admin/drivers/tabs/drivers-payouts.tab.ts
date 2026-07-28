@@ -40,6 +40,22 @@ interface MonitorSummary {
 }
 
 /**
+ * A driver with money waiting. The per-payment rows answer "what happened to
+ * this ride"; this answers the question an operator acts on — which PEOPLE are
+ * owed, and whether anyone needs chasing.
+ */
+interface OwedRow {
+  driver_id: number;
+  driver_name: string | null;
+  driver_phone: string | null;
+  amount: number;
+  rides: number;
+  account_status: string;
+  blocked_by_kyc: boolean;
+  oldest_at: string | null;
+}
+
+/**
  * Driver payouts — a STATUS MONITOR, not a worklist. Under the auto-split
  * engine the operator no longer sends payouts by hand; Razorpay Route pays each
  * driver's share at source. This screen watches that happen: paid / held (for an
@@ -91,6 +107,57 @@ interface MonitorSummary {
           <span class="card__label">Reversed</span>
           <span class="card__value">{{ summary.reversed_count }}</span>
           <span class="card__meta">cancelled rides</span>
+        </div>
+      </div>
+
+      <!-- Who is actually waiting on money. Ahead of the per-ride rows because
+           it's the only part of this screen anyone can act on. -->
+      <div class="owed-block" *ngIf="!loading && owed.length">
+        <div class="owed__head">
+          <div>
+            <h3 class="owed__title">Drivers waiting to be paid</h3>
+            <p class="owed__sub">
+              Earned but not yet sent. Anyone marked <strong>needs payout account</strong> is waiting on
+              us to chase them for bank details — the rest are retried automatically every few minutes.
+            </p>
+          </div>
+          <div class="total">
+            <span class="total__label">Total waiting</span>
+            <span class="total__value total__value--held">₹ {{ summary.held_amount | number:'1.2-2' }}</span>
+          </div>
+        </div>
+        <div class="tbl">
+          <table>
+            <thead>
+              <tr>
+                <th>Driver</th>
+                <th class="num">Waiting</th>
+                <th class="num">Rides</th>
+                <th>Why</th>
+                <th class="num">Waiting since</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of owed">
+                <td class="name">
+                  {{ row.driver_name || ('Driver #' + row.driver_id) }}
+                  <span class="phone" *ngIf="row.driver_phone">{{ row.driver_phone }}</span>
+                </td>
+                <td class="num owed">₹ {{ row.amount | number:'1.2-2' }}</td>
+                <td class="num">{{ row.rides }}</td>
+                <td>
+                  <span class="badge" [class.badge--failed]="row.blocked_by_kyc" [class.badge--held]="!row.blocked_by_kyc">
+                    {{ row.blocked_by_kyc ? 'Needs payout account' : 'Retrying transfer' }}
+                  </span>
+                </td>
+                <td class="num when">{{ row.oldest_at ? (row.oldest_at | date:'d MMM, HH:mm') : '—' }}</td>
+                <td class="act">
+                  <tm-button variant="ghost" size="sm" icon="chevron-right" (clicked)="openDriver(row.driver_id)">Open</tm-button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -221,6 +288,12 @@ interface MonitorSummary {
     .badge--reversed { background: var(--tm-border); color: var(--tm-text-muted); }
     .badge--none { background: var(--tm-border); color: var(--tm-text-muted); }
 
+    .owed-block { display: flex; flex-direction: column; gap: 10px; }
+    .owed__head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+    .owed__title { margin: 0 0 4px; font-size: 15px; }
+    .owed__sub { margin: 0; font-size: 12.5px; color: var(--tm-text-muted); max-width: 72ch; }
+    .total__value--held { color: var(--tm-amber, #B54708); }
+
     .legacy { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
     .legacy__head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
     .legacy__head h3 { margin: 0; font-size: 15px; }
@@ -244,6 +317,9 @@ export class DriversPayoutsTabComponent implements OnInit {
     { key: 'reversed', label: 'Reversed' },
   ];
 
+  /** Drivers with money waiting, worst first. */
+  owed: OwedRow[] = [];
+
   dueRows: PayoutDueRow[] = [];
   totalOwed = 0;
 
@@ -266,10 +342,11 @@ export class DriversPayoutsTabComponent implements OnInit {
     this.error = null;
 
     const status = this.active === 'all' ? '' : `?status=${this.active}`;
-    this.api.get<{ summary: MonitorSummary; rows: MonitorRow[] }>(`/admin/payouts/monitor${status}`).subscribe({
+    this.api.get<{ summary: MonitorSummary; rows: MonitorRow[]; owed?: OwedRow[] }>(`/admin/payouts/monitor${status}`).subscribe({
       next: (res) => {
         this.rows = res?.rows ?? [];
         this.summary = res?.summary ?? this.summary;
+        this.owed = res?.owed ?? [];
         this.loading = false;
       },
       error: (err) => {
@@ -303,5 +380,9 @@ export class DriversPayoutsTabComponent implements OnInit {
 
   open(row: PayoutDueRow): void {
     this.router.navigate(['/drivers', row.driver_id]);
+  }
+
+  openDriver(driverId: number): void {
+    this.router.navigate(['/drivers', driverId]);
   }
 }

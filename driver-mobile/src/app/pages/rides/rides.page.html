@@ -65,7 +65,7 @@
           <div class="dc-row" style="cursor: default;">
             <div class="dc-row__icon">
               <ion-icon
-                [name]="tripPaymentMethod === 'cash' ? 'cash-outline' : 'phone-portrait-outline'"
+                [name]="collectsCash ? 'cash-outline' : 'phone-portrait-outline'"
                 aria-hidden="true"
               ></ion-icon>
             </div>
@@ -77,6 +77,19 @@
               ₹{{ lastTrip?.['final_fare'] ?? lastTrip?.['estimated_fare'] ?? '—' }}
             </div>
           </div>
+
+          <!-- What the ride actually pays: fare − commission = yours. Shown so
+               the driver is never surprised by the amount that lands. -->
+          <div class="dc-row" *ngIf="driverPayout" style="cursor: default;">
+            <div class="dc-row__icon">
+              <ion-icon name="wallet-outline" aria-hidden="true"></ion-icon>
+            </div>
+            <div class="dc-row__text">
+              <small>You earn <span class="earn-sub">· after ₹{{ driverPayout.commission }} commission</span></small>
+              <strong>₹{{ driverPayout.net }}</strong>
+            </div>
+          </div>
+
           <div class="dc-row" *ngIf="customerPosition" style="cursor: default;">
             <div class="dc-row__icon dc-row__icon--muted">
               <ion-icon name="locate-outline" aria-hidden="true"></ion-icon>
@@ -89,6 +102,15 @@
             </div>
           </div>
         </div>
+
+        <!-- The rule that changes at the kerb: nothing to collect in person. -->
+        <p class="no-cash-note" *ngIf="driverPayout && !driverPayout.collect_cash">
+          <ion-icon name="shield-checkmark-outline" aria-hidden="true"></ion-icon>
+          <span>
+            {{ driverPayout.prepaid ? 'Already paid online.' : 'The rider pays online.' }}
+            Do not collect cash — your share reaches your bank after the ride.
+          </span>
+        </p>
       </div>
 
       <!-- Pickup / Drop addresses -->

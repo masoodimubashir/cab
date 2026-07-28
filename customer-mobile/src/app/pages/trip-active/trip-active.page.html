@@ -208,10 +208,11 @@
           <span>You tipped <strong>₹{{ trip.tip_amount }}</strong>. Thanks!</span>
         </div>
 
-        <!-- Completed: sticky pay bar -->
-        <div class="pay-bar" *ngIf="isCompleted()">
+        <!-- Sticky pay bar. Shown whenever there's something to collect: up
+             front once the fare is agreed, or afterwards for the balance. -->
+        <div class="pay-bar" *ngIf="canPayNow">
           <div class="pay-bar-info">
-            <span class="pay-bar-label">Total payable</span>
+            <span class="pay-bar-label">{{ isPrepaying ? 'Pay to confirm' : 'Total payable' }}</span>
             <span class="pay-bar-amount">₹{{ payableAmount }}</span>
           </div>
           <button class="pay-bar-btn dc-press" (click)="pay()">
@@ -219,6 +220,10 @@
             <span>Pay now</span>
           </button>
         </div>
+        <p class="prepay-hint" *ngIf="canPayNow && isPrepaying">
+          <ion-icon name="shield-checkmark-outline"></ion-icon>
+          <span>Paid up front. Cancel before pickup and you're refunded automatically.</span>
+        </p>
       </div>
     </div>
   </ng-container>

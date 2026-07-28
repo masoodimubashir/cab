@@ -62,6 +62,12 @@ class PaymentsController extends Controller
         ]);
     }
 
+    /**
+     * Phases the customer may pay in BEFORE the ride runs. The fare is agreed at
+     * CONFIRMED, so that's the earliest point there's an amount to charge.
+     */
+    private const PREPAY_STATUSES = ['CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'];
+
     public function payRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService, CouponService $couponService, PaymentModeService $paymentModeService)
     {
         $user = $request->user();
@@ -69,11 +75,27 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if ($trip->status !== 'COMPLETED') {
-            return response()->json(['message' => 'Trip must be completed before payment.'], 409);
+        // Under the automatic model the customer pays up front, as soon as the
+        // fare is agreed — the ride is prepaid, not billed afterwards. The
+        // post-completion charge stays available for the balance when the final
+        // fare came in above the estimate (waiting time, tolls, a changed route),
+        // and remains the ONLY path while the engine is off.
+        $prepay = $this->prepaymentsEnabled() && in_array($trip->status, self::PREPAY_STATUSES, true);
+
+        if (!$prepay && $trip->status !== 'COMPLETED') {
+            return response()->json([
+                'message' => $this->prepaymentsEnabled()
+                    ? 'This trip is not ready for payment yet.'
+                    : 'Trip must be completed before payment.',
+            ], 409);
         }
 
-        if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
+        // Prepay charges the agreed fare; after the ride it's the final fare.
+        $quotedFare = $prepay
+            ? (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0)
+            : (float) ($trip->final_fare ?? 0);
+
+        if ($quotedFare <= 0) {
             return response()->json(['message' => 'Final fare not available.'], 422);
         }
 
@@ -89,14 +111,14 @@ class PaymentsController extends Controller
 
         $couponAssignmentId = null;
         $discountAmount = null;
-        $payableAmount = (float) $trip->final_fare;
+        $payableAmount = $quotedFare;
 
         if (!empty($data['coupon_title'])) {
             $result = $couponService->resolveForUser(
                 code: $data['coupon_title'],
                 userId: (int) $user->id,
                 cityId: (int) $trip->city_id,
-                baseAmount: (float) $trip->final_fare,
+                baseAmount: $quotedFare,
                 cityVehicleTypeId: $trip->city_vehicle_type_id ? (int) $trip->city_vehicle_type_id : null,
                 pickupLat: $trip->pickup_lat !== null ? (float) $trip->pickup_lat : null,
                 pickupLng: $trip->pickup_lng !== null ? (float) $trip->pickup_lng : null,
@@ -111,34 +133,66 @@ class PaymentsController extends Controller
             $payableAmount = (float) $result['final_amount'];
         }
 
+        // Anything already captured against this trip comes off what's owed, so
+        // the post-ride call bills only the shortfall over the prepayment.
+        $alreadyPaid = (float) Payment::query()
+            ->where('trip_id', $trip->id)
+            ->whereIn('status', ['SUCCESS', 'REFUNDED'])
+            ->sum('amount');
+        $payableAmount = round($payableAmount - $alreadyPaid, 2);
+
         $amountPaise = (int) round($payableAmount * 100);
         if ($amountPaise <= 0) {
-            return response()->json(['message' => 'Payable amount must be greater than zero.'], 422);
+            return response()->json([
+                'message' => $alreadyPaid > 0
+                    ? 'This trip is already paid in full.'
+                    : 'Payable amount must be greater than zero.',
+                'already_paid' => $alreadyPaid,
+            ], $alreadyPaid > 0 ? 200 : 422);
         }
+
         $receipt = 'trip_' . $trip->id . '_' . now()->format('YmdHis');
 
-        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $couponAssignmentId, $discountAmount, $receipt, $razorpayService) {
-            $payment = Payment::query()->where('trip_id', $trip->id)->first();
-            if ($payment && $payment->status === 'SUCCESS') {
-                return response()->json(['payment' => $payment]);
+        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
+            // Reuse an abandoned checkout for this trip rather than piling up
+            // rows; a settled payment is never touched (there may now be several
+            // per trip: the prepayment plus a balance).
+            $payment = Payment::query()
+                ->where('trip_id', $trip->id)
+                ->where('status', 'PENDING')
+                ->latest('id')
+                ->first();
+
+            $attributes = [
+                'trip_id' => $trip->id,
+                'method' => 'RAZORPAY',
+                'provider' => 'RAZORPAY',
+                'status' => 'PENDING',
+                'amount' => $payableAmount,
+                'currency' => 'INR',
+                'paid_at' => null,
+                'razorpay_payment_id' => null,
+                'razorpay_order_id' => null,
+                'provider_response' => null,
+                'coupon_assignment_id' => $couponAssignmentId,
+                'discount_amount' => $discountAmount,
+                // A prepayment is settled at completion, not at capture: the ride
+                // hasn't happened yet, so the driver isn't owed anything.
+                'settlement_mode' => $prepay ? Payment::SETTLE_BOOKING : null,
+            ];
+
+            if ($payment) {
+                $payment->forceFill($attributes)->save();
+            } else {
+                $payment = Payment::query()->create($attributes);
             }
 
-            $payment = Payment::query()->updateOrCreate(
-                ['trip_id' => $trip->id],
-                [
-                    'method' => 'RAZORPAY',
-                    'provider' => 'RAZORPAY',
-                    'status' => 'PENDING',
-                    'amount' => $payableAmount,
-                    'currency' => 'INR',
-                    'paid_at' => null,
-                    'razorpay_payment_id' => null,
-                    'razorpay_order_id' => null,
-                    'provider_response' => null,
-                    'coupon_assignment_id' => $couponAssignmentId,
-                    'discount_amount' => $discountAmount,
-                ]
-            );
+            if ($prepay) {
+                // Cancel fees are the commission "from the moment of booking", so
+                // the rulebook needs the figure now — long before the completion
+                // settlement would normally work it out.
+                $this->stampExpectedCommission($trip, $payableAmount);
+            }
 
             $order = $razorpayService->createOrder($amountPaise, $receipt);
             $payment->razorpay_order_id = $order['order_id'];
@@ -146,6 +200,7 @@ class PaymentsController extends Controller
 
             return response()->json([
                 'payment' => $payment,
+                'prepaid' => $prepay,
                 'razorpay' => [
                     'key_id' => env('RAZORPAY_KEY_ID'),
                     'order_id' => $order['order_id'],
@@ -154,6 +209,40 @@ class PaymentsController extends Controller
                 ],
             ]);
         });
+    }
+
+    /** Is the customer expected to pay up front on a private ride? */
+    private function prepaymentsEnabled(): bool
+    {
+        return (bool) config('services.payments.split_enabled', false);
+    }
+
+    /**
+     * Works out the operator's cut on the agreed fare and stamps it on the trip
+     * at prepay time. Two things need it before the ride ends: the cancellation
+     * fee (§5 — the commission, chargeable from the moment of booking) and the
+     * split at completion. Never overwrites a figure settlement already wrote.
+     */
+    private function stampExpectedCommission(Trip $trip, float $fare): void
+    {
+        if ($trip->commission_amount !== null) {
+            return;
+        }
+
+        $subPercent = app(\App\Services\SubscriptionService::class)
+            ->effectiveCommissionPercentForTrip($trip, -1.0);
+
+        $commission = app(\App\Services\CommissionSettlementService::class)->commissionForFare(
+            $trip->city_id,
+            $fare,
+            (float) ($trip->toll_amount ?? 0),
+            $subPercent,
+        );
+
+        $trip->forceFill([
+            'commission_percent' => $commission['percent'],
+            'commission_amount' => $commission['amount'],
+        ])->save();
     }
 
     public function verifyRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService)
@@ -169,12 +258,20 @@ class PaymentsController extends Controller
             'razorpay_signature' => 'required|string',
         ]);
 
-        $payment = Payment::query()->where('trip_id', $trip->id)->first();
+        // Match on the order, not the trip: a prepaid ride can carry a second
+        // payment for the balance, so "the trip's payment" is no longer unique.
+        $payment = Payment::query()
+            ->where('trip_id', $trip->id)
+            ->where('razorpay_order_id', $data['razorpay_order_id'])
+            ->latest('id')
+            ->first();
+
         if (!$payment) {
-            return response()->json(['message' => 'Payment record not found.'], 404);
-        }
-        if ($payment->razorpay_order_id !== $data['razorpay_order_id']) {
-            return response()->json(['message' => 'Order ID mismatch.'], 409);
+            $exists = Payment::query()->where('trip_id', $trip->id)->exists();
+
+            return response()->json([
+                'message' => $exists ? 'Order ID mismatch.' : 'Payment record not found.',
+            ], $exists ? 409 : 404);
         }
         if ($payment->status === 'SUCCESS') {
             return response()->json(['payment' => $payment]);
@@ -206,8 +303,15 @@ class PaymentsController extends Controller
             $this->markCouponRedeemed($payment, $trip);
 
             // Auto-split at source (Route): driver share transferred/held,
-            // operator keeps commission. Idempotent + no-op while disabled.
+            // operator keeps commission. Idempotent + no-op while disabled, and
+            // a no-op for a prepayment — that one settles at completion instead.
             app(\App\Services\PaymentSplitService::class)->applyCapturedSplit($payment);
+
+            // A balance paid AFTER the ride has nothing left to wait for, so it
+            // settles immediately. Idempotent, and skips anything already split.
+            if ($trip->status === 'COMPLETED') {
+                app(\App\Services\BookingPaymentService::class)->settleTrip($trip);
+            }
 
             try {
                 app(InvoiceGeneratorService::class)->generateForTrip($trip);
@@ -318,8 +422,12 @@ class PaymentsController extends Controller
      * Unmatched events return 200 on purpose: Razorpay disables webhooks that
      * keep failing, and the scheduled sweeper re-checks anything we missed.
      */
-    public function razorpayWebhook(Request $request, RazorpayService $razorpayService, PaymentReconciliationService $reconciler)
-    {
+    public function razorpayWebhook(
+        Request $request,
+        RazorpayService $razorpayService,
+        PaymentReconciliationService $reconciler,
+        \App\Services\PayoutReconciliationService $payouts,
+    ) {
         $signature = (string) $request->header('X-Razorpay-Signature', '');
         $body = $request->getContent();
 
@@ -353,6 +461,51 @@ class PaymentsController extends Controller
             Log::info('DreamCabs Razorpay refund webhook processed', [
                 'event' => $event,
                 'refund_id' => $refund['id'],
+            ] + $result);
+
+            return response()->json(['ok' => true] + $result);
+        }
+
+        // Route transfer lifecycle: the driver's share either landed or bounced.
+        // A bounce re-queues their money for payout — it never disappears.
+        if (in_array($event, ['transfer.processed', 'transfer.failed'], true)) {
+            $transfer = $payload['payload']['transfer']['entity'] ?? null;
+            if (!is_array($transfer) || empty($transfer['id'])) {
+                return response()->json(['message' => 'Webhook missing transfer entity.'], 400);
+            }
+
+            $result = $payouts->applyTransfer(
+                (string) $transfer['id'],
+                $event === 'transfer.processed',
+                $transfer['error']['description'] ?? ($transfer['failure_reason'] ?? null),
+            );
+
+            Log::info('DreamCabs Razorpay transfer webhook processed', [
+                'event' => $event,
+                'transfer_id' => $transfer['id'],
+            ] + $result);
+
+            return response()->json(['ok' => true] + $result);
+        }
+
+        // Linked-account lifecycle: activation is what lets us pay a driver at
+        // all, so it also releases whatever they had parked waiting for it.
+        if (str_starts_with($event, 'account.')) {
+            $account = $payload['payload']['account']['entity'] ?? null;
+            if (!is_array($account) || empty($account['id'])) {
+                return response()->json(['message' => 'Webhook missing account entity.'], 400);
+            }
+
+            // Prefer the entity's own status; fall back to the event name
+            // ("account.activated" → "activated") when Razorpay omits it.
+            $status = (string) ($account['status'] ?? substr($event, strlen('account.')));
+
+            $result = $payouts->applyLinkedAccount((string) $account['id'], $status);
+
+            Log::info('DreamCabs Razorpay linked-account webhook processed', [
+                'event' => $event,
+                'account_id' => $account['id'],
+                'status' => $status,
             ] + $result);
 
             return response()->json(['ok' => true] + $result);

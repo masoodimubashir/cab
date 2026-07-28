@@ -628,3 +628,22 @@ ion-content.in-trip {
   font-weight: 800;
   ion-icon { font-size: 13px; }
 }
+
+/* Commission breakdown on the trip card. */
+.earn-sub { font-weight: 600; opacity: 0.75; }
+
+/* The kerb rule: fares are paid online, so there is nothing to collect. */
+.no-cash-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: rgba(14, 143, 71, 0.08);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #0b7a3e;
+  ion-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+}

@@ -15,6 +15,7 @@ class FixedRefundService
         private readonly FixedBookingEventService $events,
         private readonly NotificationCenter $notifier,
         private readonly SeatMapService $seatMap,
+        private readonly BookingPaymentService $bookingPayments,
     ) {}
 
     public function cancelByCustomer(SeatReservation $reservation): array
@@ -92,6 +93,11 @@ class FixedRefundService
             $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
             $this->releaseVehicleCapacity($dep, $res);
 
+            // R7 — the customer didn't board, so nothing is refunded and the
+            // forfeited fare is booked to the operator (the driver is not credited
+            // for a seat they never carried, matching per-seat settlement).
+            $this->autoRefundBooking($res, false, AutoRefundService::BY_CUSTOMER);
+
             $res->update([
                 'status' => 'NO_SHOW',
                 'refund_status' => 'REJECTED',
@@ -129,7 +135,7 @@ class FixedRefundService
 
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
-            $refundOutcome = $this->applyRefundIfNeeded($res, true, $dep?->trip_id);
+            $refundOutcome = $this->applyRefundIfNeeded($res, true, $dep?->trip_id, AutoRefundService::BY_OPERATOR);
 
             $this->releaseVehicleCapacity($dep, $res);
 
@@ -263,9 +269,17 @@ class FixedRefundService
     /**
      * @return array{refunded:bool,refund_pending:bool,refund_status:string,payment_status:?string}
      */
-    private function applyRefundIfNeeded(SeatReservation $reservation, bool $eligibleForRefund, ?int $tripId): array
+    private function applyRefundIfNeeded(SeatReservation $reservation, bool $eligibleForRefund, ?int $tripId, string $cancelledBy = AutoRefundService::BY_SYSTEM): array
     {
         if (!$eligibleForRefund || ($reservation->fare_amount ?? 0) <= 0) {
+            // R7 — the seat was released too late to resell, so the fare is
+            // forfeited. Book it to the operator now (rather than leaving it to
+            // settle at completion, where the driver would take a share of a seat
+            // they never carried) so the trip's ledger closes either way.
+            if (!$eligibleForRefund) {
+                $this->autoRefundBooking($reservation, false, $cancelledBy);
+            }
+
             return [
                 'refunded' => false,
                 'refund_pending' => false,
@@ -302,6 +316,32 @@ class FixedRefundService
         }
 
         if ($reservation->payment_method === 'razorpay') {
+            // R6 — the seat went back to inventory in time (or the cancel isn't the
+            // customer's fault), so the whole prepayment is returned automatically
+            // through the shared engine. The booking was cancelled before the trip
+            // completed, so its split never settled and the driver was never paid.
+            $outcome = $this->autoRefundBooking($reservation, true, $cancelledBy);
+
+            if ($outcome !== null && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true)) {
+                $reservation->forceFill([
+                    'refund_amount' => (float) $reservation->fare_amount,
+                    'refund_method' => 'razorpay',
+                    // Keep Razorpay's own refund id on the booking so the
+                    // refund.processed/failed webhook can find it, and the admin
+                    // register can show what to look up in the dashboard.
+                    'refund_reference' => $outcome['refund_id'] ?: $reservation->refund_reference,
+                    'refunded_at' => now(),
+                ])->save();
+
+                return [
+                    'refunded' => true,
+                    'refund_pending' => false,
+                    'refund_status' => 'REFUNDED',
+                    'payment_status' => 'REFUNDED',
+                ];
+            }
+
+            // Engine off, nothing mirrored, or Razorpay rejected the refund.
             // B5 policy: captured Razorpay money is returned MANUALLY by the
             // operator (GPay/bank/Razorpay dashboard) outside the app. We only
             // record the debt here — APPROVED means "owed" — and the booking
@@ -324,5 +364,27 @@ class FixedRefundService
             'refund_status' => 'NONE',
             'payment_status' => $reservation->payment_status,
         ];
+    }
+
+    /**
+     * Runs the shared seat-release rulebook against the prepayment mirrored for
+     * this reservation (keyed by the Razorpay payment id we stamped on it at
+     * confirmation). Returns null when the split engine is off, the booking wasn't
+     * paid by Razorpay, or nothing was mirrored — the caller then falls back to
+     * the legacy manual register.
+     *
+     * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string}|null
+     */
+    private function autoRefundBooking(SeatReservation $reservation, bool $refundFull, string $cancelledBy): ?array
+    {
+        if ($reservation->payment_method !== 'razorpay') {
+            return null;
+        }
+
+        return $this->bookingPayments->refundForBooking(
+            (string) $reservation->payment_reference,
+            $refundFull,
+            $cancelledBy,
+        );
     }
 }

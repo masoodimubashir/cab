@@ -147,6 +147,13 @@ export const routes: Routes = [
     canActivate: [adminAuthGuard],
     data: { permission: 'finance' },
   },
+  // Every rupee movement + the per-trip proof that it balances.
+  {
+    path: 'finance/ledger',
+    loadComponent: () => import('./admin/finance/finance-ledger.component').then((m) => m.FinanceLedgerComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
 
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard], data: { permission: 'roles_permissions' } },
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard], data: { permission: 'managers' } },

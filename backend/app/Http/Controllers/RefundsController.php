@@ -22,7 +22,15 @@ class RefundsController extends Controller
             'status' => ['nullable', 'in:due,refunded,all'],
         ]);
 
-        return response()->json($this->register->adminList($data['status'] ?? 'all'));
+        // Once the auto-refund engine is live this register stops being a
+        // worklist: refunds go back to the card automatically. Anything still
+        // sitting here unpaid is therefore an EXCEPTION — a Razorpay refund that
+        // failed, or a legacy row from before the migration — so the screen says
+        // so instead of implying every row is routine manual work.
+        return response()->json(
+            $this->register->adminList($data['status'] ?? 'all')
+            + ['auto_refunds' => (bool) config('services.payments.split_enabled', false)],
+        );
     }
 
     public function adminMarkRefunded(Request $request, string $module, int $id)
