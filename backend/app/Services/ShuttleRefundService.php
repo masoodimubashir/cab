@@ -14,6 +14,7 @@ class ShuttleRefundService
 {
     public function __construct(
         private readonly BookingPaymentService $bookingPayments,
+        private readonly NotificationCenter $notifier,
     ) {}
 
     public function cancelByCustomer(ShuttlePassengerBooking $booking, ?string $reason = null): array
@@ -151,12 +152,20 @@ class ShuttleRefundService
     ): void {
         $paid = $booking->payment_status === 'PAID';
         $refundFull ??= true;
+        $paidByRazorpay = $paid && (($booking->payment_method ?: 'razorpay') === 'razorpay');
+        $paidByWallet = $paid && $booking->payment_method === 'wallet';
 
         // Forfeited: the money stays with the operator, so the booking is closed
         // out as rejected rather than left owing.
         $refundStatus = $paid ? ($refundFull ? 'APPROVED' : 'REJECTED') : 'NONE';
         $paymentStatus = $booking->payment_status;
         $refundReference = $booking->refund_reference;
+        $refundPath = match (true) {
+            !$paid => 'none',
+            !$refundFull => 'rejected',
+            $paidByWallet => 'wallet_auto',
+            default => 'razorpay_manual_fallback', // razorpay default until auto succeeds
+        };
 
         // Either way the prepayment has to be booked through the shared engine —
         // a refund when one is due, otherwise a capture-to-operator so the
@@ -169,7 +178,14 @@ class ShuttleRefundService
             // Razorpay's own refund id, so the refund.processed/failed webhook can
             // find this booking and the admin register can show the reference.
             $refundReference = $outcome['refund_id'] ?: $refundReference;
+            if ($paidByRazorpay) {
+                $refundPath = 'razorpay_auto';
+            }
         }
+
+        $refundAmount = in_array($refundStatus, ['APPROVED', 'REFUNDED'], true)
+            ? ($booking->refund_amount ?? (float) $booking->fare_amount)
+            : (float) ($booking->refund_amount ?? 0);
 
         $booking->update([
             'status' => 'CANCELLED',
@@ -178,10 +194,8 @@ class ShuttleRefundService
             'refund_status' => $refundStatus,
             'payment_status' => $paymentStatus,
             'refund_reference' => $refundReference,
-            // APPROVED = owed; record how much so the Refunds register can
-            // lock the amount when the operator marks it paid.
             'refund_amount' => in_array($refundStatus, ['APPROVED', 'REFUNDED'], true)
-                ? ($booking->refund_amount ?? (float) $booking->fare_amount)
+                ? $refundAmount
                 : $booking->refund_amount,
             'refunded_at' => $refundStatus === 'REFUNDED'
                 ? ($booking->refunded_at ?? now())
@@ -194,6 +208,91 @@ class ShuttleRefundService
                 'status' => 'CANCELLED',
             ]);
         }
+
+        $this->notifyCustomerOfRefundOutcome($booking, $refundPath, (float) $refundAmount);
+        $this->notifyAdminsOfRefundOutcome($booking, $refundPath, (float) $refundAmount);
+    }
+
+    /**
+     * Customer-side notification following a Shuttle cancellation, wording chosen
+     * to match the actual refund path taken. Wallet refund is credited instantly,
+     * razorpay auto-refund lands in the customer's bank in 5–7 days, and a
+     * fallback-to-manual case tells the customer we're working on it.
+     */
+    private function notifyCustomerOfRefundOutcome(ShuttlePassengerBooking $booking, string $refundPath, float $amount): void
+    {
+        if (!in_array($refundPath, ['wallet_auto', 'razorpay_auto', 'razorpay_manual_fallback'], true)) {
+            return;
+        }
+
+        $data = [
+            'shuttle_booking_id' => $booking->id,
+            'refund_status' => $booking->refund_status,
+            'refund_path' => $refundPath,
+            'refund_amount' => $amount,
+        ];
+
+        [$title, $body, $icon] = match ($refundPath) {
+            'wallet_auto' => [
+                'Refund credited ✓',
+                '₹' . number_format($amount, 2) . ' has been credited to your DreamCabs wallet for your Shuttle booking.',
+                'check-circle',
+            ],
+            'razorpay_auto' => [
+                'Refund sent ✓',
+                'Your refund of ₹' . number_format($amount, 2) . ' has been initiated via Razorpay and should reach your bank in 5–7 business days.',
+                'check-circle',
+            ],
+            'razorpay_manual_fallback' => [
+                'Refund is being processed',
+                'Your refund of ₹' . number_format($amount, 2) . ' is being processed manually. We\'ll notify you once it\'s sent.',
+                'clock',
+            ],
+        };
+
+        $this->notifier->notifyUserId((int) $booking->customer_id, 'refund_completed', $title, $body, $data, $icon);
+    }
+
+    /**
+     * Admin-side notification. Silent on the routine happy paths (wallet refund,
+     * no refund due); loud on razorpay auto success (informational) and razorpay
+     * auto failure (needs manual action).
+     */
+    private function notifyAdminsOfRefundOutcome(ShuttlePassengerBooking $booking, string $refundPath, float $amount): void
+    {
+        if (!in_array($refundPath, ['razorpay_auto', 'razorpay_manual_fallback'], true)) {
+            return;
+        }
+
+        $booking->loadMissing(['customer:id,name']);
+        $customerName = $booking->customer?->name ?: ('Customer #' . $booking->customer_id);
+        $amountLabel = '₹' . number_format($amount, 2);
+        $data = [
+            'shuttle_booking_id' => $booking->id,
+            'refund_status' => $booking->refund_status,
+            'refund_path' => $refundPath,
+            'refund_amount' => $amount,
+        ];
+
+        if ($refundPath === 'razorpay_auto') {
+            $this->notifier->notifyAdmins(
+                'shuttle_refund_auto_ok',
+                'Refund sent automatically',
+                $amountLabel . ' refunded to ' . $customerName . ' for a Shuttle booking via Razorpay.',
+                $data,
+                'check-circle',
+            );
+
+            return;
+        }
+
+        $this->notifier->notifyAdmins(
+            'shuttle_refund_needs_manual',
+            'Refund needs manual action',
+            'Razorpay auto-refund failed for ' . $customerName . ' (Shuttle booking, ' . $amountLabel . '). Open /admin/refunds and send it via GPay or bank.',
+            $data,
+            'alert-triangle',
+        );
     }
 
     /**
