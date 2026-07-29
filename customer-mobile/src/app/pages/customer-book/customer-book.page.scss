@@ -38,11 +38,6 @@
   70%  { transform: scale(1); opacity: 0; }
   100% { transform: scale(1); opacity: 0; }
 }
-@keyframes cbDotPulse {
-  0%   { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0.45); }
-  70%  { box-shadow: 0 0 0 10px rgba(18, 179, 91, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(18, 179, 91, 0); }
-}
 @keyframes cbPinDrop {
   0%   { transform: translate(-50%, -130%); opacity: 0; }
   60%  { transform: translate(-50%, -94%); opacity: 1; }
@@ -58,34 +53,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Recenter FAB — sits just above the sheet on the idle map
-   ───────────────────────────────────────────────────────────── */
-.recenter-fab {
-  position: absolute;
-  right: 16px;
-  bottom: calc(40vh + 14px);
-  z-index: 9;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--dc-surface, #fff);
-  border: 1px solid var(--dc-hairline, #EEF0F2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--dc-shadow-md, 0 8px 24px rgba(13, 27, 42, 0.12));
-  cursor: pointer;
-
-  ion-icon {
-    font-size: 21px;
-    color: var(--dc-green, #12B35B);
-  }
-
-  &:active { box-shadow: var(--dc-shadow-sm); }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Top overlay: menu pill + live pickup bar
+   Top overlay: menu pill
    ───────────────────────────────────────────────────────────── */
 .top-overlay {
   position: absolute;
@@ -120,75 +88,6 @@
       margin: 0;
     }
     &:active { background: var(--dc-canvas, #F4F6F8); }
-  }
-
-  .location-bar {
-    flex: 1;
-    min-width: 0;
-    padding: 0 6px 0 14px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-
-    .loc-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--dc-green, #12B35B);
-      flex-shrink: 0;
-      animation: cbDotPulse 2.2s ease-out infinite;
-    }
-
-    .address-container {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      line-height: 1.1;
-
-      .address-eyebrow {
-        font-size: 9px;
-        font-weight: 800;
-        letter-spacing: 0.6px;
-        color: var(--dc-ink-faint, #9AA3AE);
-      }
-
-      .address-text {
-        font-size: 13.5px;
-        font-weight: 700;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        color: var(--dc-ink, #0D1B2A);
-        letter-spacing: -0.2px;
-        margin-top: 1px;
-      }
-    }
-
-    .divider {
-      width: 1px;
-      height: 26px;
-      background: var(--dc-hairline-strong, #E2E6EA);
-      margin: 0 4px;
-    }
-
-    .gps-btn {
-      background: transparent;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--dc-green, #12B35B);
-      cursor: pointer;
-      flex-shrink: 0;
-
-      ion-icon { font-size: 20px; }
-      &:active { background: var(--dc-green-tint, rgba(18,179,91,0.1)); }
-    }
   }
 }
 
@@ -1381,7 +1280,6 @@
   .new-trip-cta-btn::after,
   .center-map-pin,
   .center-map-pin .pin-icon,
-  .top-overlay .location-bar .loc-dot,
   .premium-searching-sheet .search-pulse-dot::after {
     animation: none !important;
   }
@@ -1808,7 +1706,6 @@
 
   /* shared shimmer for the placeholder blocks */
   .hs-menu,
-  .hs-line,
   .hs-bar,
   .hs-card-circle,
   .hs-card-name {
@@ -1850,7 +1747,7 @@
     box-shadow: 0 0 0 8px rgba(18, 179, 91, 0.12);
   }
 
-  /* top bar: menu pill + pickup location bar */
+  /* top bar: menu pill */
   .hs-top {
     position: absolute;
     top: max(16px, env(safe-area-inset-top, 16px));
@@ -1866,36 +1763,6 @@
     border-radius: 999px;
     flex-shrink: 0;
   }
-  .hs-locbar {
-    flex: 1;
-    min-width: 0;
-    height: 52px;
-    border-radius: 999px;
-    background: var(--dc-surface, #fff);
-    border: 1px solid var(--dc-hairline, #EEF0F2);
-    box-shadow: var(--dc-shadow-md, 0 8px 24px rgba(13, 27, 42, 0.12));
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 16px;
-  }
-  .hs-loc-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--dc-green, #12B35B);
-    opacity: 0.5;
-    flex-shrink: 0;
-  }
-  .hs-loc-lines {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .hs-line.sm { height: 8px; width: 34%; }
-  .hs-line.lg { height: 11px; width: 76%; }
 
   /* floating sheet: title · 3 product cards · "Where to?" bar */
   .hs-sheet {
@@ -1950,7 +1817,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .home-skeleton .hs-menu,
-  .home-skeleton .hs-line,
   .home-skeleton .hs-bar,
   .home-skeleton .hs-card-circle,
   .home-skeleton .hs-card-name,
@@ -1983,9 +1849,6 @@
    sheet rules. Every step shares ONE frame and NEVER grows to full screen:
        .sheet-head (fixed) · .sheet-body (scrolls) · .sheet-foot (pinned)
    ════════════════════════════════════════════════════════════════════════ */
-
-/* Keep the idle recenter FAB just above the sheet (which now caps at 40%). */
-.recenter-fab { bottom: calc(40vh + 16px); }
 
 /* ---- The frame: capped at 40% of screen height on every state ---- */
 .bottom-sheet {

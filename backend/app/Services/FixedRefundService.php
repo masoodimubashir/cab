@@ -52,18 +52,18 @@ class FixedRefundService
                 $res,
                 'customer_cancelled',
                 'Customer cancelled booking',
-                $refundOutcome['refund_status'] === 'REFUNDED'
-                    ? 'Customer cancelled before the cutoff and the refund was credited to their wallet.'
-                    : 'Customer cancelled the fixed booking. Refund status: ' . strtolower((string) $refundOutcome['refund_status']) . '.',
+                $this->cancelEventDetail($res, $refundOutcome),
                 [
                     'refund_status' => $refundOutcome['refund_status'],
                     'payment_status' => $refundOutcome['payment_status'],
                     'refund_pending' => $refundOutcome['refund_pending'],
+                    'refund_path' => $refundOutcome['refund_path'] ?? null,
                 ],
                 $res->customer,
             );
 
             $this->notifyCustomerCancelled($res, $refundOutcome);
+            $this->notifyAdminsOfRefundOutcome($res, $refundOutcome);
 
             return [
                 'reservation' => $res->fresh(['route:id,name,scope,mode', 'routeDeparture:id,route_id,service_date,depart_at,announced_depart_at,status', 'boardStop:id,name', 'dropStop:id,name']),
@@ -147,6 +147,8 @@ class FixedRefundService
                 'rating_comment' => $reason,
             ]);
 
+            $this->notifyAdminsOfRefundOutcome($res, $refundOutcome);
+
             $eventType = $reason === 'driver_missed_stop' ? 'driver_missed_stop' : 'system_cancelled';
             $eventTitle = match ($reason) {
                 'driver_missed_stop' => 'Driver missed pickup stop',
@@ -182,12 +184,36 @@ class FixedRefundService
     {
         $reservation->load(["route:id,name", "routeDeparture:id,driver_id,route_id"]);
         $routeName = $reservation->route?->name ?: "Fixed route";
-        $refundText = $refundOutcome["refund_status"] === "REFUNDED"
-            ? " Refund processed."
-            : " Refund status: " . strtolower((string) $refundOutcome["refund_status"]) . ".";
-        $data = $this->notificationData($reservation) + ["refund_status" => $refundOutcome["refund_status"]];
+        $refundText = $this->customerRefundLine($refundOutcome);
+        $data = $this->notificationData($reservation) + [
+            "refund_status" => $refundOutcome["refund_status"],
+            "refund_path" => $refundOutcome["refund_path"] ?? null,
+            "refund_amount" => $refundOutcome["refund_amount"] ?? null,
+        ];
 
         $this->notifier->notifyUserId($reservation->customer_id, "fixed_booking_cancelled", "Fixed booking cancelled", "Your booking for " . $routeName . " was cancelled." . $refundText, $data, "x-circle");
+
+        // Dedicated refund push when the auto-refund actually went through, so the
+        // customer has a clear "refund sent" ping to match the manual-register flow.
+        if (($refundOutcome["refund_path"] ?? null) === "razorpay_auto") {
+            $this->notifier->notifyUserId(
+                $reservation->customer_id,
+                "refund_completed",
+                "Refund sent ✓",
+                "Your refund of ₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2) . " for " . $routeName . " has been initiated via Razorpay and should reach your bank in 5–7 business days.",
+                $data,
+                "check-circle",
+            );
+        } elseif (($refundOutcome["refund_path"] ?? null) === "wallet_auto") {
+            $this->notifier->notifyUserId(
+                $reservation->customer_id,
+                "refund_completed",
+                "Refund credited ✓",
+                "₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2) . " has been credited to your DreamCabs wallet for " . $routeName . ".",
+                $data,
+                "check-circle",
+            );
+        }
 
         $driverId = $reservation->routeDeparture?->driver_id;
         if ($driverId) {
@@ -195,6 +221,81 @@ class FixedRefundService
         }
 
         $this->notifier->notifyAdmins("fixed_customer_cancelled", "Fixed booking cancelled", "A customer cancelled a booking on " . $routeName . ".", $data, "x-circle");
+    }
+
+    /**
+     * The refund line appended to the customer's cancellation notification.
+     * Wording follows the actual path taken so we don't tell a razorpay-paid
+     * customer that their money went to the wallet.
+     */
+    private function customerRefundLine(array $refundOutcome): string
+    {
+        return match ($refundOutcome["refund_path"] ?? null) {
+            "wallet_auto" => " ₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2) . " credited to your wallet.",
+            "razorpay_auto" => " Refund initiated via Razorpay — you'll see it in your bank in 5–7 business days.",
+            "razorpay_manual_fallback" => " Refund of ₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2) . " is being processed — we'll notify you once it's sent.",
+            "rejected" => " No refund is due for this cancellation.",
+            default => "",
+        };
+    }
+
+    /**
+     * The audit trail entry describing the cancellation outcome. Same tone as
+     * the customer message so the timeline reads coherently for admins.
+     */
+    private function cancelEventDetail(SeatReservation $reservation, array $refundOutcome): string
+    {
+        return match ($refundOutcome["refund_path"] ?? null) {
+            "wallet_auto" => "Customer cancelled before the cutoff. Refund credited to their wallet.",
+            "razorpay_auto" => "Customer cancelled before the cutoff. Razorpay auto-refund initiated — customer's bank credit in 5–7 days.",
+            "razorpay_manual_fallback" => "Customer cancelled before the cutoff. Razorpay auto-refund did not go through — the row is awaiting a manual refund from the operator.",
+            "rejected" => "Customer cancelled but no refund is due (seat could not be re-sold in time).",
+            default => "Customer cancelled the fixed booking. Refund status: " . strtolower((string) $refundOutcome["refund_status"]) . ".",
+        };
+    }
+
+    /**
+     * Admin-side notifications about how the refund resolved. Separate from the
+     * "a passenger cancelled" ping so admins can distinguish routine cancels
+     * from ones that need their attention (razorpay auto-refund failures).
+     */
+    private function notifyAdminsOfRefundOutcome(SeatReservation $reservation, array $refundOutcome): void
+    {
+        $path = $refundOutcome["refund_path"] ?? null;
+        if (!in_array($path, ["razorpay_auto", "razorpay_manual_fallback"], true)) {
+            return;
+        }
+
+        $reservation->loadMissing(["route:id,name", "customer:id,name"]);
+        $routeName = $reservation->route?->name ?: "Fixed route";
+        $customerName = $reservation->customer?->name ?: ("Customer #" . $reservation->customer_id);
+        $amount = "₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2);
+        $data = $this->notificationData($reservation) + [
+            "refund_status" => $refundOutcome["refund_status"],
+            "refund_path" => $path,
+            "refund_amount" => $refundOutcome["refund_amount"] ?? null,
+        ];
+
+        if ($path === "razorpay_auto") {
+            $this->notifier->notifyAdmins(
+                "fixed_refund_auto_ok",
+                "Refund sent automatically",
+                $amount . " refunded to " . $customerName . " for " . $routeName . " via Razorpay.",
+                $data,
+                "check-circle",
+            );
+
+            return;
+        }
+
+        // razorpay_manual_fallback — auto attempt failed, needs operator action.
+        $this->notifier->notifyAdmins(
+            "fixed_refund_needs_manual",
+            "Refund needs manual action",
+            "Razorpay auto-refund failed for " . $customerName . " (" . $routeName . ", " . $amount . "). Open /admin/refunds and send it via GPay or bank.",
+            $data,
+            "alert-triangle",
+        );
     }
 
     private function notifyNoShow(SeatReservation $reservation): void
@@ -278,7 +379,7 @@ class FixedRefundService
     }
 
     /**
-     * @return array{refunded:bool,refund_pending:bool,refund_status:string,payment_status:?string}
+     * @return array{refunded:bool,refund_pending:bool,refund_status:string,payment_status:?string,refund_path:string,refund_amount:float}
      */
     private function applyRefundIfNeeded(SeatReservation $reservation, bool $eligibleForRefund, ?int $tripId, string $cancelledBy = AutoRefundService::BY_SYSTEM): array
     {
@@ -296,6 +397,8 @@ class FixedRefundService
                 'refund_pending' => false,
                 'refund_status' => $eligibleForRefund ? 'NONE' : 'REJECTED',
                 'payment_status' => $reservation->payment_status,
+                'refund_path' => $eligibleForRefund ? 'none' : 'rejected',
+                'refund_amount' => 0.0,
             ];
         }
 
@@ -323,6 +426,8 @@ class FixedRefundService
                 'refund_pending' => false,
                 'refund_status' => 'REFUNDED',
                 'payment_status' => 'REFUNDED',
+                'refund_path' => 'wallet_auto',
+                'refund_amount' => (float) $reservation->fare_amount,
             ];
         }
 
@@ -349,14 +454,14 @@ class FixedRefundService
                     'refund_pending' => false,
                     'refund_status' => 'REFUNDED',
                     'payment_status' => 'REFUNDED',
+                    'refund_path' => 'razorpay_auto',
+                    'refund_amount' => (float) $reservation->fare_amount,
                 ];
             }
 
-            // Engine off, nothing mirrored, or Razorpay rejected the refund.
-            // B5 policy: captured Razorpay money is returned MANUALLY by the
-            // operator (GPay/bank/Razorpay dashboard) outside the app. We only
-            // record the debt here — APPROVED means "owed" — and the booking
-            // shows up in the admin Refunds register until it is marked paid.
+            // Auto-refund failed (engine off, nothing mirrored, or Razorpay
+            // rejected). Falls to the manual register: refund_status = APPROVED
+            // means "owed", operator sees it under /admin/refunds and GPays.
             $reservation->forceFill([
                 'refund_amount' => (float) $reservation->fare_amount,
             ])->save();
@@ -366,6 +471,8 @@ class FixedRefundService
                 'refund_pending' => true,
                 'refund_status' => 'APPROVED',
                 'payment_status' => $reservation->payment_status ?: 'PAID',
+                'refund_path' => 'razorpay_manual_fallback',
+                'refund_amount' => (float) $reservation->fare_amount,
             ];
         }
 
@@ -374,6 +481,8 @@ class FixedRefundService
             'refund_pending' => false,
             'refund_status' => 'NONE',
             'payment_status' => $reservation->payment_status,
+            'refund_path' => 'none',
+            'refund_amount' => 0.0,
         ];
     }
 

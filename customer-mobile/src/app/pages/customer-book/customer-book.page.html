@@ -10,16 +10,9 @@
     <div class="hs-map"></div>
     <div class="hs-pin"></div>
 
-    <!-- Top bar: menu pill + pickup location bar -->
+    <!-- Top bar: menu pill -->
     <div class="hs-top">
       <div class="hs-menu"></div>
-      <div class="hs-locbar">
-        <span class="hs-loc-dot"></span>
-        <div class="hs-loc-lines">
-          <div class="hs-line sm"></div>
-          <div class="hs-line lg"></div>
-        </div>
-      </div>
     </div>
 
     <!-- Floating sheet: title · 3 product cards · "Where to?" bar -->
@@ -38,29 +31,12 @@
   <!-- Soft top scrim so white overlays read on a busy map -->
   <div class="map-scrim-top" *ngIf="state === 'idle'" aria-hidden="true"></div>
 
-  <!-- Top overlay: side-menu pill + live pickup location bar -->
+  <!-- Top overlay: side-menu pill -->
   <div class="top-overlay" *ngIf="state === 'idle'">
     <div class="nav-pill menu-btn dc-press">
       <ion-menu-button menu="customer-menu"></ion-menu-button>
     </div>
-
-    <div class="nav-pill location-bar dc-anim-in" *ngIf="pickup && state === 'idle'">
-      <span class="loc-dot" aria-hidden="true"></span>
-      <div class="address-container">
-        <small class="address-eyebrow">PICKUP</small>
-        <span class="address-text">{{ pickup.address }}</span>
-      </div>
-      <div class="divider"></div>
-      <button class="gps-btn dc-press" (click)="centerMapToCurrentLocation(); $event.stopPropagation()" aria-label="Use current location for pickup">
-        <ion-icon name="locate"></ion-icon>
-      </button>
-    </div>
   </div>
-
-  <!-- Recenter the map on my live location (just pans the map; pickup unchanged) -->
-  <button class="recenter-fab dc-press" *ngIf="state === 'idle'" (click)="recenterOnMe()" aria-label="Center map on my location">
-    <ion-icon name="navigate"></ion-icon>
-  </button>
 
   <!-- Floating context bar during map selection mode -->
   <div class="floating-context-bar dc-anim-up" *ngIf="state === 'map-select'">
