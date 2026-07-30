@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Payment;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
@@ -32,6 +33,11 @@ class FixedAdminRecoveryActionsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // The admin cancel auto-refunds through Razorpay only when the split
+        // engine is on and the prepayment is mirrored (see createReservation).
+        config()->set('services.payments.split_enabled', true);
+        config()->set('services.razorpay.key_id', 'rzp_test_admin');
 
         $this->cityId = DB::table('cities')->insertGetId([
             'name' => 'Admin Recovery City',
@@ -252,7 +258,7 @@ class FixedAdminRecoveryActionsTest extends TestCase
 
     private function createReservation(array $overrides = []): SeatReservation
     {
-        return SeatReservation::query()->create(array_merge([
+        $reservation = SeatReservation::query()->create(array_merge([
             'route_departure_id' => $this->departure->id,
             'route_id' => $this->route->id,
             'customer_id' => $this->customer->id,
@@ -276,5 +282,22 @@ class FixedAdminRecoveryActionsTest extends TestCase
             'refund_status' => 'NONE',
             'status' => 'CONFIRMED',
         ], $overrides));
+
+        // Mirror the prepayment onto the money engine (settlement_mode=booking)
+        // so an admin cancel's auto-refund runs against Razorpay, not the manual
+        // register.
+        Payment::query()->create([
+            'method' => 'RAZORPAY',
+            'provider' => 'RAZORPAY',
+            'status' => 'SUCCESS',
+            'amount' => round((float) $reservation->fare_amount, 2),
+            'currency' => 'INR',
+            'razorpay_payment_id' => $reservation->payment_reference,
+            'commission_amount' => 0,
+            'paid_at' => now(),
+            'settlement_mode' => Payment::SETTLE_BOOKING,
+        ]);
+
+        return $reservation;
     }
 }

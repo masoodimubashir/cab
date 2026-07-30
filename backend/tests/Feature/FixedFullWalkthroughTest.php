@@ -8,7 +8,9 @@ use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
 use App\Models\User;
+use App\Services\FixedBoardingOtpService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\Support\SeatLayoutFactory;
@@ -203,7 +205,10 @@ class FixedFullWalkthroughTest extends TestCase
 
         RouteDeparture::query()->findOrFail($departureId)->update(['fixed_last_reached_stop_seq' => (int) $pickupStop->seq, 'fixed_last_reached_stop_at' => now()]);
 
-        $this->postJson("/api/fixed/bookings/{$reservationId}/board")
+        // Boarding is OTP-gated: issue the passenger's code, then board with it.
+        $this->postJson("/api/fixed/bookings/{$reservationId}/boarding-otp")->assertOk();
+        $code = Cache::get(FixedBoardingOtpService::codeCacheKey($reservationId));
+        $this->postJson("/api/fixed/bookings/{$reservationId}/board", ['code' => $code])
             ->assertOk()
             ->assertJsonPath('reservation.status', 'BOARDED');
 

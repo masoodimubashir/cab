@@ -205,6 +205,11 @@ class FixedAbcAcceptanceTest extends TestCase
 
     public function test_driver_c_completes_r6_and_gets_credited_after_commission(): void
     {
+        // Pins the legacy wallet-settlement path (split engine OFF): the point here
+        // is that commission comes from the route's fare_config, not the vehicle.
+        // The split-engine payout path is covered by BookingSettlementPhase5Test.
+        config()->set('services.payments.split_enabled', false);
+
         ['r' => $r, 'c' => $c] = $this->abcSetup();
         $route = Route::findOrFail($r[6]);
         $customer = User::factory()->create();
