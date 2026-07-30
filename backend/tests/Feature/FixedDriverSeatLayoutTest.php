@@ -65,13 +65,14 @@ class FixedDriverSeatLayoutTest extends TestCase
         ]);
     }
 
-    private function assignedDriver(int $routeId): User
+    private function assignedDriver(int $routeId, ?int $vehicleTypeId = null): User
     {
         $user = User::factory()->create();
         $user->addRole('driver');
         $driver = Driver::query()->create([
             'user_id' => $user->id,
             'city_id' => $this->cityId,
+            'vehicle_type_id' => $vehicleTypeId,
             'approval_status' => 'approved',
             'service_scope' => 'local',
             'service_mode' => 'fixed',
@@ -145,6 +146,68 @@ class FixedDriverSeatLayoutTest extends TestCase
             'route_id' => $routeId,
             'vehicle_seat_layout_id' => $this->foreignLayoutId,
         ])->assertStatus(422);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* F3 — the layout list is narrowed to the driver's own vehicle type   */
+    /* ------------------------------------------------------------------ */
+
+    public function test_layouts_endpoint_narrows_to_the_drivers_vehicle_type(): void
+    {
+        // A second vehicle type in the SAME city, with its own layout.
+        $otherTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Swift', 'sort_order' => 2, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $swiftLayoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $otherTypeId, 'Swift 4P');
+
+        $routeId = $this->makeRoute();
+        // Driver drives an Ertiga.
+        $user = $this->assignedDriver($routeId, $this->vehicleTypeId);
+
+        Sanctum::actingAs($user, ['act-as:driver']);
+        $res = $this->getJson("/api/fixed/driver/routes/{$routeId}/layouts")->assertOk();
+
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($this->primaryLayoutId, $ids, "the driver's own Ertiga layout is listed");
+        $this->assertNotContains($swiftLayoutId, $ids, "another vehicle's layout is hidden");
+    }
+
+    public function test_open_rejects_a_layout_for_a_different_vehicle_type(): void
+    {
+        $otherTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Swift', 'sort_order' => 2, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $swiftLayoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $otherTypeId, 'Swift 4P');
+
+        $routeId = $this->makeRoute();
+        $user = $this->assignedDriver($routeId, $this->vehicleTypeId);
+
+        Sanctum::actingAs($user, ['act-as:driver']);
+        $this->postJson('/api/fixed/driver/vehicles', [
+            'route_id' => $routeId,
+            'vehicle_seat_layout_id' => $swiftLayoutId,
+        ])->assertStatus(422);
+    }
+
+    public function test_layouts_falls_back_to_city_wide_when_no_layout_matches_the_vehicle(): void
+    {
+        // The driver's vehicle type has NO layout in this city, so the filter must
+        // fall back to the full city list rather than lock them out.
+        $lonelyTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Tempo', 'sort_order' => 3, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $routeId = $this->makeRoute();
+        $user = $this->assignedDriver($routeId, $lonelyTypeId);
+
+        Sanctum::actingAs($user, ['act-as:driver']);
+        $res = $this->getJson("/api/fixed/driver/routes/{$routeId}/layouts")->assertOk();
+
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($this->primaryLayoutId, $ids, 'falls back to the city Ertiga layout');
     }
 
     public function test_manifest_includes_seat_labels_for_each_passenger(): void
