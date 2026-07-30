@@ -15,6 +15,8 @@ use App\Models\ShuttlePassengerBooking;
 use App\Models\User;
 use App\Models\VehicleType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
+use Tests\Support\SeatLayoutFactory;
 use Tests\TestCase;
 
 class FixedAndShuttleTippingF7Test extends TestCase
@@ -25,12 +27,15 @@ class FixedAndShuttleTippingF7Test extends TestCase
     private City $city;
     private VehicleType $vehicleType;
     private CityVehicleType $cvt;
+    private int $layoutId;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->customer = User::factory()->create(['role' => 'customer']);
+        $this->customer = User::factory()->create();
+        $this->customer->addRole('customer');
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
         $this->city = City::query()->create(['name' => 'Delhi', 'is_active' => true]);
         $this->vehicleType = VehicleType::query()->create(['name' => 'Sedan', 'capacity' => 4]);
         $this->cvt = CityVehicleType::query()->create([
@@ -40,6 +45,7 @@ class FixedAndShuttleTippingF7Test extends TestCase
             'max_people' => 4,
             'is_active' => true,
         ]);
+        $this->layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
     }
 
     public function test_operator_tipping_config_endpoint_returns_settings(): void
@@ -52,7 +58,7 @@ class FixedAndShuttleTippingF7Test extends TestCase
             'tip_in_percentage' => false,
         ]);
 
-        $res = $this->actingAs($this->customer, 'sanctum')
+        $res = $this
             ->getJson('/api/operator/tipping');
 
         $res->assertOk()
@@ -71,17 +77,22 @@ class FixedAndShuttleTippingF7Test extends TestCase
             'mode' => 'fixed',
             'origin_name' => 'CP',
             'dest_name' => 'Aerocity',
-            'flat_fare' => 100.00,
+            'origin_lat' => 28.6315,
+            'origin_lng' => 77.2167,
+            'dest_lat' => 28.5562,
+            'dest_lng' => 77.1000,
+            'fare_config' => ['seat_fare' => 100.0],
             'max_seats_per_booking' => 4,
             'is_active' => true,
         ]);
 
-        $stop1 = RouteStop::query()->create(['route_id' => $route->id, 'seq' => 1, 'name' => 'CP', 'is_pickup' => true, 'is_active' => true]);
-        $stop2 = RouteStop::query()->create(['route_id' => $route->id, 'seq' => 2, 'name' => 'Aerocity', 'is_drop' => true, 'is_active' => true]);
+        $stop1 = RouteStop::query()->create(['route_id' => $route->id, 'seq' => 1, 'name' => 'CP', 'lat' => 28.6315, 'lng' => 77.2167, 'is_pickup' => true, 'is_active' => true]);
+        $stop2 = RouteStop::query()->create(['route_id' => $route->id, 'seq' => 2, 'name' => 'Aerocity', 'lat' => 28.5562, 'lng' => 77.1000, 'is_drop' => true, 'is_active' => true]);
 
         $departure = RouteDeparture::query()->create([
             'route_id' => $route->id,
             'city_vehicle_type_id' => $this->cvt->id,
+            'vehicle_seat_layout_id' => $this->layoutId,
             'service_date' => now()->toDateString(),
             'depart_at' => now()->addHour()->toDateTimeString(),
             'capacity' => 4,
@@ -92,7 +103,7 @@ class FixedAndShuttleTippingF7Test extends TestCase
         ]);
 
         // Store seat hold with ₹20 tip
-        $res = $this->actingAs($this->customer, 'sanctum')
+        $res = $this
             ->postJson('/api/fixed/seat-holds', [
                 'route_departure_id' => $departure->id,
                 'board_stop_id' => $stop1->id,
@@ -107,7 +118,7 @@ class FixedAndShuttleTippingF7Test extends TestCase
 
         // Confirm hold with test payment
         $holdId = $hold['id'];
-        $confirmRes = $this->actingAs($this->customer, 'sanctum')
+        $confirmRes = $this
             ->postJson("/api/fixed/seat-holds/{$holdId}/test-confirm-payment", [
                 'booking_channel' => 'advance',
             ]);

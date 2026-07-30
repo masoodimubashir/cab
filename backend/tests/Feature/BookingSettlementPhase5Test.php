@@ -433,7 +433,7 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertSame(self::SEAT_FARE, (float) $this->paymentFor($reservation)->refund_amount);
     }
 
-    public function test_r7_a_no_show_forfeits_the_fare_to_the_operator(): void
+    public function test_r7_a_no_show_gets_no_refund_but_the_fare_still_settles_by_the_split(): void
     {
         $this->mockRazorpay();
         $driver = $this->makeDriver();
@@ -451,22 +451,26 @@ class BookingSettlementPhase5Test extends TestCase
         ]);
         $this->postJson("/api/fixed/bookings/{$reservation->id}/no-show")->assertOk();
 
-        $payment = $this->paymentFor($reservation);
-        $this->assertNull($payment->refund_id, 'a no-show gets nothing back');
-        $this->assertNotNull($payment->split_at, 'the forfeited fare is settled, not left dangling');
-        $this->assertSame(0.0, (float) $payment->driver_amount);
-        $this->assertSame(self::SEAT_FARE, (float) $payment->commission_amount);
-
         $reservation->refresh();
         $this->assertSame('NO_SHOW', $reservation->status);
         $this->assertSame('REJECTED', $reservation->refund_status);
 
-        // Operator keeps the lot; the ledger still closes.
-        $this->assertBalanced($trip->id, captured: 12000, refunded: 0, driverNet: 0, operatorNet: 12000);
+        // The customer gets nothing back — but the driver drove out and waited for
+        // them, so on completion the fare is still divided by the configured
+        // commission split (owner's rule): ₹96 to the driver, ₹24 to the operator.
+        $this->completeDeparture($driver, $departure);
+
+        $payment = $this->paymentFor($reservation);
+        $this->assertNull($payment->refund_id, 'a no-show gets nothing back');
+        $this->assertNotNull($payment->split_at, 'the fare is settled, not left dangling');
+        $this->assertSame(96.0, (float) $payment->driver_amount);       // ₹120 − ₹24
+        $this->assertSame(24.0, (float) $payment->commission_amount);
+
+        $this->assertBalanced($trip->id, captured: 12000, refunded: 0, driverNet: 9600, operatorNet: 2400);
         $this->assertSame(0, LedgerEntry::query()->where('type', 'refund')->count());
     }
 
-    public function test_cancelling_once_the_vehicle_has_reached_the_pickup_stop_forfeits_the_fare(): void
+    public function test_cancelling_once_the_vehicle_has_reached_the_pickup_stop_gets_no_refund_but_still_settles(): void
     {
         $this->mockRazorpay();
         $driver = $this->makeDriver();
@@ -477,9 +481,9 @@ class BookingSettlementPhase5Test extends TestCase
         $trip = $this->startDeparture($driver, $departure);
 
         // The vehicle has reached THIS passenger's pickup stop — the seat is now
-        // spent on them and the seat can no longer be resold, so cancelling
-        // forfeits the fare. (A cancel while the bus is still en route to the stop
-        // is refunded in full — see the "still forming" sibling test.)
+        // spent on them and can no longer be resold, so cancelling returns no
+        // money to the customer. (A cancel while the bus is still en route to the
+        // stop is refunded in full — see the "still forming" sibling test.)
         $departure->fresh()->update([
             'fixed_last_reached_stop_seq' => (int) $this->pickup->seq,
             'fixed_last_reached_stop_at' => now(),
@@ -490,11 +494,17 @@ class BookingSettlementPhase5Test extends TestCase
             ->assertOk()
             ->assertJsonPath('refund_status', 'REJECTED');
 
+        // No refund to the customer; but the driver committed and waited, so on
+        // completion the fare settles by the configured commission split (owner's
+        // rule): ₹96 to the driver, ₹24 to the operator.
+        $this->completeDeparture($driver, $departure);
+
         $payment = $this->paymentFor($reservation);
         $this->assertNull($payment->refund_id);
-        $this->assertSame(self::SEAT_FARE, (float) $payment->commission_amount);
+        $this->assertSame(96.0, (float) $payment->driver_amount);
+        $this->assertSame(24.0, (float) $payment->commission_amount);
         $this->assertSame(0, LedgerEntry::query()->where('type', 'refund')->count());
-        $this->assertBalanced($trip->id, captured: 12000, refunded: 0, driverNet: 0, operatorNet: 12000);
+        $this->assertBalanced($trip->id, captured: 12000, refunded: 0, driverNet: 9600, operatorNet: 2400);
     }
 
     public function test_cancelling_while_the_vehicle_is_still_forming_is_refunded_in_full(): void

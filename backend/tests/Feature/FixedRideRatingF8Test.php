@@ -10,9 +10,13 @@ use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
+use App\Models\Trip;
 use App\Models\User;
 use App\Models\VehicleType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\Sanctum;
+use Tests\Support\SeatLayoutFactory;
 use Tests\TestCase;
 
 class FixedRideRatingF8Test extends TestCase
@@ -33,17 +37,12 @@ class FixedRideRatingF8Test extends TestCase
     {
         parent::setUp();
 
-        $this->customer = User::factory()->create(['role' => 'customer']);
-        $this->driverUser = User::factory()->create(['role' => 'driver', 'name' => 'John Driver']);
-        $this->driver = Driver::query()->create([
-            'user_id' => $this->driverUser->id,
-            'name' => 'John Driver',
-            'phone' => '9876543210',
-            'city_id' => 1,
-            'status' => 'APPROVED',
-            'rating_avg' => 0,
-            'rating_count' => 0,
-        ]);
+        $this->customer = User::factory()->create();
+        $this->customer->addRole('customer');
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+
+        $this->driverUser = User::factory()->create(['name' => 'John Driver']);
+        $this->driverUser->addRole('driver');
 
         $this->city = City::query()->create(['name' => 'Delhi', 'is_active' => true]);
         $this->vehicleType = VehicleType::query()->create(['name' => 'Sedan', 'capacity' => 4]);
@@ -54,6 +53,20 @@ class FixedRideRatingF8Test extends TestCase
             'max_people' => 4,
             'is_active' => true,
         ]);
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+
+        $this->driver = Driver::query()->create([
+            'user_id' => $this->driverUser->id,
+            'city_id' => $this->city->id,
+            'approval_status' => 'approved',
+            'rating_avg' => 0,
+            'rating_count' => 0,
+        ]);
+
+        DB::table('ride_types')->insertOrIgnore([
+            'id' => 1, 'name' => 'Fixed', 'description' => 'F8', 'sort_order' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
 
         $this->route = Route::query()->create([
             'city_id' => $this->city->id,
@@ -62,18 +75,37 @@ class FixedRideRatingF8Test extends TestCase
             'mode' => 'fixed',
             'origin_name' => 'CP',
             'dest_name' => 'Aerocity',
-            'flat_fare' => 100.00,
+            'origin_lat' => 28.6315,
+            'origin_lng' => 77.2167,
+            'dest_lat' => 28.5562,
+            'dest_lng' => 77.1000,
+            'fare_config' => ['seat_fare' => 100.0],
             'max_seats_per_booking' => 4,
             'is_active' => true,
         ]);
 
-        $stop1 = RouteStop::query()->create(['route_id' => $this->route->id, 'seq' => 1, 'name' => 'CP', 'is_pickup' => true, 'is_active' => true]);
-        $stop2 = RouteStop::query()->create(['route_id' => $this->route->id, 'seq' => 2, 'name' => 'Aerocity', 'is_drop' => true, 'is_active' => true]);
+        $stop1 = RouteStop::query()->create(['route_id' => $this->route->id, 'seq' => 1, 'name' => 'CP', 'lat' => 28.6315, 'lng' => 77.2167, 'is_pickup' => true, 'is_active' => true]);
+        $stop2 = RouteStop::query()->create(['route_id' => $this->route->id, 'seq' => 2, 'name' => 'Aerocity', 'lat' => 28.5562, 'lng' => 77.1000, 'is_drop' => true, 'is_active' => true]);
+
+        // A finished Fixed ride carries a Trip; ratings are keyed on it.
+        $trip = Trip::query()->create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driverUser->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => 1,
+            'status' => 'COMPLETED',
+            'pickup_lat' => 28.6315,
+            'pickup_lng' => 77.2167,
+            'drop_lat' => 28.5562,
+            'drop_lng' => 77.1000,
+        ]);
 
         $this->departure = RouteDeparture::query()->create([
             'route_id' => $this->route->id,
             'city_vehicle_type_id' => $this->cvt->id,
+            'vehicle_seat_layout_id' => $layoutId,
             'driver_id' => $this->driverUser->id,
+            'trip_id' => $trip->id,
             'service_date' => now()->toDateString(),
             'depart_at' => now()->addHour()->toDateTimeString(),
             'capacity' => 4,
@@ -87,6 +119,7 @@ class FixedRideRatingF8Test extends TestCase
             'route_departure_id' => $this->departure->id,
             'route_id' => $this->route->id,
             'customer_id' => $this->customer->id,
+            'trip_id' => $trip->id,
             'board_stop_id' => $stop1->id,
             'drop_stop_id' => $stop2->id,
             'seats' => 1,
@@ -98,7 +131,7 @@ class FixedRideRatingF8Test extends TestCase
 
     public function test_rating_active_booking_is_rejected(): void
     {
-        $res = $this->actingAs($this->customer, 'sanctum')
+        $res = $this
             ->postJson("/api/fixed/bookings/{$this->reservation->id}/rate", [
                 'score' => 5,
                 'comment' => 'Great drive!',
@@ -112,7 +145,7 @@ class FixedRideRatingF8Test extends TestCase
     {
         $this->reservation->update(['status' => 'DROPPED']);
 
-        $res = $this->actingAs($this->customer, 'sanctum')
+        $res = $this
             ->postJson("/api/fixed/bookings/{$this->reservation->id}/rate", [
                 'score' => 5,
                 'comment' => 'Excellent service and on-time pickup!',
@@ -136,7 +169,7 @@ class FixedRideRatingF8Test extends TestCase
     {
         $this->reservation->update(['status' => 'DROPPED', 'rating_score' => 5]);
 
-        $res = $this->actingAs($this->customer, 'sanctum')
+        $res = $this
             ->postJson("/api/fixed/bookings/{$this->reservation->id}/rate", [
                 'score' => 4,
             ]);
