@@ -24,6 +24,7 @@ class FinanceLedgerImmediateCaptureF6Test extends TestCase
 
     private int $cityId;
     private int $routeId;
+    private int $layoutId;
 
     protected function setUp(): void
     {
@@ -51,7 +52,7 @@ class FinanceLedgerImmediateCaptureF6Test extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        SeatLayoutFactory::standardErtiga6P($this->cityId, $vehicleTypeId);
+        $this->layoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $vehicleTypeId);
 
         $route = Route::query()->create([
             'city_id' => $this->cityId,
@@ -128,15 +129,17 @@ class FinanceLedgerImmediateCaptureF6Test extends TestCase
         // 2. Now simulate departure dispatch & trip completion
         $departure = RouteDeparture::query()->create([
             'route_id' => $this->routeId,
-            'scheduled_departure_at' => now()->addHour(),
+            'vehicle_seat_layout_id' => $this->layoutId,
+            'service_date' => now()->toDateString(),
+            'depart_at' => now()->addHour(),
             'status' => 'FORMING',
-            'is_cancelled' => false,
         ]);
 
-        $driverUser = User::factory()->create(['user_type' => 'driver']);
-        $driver = DB::table('drivers')->insertGetId([
+        $driverUser = User::factory()->create();
+        $driverUser->addRole('driver');
+        DB::table('drivers')->insert([
             'user_id' => $driverUser->id, 'city_id' => $this->cityId,
-            'approval_status' => 'APPROVED', 'is_online' => true, 'is_on_trip' => false,
+            'approval_status' => 'approved', 'is_online' => true,
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
@@ -144,8 +147,13 @@ class FinanceLedgerImmediateCaptureF6Test extends TestCase
             'customer_id' => User::factory()->create()->id,
             'driver_id' => $driverUser->id,
             'city_id' => $this->cityId,
+            'ride_type_id' => 1,
             'status' => 'COMPLETED',
             'route_departure_id' => $departure->id,
+            'pickup_lat' => 34.0,
+            'pickup_lng' => 74.0,
+            'drop_lat' => 34.1,
+            'drop_lng' => 74.1,
             'estimated_fare' => 150.0,
             'final_fare' => 150.0,
             'commission_amount' => 30.0,

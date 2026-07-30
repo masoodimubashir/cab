@@ -15,6 +15,8 @@ use App\Models\Trip;
 use App\Models\User;
 use App\Models\VehicleType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class AdminAnalyticsAndReportsAuditF10Test extends TestCase
@@ -25,20 +27,41 @@ class AdminAnalyticsAndReportsAuditF10Test extends TestCase
     private User $customer;
     private User $driverUser;
     private Driver $driver;
+    private int $cityId;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->admin = User::factory()->create(['role' => 'admin']);
-        $this->customer = User::factory()->create(['role' => 'customer']);
-        $this->driverUser = User::factory()->create(['role' => 'driver', 'name' => 'Driver One']);
+        $now = now();
+
+        $this->admin = User::factory()->create(['manager_all_cities' => true]);
+        $this->admin->addRole('admin');
+        $roleId = DB::table('manager_roles')->insertGetId([
+            'slug' => 'super_admin', 'name' => 'Super Admin', 'is_system' => true,
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->admin->forceFill(['manager_role_id' => $roleId])->save();
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+
+        $this->customer = User::factory()->create();
+        $this->customer->addRole('customer');
+
+        $this->driverUser = User::factory()->create(['name' => 'Driver One']);
+        $this->driverUser->addRole('driver');
+
+        $city = City::query()->create(['name' => 'Delhi', 'is_active' => true]);
+        $this->cityId = $city->id;
+
+        DB::table('ride_types')->insertOrIgnore([
+            'id' => 1, 'name' => 'Fixed', 'description' => 'F10', 'sort_order' => 1,
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+
         $this->driver = Driver::query()->create([
             'user_id' => $this->driverUser->id,
-            'name' => 'Driver One',
-            'phone' => '9876543210',
-            'city_id' => 1,
-            'status' => 'APPROVED',
+            'city_id' => $city->id,
+            'approval_status' => 'approved',
             'rating_avg' => 5.0,
             'rating_count' => 1,
         ]);
@@ -50,12 +73,18 @@ class AdminAnalyticsAndReportsAuditF10Test extends TestCase
         Trip::query()->create([
             'customer_id' => $this->customer->id,
             'driver_id' => $this->driverUser->id,
+            'city_id' => $this->cityId,
+            'ride_type_id' => 1,
             'status' => 'COMPLETED',
+            'pickup_lat' => 28.6315,
+            'pickup_lng' => 77.2167,
+            'drop_lat' => 28.5562,
+            'drop_lng' => 77.1000,
             'final_fare' => 150.00,
             'completed_at' => now(),
         ]);
 
-        $res = $this->actingAs($this->admin, 'sanctum')
+        $res = $this
             ->getJson('/api/admin/reports');
 
         $res->assertOk()
@@ -72,13 +101,13 @@ class AdminAnalyticsAndReportsAuditF10Test extends TestCase
 
     public function test_admin_analytics_realtime_and_graphs_endpoints(): void
     {
-        $realtimeRes = $this->actingAs($this->admin, 'sanctum')
-            ->getJson('/api/admin/analytics/realtime');
+        $realtimeRes = $this
+            ->getJson('/api/admin/analytics/real-time');
 
         $realtimeRes->assertOk()
             ->assertJsonStructure(['period', 'cards']);
 
-        $graphsRes = $this->actingAs($this->admin, 'sanctum')
+        $graphsRes = $this
             ->getJson('/api/admin/analytics/graphs');
 
         $graphsRes->assertOk()
@@ -87,21 +116,33 @@ class AdminAnalyticsAndReportsAuditF10Test extends TestCase
 
     public function test_admin_analytics_reports_execution_and_catalogue(): void
     {
-        // Seed a rating
+        // Seed a rating (ratings are keyed on a completed trip)
+        $trip = Trip::query()->create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driverUser->id,
+            'city_id' => $this->cityId,
+            'ride_type_id' => 1,
+            'status' => 'COMPLETED',
+            'pickup_lat' => 28.6315,
+            'pickup_lng' => 77.2167,
+            'drop_lat' => 28.5562,
+            'drop_lng' => 77.1000,
+        ]);
         Rating::query()->create([
+            'trip_id' => $trip->id,
             'customer_id' => $this->customer->id,
             'driver_id' => $this->driverUser->id,
             'score' => 5,
             'comment' => 'Great experience!',
         ]);
 
-        $catalogueRes = $this->actingAs($this->admin, 'sanctum')
+        $catalogueRes = $this
             ->getJson('/api/admin/analytics/reports');
 
         $catalogueRes->assertOk()
             ->assertJsonStructure(['data']);
 
-        $execRes = $this->actingAs($this->admin, 'sanctum')
+        $execRes = $this
             ->getJson('/api/admin/analytics/reports/ratings_reviews');
 
         $execRes->assertOk()
@@ -110,7 +151,7 @@ class AdminAnalyticsAndReportsAuditF10Test extends TestCase
 
     public function test_finance_overview_and_money_in_ledger(): void
     {
-        $overviewRes = $this->actingAs($this->admin, 'sanctum')
+        $overviewRes = $this
             ->getJson('/api/admin/finance/overview');
 
         $overviewRes->assertOk()
@@ -124,7 +165,7 @@ class AdminAnalyticsAndReportsAuditF10Test extends TestCase
                 'net_online',
             ]);
 
-        $moneyInRes = $this->actingAs($this->admin, 'sanctum')
+        $moneyInRes = $this
             ->getJson('/api/admin/finance/money-in');
 
         $moneyInRes->assertOk()
