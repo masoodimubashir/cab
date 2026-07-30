@@ -418,7 +418,7 @@ export class FixedDriverPage {
    * sheet where the driver types the code the customer reads out.
    */
   async board(passenger: FixedPassenger): Promise<void> {
-    if (!this.canBoardPassenger(passenger) || this.otpSending || this.boardCooldown(passenger) > 0) return;
+    if (!this.boardReady(passenger) || this.otpSending || this.boardCooldown(passenger) > 0) return;
 
     this.otpSending = true;
     this.error = null;
@@ -760,8 +760,37 @@ export class FixedDriverPage {
       && !this.passengers.length;
   }
 
+  /** The ride is under way — the backend only boards/drops on a started vehicle. */
+  get rideStarted(): boolean {
+    return ['DISPATCHED', 'DEPARTED'].includes((this.activeVehicle?.status || '').toUpperCase());
+  }
+
+  /** This passenger row is at a status where a Board button makes sense. Kept as
+   *  the button's visibility check so the affordance stays on screen (disabled)
+   *  rather than vanishing while the driver hasn't started or reached the stop. */
   canBoardPassenger(passenger: FixedPassenger): boolean {
     return ['BOOKED', 'CONFIRMED'].includes((passenger.status || '').toUpperCase());
+  }
+
+  /** Every precondition the backend enforces for boarding is met, so the tap will
+   *  succeed: right status, ride started, and the pickup stop reached. Gating the
+   *  button on this turns the old post-tap 422s ("Start the fixed ride…", "Reach
+   *  the passenger pickup stop…") into an up-front disabled state with a reason. */
+  boardReady(passenger: FixedPassenger): boolean {
+    return this.canBoardPassenger(passenger)
+      && this.rideStarted
+      && this.isPassengerPickupReached(passenger);
+  }
+
+  /** Why the Board button is disabled, or null when it's ready to tap. */
+  boardBlockReason(passenger: FixedPassenger): string | null {
+    if (!this.canBoardPassenger(passenger)) return null;
+    if (!this.rideStarted) return 'Start the ride to begin boarding';
+    if (!this.isPassengerPickupReached(passenger)) {
+      const stop = this.passengerBoardStop(passenger);
+      return stop ? 'Board unlocks when you reach ' + stop.name : 'Board unlocks when you reach the pickup stop';
+    }
+    return null;
   }
 
   canDropPassenger(passenger: FixedPassenger): boolean {
@@ -849,7 +878,8 @@ export class FixedDriverPage {
   passengerActionHint(passenger: FixedPassenger): string {
     const status = (passenger.status || '').toUpperCase();
     if (['BOOKED', 'CONFIRMED'].includes(status)) {
-      if (!this.isPassengerPickupReached(passenger)) return 'No-show unlocks after pickup stop is reached';
+      if (!this.rideStarted) return 'Start the ride to begin boarding';
+      if (!this.isPassengerPickupReached(passenger)) return 'Board & no-show unlock once you reach the pickup stop';
       const secs = this.noShowCountdown(passenger);
       if (secs > 0) return 'Wait for the passenger — no-show unlocks in ' + this.noShowCountdownLabel(passenger);
       return 'Board or mark no-show';

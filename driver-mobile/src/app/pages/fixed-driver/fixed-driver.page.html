@@ -244,7 +244,7 @@
               class="dc-cta passenger-action passenger-action--board dc-press"
               [class.passenger-action--cooldown]="boardCooldown(passenger) > 0"
               (click)="board(passenger)"
-              [disabled]="busy || otpSending || !canBoardPassenger(passenger) || boardCooldown(passenger) > 0"
+              [disabled]="busy || otpSending || !boardReady(passenger) || boardCooldown(passenger) > 0"
             >
               <ion-icon [name]="boardCooldown(passenger) > 0 ? 'time-outline' : 'log-in-outline'"></ion-icon>
               <span *ngIf="boardCooldown(passenger) <= 0">Board</span>
