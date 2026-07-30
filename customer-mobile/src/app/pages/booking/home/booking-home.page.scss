@@ -1,0 +1,194 @@
+/* Home — the bottom sheet over the map (screens 7–8).
+   Built from the app's own --dc-* tokens; nothing new introduced. */
+
+.bh-content {
+  --background: var(--dc-canvas);
+}
+
+/* Map surface behind the sheet. A neutral resting state until the real map
+   loads into the same box. */
+.bh-map {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 32% 38%, var(--dc-green-tint), transparent 42%),
+    repeating-linear-gradient(48deg, transparent 0 16px, var(--dc-hairline) 16px 17px),
+    var(--dc-surface-2);
+}
+.bh-map__pin {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translate(-50%, -100%);
+  font-size: 34px;
+  color: var(--dc-green);
+  filter: drop-shadow(0 4px 6px rgba(13, 27, 42, 0.2));
+}
+
+/* Drawer button, kept below the notch inset. */
+.bh-menu {
+  position: absolute;
+  top: var(--dc-safe-top);
+  left: var(--dc-safe-left);
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--dc-r-md);
+  background: var(--dc-surface);
+  box-shadow: var(--dc-shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bh-menu ion-menu-button {
+  --color: var(--dc-ink);
+}
+
+/* The sheet. */
+.bh-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  background: var(--dc-surface);
+  border-radius: var(--dc-r-xl) var(--dc-r-xl) 0 0;
+  box-shadow: var(--dc-shadow-lg);
+  padding: 8px var(--dc-safe-right) calc(var(--dc-safe-bottom) + 4px) var(--dc-safe-left);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bh-sheet--loading { opacity: 0.6; }
+
+.bh-grip {
+  width: 40px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--dc-hairline-strong);
+  align-self: center;
+  margin: 2px 0 2px;
+}
+
+/* Local / Outstation switch. */
+.bh-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--dc-surface-2);
+  border: 1px solid var(--dc-hairline-strong);
+  border-radius: var(--dc-r-md);
+}
+.bh-seg__b {
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--dc-r-sm);
+  background: transparent;
+  color: var(--dc-ink-soft);
+  font-size: var(--dc-t-caption);
+  font-weight: 700;
+}
+.bh-seg__b--on {
+  background: var(--dc-green);
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(18, 179, 91, 0.24);
+}
+
+/* The three mode cards. */
+.bh-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.bh-mode {
+  position: relative;
+  min-height: 92px;
+  border: 1px solid var(--dc-hairline-strong);
+  border-radius: var(--dc-r-md);
+  background: var(--dc-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 4px;
+  text-align: center;
+}
+.bh-mode--on {
+  border-color: var(--dc-green);
+  background: var(--dc-green-tint);
+  box-shadow: 0 0 0 2px var(--dc-green-tint-2);
+}
+.bh-mode__tick {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dc-green);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bh-mode__ic {
+  font-size: 24px;
+  color: var(--dc-green);
+}
+.bh-mode__n {
+  font-size: var(--dc-t-caption);
+  font-weight: 750;
+  color: var(--dc-ink);
+}
+.bh-mode__s {
+  font-size: 11px;
+  color: var(--dc-ink-soft);
+  line-height: 1.2;
+}
+
+/* The single action. */
+.bh-wt {
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--dc-r-md);
+  background: var(--dc-green);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 750;
+  box-shadow: 0 6px 16px rgba(18, 179, 91, 0.28);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 16px;
+}
+.bh-wt[disabled] {
+  background: var(--dc-hairline-strong);
+  color: var(--dc-ink-faint);
+  box-shadow: none;
+}
+.bh-wt__go { margin-left: auto; }
+
+/* Which city's services are on screen. Quiet, but present — the catalogue is
+   per city, so this line is what stops a missing service reading as a bug. */
+.bh-city {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -4px 0 0;
+  color: var(--dc-ink-soft);
+  font-size: var(--dc-t-caption);
+  font-weight: 600;
+}
+.bh-city__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dc-green);
+}
+/* Amber when we're guessing the city rather than knowing it. */
+.bh-city__dot--guess { background: var(--dc-amber); }

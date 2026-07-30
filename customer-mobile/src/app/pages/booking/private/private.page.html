@@ -1,0 +1,118 @@
+<ion-content [fullscreen]="true">
+  <ng-container *ngIf="waiting === 'idle'">
+
+    <!-- Step 1 — pickup -->
+    <app-step-shell
+      *ngIf="step === 'pickup'"
+      title="Where from?"
+      subtitle="We'll collect you from this exact spot."
+      [step]="1" [total]="total"
+      barLabel="Book a car"
+      (back)="back()">
+      <app-place-search placeholder="Search your pickup" (picked)="onPickup($event)"></app-place-search>
+    </app-step-shell>
+
+    <!-- Step 2 — drop -->
+    <app-step-shell
+      *ngIf="step === 'drop'"
+      title="Where to?"
+      [from]="fromLabel"
+      [step]="2" [total]="total"
+      (back)="back()">
+      <app-place-search placeholder="Search your destination" [near]="near" (picked)="onDrop($event)"></app-place-search>
+    </app-step-shell>
+
+    <!-- Step 3 — choose car -->
+    <app-step-shell
+      *ngIf="step === 'car'"
+      title="Choose your ride"
+      [from]="fromLabel" [to]="toLabel"
+      [step]="3" [total]="total"
+      cta="Next"
+      [disabled]="estimating || !estimatedFare"
+      (back)="back()"
+      (primary)="goToPrice()">
+
+      <div class="bk-chips">
+        <button class="bk-chip" type="button" [class.bk-chip--on]="vehicleTypeId === null" (click)="chooseVehicle(null)">Any car</button>
+        <button *ngFor="let v of vehicleTypes" class="bk-chip" type="button"
+                [class.bk-chip--on]="vehicleTypeId === v.id" (click)="chooseVehicle(v.id)">{{ v.name }}</button>
+      </div>
+
+      <div class="bk-opt bk-opt--on">
+        <span class="bk-opt__ic"><ion-icon name="car-outline" aria-hidden="true"></ion-icon></span>
+        <span class="bk-opt__main">
+          <span class="bk-opt__t">{{ vehicleTypeId === null ? 'Any car' : (estimate?.vehicle_name || 'Your car') }}</span>
+          <span class="bk-opt__s">{{ estimating ? 'Pricing…' : (estimate?.time_min ? (estimate?.time_min + ' min away') : 'Nearest driver') }}</span>
+        </span>
+        <span class="bk-opt__r" *ngIf="estimatedFare">~₹{{ estimatedFare }}<small>guide</small></span>
+      </div>
+
+      <p class="bk-note">This is a guide. You name your own price next.</p>
+      <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+    </app-step-shell>
+
+    <!-- Step 4 — name your price -->
+    <app-step-shell
+      *ngIf="step === 'price'"
+      title="What will you pay?"
+      subtitle="Drivers nearby can take it or ask for more."
+      [from]="fromLabel" [to]="toLabel"
+      [step]="4" [total]="total"
+      cta="Send to drivers"
+      [disabled]="!offerValid || busy"
+      (back)="back()"
+      (primary)="sendToDrivers()">
+
+      <p class="bk-lab" *ngIf="guideLine">{{ guideLine }}</p>
+
+      <label class="pv-price" [class.pv-price--bad]="offerTooLow">
+        <span class="pv-price__cur" aria-hidden="true">₹</span>
+        <input class="pv-price__in" type="number" inputmode="numeric" placeholder="0"
+               aria-label="What you will pay" [(ngModel)]="offer" />
+      </label>
+
+      <p class="bk-note bk-note--warn" *ngIf="offerTooLow">Too low — drivers can't accept less than ₹{{ minFare }}.</p>
+      <p class="bk-sub" *ngIf="!offerTooLow && minFare">Lowest allowed is ₹{{ minFare }}.</p>
+      <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+    </app-step-shell>
+
+  </ng-container>
+
+  <!-- Step 5a — searching -->
+  <app-step-shell
+    *ngIf="waiting === 'searching'"
+    title="Asking drivers nearby"
+    barLabel="Book a car"
+    [step]="5" [total]="total"
+    cta="Cancel" [ghost]="true"
+    (back)="cancel()"
+    (primary)="cancel()">
+    <div class="pv-wait">
+      <div class="pv-pulse" aria-hidden="true"><ion-icon name="car-outline"></ion-icon></div>
+      <p class="bk-sub pv-wait__t">Your price ₹{{ askedAmount }}<span *ngIf="!noAnswer"> · {{ secondsLeft }}s left</span></p>
+      <p class="bk-note bk-note--warn" *ngIf="noAnswer">Nobody has answered yet. Keep waiting, or go back and offer a bit more.</p>
+    </div>
+  </app-step-shell>
+
+  <!-- Step 5b — drivers answered -->
+  <app-step-shell
+    *ngIf="waiting === 'bids'"
+    [title]="offers.length + (offers.length === 1 ? ' driver answered' : ' drivers answered')"
+    subtitle="Tap one to ride with them."
+    barLabel="Book a car"
+    [step]="5" [total]="total"
+    cta="Cancel this ride" [ghost]="true"
+    (back)="cancel()"
+    (primary)="cancel()">
+
+    <div *ngFor="let o of offers; trackBy: trackByOffer" class="bk-opt pv-bid">
+      <span class="bk-opt__ic" [class.bk-badge--amber]="!takesYourPrice(o)" aria-hidden="true">{{ takesYourPrice(o) ? '✓' : '↑' }}</span>
+      <span class="bk-opt__main">
+        <span class="bk-opt__t">{{ o.driver_name || 'Driver' }}<span *ngIf="o.driver_rating"> · ★ {{ o.driver_rating }}</span></span>
+        <span class="bk-opt__s">{{ offerLine(o) }}</span>
+      </span>
+      <button class="pv-take" type="button" (click)="rideWith(o)">₹{{ o.amount }}</button>
+    </div>
+  </app-step-shell>
+</ion-content>

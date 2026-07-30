@@ -13,6 +13,13 @@ const routes: Routes = [
           import('../pages/customer-book/customer-book.module').then((m) => m.CustomerBookPageModule),
       },
       {
+        // The redesigned booking flow (rev 5). Home is the bottom sheet; the
+        // mode flows lazy-load beneath it as they're built.
+        path: 'go',
+        loadChildren: () =>
+          import('../pages/booking/booking.module').then((m) => m.BookingPageModule),
+      },
+      {
         path: 'my-trips',
         loadChildren: () =>
           import('../pages/customer-trips/customer-trips.module').then((m) => m.CustomerTripsPageModule),
@@ -93,7 +100,7 @@ const routes: Routes = [
       },
       {
         path: '',
-        redirectTo: 'book',
+        redirectTo: 'go',
         pathMatch: 'full',
       },
     ],

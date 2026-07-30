@@ -1,0 +1,27 @@
+/* "Pool ride" — only the forming screen is unique; the rest is StepShell +
+   shared .bk-* utilities. */
+
+.sh-forming {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding-top: 20px;
+}
+.sh-forming__t { text-align: center; }
+.sh-pulse {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.12);
+  border: 2px solid var(--dc-amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sh-pulse { animation: sh-breathe 2.4s ease-in-out infinite; }
+  @keyframes sh-breathe { 50% { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0.10); } }
+}

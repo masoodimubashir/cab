@@ -1,0 +1,70 @@
+<ion-content [fullscreen]="true" class="bh-content">
+  <!-- Map behind the sheet. The real Google map slots into this same div,
+       reusing the existing map service; the surface below is the resting
+       state so the screen is never blank while it loads. -->
+  <div class="bh-map" aria-hidden="true">
+    <ion-icon class="bh-map__pin" name="location" aria-hidden="true"></ion-icon>
+  </div>
+
+  <!-- Drawer button, top-left, clear of any camera hole via the safe inset. -->
+  <div class="bh-menu">
+    <ion-menu-button menu="customer-menu" aria-label="Open menu"></ion-menu-button>
+  </div>
+
+  <!-- The sheet. -->
+  <section class="bh-sheet" [class.bh-sheet--loading]="loading">
+    <span class="bh-grip" aria-hidden="true"></span>
+
+    <h1 class="bk-title">Where are you going?</h1>
+
+    <!-- Which city's services these are. Shown because the catalogue is per
+         city: if we guessed wrong, the rider can see why a service is absent
+         instead of concluding the app doesn't offer it. -->
+    <p class="bh-city" *ngIf="city">
+      <span class="bh-city__dot" [class.bh-city__dot--guess]="!located" aria-hidden="true"></span>
+      <span>{{ located ? 'Services in ' + city.name : 'Showing ' + city.name + ' — turn on location for your area' }}</span>
+    </p>
+
+    <!-- Local / Outstation — only when the operator runs both. -->
+    <div class="bh-seg" *ngIf="hasScopeSwitch" role="tablist">
+      <button
+        *ngFor="let s of scopes"
+        class="bh-seg__b"
+        type="button"
+        role="tab"
+        [attr.aria-selected]="scope === s"
+        [class.bh-seg__b--on]="scope === s"
+        (click)="pickScope(s)">
+        {{ scopeLabel(s) }}
+      </button>
+    </div>
+
+    <!-- The three modes as cards. Selected shows tint + ring + a tick dot. -->
+    <div class="bh-modes" *ngIf="tiles.length; else noModes">
+      <button
+        *ngFor="let tile of tiles; trackBy: trackByMode"
+        class="bh-mode"
+        type="button"
+        [class.bh-mode--on]="mode === tile.mode"
+        (click)="pickMode(tile)">
+        <span class="bh-mode__tick" *ngIf="mode === tile.mode" aria-hidden="true">✓</span>
+        <ion-icon class="bh-mode__ic" [name]="tile.icon" aria-hidden="true"></ion-icon>
+        <span class="bh-mode__n">{{ tile.title }}</span>
+        <span class="bh-mode__s">{{ tile.hint }}</span>
+      </button>
+    </div>
+
+    <ng-template #noModes>
+      <p class="bk-note" *ngIf="!loading">
+        No rides are set up for this area yet. Please try again later.
+      </p>
+    </ng-template>
+
+    <!-- The single action. -->
+    <button class="bh-wt" type="button" [disabled]="!tiles.length" (click)="whereTo()">
+      <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
+      <span>Where to?</span>
+      <ion-icon class="bh-wt__go" name="arrow-forward-outline" aria-hidden="true"></ion-icon>
+    </button>
+  </section>
+</ion-content>

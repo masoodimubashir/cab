@@ -15,7 +15,7 @@ export class SplashPage implements OnInit {
   ) {}
 
   private homeRouteForCurrentUser(): string {
-    return '/customer-tabs/book';
+    return '/customer-tabs/go';
   }
 
   ngOnInit() {
