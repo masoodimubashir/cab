@@ -149,3 +149,105 @@
   font-weight: 800;
   color: #B45309; /* amber caution */
 }
+
+/* Rating Prompt Card */
+.rating-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-color: #F59E0B;
+  background: #FFFDF5;
+}
+.rating-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rating-head-icon {
+  font-size: 26px;
+  color: #F59E0B;
+}
+.rating-head strong {
+  font-size: 15px;
+  color: var(--dc-ink, #0D1B2A);
+}
+.rating-head p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--dc-ink-soft, #6C757D);
+}
+.star-rating {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.star-btn {
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
+  ion-icon {
+    font-size: 32px;
+    color: #CBD5E1;
+    transition: color 0.15s ease, transform 0.15s ease;
+    &.filled {
+      color: #F59E0B;
+      transform: scale(1.08);
+    }
+  }
+}
+.rating-comment-field textarea {
+  width: 100%;
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--dc-ink, #0D1B2A);
+  background: #fff;
+  outline: none;
+  resize: none;
+}
+.submit-rating-btn {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+/* Submitted Review Card */
+.review-submitted-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #F8FAFC;
+}
+.submitted-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--dc-green, #12B35B);
+}
+.submitted-head-icon {
+  font-size: 18px;
+}
+.submitted-stars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  ion-icon {
+    font-size: 18px;
+    color: #F59E0B;
+  }
+  strong {
+    margin-left: 6px;
+    font-size: 13.5px;
+    color: var(--dc-ink, #0D1B2A);
+  }
+}
+.submitted-comment {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--dc-ink-soft, #6C757D);
+}

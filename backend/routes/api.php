@@ -510,6 +510,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/bookings', [FixedBookingsController::class, 'index']);
     Route::get('/fixed/bookings/{reservation}', [FixedBookingsController::class, 'show']);
     Route::post('/fixed/bookings/{reservation}/cancel', [FixedBookingsController::class, 'cancel'])->middleware('throttle:booking');
+    Route::post('/fixed/bookings/{reservation}/rate', [FixedBookingsController::class, 'rate'])->middleware('throttle:booking');
     // B5 — "My refunds": everything owed to / returned to this customer
     // across fixed + shuttle bookings, with how and when it arrives.
     Route::get('/customer/refunds', [RefundsController::class, 'customerIndex']);

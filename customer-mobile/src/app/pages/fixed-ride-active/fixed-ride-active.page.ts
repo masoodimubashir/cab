@@ -51,6 +51,8 @@ interface FixedBooking {
   announced_depart_at?: string | null;
   depart_at?: string | null;
   service_date?: string | null;
+  rating_score?: number | null;
+  rating_comment?: string | null;
 }
 
 @Component({
@@ -62,6 +64,9 @@ interface FixedBooking {
 export class FixedRideActivePage {
   loading = false;
   cancelling = false;
+  submittingRating = false;
+  ratingScore = 5;
+  ratingComment = '';
   error: string | null = null;
   booking: FixedBooking | null = null;
   private pollSub?: Subscription;
@@ -164,6 +169,33 @@ export class FixedRideActivePage {
         },
         error: (err) => this.error = err?.error?.message || 'Could not cancel fixed booking.',
       });
+  }
+
+  canRate(booking: FixedBooking): boolean {
+    return ['DROPPED', 'COMPLETED'].includes((booking.status || '').toUpperCase()) && booking.rating_score == null;
+  }
+
+  setRatingScore(score: number): void {
+    this.ratingScore = score;
+  }
+
+  submitRating(): void {
+    if (!this.booking || this.submittingRating) return;
+    this.submittingRating = true;
+    this.api.post<{ booking: FixedBooking; message: string }>('/fixed/bookings/' + this.booking.id + '/rate', {
+      score: this.ratingScore,
+      comment: this.ratingComment.trim() || null,
+    }).pipe(finalize(() => this.submittingRating = false)).subscribe({
+      next: async (res) => {
+        if (res?.booking) {
+          this.booking = res.booking;
+        }
+        await this.showToast(res?.message || 'Thank you for rating your ride!');
+      },
+      error: async (err) => {
+        await this.showToast(err?.error?.message || 'Could not submit rating.');
+      },
+    });
   }
 
   isActiveBooking(booking: FixedBooking): boolean {

@@ -46,6 +46,45 @@
         </p>
       </section>
 
+      <!-- Rating Prompt Section (when dropped/completed and not yet rated) -->
+      <section class="ride-card rating-card" *ngIf="canRate(ride)">
+        <div class="rating-head">
+          <ion-icon name="star-outline" class="rating-head-icon"></ion-icon>
+          <div>
+            <strong>How was your ride?</strong>
+            <p>Rate your experience with {{ ride.driver_name || 'your driver' }}</p>
+          </div>
+        </div>
+
+        <div class="star-rating">
+          <button type="button" *ngFor="let star of [1, 2, 3, 4, 5]" class="star-btn" (click)="setRatingScore(star)">
+            <ion-icon [name]="star <= ratingScore ? 'star' : 'star-outline'" [class.filled]="star <= ratingScore"></ion-icon>
+          </button>
+        </div>
+
+        <label class="rating-comment-field">
+          <textarea [(ngModel)]="ratingComment" placeholder="Write feedback for the driver (optional)..." rows="2"></textarea>
+        </label>
+
+        <button class="primary-btn submit-rating-btn" type="button" (click)="submitRating()" [disabled]="submittingRating">
+          <ion-spinner *ngIf="submittingRating" name="crescent"></ion-spinner>
+          <span *ngIf="!submittingRating">Submit review</span>
+        </button>
+      </section>
+
+      <!-- Submitted Review Card -->
+      <section class="ride-card review-submitted-card" *ngIf="ride.rating_score">
+        <div class="submitted-head">
+          <ion-icon name="checkmark-circle" class="submitted-head-icon"></ion-icon>
+          <span>Your review</span>
+        </div>
+        <div class="submitted-stars">
+          <ion-icon *ngFor="let star of [1, 2, 3, 4, 5]" [name]="star <= (ride.rating_score || 0) ? 'star' : 'star-outline'" class="filled"></ion-icon>
+          <strong>{{ ride.rating_score }}/5</strong>
+        </div>
+        <p *ngIf="ride.rating_comment" class="submitted-comment">"{{ ride.rating_comment }}"</p>
+      </section>
+
       <section class="ride-card route-card">
         <div class="route-stop">
           <i class="dot dot--pickup"></i>
