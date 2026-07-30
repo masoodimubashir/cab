@@ -6,11 +6,12 @@ import { RouterModule, Routes } from '@angular/router';
 
 import { FixedBookPage } from './fixed.page';
 import { StepShellComponent } from '../step-shell.component';
+import { SeatGridComponent } from './seat-grid.component';
 
 const routes: Routes = [{ path: '', component: FixedBookPage }];
 
 @NgModule({
-  imports: [CommonModule, FormsModule, IonicModule, RouterModule.forChild(routes), StepShellComponent],
+  imports: [CommonModule, FormsModule, IonicModule, RouterModule.forChild(routes), StepShellComponent, SeatGridComponent],
   declarations: [FixedBookPage],
 })
 export class FixedBookPageModule {}

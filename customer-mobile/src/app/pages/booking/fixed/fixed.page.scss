@@ -33,46 +33,9 @@
   font-weight: 800;
 }
 
-/* seat map */
-.fx-seatmap {
-  background: var(--dc-surface);
-  border: 1px solid var(--dc-hairline-strong);
-  border-radius: var(--dc-r-md);
-  box-shadow: var(--dc-shadow-sm);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.fx-wheel {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--dc-ink-faint);
-}
-.fx-wheel::before { content: ""; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--dc-ink-faint); }
-.fx-row { display: flex; gap: 8px; justify-content: center; }
-.fx-gap { flex: 1 1 0; max-width: 44px; }
-.fx-seat {
-  flex: 1 1 0;
-  max-width: 44px;
-  aspect-ratio: 1;
-  border: 2px solid var(--dc-hairline-strong);
-  border-radius: 10px;
-  background: var(--dc-surface);
-  color: var(--dc-ink-soft);
-  font-size: 12px;
-  font-weight: 700;
-}
-.fx-seat--on { background: var(--dc-green); border-color: var(--dc-green); color: #fff; }
-/* Taken seats read as hatched AND disabled — pattern, not colour alone. */
-.fx-seat--off {
-  background: repeating-linear-gradient(45deg, var(--dc-hairline) 0 4px, transparent 4px 8px);
-  color: var(--dc-ink-faint);
-  border-style: dashed;
-}
+/* The car seat map itself is the shared <app-seat-grid> (ported from admin);
+   this just centres it. */
+.fx-carwrap { display: flex; justify-content: center; }
 
 /* ticket */
 .fx-ticket {
@@ -96,4 +59,103 @@
   font-weight: 800;
   color: var(--dc-green);
   font-variant-numeric: tabular-nums;
+}
+
+/* Seat legend — spells out taken vs free vs yours, so a colour is never the
+   only cue. */
+.fx-legend {
+  display: flex;
+  gap: 16px;
+  padding: 2px 2px 0;
+}
+.fx-legend__i {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--dc-t-caption);
+  color: var(--dc-ink-soft);
+  font-weight: 600;
+}
+.fx-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 2px solid var(--dc-hairline-strong);
+  background: var(--dc-surface);
+}
+.fx-swatch--on { background: var(--dc-green); border-color: var(--dc-green); }
+.fx-swatch--off {
+  background: repeating-linear-gradient(45deg, var(--dc-hairline) 0 3px, transparent 3px 6px);
+  border-style: dashed;
+}
+
+.fx-seatfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fx-refresh {
+  flex: none;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--dc-hairline-strong);
+  border-radius: var(--dc-r-sm);
+  background: var(--dc-surface);
+  color: var(--dc-green);
+  font-size: var(--dc-t-caption);
+  font-weight: 700;
+}
+
+/* Payment method selector */
+.fx-paymethods {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+.fx-paymethods__title {
+  font-size: var(--dc-t-caption);
+  font-weight: 700;
+  color: var(--dc-ink-soft);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.fx-paymethod {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--dc-hairline-strong);
+  border-radius: var(--dc-r-md);
+  background: var(--dc-surface);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+.fx-paymethod--active {
+  border-color: var(--dc-green);
+  background: var(--dc-green-tint);
+}
+.fx-paymethod__icon {
+  font-size: 20px;
+}
+.fx-paymethod__info {
+  flex: 1;
+}
+.fx-paymethod__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dc-ink);
+}
+.fx-paymethod__sub {
+  font-size: 12px;
+  color: var(--dc-ink-soft);
+}
+.fx-paymethod input[type="radio"] {
+  accent-color: var(--dc-green);
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
 }

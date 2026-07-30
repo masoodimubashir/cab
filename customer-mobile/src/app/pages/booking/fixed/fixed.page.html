@@ -97,24 +97,43 @@
     (primary)="goToReview()">
 
     <p class="bk-sub" *ngIf="loading">Loading seats…</p>
-    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+    <p class="bk-note bk-note--warn" *ngIf="error && !loading">{{ error }}</p>
 
-    <div class="fx-seatmap" *ngIf="seatMap">
-      <div class="fx-wheel">driver</div>
-      <div class="fx-row" *ngFor="let row of seatRows">
-        <ng-container *ngFor="let cell of row">
-          <span *ngIf="cell.kind !== 'seat'" class="fx-gap"></span>
-          <button *ngIf="cell.kind === 'seat'" type="button"
-                  class="fx-seat"
-                  [class.fx-seat--on]="isSelected(cell)"
-                  [class.fx-seat--off]="cell.status !== 'AVAILABLE'"
-                  [disabled]="cell.status !== 'AVAILABLE'"
-                  (click)="toggleSeat(cell)">{{ cell.label }}</button>
-        </ng-container>
+    <ng-container *ngIf="!loading && seatMap">
+      <!-- The map has a layout but no seats in it — say so plainly rather than
+           show a blank box. This is a config gap (empty seat layout), not an
+           error the rider caused. -->
+      <div class="bk-note bk-note--warn" *ngIf="!hasSeats">
+        Seats for this departure aren't set up yet. Please pick another departure or try again later.
       </div>
-    </div>
 
-    <div class="bk-note" *ngIf="selected.length">{{ selected.length }} seat{{ selected.length > 1 ? 's' : '' }} · ₹{{ seatFare }}. Hatched seats are taken.</div>
+      <ng-container *ngIf="hasSeats">
+        <p class="bk-sub">Tap a seat to pick it. Green is yours; hatched is already taken.</p>
+
+        <!-- The same car the operator designed in admin, seat for seat. -->
+        <div class="fx-carwrap">
+          <app-seat-grid
+            [rows]="seatMap.layout.rows"
+            [cols]="seatMap.layout.cols"
+            [cells]="seatMap.cells"
+            [selectedLabels]="selected"
+            (pick)="toggleLabel($event)"></app-seat-grid>
+        </div>
+
+        <!-- Legend: the two states that need a word — taken and yours. -->
+        <div class="fx-legend">
+          <span class="fx-legend__i"><i class="fx-swatch fx-swatch--on"></i>Your seat</span>
+          <span class="fx-legend__i"><i class="fx-swatch fx-swatch--off"></i>Taken</span>
+        </div>
+
+        <div class="fx-seatfoot">
+          <span class="bk-sub">{{ seatsFree }} seat{{ seatsFree === 1 ? '' : 's' }} free · pick up to {{ maxSeats }}</span>
+          <button class="fx-refresh" type="button" (click)="refreshSeats()" [disabled]="loading">↻ Refresh</button>
+        </div>
+
+        <div class="bk-note" *ngIf="selected.length">Selected {{ selected.length }} seat{{ selected.length > 1 ? 's' : '' }} · ₹{{ seatFare }}.</div>
+      </ng-container>
+    </ng-container>
   </app-step-shell>
 
   <!-- Step 5 — review + pay -->
@@ -134,6 +153,27 @@
       <button *ngIf="coupon" class="fx-apply" type="button" (click)="removeCoupon()">Remove</button>
     </label>
     <p class="bk-note bk-note--warn" *ngIf="couponError">{{ couponError }}</p>
+
+    <!-- Payment Method Selector -->
+    <div class="fx-paymethods">
+      <p class="fx-paymethods__title">Select Payment Method</p>
+      <div class="fx-paymethod" [class.fx-paymethod--active]="paymentMethod === 'upi'" (click)="paymentMethod = 'upi'">
+        <div class="fx-paymethod__icon">⚡</div>
+        <div class="fx-paymethod__info">
+          <div class="fx-paymethod__name">UPI (Google Pay, PhonePe, Paytm)</div>
+          <div class="fx-paymethod__sub">Instant payment via any UPI app or QR</div>
+        </div>
+        <input type="radio" name="paymethod" [checked]="paymentMethod === 'upi'" (change)="paymentMethod = 'upi'" />
+      </div>
+      <div class="fx-paymethod" [class.fx-paymethod--active]="paymentMethod === 'card'" (click)="paymentMethod = 'card'">
+        <div class="fx-paymethod__icon">💳</div>
+        <div class="fx-paymethod__info">
+          <div class="fx-paymethod__name">Cards, Netbanking & Wallets</div>
+          <div class="fx-paymethod__sub">Visa, Mastercard, RuPay, Netbanking</div>
+        </div>
+        <input type="radio" name="paymethod" [checked]="paymentMethod === 'card'" (change)="paymentMethod = 'card'" />
+      </div>
+    </div>
 
     <div class="bk-money">
       <div class="bk-money__row"><span>Seat fare × {{ selected.length }}</span><span>₹{{ seatFare }}</span></div>
