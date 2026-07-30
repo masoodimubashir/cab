@@ -36,7 +36,7 @@ class FixedRefundService
 
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
-            $eligibleForRefund = $this->isRefundAllowed($dep);
+            $eligibleForRefund = $this->isRefundAllowed($res, $dep);
             $refundOutcome = $this->applyRefundIfNeeded($res, $eligibleForRefund, $dep?->trip_id, AutoRefundService::BY_CUSTOMER);
 
             $this->releaseVehicleCapacity($dep, $res);
@@ -234,7 +234,7 @@ class FixedRefundService
             "wallet_auto" => " ₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2) . " credited to your wallet.",
             "razorpay_auto" => " Refund initiated via Razorpay — you'll see it in your bank in 5–7 business days.",
             "razorpay_manual_fallback" => " Refund of ₹" . number_format((float) ($refundOutcome["refund_amount"] ?? 0), 2) . " is being processed — we'll notify you once it's sent.",
-            "rejected" => " No refund is due for this cancellation.",
+            "rejected" => " The bus had already reached your pickup stop, so no refund is due.",
             default => "",
         };
     }
@@ -249,7 +249,7 @@ class FixedRefundService
             "wallet_auto" => "Customer cancelled before the cutoff. Refund credited to their wallet.",
             "razorpay_auto" => "Customer cancelled before the cutoff. Razorpay auto-refund initiated — customer's bank credit in 5–7 days.",
             "razorpay_manual_fallback" => "Customer cancelled before the cutoff. Razorpay auto-refund did not go through — the row is awaiting a manual refund from the operator.",
-            "rejected" => "Customer cancelled but no refund is due (seat could not be re-sold in time).",
+            "rejected" => "Customer cancelled after the bus had reached their pickup stop, so the seat could not be resold — no refund is due.",
             default => "Customer cancelled the fixed booking. Refund status: " . strtolower((string) $refundOutcome["refund_status"]) . ".",
         };
     }
@@ -358,24 +358,36 @@ class FixedRefundService
     }
 
     /**
-     * The whole fixed-route cancellation rule: is a driver committed to running
-     * this vehicle yet?
+     * The whole fixed-route cancellation rule: has the vehicle reached THIS
+     * passenger's own pickup stop yet?
      *
-     * Not committed  → nothing has been promised to anyone, so the seat money
-     *                  goes straight back in full.
-     * Committed      → a driver is running this departure on the strength of the
-     *                  seats sold. Pulling out now costs them the trip, so the
-     *                  fare is forfeited.
+     * Not reached  → the bus is still driving towards the passenger (or hasn't
+     *                started), so the seat can still be resold to someone else.
+     *                The fare goes straight back in full — even if the departure
+     *                has already started and is en route.
+     * Reached      → the bus is now waiting at the passenger's stop (the same
+     *                moment a no-show becomes possible), so the seat is spent on
+     *                this rider and the fare is forfeited.
      *
-     * `trip_id` is the exact moment of commitment for both routes into a
-     * departure: the auto-dispatcher stamps it when it assigns a driver, and a
-     * driver opening their own vehicle stamps it when they tap Start. Before
-     * that a departure is only "forming" — a driver may be attached to it, but
-     * they haven't set off and nothing is owed to them.
+     * We deliberately do NOT gate on `trip_id` (the moment the departure starts):
+     * a bus that has set off but is still three stops away has cost this rider
+     * nothing, so binding the refund to "started" punished passengers whose stop
+     * the vehicle had not yet reached. The physical arrival at their own stop is
+     * the fair line, and it reuses the exact signal that unlocks a no-show.
+     *
+     * A boarded passenger is already blocked from self-cancelling upstream, but
+     * we keep the check as an explicit belt-and-braces: once you are on the
+     * vehicle there is no refund.
      */
-    private function isRefundAllowed(?RouteDeparture $departure): bool
+    private function isRefundAllowed(SeatReservation $reservation, ?RouteDeparture $departure): bool
     {
-        return $departure?->trip_id === null;
+        if ($reservation->status === 'BOARDED' || $reservation->boarded_at !== null) {
+            return false;
+        }
+
+        $reservation->loadMissing('boardStop:id,seq');
+
+        return !FixedNoShowPolicy::hasReachedPickup($reservation, $departure);
     }
 
     /**

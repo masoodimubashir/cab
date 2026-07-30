@@ -70,4 +70,34 @@ class FixedNoShowPolicy
 
         return $departure->fixed_last_reached_stop_at->copy()->addMinutes($waitMinutes);
     }
+
+    /**
+     * Has the vehicle physically reached THIS passenger's pickup stop yet?
+     *
+     * This is the same "the bus is at your stop" moment that unlocks a no-show,
+     * exposed as a plain boolean so the refund policy can share one definition:
+     * a customer is owed a refund only while the bus is still driving *towards*
+     * their stop — the instant it enters their pickup radius, the seat can no
+     * longer be resold and the fare is forfeited.
+     *
+     * True once either signal fires:
+     *  - GPS: the stop-automation stamped this passenger's arrival timer, or
+     *  - Manual/GPS-departure fallback: the highest stop the vehicle has reached
+     *    is at or past this passenger's board stop.
+     */
+    public static function hasReachedPickup(SeatReservation $reservation, ?RouteDeparture $departure): bool
+    {
+        if ($reservation->fixed_stop_arrived_at) {
+            return true;
+        }
+
+        if (!$departure) {
+            return false;
+        }
+
+        $boardSeq = (int) ($reservation->boardStop?->seq ?? 0);
+        $reachedSeq = (int) ($departure->fixed_last_reached_stop_seq ?? 0);
+
+        return $boardSeq > 0 && $reachedSeq >= $boardSeq;
+    }
 }
