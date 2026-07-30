@@ -70,6 +70,7 @@ class FixedBookingsController extends Controller
             'has_extra_luggage' => ['nullable', 'boolean'],
             'extra_luggage_count' => ['nullable', 'integer', 'min:0', 'max:200'],
             'coupon_title' => ['nullable', 'string', 'max:128'],
+            'tip_amount' => ['nullable', 'numeric', 'min:0', 'max:10000'],
         ]);
 
         $hold = $this->seatHolds->createHold($request->user(), $data);

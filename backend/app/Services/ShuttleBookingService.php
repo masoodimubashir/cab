@@ -39,7 +39,10 @@ class ShuttleBookingService
             (CitySetting::query()->firstOrCreate(['city_id' => $cvt->city_id])->toll_mode === 'yes') ? (float) ($data['toll_amount'] ?? 0) : 0.0,
         );
 
-        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate) {
+        $tipAmount = max(0.0, round((float) ($data['tip_amount'] ?? 0), 2));
+        $totalFare = round((float) $estimate['estimated_fare'] + $tipAmount, 2);
+
+        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare) {
             $journey = ShuttleJourney::query()->create([
                 'city_id' => $cvt->city_id,
                 'city_vehicle_type_id' => $cvt->id,
@@ -64,7 +67,8 @@ class ShuttleBookingService
                 'drop_address' => $data['drop_address'] ?? null,
                 'quote_distance_km' => $estimate['distance_km'] ?? null,
                 'quote_time_min' => $estimate['time_min'] ?? null,
-                'fare_amount' => (float) $estimate['estimated_fare'],
+                'fare_amount' => $totalFare,
+                'tip_amount' => $tipAmount,
                 'fare_breakdown' => $estimate['fare_breakdown'] ?? [],
                 'currency' => 'INR',
                 'payment_status' => 'PENDING',

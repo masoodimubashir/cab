@@ -20,6 +20,11 @@ interface ShuttleBooking { id: number; trip_id?: number | null; }
 
 type Step = 'pickup' | 'drop' | 'fare' | 'paying' | 'forming';
 
+interface TippingConfig {
+  values: number[];
+  in_percentage: boolean;
+}
+
 /**
  * "Pool ride" — the Shuttle flow on the shared shell.
  *
@@ -49,6 +54,9 @@ export class ShuttleBookPage implements OnInit {
   busy = false;
   error: string | null = null;
 
+  tipping: TippingConfig | null = null;
+  selectedTipPreset: number | null = null;
+
   constructor(
     private api: ApiService,
     private auth: AuthService,
@@ -64,6 +72,14 @@ export class ShuttleBookPage implements OnInit {
       return;
     }
     if (this.bookingSvc.trip.pickup) this.step = 'drop';
+    this.loadTippingConfig();
+  }
+
+  private loadTippingConfig(): void {
+    this.api.get<TippingConfig>('/operator/tipping').subscribe({
+      next: (cfg) => { this.tipping = cfg; this.cdr.markForCheck(); },
+      error: () => { this.tipping = null; this.cdr.markForCheck(); },
+    });
   }
 
   get fromLabel(): string { return this.bookingSvc.trip.pickup?.address ?? ''; }
@@ -128,6 +144,28 @@ export class ShuttleBookPage implements OnInit {
     return this.estimate?.estimated_fare ?? null;
   }
 
+  get tipAmount(): number {
+    if (!this.tipping || this.selectedTipPreset == null) return 0;
+    if (this.tipping.in_percentage) {
+      const base = this.fare || 0;
+      return Math.max(1, Math.round((base * this.selectedTipPreset) / 100));
+    }
+    return this.selectedTipPreset;
+  }
+
+  get payableTotal(): number {
+    return (this.fare || 0) + this.tipAmount;
+  }
+
+  pickTipPreset(val: number): void {
+    this.selectedTipPreset = this.selectedTipPreset === val ? null : val;
+    this.cdr.markForCheck();
+  }
+
+  tipPresetLabel(val: number): string {
+    return this.tipping?.in_percentage ? `${val}%` : `₹${val}`;
+  }
+
   get canConfirm(): boolean {
     return !!this.fare && this.estimate?.available !== false;
   }
@@ -160,6 +198,7 @@ export class ShuttleBookPage implements OnInit {
       drop_address: drop.address,
       drop_lat: drop.lat,
       drop_lng: drop.lng,
+      tip_amount: this.tipAmount,
     }, { 'Idempotency-Key': this.uuid('shuttle') }).subscribe({
       next: (res) => {
         const b = res?.booking ?? null;
