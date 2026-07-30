@@ -188,19 +188,38 @@
   <!-- Done — ticket -->
   <app-step-shell
     *ngIf="step === 'done'"
-    title="Show this to the driver"
-    barLabel="Booking confirmed"
+    title="Booking Confirmed"
+    [barLabel]="route?.name || 'Fixed Ride'"
     [step]="5" [total]="total"
-    cta="View booking"
+    cta="View active fixed ride"
     (back)="viewBooking()"
     (primary)="viewBooking()">
     <div class="fx-ticket">
       <span class="bk-badge">CONFIRMED</span>
+      <p class="fx-ticket__subtitle">Show this 4-digit code to the driver when boarding</p>
       <div class="fx-otp" *ngIf="boardingCode">
         <b *ngFor="let d of boardingCode.split('')">{{ d }}</b>
       </div>
-      <p class="bk-sub" *ngIf="!boardingCode">Your booking is confirmed. The code appears in My bookings.</p>
-      <div class="bk-field"><span class="bk-dot"></span> {{ route?.origin_name }} → {{ route?.dest_name }}</div>
+      <p class="bk-sub" *ngIf="!boardingCode">Your booking is confirmed. Your boarding code appears in My Bookings.</p>
+
+      <div class="fx-ticket__details">
+        <div class="fx-tdetail__row">
+          <span class="fx-tdetail__label">Route</span>
+          <span class="fx-tdetail__val">{{ route?.origin_name }} → {{ route?.dest_name }}</span>
+        </div>
+        <div class="fx-tdetail__row" *ngIf="selected.length">
+          <span class="fx-tdetail__label">Seats booked</span>
+          <span class="fx-tdetail__val">{{ selected.join(', ') }}</span>
+        </div>
+        <div class="fx-tdetail__row">
+          <span class="fx-tdetail__label">Amount paid</span>
+          <span class="fx-tdetail__val fx-tdetail__val--green">₹{{ finalTotal }}</span>
+        </div>
+        <div class="fx-tdetail__row">
+          <span class="fx-tdetail__label">Payment method</span>
+          <span class="fx-tdetail__val">{{ paymentMethod === 'upi' ? 'Razorpay UPI' : 'Card / Netbanking' }}</span>
+        </div>
+      </div>
     </div>
   </app-step-shell>
 

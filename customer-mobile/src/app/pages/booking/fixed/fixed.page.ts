@@ -383,8 +383,13 @@ export class FixedBookPage implements OnInit {
   // ---- done -------------------------------------------------------------
 
   viewBooking(): void {
+    const bookingId = (this.reservation as any)?.id;
     this.booking.reset();
-    void this.router.navigate(['/customer-tabs/fixed-rides']);
+    if (bookingId) {
+      void this.router.navigate(['/customer-tabs/fixed-rides', bookingId]);
+    } else {
+      void this.router.navigateByUrl('/customer-tabs/fixed-rides?active=1');
+    }
   }
 
   // ---- nav --------------------------------------------------------------

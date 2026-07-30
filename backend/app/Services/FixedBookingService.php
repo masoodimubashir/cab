@@ -224,6 +224,15 @@ class FixedBookingService
             return array_merge($base, ["key" => "cancelled", "label" => "Booking cancelled", "detail" => "This fixed booking is cancelled.", "tone" => "medium"]);
         }
 
+        // Everything below (approaching / arrived / leaving-soon) is only real
+        // once the ride has STARTED. Until the departure is dispatched, ignore any
+        // arrival timestamps — even a stale one — and report only "Booking
+        // confirmed", so a customer never sees "the vehicle is waiting" right after
+        // paying while the vehicle is still forming at the origin. (Bug F1)
+        if (!in_array($reservation->routeDeparture?->status, ["DISPATCHED", "DEPARTED"], true)) {
+            return $base;
+        }
+
         if ($reservation->fixed_no_show_after_at) {
             $deadline = $reservation->fixed_no_show_after_at;
             if ($deadline instanceof Carbon && $deadline->isFuture()) {
@@ -236,10 +245,6 @@ class FixedBookingService
             return array_merge($base, ["key" => "vehicle_approaching", "label" => "Vehicle approaching", "detail" => "Your vehicle is near your pickup stop.", "tone" => "primary"]);
         }
 
-        if (in_array($reservation->routeDeparture?->status, ["DISPATCHED", "DEPARTED"], true)) {
-            return array_merge($base, ["key" => "ride_started", "label" => "Ride started", "detail" => "Your fixed ride has started. Be ready at your selected pickup stop.", "tone" => "primary"]);
-        }
-
-        return $base;
+        return array_merge($base, ["key" => "ride_started", "label" => "Ride started", "detail" => "Your fixed ride has started. Be ready at your selected pickup stop.", "tone" => "primary"]);
     }
 }
