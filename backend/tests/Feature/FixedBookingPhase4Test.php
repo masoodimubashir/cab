@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Payment;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
@@ -119,11 +120,12 @@ class FixedBookingPhase4Test extends TestCase
     {
         $reservation = $this->createReservation(['seats' => 2, 'extra_luggage_count' => 1, 'fare_amount' => 265]);
         $this->departure->update(['seats_taken' => 2, 'luggage_taken' => 1]);
+        $this->enableAutoRefund($reservation);
 
         $razorpay = Mockery::mock(RazorpayService::class);
         $razorpay->shouldReceive('refundPayment')
             ->once()
-            ->with('pay_phase4_123', 26500, Mockery::on(fn ($notes) => $notes['module'] === 'fixed' && $notes['reservation_id'] === (string) $reservation->id))
+            ->with('pay_phase4_123', 26500, Mockery::on(fn ($notes) => ($notes['reason'] ?? null) === 'booking_cancelled'))
             ->andReturn(['id' => 'rfnd_phase4_123', 'status' => 'processed', 'amount' => 26500]);
         $this->instance(RazorpayService::class, $razorpay);
 
@@ -144,12 +146,14 @@ class FixedBookingPhase4Test extends TestCase
     }
 
     /**
-     * The cancellation rule is no longer a clock — it's whether a driver is
-     * already running this departure. Once a trip exists the vehicle has set off
-     * on the strength of the seats sold, so the fare is forfeited however long
-     * there is until the scheduled departure time.
+     * The cancellation rule is not a clock, and no longer just "has the vehicle
+     * started". It's whether the vehicle has physically reached THIS passenger's
+     * own pickup stop — the same "the bus is at your stop" moment that unlocks a
+     * no-show. Here the vehicle has started AND reached the passenger's stop
+     * (seq 1, the origin), so their seat is spent on them and the fare is
+     * forfeited, whatever the scheduled departure time.
      */
-    public function test_customer_cancel_after_the_vehicle_started_rejects_refund_but_releases_capacity(): void
+    public function test_customer_cancel_after_the_vehicle_reached_their_pickup_stop_rejects_refund_but_releases_capacity(): void
     {
         $rideTypeId = DB::table('ride_types')->insertGetId([
             'name' => 'Fixed', 'mode' => 'fixed', 'description' => 'Fixed', 'sort_order' => 1,
@@ -171,6 +175,9 @@ class FixedBookingPhase4Test extends TestCase
         $this->departure->update([
             'trip_id' => $trip->id,
             'status' => 'DEPARTED',
+            // The vehicle has reached the passenger's pickup stop (seq 1).
+            'fixed_last_reached_stop_seq' => 1,
+            'fixed_last_reached_stop_at' => now(),
             'seats_taken' => 1,
         ]);
         $reservation = $this->createReservation(['seats' => 1, 'fare_amount' => 120]);
@@ -193,10 +200,86 @@ class FixedBookingPhase4Test extends TestCase
         $this->assertSame(0, $this->departure->fresh()->seats_taken);
     }
 
+    /**
+     * The core F4 fix: a vehicle that has STARTED but not yet reached this
+     * passenger's stop still owes them a full refund — the seat can be resold to
+     * someone further down the line. Passenger boards at a later stop (seq 3)
+     * while the bus has only reached the origin (seq 1), so cancelling refunds in
+     * full even though the trip is already running.
+     */
+    public function test_customer_cancel_after_start_but_before_reaching_their_stop_refunds_in_full(): void
+    {
+        $laterPickup = RouteStop::query()->create([
+            'route_id' => $this->route->id, 'seq' => 3, 'name' => 'Midtown',
+            'lat' => 34.05, 'lng' => 74.05,
+            'is_pickup' => true, 'is_drop' => false, 'is_active' => true,
+            'is_temporarily_unavailable' => false,
+        ]);
+        $laterDrop = RouteStop::query()->create([
+            'route_id' => $this->route->id, 'seq' => 4, 'name' => 'Far End',
+            'lat' => 34.2, 'lng' => 74.2,
+            'is_pickup' => false, 'is_drop' => true, 'is_active' => true,
+            'is_temporarily_unavailable' => false,
+        ]);
+
+        $rideTypeId = DB::table('ride_types')->insertGetId([
+            'name' => 'Fixed', 'mode' => 'fixed', 'description' => 'Fixed', 'sort_order' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $trip = Trip::query()->create([
+            'customer_id' => null,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->route->city_id,
+            'ride_type_id' => $rideTypeId,
+            'route_id' => $this->route->id,
+            'route_departure_id' => $this->departure->id,
+            'status' => 'EN_ROUTE_PICKUP',
+            'estimated_fare' => 120, 'final_fare' => 120, 'currency' => 'INR',
+            'pickup_lat' => 34.0, 'pickup_lng' => 74.0,
+            'drop_lat' => 34.2, 'drop_lng' => 74.2,
+        ]);
+        $this->departure->update([
+            'trip_id' => $trip->id,
+            'status' => 'DEPARTED',
+            // Bus has only reached the origin (seq 1); the passenger's stop is seq 3.
+            'fixed_last_reached_stop_seq' => 1,
+            'fixed_last_reached_stop_at' => now(),
+            'seats_taken' => 1,
+        ]);
+
+        $reservation = $this->createReservation([
+            'seats' => 1, 'fare_amount' => 120,
+            'board_stop_id' => $laterPickup->id,
+            'drop_stop_id' => $laterDrop->id,
+        ]);
+        $this->enableAutoRefund($reservation);
+
+        $razorpay = Mockery::mock(RazorpayService::class);
+        $razorpay->shouldReceive('refundPayment')
+            ->once()
+            ->with('pay_phase4_123', 12000, Mockery::on(fn ($notes) => ($notes['reason'] ?? null) === 'booking_cancelled'))
+            ->andReturn(['id' => 'rfnd_phase4_later', 'status' => 'processed', 'amount' => 12000]);
+        $this->instance(RazorpayService::class, $razorpay);
+
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+
+        $this->postJson("/api/fixed/bookings/{$reservation->id}/cancel")
+            ->assertOk()
+            ->assertJsonPath('refund_status', 'REFUNDED');
+
+        $reservation->refresh();
+        $this->assertSame('CANCELLED', $reservation->status);
+        $this->assertSame('REFUNDED', $reservation->refund_status);
+        $this->assertSame('REFUNDED', $reservation->payment_status);
+        $this->assertSame('rfnd_phase4_later', $reservation->refund_reference);
+        $this->assertSame(0, $this->departure->fresh()->seats_taken);
+    }
+
     public function test_razorpay_refund_failure_keeps_refund_pending_and_releases_capacity(): void
     {
         $reservation = $this->createReservation(['seats' => 1, 'fare_amount' => 120]);
         $this->departure->update(['seats_taken' => 1]);
+        $this->enableAutoRefund($reservation);
 
         $razorpay = Mockery::mock(RazorpayService::class);
         $razorpay->shouldReceive('refundPayment')
@@ -432,5 +515,30 @@ class FixedBookingPhase4Test extends TestCase
             'refund_status' => 'NONE',
             'status' => 'CONFIRMED',
         ], $overrides));
+    }
+
+    /**
+     * Turns the split/refund engine on and mirrors the booking's prepayment as a
+     * settlement_mode=booking Payment row — exactly what the real confirm-payment
+     * flow does — so the auto-refund path actually runs against Razorpay instead
+     * of silently falling through to the manual register.
+     */
+    private function enableAutoRefund(SeatReservation $reservation): void
+    {
+        config()->set('services.payments.split_enabled', true);
+        config()->set('services.razorpay.key_id', 'rzp_test_phase4');
+
+        Payment::query()->create([
+            'trip_id' => null,
+            'method' => 'RAZORPAY',
+            'provider' => 'RAZORPAY',
+            'status' => 'SUCCESS',
+            'amount' => round((float) $reservation->fare_amount, 2),
+            'currency' => 'INR',
+            'razorpay_payment_id' => $reservation->payment_reference,
+            'commission_amount' => 0,
+            'paid_at' => now(),
+            'settlement_mode' => Payment::SETTLE_BOOKING,
+        ]);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Payment;
 use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
@@ -151,6 +152,7 @@ class FixedStopAutomationTest extends TestCase
     {
         $reservation = $this->createReservation(['fare_amount' => 120, 'payment_reference' => 'pay_missed_stop']);
         $this->departure->update(['seats_taken' => 1]);
+        $this->enableAutoRefund($reservation);
         $this->customer->forceFill([
             'current_lat' => 34.0000200,
             'current_lng' => 74.0000200,
@@ -228,5 +230,29 @@ class FixedStopAutomationTest extends TestCase
             'refund_status' => 'NONE',
             'status' => 'CONFIRMED',
         ], $overrides));
+    }
+
+    /**
+     * Turns the split/refund engine on and mirrors the booking's prepayment as a
+     * settlement_mode=booking Payment row, so the auto-refund path actually runs
+     * against Razorpay instead of falling through to the manual register.
+     */
+    private function enableAutoRefund(SeatReservation $reservation): void
+    {
+        config()->set('services.payments.split_enabled', true);
+        config()->set('services.razorpay.key_id', 'rzp_test_auto');
+
+        Payment::query()->create([
+            'trip_id' => null,
+            'method' => 'RAZORPAY',
+            'provider' => 'RAZORPAY',
+            'status' => 'SUCCESS',
+            'amount' => round((float) $reservation->fare_amount, 2),
+            'currency' => 'INR',
+            'razorpay_payment_id' => $reservation->payment_reference,
+            'commission_amount' => 0,
+            'paid_at' => now(),
+            'settlement_mode' => Payment::SETTLE_BOOKING,
+        ]);
     }
 }

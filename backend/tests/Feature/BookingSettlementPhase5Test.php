@@ -466,7 +466,7 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertSame(0, LedgerEntry::query()->where('type', 'refund')->count());
     }
 
-    public function test_cancelling_once_a_driver_is_running_the_departure_forfeits_the_fare(): void
+    public function test_cancelling_once_the_vehicle_has_reached_the_pickup_stop_forfeits_the_fare(): void
     {
         $this->mockRazorpay();
         $driver = $this->makeDriver();
@@ -474,9 +474,16 @@ class BookingSettlementPhase5Test extends TestCase
         $customer = $this->makeCustomer();
         $reservation = $this->bookSeats($customer, $departure, ['2A'], 'r7-late');
 
-        // The driver has set off on the strength of the seats sold — pulling out
-        // now costs them the trip, so the fare is forfeited however early it is.
         $trip = $this->startDeparture($driver, $departure);
+
+        // The vehicle has reached THIS passenger's pickup stop — the seat is now
+        // spent on them and the seat can no longer be resold, so cancelling
+        // forfeits the fare. (A cancel while the bus is still en route to the stop
+        // is refunded in full — see the "still forming" sibling test.)
+        $departure->fresh()->update([
+            'fixed_last_reached_stop_seq' => (int) $this->pickup->seq,
+            'fixed_last_reached_stop_at' => now(),
+        ]);
 
         Sanctum::actingAs($customer, ['act-as:customer']);
         $this->postJson("/api/fixed/bookings/{$reservation->id}/cancel")
