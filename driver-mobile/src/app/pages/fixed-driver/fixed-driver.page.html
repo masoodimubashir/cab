@@ -64,14 +64,20 @@
         </div>
       </div>
 
-      <label class="fixed-field fixed-field--stack" *ngIf="selectedRouteId">
+      <!-- One layout for this driver's vehicle → just confirm it, no picker. -->
+      <div class="fixed-field fixed-field--stack" *ngIf="selectedRouteId && layouts.length === 1">
+        <span>Your vehicle</span>
+        <strong>{{ layouts[0].name }} · {{ layouts[0].seat_count }} seats</strong>
+      </div>
+
+      <!-- More than one match → let the driver choose. -->
+      <label class="fixed-field fixed-field--stack" *ngIf="selectedRouteId && layouts.length > 1">
         <span>Seat layout</span>
         <ion-select
           [(ngModel)]="selectedLayoutId"
           (ionChange)="onLayoutChange()"
           interface="action-sheet"
-          [placeholder]="layoutsLoading ? 'Loading…' : (layouts.length ? 'Pick layout' : 'No layouts yet')"
-          [disabled]="!layouts.length || layoutsLoading"
+          placeholder="Pick layout"
         >
           <ion-select-option *ngFor="let l of layouts" [value]="l.id">
             {{ l.name }} · {{ l.seat_count }} seats
@@ -79,8 +85,10 @@
         </ion-select>
       </label>
 
+      <p class="fixed-hint" *ngIf="selectedRouteId && layoutsLoading">Loading your vehicle…</p>
+
       <p class="fixed-hint" *ngIf="selectedRouteId && !layouts.length && !layoutsLoading">
-        Your operator hasn't designed a seat layout for this city yet. Ask them to add one before you open a vehicle.
+        Your operator hasn't designed a seat layout for your vehicle in this city yet. Ask them to add one before you open a vehicle.
       </p>
 
       <button class="dc-cta fixed-primary dc-press" (click)="openVehicle()"

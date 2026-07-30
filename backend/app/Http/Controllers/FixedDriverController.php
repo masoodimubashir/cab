@@ -102,10 +102,12 @@ class FixedDriverController extends Controller
     }
 
     /**
-     * List seat layouts the driver can pick from when opening a vehicle on
-     * this route. Scoped to the route's city; M6 stays with "any active in
-     * the city" — narrowing by driver vehicle-type waits until M7+ when the
-     * driver profile carries a trustworthy `vehicle_type_id`.
+     * List seat layouts the driver can pick from when opening a vehicle on this
+     * route. Scoped to the route's city AND narrowed to the driver's own vehicle
+     * type when their profile carries one (F3) — so a Swift driver stops seeing
+     * an Ertiga's layout. Falls back to the full city list only when the driver
+     * has no known vehicle type, or when no layout exists for it (so a
+     * mis-configured driver is never locked out of opening a vehicle).
      */
     public function layouts(Request $request, Route $route)
     {
@@ -114,9 +116,12 @@ class FixedDriverController extends Controller
             abort(403, 'This fixed route is not assigned to you.');
         }
 
+        $vehicleTypeId = $this->effectiveLayoutVehicleTypeId($route, $this->driverProfile($request));
+
         $layouts = VehicleSeatLayout::query()
             ->where('city_id', $route->city_id)
             ->where('is_active', true)
+            ->when($vehicleTypeId, fn ($q) => $q->where('vehicle_type_id', $vehicleTypeId))
             ->withCount(['cells as seat_count' => fn ($q) => $q->where('kind', 'seat')])
             ->orderBy('name')
             ->get(['id', 'name', 'rows', 'cols'])
@@ -129,6 +134,30 @@ class FixedDriverController extends Controller
             ])->values();
 
         return response()->json(['data' => $layouts]);
+    }
+
+    /**
+     * The vehicle-type filter to apply to a driver's layout choices on this
+     * route, or null for "any layout in the city". Returns the driver's own
+     * vehicle type only when they have one AND the city actually has an active
+     * layout for it; otherwise null, so the list/validation fall back to
+     * city-wide together and can never disagree. Shared by {@see layouts()} and
+     * the {@see open()} guard.
+     */
+    private function effectiveLayoutVehicleTypeId(Route $route, Driver $driver): ?int
+    {
+        $vehicleTypeId = $driver->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
+        if (!$vehicleTypeId) {
+            return null;
+        }
+
+        $hasMatch = VehicleSeatLayout::query()
+            ->where('city_id', $route->city_id)
+            ->where('is_active', true)
+            ->where('vehicle_type_id', $vehicleTypeId)
+            ->exists();
+
+        return $hasMatch ? $vehicleTypeId : null;
     }
 
     public function open(Request $request)
@@ -149,15 +178,22 @@ class FixedDriverController extends Controller
             abort(403, 'This fixed route is not assigned to you.');
         }
 
-        $this->serviceModes->assertFixedMode($this->driverProfile($request), $route->scope ?: Driver::SERVICE_SCOPE_LOCAL);
+        $driver = $this->driverProfile($request);
+        $this->serviceModes->assertFixedMode($driver, $route->scope ?: Driver::SERVICE_SCOPE_LOCAL);
 
-        // Layout: driver's explicit pick if provided (must belong to this city),
+        // Layout: driver's explicit pick if provided (must belong to this city and,
+        // when the driver has a known vehicle type, match it — the same F3 filter
+        // the picker list uses, so a direct call can't open a foreign vehicle),
         // otherwise fall back to the resolver.
         $layoutId = $this->seatMap->resolveDefaultLayoutForRoute($route);
         if (!empty($data['vehicle_seat_layout_id'])) {
             $picked = VehicleSeatLayout::query()->find((int) $data['vehicle_seat_layout_id']);
             if (!$picked || (int) $picked->city_id !== (int) $route->city_id) {
                 abort(422, 'That seat layout is not available for this route\'s city.');
+            }
+            $vehicleTypeId = $this->effectiveLayoutVehicleTypeId($route, $driver);
+            if ($vehicleTypeId !== null && (int) $picked->vehicle_type_id !== $vehicleTypeId) {
+                abort(422, 'That seat layout is not for your vehicle.');
             }
             $layoutId = (int) $picked->id;
         }
