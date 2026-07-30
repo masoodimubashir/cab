@@ -178,6 +178,8 @@ class FixedBookingService
                 'lng' => (float) $latestDriverLocation->lng,
                 'recorded_at' => optional($latestDriverLocation->recorded_at)->toIso8601String(),
             ] : null,
+            'rating_score' => $reservation->rating_score !== null ? (int) $reservation->rating_score : null,
+            'rating_comment' => $reservation->rating_comment,
             'created_at' => optional($reservation->created_at)->toIso8601String(),
         ];
     }

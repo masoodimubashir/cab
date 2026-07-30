@@ -185,4 +185,67 @@ class FixedBookingsController extends Controller
             'refund_status' => $result['refund_status'],
         ]);
     }
+
+    public function rate(Request $request, SeatReservation $reservation)
+    {
+        if ($reservation->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        if (!in_array(strtoupper((string) $reservation->status), ['DROPPED', 'COMPLETED'], true)) {
+            return response()->json(['message' => 'You can only rate a finished ride.'], 409);
+        }
+
+        if ($reservation->rating_score !== null) {
+            return response()->json(['message' => 'You have already rated this ride.'], 409);
+        }
+
+        $data = $request->validate([
+            'score' => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $score = (int) $data['score'];
+        $comment = $data['comment'] ?? null;
+
+        $reservation->loadMissing('routeDeparture');
+        $driverId = $reservation->routeDeparture?->driver_id;
+        if (!$driverId && $reservation->trip_id) {
+            $driverId = \App\Models\Trip::query()->where('id', $reservation->trip_id)->value('driver_id');
+        }
+
+        \DB::transaction(function () use ($reservation, $score, $comment, $driverId) {
+            $reservation->update([
+                'rating_score' => $score,
+                'rating_comment' => $comment,
+            ]);
+
+            if ($driverId) {
+                \App\Models\Rating::query()->updateOrCreate(
+                    [
+                        'trip_id' => $reservation->trip_id,
+                        'customer_id' => $reservation->customer_id,
+                    ],
+                    [
+                        'driver_id' => $driverId,
+                        'score' => $score,
+                        'comment' => $comment,
+                    ]
+                );
+
+                $avg = \App\Models\Rating::query()->where('driver_id', $driverId)->avg('score');
+                $count = \App\Models\Rating::query()->where('driver_id', $driverId)->count();
+
+                \App\Models\Driver::query()->where('user_id', $driverId)->update([
+                    'rating_avg' => $avg ? (float) $avg : 0.0,
+                    'rating_count' => (int) $count,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'booking' => $this->bookings->shapeBooking($reservation->fresh()),
+            'message' => 'Thank you for your rating!',
+        ]);
+    }
 }
