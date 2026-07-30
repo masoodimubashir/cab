@@ -6,6 +6,8 @@ import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
 import { BookingService } from '../booking.service';
 
+import { SeatCell } from './seat-grid.component';
+
 declare const Razorpay: any;
 
 interface FixedStop {
@@ -24,14 +26,9 @@ interface FixedDeparture {
   seats_remaining: number; luggage_remaining: number; status: string;
   vehicle_name?: string | null;
 }
-interface SeatMapCell {
-  row: number; col: number; kind: 'seat' | 'blocked' | 'aisle';
-  label: string | null; price_delta: number;
-  status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'BLOCKED' | 'AISLE';
-}
 interface SeatMapResponse {
   layout: { rows: number; cols: number };
-  cells: SeatMapCell[];
+  cells: SeatCell[];
 }
 interface SeatHold { id: number; seats: number; amount: number; }
 interface CouponPreview { base_amount: number; discount: number; final_amount: number; coupon?: { title: string } | null; }
@@ -79,6 +76,8 @@ export class FixedBookPage implements OnInit {
   couponTitle = '';
   coupon: CouponPreview | null = null;
   couponError: string | null = null;
+
+  paymentMethod: 'upi' | 'card' = 'upi';
 
   reservation: Reservation | null = null;
   boardingCode = '';
@@ -208,11 +207,12 @@ export class FixedBookPage implements OnInit {
     this.api.get<SeatMapResponse>(`/fixed/departures/${this.departure.id}/seat-map`).subscribe({
       next: (res) => {
         this.seatMap = res;
+        // Drop any seats that were grabbed by someone else since we last looked.
         this.selected = this.selected.filter((l) => res.cells.some((c) => c.label === l && c.status === 'AVAILABLE'));
         this.loading = false;
         this.cdr.markForCheck();
       },
-      error: (err) => { this.error = err?.error?.message || 'Could not load seats.'; this.loading = false; this.cdr.markForCheck(); },
+      error: (err) => { this.seatMap = null; this.error = err?.error?.message || 'Could not load seats.'; this.loading = false; this.cdr.markForCheck(); },
     });
   }
 
@@ -220,9 +220,9 @@ export class FixedBookPage implements OnInit {
     return Math.max(1, Math.min(this.route?.max_seats_per_booking ?? 1, this.departure?.seats_remaining ?? 1));
   }
 
-  toggleSeat(cell: SeatMapCell): void {
-    if (cell.kind !== 'seat' || !cell.label || cell.status !== 'AVAILABLE') return;
-    const i = this.selected.indexOf(cell.label);
+  /** The seat grid emits a label; toggle it in/out of the selection. */
+  toggleLabel(label: string): void {
+    const i = this.selected.indexOf(label);
     if (i >= 0) {
       this.selected = this.selected.filter((_, idx) => idx !== i);
     } else {
@@ -230,23 +230,25 @@ export class FixedBookPage implements OnInit {
         void this.toast(`You can pick up to ${this.maxSeats} seat${this.maxSeats > 1 ? 's' : ''}.`, 'danger');
         return;
       }
-      this.selected = [...this.selected, cell.label];
+      this.selected = [...this.selected, label];
     }
     this.coupon = null;
     this.cdr.markForCheck();
   }
 
-  isSelected(cell: SeatMapCell): boolean {
-    return !!cell.label && this.selected.includes(cell.label);
+  /** Re-pull the map so seats others just booked show as taken. */
+  refreshSeats(): void {
+    this.loadSeatMap();
   }
 
-  get seatRows(): SeatMapCell[][] {
-    if (!this.seatMap) return [];
-    const rows: SeatMapCell[][] = [];
-    for (const c of this.seatMap.cells) {
-      (rows[c.row] ??= [])[c.col] = c;
-    }
-    return rows.filter(Boolean).map((r) => Array.from(r, (c) => c ?? { row: 0, col: 0, kind: 'aisle', label: null, price_delta: 0, status: 'AISLE' }));
+  /** Does this departure actually have seats to pick? */
+  get hasSeats(): boolean {
+    return (this.seatMap?.cells ?? []).some((c) => c.kind === 'seat');
+  }
+
+  /** How many are still free — shown so the rider knows what's left. */
+  get seatsFree(): number {
+    return (this.seatMap?.cells ?? []).filter((c) => c.kind === 'seat' && c.status === 'AVAILABLE').length;
   }
 
   // ---- step 5: review + pay --------------------------------------------
@@ -319,14 +321,19 @@ export class FixedBookPage implements OnInit {
     }
 
     const user = this.auth.getUser();
-    const rzp = new Razorpay({
+    const rzpOptions: any = {
       key: order.razorpay.key_id,
       order_id: order.razorpay.order_id,
       amount: order.razorpay.amount_paise,
       currency: order.razorpay.currency,
       name: 'DreamCabs',
       description: `Fixed booking #${hold.id}`,
-      prefill: { name: user?.name || '', email: user?.email || '', contact: user?.phone || '' },
+      prefill: {
+        name: user?.name || '',
+        email: user?.email || '',
+        contact: user?.phone || '',
+        method: this.paymentMethod === 'upi' ? 'upi' : 'card',
+      },
       theme: { color: '#12B35B' },
       handler: (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) =>
         this.confirmPayment(hold, resp),
@@ -338,7 +345,9 @@ export class FixedBookPage implements OnInit {
           this.cdr.markForCheck();
         },
       },
-    });
+    };
+
+    const rzp = new Razorpay(rzpOptions);
     rzp.on('payment.failed', async (resp: any) => {
       this.busy = false;
       await this.toast(resp?.error?.description || 'Payment failed.', 'danger');
