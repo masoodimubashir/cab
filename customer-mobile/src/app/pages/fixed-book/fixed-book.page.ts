@@ -98,6 +98,11 @@ interface FixedCouponPreview {
 declare const google: any;
 declare const Razorpay: any;
 
+interface TippingConfig {
+  values: number[];
+  in_percentage: boolean;
+}
+
 interface FixedLiveStatus {
   key: string;
   label: string;
@@ -190,6 +195,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   activeBookings: FixedReservation[] = [];
   liveTrackingActive = false;
 
+  tipping: TippingConfig | null = null;
+  selectedTipPreset: number | null = null;
+
   private entered = false;
   private unsubscribeFixedCity: (() => void) | null = null;
   private fixedMap: any = null;
@@ -221,7 +229,15 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.locationSub = this.fixedLocation.state$.subscribe((state) => {
       this.locationWarning = state.degraded ? state.message : null;
     });
+    this.loadTippingConfig();
     this.enter();
+  }
+
+  private loadTippingConfig(): void {
+    this.api.get<TippingConfig>('/operator/tipping').subscribe({
+      next: (cfg) => { this.tipping = cfg; },
+      error: () => { this.tipping = null; },
+    });
   }
   ngOnDestroy(): void {
     this.unsubscribeFixedCity?.();
@@ -312,8 +328,29 @@ export class FixedBookPage implements OnInit, OnDestroy {
     return (fare * seatCount) + seatDeltas + luggage;
   }
 
+  get tipAmount(): number {
+    if (!this.tipping || this.selectedTipPreset == null) return 0;
+    if (this.tipping.in_percentage) {
+      const baseFare = (this.selectedRoute?.flat_fare || 0) * (this.selectedLabels.length || this.seats);
+      return Math.max(1, Math.round((baseFare * this.selectedTipPreset) / 100));
+    }
+    return this.selectedTipPreset;
+  }
+
   get payableTotal(): number {
-    return this.couponPreview?.final_amount ?? this.fareTotal;
+    return (this.couponPreview?.final_amount ?? this.fareTotal) + this.tipAmount;
+  }
+
+  pickTipPreset(val: number): void {
+    if (this.selectedTipPreset === val) {
+      this.selectedTipPreset = null;
+    } else {
+      this.selectedTipPreset = val;
+    }
+  }
+
+  tipPresetLabel(val: number): string {
+    return this.tipping?.in_percentage ? `${val}%` : `₹${val}`;
   }
 
   get discountTotal(): number {
@@ -1250,6 +1287,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       seats: this.selectedLabels.length || this.seats,
       has_extra_luggage: this.extraLuggageCount > 0,
       extra_luggage_count: this.extraLuggageCount,
+      tip_amount: this.tipAmount,
     };
     const coupon = this.couponTitle.trim();
     if (coupon || requireCoupon) payload['coupon_title'] = coupon;

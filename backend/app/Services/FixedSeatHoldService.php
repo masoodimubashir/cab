@@ -83,8 +83,9 @@ class FixedSeatHoldService
         $dropStopId = (int) $data['drop_stop_id'];
         $hasExtraLuggage = $extraLuggageCount > 0;
         $couponTitle = $data["coupon_title"] ?? null;
+        $tipAmount = max(0.0, round((float) ($data['tip_amount'] ?? 0), 2));
 
-        $hold = DB::transaction(function () use ($customer, $departure, $seats, $seatLabels, $extraLuggageCount, $hasExtraLuggage, $boardStopId, $dropStopId, $couponTitle) {
+        $hold = DB::transaction(function () use ($customer, $departure, $seats, $seatLabels, $extraLuggageCount, $hasExtraLuggage, $boardStopId, $dropStopId, $couponTitle, $tipAmount) {
             $dep = RouteDeparture::query()->with('route')->lockForUpdate()->find($departure->id);
             if (!$dep) {
                 throw new ReservationException('This departure could not be found.', 404);
@@ -121,7 +122,7 @@ class FixedSeatHoldService
             $luggageSurcharge = $hasExtraLuggage ? (float) $route->luggage_surcharge_amount * $extraLuggageCount : 0.0;
             $baseAmount = $this->pricing->bookingAmount($route, $seats, $extraLuggageCount);
             $coupon = $this->resolveFixedCoupon($customer, $dep, $route, $boardStop, $dropStop, $baseAmount, $couponTitle);
-            $amount = $coupon["final_amount"];
+            $amount = round((float) $coupon["final_amount"] + $tipAmount, 2);
 
             // Idempotent — safe to call before every hold in case snapshot hasn't run yet.
             $this->seatMap->snapshotForDeparture($dep);
@@ -135,6 +136,7 @@ class FixedSeatHoldService
                 'amount' => $amount,
                 'original_amount' => $baseAmount,
                 'discount_amount' => $coupon["discount"],
+                'tip_amount' => $tipAmount,
                 'coupon_assignment_id' => $coupon["assignment_id"],
                 'has_extra_luggage' => $hasExtraLuggage,
                 'extra_luggage_count' => $extraLuggageCount,
@@ -241,6 +243,7 @@ class FixedSeatHoldService
                 'drop_lng' => (float) $dropStop->lng,
                 'drop_address' => $dropStop->name,
                 'fare_amount' => (float) $lockedHold->amount,
+                'tip_amount' => (float) ($lockedHold->tip_amount ?? 0),
                 'commission_percent' => (float) $commission['percent'],
                 'commission_amount' => (float) $commission['amount'],
                 'promo_discount_amount' => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
@@ -404,6 +407,7 @@ class FixedSeatHoldService
                 'drop_lng' => (float) $dropStop->lng,
                 'drop_address' => $dropStop->name,
                 'fare_amount' => (float) $lockedHold->amount,
+                'tip_amount' => (float) ($lockedHold->tip_amount ?? 0),
                 'commission_percent' => (float) $commission['percent'],
                 'commission_amount' => (float) $commission['amount'],
                 'promo_discount_amount' => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
@@ -537,6 +541,7 @@ class FixedSeatHoldService
                 "drop_lng" => (float) $dropStop->lng,
                 "drop_address" => $dropStop->name,
                 "fare_amount" => (float) $lockedHold->amount,
+                "tip_amount" => (float) ($lockedHold->tip_amount ?? 0),
                 "commission_percent" => (float) $commission['percent'],
                 "commission_amount" => (float) $commission['amount'],
                 "promo_discount_amount" => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,

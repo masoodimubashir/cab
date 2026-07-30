@@ -44,6 +44,7 @@ class ShuttleBookingsController extends Controller
             'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            'tip_amount' => ['nullable', 'numeric', 'min:0', 'max:10000'],
         ]);
 
         $booking = $this->bookings->createBooking($request->user(), $data);

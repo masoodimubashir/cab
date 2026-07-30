@@ -52,14 +52,32 @@
     subtitle="Pools are paid before we find the car."
     [from]="fromLabel" [to]="toLabel"
     [step]="4" [total]="total"
-    [cta]="busy ? 'Working…' : ('Pay ₹' + (fare || 0))"
+    [cta]="busy ? 'Working…' : ('Pay ₹' + (payableTotal || 0))"
     [disabled]="busy"
     (back)="back()"
     (primary)="pay()">
 
     <div class="bk-money">
       <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
-      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ fare }}</span></div>
+      <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
+      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ payableTotal }}</span></div>
+    </div>
+    <div class="fb-tip-chips" *ngIf="tipping && tipping.values && tipping.values.length > 0" style="margin: 12px 0; display: flex; gap: 8px;">
+      <button type="button"
+              *ngFor="let val of tipping.values"
+              class="fb-tip-chip"
+              [style.flex]="'1'"
+              [style.background]="selectedTipPreset === val ? '#E7F8EF' : '#FFFFFF'"
+              [style.color]="selectedTipPreset === val ? '#12B35B' : '#0D1B2A'"
+              [style.border]="'1.5px solid ' + (selectedTipPreset === val ? '#12B35B' : '#EEF0F2')"
+              [style.padding]="'9px 12px'"
+              [style.border-radius]="'12px'"
+              [style.font-weight]="'850'"
+              [style.font-size]="'13px'"
+              [style.cursor]="'pointer'"
+              (click)="pickTipPreset(val)">
+        Tip {{ tipPresetLabel(val) }}
+      </button>
     </div>
     <div class="bk-note bk-note--warn"><b>Refunded in full</b> if no car forms.</div>
     <p class="bk-note bk-note--danger" *ngIf="error">{{ error }}</p>

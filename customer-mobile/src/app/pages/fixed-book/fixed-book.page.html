@@ -233,9 +233,25 @@
           <app-hold-timer *ngIf="hold?.expires_at" [expiresAt]="hold?.expires_at || null" (expired)="onHoldExpired()"></app-hold-timer>
         </div>
 
+        <div class="fb-price-card fb-tip-card" *ngIf="tipping && tipping.values && tipping.values.length > 0">
+          <div class="fb-tip-card__head">
+            <span>Add a tip for the driver (optional)</span>
+          </div>
+          <div class="fb-tip-chips">
+            <button type="button"
+                    *ngFor="let val of tipping.values"
+                    class="fb-tip-chip dc-press"
+                    [class.active]="selectedTipPreset === val"
+                    (click)="pickTipPreset(val)">
+              {{ tipPresetLabel(val) }}
+            </button>
+          </div>
+        </div>
+
         <div class="fb-price-card">
           <div><span>Seat fare</span><strong>₹{{ (selectedRoute?.flat_fare || 0) * (selectedLabels.length || seats) | number: '1.0-2' }}</strong></div>
           <div><span>Extra luggage</span><strong>₹{{ luggageTotal | number: '1.0-2' }}</strong></div>
+          <div *ngIf="tipAmount > 0" class="is-tip"><span>Driver tip</span><strong>+₹{{ tipAmount | number: '1.0-2' }}</strong></div>
           <div *ngIf="discountTotal > 0" class="is-discount"><span>Coupon discount</span><strong>-₹{{ discountTotal | number: '1.0-2' }}</strong></div>
           <div class="is-total"><span>Final price</span><strong>₹{{ payableTotal | number: '1.0-2' }}</strong></div>
         </div>

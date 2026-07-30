@@ -931,3 +931,38 @@
   font-weight: 600;
   strong { color: #0e7a3d; }
 }
+
+.fb-tip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fb-tip-card__head {
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--dc-ink-soft, #6C757D);
+}
+.fb-tip-chips {
+  display: flex;
+  gap: 8px;
+}
+.fb-tip-chip {
+  flex: 1;
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1.5px solid var(--dc-hairline, #EEF0F2);
+  background: #fff;
+  color: var(--dc-ink, #0D1B2A);
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+  &.active {
+    border-color: var(--dc-green, #12B35B);
+    background: var(--dc-green-tint, #E7F8EF);
+    color: var(--dc-green, #12B35B);
+  }
+}
+.fb-price-card .is-tip span,
+.fb-price-card .is-tip strong {
+  color: var(--dc-green, #12B35B);
+}
