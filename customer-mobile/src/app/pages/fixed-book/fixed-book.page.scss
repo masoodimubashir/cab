@@ -966,3 +966,32 @@
 .fb-price-card .is-tip strong {
   color: var(--dc-green, #12B35B);
 }
+
+.fb-map-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #E8F1FF;
+  color: #1E6CF0;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  ion-icon { font-size: 16px; flex: none; }
+}
+
+.fb-snapped-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #E7F8EF;
+  color: #128A48;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  ion-icon { font-size: 16px; flex: none; }
+  strong { font-weight: 900; }
+}

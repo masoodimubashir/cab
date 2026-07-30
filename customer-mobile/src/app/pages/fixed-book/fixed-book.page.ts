@@ -194,9 +194,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
   confirmation: FixedReservation | null = null;
   activeBookings: FixedReservation[] = [];
   liveTrackingActive = false;
-
   tipping: TippingConfig | null = null;
   selectedTipPreset: number | null = null;
+
+  snappedStopInfo: { stopName: string; distanceMeters: number; kind: 'pickup' | 'drop' } | null = null;
 
   private entered = false;
   private unsubscribeFixedCity: (() => void) | null = null;
@@ -564,7 +565,97 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const label = document.createElement('span');
     label.textContent = stop.id === this.boardStopId ? 'P' : stop.id === this.dropStopId ? 'D' : String(stop.seq);
     marker.appendChild(label);
+
+    marker.addEventListener('click', (e: Event) => {
+      e.stopPropagation();
+      this.zone.run(() => this.onStopMarkerClick(stop));
+    });
+
     return marker;
+  }
+
+  snapMapClickToNearestStop(lat: number, lng: number): void {
+    if (!this.selectedRoute || this.step !== 'details') return;
+
+    const isPickupMode = !this.boardStopId || (!this.dropStopId && this.pickupStops.length > 0);
+    const targetStops = isPickupMode ? this.pickupStops : this.dropStops;
+
+    if (!targetStops.length) {
+      this.showToast('No available stops to select.');
+      return;
+    }
+
+    let minDistance = Infinity;
+    let nearestStop: FixedStop | null = null;
+
+    for (const stop of targetStops) {
+      const dist = this.distanceMeters(lat, lng, Number(stop.lat), Number(stop.lng));
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearestStop = stop;
+      }
+    }
+
+    if (nearestStop && minDistance < 10000) {
+      const distRounded = Math.round(minDistance);
+      if (isPickupMode) {
+        this.boardStopId = nearestStop.id;
+        this.onBoardStopChange();
+        this.snappedStopInfo = { stopName: nearestStop.name, distanceMeters: distRounded, kind: 'pickup' };
+        this.showToast(`Boarding stop set to "${nearestStop.name}" (snapped, ${distRounded}m away)`);
+      } else {
+        this.dropStopId = nearestStop.id;
+        this.onDropStopChange();
+        this.snappedStopInfo = { stopName: nearestStop.name, distanceMeters: distRounded, kind: 'drop' };
+        this.showToast(`Drop stop set to "${nearestStop.name}" (snapped, ${distRounded}m away)`);
+      }
+      this.refreshStopMapSelection();
+    } else {
+      this.showToast('Clicked position is too far from any route stop.');
+    }
+  }
+
+  onStopMarkerClick(stop: FixedStop): void {
+    if (this.step !== 'details') return;
+
+    const isAvailablePickup = this.pickupStops.some((s) => s.id === stop.id);
+    const isAvailableDrop = this.dropStops.some((s) => s.id === stop.id);
+
+    if (!this.boardStopId && isAvailablePickup) {
+      this.boardStopId = stop.id;
+      this.onBoardStopChange();
+      this.snappedStopInfo = null;
+      this.showToast(`Boarding stop selected: "${stop.name}"`);
+    } else if (this.boardStopId && !this.dropStopId && isAvailableDrop) {
+      this.dropStopId = stop.id;
+      this.onDropStopChange();
+      this.snappedStopInfo = null;
+      this.showToast(`Drop stop selected: "${stop.name}"`);
+    } else if (isAvailablePickup) {
+      this.boardStopId = stop.id;
+      this.onBoardStopChange();
+      this.snappedStopInfo = null;
+      this.showToast(`Boarding stop updated: "${stop.name}"`);
+    } else if (isAvailableDrop) {
+      this.dropStopId = stop.id;
+      this.onDropStopChange();
+      this.snappedStopInfo = null;
+      this.showToast(`Drop stop updated: "${stop.name}"`);
+    } else {
+      this.showToast(`Stop "${stop.name}" is not available for selection.`);
+    }
+    this.refreshStopMapSelection();
+  }
+
+  private distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
   private stopMarkerZIndex(stop: FixedStop): number {
