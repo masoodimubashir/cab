@@ -81,8 +81,9 @@ class PaymentSplitService
             }
             if ($locked->settlement_mode === Payment::SETTLE_BOOKING) {
                 // Prepaid before the ride ran — Fixed/Shuttle seats, or a Private
-                // ride paid at booking. The driver isn't owed anything until the
-                // trip completes, so settlement waits for the completion hook.
+                // ride paid at booking. Record the capture on the ledger immediately
+                // so the transaction is visible on /admin/ledger without delay.
+                $this->recordCaptureOnLedger($locked);
                 return;
             }
 
@@ -216,19 +217,21 @@ class PaymentSplitService
             $driverPaise = $driver !== null ? $split['driver_paise'] : 0;
             $operatorPaise = $capturedPaise - $feePaise - $driverPaise;
 
-            // 1) Money landed with the operator (recorded now, at settlement).
-            $this->ledger->record(
-                LedgerEntry::TYPE_CAPTURE,
-                LedgerEntry::PARTY_CUSTOMER,
-                'in',
-                $capturedPaise,
-                $locked->trip_id,
-                $locked->id,
-                $locked->razorpay_payment_id,
-            );
+            // 1) Money landed with the operator (if not already recorded at capture).
+            if (! $this->ledger->hasCapture($locked)) {
+                $this->ledger->record(
+                    LedgerEntry::TYPE_CAPTURE,
+                    LedgerEntry::PARTY_CUSTOMER,
+                    'in',
+                    $capturedPaise,
+                    $locked->trip_id,
+                    $locked->id,
+                    $locked->razorpay_payment_id,
+                );
 
-            // 1b) Straight back out to the gateway.
-            $this->recordGatewayFee($locked, (int) $locked->trip_id, $feePaise);
+                // 1b) Straight back out to the gateway.
+                $this->recordGatewayFee($locked, (int) $locked->trip_id, $feePaise);
+            }
 
             // 2) Operator retains its commission.
             if ($operatorPaise > 0) {
@@ -254,6 +257,33 @@ class PaymentSplitService
                 'split_at' => now(),
             ])->save();
         });
+    }
+
+    /**
+     * Records the capture (and gateway fee if applicable) on the ledger immediately
+     * upon payment confirmation so transactions appear on /admin/ledger without delay.
+     * Idempotent via LedgerService::hasCapture.
+     */
+    public function recordCaptureOnLedger(Payment $payment): void
+    {
+        if (! $this->enabled() || $this->ledger->hasCapture($payment)) {
+            return;
+        }
+
+        $capturedPaise = self::toPaise($payment->amount);
+        $feePaise = $this->feePaise($payment, $capturedPaise);
+
+        $this->ledger->record(
+            LedgerEntry::TYPE_CAPTURE,
+            LedgerEntry::PARTY_CUSTOMER,
+            'in',
+            $capturedPaise,
+            $payment->trip_id,
+            $payment->id,
+            $payment->razorpay_payment_id,
+        );
+
+        $this->recordGatewayFee($payment, $payment->trip_id, $feePaise);
     }
 
     /**
