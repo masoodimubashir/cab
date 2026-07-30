@@ -133,6 +133,12 @@ class FixedRouteVehicleDecouplingTest extends TestCase
 
     public function test_vehicleless_route_settles_and_credits_the_driver_correctly(): void
     {
+        // This case pins the legacy wallet-settlement path (split engine OFF):
+        // it checks that a *vehicleless* route still settles the driver's share the
+        // classic way. The split-engine equivalent (Route transfer / held earning)
+        // is covered by BookingSettlementPhase5Test.
+        config()->set('services.payments.split_enabled', false);
+
         $route = $this->vehiclelessRoute();
         $driverUser = User::factory()->create();
         Driver::create(['user_id' => $driverUser->id, 'city_id' => $this->cityId, 'approval_status' => 'approved']);
