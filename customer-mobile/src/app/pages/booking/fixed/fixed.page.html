@@ -1,0 +1,167 @@
+<ion-content [fullscreen]="true">
+
+  <!-- Step 1 — route -->
+  <app-step-shell
+    *ngIf="step === 'route'"
+    title="Choose a route"
+    subtitle="A set line with set stops. You pay for one seat."
+    barLabel="Share a seat"
+    [step]="1" [total]="total"
+    (back)="back()">
+    <label class="bk-field">
+      <input class="bk-field__input" type="search" placeholder="Search route or stop"
+             autocomplete="off" [(ngModel)]="search" />
+    </label>
+    <p class="bk-sub" *ngIf="loading">Loading routes…</p>
+    <button *ngFor="let r of visibleRoutes; trackBy: trackByRoute" class="bk-opt" type="button" (click)="pickRoute(r)">
+      <span class="bk-opt__ic">🚌</span>
+      <span class="bk-opt__main">
+        <span class="bk-opt__t">{{ r.name }}</span>
+        <span class="bk-opt__s">{{ r.origin_name }} → {{ r.dest_name }} · {{ (r.stops || []).length }} stops</span>
+      </span>
+      <span class="bk-opt__r">₹{{ r.flat_fare }}<small>a seat</small></span>
+    </button>
+    <p class="bk-note" *ngIf="!loading && !visibleRoutes.length">No routes match. Try a different search.</p>
+  </app-step-shell>
+
+  <!-- Step 2 — departure -->
+  <app-step-shell
+    *ngIf="step === 'departure'"
+    title="Choose a departure"
+    [barLabel]="route?.name || 'Share a seat'"
+    [step]="2" [total]="total"
+    (back)="back()">
+    <p class="bk-sub" *ngIf="loading">Loading departures…</p>
+    <button *ngFor="let d of departures; trackBy: trackByDep" class="bk-opt" type="button"
+            [class.bk-opt--on]="departure?.id === d.id" (click)="pickDeparture(d)">
+      <span class="bk-opt__ic">🚐</span>
+      <span class="bk-opt__main">
+        <span class="bk-opt__t">{{ departLabel(d) }}</span>
+        <span class="bk-opt__s">{{ d.seats_remaining }} seats left{{ d.vehicle_name ? ' · ' + d.vehicle_name : '' }}</span>
+      </span>
+      <span class="bk-opt__r">₹{{ route?.flat_fare }}</span>
+    </button>
+    <p class="bk-note" *ngIf="!loading && !departures.length">No departures yet on this route. Try again later.</p>
+  </app-step-shell>
+
+  <!-- Step 3 — stops + luggage -->
+  <app-step-shell
+    *ngIf="step === 'details'"
+    title="Stops & luggage"
+    [barLabel]="route?.name || 'Share a seat'"
+    [step]="3" [total]="total"
+    cta="Next"
+    [disabled]="!detailsReady"
+    (back)="back()"
+    (primary)="goToSeats()">
+
+    <p class="bk-lab">Board at</p>
+    <button *ngFor="let s of boardStops; trackBy: trackByStop" class="bk-opt" type="button"
+            [class.bk-opt--on]="boardStopId === s.id" (click)="pickBoard(s.id)">
+      <span class="bk-opt__ic">🔵</span>
+      <span class="bk-opt__main"><span class="bk-opt__t">{{ s.name }}</span></span>
+      <span class="bk-tick" *ngIf="boardStopId === s.id">✓</span>
+    </button>
+
+    <p class="bk-lab">Drop at</p>
+    <button *ngFor="let s of dropStops; trackBy: trackByStop" class="bk-opt" type="button"
+            [class.bk-opt--on]="dropStopId === s.id" (click)="pickDrop(s.id)">
+      <span class="bk-opt__ic">⬛</span>
+      <span class="bk-opt__main"><span class="bk-opt__t">{{ s.name }}</span></span>
+      <span class="bk-tick" *ngIf="dropStopId === s.id">✓</span>
+    </button>
+
+    <div class="bk-opt" *ngIf="route?.luggage_surcharge_amount">
+      <span class="bk-opt__ic">🧳</span>
+      <span class="bk-opt__main">
+        <span class="bk-opt__t">Extra luggage</span>
+        <span class="bk-opt__s">+₹{{ route?.luggage_surcharge_amount }} each</span>
+      </span>
+      <span class="fx-step">
+        <button type="button" (click)="addLuggage(-1)" [disabled]="luggage === 0" aria-label="Less">−</button>
+        <b>{{ luggage }}</b>
+        <button type="button" (click)="addLuggage(1)" [disabled]="luggage >= luggageMax" aria-label="More">+</button>
+      </span>
+    </div>
+  </app-step-shell>
+
+  <!-- Step 4 — seats -->
+  <app-step-shell
+    *ngIf="step === 'seats'"
+    title="Pick your seats"
+    [barLabel]="route?.name || 'Share a seat'"
+    [step]="4" [total]="total"
+    cta="Review"
+    [disabled]="!selected.length"
+    (back)="back()"
+    (primary)="goToReview()">
+
+    <p class="bk-sub" *ngIf="loading">Loading seats…</p>
+    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+
+    <div class="fx-seatmap" *ngIf="seatMap">
+      <div class="fx-wheel">driver</div>
+      <div class="fx-row" *ngFor="let row of seatRows">
+        <ng-container *ngFor="let cell of row">
+          <span *ngIf="cell.kind !== 'seat'" class="fx-gap"></span>
+          <button *ngIf="cell.kind === 'seat'" type="button"
+                  class="fx-seat"
+                  [class.fx-seat--on]="isSelected(cell)"
+                  [class.fx-seat--off]="cell.status !== 'AVAILABLE'"
+                  [disabled]="cell.status !== 'AVAILABLE'"
+                  (click)="toggleSeat(cell)">{{ cell.label }}</button>
+        </ng-container>
+      </div>
+    </div>
+
+    <div class="bk-note" *ngIf="selected.length">{{ selected.length }} seat{{ selected.length > 1 ? 's' : '' }} · ₹{{ seatFare }}. Hatched seats are taken.</div>
+  </app-step-shell>
+
+  <!-- Step 5 — review + pay -->
+  <app-step-shell
+    *ngIf="step === 'review'"
+    title="Review & pay"
+    [barLabel]="route?.name || 'Share a seat'"
+    [step]="5" [total]="total"
+    [cta]="busy ? 'Working…' : ('Pay ₹' + finalTotal)"
+    [disabled]="busy"
+    (back)="back()"
+    (primary)="pay()">
+
+    <label class="bk-field">
+      <input class="bk-field__input" type="text" placeholder="Coupon code" [(ngModel)]="couponTitle" />
+      <button *ngIf="!coupon" class="fx-apply" type="button" (click)="applyCoupon()">Apply</button>
+      <button *ngIf="coupon" class="fx-apply" type="button" (click)="removeCoupon()">Remove</button>
+    </label>
+    <p class="bk-note bk-note--warn" *ngIf="couponError">{{ couponError }}</p>
+
+    <div class="bk-money">
+      <div class="bk-money__row"><span>Seat fare × {{ selected.length }}</span><span>₹{{ seatFare }}</span></div>
+      <div class="bk-money__row" *ngIf="luggageTotal"><span>Luggage × {{ luggage }}</span><span>₹{{ luggageTotal }}</span></div>
+      <div class="bk-money__row" *ngIf="coupon?.coupon"><span>{{ coupon?.coupon?.title }}</span><span>−₹{{ coupon?.discount }}</span></div>
+      <div class="bk-money__row bk-money__tot"><span>You pay</span><span>₹{{ finalTotal }}</span></div>
+    </div>
+    <div class="bk-note">Paid before boarding. You'll get a code to show the driver.</div>
+    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+  </app-step-shell>
+
+  <!-- Done — ticket -->
+  <app-step-shell
+    *ngIf="step === 'done'"
+    title="Show this to the driver"
+    barLabel="Booking confirmed"
+    [step]="5" [total]="total"
+    cta="View booking"
+    (back)="viewBooking()"
+    (primary)="viewBooking()">
+    <div class="fx-ticket">
+      <span class="bk-badge">CONFIRMED</span>
+      <div class="fx-otp" *ngIf="boardingCode">
+        <b *ngFor="let d of boardingCode.split('')">{{ d }}</b>
+      </div>
+      <p class="bk-sub" *ngIf="!boardingCode">Your booking is confirmed. The code appears in My bookings.</p>
+      <div class="bk-field"><span class="bk-dot"></span> {{ route?.origin_name }} → {{ route?.dest_name }}</div>
+    </div>
+  </app-step-shell>
+
+</ion-content>

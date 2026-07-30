@@ -783,7 +783,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   private homeRouteForUser(_user: AuthUser | null | undefined): string {
-    return '/customer-tabs/book';
+    return '/customer-tabs/go';
   }
 
   private isSyntheticEmail(email?: string | null): boolean {

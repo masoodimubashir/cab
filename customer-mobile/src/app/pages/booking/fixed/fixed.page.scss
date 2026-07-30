@@ -1,0 +1,99 @@
+/* "Share a seat" — the parts unique to Fixed. Structure comes from StepShell
+   and the shared .bk-* utilities; only the seat grid, luggage stepper and
+   ticket are new. All from the app's --dc-* tokens. */
+
+.fx-step {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fx-step button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--dc-hairline-strong);
+  background: var(--dc-surface);
+  color: var(--dc-ink);
+  font-size: 18px;
+  font-weight: 700;
+}
+.fx-step button[disabled] { color: var(--dc-ink-faint); }
+.fx-step b { min-width: 16px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.fx-apply {
+  flex: none;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--dc-r-sm);
+  background: var(--dc-green-tint);
+  color: var(--dc-green);
+  font-size: var(--dc-t-caption);
+  font-weight: 800;
+}
+
+/* seat map */
+.fx-seatmap {
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-hairline-strong);
+  border-radius: var(--dc-r-md);
+  box-shadow: var(--dc-shadow-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fx-wheel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dc-ink-faint);
+}
+.fx-wheel::before { content: ""; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--dc-ink-faint); }
+.fx-row { display: flex; gap: 8px; justify-content: center; }
+.fx-gap { flex: 1 1 0; max-width: 44px; }
+.fx-seat {
+  flex: 1 1 0;
+  max-width: 44px;
+  aspect-ratio: 1;
+  border: 2px solid var(--dc-hairline-strong);
+  border-radius: 10px;
+  background: var(--dc-surface);
+  color: var(--dc-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+.fx-seat--on { background: var(--dc-green); border-color: var(--dc-green); color: #fff; }
+/* Taken seats read as hatched AND disabled — pattern, not colour alone. */
+.fx-seat--off {
+  background: repeating-linear-gradient(45deg, var(--dc-hairline) 0 4px, transparent 4px 8px);
+  color: var(--dc-ink-faint);
+  border-style: dashed;
+}
+
+/* ticket */
+.fx-ticket {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding-top: 12px;
+}
+.fx-otp { display: flex; gap: 8px; }
+.fx-otp b {
+  width: 42px;
+  height: 52px;
+  border: 2px solid var(--dc-green);
+  border-radius: var(--dc-r-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--dc-green);
+  font-variant-numeric: tabular-nums;
+}

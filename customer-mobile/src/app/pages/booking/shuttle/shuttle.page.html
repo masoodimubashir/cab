@@ -1,0 +1,85 @@
+<ion-content [fullscreen]="true">
+
+  <!-- Step 1 — pickup -->
+  <app-step-shell
+    *ngIf="step === 'pickup'"
+    title="Where from?"
+    subtitle="We'll collect you from this exact spot."
+    barLabel="Pool ride"
+    [step]="1" [total]="total"
+    (back)="back()">
+    <app-place-search placeholder="Search your pickup" (picked)="onPickup($event)"></app-place-search>
+  </app-step-shell>
+
+  <!-- Step 2 — drop -->
+  <app-step-shell
+    *ngIf="step === 'drop'"
+    title="Where to?"
+    [from]="fromLabel"
+    [step]="2" [total]="total"
+    (back)="back()">
+    <app-place-search placeholder="Search your destination" [near]="near" (picked)="onDrop($event)"></app-place-search>
+  </app-step-shell>
+
+  <!-- Step 3 — fare -->
+  <app-step-shell
+    *ngIf="step === 'fare'"
+    title="Your pool fare"
+    [from]="fromLabel" [to]="toLabel"
+    [step]="3" [total]="total"
+    cta="Confirm pool"
+    [disabled]="estimating || !canConfirm"
+    (back)="back()"
+    (primary)="confirm()">
+
+    <div class="bk-opt bk-opt--on">
+      <span class="bk-opt__ic">🚐</span>
+      <span class="bk-opt__main">
+        <span class="bk-opt__t">Pool ride</span>
+        <span class="bk-opt__s">{{ estimating ? 'Pricing…' : 'Others may join · pay now' }}</span>
+      </span>
+      <span class="bk-opt__r" *ngIf="fare">₹{{ fare }}<small>a seat</small></span>
+    </div>
+
+    <p class="bk-note">A fixed price per seat — no bargaining. Cheaper than the whole car.</p>
+    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+  </app-step-shell>
+
+  <!-- Step 4 — pay -->
+  <app-step-shell
+    *ngIf="step === 'paying'"
+    title="Pay for your seat"
+    subtitle="Pools are paid before we find the car."
+    [from]="fromLabel" [to]="toLabel"
+    [step]="4" [total]="total"
+    [cta]="busy ? 'Working…' : ('Pay ₹' + (fare || 0))"
+    [disabled]="busy"
+    (back)="back()"
+    (primary)="pay()">
+
+    <div class="bk-money">
+      <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
+      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ fare }}</span></div>
+    </div>
+    <div class="bk-note bk-note--warn"><b>Refunded in full</b> if no car forms.</div>
+    <p class="bk-note bk-note--danger" *ngIf="error">{{ error }}</p>
+  </app-step-shell>
+
+  <!-- Forming -->
+  <app-step-shell
+    *ngIf="step === 'forming'"
+    title="Finding people to share with"
+    barLabel="Pool ride"
+    [step]="4" [total]="total"
+    cta="View my pools"
+    (back)="viewPools()"
+    (primary)="viewPools()">
+    <div class="sh-forming">
+      <div class="sh-pulse" aria-hidden="true">🚐</div>
+      <span class="bk-badge bk-badge--amber">FORMING</span>
+      <p class="bk-sub sh-forming__t">{{ fromLabel }} → {{ toLabel }} · ₹{{ fare }} paid</p>
+      <p class="bk-note">We'll message you the moment a car forms. You can leave this screen.</p>
+    </div>
+  </app-step-shell>
+
+</ion-content>

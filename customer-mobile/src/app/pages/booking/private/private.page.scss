@@ -1,0 +1,71 @@
+/* "Book a car" — the parts unique to name-your-price. Everything structural
+   comes from the shared StepShell and the .bk-* utilities. */
+
+.pv-price {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 0 16px;
+  background: var(--dc-surface);
+  border: 2px solid var(--dc-green);
+  border-radius: var(--dc-r-md);
+  box-shadow: 0 0 0 3px var(--dc-green-tint);
+}
+.pv-price--bad { border-color: var(--dc-danger); box-shadow: 0 0 0 3px var(--dc-danger-tint); }
+.pv-price__cur { flex: none; font-size: 20px; font-weight: 700; color: var(--dc-ink-soft); }
+.pv-price__in {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--dc-ink);
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+
+  &::-webkit-outer-spin-button, &::-webkit-inner-spin-button { appearance: none; margin: 0; }
+  -moz-appearance: textfield;
+}
+
+.pv-wait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding-top: 24px;
+}
+.pv-wait__t { text-align: center; }
+.pv-pulse {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--dc-green-tint);
+  border: 2px solid var(--dc-green);
+  color: var(--dc-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pv-pulse { animation: pv-breathe 2.4s ease-in-out infinite; }
+  @keyframes pv-breathe { 50% { box-shadow: 0 0 0 14px var(--dc-green-tint); } }
+}
+
+.pv-bid { cursor: default; }
+.pv-take {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--dc-r-sm);
+  background: var(--dc-green);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}

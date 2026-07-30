@@ -21,11 +21,17 @@ export class CustomerTabsPage {
   hideTabBar = true; // 'book' is the default landing tab
 
   onTabChange(ev: { tab?: string }): void {
-    this.hideTabBar = ev?.tab === 'book' || this.router.url.includes('/customer-tabs/fixed-rides');
+    this.hideTabBar =
+      ev?.tab === 'go' || ev?.tab === 'book' || this.router.url.includes('/customer-tabs/fixed-rides');
   }
 
   private syncTabBar(url: string): void {
-    this.hideTabBar = url.includes('/customer-tabs/book') || url.includes('/customer-tabs/fixed-rides');
+    // The new home ('go') docks its own bottom sheet, so a tab bar underneath
+    // would collide with it — hidden, same as the old map-first 'book' home.
+    this.hideTabBar =
+      url.includes('/customer-tabs/go') ||
+      url.includes('/customer-tabs/book') ||
+      url.includes('/customer-tabs/fixed-rides');
   }
 }
 
