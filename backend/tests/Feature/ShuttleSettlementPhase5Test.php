@@ -175,10 +175,10 @@ class ShuttleSettlementPhase5Test extends TestCase
         $this->assertSame(round((float) $booking->fare_amount * 0.2, 2), (float) $payment->commission_amount);
 
         // The trip exists (it's created at confirm) but no driver is on it yet,
-        // so nothing is split and nothing has hit the ledger.
+        // so nothing is split to a driver yet, but capture is recorded on the ledger immediately (F6 fix).
         $this->assertSame((int) $booking->journey->trip_id, (int) $payment->trip_id);
         $this->assertNull($payment->split_at);
-        $this->assertSame(0, LedgerEntry::query()->count());
+        $this->assertSame(1, LedgerEntry::query()->where('type', LedgerEntry::TYPE_CAPTURE)->count());
     }
 
     public function test_completing_the_journey_splits_the_prepayment_and_reconciles(): void

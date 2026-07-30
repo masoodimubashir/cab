@@ -272,10 +272,10 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertSame('SUCCESS', $payment->status);
         $this->assertSame(self::SEAT_FARE, (float) $payment->amount);
         $this->assertSame(24.0, (float) $payment->commission_amount);   // 20% of ₹120, snapshotted
-        // The departure is still forming: no trip exists, and nothing is split.
+        // The departure is still forming: no trip exists yet, but the capture is recorded on the ledger immediately (F6 fix).
         $this->assertNull($payment->trip_id);
         $this->assertNull($payment->split_at);
-        $this->assertSame(0, LedgerEntry::query()->count());
+        $this->assertSame(1, LedgerEntry::query()->where('type', LedgerEntry::TYPE_CAPTURE)->count());
     }
 
     public function test_starting_the_departure_attaches_the_prepayment_to_the_trip(): void

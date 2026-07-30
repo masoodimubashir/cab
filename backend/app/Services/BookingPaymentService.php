@@ -62,10 +62,11 @@ class BookingPaymentService
                 ->lockForUpdate()
                 ->first();
             if ($existing) {
+                $this->split->recordCaptureOnLedger($existing);
                 return $existing;
             }
 
-            return Payment::query()->create([
+            $payment = Payment::query()->create([
                 'trip_id' => $tripId,
                 'method' => 'RAZORPAY',
                 'provider' => 'RAZORPAY',
@@ -77,6 +78,10 @@ class BookingPaymentService
                 'paid_at' => now(),
                 'settlement_mode' => Payment::SETTLE_BOOKING,
             ]);
+
+            $this->split->recordCaptureOnLedger($payment);
+
+            return $payment;
         });
     }
 
@@ -107,11 +112,26 @@ class BookingPaymentService
             return;
         }
 
-        Payment::query()
-            ->whereIn('razorpay_payment_id', array_unique($ids))
+        $uniqueIds = array_unique($ids);
+
+        $payments = Payment::query()
+            ->whereIn('razorpay_payment_id', $uniqueIds)
             ->where('settlement_mode', Payment::SETTLE_BOOKING)
             ->whereNull('trip_id')
-            ->update(['trip_id' => $trip->id]);
+            ->get(['id']);
+
+        if ($payments->isNotEmpty()) {
+            $paymentIds = $payments->pluck('id')->all();
+
+            Payment::query()
+                ->whereIn('id', $paymentIds)
+                ->update(['trip_id' => $trip->id]);
+
+            \App\Models\LedgerEntry::query()
+                ->whereIn('payment_id', $paymentIds)
+                ->whereNull('trip_id')
+                ->update(['trip_id' => $trip->id]);
+        }
     }
 
     /**
