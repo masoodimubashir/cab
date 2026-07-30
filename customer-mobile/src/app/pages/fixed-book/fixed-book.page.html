@@ -103,6 +103,16 @@
           <span>Vehicle boarding now</span>
         </div>
 
+        <div class="fb-map-tip">
+          <ion-icon name="map-outline"></ion-icon>
+          <span>Tap any stop marker or map position to snap to the nearest route stop.</span>
+        </div>
+
+        <div class="fb-snapped-badge" *ngIf="snappedStopInfo">
+          <ion-icon name="pin-outline"></ion-icon>
+          <span>Snapped to <strong>{{ snappedStopInfo.stopName }}</strong> ({{ snappedStopInfo.distanceMeters }}m away)</span>
+        </div>
+
         <label class="fb-field">
           <span class="fb-label">Board at</span>
           <ion-select [(ngModel)]="boardStopId" (ngModelChange)="onBoardStopChange()" interface="action-sheet" placeholder="Pick stop">
