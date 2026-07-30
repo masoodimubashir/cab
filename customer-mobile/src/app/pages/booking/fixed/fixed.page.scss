@@ -159,3 +159,41 @@
   margin: 0;
   cursor: pointer;
 }
+
+/* Step 5 Ticket details */
+.fx-ticket__subtitle {
+  font-size: var(--dc-t-caption);
+  color: var(--dc-ink-soft);
+  font-weight: 600;
+  margin: 0;
+  text-align: center;
+}
+.fx-ticket__details {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--dc-r-md);
+  border: 1px solid var(--dc-hairline-strong);
+  background: var(--dc-surface);
+  margin-top: 8px;
+}
+.fx-tdetail__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+.fx-tdetail__label {
+  color: var(--dc-ink-soft);
+  font-weight: 600;
+}
+.fx-tdetail__val {
+  color: var(--dc-ink);
+  font-weight: 700;
+}
+.fx-tdetail__val--green {
+  color: var(--dc-green);
+  font-size: 16px;
+}
