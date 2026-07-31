@@ -77,7 +77,7 @@ export class FixedBookPage implements OnInit {
   coupon: CouponPreview | null = null;
   couponError: string | null = null;
 
-  paymentMethod: 'upi' | 'card' = 'upi';
+  paymentMethod: 'gpay' | 'all' = 'gpay';
 
   reservation: Reservation | null = null;
   boardingCode = '';
@@ -332,7 +332,6 @@ export class FixedBookPage implements OnInit {
         name: user?.name || '',
         email: user?.email || '',
         contact: user?.phone || '',
-        method: this.paymentMethod === 'upi' ? 'upi' : 'card',
       },
       theme: { color: '#12B35B' },
       handler: (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) =>

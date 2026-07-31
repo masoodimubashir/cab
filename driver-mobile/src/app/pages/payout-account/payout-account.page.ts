@@ -1,4 +1,5 @@
 import { Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 
@@ -38,6 +39,9 @@ export class PayoutAccountPage implements OnInit {
   loading = true;
   saving = false;
 
+  /** True when reached as the last onboarding step (bank is optional here). */
+  onboarding = false;
+
   account: PayoutAccount | null = null;
 
   /** Form model. Shown when there's no verified account (or the driver edits). */
@@ -52,10 +56,17 @@ export class PayoutAccountPage implements OnInit {
   constructor(
     private api: ApiService,
     private toastCtrl: ToastController,
+    private router: Router,
   ) {}
 
   ngOnInit(): void {
+    this.onboarding = window.location.search.includes('next=onboarding');
     this.load();
+  }
+
+  /** Bank is optional at onboarding — let the driver add it later from home. */
+  skipForNow(): void {
+    void this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
   }
 
   load(): void {
@@ -123,6 +134,12 @@ export class PayoutAccountPage implements OnInit {
           color: 'success',
         });
         await t.present();
+        // During onboarding, land on the dashboard (with the under-review banner);
+        // otherwise return to the pending-review screen as before.
+        void this.router.navigateByUrl(
+          this.onboarding ? '/tabs/dashboard' : '/driver-pending-review',
+          { replaceUrl: true },
+        );
       },
       error: async (e: any) => {
         this.saving = false;

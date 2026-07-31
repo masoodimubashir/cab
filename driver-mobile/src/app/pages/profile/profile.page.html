@@ -73,7 +73,7 @@
     </div>
 
     <!-- ==================== TAB 1: PROFILE DETAILS ==================== -->
-    <ng-container *ngIf="activeSegment === 'profile' || onboarding">
+    <ng-container *ngIf="(!onboarding && activeSegment === 'profile') || (onboarding && onboardingStep === 'profile')">
       <div class="pg-card pf-head">
         <label class="pf-avatar dc-press">
           <img
@@ -228,6 +228,74 @@
       </button>
     </ng-container>
 
+    <!-- ============ ONBOARDING STEP 2: VEHICLE & SERVICE (FORM) ============ -->
+    <ng-container *ngIf="onboarding && onboardingStep === 'vehicle'">
+      <div class="pg-card pf-form">
+        <div class="pg-card__head">
+          <div class="pg-card__icon"><ion-icon name="car-sport-outline"></ion-icon></div>
+          <h2 class="pg-card__title">Your Vehicle &amp; Service</h2>
+        </div>
+
+        <label class="pf-field">
+          <span class="pf-field__label">City <em>*</em></span>
+          <ion-select class="pf-input" interface="action-sheet" placeholder="Select your city"
+            [(ngModel)]="city_id" (ionChange)="onOnboardingCityChange()" [disabled]="submitting">
+            <ion-select-option *ngFor="let c of cities" [value]="c.id">{{ c.name }}</ion-select-option>
+          </ion-select>
+        </label>
+
+        <label class="pf-field" *ngIf="rideModes.length">
+          <span class="pf-field__label">Service <em>*</em></span>
+          <ion-select class="pf-input" interface="action-sheet" placeholder="Select the service you drive"
+            [(ngModel)]="selectedRideKey" (ionChange)="onRideModeChange()" [disabled]="submitting">
+            <ion-select-option *ngFor="let m of rideModes" [value]="m.key">
+              {{ m.scope === 'outstation' ? 'Outstation' : 'Local' }} · {{ m.name }}
+            </ion-select-option>
+          </ion-select>
+        </label>
+
+        <label class="pf-field">
+          <span class="pf-field__label">Vehicle type <em>*</em></span>
+          <ion-select class="pf-input" interface="action-sheet" placeholder="Select vehicle type"
+            [(ngModel)]="vehicle_type_id" (ionChange)="onOnboardingVehicleTypeChange()" [disabled]="submitting">
+            <ion-select-option *ngFor="let v of vehicleTypes" [value]="v.id">{{ v.name }}</ion-select-option>
+          </ion-select>
+        </label>
+
+        <label class="pf-field" *ngIf="cityVehicles.length">
+          <span class="pf-field__label">Vehicle <em>*</em></span>
+          <ion-select class="pf-input" interface="action-sheet" placeholder="Select your vehicle"
+            [(ngModel)]="city_vehicle_type_id" [disabled]="submitting">
+            <ion-select-option *ngFor="let cv of cityVehicles" [value]="cv.id">{{ cv.display_name }}</ion-select-option>
+          </ion-select>
+        </label>
+
+        <label class="pf-field">
+          <span class="pf-field__label">Registration number <em>*</em></span>
+          <input class="pf-input" [(ngModel)]="vehicle_reg_no" placeholder="e.g. JK01AB1234" [disabled]="submitting" />
+        </label>
+
+        <label class="pf-field">
+          <span class="pf-field__label">Model year <small>(optional)</small></span>
+          <input class="pf-input" type="tel" inputmode="numeric" maxlength="4"
+            [(ngModel)]="vehicle_model_year" placeholder="e.g. 2020" [disabled]="submitting" />
+        </label>
+
+        <label class="pf-field">
+          <span class="pf-field__label">Colour <small>(optional)</small></span>
+          <input class="pf-input" [(ngModel)]="vehicle_color" placeholder="e.g. White" [disabled]="submitting" />
+        </label>
+      </div>
+
+      <button class="dc-cta pf-save" (click)="submitRegistration()" [disabled]="submitting">
+        <ion-spinner *ngIf="submitting" name="crescent"></ion-spinner>
+        {{ submitting ? 'Submitting…' : 'Complete registration' }}
+      </button>
+      <button class="dc-cta dc-cta--ghost" (click)="backToProfileStep()" [disabled]="submitting" style="margin-top:10px;">
+        Back
+      </button>
+    </ng-container>
+
     <!-- ==================== TAB 2: VEHICLE & SERVICE (READ-ONLY) ==================== -->
     <ng-container *ngIf="activeSegment === 'vehicle' && !onboarding">
       <div class="pg-card pf-registered-card">
@@ -290,8 +358,8 @@
       </div>
     </ng-container>
 
-    <!-- ==================== TAB 3: VERIFICATION DOCUMENTS (READ-ONLY VIEW) ==================== -->
-    <ng-container *ngIf="activeSegment === 'documents' && !onboarding">
+    <!-- ==================== TAB 3: VERIFICATION DOCUMENTS ==================== -->
+    <ng-container *ngIf="(activeSegment === 'documents' && !onboarding) || (onboarding && onboardingStep === 'documents')">
       <div class="doc-list pg-anim-body">
         <div class="pg-card doc-card" *ngFor="let slot of docs">
 
@@ -302,12 +370,18 @@
             </div>
           </div>
 
-          <!-- Label Values View (e.g. License Number, Expiry Date) -->
+          <!-- Label Values (e.g. License Number, Expiry Date) — editable while onboarding -->
           <div class="doc-view-labels" *ngIf="slot.doc.labels.length">
-            <div class="doc-view-label-item" *ngFor="let l of slot.doc.labels">
-              <span class="doc-view-label-item__key">{{ l.label }}:</span>
-              <strong class="doc-view-label-item__val">{{ slot.labelValues[l.label] || '—' }}</strong>
-            </div>
+            <ng-container *ngFor="let l of slot.doc.labels">
+              <label class="pf-field" *ngIf="onboarding">
+                <span class="pf-field__label">{{ l.label }} <em *ngIf="l.mandatory">*</em></span>
+                <input class="pf-input" [(ngModel)]="slot.labelValues[l.label]" [placeholder]="l.label" />
+              </label>
+              <div class="doc-view-label-item" *ngIf="!onboarding">
+                <span class="doc-view-label-item__key">{{ l.label }}:</span>
+                <strong class="doc-view-label-item__val">{{ slot.labelValues[l.label] || '—' }}</strong>
+              </div>
+            </ng-container>
           </div>
 
           <!-- Uploaded Images & Action Buttons (View & Download) -->
@@ -343,8 +417,44 @@
                   Uploaded {{ ex.uploaded_at | date:'dd MMM yyyy' }}
                 </span>
               </div>
+
+              <!-- Rejection reason -->
+              <div class="doc-reject" *ngIf="image.existing && image.existing.status === 'rejected'"
+                   style="display:flex;gap:6px;align-items:center;color:var(--ion-color-danger);font-size:13px;margin-top:6px;">
+                <ion-icon name="alert-circle-outline"></ion-icon>
+                <span>{{ image.existing.rejection_reason || 'Rejected — please upload a clearer copy.' }}</span>
+              </div>
+
+              <!-- Upload / Re-upload (only when missing or rejected) -->
+              <label class="dc-cta dc-cta--ghost dc-press"
+                     *ngIf="!image.existing || image.existing.status === 'rejected'"
+                     style="margin-top:8px;display:flex;gap:8px;align-items:center;justify-content:center;cursor:pointer;">
+                <input type="file" accept="image/*,application/pdf" hidden
+                       (change)="onDocFileSelected(slot, image, $event)"
+                       [disabled]="image.status === 'uploading'" />
+                <ion-spinner *ngIf="image.status === 'uploading'" name="crescent"></ion-spinner>
+                <ion-icon *ngIf="image.status !== 'uploading'" name="cloud-upload-outline"></ion-icon>
+                <span>{{ image.status === 'uploading'
+                          ? 'Uploading…'
+                          : (image.existing && image.existing.status === 'rejected' ? 'Re-upload document' : 'Upload document') }}</span>
+              </label>
+              <div class="doc-upload-err" *ngIf="image.status === 'error' && image.error"
+                   style="color:var(--ion-color-danger);font-size:13px;margin-top:4px;">{{ image.error }}</div>
             </div>
           </div>
+        </div>
+
+        <!-- Onboarding Step 3 Navigation Buttons -->
+        <div *ngIf="onboarding && onboardingStep === 'documents'" style="margin-top: 24px; display: flex; flex-direction: column; gap: 10px;">
+          <button class="dc-cta pf-save" type="button" (click)="finishOnboardingDocuments()" [disabled]="!requiredDocsSubmitted">
+            Continue to Bank Account / Payout Details &rarr;
+          </button>
+          <p *ngIf="!requiredDocsSubmitted" style="text-align:center;color:var(--ion-color-medium);font-size:13px;margin:0;">
+            Upload your required documents to continue.
+          </p>
+          <button class="dc-cta dc-cta--ghost" type="button" (click)="backToVehicleStep()">
+            Back to Vehicle
+          </button>
         </div>
       </div>
     </ng-container>
