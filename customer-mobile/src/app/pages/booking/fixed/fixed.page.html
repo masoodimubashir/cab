@@ -154,27 +154,6 @@
     </label>
     <p class="bk-note bk-note--warn" *ngIf="couponError">{{ couponError }}</p>
 
-    <!-- Payment Method Selector -->
-    <div class="fx-paymethods">
-      <p class="fx-paymethods__title">Select Payment Method</p>
-      <div class="fx-paymethod" [class.fx-paymethod--active]="paymentMethod === 'upi'" (click)="paymentMethod = 'upi'">
-        <div class="fx-paymethod__icon">⚡</div>
-        <div class="fx-paymethod__info">
-          <div class="fx-paymethod__name">UPI (Google Pay, PhonePe, Paytm)</div>
-          <div class="fx-paymethod__sub">Instant payment via any UPI app or QR</div>
-        </div>
-        <input type="radio" name="paymethod" [checked]="paymentMethod === 'upi'" (change)="paymentMethod = 'upi'" />
-      </div>
-      <div class="fx-paymethod" [class.fx-paymethod--active]="paymentMethod === 'card'" (click)="paymentMethod = 'card'">
-        <div class="fx-paymethod__icon">💳</div>
-        <div class="fx-paymethod__info">
-          <div class="fx-paymethod__name">Cards, Netbanking & Wallets</div>
-          <div class="fx-paymethod__sub">Visa, Mastercard, RuPay, Netbanking</div>
-        </div>
-        <input type="radio" name="paymethod" [checked]="paymentMethod === 'card'" (change)="paymentMethod = 'card'" />
-      </div>
-    </div>
-
     <div class="bk-money">
       <div class="bk-money__row"><span>Seat fare × {{ selected.length }}</span><span>₹{{ seatFare }}</span></div>
       <div class="bk-money__row" *ngIf="luggageTotal"><span>Luggage × {{ luggage }}</span><span>₹{{ luggageTotal }}</span></div>
@@ -217,7 +196,7 @@
         </div>
         <div class="fx-tdetail__row">
           <span class="fx-tdetail__label">Payment method</span>
-          <span class="fx-tdetail__val">{{ paymentMethod === 'upi' ? 'Razorpay UPI' : 'Card / Netbanking' }}</span>
+          <span class="fx-tdetail__val">Razorpay</span>
         </div>
       </div>
     </div>

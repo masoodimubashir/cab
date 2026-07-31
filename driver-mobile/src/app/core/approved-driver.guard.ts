@@ -61,8 +61,11 @@ export class ApprovedDriverGuard implements CanActivate {
   }
 
   private toDecision(state: DriverState): boolean | UrlTree {
-    if (state === 'approved') return true;
-    if (state === 'pending') return this.router.parseUrl('/driver-pending-review');
+    // A driver who has submitted documents (pending) is allowed onto the tabs so
+    // they land on the dashboard with an "under review" banner. Going online is
+    // gated separately on the dashboard until documents AND payout are approved.
+    // Only a driver who hasn't registered/uploaded yet is sent back to finish.
+    if (state === 'approved' || state === 'pending') return true;
     return this.router.parseUrl('/profile');
   }
 

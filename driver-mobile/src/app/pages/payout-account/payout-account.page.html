@@ -118,6 +118,12 @@
       <ion-button expand="block" type="submit" [disabled]="!canSubmit || saving">
         {{ saving ? 'Submitting…' : 'Submit for verification' }}
       </ion-button>
+
+      <!-- Onboarding: bank is optional, allow skipping to home -->
+      <ion-button *ngIf="onboarding" expand="block" fill="clear" type="button"
+                  [disabled]="saving" (click)="skipForNow()">
+        Skip for now — add bank later
+      </ion-button>
     </form>
   </div>
 

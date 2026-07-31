@@ -425,6 +425,40 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return !!this.driver?.['is_online'];
   }
 
+  /** Payout (bank) review state, fetched alongside the profile. */
+  payoutStatus: 'none' | 'pending' | 'verified' | 'rejected' | null = null;
+  get payoutVerified(): boolean { return this.payoutStatus === 'verified'; }
+
+  /**
+   * Owner's rule: a driver may go ONLINE only once BOTH their documents (admin
+   * approval) AND their bank/payout account are approved.
+   */
+  get canGoOnline(): boolean { return this.isApproved && this.payoutVerified; }
+
+  /** The "under review / action needed" banner text, or null when fully cleared. */
+  get reviewBannerText(): string | null {
+    if (this.canGoOnline) return null;
+    const bankMissing = this.payoutStatus === 'none' || this.payoutStatus === 'rejected' || this.payoutStatus == null;
+    if (!this.isApproved && bankMissing) {
+      return 'Your documents are under review and no bank account is added yet. Once both are approved you can take rides and get paid.';
+    }
+    if (!this.isApproved) {
+      return 'Your documents are under review. You can go online once they are approved.';
+    }
+    if (bankMissing) {
+      return 'Add your bank account so it can be approved — you need it to go online and receive payments.';
+    }
+    return 'Your bank details are under review. You can go online once they are approved.';
+  }
+
+  /** Fetches the payout status for the banner + go-online gate (any driver). */
+  private loadReviewStatus(): void {
+    this.api.get<{ status: string }>('/me/driver/payout-account').subscribe({
+      next: (a) => { this.payoutStatus = (a?.status as 'none' | 'pending' | 'verified' | 'rejected') ?? 'none'; },
+      error: () => { /* leave as-is; banner falls back to "add bank" */ },
+    });
+  }
+
   // ------------------------------------------------------------------ drawer --
 
   openDrawer(): void {
@@ -646,6 +680,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           this.walletBalance = res.wallet_balance;
         }
         this.refreshWalletBalance();
+        this.loadReviewStatus();
         if (res.user) {
           // Keep the locally-stored user in sync with the server — crucially the
           // avatar, so a photo uploaded anywhere (app or admin) shows up here,
@@ -941,6 +976,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   async goOnline(): Promise<void> {
     if (this.toggling) return;
+    if (!this.canGoOnline) {
+      this.error = this.reviewBannerText || 'You cannot go online until your documents and bank account are approved.';
+      return;
+    }
     this.toggling = true;
     this.error = null;
 

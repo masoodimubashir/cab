@@ -97,6 +97,13 @@ export class ProfilePage implements OnInit, OnDestroy {
   vehicle_reg_no = '';
   fleet_id: number | null = null;
 
+  // Onboarding registration steps: 'profile' | 'vehicle' | 'documents'
+  onboardingStep: 'profile' | 'vehicle' | 'documents' = 'profile';
+  ride_type_id: number | null = null;
+  rideModes: Array<RideModeOption & { key: string }> = [];
+  selectedRideKey: string | null = null;
+  submitting = false;
+
   // Address autocomplete (Google Places)
   addressQuery = '';
   addressSuggestions: PlaceSuggestion[] = [];
@@ -545,7 +552,12 @@ export class ProfilePage implements OnInit, OnDestroy {
         os_version: this.deviceInfo.os_version?.slice(0, 32),
         device_type: this.deviceInfo.device_type?.slice(0, 64),
       }, this.photoFile);
-      this.message = 'Profile details draft saved.';
+      // Advance to step 2 (vehicle & service) — this is where registration is
+      // actually submitted. Previously this just saved a local draft and stopped,
+      // leaving the driver stuck on the profile screen.
+      this.error = null;
+      this.message = null;
+      this.onboardingStep = 'vehicle';
       return;
     }
 
@@ -564,6 +576,181 @@ export class ProfilePage implements OnInit, OnDestroy {
       error: (err) => {
         this.error = err?.error?.message || 'Could not save profile.';
         this.busy = false;
+      },
+    });
+  }
+
+  // ── Onboarding step 2 — vehicle & service ──────────────────
+
+  backToProfileStep(): void {
+    this.error = null;
+    this.message = null;
+    this.onboardingStep = 'profile';
+  }
+
+  /** City chosen: reset dependent picks and load the city's ride products. */
+  onOnboardingCityChange(): void {
+    this.selectedRideKey = null;
+    this.ride_type_id = null;
+    this.service_scope = null;
+    this.service_mode = null;
+    this.vehicle_type_id = null;
+    this.city_vehicle_type_id = null;
+    this.cityVehicles = [];
+    this.rideModes = [];
+    if (!this.city_id) return;
+
+    this.api.get<{ scopes: RideScopeOption[] }>(`/catalog/cities/${this.city_id}/driver-ride-products`).pipe(
+      catchError(() => of({ scopes: [] as RideScopeOption[] })),
+    ).subscribe({
+      next: (res) => {
+        const modes: Array<RideModeOption & { key: string }> = [];
+        for (const sc of res.scopes ?? []) {
+          for (const m of sc.modes ?? []) {
+            modes.push({ ...m, key: `${m.scope}:${m.mode}:${m.id}` });
+          }
+        }
+        this.rideModes = modes;
+      },
+    });
+  }
+
+  /** Ride product chosen: derive ride_type_id + scope + mode from the pick. */
+  onRideModeChange(): void {
+    const m = this.rideModes.find((x) => x.key === this.selectedRideKey);
+    this.ride_type_id = m ? m.id : null;
+    this.service_scope = m ? m.scope : null;
+    this.service_mode = m ? m.mode : null;
+  }
+
+  /** Vehicle type chosen: reload the city's vehicles for that type. */
+  onOnboardingVehicleTypeChange(): void {
+    this.city_vehicle_type_id = null;
+    this.cityVehicles = [];
+    this.loadCityVehicles();
+  }
+
+  /** Final step — submit the whole registration (profile + vehicle) to the server. */
+  submitRegistration(): void {
+    this.error = null;
+    this.message = null;
+
+    if (!this.city_id) { this.error = 'Please select your city.'; return; }
+    if (!this.ride_type_id || !this.service_scope || !this.service_mode) { this.error = 'Please select your service.'; return; }
+    if (!this.vehicle_type_id) { this.error = 'Please select your vehicle type.'; return; }
+    if (!this.city_vehicle_type_id) { this.error = 'Please select your vehicle.'; return; }
+    const regNo = this.vehicle_reg_no.trim();
+    if (!regNo) { this.error = 'Please enter your vehicle registration number.'; return; }
+    const year = this.vehicle_model_year.trim();
+    if (year && !/^\d{4}$/.test(year)) { this.error = 'Model year must be a 4-digit year.'; return; }
+
+    const profile = this.draft.getProfile();
+    const fd = new FormData();
+    fd.append('name', (profile?.name || this.name).trim());
+    const email = (profile?.email || this.email).trim();
+    if (email) fd.append('email', email);
+    const dob = profile?.dob || this.dob;
+    if (dob) fd.append('dob', dob);
+    const address = profile?.address || this.address;
+    if (address) fd.append('address', address);
+
+    fd.append('ride_type_id', String(this.ride_type_id));
+    fd.append('vehicle_type_id', String(this.vehicle_type_id));
+    fd.append('city_vehicle_type_id', String(this.city_vehicle_type_id));
+    fd.append('city_id', String(this.city_id));
+    fd.append('service_scope', this.service_scope);
+    fd.append('service_mode', this.service_mode);
+    const vtName = this.selectedVehicleTypeOpt?.name;
+    if (vtName) fd.append('vehicle_type', vtName);
+    if (year) fd.append('vehicle_model', year);
+    if (this.vehicle_color.trim()) fd.append('vehicle_color', this.vehicle_color.trim());
+    fd.append('vehicle_reg_no', regNo);
+    if (this.fleet_id) fd.append('fleet_id', String(this.fleet_id));
+
+    const photo = this.draft.getPhotoFile() || this.photoFile;
+    if (photo) fd.append('photo', photo);
+    if (this.deviceInfo.app_version) fd.append('app_version', this.deviceInfo.app_version.slice(0, 32));
+    if (this.deviceInfo.os_version) fd.append('os_version', this.deviceInfo.os_version.slice(0, 32));
+    if (this.deviceInfo.device_type) fd.append('device_type', this.deviceInfo.device_type.slice(0, 64));
+
+    this.submitting = true;
+    this.api.postForm<{ driver: unknown; user: AuthUser }>('/drivers/register', fd).subscribe({
+      next: (res) => {
+        this.submitting = false;
+        if (res.user) this.auth.updateUser(res.user);
+        this.draft.clear();
+        this.message = 'Vehicle details saved! Step 3: Upload your required verification documents.';
+        this.onboardingStep = 'documents';
+        this.refreshDocuments();
+      },
+      error: (err) => {
+        this.submitting = false;
+        this.error = err?.error?.message || 'Could not submit your registration. Please check the details and try again.';
+      },
+    });
+  }
+
+  backToVehicleStep(): void {
+    this.error = null;
+    this.message = null;
+    this.onboardingStep = 'vehicle';
+  }
+
+  finishOnboardingDocuments(): void {
+    if (!this.requiredDocsSubmitted) {
+      this.error = 'Please upload your required documents before continuing.';
+      return;
+    }
+    // Bank is optional (owner's rule): the driver may add it now or later. The
+    // payout page carries a "skip to home" action.
+    this.router.navigateByUrl('/payout-account?next=onboarding', { replaceUrl: true });
+  }
+
+  /**
+   * True once every mandatory document (or, when none are flagged mandatory,
+   * every shown document) has all of its image slots uploaded. Gates the move
+   * to the bank step so a driver can't skip documents.
+   */
+  get requiredDocsSubmitted(): boolean {
+    if (!this.docs.length) return true; // nothing to upload
+    const mandatory = this.docs.filter((s) => (s.doc.required || '').startsWith('mandatory'));
+    const gate = mandatory.length ? mandatory : this.docs;
+    return gate.every((s) => s.uploads.every((u) => !!u.existing && u.existing.status !== 'rejected'));
+  }
+
+  /** A driver picked a file for one document image slot. */
+  onDocFileSelected(slot: DocUploadState, image: DocImageSlot, ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = ''; // let the same file be re-picked after an error
+    if (!file) return;
+    this.uploadDocSlot(slot, image, file);
+  }
+
+  /** Upload (or re-upload) one document image to the server. */
+  private uploadDocSlot(slot: DocUploadState, image: DocImageSlot, file: File): void {
+    image.file = file;
+    image.status = 'uploading';
+    image.error = undefined;
+    this.error = null;
+
+    const fd = new FormData();
+    fd.append('document_id', String(slot.doc.id));
+    fd.append('image_index', String(image.index));
+    fd.append('file', file);
+    const labels = slot.labelValues || {};
+    if (Object.keys(labels).length) fd.append('label_values', JSON.stringify(labels));
+    if (this.vehicle_type_id) fd.append('vehicle_type_id', String(this.vehicle_type_id));
+
+    this.api.postForm<{ document?: ExistingUpload }>('/drivers/documents', fd).subscribe({
+      next: () => {
+        image.status = 'done';
+        image.file = null;
+        this.refreshDocuments(); // reconcile: server now marks it uploaded/pending
+      },
+      error: (err) => {
+        image.status = 'error';
+        image.error = err?.error?.message || 'Upload failed. Please try again.';
       },
     });
   }
