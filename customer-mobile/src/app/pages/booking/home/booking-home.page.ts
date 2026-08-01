@@ -3,31 +3,26 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  NgZone,
   OnDestroy,
   OnInit,
   ViewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import * as L from 'leaflet';
 
 import { GeolocationService } from '../../../core/geolocation.service';
+import { PlacesService } from '../../../core/places.service';
 import { BookingService, resolveCity, scopesOffered, tilesFor, RawScope } from '../booking.service';
 import { City, RideMode, ServiceTile, TripScope } from '../booking.models';
 
-// Fix Leaflet default icon broken path in Angular / webpack
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
+declare const google: any;
 
 /**
- * Home — bottom sheet over a live Leaflet map.
+ * Home — Google Maps behind the bottom sheet, live GPS tracking.
  *
- * The map initialises with the user's GPS position, then uses
- * `watchPosition` to pan + move a marker in real-time as the user
- * walks. Falls back to a default city centre if location is denied.
+ * The map initialises full-screen via the native Google Maps JS SDK
+ * (same loader PlacesService uses — single shared script tag).
+ * `watchPosition` pans an AdvancedMarkerElement smoothly as the user walks.
  */
 @Component({
   selector: 'app-booking-home',
@@ -40,6 +35,7 @@ export class BookingHomePage implements OnInit, OnDestroy {
   @ViewChild('mapEl', { static: true }) mapElRef!: ElementRef<HTMLDivElement>;
 
   loading = true;
+  mapReady = false;
 
   scope: TripScope = 'local';
   scopes: TripScope[] = ['local'];
@@ -51,74 +47,72 @@ export class BookingHomePage implements OnInit, OnDestroy {
 
   private catalog: RawScope[] = [];
 
-  // ── Leaflet internals ────────────────────────────────────────────────────
-  private map: L.Map | null = null;
-  private userMarker: L.Marker | null = null;
-  private accuracyCircle: L.Circle | null = null;
+  // ── Google Maps internals ────────────────────────────────────────────────
+  private map: any = null;
+  private userMarker: any = null;   // AdvancedMarkerElement
+  private accuracyCircle: any = null;
   private watchId: string | null = null;
 
   constructor(
     private booking: BookingService,
     private geo: GeolocationService,
+    private places: PlacesService,
     private router: Router,
+    private zone: NgZone,
     private cdr: ChangeDetectorRef,
   ) {}
 
   async ngOnInit(): Promise<void> {
-    this.initMap();
-    await this.load();
+    // Load data and map concurrently — neither blocks the other.
+    await Promise.all([this.load(), this.initMap()]);
   }
 
   ngOnDestroy(): void {
     if (this.watchId) {
       void this.geo.clearWatch(this.watchId);
     }
-    if (this.map) {
-      this.map.remove();
-      this.map = null;
-    }
+    this.userMarker = null;
+    this.map = null;
   }
 
   // ── Map setup ────────────────────────────────────────────────────────────
 
-  private initMap(): void {
-    const el = this.mapElRef.nativeElement;
+  private async initMap(): Promise<void> {
+    try {
+      await this.places.ensureLoaded();
 
-    this.map = L.map(el, {
-      zoomControl: false,
-      attributionControl: false,
-      dragging: true,
-      touchZoom: true,
-      scrollWheelZoom: false,
-      doubleClickZoom: true,
-    }).setView([34.0, 74.8], 13); // default: Kashmir — updated once GPS fires
+      const el = this.mapElRef.nativeElement;
 
-    // OpenStreetMap tiles — no API key required
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      minZoom: 5,
-    }).addTo(this.map);
+      // Default centre: Kashmir — overridden immediately by GPS.
+      this.map = new google.maps.Map(el, {
+        center: { lat: 34.0, lng: 74.8 },
+        zoom: 14,
+        disableDefaultUI: true,
+        mapId: 'DEMO_MAP_ID',         // needed for AdvancedMarkerElement
+        gestureHandling: 'greedy',    // single-finger pan on mobile
+        clickableIcons: false,
+      });
 
-    // Zoom controls bottom-right to stay out of the menu button area
-    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+      this.zone.run(() => {
+        this.mapReady = true;
+        this.cdr.markForCheck();
+      });
 
-    // Attribution bottom-left, tiny
-    L.control.attribution({ position: 'bottomleft', prefix: false })
-      .addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank">OSM</a>')
-      .addTo(this.map);
-
-    // Start live GPS watch
-    void this.startWatch();
+      // Start watching GPS after map is ready.
+      await this.startWatch();
+    } catch {
+      // Maps unavailable (offline / key missing) — page still works.
+    }
   }
 
   private async startWatch(): Promise<void> {
-    // First quick fix — move map immediately
+    // Quick first fix — centre the map immediately.
     const fix = await this.geo.getCurrentFix();
     if (fix) {
       this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, true);
     }
 
-    // Continuous watch — moves marker as user walks
+    // Continuous watch — moves marker as user walks.
     try {
       this.watchId = await this.geo.watchPosition(
         { enableHighAccuracy: true, maximumAge: 2000 },
@@ -128,46 +122,54 @@ export class BookingHomePage implements OnInit, OnDestroy {
         },
       );
     } catch {
-      // Location unavailable — map stays at last known / default
+      // Location unavailable — stays at first fix / default.
     }
   }
 
-  private updateMapPosition(lat: number, lng: number, accuracy: number, pan: boolean): void {
+  private async updateMapPosition(
+    lat: number, lng: number, accuracy: number, pan: boolean,
+  ): Promise<void> {
     if (!this.map) return;
-    const latlng = L.latLng(lat, lng);
+    const latlng = { lat, lng };
 
     if (!this.userMarker) {
-      // Create a custom pulsing marker for the user's position
-      const icon = L.divIcon({
-        className: '',
-        html: `
-          <div class="bh-map-dot">
-            <span class="bh-map-dot__pulse"></span>
-          </div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
+      // Build the pulsing dot using AdvancedMarkerElement + custom HTML.
+      const { AdvancedMarkerElement } = await (google.maps as any).importLibrary('marker');
+
+      const dotEl = document.createElement('div');
+      dotEl.className = 'bh-map-dot';
+      dotEl.innerHTML = '<span class="bh-map-dot__pulse"></span>';
+
+      this.userMarker = new AdvancedMarkerElement({
+        map: this.map,
+        position: latlng,
+        content: dotEl,
+        zIndex: 1000,
+        title: 'Your location',
       });
 
-      this.userMarker = L.marker(latlng, { icon, zIndexOffset: 1000 }).addTo(this.map);
-
-      this.accuracyCircle = L.circle(latlng, {
+      this.accuracyCircle = new google.maps.Circle({
+        map: this.map,
+        center: latlng,
         radius: accuracy,
-        color: '#12B35B',
+        strokeColor: '#12B35B',
+        strokeOpacity: 0.35,
+        strokeWeight: 1,
         fillColor: '#12B35B',
         fillOpacity: 0.08,
-        weight: 1,
-        opacity: 0.4,
-      }).addTo(this.map);
+        clickable: false,
+      });
     } else {
-      this.userMarker.setLatLng(latlng);
-      this.accuracyCircle?.setLatLng(latlng).setRadius(accuracy);
+      this.userMarker.position = latlng;
+      this.accuracyCircle.setCenter(latlng);
+      this.accuracyCircle.setRadius(accuracy);
     }
 
     if (pan) {
-      this.map.setView(latlng, 15, { animate: true });
+      this.map.setCenter(latlng);
+      this.map.setZoom(15);
     } else {
-      // Smooth pan without resetting zoom
-      this.map.panTo(latlng, { animate: true, duration: 0.8 });
+      this.map.panTo(latlng);
     }
   }
 
@@ -185,7 +187,7 @@ export class BookingHomePage implements OnInit, OnDestroy {
         const fix = await this.geo.getCurrentPosition();
         if (fix) city = resolveCity(cities, fix.lat, fix.lng);
       } catch {
-        // Location denied or unavailable
+        // Location denied — fall through.
       }
 
       this.located = !!city;
@@ -233,11 +235,12 @@ export class BookingHomePage implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Recenter the map on user's current position. */
+  /** Recenter map on user's current GPS position. */
   recenter(): void {
     void this.geo.getCurrentPosition().then((fix) => {
       if (fix && this.map) {
-        this.map.setView([fix.lat, fix.lng], 15, { animate: true });
+        this.map.panTo({ lat: fix.lat, lng: fix.lng });
+        this.map.setZoom(15);
       }
     });
   }
