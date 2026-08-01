@@ -29,9 +29,9 @@
       <ng-container *ngIf="hasChannels">
         <p class="dc-section">Contact us</p>
         <div class="dc-list">
-          <button class="dc-row dc-press" *ngIf="support?.customer_support_no" (click)="call(support?.customer_support_no)">
+          <button class="dc-row dc-press" *ngIf="effectivePhone" (click)="call(effectivePhone)">
             <span class="dc-row__icon"><ion-icon name="headset-outline"></ion-icon></span>
-            <span class="dc-row__text"><strong>Customer support</strong><small>{{ support?.customer_support_no }}</small></span>
+            <span class="dc-row__text"><strong>Customer support</strong><small>{{ effectivePhone }}</small></span>
             <ion-icon class="dc-row__chev" name="call-outline"></ion-icon>
           </button>
           <button class="dc-row dc-press" *ngIf="support?.support_email" (click)="email(support?.support_email)">
