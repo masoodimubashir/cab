@@ -207,13 +207,23 @@ class FinanceController extends Controller
      */
     private function range(Request $request): array
     {
+        if ($request->filled('date')) {
+            $d = Carbon::parse($request->query('date'));
+            return [$d->copy()->startOfDay(), $d->copy()->endOfDay()];
+        }
+
+        if ($request->filled('from') && ! $request->filled('to')) {
+            $d = Carbon::parse($request->query('from'));
+            return [$d->copy()->startOfDay(), $d->copy()->endOfDay()];
+        }
+
         $to = $request->filled('to')
             ? Carbon::parse($request->query('to'))->endOfDay()
             : Carbon::now()->endOfDay();
 
         $from = $request->filled('from')
             ? Carbon::parse($request->query('from'))->startOfDay()
-            : (clone $to)->subDays(29)->startOfDay();
+            : Carbon::now()->startOfMonth()->startOfDay();
 
         return [$from, $to];
     }

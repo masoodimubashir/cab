@@ -1178,7 +1178,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
       this.resetDetails();
       return;
     }
-    this.router.navigateByUrl('/customer-tabs/book');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   done(): void {

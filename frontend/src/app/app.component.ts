@@ -149,7 +149,6 @@ export class AppComponent implements OnInit {
 
     // --- Operations ---
     if (can('rides')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
-    if (can('rides')) operations.push({ label: 'Fixed Routes', icon: 'map', route: '/fixed-routes' });
     if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
 
     if (can('manual_dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });

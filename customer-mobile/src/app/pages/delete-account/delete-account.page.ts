@@ -22,7 +22,7 @@ export class DeleteAccountPage {
   ) {}
 
   goBack(): void {
-    this.router.navigateByUrl('/customer-tabs/book');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   async confirmDelete(): Promise<void> {

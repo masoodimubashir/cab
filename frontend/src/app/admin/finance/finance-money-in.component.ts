@@ -63,8 +63,8 @@ type SourceFilter = 'all' | 'fixed' | 'shuttle' | 'topup';
         <div class="hero__side">
           <div class="total" *ngIf="!loading">
             <span class="total__label">Online in this range</span>
-            <span class="total__value total__value--pos">₹ {{ totalOnline | number:'1.2-2' }}</span>
-            <span class="total__count" *ngIf="totalCash > 0">+ ₹ {{ totalCash | number:'1.2-2' }} cash (held by drivers)</span>
+            <span class="total__value total__value--pos" [class.total__value--pulse]="cardsUpdating">₹ {{ filteredTotalOnline | number:'1.2-2' }}</span>
+            <span class="total__count" *ngIf="filteredTotalCash > 0">+ ₹ {{ filteredTotalCash | number:'1.2-2' }} cash (held by drivers)</span>
           </div>
           <tm-button variant="outline" size="sm" icon="refresh" [loading]="loading" (clicked)="load()">Refresh</tm-button>
         </div>
@@ -78,22 +78,43 @@ type SourceFilter = 'all' | 'fixed' | 'shuttle' | 'topup';
         <button type="button" class="tab" [class.tab--on]="source === 'topup'" (click)="setSource('topup')">Wallet top-ups</button>
       </div>
 
-      <!-- Toolbar: search + date range -->
+      <!-- Toolbar: search + date range + export -->
       <div class="toolbar">
         <div class="search">
           <span class="search__icon"><tm-icon name="search" [size]="15" /></span>
           <input type="text" class="search__input" placeholder="Search name, phone or reference"
-            [(ngModel)]="search" (ngModelChange)="page = 1" />
-          <button *ngIf="search.trim()" type="button" class="search__clear" (click)="search=''; page=1" aria-label="Clear search">
+            [(ngModel)]="search" (ngModelChange)="onSearchChange()" />
+          <button *ngIf="search.trim()" type="button" class="search__clear" (click)="clearSearch()" aria-label="Clear search">
             <tm-icon name="x" [size]="13" />
           </button>
         </div>
 
-        <div class="date-range">
-          <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
-          <input #rangeInput type="text" readonly class="date-range__input" placeholder="Pick a date range"
-            [value]="rangeLabel" aria-label="Filter by date range" />
+        <div class="date-pills">
+          <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'today'" (click)="setPresetDate('today')">Today</button>
+          <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'yesterday'" (click)="setPresetDate('yesterday')">Yesterday</button>
+          <button type="button" class="date-pill" [class.date-pill--on]="activePreset === '7days'" (click)="setPresetDate('7days')">7 Days</button>
+          <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'thisMonth'" (click)="setPresetDate('thisMonth')">This Month</button>
         </div>
+
+        <div class="date-range" [class.has-value]="dateFrom || dateTo">
+          <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
+          <input
+            #rangeInput
+            type="text"
+            readonly
+            class="date-range__input"
+            placeholder="Created · any date"
+            [value]="rangeLabel"
+            aria-label="Filter by date range"
+          />
+          <button *ngIf="dateFrom || dateTo" type="button" class="search__clear" (click)="clearDateRange(); $event.stopPropagation()" aria-label="Clear date range">
+            <tm-icon name="x" [size]="13" />
+          </button>
+        </div>
+
+        <button type="button" class="export-btn" (click)="exportCsv()" title="Export payment-in entries to CSV">
+          <tm-icon name="download" [size]="14" /> Export CSV
+        </button>
       </div>
 
       <div class="state state--error" *ngIf="error">{{ error }}</div>
@@ -103,7 +124,7 @@ type SourceFilter = 'all' | 'fixed' | 'shuttle' | 'topup';
         [total]="filtered.length"
         [page]="page"
         [pageSize]="pageSize"
-        [loading]="loading"
+        [loading]="loading || searchLoading"
         [showToolbar]="false"
         emptyTitle="No money in for this range"
         emptyHint="Nothing was collected in the selected dates and filters."
@@ -177,6 +198,12 @@ type SourceFilter = 'all' | 'fixed' | 'shuttle' | 'topup';
     .hero__side { display: flex; align-items: center; gap: 14px; }
     .total { text-align: right; display: flex; flex-direction: column; }
     .total__label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tm-text-muted); }
+    @keyframes numberPulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.08); opacity: 0.6; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .total__value--pulse { animation: numberPulse 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
     .total__value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--tm-text); }
     .total__value--pos { color: var(--tm-green, #12805c); }
     .total__count { font-size: 11px; color: var(--tm-text-muted); }
@@ -196,6 +223,15 @@ type SourceFilter = 'all' | 'fixed' | 'shuttle' | 'topup';
     .search__input::placeholder { color: var(--tm-text-soft); }
     .search__clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
       border-radius: 50%; background: var(--tm-canvas-2); color: var(--tm-text-muted); }
+
+    .date-pills { display: inline-flex; align-items: center; gap: 4px; background: var(--tm-canvas-subtle, #f3f4f6); padding: 3px; border-radius: var(--tm-radius-md); }
+    .date-pill { border: 0; background: transparent; padding: 5px 11px; border-radius: var(--tm-radius-sm); font-size: 11.5px; font-weight: 700; color: var(--tm-text-muted); cursor: pointer; transition: all 0.15s ease; white-space: nowrap; }
+    .date-pill:hover { color: var(--tm-text); }
+    .date-pill--on { background: var(--tm-surface); color: var(--tm-text); font-weight: 850; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+    .export-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; background: #059669; color: #ffffff; border: 0; border-radius: var(--tm-radius-md); font-size: 12px; font-weight: 800; cursor: pointer; transition: background 0.15s ease, transform 0.1s ease; box-shadow: 0 1px 3px rgba(5, 150, 105, 0.25); white-space: nowrap; }
+    .export-btn:hover { background: #047857; transform: translateY(-1px); }
+    .export-btn:active { transform: translateY(0); }
 
     .date-range { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
       border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md); background: transparent; line-height: 1;
@@ -252,10 +288,10 @@ export class FinanceMoneyInComponent implements OnInit, AfterViewInit, OnDestroy
   loading = false;
   error = '';
 
-  source: SourceFilter = 'all';
-  from = '';
-  to = '';
+  dateFrom = moment().startOf('month').format('YYYY-MM-DD');
+  dateTo = moment().format('YYYY-MM-DD');
   search = '';
+  source: SourceFilter = 'all';
 
   totalOnline = 0;
   totalCash = 0;
@@ -268,7 +304,6 @@ export class FinanceMoneyInComponent implements OnInit, AfterViewInit, OnDestroy
   ngOnInit(): void {
     const src = this.route.snapshot.queryParamMap.get('source') as SourceFilter | null;
     if (src && ['all', 'fixed', 'shuttle', 'topup'].includes(src)) this.source = src;
-    this.setDefaultRange();
     this.load();
   }
 
@@ -284,8 +319,8 @@ export class FinanceMoneyInComponent implements OnInit, AfterViewInit, OnDestroy
     this.loading = true;
     this.error = '';
     const params = new URLSearchParams();
-    if (this.from) params.set('from', this.from);
-    if (this.to) params.set('to', this.to);
+    if (this.dateFrom) params.set('from', this.dateFrom);
+    if (this.dateTo) params.set('to', this.dateTo);
     if (this.source !== 'all') params.set('source', this.source);
 
     this.api.get<MoneyInResponse>(`/admin/finance/money-in?${params.toString()}`).subscribe({
@@ -303,19 +338,132 @@ export class FinanceMoneyInComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
-  setSource(s: SourceFilter): void {
-    if (this.source === s) return;
-    this.source = s;
+  get rangeLabel(): string {
+    if (this.dateFrom && this.dateTo) return `${this.dateFrom} → ${this.dateTo}`;
+    return '';
+  }
+
+  clearDateRange(): void {
+    this.dateFrom = '';
+    this.dateTo = '';
+    this.page = 1;
     this.load();
   }
 
-  get rangeLabel(): string {
-    return this.from && this.to ? `${this.from} → ${this.to}` : '';
+  searchLoading = false;
+  cardsUpdating = false;
+  private searchTimer: any = null;
+
+  triggerCardPulse(): void {
+    this.cardsUpdating = true;
+    setTimeout(() => {
+      this.zone.run(() => {
+        this.cardsUpdating = false;
+      });
+    }, 350);
   }
 
-  private setDefaultRange(): void {
-    this.to = moment().format('YYYY-MM-DD');
-    this.from = moment().subtract(29, 'days').format('YYYY-MM-DD');
+  onSearchChange(): void {
+    this.searchLoading = true;
+    this.triggerCardPulse();
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.zone.run(() => {
+        this.page = 1;
+        this.searchLoading = false;
+      });
+    }, 200);
+  }
+
+  clearSearch(): void {
+    this.search = '';
+    this.page = 1;
+    this.triggerCardPulse();
+  }
+
+  get filteredTotalOnline(): number {
+    return this.filtered
+      .filter((r) => r.method !== 'cash')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  }
+
+  get filteredTotalCash(): number {
+    return this.filtered
+      .filter((r) => r.method === 'cash')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  }
+
+  activePreset: 'today' | 'yesterday' | '7days' | 'thisMonth' | null = 'thisMonth';
+
+  setPresetDate(preset: 'today' | 'yesterday' | '7days' | 'thisMonth'): void {
+    this.activePreset = preset;
+    const now = new Date();
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    if (preset === 'today') {
+      const todayStr = formatDate(now);
+      this.dateFrom = todayStr;
+      this.dateTo = todayStr;
+    } else if (preset === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = formatDate(y);
+      this.dateFrom = yStr;
+      this.dateTo = yStr;
+    } else if (preset === '7days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      this.dateFrom = formatDate(d);
+      this.dateTo = formatDate(now);
+    } else if (preset === 'thisMonth') {
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      this.dateFrom = `${year}-${month}-01`;
+      this.dateTo = formatDate(now);
+    }
+
+    this.page = 1;
+    this.triggerCardPulse();
+    this.load();
+  }
+
+  exportCsv(): void {
+    const rows = this.filtered;
+    if (!rows.length) return;
+    const headers = ['When', 'Source', 'Customer Name', 'Customer Phone', 'Amount (INR)', 'Method', 'Reference'];
+    const csvRows = [headers.join(',')];
+    for (const r of rows) {
+      const line = [
+        `"${r.at || ''}"`,
+        `"${r.source_label || ''}"`,
+        `"${(r.who_name || '').replace(/"/g, '""')}"`,
+        `"${r.who_phone || ''}"`,
+        r.amount || 0,
+        `"${r.method || ''}"`,
+        `"${r.reference || ''}"`,
+      ];
+      csvRows.push(line.join(','));
+    }
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `payment-in-export-${new Date().toISOString().substring(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  setSource(s: SourceFilter): void {
+    if (this.source === s) return;
+    this.source = s;
+    this.triggerCardPulse();
+    this.load();
   }
 
   private initDateRangePicker(): void {
@@ -328,25 +476,30 @@ export class FinanceMoneyInComponent implements OnInit, AfterViewInit, OnDestroy
         opens: 'left',
         maxDate: moment(),
         alwaysShowCalendars: true,
-        startDate: moment(this.from),
-        endDate: moment(this.to),
+        startDate: moment(this.dateFrom),
+        endDate: moment(this.dateTo),
         locale: { format: 'YYYY-MM-DD', applyLabel: 'Apply', cancelLabel: 'Cancel' },
         ranges: {
+          Today: [moment(), moment()],
+          Yesterday: [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
           'Last 7 days': [moment().subtract(6, 'days'), moment()],
           'Last 30 days': [moment().subtract(29, 'days'), moment()],
           'This month': [moment().startOf('month'), moment().endOf('month')],
           'Last month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')],
-          'All time': [moment('2000-01-01'), moment()],
         },
       } as any,
       (start: moment.Moment, end: moment.Moment) => {
         this.zone.run(() => {
-          this.from = start.format('YYYY-MM-DD');
-          this.to = end.format('YYYY-MM-DD');
+          this.dateFrom = start.format('YYYY-MM-DD');
+          this.dateTo = end.format('YYYY-MM-DD');
+          this.page = 1;
           this.load();
         });
       },
     );
+    $el.on('cancel.daterangepicker', () => {
+      this.zone.run(() => this.clearDateRange());
+    });
   }
 
   private destroyDateRangePicker(): void {

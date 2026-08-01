@@ -95,8 +95,8 @@ const PAID_OPTIONS = [
         <div class="hero__side">
           <div class="total" *ngIf="!loading">
             <span class="total__label">{{ autoRefunds ? 'Needs a human' : 'Due to customers' }}</span>
-            <span class="total__value" [class.total__value--zero]="totalDue === 0">₹ {{ totalDue | number:'1.2-2' }}</span>
-            <span class="total__count">{{ dueCount }} {{ autoRefunds ? 'exceptions' : 'pending' }}</span>
+            <span class="total__value" [class.total__value--zero]="filteredTotalDue === 0" [class.total__value--pulse]="cardsUpdating">₹ {{ filteredTotalDue | number:'1.2-2' }}</span>
+            <span class="total__count">{{ filteredDueCount }} {{ autoRefunds ? 'exceptions' : 'pending' }}</span>
           </div>
           <tm-button variant="outline" size="sm" icon="refresh" [loading]="loading" (clicked)="load()">Refresh</tm-button>
         </div>
@@ -188,6 +188,14 @@ const PAID_OPTIONS = [
             </ul>
           </div>
 
+          <!-- Date shortcut pills -->
+          <div class="date-pills">
+            <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'today'" (click)="setPresetDate('today')">Today</button>
+            <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'yesterday'" (click)="setPresetDate('yesterday')">Yesterday</button>
+            <button type="button" class="date-pill" [class.date-pill--on]="activePreset === '7days'" (click)="setPresetDate('7days')">7 Days</button>
+            <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'thisMonth'" (click)="setPresetDate('thisMonth')">This Month</button>
+          </div>
+
           <!-- Date range -->
           <div class="date-range" [class.has-value]="dateFrom || dateTo">
             <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
@@ -198,6 +206,10 @@ const PAID_OPTIONS = [
               <tm-icon name="x" [size]="12" />
             </button>
           </div>
+
+          <button type="button" class="export-btn" (click)="exportCsv()" title="Export refunds to CSV">
+            <tm-icon name="download" [size]="14" /> Export CSV
+          </button>
         </div>
       </div>
 
@@ -230,16 +242,16 @@ const PAID_OPTIONS = [
         <button type="button" class="pills__clear" (click)="clearAllFilters()">Clear all</button>
       </div>
 
-      <div class="state" *ngIf="loading">Loading the refund register…</div>
-      <div class="state state--error" *ngIf="!loading && error">{{ error }}</div>
+      <div class="state" *ngIf="loading || searchLoading">Filtering the refund register…</div>
+      <div class="state state--error" *ngIf="!loading && !searchLoading && error">{{ error }}</div>
 
-      <div class="state state--empty" *ngIf="!loading && !error && !visibleRows.length">
+      <div class="state state--empty" *ngIf="!loading && !searchLoading && !error && !visibleRows.length">
         <tm-icon name="check" [size]="22" />
         <strong>{{ emptyTitle }}</strong>
         <span>{{ emptyHint }}</span>
       </div>
 
-      <div class="tbl" *ngIf="!loading && visibleRows.length">
+      <div class="tbl" *ngIf="!loading && !searchLoading && visibleRows.length">
         <div class="tbl__count">Showing {{ visibleRows.length }} {{ visibleRows.length === 1 ? 'refund' : 'refunds' }}</div>
         <table>
           <thead>
@@ -382,6 +394,12 @@ const PAID_OPTIONS = [
     .hero__side { display: flex; align-items: center; gap: 14px; }
     .total { text-align: right; display: flex; flex-direction: column; }
     .total__label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tm-text-muted); }
+    @keyframes numberPulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.08); opacity: 0.6; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .total__value--pulse { animation: numberPulse 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
     .total__value { font-size: 20px; font-weight: 800; color: var(--tm-danger, #B42318); font-variant-numeric: tabular-nums; }
     .total__value--zero { color: var(--tm-green, #12805c); }
     .total__count { font-size: 11px; color: var(--tm-text-muted); }
@@ -435,6 +453,15 @@ const PAID_OPTIONS = [
     .state-select__option.is-selected { background: var(--tm-green-tint); color: var(--tm-green-deep); font-weight: 700; }
     .state-select__option-check { color: var(--tm-green-deep); flex-shrink: 0; }
     .state-select__option-label { flex: 1; }
+
+    .date-pills { display: inline-flex; align-items: center; gap: 4px; background: var(--tm-canvas-subtle, #f3f4f6); padding: 3px; border-radius: var(--tm-radius-md); }
+    .date-pill { border: 0; background: transparent; padding: 5px 11px; border-radius: var(--tm-radius-sm); font-size: 11.5px; font-weight: 700; color: var(--tm-text-muted); cursor: pointer; transition: all 0.15s ease; white-space: nowrap; }
+    .date-pill:hover { color: var(--tm-text); }
+    .date-pill--on { background: var(--tm-surface); color: var(--tm-text); font-weight: 850; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+    .export-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; background: #059669; color: #ffffff; border: 0; border-radius: var(--tm-radius-md); font-size: 12px; font-weight: 800; cursor: pointer; transition: background 0.15s ease, transform 0.1s ease; box-shadow: 0 1px 3px rgba(5, 150, 105, 0.25); white-space: nowrap; }
+    .export-btn:hover { background: #047857; transform: translateY(-1px); }
+    .export-btn:active { transform: translateY(0); }
 
     /* ---------- Date range ---------- */
     .date-range { display: inline-flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px;
@@ -567,10 +594,75 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   search = '';
   moduleFilter: 'all' | 'fixed' | 'shuttle' = 'all';
   paidVia: 'all' | 'razorpay' | 'wallet' = 'all';
-  dateFrom = '';
-  dateTo = '';
+  dateFrom = moment().startOf('month').format('YYYY-MM-DD');
+  dateTo = moment().format('YYYY-MM-DD');
+  activePreset: 'today' | 'yesterday' | '7days' | 'thisMonth' | null = 'thisMonth';
   moduleOpen = false;
   paidOpen = false;
+
+  setPresetDate(preset: 'today' | 'yesterday' | '7days' | 'thisMonth'): void {
+    this.activePreset = preset;
+    const now = new Date();
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    if (preset === 'today') {
+      const todayStr = formatDate(now);
+      this.dateFrom = todayStr;
+      this.dateTo = todayStr;
+    } else if (preset === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = formatDate(y);
+      this.dateFrom = yStr;
+      this.dateTo = yStr;
+    } else if (preset === '7days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      this.dateFrom = formatDate(d);
+      this.dateTo = formatDate(now);
+    } else if (preset === 'thisMonth') {
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      this.dateFrom = `${year}-${month}-01`;
+      this.dateTo = formatDate(now);
+    }
+
+    this.triggerCardPulse();
+  }
+
+  exportCsv(): void {
+    const rows = this.visibleRows;
+    if (!rows.length) return;
+    const headers = ['Refund ID', 'Trip/Booking', 'Customer Name', 'Customer Phone', 'Amount (INR)', 'Reason', 'Payment Method', 'State', 'Date'];
+    const csvRows = [headers.join(',')];
+    for (const r of rows) {
+      const line = [
+        r.id ?? '',
+        `"${(r.trip_label || '').replace(/"/g, '""')}"`,
+        `"${(r.customer_name || '').replace(/"/g, '""')}"`,
+        `"${r.customer_phone || ''}"`,
+        r.amount || 0,
+        `"${(r.reason || '').replace(/"/g, '""')}"`,
+        `"${r.payment_method || ''}"`,
+        `"${r.state || ''}"`,
+        `"${r.created_at || ''}"`,
+      ];
+      csvRows.push(line.join(','));
+    }
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `refunds-export-${new Date().toISOString().substring(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   markRow: RefundRow | null = null;
   markMethod = 'gpay';
@@ -674,13 +766,50 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
       : 'Rows appear here as refunds are owed and settled.';
   }
 
+  searchLoading = false;
+  cardsUpdating = false;
+  private searchTimer: any = null;
+
+  triggerCardPulse(): void {
+    this.cardsUpdating = true;
+    setTimeout(() => {
+      this.zone.run(() => {
+        this.cardsUpdating = false;
+      });
+    }, 350);
+  }
+
+  get filteredTotalDue(): number {
+    return this.visibleRows
+      .filter((r) => r.state === 'due')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  }
+
+  get filteredDueCount(): number {
+    return this.visibleRows.filter((r) => r.state === 'due').length;
+  }
+
   setFilter(f: 'due' | 'refunded' | 'all'): void {
     this.filter = f;
+    this.triggerCardPulse();
   }
 
   // ── Search ──────────────────────────────────────────────────────
-  onSearchChange(): void { /* getter re-evaluates */ }
-  clearSearch(): void { this.search = ''; }
+  onSearchChange(): void {
+    this.searchLoading = true;
+    this.triggerCardPulse();
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.zone.run(() => {
+        this.searchLoading = false;
+      });
+    }, 200);
+  }
+
+  clearSearch(): void {
+    this.search = '';
+    this.triggerCardPulse();
+  }
 
   // ── Module ──────────────────────────────────────────────────────
   moduleLabel(): string {
@@ -688,7 +817,7 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
       : this.moduleOptions.find((o) => o.value === this.moduleFilter)?.label ?? 'All bookings';
   }
   toggleModuleMenu(event: MouseEvent): void { event.stopPropagation(); this.paidOpen = false; this.moduleOpen = !this.moduleOpen; }
-  selectModule(value: 'all' | 'fixed' | 'shuttle'): void { this.moduleOpen = false; this.moduleFilter = value; }
+  selectModule(value: 'all' | 'fixed' | 'shuttle'): void { this.moduleOpen = false; this.moduleFilter = value; this.triggerCardPulse(); }
 
   // ── Paid via ────────────────────────────────────────────────────
   paidLabel(): string {
@@ -696,7 +825,7 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
       : this.paidOptions.find((o) => o.value === this.paidVia)?.label ?? 'Any payment';
   }
   togglePaidMenu(event: MouseEvent): void { event.stopPropagation(); this.moduleOpen = false; this.paidOpen = !this.paidOpen; }
-  selectPaid(value: 'all' | 'razorpay' | 'wallet'): void { this.paidOpen = false; this.paidVia = value; }
+  selectPaid(value: 'all' | 'razorpay' | 'wallet'): void { this.paidOpen = false; this.paidVia = value; this.triggerCardPulse(); }
 
   clearAllFilters(): void {
     this.search = '';
@@ -716,6 +845,8 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
         opens: 'left',
         maxDate: moment(),
         alwaysShowCalendars: true,
+        startDate: moment(this.dateFrom),
+        endDate: moment(this.dateTo),
         locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
         ranges: {
           Today: [moment(), moment()],

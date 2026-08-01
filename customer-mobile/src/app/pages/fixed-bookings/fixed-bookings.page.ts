@@ -195,7 +195,7 @@ export class FixedBookingsPage {
   }
 
   back(): void {
-    this.router.navigateByUrl('/customer-tabs/book');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   toggle(booking: FixedBooking): void {

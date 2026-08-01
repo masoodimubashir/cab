@@ -272,5 +272,5 @@ export class CustomerEmergencyContactsPage implements OnInit {
     });
   }
 
-  back(): void { this.router.navigateByUrl('/customer-tabs/book'); }
+  back(): void { this.router.navigateByUrl('/customer-tabs/go'); }
 }
