@@ -17,7 +17,7 @@ use Illuminate\Http\Request;
  * City resolution order:
  *   1. explicit ?city_id=N
  *   2. the authenticated user's driver.city_id (if they have a driver profile)
- *   3. the customer's most recent trip's city_id
+ *   3. the customer's most recent trip's city_id (using customer_id)
  *   4. the first city_settings row with configured support info (or first row)
  */
 class SupportInfoController extends Controller
@@ -25,14 +25,15 @@ class SupportInfoController extends Controller
     public function show(Request $request)
     {
         $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
+        $userId = $request->user()?->id;
 
-        if (! $cityId) {
-            $driver = Driver::query()->where('user_id', $request->user()->id)->first();
+        if (! $cityId && $userId) {
+            $driver = Driver::query()->where('user_id', $userId)->first();
             $cityId = $driver?->city_id;
         }
 
-        if (! $cityId) {
-            $latestTrip = Trip::query()->where('user_id', $request->user()->id)->latest()->first();
+        if (! $cityId && $userId) {
+            $latestTrip = Trip::query()->where('customer_id', $userId)->latest()->first();
             $cityId = $latestTrip?->city_id;
         }
 
