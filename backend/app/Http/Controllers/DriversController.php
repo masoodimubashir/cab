@@ -344,27 +344,40 @@ class DriversController extends Controller
     {
         $user = $request->user();
         $period = $request->query('period', 'week');
-        if (!in_array($period, ['week', 'month'], true)) {
+        if (!in_array($period, ['week', 'month', 'all'], true)) {
             $period = 'week';
         }
-        $days = $period === 'month' ? 30 : 7;
 
-        $today = now()->startOfDay();
-        $windowStart = $today->copy()->subDays($days - 1);
+        $windowStart = null;
+        if ($period === 'week') {
+            $windowStart = now()->startOfDay()->subDays(6);
+            $days = 7;
+        } elseif ($period === 'month') {
+            $windowStart = now()->startOfDay()->subDays(29);
+            $days = 30;
+        } else {
+            $days = 30; // default chart window for all-time view
+        }
 
-        $rows = Trip::query()
+        $rowsQuery = Trip::query()
             ->where('driver_id', $user->id)
             ->where('status', 'COMPLETED')
-            ->whereNotNull('completed_at')
-            ->where('completed_at', '>=', $windowStart)
+            ->whereNotNull('completed_at');
+
+        if ($windowStart) {
+            $rowsQuery->where('completed_at', '>=', $windowStart);
+        }
+
+        $rows = (clone $rowsQuery)
             ->selectRaw('DATE(completed_at) as day, COALESCE(SUM(final_fare), 0) as amount')
             ->groupBy('day')
             ->pluck('amount', 'day');
 
         // Backfill missing days with zero so the bar chart has even gaps.
         $buckets = [];
+        $chartStart = $windowStart ?: now()->startOfDay()->subDays(29);
         for ($i = 0; $i < $days; $i++) {
-            $d = $windowStart->copy()->addDays($i);
+            $d = $chartStart->copy()->addDays($i);
             $key = $d->toDateString();
             $buckets[] = [
                 'date' => $key,
@@ -375,37 +388,21 @@ class DriversController extends Controller
 
         // Always also return last-7-days for the weekly breakdown list.
         $weekly = array_slice($buckets, -7);
-        if (count($buckets) < 7) {
-            $weekStart = $today->copy()->subDays(6);
-            $weekRows = Trip::query()
-                ->where('driver_id', $user->id)
-                ->where('status', 'COMPLETED')
-                ->whereNotNull('completed_at')
-                ->where('completed_at', '>=', $weekStart)
-                ->selectRaw('DATE(completed_at) as day, COALESCE(SUM(final_fare), 0) as amount')
-                ->groupBy('day')
-                ->pluck('amount', 'day');
-            $weekly = [];
-            for ($i = 0; $i < 7; $i++) {
-                $d = $weekStart->copy()->addDays($i);
-                $key = $d->toDateString();
-                $weekly[] = [
-                    'date' => $key,
-                    'amount' => (float) ($weekRows[$key] ?? 0),
-                    'weekday' => $d->format('D'),
-                ];
-            }
-        }
 
         // Per-ride breakdown for the selected window: fare − commission = net.
         // This is what the driver sees as "how much was cut for each ride".
-        $rides = Trip::query()
+        $ridesQuery = Trip::query()
             ->where('driver_id', $user->id)
             ->where('status', 'COMPLETED')
-            ->whereNotNull('completed_at')
-            ->where('completed_at', '>=', $windowStart)
+            ->whereNotNull('completed_at');
+
+        if ($windowStart) {
+            $ridesQuery->where('completed_at', '>=', $windowStart);
+        }
+
+        $rides = $ridesQuery
             ->orderByDesc('completed_at')
-            ->limit(200)
+            ->limit(500)
             ->get(['id', 'completed_at', 'final_fare', 'commission_amount', 'route_departure_id'])
             ->map(function (Trip $t) {
                 $fare = (float) ($t->final_fare ?? 0);
@@ -422,18 +419,17 @@ class DriversController extends Controller
             })
             ->all();
 
-        // ── Lifetime money totals ──
-        // Gross fares across every completed trip.
-        $totalEarnings = (float) Trip::query()
+        // ── Period money totals (or lifetime if 'all') ──
+        $totalsQuery = Trip::query()
             ->where('driver_id', $user->id)
-            ->where('status', 'COMPLETED')
-            ->sum('final_fare');
+            ->where('status', 'COMPLETED');
 
-        // Platform commission taken across every completed trip.
-        $totalCommission = (float) Trip::query()
-            ->where('driver_id', $user->id)
-            ->where('status', 'COMPLETED')
-            ->sum('commission_amount');
+        if ($windowStart) {
+            $totalsQuery->where('completed_at', '>=', $windowStart);
+        }
+
+        $totalEarnings = (float) (clone $totalsQuery)->sum('final_fare');
+        $totalCommission = (float) (clone $totalsQuery)->sum('commission_amount');
 
         // What the driver has added to their own wallet (successful Razorpay
         // top-ups only) — the piece that makes the wallet differ from earnings.
@@ -527,7 +523,7 @@ class DriversController extends Controller
             ->first();
 
         $heldQuery = \App\Models\HeldEarning::query()
-            ->where('driver_user_id', $user->id)
+            ->where('driver_id', $user->id)
             ->where('status', \App\Models\HeldEarning::STATUS_HELD);
 
         if ($windowStart) {

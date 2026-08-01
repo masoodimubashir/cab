@@ -69,7 +69,12 @@ export class EarningsPage implements OnInit {
   net = 0;
   currency = 'INR';
 
-  period: 'week' | 'month' = 'week';
+  period: 'week' | 'month' | 'all' = 'week';
+  periodLabelMap: Record<'week' | 'month' | 'all', string> = {
+    week: 'this week',
+    month: 'this month',
+    all: 'all time',
+  };
   buckets: Bucket[] = [];
   rides: RideRow[] = [];
   payout: PayoutSummary | null = null;
@@ -101,7 +106,7 @@ export class EarningsPage implements OnInit {
     });
   }
 
-  setPeriod(p: 'week' | 'month'): void {
+  setPeriod(p: 'week' | 'month' | 'all'): void {
     if (this.period === p) return;
     this.period = p;
     this.load();
