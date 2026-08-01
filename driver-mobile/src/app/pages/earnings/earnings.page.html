@@ -94,7 +94,7 @@
     <div class="pg-card ec-chart-card">
       <div class="pg-card__head">
         <div class="pg-card__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Overview</h2>
+        <h2 class="pg-card__title">{{ periodChartTitleMap[period] }} <small class="ec-scope">· {{ periodLabelMap[period] }}</small></h2>
       </div>
 
       <div class="dc-pills ec-pills">
@@ -123,7 +123,7 @@
           <div class="dc-empty">
             <div class="dc-empty__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
             <strong>No earnings yet</strong>
-            <span>No completed trips in this period. Your earnings will appear here once you finish a trip.</span>
+            <span>No completed trips in {{ periodLabelMap[period] }}. Your earnings will appear here once you finish a trip.</span>
           </div>
         </ng-template>
       </ng-container>
@@ -133,7 +133,7 @@
     <div class="pg-card ec-rides-card">
       <div class="pg-card__head">
         <div class="pg-card__icon"><ion-icon name="receipt-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Each ride <small class="ec-scope">· {{ periodLabelMap[period] }}</small></h2>
+        <h2 class="pg-card__title">{{ periodRideTitleMap[period] }} <small class="ec-scope">· {{ periodLabelMap[period] }}</small></h2>
       </div>
 
       <div class="ec-week" *ngIf="loading">
