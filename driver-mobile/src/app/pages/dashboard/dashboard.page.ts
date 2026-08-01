@@ -749,7 +749,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
    * ready, so the driver never sees a half-loaded dashboard.
    */
   private maybeFinishHome(): void {
-    if (this.profileReady && this.mapReady) this.finishHomeLoading();
+    const timeElapsed = Date.now() - this.homeLoadStart > 5000;
+    if (this.profileReady && this.mapReady && (this.hasFix || timeElapsed)) {
+      this.finishHomeLoading();
+    }
   }
 
   /**
@@ -896,6 +899,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   ): void {
     if (!this.map) return;
     this.hasFix = true;
+    this.maybeFinishHome();
     this.lastPos = { lat, lng };
     const pos = { lat, lng };
 

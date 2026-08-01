@@ -3,26 +3,23 @@
   <!-- ===== Full-bleed live map (ViewChild #mapDiv — DO NOT rename) ===== -->
   <div #mapDiv class="map-canvas"></div>
 
-  <!-- ===== FULL-SCREEN COLD-START SKELETON =====
-       Covers the whole dashboard (map + top bar + sheet) until BOTH the driver
-       profile and the map are ready, then fades out to reveal the live screen. -->
+  <!-- ===== FULL-SCREEN LOCATION FETCHING LOADING OVERLAY =====
+       Covers the dashboard until profile, map, and GPS position are ready. -->
   <div class="home-skeleton" [class.hs-done]="!homeLoading" aria-hidden="true">
-    <div class="hs-map"></div>
-    <div class="hs-pin"></div>
-
-    <!-- Top bar: avatar pill · DRIVER badge · status chip -->
-    <div class="hs-top">
-      <div class="hs-avatar dc-skeleton"></div>
-      <span class="drv-badge">DRIVER</span>
-      <div class="hs-status dc-skeleton"></div>
-    </div>
-
-    <!-- Bottom sheet: handle · title · hint · CTA -->
-    <div class="hs-sheet">
-      <div class="hs-handle"></div>
-      <div class="hs-line dc-skeleton"></div>
-      <div class="hs-sub dc-skeleton"></div>
-      <div class="hs-cta dc-skeleton"></div>
+    <div class="loc-loader-card">
+      <div class="loc-radar-anim">
+        <span class="loc-radar-ring r1"></span>
+        <span class="loc-radar-ring r2"></span>
+        <span class="loc-radar-ring r3"></span>
+        <div class="loc-radar-center">
+          <ion-icon name="location"></ion-icon>
+        </div>
+      </div>
+      <h2 class="loc-loader-title">Fetching current location...</h2>
+      <p class="loc-loader-sub">Pinpointing your position on the map</p>
+      <div class="loc-loader-bar">
+        <div class="loc-loader-bar-fill"></div>
+      </div>
     </div>
   </div>
 
