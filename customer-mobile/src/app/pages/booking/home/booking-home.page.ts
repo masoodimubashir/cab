@@ -235,16 +235,6 @@ export class BookingHomePage implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Recenter map on user's current GPS position. */
-  recenter(): void {
-    void this.geo.getCurrentPosition().then((fix) => {
-      if (fix && this.map) {
-        this.map.panTo({ lat: fix.lat, lng: fix.lng });
-        this.map.setZoom(15);
-      }
-    });
-  }
-
   whereTo(): void {
     this.booking.setScope(this.scope);
     if (this.mode) this.booking.setMode(this.mode);
