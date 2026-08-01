@@ -3,7 +3,7 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/wallet"></ion-back-button>
     </ion-buttons>
-    <ion-title class="pg-brandtitle"><span class="b-white">Ride</span> <span class="b-green">earnings</span></ion-title>
+    <ion-title class="pg-brandtitle"><span class="b-green">Earnings</span></ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
@@ -16,7 +16,7 @@
 
   <!-- ─── Money hero: lifetime gross, with commission + net beside it ─── -->
   <div class="pg-hero ec-hero">
-    <p class="pg-hero__label">Total ride earnings</p>
+    <p class="pg-hero__label">Total earnings</p>
     <h1 class="pg-hero__amount">₹{{ total | number:'1.0-2' }}</h1>
 
     <div class="ec-hero__stats">
@@ -47,7 +47,7 @@
     <div class="pg-card ec-payout-card" *ngIf="payout">
       <div class="pg-card__head">
         <div class="pg-card__icon"><ion-icon name="wallet-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Paid to your bank</h2>
+        <h2 class="pg-card__title">Paid to your bank <small class="ec-scope">· this {{ period }}</small></h2>
       </div>
 
       <div class="ec-payout">

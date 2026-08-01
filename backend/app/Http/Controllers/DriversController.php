@@ -476,7 +476,7 @@ class DriversController extends Controller
                 'max' => (int) $settings->wallet_cash_max_capping,
             ],
             'subscription_active' => $subscriptionActive,
-            'payout' => $this->payoutSummary($user),
+            'payout' => $this->payoutSummary($user, $windowStart),
         ]);
     }
 
@@ -496,7 +496,7 @@ class DriversController extends Controller
      *
      * @return array{enabled:bool,paid:float,pending:float,held:float,account_status:string,blocked_by_kyc:bool}
      */
-    private function payoutSummary(\App\Models\User $user): array
+    private function payoutSummary(\App\Models\User $user, ?\Carbon\Carbon $windowStart = null): array
     {
         $enabled = (bool) config('services.payments.split_enabled', false);
         if (! $enabled) {
@@ -508,19 +508,33 @@ class DriversController extends Controller
             ];
         }
 
-        $transferred = \App\Models\Payment::query()
+        $transferredQuery = \App\Models\Payment::query()
             ->whereIn('transfer_status', [
                 \App\Models\Payment::TRANSFER_CREATED,
                 \App\Models\Payment::TRANSFER_PROCESSED,
             ])
-            ->whereIn('trip_id', Trip::query()->where('driver_id', $user->id)->select('id'))
+            ->whereIn('trip_id', Trip::query()->where('driver_id', $user->id)->select('id'));
+
+        if ($windowStart) {
+            $transferredQuery->where('created_at', '>=', $windowStart);
+        }
+
+        $transferred = $transferredQuery
             ->selectRaw("
                 COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as paid,
                 COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as pending
             ", [\App\Models\Payment::TRANSFER_PROCESSED, \App\Models\Payment::TRANSFER_CREATED])
             ->first();
 
-        $heldPaise = app(\App\Services\HeldEarningsService::class)->heldTotalPaise((int) $user->id);
+        $heldQuery = \App\Models\HeldEarning::query()
+            ->where('driver_user_id', $user->id)
+            ->where('status', \App\Models\HeldEarning::STATUS_HELD);
+
+        if ($windowStart) {
+            $heldQuery->where('created_at', '>=', $windowStart);
+        }
+
+        $heldPaise = (int) $heldQuery->sum('amount_paise');
 
         return [
             'enabled' => true,
