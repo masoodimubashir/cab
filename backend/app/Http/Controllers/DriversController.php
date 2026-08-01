@@ -504,18 +504,17 @@ class DriversController extends Controller
             ];
         }
 
-        $transferredQuery = \App\Models\Payment::query()
+        $tripIdsQuery = Trip::query()
+            ->where('driver_id', $user->id)
+            ->when($windowStart, fn ($q) => $q->where('completed_at', '>=', $windowStart))
+            ->select('id');
+
+        $transferred = \App\Models\Payment::query()
             ->whereIn('transfer_status', [
                 \App\Models\Payment::TRANSFER_CREATED,
                 \App\Models\Payment::TRANSFER_PROCESSED,
             ])
-            ->whereIn('trip_id', Trip::query()->where('driver_id', $user->id)->select('id'));
-
-        if ($windowStart) {
-            $transferredQuery->where('created_at', '>=', $windowStart);
-        }
-
-        $transferred = $transferredQuery
+            ->whereIn('trip_id', $tripIdsQuery)
             ->selectRaw("
                 COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as paid,
                 COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as pending
