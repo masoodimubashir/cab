@@ -526,76 +526,114 @@
   inset: 0;
   z-index: 56;
   overflow: hidden;
-  background: #F5F7FA;
+  background: linear-gradient(135deg, #0d1b2a 0%, #15283c 50%, #0d1b2a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.5s ease, visibility 0s linear 0s;
 
-  .hs-map {
+  .loc-loader-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    max-width: 320px;
+  }
+
+  .loc-radar-anim {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .loc-radar-ring {
     position: absolute;
     inset: 0;
-    background:
-      radial-gradient(circle at 30% 34%, rgba(18, 179, 91, 0.07), transparent 42%),
-      linear-gradient(135deg, #EAEDEF 0%, #E0E4E7 100%);
+    border-radius: 50%;
+    border: 2px solid rgba(18, 179, 91, 0.6);
+    opacity: 0;
+    animation: drvRadarRipple 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
 
-    &::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(100deg, transparent 38%, rgba(255, 255, 255, 0.5) 50%, transparent 62%);
-      background-size: 220% 100%;
-      background-position: 130% 0;
-      animation: hsMapSweep 1.8s ease-in-out infinite;
+    &.r1 { animation-delay: 0s; }
+    &.r2 { animation-delay: 0.7s; }
+    &.r3 { animation-delay: 1.4s; }
+  }
+
+  .loc-radar-center {
+    position: relative;
+    z-index: 2;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #12B35B 0%, #0E954B 100%);
+    box-shadow: 0 0 24px rgba(18, 179, 91, 0.6), 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: drvPinBounce 1.8s ease-in-out infinite alternate;
+
+    ion-icon {
+      font-size: 28px;
+      color: #ffffff;
     }
   }
 
-  .hs-pin {
-    position: absolute;
-    left: 50%;
-    top: 42%;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: rgba(18, 179, 91, 0.4);
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 0 8px rgba(18, 179, 91, 0.14);
+  .loc-loader-title {
+    color: #ffffff;
+    font-size: 1.2rem;
+    font-weight: 750;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.01em;
   }
 
-  .hs-top {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 12px);
-    left: 14px;
-    right: 14px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  .loc-loader-sub {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.86rem;
+    margin: 0 0 24px 0;
+    line-height: 1.4;
   }
-  .hs-avatar { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; }
-  .hs-status { margin-left: auto; width: 108px; height: 34px; border-radius: 9999px; }
 
-  .hs-sheet {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-    max-width: 520px;
-    margin: 0 auto;
-    background: #ffffff;
-    border-radius: 22px;
-    box-shadow: 0 12px 40px rgba(13, 27, 42, 0.18);
-    padding: 16px;
-  }
-  .hs-handle {
-    width: 36px;
+  .loc-loader-bar {
+    width: 160px;
     height: 4px;
     border-radius: 2px;
-    background: #D6DCE2;
-    margin: -4px auto 16px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    position: relative;
   }
-  .hs-line { height: 16px; width: 56%; margin: 0 auto 10px; border-radius: 9999px; }
-  .hs-sub  { height: 11px; width: 78%; margin: 0 auto 18px; border-radius: 9999px; }
-  .hs-cta  { height: 56px; width: 100%; border-radius: 9999px; }
+
+  .loc-loader-bar-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #12B35B, #34D399);
+    animation: drvBarSlide 1.5s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes drvRadarRipple {
+  0% { transform: scale(0.3); opacity: 0.9; }
+  70% { opacity: 0.4; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+@keyframes drvPinBounce {
+  0% { transform: translateY(0) scale(1); }
+  100% { transform: translateY(-6px) scale(1.05); }
+}
+
+@keyframes drvBarSlide {
+  0% { left: 0%; width: 30%; }
+  100% { left: 70%; width: 30%; }
 }
 
 /* Fade the overlay out once ready, then drop it from paint + a11y. */

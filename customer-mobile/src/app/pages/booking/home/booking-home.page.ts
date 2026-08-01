@@ -35,6 +35,7 @@ export class BookingHomePage implements OnInit, OnDestroy {
   @ViewChild('mapEl', { static: true }) mapElRef!: ElementRef<HTMLDivElement>;
 
   loading = true;
+  locationFetching = true;
   mapReady = false;
 
   scope: TripScope = 'local';
@@ -63,6 +64,14 @@ export class BookingHomePage implements OnInit, OnDestroy {
   ) {}
 
   async ngOnInit(): Promise<void> {
+    // Safety timeout: hide location loader after 6s max so UI never hangs if GPS denied/slow
+    setTimeout(() => {
+      if (this.locationFetching) {
+        this.locationFetching = false;
+        this.cdr.markForCheck();
+      }
+    }, 6000);
+
     // Load data and map concurrently — neither blocks the other.
     await Promise.all([this.load(), this.initMap()]);
   }
@@ -102,14 +111,23 @@ export class BookingHomePage implements OnInit, OnDestroy {
       await this.startWatch();
     } catch {
       // Maps unavailable (offline / key missing) — page still works.
+      this.locationFetching = false;
+      this.cdr.markForCheck();
     }
   }
 
   private async startWatch(): Promise<void> {
     // Quick first fix — centre the map immediately.
-    const fix = await this.geo.getCurrentFix();
-    if (fix) {
-      this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, true);
+    try {
+      const fix = await this.geo.getCurrentFix();
+      if (fix) {
+        this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, true);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      this.locationFetching = false;
+      this.cdr.markForCheck();
     }
 
     // Continuous watch — moves marker as user walks.
@@ -123,6 +141,8 @@ export class BookingHomePage implements OnInit, OnDestroy {
       );
     } catch {
       // Location unavailable — stays at first fix / default.
+      this.locationFetching = false;
+      this.cdr.markForCheck();
     }
   }
 
@@ -170,6 +190,11 @@ export class BookingHomePage implements OnInit, OnDestroy {
       this.map.setZoom(15);
     } else {
       this.map.panTo(latlng);
+    }
+
+    if (this.locationFetching) {
+      this.locationFetching = false;
+      this.cdr.markForCheck();
     }
   }
 

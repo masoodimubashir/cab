@@ -1,8 +1,26 @@
 <ion-content [fullscreen]="true" class="bh-content">
 
-  <!-- ── Live Leaflet map fills the whole screen ── -->
-  <div #mapEl class="bh-map" aria-label="Map"></div>
+  <!-- ── Fullscreen Location Fetching Loading Screen ── -->
+  <div class="loc-loader-overlay" [class.loc-loader-overlay--hidden]="!locationFetching" aria-live="polite">
+    <div class="loc-loader-card">
+      <div class="loc-radar-anim">
+        <span class="loc-radar-ring r1"></span>
+        <span class="loc-radar-ring r2"></span>
+        <span class="loc-radar-ring r3"></span>
+        <div class="loc-radar-center">
+          <ion-icon name="location"></ion-icon>
+        </div>
+      </div>
+      <h2 class="loc-loader-title">Fetching current location...</h2>
+      <p class="loc-loader-sub">Pinpointing your position on the map</p>
+      <div class="loc-loader-bar">
+        <div class="loc-loader-bar-fill"></div>
+      </div>
+    </div>
+  </div>
 
+  <!-- ── Live Google Map fills the whole screen ── -->
+  <div #mapEl class="bh-map" aria-label="Map"></div>
 
   <!-- Drawer button, top-left -->
   <div class="bh-menu">

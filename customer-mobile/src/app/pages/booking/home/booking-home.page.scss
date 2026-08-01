@@ -10,6 +10,135 @@
   position: relative;
 }
 
+/* ── Fullscreen Location Fetching Loading Screen ── */
+.loc-loader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: linear-gradient(135deg, #0d1b2a 0%, #15283c 50%, #0d1b2a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.45s;
+}
+
+.loc-loader-overlay--hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.loc-loader-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 320px;
+}
+
+.loc-radar-anim {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.loc-radar-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(18, 179, 91, 0.6);
+  opacity: 0;
+  animation: locRadarRipple 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+
+  &.r1 { animation-delay: 0s; }
+  &.r2 { animation-delay: 0.7s; }
+  &.r3 { animation-delay: 1.4s; }
+}
+
+@keyframes locRadarRipple {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+.loc-radar-center {
+  position: relative;
+  z-index: 2;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #12B35B 0%, #0E954B 100%);
+  box-shadow: 0 0 24px rgba(18, 179, 91, 0.6), 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: locPinBounce 1.8s ease-in-out infinite alternate;
+
+  ion-icon {
+    font-size: 28px;
+    color: #ffffff;
+  }
+}
+
+@keyframes locPinBounce {
+  0% { transform: translateY(0) scale(1); }
+  100% { transform: translateY(-6px) scale(1.05); }
+}
+
+.loc-loader-title {
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 750;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.01em;
+}
+
+.loc-loader-sub {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.86rem;
+  margin: 0 0 24px 0;
+  line-height: 1.4;
+}
+
+.loc-loader-bar {
+  width: 160px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  position: relative;
+}
+
+.loc-loader-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #12B35B, #34D399);
+  animation: locBarSlide 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes locBarSlide {
+  0% { left: 0%; width: 30%; }
+  100% { left: 70%; width: 30%; }
+}
+
 /* ── The map FILLS the entire screen height ── */
 .bh-map {
   position: fixed;      /* fixed so it ignores ion-content scroll offset */
@@ -69,7 +198,6 @@
 .bh-menu ion-menu-button {
   --color: #0D1B2A;
 }
-
 
 /* ── Bottom sheet ── */
 .bh-sheet {
