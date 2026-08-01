@@ -1,101 +1,143 @@
-/* Home — the bottom sheet over the map (screens 7–8).
-   Built from the app's own --dc-* tokens; nothing new introduced. */
+/* Home — live Leaflet map behind the bottom sheet. */
 
 .bh-content {
-  --background: var(--dc-canvas);
+  --background: #e8ecef;
 }
 
-/* Map surface behind the sheet. A neutral resting state until the real map
-   loads into the same box. */
+/* ── Live map fills the whole ion-content ── */
 .bh-map {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle at 32% 38%, var(--dc-green-tint), transparent 42%),
-    repeating-linear-gradient(48deg, transparent 0 16px, var(--dc-hairline) 16px 17px),
-    var(--dc-surface-2);
-}
-.bh-map__pin {
-  position: absolute;
-  left: 50%;
-  top: 34%;
-  transform: translate(-50%, -100%);
-  font-size: 34px;
-  color: var(--dc-green);
-  filter: drop-shadow(0 4px 6px rgba(13, 27, 42, 0.2));
+  z-index: 0;
+
+  /* Override Leaflet default z-index for the pane so the sheet stays on top */
+  .leaflet-pane { z-index: 1 !important; }
+  .leaflet-control { z-index: 2 !important; }
 }
 
-/* Drawer button, kept below the notch inset. */
+/* ── Pulsing user-location dot (rendered via Leaflet divIcon) ── */
+:global(.bh-map-dot) {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #12B35B;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(18, 179, 91, 0.5);
+}
+
+:global(.bh-map-dot__pulse) {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: rgba(18, 179, 91, 0.25);
+  animation: bh-pulse 1.8s ease-out infinite;
+}
+
+@keyframes bh-pulse {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* ── Drawer button ── */
 .bh-menu {
   position: absolute;
-  top: var(--dc-safe-top);
-  left: var(--dc-safe-left);
-  z-index: 3;
+  top: calc(var(--dc-safe-top) + 8px);
+  left: calc(var(--dc-safe-left) + 12px);
+  z-index: 10;
   width: 44px;
   height: 44px;
   border-radius: var(--dc-r-md);
-  background: var(--dc-surface);
-  box-shadow: var(--dc-shadow-md);
+  background: var(--dc-surface, #fff);
+  box-shadow: 0 4px 12px rgba(13, 27, 42, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .bh-menu ion-menu-button {
-  --color: var(--dc-ink);
+  --color: var(--dc-ink, #0D1B2A);
 }
 
-/* The sheet. */
+/* ── Recenter FAB — bottom-right, above sheet ── */
+.bh-recenter {
+  position: absolute;
+  right: calc(var(--dc-safe-right) + 12px);
+  bottom: 290px;   /* clears the sheet's resting height */
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--dc-surface, #fff);
+  box-shadow: 0 4px 12px rgba(13, 27, 42, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  &:active { transform: scale(0.93); }
+
+  ion-icon {
+    font-size: 22px;
+    color: var(--dc-green, #12B35B);
+  }
+}
+
+/* ── Bottom sheet ── */
 .bh-sheet {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 2;
-  background: var(--dc-surface);
-  border-radius: var(--dc-r-xl) var(--dc-r-xl) 0 0;
-  box-shadow: var(--dc-shadow-lg);
+  z-index: 5;
+  background: var(--dc-surface, #fff);
+  border-radius: var(--dc-r-xl, 20px) var(--dc-r-xl, 20px) 0 0;
+  box-shadow: 0 -4px 24px rgba(13, 27, 42, 0.12);
   padding: 8px var(--dc-safe-right) calc(var(--dc-safe-bottom) + 4px) var(--dc-safe-left);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-.bh-sheet--loading { opacity: 0.6; }
+.bh-sheet--loading { opacity: 0.65; pointer-events: none; }
 
 .bh-grip {
   width: 40px;
   height: 4px;
   border-radius: 3px;
-  background: var(--dc-hairline-strong);
+  background: var(--dc-hairline-strong, #ddd);
   align-self: center;
   margin: 2px 0 2px;
 }
 
-/* Local / Outstation switch. */
+/* ── Local / Outstation switch ── */
 .bh-seg {
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: var(--dc-surface-2);
-  border: 1px solid var(--dc-hairline-strong);
-  border-radius: var(--dc-r-md);
+  background: var(--dc-surface-2, #f5f7fa);
+  border: 1px solid var(--dc-hairline-strong, #ddd);
+  border-radius: var(--dc-r-md, 12px);
 }
 .bh-seg__b {
   flex: 1;
   min-height: 40px;
   border: 0;
-  border-radius: var(--dc-r-sm);
+  border-radius: var(--dc-r-sm, 8px);
   background: transparent;
-  color: var(--dc-ink-soft);
-  font-size: var(--dc-t-caption);
+  color: var(--dc-ink-soft, #6C757D);
+  font-size: var(--dc-t-caption, 0.82rem);
   font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
 }
 .bh-seg__b--on {
-  background: var(--dc-green);
+  background: var(--dc-green, #12B35B);
   color: #fff;
   box-shadow: 0 3px 8px rgba(18, 179, 91, 0.24);
 }
 
-/* The three mode cards. */
+/* ── Mode cards ── */
 .bh-modes {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -104,9 +146,9 @@
 .bh-mode {
   position: relative;
   min-height: 92px;
-  border: 1px solid var(--dc-hairline-strong);
-  border-radius: var(--dc-r-md);
-  background: var(--dc-surface);
+  border: 1px solid var(--dc-hairline-strong, #ddd);
+  border-radius: var(--dc-r-md, 12px);
+  background: var(--dc-surface, #fff);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -114,11 +156,13 @@
   gap: 4px;
   padding: 10px 4px;
   text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 .bh-mode--on {
-  border-color: var(--dc-green);
-  background: var(--dc-green-tint);
-  box-shadow: 0 0 0 2px var(--dc-green-tint-2);
+  border-color: var(--dc-green, #12B35B);
+  background: var(--dc-green-tint, #edfbf3);
+  box-shadow: 0 0 0 2px rgba(18, 179, 91, 0.15);
 }
 .bh-mode__tick {
   position: absolute;
@@ -127,7 +171,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--dc-green);
+  background: var(--dc-green, #12B35B);
   color: #fff;
   font-size: 10px;
   font-weight: 800;
@@ -137,25 +181,25 @@
 }
 .bh-mode__ic {
   font-size: 24px;
-  color: var(--dc-green);
+  color: var(--dc-green, #12B35B);
 }
 .bh-mode__n {
-  font-size: var(--dc-t-caption);
+  font-size: var(--dc-t-caption, 0.82rem);
   font-weight: 750;
-  color: var(--dc-ink);
+  color: var(--dc-ink, #0D1B2A);
 }
 .bh-mode__s {
   font-size: 11px;
-  color: var(--dc-ink-soft);
+  color: var(--dc-ink-soft, #6C757D);
   line-height: 1.2;
 }
 
-/* The single action. */
+/* ── "Where to?" CTA bar ── */
 .bh-wt {
   min-height: 48px;
   border: 0;
-  border-radius: var(--dc-r-md);
-  background: var(--dc-green);
+  border-radius: var(--dc-r-md, 12px);
+  background: var(--dc-green, #12B35B);
   color: #fff;
   font-size: 14.5px;
   font-weight: 750;
@@ -164,23 +208,26 @@
   align-items: center;
   gap: 9px;
   padding: 0 16px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  &:active { opacity: 0.88; }
 }
 .bh-wt[disabled] {
-  background: var(--dc-hairline-strong);
-  color: var(--dc-ink-faint);
+  background: var(--dc-hairline-strong, #ddd);
+  color: var(--dc-ink-faint, #aaa);
   box-shadow: none;
+  cursor: not-allowed;
 }
 .bh-wt__go { margin-left: auto; }
 
-/* Which city's services are on screen. Quiet, but present — the catalogue is
-   per city, so this line is what stops a missing service reading as a bug. */
+/* ── City indicator ── */
 .bh-city {
   display: flex;
   align-items: center;
   gap: 7px;
   margin: -4px 0 0;
-  color: var(--dc-ink-soft);
-  font-size: var(--dc-t-caption);
+  color: var(--dc-ink-soft, #6C757D);
+  font-size: var(--dc-t-caption, 0.82rem);
   font-weight: 600;
 }
 .bh-city__dot {
@@ -188,7 +235,6 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--dc-green);
+  background: var(--dc-green, #12B35B);
 }
-/* Amber when we're guessing the city rather than knowing it. */
-.bh-city__dot--guess { background: var(--dc-amber); }
+.bh-city__dot--guess { background: var(--dc-amber, #F59E0B); }
