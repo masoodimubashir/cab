@@ -1,31 +1,31 @@
 <ion-content [fullscreen]="true" class="bh-content">
-  <!-- Map behind the sheet. The real Google map slots into this same div,
-       reusing the existing map service; the surface below is the resting
-       state so the screen is never blank while it loads. -->
-  <div class="bh-map" aria-hidden="true">
-    <ion-icon class="bh-map__pin" name="location" aria-hidden="true"></ion-icon>
-  </div>
 
-  <!-- Drawer button, top-left, clear of any camera hole via the safe inset. -->
+  <!-- ── Live Leaflet map fills the whole screen ── -->
+  <div #mapEl class="bh-map" aria-label="Map"></div>
+
+  <!-- Recenter button — tapping flies back to the user's live location -->
+  <button class="bh-recenter" (click)="recenter()" aria-label="Recenter on my location">
+    <ion-icon name="locate-outline"></ion-icon>
+  </button>
+
+  <!-- Drawer button, top-left -->
   <div class="bh-menu">
     <ion-menu-button menu="customer-menu" aria-label="Open menu"></ion-menu-button>
   </div>
 
-  <!-- The sheet. -->
+  <!-- ── Bottom sheet ── -->
   <section class="bh-sheet" [class.bh-sheet--loading]="loading">
     <span class="bh-grip" aria-hidden="true"></span>
 
     <h1 class="bk-title">Where are you going?</h1>
 
-    <!-- Which city's services these are. Shown because the catalogue is per
-         city: if we guessed wrong, the rider can see why a service is absent
-         instead of concluding the app doesn't offer it. -->
+    <!-- City indicator -->
     <p class="bh-city" *ngIf="city">
       <span class="bh-city__dot" [class.bh-city__dot--guess]="!located" aria-hidden="true"></span>
       <span>{{ located ? 'Services in ' + city.name : 'Showing ' + city.name + ' — turn on location for your area' }}</span>
     </p>
 
-    <!-- Local / Outstation — only when the operator runs both. -->
+    <!-- Local / Outstation switch -->
     <div class="bh-seg" *ngIf="hasScopeSwitch" role="tablist">
       <button
         *ngFor="let s of scopes"
@@ -39,7 +39,7 @@
       </button>
     </div>
 
-    <!-- The three modes as cards. Selected shows tint + ring + a tick dot. -->
+    <!-- Mode cards -->
     <div class="bh-modes" *ngIf="tiles.length; else noModes">
       <button
         *ngFor="let tile of tiles; trackBy: trackByMode"
@@ -60,11 +60,12 @@
       </p>
     </ng-template>
 
-    <!-- The single action. -->
+    <!-- Where to? CTA -->
     <button class="bh-wt" type="button" [disabled]="!tiles.length" (click)="whereTo()">
       <ion-icon name="search-outline" aria-hidden="true"></ion-icon>
       <span>Where to?</span>
       <ion-icon class="bh-wt__go" name="arrow-forward-outline" aria-hidden="true"></ion-icon>
     </button>
   </section>
+
 </ion-content>

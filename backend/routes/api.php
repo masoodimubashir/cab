@@ -338,6 +338,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::get('/admin/cities/{city}/preview-settings', [AdminCitySettingsController::class, 'preview'])->middleware('permission:city_settings');
         Route::get('/admin/cities/{city}/dispatcher-settings', [AdminDispatcherSettingsController::class, 'index'])->middleware('permission:city_settings');
         Route::patch('/admin/cities/{city}/dispatcher-settings/{setting}', [AdminDispatcherSettingsController::class, 'update'])->middleware('permission:city_settings');
+
+        // ── Service catalogue (ride-products): operator can toggle modes/scopes ──
+        Route::get('/admin/cities/{city}/ride-products', [AdminCityRideProductsController::class, 'index'])->middleware('permission:city_settings');
+        Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}', [AdminCityRideProductsController::class, 'updateScope'])->middleware('permission:city_settings');
+        Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode'])->middleware('permission:city_settings');
+        Route::post('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode'])->middleware('permission:city_settings');
+
         Route::get('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'index'])->middleware('permission:vehicles|pricing|manual_dispatch|rides');
         Route::post('/admin/cities/{city}/vehicle-types', [AdminVehicleTypesController::class, 'store'])->middleware('permission:vehicles');
         Route::get('/admin/cities/{city}/vehicle-types/{vehicleType}', [AdminVehicleTypesController::class, 'show'])->middleware('permission:vehicles|pricing');
