@@ -41,8 +41,7 @@
             ],
             "styles": [
               "src/global.scss",
-              "src/theme/variables.scss",
-              "node_modules/leaflet/dist/leaflet.css"
+              "src/theme/variables.scss"
             ],
             "scripts": []
           },
