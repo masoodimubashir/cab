@@ -70,10 +70,14 @@ export class SupportPage implements OnInit {
 
   get hasChannels(): boolean {
     return !!(
-      this.support?.customer_support_no ||
+      this.effectivePhone ||
       this.support?.support_email ||
       this.support?.emergency_police_no
     );
+  }
+
+  get effectivePhone(): string | null {
+    return this.support?.customer_support_no || this.support?.driver_support_no || null;
   }
 
   call(phone: string | null | undefined): void {
