@@ -185,6 +185,46 @@ class DriverPayoutVisibilityTest extends TestCase
         $this->assertSame(160.0, (float) $this->earnings()['paid']);
     }
 
+    public function test_earnings_payout_respects_week_and_month_period_filters(): void
+    {
+        $this->verifyPayout();
+
+        // 1. Trip inside this week (today)
+        $tripThisWeek = $this->trip(fare: 200);
+        $this->splitPayment($tripThisWeek, Payment::TRANSFER_PROCESSED, driverAmount: 160);
+
+        // 2. Trip 20 days ago (inside this month, outside this week)
+        $tripOld = Trip::query()->create([
+            'customer_id' => $this->customer->id, 'driver_id' => $this->driver->id,
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId,
+            'status' => 'COMPLETED', 'estimated_fare' => 300, 'final_fare' => 300,
+            'commission_amount' => 60, 'currency' => 'INR',
+            'pickup_lat' => 12.97, 'pickup_lng' => 77.59,
+            'drop_lat' => 12.93, 'drop_lng' => 77.62, 'completed_at' => now()->subDays(20),
+        ]);
+        $paymentOld = Payment::query()->create([
+            'trip_id' => $tripOld->id,
+            'method' => 'RAZORPAY', 'provider' => 'RAZORPAY', 'status' => 'SUCCESS',
+            'amount' => 300, 'currency' => 'INR',
+            'razorpay_payment_id' => 'pay_' . $tripOld->id,
+            'commission_amount' => 60, 'driver_amount' => 240,
+            'driver_transfer_id' => 'trf_' . $tripOld->id,
+            'transfer_status' => Payment::TRANSFER_PROCESSED,
+            'paid_at' => now()->subDays(20), 'split_at' => now()->subDays(20),
+            'created_at' => now()->subDays(20),
+        ]);
+
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+
+        // Week filter -> should only return the 160 from this week
+        $resWeek = $this->getJson('/api/drivers/me/earnings?period=week')->assertOk()->json('payout');
+        $this->assertSame(160.0, (float) $resWeek['paid']);
+
+        // Month filter -> should return 160 + 240 = 400 from this month
+        $resMonth = $this->getJson('/api/drivers/me/earnings?period=month')->assertOk()->json('payout');
+        $this->assertSame(400.0, (float) $resMonth['paid']);
+    }
+
     public function test_with_the_engine_off_the_payout_section_is_switched_off(): void
     {
         config()->set('services.payments.split_enabled', false);
