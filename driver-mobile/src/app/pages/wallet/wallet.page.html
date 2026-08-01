@@ -3,9 +3,7 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
-    <ion-title class="pg-brandtitle">
-      <span class="b-white">Earnings &amp;</span> <span class="b-green">Wallet</span>
-    </ion-title>
+    <ion-title class="pg-brandtitle"><span class="b-green">Wallet</span></ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
@@ -23,7 +21,7 @@
   <div class="pg-hero">
     <p class="pg-hero__label">Wallet balance</p>
     <h1 class="pg-hero__amount">₹{{ balance | number: '1.0-2' }}</h1>
-    <p class="pg-subtitle">Money you hold — earnings, top-ups, minus commission</p>
+    <p class="pg-subtitle">Your balance — top-ups minus commission & ride deductions</p>
 
     <button class="dc-cta wallet-topup dc-press" [disabled]="toppingUp" (click)="promptTopUp()">
       <ion-spinner *ngIf="toppingUp" name="crescent"></ion-spinner>
@@ -44,29 +42,14 @@
       <div class="dc-skeleton" style="height:180px"></div>
     </div>
 
-    <!-- Plain-language reconciliation: where the money came from -->
+    <!-- Balance breakdown -->
     <div class="pg-card" *ngIf="!loading && !error">
       <div class="pg-card__head">
         <div class="pg-card__icon"><ion-icon name="stats-chart-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Where your money comes from</h2>
+        <h2 class="pg-card__title">Balance breakdown</h2>
       </div>
 
       <div class="sum">
-        <div class="sum__row">
-          <span class="sum__label">Total earnings <small>(before commission)</small></span>
-          <span class="sum__val">₹{{ totalEarnings | number: '1.0-2' }}</span>
-        </div>
-        <div class="sum__row">
-          <span class="sum__label">Commission taken</span>
-          <span class="sum__val sum__val--neg">−₹{{ totalCommission | number: '1.0-2' }}</span>
-        </div>
-        <div class="sum__row sum__row--total">
-          <span class="sum__label">Net from rides</span>
-          <span class="sum__val sum__val--pos">₹{{ netEarnings | number: '1.0-2' }}</span>
-        </div>
-
-        <div class="sum__divider"></div>
-
         <div class="sum__row">
           <span class="sum__label">You topped up</span>
           <span class="sum__val">+₹{{ topupTotal | number: '1.0-2' }}</span>
@@ -78,17 +61,8 @@
       </div>
     </div>
 
-    <!-- Drill-downs — detail lives behind these, keeping this page clean -->
+    <!-- Drill-downs -->
     <div class="pg-card pg-card--tight" *ngIf="!loading && !error">
-      <button class="nav-row dc-press" (click)="openRideBreakdown()">
-        <span class="dc-row__icon"><ion-icon name="bar-chart-outline"></ion-icon></span>
-        <span class="dc-row__text">
-          <strong>Earnings</strong>
-          <small>Chart &amp; per-ride commission breakdown</small>
-        </span>
-        <ion-icon class="nav-row__chev" name="chevron-forward-outline"></ion-icon>
-      </button>
-
       <button class="nav-row dc-press" (click)="openActivity()">
         <span class="dc-row__icon"><ion-icon name="receipt-outline"></ion-icon></span>
         <span class="dc-row__text">

@@ -75,6 +75,16 @@ export class EarningsPage implements OnInit {
     month: 'this month',
     all: 'all time',
   };
+  periodRideTitleMap: Record<'week' | 'month' | 'all', string> = {
+    week: 'Weekly rides',
+    month: 'Monthly rides',
+    all: 'All time rides',
+  };
+  periodChartTitleMap: Record<'week' | 'month' | 'all', string> = {
+    week: 'Weekly Overview',
+    month: 'Monthly Overview',
+    all: 'All time Activity',
+  };
   buckets: Bucket[] = [];
   rides: RideRow[] = [];
   payout: PayoutSummary | null = null;

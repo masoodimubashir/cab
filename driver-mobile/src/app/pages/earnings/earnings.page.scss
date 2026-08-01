@@ -1,7 +1,7 @@
 /* =============================================================================
    Earnings page — header + body shell use the shared pg- system (theme/pages.scss).
    Local `ec-` classes only style the money-hero stat strip, the bespoke bar
-   chart, and a few value states. No global pg-/dc- class or keyframe is redefined.
+   chart, and value states.
    ========================================================================== */
 
 .dc-error {
@@ -9,16 +9,15 @@
   font-size: 0.86rem;
 }
 
-/* ── Money hero stat strip (sits under the headline number in the green→navy hero) ── */
+/* ── Money hero stat strip (sits under the headline number in the hero) ── */
 .ec-hero {
-  /* keep the hero comfortably tall so the stat strip breathes */
-  padding-bottom: 30px;
+  padding-bottom: 28px;
 }
 
 .ec-hero__stats {
   display: flex;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .ec-hstat {
@@ -27,16 +26,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(2px);
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 
   ion-icon {
     flex-shrink: 0;
-    font-size: 20px;
-    color: var(--ion-color-primary, #12B35B);
+    font-size: 22px;
+    color: #34D399; /* Vibrant Emerald */
+  }
+
+  &:first-child ion-icon {
+    color: #F87171; /* Soft Coral Red for Commission */
   }
 
   &__body {
@@ -47,13 +51,14 @@
   }
   &__label {
     font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: rgba(255, 255, 255, 0.7);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.75);
     white-space: nowrap;
   }
   &__value {
-    font-size: 0.96rem;
+    font-size: 1.02rem;
     font-weight: 800;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
@@ -63,30 +68,54 @@
   }
 }
 
-/* ── Chart card ── */
+/* ── Chart & Period Filter Card ── */
 .ec-chart-card {
   overflow: hidden;
 }
 
 .ec-pills {
-  margin-top: 4px;
-  margin-bottom: 6px;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  display: flex;
+  gap: 6px;
+  background: #F1F5F9;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.ec-pills .dc-pill {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #64748B;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+
+  &.is-active {
+    background: #FFFFFF;
+    color: #0F172A;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
 }
 
 .ec-skeletons { padding: 4px 0; }
 
 .ec-chart {
-  padding: 14px 2px 2px;
+  padding: 16px 4px 4px;
 }
 
 .ec-chart__bars {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  height: 168px;
-  padding-bottom: 26px;
+  height: 172px;
+  padding-bottom: 28px;
   position: relative;
-  border-bottom: 1px solid #EEF1F4;
+  border-bottom: 1px solid #E2E8F0;
 }
 
 .ec-bar-wrap {
@@ -97,33 +126,33 @@
   height: 100%;
   justify-content: flex-end;
   position: relative;
-  padding: 0 3px;
+  padding: 0 4px;
 }
 
 .ec-bar {
   width: 100%;
-  max-width: 26px;
-  background: linear-gradient(180deg, var(--ion-color-primary, #12B35B) 0%, #0E8F47 100%);
+  max-width: 28px;
+  background: linear-gradient(180deg, #10B981 0%, #059669 100%);
   border-radius: 8px 8px 3px 3px;
-  min-height: 3px;
+  min-height: 4px;
   position: relative;
-  box-shadow: 0 4px 10px rgba(var(--ion-color-primary-rgb), 0.18);
-  transition: height 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  transition: height 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   &--zero {
-    background: #E6EAEF;
+    background: #E2E8F0;
     box-shadow: none;
   }
 }
 
 .ec-bar__value {
   position: absolute;
-  top: -17px;
+  top: -19px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.64rem;
-  font-weight: 700;
-  color: var(--text-main, #0D1B2A);
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #0F172A;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -131,81 +160,66 @@
 .ec-bar__label {
   position: absolute;
   bottom: -24px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-muted, #6C757D);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748B;
   white-space: nowrap;
 }
 
-/* ── Weekly list states ── */
-.ec-week-card {
-  padding-bottom: 8px;
-}
-
-.ec-list {
-  /* list sits inside a pg-card, so drop its own elevation to avoid double shadow */
-  box-shadow: none;
-  border: 1px solid #EEF1F4;
-}
-
-.ec-week {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.ec-value--zero {
-  color: var(--text-muted, #6C757D);
-  font-weight: 600;
-}
-
 /* ── Ride-by-ride breakdown ── */
-.ec-rides-card { padding-bottom: 8px; }
-.ec-scope { font-weight: 600; color: #94a3b8; font-size: 0.8rem; }
+.ec-rides-card { padding-bottom: 10px; }
+.ec-scope { font-weight: 600; color: #94A3B8; font-size: 0.8rem; }
 
 .ec-totals {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .ec-total {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px;
-  border-radius: 12px;
-  background: #f5f7fa;
+  gap: 3px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: #F8FAFC;
+  border: 1px solid #F1F5F9;
 }
-.ec-total__label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; }
-.ec-total__val { font-size: 0.98rem; font-weight: 800; color: #0f172a; }
-.ec-total__val--neg { color: #ef4444; }
-.ec-total__val--pos { color: #0e8f47; }
+.ec-total__label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.03em; }
+.ec-total__val { font-size: 1.02rem; font-weight: 800; color: #0F172A; font-variant-numeric: tabular-nums; }
+.ec-total__val--neg { color: #EF4444; }
+.ec-total__val--pos { color: #059669; }
 
 .ec-rides { display: flex; flex-direction: column; gap: 10px; }
 .ec-ride {
-  padding: 12px;
-  border: 1px solid #eef1f4;
-  border-radius: 14px;
-  background: #fff;
+  padding: 13px 14px;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  &:active {
+    transform: scale(0.99);
+  }
 }
 .ec-ride__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .ec-ride__id {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.86rem;
-  font-weight: 700;
-  color: #0f172a;
+  gap: 6px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #0F172A;
 }
-.ec-ride__id ion-icon { font-size: 14px; color: #94a3b8; }
-.ec-ride__date { font-size: 0.76rem; color: #94a3b8; font-weight: 600; }
+.ec-ride__id ion-icon { font-size: 15px; color: #6366F1; }
+.ec-ride__date { font-size: 0.76rem; color: #64748B; font-weight: 600; }
 
 .ec-ride__calc {
   display: flex;
@@ -213,19 +227,19 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.ec-op { color: #cbd5e1; font-weight: 700; }
+.ec-op { color: #CBD5E1; font-weight: 800; font-size: 0.82rem; }
 .ec-chip {
-  padding: 3px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 700;
-  background: #f1f5f9;
-  color: #475569;
+  background: #F1F5F9;
+  color: #334155;
   white-space: nowrap;
 }
-.ec-chip--neg { background: #fee2e2; color: #b91c1c; }
-.ec-chip--free { background: #dcfce7; color: #15803d; }
-.ec-chip--net { background: #0e8f47; color: #fff; }
+.ec-chip--neg { background: #FEE2E2; color: #991B1B; }
+.ec-chip--free { background: #D1FAE5; color: #065F46; }
+.ec-chip--net { background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25); }
 
 /* ── Payouts: what actually reached the bank ───────────────────────── */
 .ec-payout {
@@ -238,48 +252,49 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
-  & + .ec-payout__row { border-top: 1px solid #f1f5f9; }
+  padding: 12px 0;
+  & + .ec-payout__row { border-top: 1px solid #F1F5F9; }
 }
 .ec-payout__label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #475569;
-  ion-icon { font-size: 17px; flex-shrink: 0; }
-  ion-icon.is-paid { color: #0e8f47; }
-  ion-icon.is-pending { color: #b45309; }
-  ion-icon.is-held { color: #b91c1c; }
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #334155;
+  ion-icon { font-size: 18px; flex-shrink: 0; }
+  ion-icon.is-paid { color: #10B981; }
+  ion-icon.is-pending { color: #D97706; }
+  ion-icon.is-held { color: #DC2626; }
 }
 .ec-payout__val {
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 800;
-  color: #0f172a;
+  color: #0F172A;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.ec-payout__val--held { color: #b91c1c; }
+.ec-payout__val--held { color: #DC2626; }
 
 .ec-payout__note {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
-  margin: 10px 0 0;
-  padding: 10px 11px;
-  background: #fef3c7;
-  border-radius: 12px;
-  font-size: 0.8rem;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  background: #FEF3C7;
+  border-radius: 14px;
+  font-size: 0.82rem;
   font-weight: 600;
-  line-height: 1.4;
-  color: #92400e;
-  ion-icon { font-size: 17px; flex-shrink: 0; margin-top: 1px; }
+  line-height: 1.45;
+  color: #92400E;
+  ion-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
 }
-.ec-payout__cta { margin-top: 10px; --border-radius: 12px; }
+.ec-payout__cta { margin-top: 12px; --border-radius: 14px; --background: #10B981; }
 .ec-payout__hint {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.45;
-  color: #94a3b8;
+  color: #94A3B8;
 }
