@@ -110,13 +110,54 @@ class PayoutMonitorService
      *
      * @return array{rows:array,reconciliation:array}
      */
-    public function ledger(?int $tripId = null, int $limit = 500, bool $unbalancedOnly = false): array
+    public function ledger(?int $tripId = null, int $limit = 500, bool $unbalancedOnly = false, ?string $from = null, ?string $to = null, ?string $search = null): array
     {
         $query = LedgerEntry::query()
-            ->with(['trip:id,customer_id,driver_id', 'trip.customer:id,name,phone', 'trip.driver:id,name,phone'])
+            ->with([
+                'trip:id,customer_id,driver_id,booked_for_name,booked_for_phone',
+                'trip.customer:id,name,phone',
+                'trip.driver:id,name,phone',
+                'payment:id,trip_id',
+                'payment.trip:id,customer_id,driver_id,booked_for_name,booked_for_phone',
+                'payment.trip.customer:id,name,phone',
+                'payment.trip.driver:id,name,phone',
+            ])
             ->orderByDesc('id');
         if ($tripId !== null) {
             $query->where('trip_id', $tripId);
+        }
+
+        if (!empty($from) && !empty($to)) {
+            try {
+                $fromDate = \Illuminate\Support\Carbon::parse($from)->startOfDay();
+                $toDate = \Illuminate\Support\Carbon::parse($to)->endOfDay();
+                $query->whereBetween('created_at', [$fromDate, $toDate]);
+            } catch (\Throwable $e) {
+                // Ignore malformed date strings
+            }
+        } elseif (!empty($from)) {
+            try {
+                $fromDate = \Illuminate\Support\Carbon::parse($from);
+                $query->whereDate('created_at', $fromDate);
+            } catch (\Throwable $e) {
+                // Ignore malformed date strings
+            }
+        }
+
+        if (!empty($search)) {
+            $term = trim($search);
+            $query->where(function ($q) use ($term) {
+                $q->where('id', $term)
+                  ->orWhere('payment_id', $term)
+                  ->orWhere('trip_id', $term)
+                  ->orWhere('razorpay_ref', 'LIKE', "%{$term}%")
+                  ->orWhereHas('trip.customer', function ($cq) use ($term) {
+                      $cq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%");
+                  })
+                  ->orWhereHas('trip.driver', function ($dq) use ($term) {
+                      $dq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%");
+                  });
+            });
         }
 
         // "Show me only what doesn't add up" — the single question worth asking
@@ -139,21 +180,24 @@ class PayoutMonitorService
 
         $entries = $query->limit($limit)->get();
 
-        $rows = $entries->map(fn (LedgerEntry $e) => [
-            'id' => $e->id,
-            'trip_id' => $e->trip_id,
-            'payment_id' => $e->payment_id,
-            'type' => $e->type,
-            'party' => $e->party,
-            'direction' => $e->direction,
-            'amount' => round(((int) $e->amount_paise) / 100, 2),
-            'razorpay_ref' => $e->razorpay_ref,
-            'created_at' => optional($e->created_at)->toIso8601String(),
-            'customer_name' => $e->trip?->customer?->name,
-            'customer_phone' => $e->trip?->customer?->phone,
-            'driver_name' => $e->trip?->driver?->name,
-            'driver_phone' => $e->trip?->driver?->phone,
-        ])->all();
+        $rows = $entries->map(function (LedgerEntry $e) {
+            $trip = $e->trip ?? $e->payment?->trip;
+            return [
+                'id' => $e->id,
+                'trip_id' => $e->trip_id,
+                'payment_id' => $e->payment_id,
+                'type' => $e->type,
+                'party' => $e->party,
+                'direction' => $e->direction,
+                'amount' => round(((int) $e->amount_paise) / 100, 2),
+                'razorpay_ref' => $e->razorpay_ref,
+                'created_at' => optional($e->created_at)->toIso8601String(),
+                'customer_name' => $trip?->customer_name ?? $trip?->customer?->name ?? ($e->meta['customer_name'] ?? null),
+                'customer_phone' => $trip?->customer_phone ?? $trip?->customer?->phone ?? ($e->meta['customer_phone'] ?? null),
+                'driver_name' => $trip?->driver?->name ?? ($e->meta['driver_name'] ?? null),
+                'driver_phone' => $trip?->driver?->phone ?? ($e->meta['driver_phone'] ?? null),
+            ];
+        })->all();
 
         // Reconcile each trip that appears in this slice.
         $reconciliation = collect($entries)

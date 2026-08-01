@@ -195,7 +195,7 @@ export class CustomerTripsPage {
 
   /** Header back button — returns to the Ride/home tab (mirrors the other pages). */
   back(): void {
-    this.router.navigateByUrl('/customer-tabs/book');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   /**

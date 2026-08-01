@@ -173,19 +173,19 @@ export class SetupWizardComponent implements OnInit, OnDestroy {
     },
     {
       key: 'fixed_routes',
-      title: 'Fixed Routes',
+      title: 'Fixed Routes & Departures',
       icon: 'map',
-      blurb: 'Route paths, stops and flat fares for Fixed rides. Attach a vehicle to inherit its seats & luggage.',
-      cta: 'Add routes',
-      action: () => this.goWithReturn('/fixed-routes'),
+      blurb: 'Route departures, stops and flat fares for Fixed rides.',
+      cta: 'View departures',
+      action: () => this.goWithReturn('/fixed-departures'),
     },
     {
       key: 'route_groups',
       title: 'Route Groups & Drivers',
       icon: 'users',
-      blurb: 'Group routes and assign drivers. Only assigned drivers see and can open Fixed rides for those routes.',
-      cta: 'Assign drivers',
-      action: () => this.goWithReturn('/fixed-routes'),
+      blurb: 'Group routes and assign drivers.',
+      cta: 'View departures',
+      action: () => this.goWithReturn('/fixed-departures'),
     },
   ];
 

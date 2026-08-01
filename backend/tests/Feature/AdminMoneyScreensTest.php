@@ -271,6 +271,84 @@ class AdminMoneyScreensTest extends TestCase
 
     /* ------------------------------------------------------------------ */
 
+    /* ------------------------------------------------------------------ */
+    /* 4) Advanced Filtering, Search & Edge Cases                          */
+    /* ------------------------------------------------------------------ */
+
+    public function test_ledger_date_range_filtering(): void
+    {
+        $payment = $this->settledRide($this->driver(verified: true));
+        $this->asAdmin();
+
+        $today = now()->format('Y-m-d');
+        $past = now()->subDays(30)->format('Y-m-d');
+        $future = now()->addDays(10)->format('Y-m-d');
+
+        // Happy path: today's date range returns rows
+        $resToday = $this->getJson("/api/admin/ledger?from={$today}&to={$today}")->assertOk()->json();
+        $this->assertNotEmpty($resToday['rows']);
+
+        // Future range returns empty rows
+        $resFuture = $this->getJson("/api/admin/ledger?from={$future}&to={$future}")->assertOk()->json();
+        $this->assertEmpty($resFuture['rows']);
+    }
+
+    public function test_ledger_search_permutations(): void
+    {
+        $driver = $this->driver(verified: true, name: 'SpecialDriverName');
+        $payment = $this->settledRide($driver);
+        $this->asAdmin();
+
+        // Search by driver name
+        $resDriver = $this->getJson('/api/admin/ledger?search=SpecialDriverName')->assertOk()->json();
+        $this->assertNotEmpty($resDriver['rows']);
+
+        // Search by payment ID
+        $resPay = $this->getJson("/api/admin/ledger?search={$payment->razorpay_payment_id}")->assertOk()->json();
+        $this->assertNotEmpty($resPay['rows']);
+
+        // Search by non-existent term returns empty
+        $resNonExistent = $this->getJson('/api/admin/ledger?search=NonExistentTerm999')->assertOk()->json();
+        $this->assertEmpty($resNonExistent['rows']);
+    }
+
+    public function test_money_in_filters_and_totals(): void
+    {
+        $this->settledRide($this->driver(verified: true));
+        $this->asAdmin();
+
+        $today = now()->format('Y-m-d');
+
+        // Money in with source=all
+        $resAll = $this->getJson("/api/admin/finance/money-in?from={$today}&to={$today}&source=all")->assertOk()->json();
+        $this->assertArrayHasKey('rows', $resAll);
+        $this->assertArrayHasKey('total_online', $resAll);
+        $this->assertArrayHasKey('total_cash', $resAll);
+
+        // Money in with source=topup
+        $resTopup = $this->getJson("/api/admin/finance/money-in?from={$today}&to={$today}&source=topup")->assertOk()->json();
+        $this->assertIsArray($resTopup['rows']);
+    }
+
+    public function test_refunds_status_filtering(): void
+    {
+        $this->asAdmin();
+
+        $resDue = $this->getJson('/api/admin/refunds?status=due')->assertOk()->json();
+        $this->assertArrayHasKey('rows', $resDue);
+
+        $resRefunded = $this->getJson('/api/admin/refunds?status=refunded')->assertOk()->json();
+        $this->assertArrayHasKey('rows', $resRefunded);
+    }
+
+    public function test_invalid_date_formats_do_not_crash_ledger(): void
+    {
+        $this->asAdmin();
+
+        // Sad path: malformed dates should not cause internal server errors
+        $this->getJson('/api/admin/ledger?from=invalid-date&to=invalid-date')->assertOk();
+    }
+
     public function test_the_money_screens_are_behind_the_finance_permission(): void
     {
         $nobody = User::factory()->create();

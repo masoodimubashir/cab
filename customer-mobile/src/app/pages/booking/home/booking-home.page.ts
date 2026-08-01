@@ -129,7 +129,7 @@ export class BookingHomePage implements OnInit {
       case 'private': void this.router.navigate(['/customer-tabs/go/private']); break;
       case 'fixed': void this.router.navigate(['/customer-tabs/go/fixed']); break;
       case 'shuttle': void this.router.navigate(['/customer-tabs/go/shuttle']); break;
-      default: void this.router.navigate(['/customer-tabs/book']);
+      default: void this.router.navigate(['/customer-tabs/go/private']);
     }
   }
 

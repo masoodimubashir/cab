@@ -328,7 +328,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.tripId = Number(this.route.snapshot.paramMap.get('tripId'));
     if (!this.tripId) {
-      this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+      this.router.navigateByUrl('/customer-tabs/go', { replaceUrl: true });
       return;
     }
     this.refresh();
@@ -1291,7 +1291,7 @@ export class TripActivePage implements OnInit, OnDestroy {
         color: 'success'
       });
       await t.present();
-      this.router.navigateByUrl('/customer-tabs/book', { replaceUrl: true });
+      this.router.navigateByUrl('/customer-tabs/go', { replaceUrl: true });
     } catch (e: any) {
       this.loading = false;
       const t = await this.toastCtrl.create({

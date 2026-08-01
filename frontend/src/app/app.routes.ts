@@ -127,7 +127,7 @@ export const routes: Routes = [
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard], data: { permission: 'subscriptions' } },
 
   { path: 'fixed-departures', component: FixedDeparturesComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
-  { path: 'fixed-routes', component: FixedRoutesHubComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
+  { path: 'fixed-routes', redirectTo: 'fixed-departures', pathMatch: 'full' },
   { path: 'shuttle-bookings', component: ShuttleBookingsComponent, canActivate: [adminAuthGuard], data: { permission: 'rides' } },
 
   // B5 — customer-refund register (fixed + shuttle, manual settlement).

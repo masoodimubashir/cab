@@ -76,7 +76,7 @@ export class CustomerProfilePage implements OnInit {
       next: (res) => {
         this.auth.updateUser(res.user);
         this.busy = false;
-        this.router.navigateByUrl('/customer-tabs/book');
+        this.router.navigateByUrl('/customer-tabs/go');
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not save profile.';
@@ -85,5 +85,5 @@ export class CustomerProfilePage implements OnInit {
     });
   }
 
-  back(): void { this.router.navigateByUrl('/customer-tabs/book'); }
+  back(): void { this.router.navigateByUrl('/customer-tabs/go'); }
 }

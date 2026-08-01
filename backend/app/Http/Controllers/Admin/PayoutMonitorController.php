@@ -35,6 +35,9 @@ class PayoutMonitorController extends Controller
             $tripId !== null && $tripId !== '' ? (int) $tripId : null,
             (int) $request->query('limit', 500),
             $request->boolean('unbalanced'),
+            $request->query('from') ?? $request->query('date'),
+            $request->query('to') ?? $request->query('date'),
+            $request->query('search'),
         ));
     }
 }

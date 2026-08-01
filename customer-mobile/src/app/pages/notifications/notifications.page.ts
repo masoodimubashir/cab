@@ -108,7 +108,7 @@ export class NotificationsPage implements OnDestroy {
   }
 
   back(): void {
-    this.router.navigateByUrl('/customer-tabs/book');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   iconFor(n: AppNotification): string {

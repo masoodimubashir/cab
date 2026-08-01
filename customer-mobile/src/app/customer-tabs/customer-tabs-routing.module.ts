@@ -9,8 +9,8 @@ const routes: Routes = [
     children: [
       {
         path: 'book',
-        loadChildren: () =>
-          import('../pages/customer-book/customer-book.module').then((m) => m.CustomerBookPageModule),
+        redirectTo: 'go',
+        pathMatch: 'full',
       },
       {
         // The redesigned booking flow (rev 5). Home is the bottom sheet; the
