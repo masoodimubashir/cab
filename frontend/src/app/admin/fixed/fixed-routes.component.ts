@@ -249,7 +249,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
           </button>
           <div class="rt-tools__sep"></div>
           <button class="rt-tool ghost" (click)="resnapPath()" [disabled]="!roadPath.length && !form.path.length" title="Re-snap path to roads via Google Directions">
-            <tm-icon name="refresh-cw" [size]="13" /> Snap to road
+            <tm-icon name="refresh" [size]="13" /> Snap to road
           </button>
           <button class="rt-tool ghost" (click)="undoPath()" [disabled]="!form.path.length" title="Undo last path point">
             <tm-icon name="chevron-left" [size]="13" /> Undo
