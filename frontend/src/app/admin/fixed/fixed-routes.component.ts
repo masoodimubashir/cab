@@ -240,7 +240,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <span class="rt-tool__dot b"></span> Destination
           </button>
           <button class="rt-tool" [class.on]="tool === 'path'" [disabled]="!endpointsSet" (click)="setTool('path')"
-            title="Draw the route path (set start & destination first)">
+            title="Draw the route path (click map or drag green line directly)">
             <tm-icon name="road" [size]="13" /> Draw path
           </button>
           <button class="rt-tool" [class.on]="tool === 'stop'" [disabled]="!endpointsSet" (click)="setTool('stop')"
@@ -248,6 +248,9 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <tm-icon name="map-marker" [size]="13" /> Stops
           </button>
           <div class="rt-tools__sep"></div>
+          <button class="rt-tool ghost" (click)="resnapPath()" [disabled]="!roadPath.length && !form.path.length" title="Re-snap path to roads via Google Directions">
+            <tm-icon name="refresh-cw" [size]="13" /> Snap to road
+          </button>
           <button class="rt-tool ghost" (click)="undoPath()" [disabled]="!form.path.length" title="Undo last path point">
             <tm-icon name="chevron-left" [size]="13" /> Undo
           </button>
@@ -717,7 +720,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     switch (this.tool) {
       case 'origin': return 'Click to set the START — it snaps to the nearest road and auto-names from the landmark.';
       case 'dest': return 'Click to set the DESTINATION — it snaps to the nearest road and auto-names from the landmark.';
-      case 'path': return 'Click along the way — the path follows real roads between your points. Undo / Clear below.';
+      case 'path': return 'Click along the way or drag the green route line to shape your path on roads. Use "Snap to road" to auto-align.';
       case 'stop': return 'Click to drop a STOP — it snaps to the nearest road and auto-names from the landmark.';
       default: return 'Pick a tool, then click the map.';
     }
@@ -1067,6 +1070,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       return;
     }
     this.tool = t;
+    this.redrawPath();
   }
 
   private scheduleMapInit(): void {
@@ -1446,18 +1450,45 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
     const line = this.roadPath.length ? this.roadPath : this.form.path;
     if (line.length) {
+      const isEditable = this.tool === 'path';
       this.pathLine = new google.maps.Polyline({
         path: line, map: this.map, geodesic: true,
         strokeColor: '#12B35B', strokeOpacity: 0.95, strokeWeight: 5,
+        editable: isEditable,
       });
+
+      if (isEditable && this.pathLine) {
+        const polyPath = this.pathLine.getPath();
+        const updateFromPolyline = () => {
+          const arr = polyPath.getArray();
+          this.roadPath = arr.map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
+          this.pathLocked = true;
+        };
+        google.maps.event.addListener(polyPath, 'set_at', updateFromPolyline);
+        google.maps.event.addListener(polyPath, 'insert_at', updateFromPolyline);
+        google.maps.event.addListener(polyPath, 'remove_at', updateFromPolyline);
+      }
     }
     this.form.path.forEach((p, i) => {
-      this.pathDots.push(new google.maps.Marker({
-        position: p, map: this.map!,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 4.5, fillColor: '#0f5132', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1.5 },
-        title: `Path point ${i + 1}`,
-      }));
+      const dot = new google.maps.Marker({
+        position: p, map: this.map!, draggable: true,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5.5, fillColor: '#0f5132', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+        title: `Path point ${i + 1} (drag to move)`,
+      });
+      dot.addListener('dragend', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) {
+          this.form.path[i] = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+          this.pathLocked = false;
+          this.recomputeRoadPath();
+        }
+      });
+      this.pathDots.push(dot);
     });
+  }
+
+  resnapPath(): void {
+    this.pathLocked = false;
+    this.recomputeRoadPath();
   }
 
   private redrawStops(): void {
