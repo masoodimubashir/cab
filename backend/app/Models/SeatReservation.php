@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * status lifecycle all live here, layered under the vehicle-level trips row.
  */
 #[Fillable([
-    'route_departure_id', 'trip_id', 'route_id', 'customer_id', 'seats', 'booking_channel',
+    'route_departure_id', 'trip_id', 'route_id', 'route_name', 'customer_id', 'seats', 'booking_channel',
     'board_stop_id', 'board_lat', 'board_lng', 'board_address',
     'drop_stop_id', 'drop_lat', 'drop_lng', 'drop_address',
     'fare_amount', 'tip_amount', 'commission_percent', 'commission_amount', 'promo_discount_amount', 'coupon_assignment_id',

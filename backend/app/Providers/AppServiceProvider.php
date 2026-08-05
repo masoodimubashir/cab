@@ -51,12 +51,6 @@ class AppServiceProvider extends ServiceProvider
             return [Limit::perMinute(300)->by((string) $key)];
         });
 
-        RateLimiter::for('chat', function (Request $request) {
-            $userId = optional($request->user())->id;
-            $key = 'chat:' . ($userId ?: $request->ip());
-            return [Limit::perMinute(30)->by((string) $key)];
-        });
-
         RateLimiter::for('webhooks', function (Request $request) {
             return [Limit::perMinute(120)->by('webhook:' . ($request->ip() ?? 'unknown'))];
         });

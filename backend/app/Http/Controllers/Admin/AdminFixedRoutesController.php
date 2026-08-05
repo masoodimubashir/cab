@@ -8,7 +8,9 @@ use Illuminate\Validation\Rule;
 use App\Models\Route;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedRouteService;
+use App\Services\KmlRouteImportService;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 class AdminFixedRoutesController
 {
@@ -16,6 +18,117 @@ class AdminFixedRoutesController
         private readonly FixedRouteService $routes,
         private readonly FixedAvailabilityService $availability,
     ) {}
+
+    /**
+     * Parse an uploaded Google My Maps export (KML/KMZ) into draft routes. Nothing
+     * is saved — the admin reviews each draft in the map editor and saves it
+     * through the normal store()/update() flow, which keeps all the usual
+     * validation.
+     *
+     * Each draft is tagged with a same-name existing route (if any) so the client
+     * can offer "update the existing route" — replacing its line + stops from My
+     * Maps while preserving its fare, vehicle and settings — instead of creating
+     * a duplicate.
+     */
+    public function importKml(Request $request, City $city, KmlRouteImportService $importer)
+    {
+        $request->validate([
+            'file' => ['required', 'file', 'max:10240'], // 10 MB
+        ]);
+
+        $file = $request->file('file');
+        $ext = strtolower((string) $file->getClientOriginalExtension());
+        if (! in_array($ext, ['kml', 'kmz', 'xml'], true)) {
+            abort(422, 'Please upload a Google My Maps export (.kml or .kmz).');
+        }
+
+        $contents = file_get_contents($file->getRealPath());
+        if ($contents === false || $contents === '') {
+            abort(422, 'The uploaded file was empty.');
+        }
+
+        try {
+            $routes = $importer->parse($contents);
+        } catch (RuntimeException $e) {
+            abort(422, $e->getMessage());
+        }
+
+        $routes = array_map(function (array $draft) use ($city) {
+            $name = trim((string) ($draft['name'] ?? ''));
+            $existing = $name === '' ? null : Route::query()
+                ->where('city_id', $city->id)
+                ->where('mode', 'fixed')
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
+                ->first();
+
+            $draft['existing_route_id'] = $existing?->id;
+            $draft['existing'] = $existing
+                ? $this->routes->shapeAdminRoute($existing->loadMissing('stops'))
+                : null;
+
+            return $draft;
+        }, $routes);
+
+        return response()->json([
+            'routes' => $routes,
+            'count' => count($routes),
+        ]);
+    }
+
+    /**
+     * Bulk import: parse a Google My Maps export and create a route for each new
+     * route in it, attached to the given vehicle — name + line only, no stops or
+     * price, inactive. They appear in that vehicle's ungrouped list as "Needs
+     * pricing". Same-name routes are skipped.
+     */
+    public function bulkImportKml(Request $request, City $city, KmlRouteImportService $importer)
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'max:10240'], // 10 MB
+            'city_vehicle_type_id' => ['required', 'integer', Rule::exists('city_vehicle_types', 'id')->where(fn ($q) => $q->where('city_id', $city->id))],
+        ]);
+
+        $file = $request->file('file');
+        $ext = strtolower((string) $file->getClientOriginalExtension());
+        if (! in_array($ext, ['kml', 'kmz', 'xml'], true)) {
+            abort(422, 'Please upload a Google My Maps export (.kml or .kmz).');
+        }
+
+        $contents = file_get_contents($file->getRealPath());
+        if ($contents === false || $contents === '') {
+            abort(422, 'The uploaded file was empty.');
+        }
+
+        try {
+            $parsed = $importer->parse($contents);
+        } catch (RuntimeException $e) {
+            abort(422, $e->getMessage());
+        }
+
+        $created = 0;
+        $skipped = [];
+        foreach ($parsed as $draft) {
+            $name = trim((string) ($draft['name'] ?? ''));
+            $exists = $name !== '' && Route::query()
+                ->where('city_id', $city->id)
+                ->where('mode', 'fixed')
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
+                ->exists();
+            if ($exists) {
+                $skipped[] = $name;
+                continue;
+            }
+            $route = $this->routes->createBulkRoute($city, (int) $data['city_vehicle_type_id'], $draft);
+            broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_created'))->toOthers();
+            $created++;
+        }
+
+        return response()->json([
+            'created_count' => $created,
+            'skipped_count' => count($skipped),
+            'skipped_names' => $skipped,
+        ]);
+    }
 
     public function index(City $city)
     {

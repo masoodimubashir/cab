@@ -47,7 +47,6 @@ interface CitySettings {
   id: number;
   city_id: number;
 
-  chat_enabled: boolean;
   show_region_specific_fare: boolean;
   show_vehicle_make_model: boolean;
 
@@ -98,7 +97,6 @@ const PAYMENT_MODE_OPTIONS = [
 ];
 
 const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
-  { key: 'chat_enabled', label: 'In-app chat', hint: 'Let riders and drivers message during a trip.' },
   { key: 'show_region_specific_fare', label: 'Region-specific fare', hint: 'Show area-based fares in the booking flow.' },
   { key: 'show_vehicle_make_model', label: 'Vehicle make & model', hint: 'Display the car make/model to the rider.' },
 ];
@@ -301,7 +299,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="spb-group" *ngIf="copyOpts.general">
               <span class="spb-lbl">⚙️ General & Contacts:</span>
               <div class="spb-pills">
-                <span class="spb-pill">Chat: {{ sourcePreview.settings.chat_enabled ? 'ON' : 'OFF' }}</span>
                 <span class="spb-pill">Region Fares: {{ sourcePreview.settings.show_region_specific_fare ? 'ON' : 'OFF' }}</span>
                 <span class="spb-pill">Make/Model: {{ sourcePreview.settings.show_vehicle_make_model ? 'ON' : 'OFF' }}</span>
                 <span class="spb-pill" *ngIf="sourcePreview.settings.emergency_no">Emergency: {{ sourcePreview.settings.emergency_no }}</span>
@@ -963,7 +960,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       else fd.append(key, String(val));
     };
 
-    append('chat_enabled', f.chat_enabled);
     append('show_region_specific_fare', f.show_region_specific_fare);
     append('show_vehicle_make_model', f.show_vehicle_make_model);
 

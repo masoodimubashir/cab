@@ -52,7 +52,6 @@ use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InvoicesController;
 use App\Http\Controllers\RatingsController;
 use App\Http\Controllers\SafetyController;
-use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\Admin\AdminVehicleSetsController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
@@ -155,7 +154,6 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips', [TripsController::class, 'store'])->middleware('throttle:booking');
     Route::post('/trips/{trip}/cancel', [TripsController::class, 'cancel']);
     Route::post('/trips/{trip}/confirm', [TripsController::class, 'confirm']);
-    Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
     // List drivers eligible for this trip + customer picks one to negotiate with.
     Route::get('/trips/{trip}/nearby-drivers', [TripsController::class, 'nearbyDrivers']);
     Route::post('/trips/{trip}/select-driver', [TripsController::class, 'selectDriver']);
@@ -167,7 +165,6 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/trips/available', [TripsController::class, 'available']);
     Route::post('/trips/{trip}/start-otp', [TripsController::class, 'requestStartOtp'])->middleware('throttle:otp');
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
-    Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
     Route::post('/trips/{trip}/no-show', [TripsController::class, 'markNoShow']);
 
     // Shared-departure manifest: read + per-seat board / no-show.
@@ -178,7 +175,6 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/trips/{trip}/negotiation', [FareNegotiationController::class, 'show']);
-    Route::get('/trips/{trip}/messages', [TripMessagesController::class, 'index']);
     Route::get('/drivers/me', [DriversController::class, 'me']);
     // Anonymized nearby-drivers list for the customer "searching" map.
     // Returns lat/lng + opaque driver id only — no PII.
@@ -417,7 +413,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/trips', [AdminTripsController::class, 'index'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation'])->middleware('permission:rides|live_operations');
-    Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate'])->middleware('permission:rides');
 
     Route::middleware('manager.city')->group(function () {
         // ── Promotions: coupons ─────────────────────────────────────────
@@ -558,6 +553,8 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
 
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
+    Route::post('/admin/cities/{city}/fixed-routes/import-kml', [AdminFixedRoutesController::class, 'importKml']);
+    Route::post('/admin/cities/{city}/fixed-routes/import-kml-bulk', [AdminFixedRoutesController::class, 'bulkImportKml']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
 

@@ -21,7 +21,6 @@ class AdminCitySettingsController
     public function update(Request $request, City $city)
     {
         $data = $request->validate([
-            'chat_enabled' => ['nullable', 'boolean'],
             'show_region_specific_fare' => ['nullable', 'boolean'],
             'show_vehicle_make_model' => ['nullable', 'boolean'],
 
@@ -156,9 +155,8 @@ class AdminCitySettingsController
         $targetSettings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
 
         if ($sourceSettings) {
-            // General Settings (chat, fare features, emergency/support contacts)
+            // General Settings (fare features, emergency/support contacts)
             if ($request->boolean('copy_general')) {
-                $targetSettings->chat_enabled = $sourceSettings->chat_enabled;
                 $targetSettings->show_region_specific_fare = $sourceSettings->show_region_specific_fare;
                 $targetSettings->show_vehicle_make_model = $sourceSettings->show_vehicle_make_model;
                 $targetSettings->emergency_no = $sourceSettings->emergency_no;
@@ -256,7 +254,6 @@ class AdminCitySettingsController
             'id' => $s->id,
             'city_id' => $s->city_id,
 
-            'chat_enabled' => (bool) $s->chat_enabled,
             'show_region_specific_fare' => (bool) $s->show_region_specific_fare,
             'show_vehicle_make_model' => (bool) $s->show_vehicle_make_model,
 

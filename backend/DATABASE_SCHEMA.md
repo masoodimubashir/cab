@@ -40,7 +40,6 @@
 - [Trips, Dispatch & Safety](#trips-dispatch--safety)
   - [`trips`](#trips)
   - [`trip_assignments`](#trip_assignments)
-  - [`trip_messages`](#trip_messages)
   - [`trip_share_links`](#trip_share_links)
   - [`fare_negotiations`](#fare_negotiations)
   - [`fare_negotiation_offers`](#fare_negotiation_offers)
@@ -429,7 +428,6 @@ Per-city configuration for features, contact numbers, and payment modes.
 |---|---|---|---|
 | id | bigint unsigned | No | Unique identifier |
 | city_id | bigint unsigned | No | Foreign key to cities; one-to-one relationship |
-| chat_enabled | tinyint(1) | No | Enable in-trip messaging between driver and customer; defaults to 1 (true) |
 | show_region_specific_fare | tinyint(1) | No | Display zone-specific pricing; defaults to 0 (false) |
 | show_vehicle_make_model | tinyint(1) | No | Show driver's vehicle make/model to customer; defaults to 1 (true) |
 | customer_login_otp_message | text | Yes | Custom OTP message template for Android customers |
@@ -617,22 +615,6 @@ _Driver dispatch offer for a trip; tracks when a driver was offered the trip and
 | decided_at | timestamp | Yes | When the driver accepted or rejected the assignment |
 | created_at | timestamp | Yes | When the assignment record was created |
 | updated_at | timestamp | Yes | When the assignment record was last updated |
-
-### trip_messages
-_In-trip communication between customer and driver; messages are moderated._
-
-| Field | Type | Null | Description |
-|---|---|---|---|
-| id | bigint unsigned | No | Primary key, unique identifier for the message |
-| trip_id | bigint unsigned | No | FK→trips.id; the trip this message is for |
-| sender_user_id | bigint unsigned | No | FK→users.id; user who sent the message |
-| message_type | enum | No | Type of message: TEXT (default: TEXT) |
-| body | text | No | Message content |
-| moderation_status | enum | No | Moderation state: VISIBLE, FLAGGED, REMOVED (default: VISIBLE) |
-| moderated_by_user_id | bigint unsigned | Yes | FK→users.id; moderator who reviewed this message |
-| moderation_reason | text | Yes | Reason why message was flagged or removed |
-| created_at | timestamp | Yes | When the message was sent |
-| updated_at | timestamp | Yes | When the message record was last updated |
 
 ### trip_share_links
 _Shareable link that allows anonymous viewers to track a trip's live location and status._

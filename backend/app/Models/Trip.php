@@ -289,9 +289,5 @@ class Trip extends Model
         return $this->hasMany(SafetyEvent::class, 'trip_id');
     }
 
-    public function messages(): HasMany
-    {
-        return $this->hasMany(TripMessage::class, 'trip_id');
-    }
 }
 

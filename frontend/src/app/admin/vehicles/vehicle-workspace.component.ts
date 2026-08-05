@@ -1,4 +1,4 @@
-import { Component, HostListener, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -7,8 +7,9 @@ import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, DrawerComponent, IconComponent, StatusPillComponent } from '../../ui';
+import { ModalComponent } from '../../ui/modal/modal.component';
 import { ReturnToSetupComponent } from '../setup/return-to-setup.component';
-import { FixedRoutesComponent } from '../fixed/fixed-routes.component';
+import { FixedRoutesComponent, ImportedRouteDraft } from '../fixed/fixed-routes.component';
 import { VehicleBasePricingComponent } from '../settings/vehicle-base-pricing.component';
 import { OutstationPackagesComponent } from '../settings/outstation-packages.component';
 import { SeatGridComponent } from '../vehicle-seat-layouts/seat-grid.component';
@@ -60,6 +61,8 @@ interface GroupRow {
   id: number;
   name: string;
   is_active: boolean;
+  /** The city vehicle this group belongs to. null = legacy/unbound group. */
+  city_vehicle_type_id: number | null;
   route_ids: number[];
   driver_user_ids: number[];
 }
@@ -106,6 +109,7 @@ interface TabDef { key: string; label: string; count?: number; }
     ButtonComponent,
     DrawerComponent,
     IconComponent,
+    ModalComponent,
     StatusPillComponent,
     ReturnToSetupComponent,
     FixedRoutesComponent,
@@ -268,6 +272,7 @@ interface TabDef { key: string; label: string; count?: number; }
                         <span class="ws__grow"></span>
                         <tm-button variant="green" size="sm" icon="plus" (clicked)="openUnifiedGroupDrawer(v)">Manage Routes & Groups</tm-button>
                         <tm-button variant="outline" size="sm" icon="plus" (clicked)="newRouteFor(v)">Add route</tm-button>
+                        <tm-button variant="outline" size="sm" icon="upload" [disabled]="importingKml" (clicked)="openImportChoice(v)">{{ importingKml ? 'Reading…' : 'Import from My Maps' }}</tm-button>
                       </div>
 
                       <div class="gline" *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup">
@@ -282,8 +287,8 @@ interface TabDef { key: string; label: string; count?: number; }
                         <div class="gcol">
                           <span class="gcol__lbl">Routes</span>
                           <div class="gcol__body">
-                            <span class="rchip2" *ngFor="let r of routesIn(g)">
-                              <tm-icon name="map-marker" [size]="11" />
+                            <span class="rchip2" *ngFor="let r of routesIn(g)" title="Locked while in a group — remove it from the group to edit the route">
+                              <tm-icon name="lock" [size]="11" />
                               <b>{{ r.name }}</b>
                               <button type="button" class="rx" title="Remove route" (click)="ungroupRoute(g, r.id)">×</button>
                             </span>
@@ -303,7 +308,27 @@ interface TabDef { key: string; label: string; count?: number; }
                         </div>
                       </div>
 
-                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length">No route groups yet. Click Manage Routes & Groups to create a group and assign routes and drivers all at once.</div>
+                      <div class="gline gline--orphan" *ngIf="ungroupedForVehicle(v).length">
+                        <div class="gline__head">
+                          <span class="gname">Ungrouped routes</span>
+                          <span class="gmeta">{{ ungroupedForVehicle(v).length }} not in any group · editable</span>
+                        </div>
+                        <div class="gcol">
+                          <span class="gcol__lbl">Routes</span>
+                          <div class="gcol__body">
+                            <span class="rchip2 rchip2--edit" [class.rchip2--nopr]="r.flat_fare == null" *ngFor="let r of ungroupedForVehicle(v)">
+                              <button type="button" class="rchip2__edit" [title]="r.flat_fare == null ? 'Add a price to finish this route' : 'Edit this route on the map'" (click)="editRouteFor(v, r.id)">
+                                <tm-icon name="edit" [size]="11" />
+                                <b>{{ r.name }}</b>
+                                <span class="npbadge" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
+                              </button>
+                              <button type="button" class="rx add" [disabled]="r.flat_fare == null" [title]="r.flat_fare == null ? 'Add a price before grouping this route' : 'Add to a group'" (click)="openAssignDrawer(r)">+</button>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length && !ungroupedForVehicle(v).length">No route groups yet. Click Manage Routes & Groups to create a group and assign routes and drivers all at once.</div>
                     </div>
                   </td>
                 </tr>
@@ -319,7 +344,12 @@ interface TabDef { key: string; label: string; count?: number; }
         </div>
 
         <!-- Map route editor: hidden table, opens as a drawer via Add route / edit route. -->
-        <app-fixed-routes *ngIf="selected" [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="loadRoutes()"></app-fixed-routes>
+        <app-fixed-routes *ngIf="selected" [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="loadRoutes()" (editorClosed)="onRouteEditorClosed()"></app-fixed-routes>
+
+        <!-- Hidden picker for "Import from My Maps" (KML/KMZ upload) — creates. -->
+        <input #kmlInput type="file" accept=".kml,.kmz" hidden (change)="onKmlFileSelected($event)" />
+        <!-- Hidden picker for "Edit → Update from My Maps" — updates one route. -->
+        <input #editKmlInput type="file" accept=".kml,.kmz" hidden (change)="onEditKmlFileSelected($event)" />
 
         <!-- (The old tabbed editor is gone — its fares, routes, groups, layouts
              and drivers are reached from the spreadsheet cells + drawers above.) -->
@@ -638,9 +668,71 @@ interface TabDef { key: string; label: string; count?: number; }
         (cancelled)="closeLayoutDrawer()"
       ></app-seat-layout-designer>
     </div>
+
+    <!-- Edit an ungrouped route: choose to edit by hand or replace from My Maps. -->
+    <tm-modal [open]="editChoiceOpen" title="Edit route" (closed)="editChoiceOpen = false">
+      <ng-container slot="body">
+        <p class="echoice__lead">How do you want to edit <b>{{ editChoiceName }}</b>?</p>
+        <div class="echoice">
+          <button type="button" class="echoice__opt" (click)="chooseManualEdit()">
+            <span class="echoice__ic"><tm-icon name="edit" [size]="18" /></span>
+            <span class="echoice__txt">
+              <span class="echoice__t">Edit manually</span>
+              <span class="echoice__d">Open the map editor and adjust the line, stops, fare and settings by hand.</span>
+            </span>
+          </button>
+          <button type="button" class="echoice__opt" [disabled]="importingKml" (click)="chooseMyMapsEdit()">
+            <span class="echoice__ic"><tm-icon name="map" [size]="18" /></span>
+            <span class="echoice__txt">
+              <span class="echoice__t">{{ importingKml ? 'Reading…' : 'Update from Google My Maps' }}</span>
+              <span class="echoice__d">Upload the edited KML/KMZ — the line &amp; stops are replaced, fare &amp; settings kept.</span>
+            </span>
+          </button>
+        </div>
+      </ng-container>
+    </tm-modal>
+
+    <!-- Import from My Maps: single (review each) or bulk (many, no price). -->
+    <tm-modal [open]="importChoiceOpen" title="Import from Google My Maps" (closed)="importChoiceOpen = false">
+      <ng-container slot="body">
+        <p class="echoice__lead">Importing to <b>{{ importChoiceVehicle?.display_name || 'this vehicle' }}</b>.</p>
+        <div class="echoice">
+          <button type="button" class="echoice__opt" (click)="chooseSingleImport()">
+            <span class="echoice__ic"><tm-icon name="edit" [size]="18" /></span>
+            <span class="echoice__txt">
+              <span class="echoice__t">Single — review each</span>
+              <span class="echoice__d">Open each route on the map to set its stops, fare and settings before saving.</span>
+            </span>
+          </button>
+          <button type="button" class="echoice__opt" [disabled]="importingKml" (click)="chooseBulkImport()">
+            <span class="echoice__ic"><tm-icon name="upload" [size]="18" /></span>
+            <span class="echoice__txt">
+              <span class="echoice__t">{{ importingKml ? 'Importing…' : 'Bulk — import all now' }}</span>
+              <span class="echoice__d">Add every route in the file at once (name &amp; line only). They land as “Needs pricing” to finish later.</span>
+            </span>
+          </button>
+        </div>
+      </ng-container>
+    </tm-modal>
+
+    <!-- Hidden picker for "Bulk" import — creates Needs-pricing routes. -->
+    <input #bulkKmlInput type="file" accept=".kml,.kmz" hidden (change)="onBulkKmlFileSelected($event)" />
   `,
   styles: [`
     .ws { display: flex; flex-direction: column; gap: 14px; }
+    .echoice__lead { margin: 0 0 14px; color: var(--tm-text-muted); }
+    .rchip2--nopr { border-color: #ffe2a8; background: #fff7e6; }
+    .npbadge { margin-left: 6px; font-size: 10px; font-weight: 800; color: #9a6700; white-space: nowrap; }
+    .rx.add[disabled] { opacity: .4; cursor: not-allowed; }
+    .echoice { display: flex; flex-direction: column; gap: 10px; }
+    .echoice__opt { display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left; padding: 14px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg, 12px); background: var(--tm-surface); cursor: pointer; transition: border-color .15s, background .15s, transform .05s; }
+    .echoice__opt:hover:not([disabled]) { border-color: var(--tm-green, #0f7a3f); background: var(--tm-canvas-2, #eef1f5); }
+    .echoice__opt:active:not([disabled]) { transform: translateY(1px); }
+    .echoice__opt[disabled] { opacity: .6; cursor: default; }
+    .echoice__ic { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--tm-canvas-2, #eef1f5); color: var(--tm-green, #0f7a3f); }
+    .echoice__txt { display: flex; flex-direction: column; gap: 3px; }
+    .echoice__t { font-weight: 800; color: var(--tm-text); }
+    .echoice__d { font-size: 12.5px; color: var(--tm-text-muted); line-height: 1.4; }
     .ws__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .ws__head h1 { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
     .ws__city { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--tm-line); border-radius: 999px; background: var(--tm-surface); font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
@@ -996,6 +1088,11 @@ interface TabDef { key: string; label: string; count?: number; }
     .rchip2.warn { background: #fef3c7; color: #b45309; padding: 4px 8px; }
     .rchip2 .rx { width: 16px; height: 16px; border: 0; border-radius: 5px; display: grid; place-items: center; background: transparent; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; opacity: .55; }
     .rchip2 .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
+    .rchip2 .rx.add { font-size: 15px; }
+    .rchip2--edit { padding-left: 4px; background: var(--tm-canvas-2, #eef1f5); color: var(--tm-text); }
+    .rchip2__edit { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: 700; padding: 2px 5px; border-radius: 6px; cursor: pointer; }
+    .rchip2__edit b { font-weight: 700; }
+    .rchip2__edit:hover { background: rgba(0,0,0,.06); color: var(--tm-green, #16a34a); }
     .dpill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 3px; border-radius: 999px; background: var(--tm-canvas-2, #eaeef4); font-size: 12px; font-weight: 700; color: var(--tm-text); }
     .dpill .rx { width: 15px; height: 15px; border: 0; border-radius: 5px; background: transparent; color: var(--tm-text-muted); font-size: 13px; line-height: 1; cursor: pointer; opacity: .6; }
     .dpill .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
@@ -1238,7 +1335,14 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   get availableGroupsForUnifiedDrawer(): GroupRow[] {
     const v = this.targetVehicleForGroup;
     if (!v) return [];
-    return this.groupsForVehicle(v);
+    const forVehicle = this.groupsForVehicle(v);
+    // Also surface stray legacy groups (unbound + route-less) so they stay
+    // reachable to rebind or delete — saving here binds them to this vehicle.
+    const seen = new Set(forVehicle.map((g) => g.id));
+    const strays = this.groups.filter(
+      (g) => g.city_vehicle_type_id == null && !g.route_ids.length && !seen.has(g.id),
+    );
+    return [...forVehicle, ...strays];
   }
 
   get availableRoutesForUnifiedDrawer(): RouteLite[] {
@@ -1285,6 +1389,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         this.api.patch(`/admin/cities/${this.cityId}/route-groups/${id}`, {
           name,
           route_ids: this.unifiedForm.route_ids,
+          // Managing a group under a vehicle binds it to that vehicle — this also
+          // rescues stray/legacy unbound groups the moment they're saved here.
+          city_vehicle_type_id: this.targetVehicleForGroup?.id ?? null,
         }).subscribe({
           next: () => {
             this.api.put(`/admin/cities/${this.cityId}/route-groups/${id}/drivers`, {
@@ -1325,6 +1432,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       this.api.post<{ route_group: GroupRow }>(`/admin/cities/${this.cityId}/route-groups`, {
         name: newName,
         route_ids: this.unifiedForm.route_ids,
+        city_vehicle_type_id: this.targetVehicleForGroup?.id ?? null,
       }).subscribe({
         next: (res) => {
           const newId = res?.route_group?.id;
@@ -1936,7 +2044,10 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   createGroup(): void {
     if (!this.groupName.trim() || this.cityId == null || this.groupSaving) return;
     this.groupSaving = true;
-    this.api.post(`/admin/cities/${this.cityId}/route-groups`, { name: this.groupName.trim() }).subscribe({
+    this.api.post(`/admin/cities/${this.cityId}/route-groups`, {
+      name: this.groupName.trim(),
+      city_vehicle_type_id: this.selected?.id ?? null,
+    }).subscribe({
       next: () => { this.groupSaving = false; this.groupOpen = false; this.toast.success('Route group created'); this.loadGroups(); },
       error: (err) => { this.groupSaving = false; this.toast.error(err?.error?.message || 'Could not create group'); },
     });
@@ -2148,10 +2259,11 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   groupsForVehicle(v: CityVehicleRow): GroupRow[] {
     const mine = new Set(this.routesForVehicle(v).map((r) => r.id));
     return this.groups.filter((g) => {
-      if ((g as any).city_vehicle_type_id != null) {
-        return (g as any).city_vehicle_type_id === v.id;
-      }
-      return g.route_ids.length === 0 || g.route_ids.some((id) => mine.has(id));
+      // Bound groups belong to exactly one vehicle — shown there even when empty.
+      if (g.city_vehicle_type_id != null) return g.city_vehicle_type_id === v.id;
+      // Legacy unbound groups fall back to route ownership only; a route-less
+      // unbound group belongs to no vehicle (it no longer leaks onto every row).
+      return g.route_ids.some((id) => mine.has(id));
     });
   }
   ungroupedForVehicle(v: CityVehicleRow): RouteLite[] {
@@ -2191,7 +2303,195 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   // route map editor + group create, rebinding `selected` to the acted-on vehicle
   newRouteFor(v: CityVehicleRow): void { this.select(v); setTimeout(() => this.newRoute()); }
-  editRouteFor(v: CityVehicleRow, routeId: number): void { this.select(v); setTimeout(() => this.editRoute(routeId)); }
+  // ── Edit an ungrouped route: choose Manual vs update-from-My-Maps ──────────
+  editChoiceOpen = false;
+  editChoiceRouteId: number | null = null;
+  editChoiceVehicle: CityVehicleRow | null = null;
+  editChoiceName = '';
+  @ViewChild('editKmlInput') private editKmlInput?: ElementRef<HTMLInputElement>;
+
+  /** The edit pen on an ungrouped route opens a choice: edit by hand, or replace
+   *  its line & stops from a Google My Maps upload (keeping fare & settings). */
+  editRouteFor(v: CityVehicleRow, routeId: number): void {
+    this.editChoiceVehicle = v;
+    this.editChoiceRouteId = routeId;
+    this.editChoiceName = this.ungroupedForVehicle(v).find((r) => r.id === routeId)?.name ?? 'this route';
+    this.editChoiceOpen = true;
+  }
+
+  chooseManualEdit(): void {
+    const v = this.editChoiceVehicle;
+    const id = this.editChoiceRouteId;
+    this.editChoiceOpen = false;
+    if (v && id != null) { this.select(v); setTimeout(() => this.editRoute(id)); }
+  }
+
+  chooseMyMapsEdit(): void {
+    this.editChoiceOpen = false;
+    const el = this.editKmlInput?.nativeElement;
+    if (el) { el.value = ''; el.click(); }
+  }
+
+  /** Upload for the "edit → from My Maps" path: parse, then open the map editor
+   *  for THIS route with the imported line + stops, preserving fare & settings. */
+  onEditKmlFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const routeId = this.editChoiceRouteId;
+    const v = this.editChoiceVehicle;
+    if (!file || this.cityId == null || routeId == null || !v) return;
+
+    const fd = new FormData();
+    fd.append('file', file);
+    this.importingKml = true;
+    this.api.postMultipart<{ routes: ImportedRouteDraft[]; count: number }>(
+      `/admin/cities/${this.cityId}/fixed-routes/import-kml`, fd,
+    ).subscribe({
+      next: (res) => {
+        this.importingKml = false;
+        const routes = res?.routes ?? [];
+        if (!routes.length) { this.toast.error('No routes were found in that file.'); return; }
+        // If the file holds several routes, prefer the one whose name matches
+        // this route; otherwise use the first.
+        const draft = routes.find((d) => d.existing_route_id === routeId) ?? routes[0];
+        this.select(v);
+        setTimeout(() => this.fixedRoutes?.openEditFromImport(routeId, draft));
+      },
+      error: (err) => {
+        this.importingKml = false;
+        this.toast.error(err?.error?.message || 'Could not read that file.');
+      },
+    });
+  }
+
+  // ── Import from Google My Maps (KML/KMZ) ──────────────────────────────────
+  // The file is parsed server-side into draft routes; each draft is opened in the
+  // normal map editor for review and saved through the normal create flow. When
+  // a file holds several routes we queue them and open the next after each close.
+  @ViewChild('kmlInput') private kmlInput?: ElementRef<HTMLInputElement>;
+  importingKml = false;
+  private importQueue: ImportedRouteDraft[] = [];
+  private importTotal = 0;
+  private importTargetVehicle: CityVehicleRow | null = null;
+
+  // ── "Import from My Maps" → choose Single (review each) or Bulk (all now) ──
+  importChoiceOpen = false;
+  importChoiceVehicle: CityVehicleRow | null = null;
+  @ViewChild('bulkKmlInput') private bulkKmlInput?: ElementRef<HTMLInputElement>;
+
+  openImportChoice(v: CityVehicleRow): void {
+    if (this.importingKml) return;
+    this.importChoiceVehicle = v;
+    this.importChoiceOpen = true;
+  }
+
+  chooseSingleImport(): void {
+    const v = this.importChoiceVehicle;
+    this.importChoiceOpen = false;
+    if (v) this.triggerKmlImport(v);
+  }
+
+  chooseBulkImport(): void {
+    this.importChoiceOpen = false;
+    const el = this.bulkKmlInput?.nativeElement;
+    if (el) { el.value = ''; el.click(); }
+  }
+
+  /** Bulk import: create every route in the file for the chosen vehicle, with
+   *  name + line only (no stops/price) — they land as "Needs pricing". */
+  onBulkKmlFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const v = this.importChoiceVehicle;
+    if (!file || this.cityId == null || !v) return;
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('city_vehicle_type_id', String(v.id));
+    this.importingKml = true;
+    this.api.postMultipart<{ created_count: number; skipped_count: number }>(
+      `/admin/cities/${this.cityId}/fixed-routes/import-kml-bulk`, fd,
+    ).subscribe({
+      next: (res) => {
+        this.importingKml = false;
+        const created = res?.created_count ?? 0;
+        const skipped = res?.skipped_count ?? 0;
+        if (created) {
+          this.toast.success(`Imported ${created} route${created === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} existing` : ''} — add a price to finish each.`);
+        } else {
+          this.toast.info(skipped ? (skipped === 1 ? 'Route already exists' : 'Routes already exist') : 'No routes were found in that file.');
+        }
+        this.loadRoutes();
+      },
+      error: (err) => {
+        this.importingKml = false;
+        this.toast.error(err?.error?.message || 'Could not read that file.');
+      },
+    });
+  }
+
+  triggerKmlImport(v: CityVehicleRow): void {
+    if (this.importingKml) return;
+    this.importTargetVehicle = v;
+    const el = this.kmlInput?.nativeElement;
+    if (el) { el.value = ''; el.click(); }
+  }
+
+  onKmlFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file || this.cityId == null || !this.importTargetVehicle) return;
+
+    const fd = new FormData();
+    fd.append('file', file);
+    this.importingKml = true;
+    this.api.postMultipart<{ routes: ImportedRouteDraft[]; count: number }>(
+      `/admin/cities/${this.cityId}/fixed-routes/import-kml`, fd,
+    ).subscribe({
+      next: (res) => {
+        this.importingKml = false;
+        const routes = res?.routes ?? [];
+        if (!routes.length) { this.toast.error('No routes were found in that file.'); return; }
+
+        // The import button only CREATES. Any route whose name already exists is
+        // skipped (it's updated from its own Edit → "Update from My Maps"), so the
+        // button can never silently make duplicates.
+        const fresh = routes.filter((r) => !r.existing_route_id);
+        const skipped = routes.filter((r) => r.existing_route_id);
+        if (skipped.length) {
+          this.toast.info(skipped.length === 1 ? 'Route already exists' : 'Routes already exist');
+        }
+        if (!fresh.length) { return; }
+
+        this.importQueue = [...fresh];
+        this.importTotal = fresh.length;
+        this.toast.success(`Found ${fresh.length} new route${fresh.length === 1 ? '' : 's'} — review and save each one.`);
+        this.openNextImported();
+      },
+      error: (err) => {
+        this.importingKml = false;
+        this.toast.error(err?.error?.message || 'Could not read that file.');
+      },
+    });
+  }
+
+  private openNextImported(): void {
+    const draft = this.importQueue.shift();
+    if (!draft || !this.importTargetVehicle) return;
+    if (this.importTotal > 1) {
+      this.toast.info(`Reviewing route ${this.importTotal - this.importQueue.length} of ${this.importTotal}`);
+    }
+    // The "Import from My Maps" button only ever CREATES new routes. Updating an
+    // existing route from My Maps is done from the ungrouped route's edit menu.
+    this.select(this.importTargetVehicle);
+    setTimeout(() => this.fixedRoutes?.openImported(draft, false));
+  }
+
+  /** After a reviewed import is saved or cancelled, open the next queued route. */
+  onRouteEditorClosed(): void {
+    if (this.importQueue.length) setTimeout(() => this.openNextImported(), 150);
+    else { this.importTotal = 0; this.importTargetVehicle = null; }
+  }
   openGroupDrawerFor(v: CityVehicleRow): void { this.select(v); this.openGroupDrawer(); }
 
   // floating row kebab menu

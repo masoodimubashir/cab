@@ -84,6 +84,33 @@ class FixedRouteService
         });
     }
 
+    /**
+     * Create a route from a bulk My Maps import: only what the map holds (name +
+     * line + endpoints), attached to the given vehicle. No stops, no price, and
+     * inactive — it shows in that vehicle's ungrouped list as "Needs pricing"
+     * until an admin opens it, adds a fare (and stops), and saves.
+     */
+    public function createBulkRoute(City $city, int $cityVehicleTypeId, array $draft): Route
+    {
+        $attrs = $this->routeAttributes($city, [
+            'scope' => 'local',
+            'name' => $draft['name'] ?? 'Imported route',
+            'origin_name' => $draft['origin_name'] ?: 'Start',
+            'dest_name' => $draft['dest_name'] ?: 'End',
+            'origin_lat' => $draft['origin_lat'],
+            'origin_lng' => $draft['origin_lng'],
+            'dest_lat' => $draft['dest_lat'],
+            'dest_lng' => $draft['dest_lng'],
+            'path_polyline' => $draft['path'] ?? null,
+            'city_vehicle_type_id' => $cityVehicleTypeId,
+            'fare_config' => [],   // no price yet → "Needs pricing"
+            'is_active' => false,  // not bookable until priced
+        ]);
+
+        // No route_stops — stops aren't in the map; added when the admin finishes.
+        return Route::query()->create($attrs);
+    }
+
     public function updateAdminRoute(City $city, Route $route, array $data): Route
     {
         $this->availability->assertCityOwnsRoute($city, $route);
