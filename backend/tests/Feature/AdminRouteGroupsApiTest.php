@@ -64,6 +64,21 @@ class AdminRouteGroupsApiTest extends TestCase
         ]);
     }
 
+    private function makeCityVehicleType(int $cityId): int
+    {
+        $rideTypeId = DB::table('ride_types')->insertGetId([
+            'name' => 'RT ' . uniqid(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $cityId,
+            'ride_type_id' => $rideTypeId,
+            'product_kind' => 'local',
+            'display_name' => 'Veh ' . uniqid(),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
     public function test_create_group_with_routes(): void
     {
         $r1 = $this->makeRoute($this->cityId, 'R1');
@@ -195,6 +210,48 @@ class AdminRouteGroupsApiTest extends TestCase
 
         $this->putJson("/api/admin/cities/{$this->cityId}/route-groups/{$group}/drivers", ['driver_user_ids' => [$foreign->user_id]])
             ->assertStatus(422);
+    }
+
+    public function test_create_group_binds_to_a_city_vehicle(): void
+    {
+        $vehId = $this->makeCityVehicleType($this->cityId);
+
+        $res = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
+            'name' => 'Line A', 'city_vehicle_type_id' => $vehId,
+        ]);
+
+        $res->assertCreated();
+        // A bound but route-less group carries its vehicle, so it no longer
+        // has to leak onto every vehicle to be discoverable.
+        $this->assertSame($vehId, $res->json('route_group.city_vehicle_type_id'));
+        $this->assertSame(0, $res->json('route_group.route_count'));
+    }
+
+    public function test_group_vehicle_from_another_city_is_rejected(): void
+    {
+        $foreignVeh = $this->makeCityVehicleType($this->otherCityId);
+
+        $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
+            'name' => 'Bad', 'city_vehicle_type_id' => $foreignVeh,
+        ])->assertStatus(422);
+    }
+
+    public function test_rename_preserves_binding_but_explicit_rebind_updates_it(): void
+    {
+        $v1 = $this->makeCityVehicleType($this->cityId);
+        $v2 = $this->makeCityVehicleType($this->cityId);
+        $groupId = $this->postJson("/api/admin/cities/{$this->cityId}/route-groups", [
+            'name' => 'G', 'city_vehicle_type_id' => $v1,
+        ])->json('route_group.id');
+
+        // Rename / route-only save omits the field → binding is left intact.
+        $this->patchJson("/api/admin/cities/{$this->cityId}/route-groups/{$groupId}", ['name' => 'G2'])
+            ->assertOk()->assertJsonPath('route_group.city_vehicle_type_id', $v1);
+
+        // Sending the field rebinds the group.
+        $this->patchJson("/api/admin/cities/{$this->cityId}/route-groups/{$groupId}", [
+            'name' => 'G2', 'city_vehicle_type_id' => $v2,
+        ])->assertOk()->assertJsonPath('route_group.city_vehicle_type_id', $v2);
     }
 
     public function test_city_drivers_endpoint_lists_only_this_city(): void

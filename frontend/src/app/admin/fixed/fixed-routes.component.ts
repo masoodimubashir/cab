@@ -48,6 +48,14 @@ interface CityCommercialSettings {
 
 interface LatLng { lat: number; lng: number; }
 
+/** One real-road route Google returned between the start and the destination. */
+interface RouteAlt {
+  path: LatLng[];
+  summary: string;
+  distanceText: string;
+  durationText: string;
+}
+
 interface FixedNoShowSettings {
   stop_arrival_radius_m: number;
   driver_missed_stop_grace_minutes: number;
@@ -89,6 +97,25 @@ interface FixedRouteRow {
 
 interface VehicleTypeOption { id: number; display_name: string; max_people: number; luggage_capacity: number; }
 interface CityOption { id: number; name: string; }
+
+/** A route parsed from a Google My Maps KML/KMZ export, awaiting review + save. */
+export interface ImportedRouteDraft {
+  name: string;
+  origin_name: string;
+  origin_lat: number;
+  origin_lng: number;
+  dest_name: string;
+  dest_lat: number;
+  dest_lng: number;
+  path: number[][];
+  stops: { name: string; lat: number; lng: number }[];
+  // Set when a same-name fixed route already exists in the city: the client can
+  // update it (replace line + stops, keep fare/vehicle/settings) instead of
+  // creating a duplicate. `existing` carries that route's current config to
+  // pre-fill the preserved fields.
+  existing_route_id?: number | null;
+  existing?: FixedRouteRow | null;
+}
 
 const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
   { label: 'Local (in-city)', value: 'local' },
@@ -240,7 +267,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <span class="rt-tool__dot b"></span> Destination
           </button>
           <button class="rt-tool" [class.on]="tool === 'path'" [disabled]="!endpointsSet" (click)="setTool('path')"
-            title="Draw the route path (click map or drag green line directly)">
+            title="Draw the route path from start to destination">
             <tm-icon name="road" [size]="13" /> Draw path
           </button>
           <button class="rt-tool" [class.on]="tool === 'stop'" [disabled]="!endpointsSet" (click)="setTool('stop')"
@@ -248,10 +275,16 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <tm-icon name="map-marker" [size]="13" /> Stops
           </button>
           <div class="rt-tools__sep"></div>
-          <button class="rt-tool ghost" (click)="resnapPath()" [disabled]="!roadPath.length && !form.path.length" title="Re-snap path to roads via Google Directions">
-            <tm-icon name="refresh" [size]="13" /> Snap to road
+          <button class="rt-tool" [class.on]="tool === 'path' && pathMode === 'road'" [disabled]="!endpointsSet" (click)="showRouteOptions()"
+            title="Show every real-road route Google has between the start and the destination">
+            <tm-icon name="road" [size]="13" /> Route options
           </button>
-          <button class="rt-tool ghost" (click)="undoPath()" [disabled]="!form.path.length" title="Undo last path point">
+          <button class="rt-tool" [class.on]="tool === 'path' && pathMode === 'free'" [disabled]="!endpointsSet" (click)="setPathMode('free')"
+            title="Draw your own path by hand, ignoring roads">
+            <tm-icon name="edit" [size]="13" /> Free draw
+          </button>
+          <div class="rt-tools__sep"></div>
+          <button class="rt-tool ghost" *ngIf="pathMode === 'free'" (click)="undoPath()" [disabled]="!form.path.length" title="Undo last path point">
             <tm-icon name="chevron-left" [size]="13" /> Undo
           </button>
           <button class="rt-tool ghost" (click)="clearPath()" [disabled]="!hasRouteDraftData" title="Clear path and route details">Clear path</button>
@@ -260,6 +293,30 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
         <div class="rt-hint">
           <tm-icon name="pin" [size]="14" />
           <span>{{ toolHint }}</span>
+        </div>
+
+        <div class="rt-alts" *ngIf="tool === 'path' && pathMode === 'road' && (altsLoading || routeAlts.length)">
+          <div class="rt-alts__head">
+            <span>Route options</span>
+            <small *ngIf="routeAlts.length">{{ routeAlts.length }} found</small>
+          </div>
+          <p class="rt-alts__loading" *ngIf="altsLoading">Finding every road route…</p>
+          <button
+            type="button" class="rt-alt"
+            *ngFor="let a of routeAlts; let i = index"
+            [class.on]="selectedAltIdx === i"
+            (click)="selectAlternative(i)"
+            (mouseenter)="hoverAlternative(i)"
+            (mouseleave)="hoverAlternative(null)"
+          >
+            <span class="rt-alt__bar"></span>
+            <span class="rt-alt__txt">
+              <b>{{ a.summary || 'Route ' + (i + 1) }}</b>
+              <small>{{ a.distanceText }}<ng-container *ngIf="a.durationText"> · {{ a.durationText }}</ng-container></small>
+            </span>
+            <tm-icon *ngIf="selectedAltIdx === i" name="check" [size]="14" />
+          </button>
+          <p class="rt-alts__hint" *ngIf="routeAlts.length">Hover to preview, click to use it. All options follow real roads.</p>
         </div>
 
         <div class="rt-steps">
@@ -498,12 +555,12 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .icon-btn:hover { background: var(--tm-ink); color: #fff; }
     .icon-btn--danger:hover { background: var(--tm-danger, #ef4444); }
     .rt-x { font-size: 20px; line-height: 1; font-weight: 700; }
-    .rt-editor { position: fixed; inset: 0; height: 100dvh; overflow: hidden; z-index: 1000; display: grid; grid-template-columns: 1fr 620px; background: var(--tm-canvas); animation: rtFade 0.18s ease; }
+    .rt-editor { position: fixed; inset: 0; height: 100dvh; overflow: hidden; z-index: 1000; display: grid; grid-template-columns: minmax(0, 1fr) 440px; background: var(--tm-canvas); animation: rtFade 0.18s ease; }
     @keyframes rtFade { from { opacity: 0; } to { opacity: 1; } }
     /* Drawer mode — a 90%-wide panel sliding in from the right over a scrim,
        instead of the full-screen takeover. Used inside the vehicle workspace. */
     .rt-scrim { position: fixed; inset: 0; z-index: 999; background: rgba(8,12,16,.5); animation: rtFade .18s ease; }
-    .rt-editor--drawer { left: auto; right: 0; width: 92vw; max-width: 1500px; box-shadow: -10px 0 40px rgba(8,12,16,.28); animation: rtSlide .2s ease; }
+    .rt-editor--drawer { left: auto; right: 0; width: 94vw; max-width: 1600px; box-shadow: -10px 0 40px rgba(8,12,16,.28); animation: rtSlide .2s ease; }
     @keyframes rtSlide { from { transform: translateX(100%); } to { transform: none; } }
     @media (prefers-reduced-motion: reduce) { .rt-editor, .rt-editor--drawer, .rt-scrim { animation: none; } }
     .rt-map-wrap { position: relative; overflow: hidden; }
@@ -523,6 +580,19 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .rt-steps span { min-height: 30px; display: flex; align-items: center; padding: 0 10px; border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 850; }
     .rt-steps span.on { background: #ecfdf5; color: #15803d; outline: 1px solid #86efac; }
     .rt-steps span.done { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .rt-alts { position: absolute; top: 236px; right: 14px; width: 268px; max-height: calc(100dvh - 260px); overflow-y: auto; display: grid; gap: 6px; padding: 10px; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgba(13,27,42,0.16); }
+    .rt-alts__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; color: var(--tm-text); }
+    .rt-alts__head small { font-size: 10px; font-weight: 800; color: var(--tm-text-muted); letter-spacing: 0; text-transform: none; }
+    .rt-alts__loading { margin: 0; font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+    .rt-alt { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 10px; border: 1.5px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); cursor: pointer; text-align: left; font-family: inherit; }
+    .rt-alt:hover { border-color: #86efac; background: #f0fdf4; }
+    .rt-alt.on { border-color: var(--tm-green); background: var(--tm-success-bg); }
+    .rt-alt__bar { width: 4px; align-self: stretch; min-height: 26px; border-radius: 3px; background: #9aa5b1; flex: none; }
+    .rt-alt.on .rt-alt__bar { background: #12B35B; }
+    .rt-alt__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .rt-alt__txt b { font-size: 12.5px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rt-alt__txt small { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
+    .rt-alts__hint { margin: 2px 0 0; font-size: 10.5px; font-weight: 600; line-height: 1.35; color: var(--tm-text-muted); }
     .rt-panel { display: flex; flex-direction: column; background: var(--tm-surface); border-left: 1px solid var(--tm-line); height: 100%; min-height: 0; overflow: hidden; }
     .rt-panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--tm-line); }
     .rt-panel__head h2 { margin: 0; font-size: 17px; font-weight: 800; color: var(--tm-text); }
@@ -607,6 +677,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   @Input() drawerMode = false;
   /** Fires whenever the route list is (re)loaded, so hosts can refresh counts. */
   @Output() routesChanged = new EventEmitter<void>();
+  /** Fires when the map editor closes (saved or cancelled), so hosts can advance
+   *  a queued flow such as reviewing several imported routes one after another. */
+  @Output() editorClosed = new EventEmitter<void>();
   routes: FixedRouteRow[] = [];
   vehicleTypes: VehicleTypeOption[] = [];
   cities: CityOption[] = [];
@@ -665,6 +738,16 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private mapInitTries = 0;
   private pathLocked = false;
   roadPath: LatLng[] = [];
+  /** 'road' = pick one of the real-road routes Google returns between A and B.
+   *  'free' = operator draws any path; straight segments between clicked points. */
+  pathMode: 'road' | 'free' = 'road';
+  /** Every road route Google found between the start and the destination. */
+  routeAlts: RouteAlt[] = [];
+  selectedAltIdx: number | null = null;
+  hoveredAltIdx: number | null = null;
+  altsLoading = false;
+  private altPolylines: google.maps.Polyline[] = [];
+  private altSeq = 0;
 
   private subs: Subscription[] = [];
 
@@ -720,7 +803,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     switch (this.tool) {
       case 'origin': return 'Click to set the START — it snaps to the nearest road and auto-names from the landmark.';
       case 'dest': return 'Click to set the DESTINATION — it snaps to the nearest road and auto-names from the landmark.';
-      case 'path': return 'Click along the way or drag the green route line to shape your path on roads. Use "Snap to road" to auto-align.';
+      case 'path': return this.pathMode === 'free'
+        ? 'Free draw: click along the map to drop points — straight lines connect them, ignoring roads. Drag any point on the line to fine-tune; right-click a point to delete it.'
+        : 'Pick a route: these are the real road routes Google has between A and B. Click one on the map or in the list to use it.';
       case 'stop': return 'Click to drop a STOP — it snaps to the nearest road and auto-names from the landmark.';
       default: return 'Pick a tool, then click the map.';
     }
@@ -905,6 +990,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.form = this.blankForm();
     this.roadPath = [];
     this.pathLocked = false;
+    this.pathMode = 'road';
+    this.clearAlternatives();
     this.directionsDisabled = false;
     this.tool = 'origin';
     this.open = true;
@@ -962,6 +1049,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.removedStops = (r.stops || []).slice(1, -1).filter((s) => this.isRemovedStop(s)).map((s) => ({ ...s }));
     this.roadPath = (r.path_polyline || []).map((p) => ({ lat: p[0], lng: p[1] }));
     this.pathLocked = this.roadPath.length > 0;
+    this.pathMode = 'road';
+    this.clearAlternatives();
     this.directionsDisabled = false;
     this.tool = 'path';
     this.open = true;
@@ -973,6 +1062,100 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.removedStopsModalOpen = false;
     this.selectedRemovedStopIndexes.clear();
     this.teardownMap();
+    this.editorClosed.emit();
+  }
+
+  /** Open the editor pre-filled from a Google My Maps import for review.
+   *
+   *  - Create (asUpdate = false): a brand-new route (editingId = null); fare,
+   *    vehicle and stops are left for the admin to complete.
+   *  - Update (asUpdate = true) when the draft matched a same-name route: the
+   *    existing route's fare / vehicle / settings are pre-filled and preserved,
+   *    while the LINE and STOPS are replaced from My Maps. Saving PATCHes the
+   *    existing route (stops without ids are re-created; old ones are retired).
+   *  Nothing is saved until the admin hits Save/Create. */
+  openImported(draft: ImportedRouteDraft, asUpdate = false): void {
+    const existing = asUpdate && draft.existing_route_id ? draft.existing ?? null : null;
+    this.editingId = existing ? draft.existing_route_id ?? null : null;
+    this.originalStopBookable.clear();
+    this.removedStops = [];
+    this.selectedRemovedStopIndexes.clear();
+    this.restoredStopIds.clear();
+    this.removedStopsModalOpen = false;
+
+    if (existing) {
+      // Preserve the existing route's fare / vehicle / settings; the geometry
+      // (name, from/to, line, stops) is overwritten from the draft below.
+      const fc = existing.fare_config || ({ seat_fare: null, commission_percent: null, fixed_commission: null } as FareConfig);
+      const ns = existing.fixed_settings_json || {};
+      this.form = {
+        ...this.blankForm(),
+        scope: existing.scope,
+        origin_city_id: existing.origin_city_id,
+        dest_city_id: existing.dest_city_id,
+        seat_fare: fc.seat_fare ?? existing.flat_fare,
+        commission_percent: fc.commission_percent ?? (this.commissionType === 'percent' ? this.cityCommercials.commission_percent : null),
+        fixed_commission: fc.fixed_commission ?? (this.commissionType === 'fixed' ? this.cityCommercials.fixed_commission : null),
+        city_vehicle_type_id: existing.city_vehicle_type_id,
+        booking_window_hours: existing.booking_window_hours,
+        max_seats_per_booking: existing.max_seats_per_booking,
+        waiting_time_per_stop_minutes: existing.waiting_time_per_stop_minutes,
+        luggage_surcharge_amount: existing.luggage_surcharge_amount,
+        max_luggage_per_vehicle: existing.max_luggage_per_vehicle ?? 0,
+        stop_arrival_radius_m: Number(ns.stop_arrival_radius_m ?? 150),
+        driver_missed_stop_grace_minutes: Number(ns.driver_missed_stop_grace_minutes ?? 3),
+        customer_pickup_radius_m: Number(ns.customer_pickup_radius_m ?? 150),
+        vehicle_approaching_alert_radius_m: Number(ns.vehicle_approaching_alert_radius_m ?? 500),
+        customer_grace_minutes: Number(ns.customer_grace_minutes ?? 2),
+        boarding_confirmation_mode: (ns.boarding_confirmation_mode ?? 'driver_only') as FixedNoShowSettings['boarding_confirmation_mode'],
+        requires_prepaid: existing.requires_prepaid,
+        is_active: existing.is_active,
+        sort_order: existing.sort_order,
+      };
+    } else {
+      this.form = this.blankForm();
+    }
+
+    // Geometry always comes from the My Maps draft. Null the origin/dest stop ids
+    // so the stops are re-created fresh (old ones are retired by the backend).
+    this.form.origin_stop_id = null;
+    this.form.dest_stop_id = null;
+    this.form.name = draft.name || (existing?.name ?? '');
+    this.form.origin_name = draft.origin_name || '';
+    this.form.origin_lat = draft.origin_lat;
+    this.form.origin_lng = draft.origin_lng;
+    this.form.dest_name = draft.dest_name || '';
+    this.form.dest_lat = draft.dest_lat;
+    this.form.dest_lng = draft.dest_lng;
+    this.form.stops = (draft.stops || []).map((s) => ({
+      name: s.name || '', lat: s.lat, lng: s.lng,
+      is_pickup: true, is_drop: true, is_active: true,
+      is_temporarily_unavailable: false, unavailable_reason: null,
+    }));
+    this.roadPath = (draft.path || []).map((p) => ({ lat: p[0], lng: p[1] }));
+    this.pathLocked = this.roadPath.length > 0;
+    this.pathMode = 'road';
+    this.clearAlternatives();
+    this.directionsDisabled = false;
+    this.tool = 'path';
+    this.open = true;
+    this.scheduleMapInit();
+  }
+
+  /** Update an EXISTING route from a Google My Maps import (the "edit → from My
+   *  Maps" path): the target route is known, so its name, fare, vehicle and
+   *  settings are kept while the line + stops are replaced from the draft. */
+  openEditFromImport(routeId: number, draft: ImportedRouteDraft): void {
+    const row = this.routes.find((r) => r.id === routeId) ?? null;
+    this.openImported(
+      {
+        ...draft,
+        name: row?.name ?? draft.name, // keep the route's own name/identity
+        existing_route_id: routeId,
+        existing: row,
+      },
+      !!row,
+    );
   }
 
   onScopeChange(): void {
@@ -1071,6 +1254,153 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     }
     this.tool = t;
     this.redrawPath();
+    this.renderAlternatives();
+    if (t === 'path' && this.pathMode === 'road' && !this.routeAlts.length) this.fetchRouteAlternatives();
+  }
+
+  /** Toggle between picking a Google road route and free-hand drawing. */
+  setPathMode(mode: 'road' | 'free'): void {
+    if (!this.endpointsSet) { this.toast.error('Set the start and destination first.'); return; }
+    if (this.tool !== 'path') this.tool = 'path';
+    if (this.pathMode === mode) { this.redrawPath(); return; }
+    this.pathMode = mode;
+    if (mode === 'free') {
+      this.clearAlternatives();
+      this.pathLocked = true;
+      this.rebuildFreePath();
+      this.toast.success('Free draw on — click along the map to draw any path. Drag points on the line to adjust.');
+    } else {
+      this.showRouteOptions();
+    }
+    this.redrawPath();
+  }
+
+  /** Ask Google for every road route between A and B and show them as pickable options. */
+  showRouteOptions(): void {
+    if (!this.endpointsSet) { this.toast.error('Set the start and destination first.'); return; }
+    this.tool = 'path';
+    this.pathMode = 'road';
+    this.form.path = []; // options are computed from the endpoints only
+    this.fetchRouteAlternatives();
+  }
+
+  private fetchRouteAlternatives(): void {
+    if (!this.endpointsSet || !this.directionsSvc || this.directionsDisabled) return;
+    const seq = ++this.altSeq;
+    this.altsLoading = true;
+    const origin = { lat: this.form.origin_lat as number, lng: this.form.origin_lng as number };
+    const destination = { lat: this.form.dest_lat as number, lng: this.form.dest_lng as number };
+    this.directionsSvc.route(
+      { origin, destination, travelMode: google.maps.TravelMode.DRIVING, provideRouteAlternatives: true },
+      (res: any, status: any) => {
+        if (seq !== this.altSeq || !this.open) return;
+        this.altsLoading = false;
+        if (status !== 'OK' || !res?.routes?.length) {
+          if (status === 'REQUEST_DENIED') {
+            this.directionsDisabled = true;
+            this.toast.error('Road routing unavailable (enable Directions API).');
+          } else if (status === 'ZERO_RESULTS') {
+            this.toast.error('Google has no road route between these two points.');
+          }
+          this.clearAlternatives();
+          return;
+        }
+        this.routeAlts = (res.routes as any[])
+          .map((r) => ({
+            path: (r.overview_path || []).map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() })),
+            summary: r.summary || '',
+            distanceText: r.legs?.[0]?.distance?.text || '',
+            durationText: r.legs?.[0]?.duration?.text || '',
+          }))
+          .filter((a: RouteAlt) => a.path.length > 1);
+        if (!this.routeAlts.length) { this.clearAlternatives(); return; }
+        this.applyAlternative(0);
+        this.renderAlternatives();
+        this.toast.success(
+          this.routeAlts.length === 1
+            ? 'Google has one road route between these points.'
+            : `${this.routeAlts.length} road routes found — pick the one you want.`,
+        );
+      },
+    );
+  }
+
+  /** Make option `i` the saved route. */
+  private applyAlternative(i: number): void {
+    const alt = this.routeAlts[i];
+    if (!alt) return;
+    this.selectedAltIdx = i;
+    this.roadPath = alt.path.slice();
+    this.pathLocked = true;
+    this.redrawPath();
+  }
+
+  selectAlternative(i: number): void {
+    if (i === this.selectedAltIdx) return;
+    this.applyAlternative(i);
+    this.renderAlternatives();
+  }
+
+  hoverAlternative(i: number | null): void {
+    if (this.hoveredAltIdx === i) return;
+    this.hoveredAltIdx = i;
+    this.renderAlternatives();
+  }
+
+  /** Draw the non-selected options as grey clickable lines behind the chosen green one. */
+  private renderAlternatives(): void {
+    this.altPolylines.forEach((p) => p.setMap(null));
+    this.altPolylines = [];
+    if (!this.map || this.pathMode !== 'road' || this.tool !== 'path') return;
+    this.routeAlts.forEach((alt, i) => {
+      if (i === this.selectedAltIdx) return;
+      const hot = this.hoveredAltIdx === i;
+      const line = new google.maps.Polyline({
+        path: alt.path, map: this.map!, geodesic: true, clickable: true,
+        strokeColor: hot ? '#0ea5e9' : '#94a3b8',
+        strokeOpacity: hot ? 0.95 : 0.65,
+        strokeWeight: hot ? 6 : 4,
+        zIndex: hot ? 3 : 1,
+      });
+      line.addListener('click', () => this.selectAlternative(i));
+      line.addListener('mouseover', () => this.hoverAlternative(i));
+      line.addListener('mouseout', () => this.hoverAlternative(null));
+      this.altPolylines.push(line);
+    });
+  }
+
+  private clearAlternatives(): void {
+    this.altSeq++;
+    this.altsLoading = false;
+    this.routeAlts = [];
+    this.selectedAltIdx = null;
+    this.hoveredAltIdx = null;
+    this.altPolylines.forEach((p) => p.setMap(null));
+    this.altPolylines = [];
+  }
+
+  /** Free mode: the saved line is exactly origin → clicked points → destination, straight. */
+  private rebuildFreePath(): void {
+    const pts: LatLng[] = [];
+    if (this.form.origin_lat != null) pts.push({ lat: this.form.origin_lat, lng: this.form.origin_lng as number });
+    pts.push(...this.form.path);
+    if (this.form.dest_lat != null) pts.push({ lat: this.form.dest_lat, lng: this.form.dest_lng as number });
+    this.roadPath = pts;
+    this.redrawPath();
+  }
+
+  /** Free mode: keep form.path/endpoints in sync when the editable line is dragged. */
+  private syncFreeFromPolyline(polyPath: google.maps.MVCArray<google.maps.LatLng>): void {
+    const arr = polyPath.getArray();
+    this.roadPath = arr.map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
+    if (arr.length < 2) return;
+    const first = arr[0], last = arr[arr.length - 1];
+    this.form.origin_lat = first.lat(); this.form.origin_lng = first.lng();
+    this.form.dest_lat = last.lat(); this.form.dest_lng = last.lng();
+    this.form.path = arr.slice(1, -1).map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
+    this.pathLocked = true;
+    this.redrawOrigin();
+    this.redrawDest();
   }
 
   private scheduleMapInit(): void {
@@ -1147,14 +1477,17 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     }
 
     if (this.tool === 'path') {
-      if (this.form.path.length >= 23) { this.toast.error('Up to 23 path points.'); return; }
-      const p = await this.snapPoint({ lat, lng });
-      if (!this.open) return;
-      const v = this.validatePlacement(p.lat, p.lng, 'path');
-      if (!v.ok) { this.toast.error(v.msg!); return; }
-      this.pathLocked = false;
-      this.form.path.push(p);
-      this.recomputeRoadPath();
+      if (this.pathMode === 'free') {
+        if (this.form.path.length >= 300) { this.toast.error('This path already has the maximum number of points.'); return; }
+        const v = this.validatePlacement(lat, lng, 'path');
+        if (!v.ok) { this.toast.error(v.msg!); return; }
+        this.form.path.push({ lat, lng }); // exact click — no road snapping
+        this.pathLocked = true;
+        this.rebuildFreePath();
+        return;
+      }
+      // Road mode needs no map clicks — the operator picks a ready-made Google route.
+      this.toast.error('Pick one of the route options on the right, or switch to Free draw to draw your own.');
       return;
     }
     if (this.tool === 'stop') {
@@ -1217,6 +1550,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   private recomputeRoadPath(): void {
+    if (this.pathMode === 'free') { this.rebuildFreePath(); return; }
+    // Road mode is "pick one of Google's routes" — as soon as both ends exist,
+    // (re)fetch the options rather than snapping a hand-built waypoint list.
+    if (this.endpointsSet && !this.form.path.length) { this.fetchRouteAlternatives(); return; }
     if (this.pathLocked) { this.redrawPath(); return; }
     const seq = ++this.routeSeq;
     const pts: LatLng[] = [];
@@ -1450,25 +1787,33 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
     const line = this.roadPath.length ? this.roadPath : this.form.path;
     if (line.length) {
-      const isEditable = this.tool === 'path';
+      // Only the hand-drawn path gets vertex handles; a picked Google route is
+      // shown as-is so the operator swaps options instead of nudging 300 points.
+      const isEditable = this.tool === 'path' && this.pathMode === 'free';
       this.pathLine = new google.maps.Polyline({
         path: line, map: this.map, geodesic: true,
-        strokeColor: '#12B35B', strokeOpacity: 0.95, strokeWeight: 5,
-        editable: isEditable,
+        strokeColor: '#12B35B', strokeOpacity: 0.95, strokeWeight: 6,
+        editable: isEditable, zIndex: 5,
       });
 
       if (isEditable && this.pathLine) {
         const polyPath = this.pathLine.getPath();
-        const updateFromPolyline = () => {
-          const arr = polyPath.getArray();
-          this.roadPath = arr.map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
-          this.pathLocked = true;
-        };
+        const updateFromPolyline = this.pathMode === 'free'
+          ? () => this.syncFreeFromPolyline(polyPath)
+          : () => {
+              const arr = polyPath.getArray();
+              this.roadPath = arr.map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
+              this.pathLocked = true;
+            };
         google.maps.event.addListener(polyPath, 'set_at', updateFromPolyline);
         google.maps.event.addListener(polyPath, 'insert_at', updateFromPolyline);
         google.maps.event.addListener(polyPath, 'remove_at', updateFromPolyline);
       }
     }
+    // Road mode shows draggable dots for each clicked waypoint. Free mode relies on
+    // the editable line's own vertex handles (drag to move, drag midpoint to insert,
+    // right-click to delete) so we don't render duplicate handles on top of them.
+    if (this.pathMode === 'free') return;
     this.form.path.forEach((p, i) => {
       const dot = new google.maps.Marker({
         position: p, map: this.map!, draggable: true,
@@ -1587,6 +1932,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.form = this.blankForm();
     this.roadPath = [];
     this.pathLocked = false;
+    this.pathMode = 'road';
+    this.clearAlternatives();
     this.directionsDisabled = false;
     this.tool = 'origin';
     this.redrawOrigin();
@@ -1620,6 +1967,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.pathDots.forEach((m) => m.setMap(null)); this.pathDots = [];
     this.stopMarkers.forEach((m) => m.setMap(null)); this.stopMarkers = [];
     this.boundaryPoly?.setMap(null); this.boundaryPoly = null;
+    this.clearAlternatives();
     this.map = null; this.geocoder = null; this.directionsSvc = null; this.placesSvc = null;
     this.roadPath = [];
   }

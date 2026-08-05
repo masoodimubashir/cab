@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'city_id',
-    'chat_enabled',
     'show_region_specific_fare',
     'show_vehicle_make_model',
     'allowed_driver_payment_modes',
@@ -60,7 +59,6 @@ class CitySetting extends Model
     protected $table = 'city_settings';
 
     protected $casts = [
-        'chat_enabled' => 'boolean',
         'show_region_specific_fare' => 'boolean',
         'show_vehicle_make_model' => 'boolean',
         'allowed_driver_payment_modes' => 'array',

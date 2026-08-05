@@ -120,7 +120,10 @@ class FixedBookingService
         return [
             'id' => $reservation->id,
             'route_id' => $reservation->route_id,
-            'route_name' => $reservation->route?->name,
+            // Frozen at booking time so renaming the route never changes the
+            // name shown on past rides; falls back to the live name for any
+            // legacy row without a snapshot.
+            'route_name' => $reservation->route_name ?: $reservation->route?->name,
             'scope' => $reservation->route?->scope,
             'route_departure_id' => $reservation->route_departure_id,
             'trip_id' => $departure?->trip_id,

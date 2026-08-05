@@ -86,6 +86,7 @@ class SeatReservationService
                 'route_departure_id' => $dep->id,
                 'trip_id' => $dep->trip_id,
                 'route_id' => $route->id,
+                'route_name' => $route->name,
                 'customer_id' => $customer->id,
                 'seats' => $seats,
                 'booking_channel' => $channel,
