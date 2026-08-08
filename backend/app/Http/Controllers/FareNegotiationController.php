@@ -98,16 +98,14 @@ class FareNegotiationController extends Controller
             }
         }
 
-        // City-level settings — payment modes feed the pay screen, and
-        // show_vehicle_make_model gates whether the rider sees the driver's
-        // car make/model on the trip screen (default ON when no row exists).
+        // Payment methods are a global operator policy now (Operator Settings →
+        // Payments), so they no longer come off the city row. City settings are
+        // still read for show_vehicle_make_model, which gates whether the rider
+        // sees the driver's car make/model (default ON when no row exists).
         $citySetting = \App\Models\CitySetting::query()
             ->where('city_id', $trip->city_id)
             ->first();
-        $cityModes = $citySetting?->allowed_driver_payment_modes;
-        $cityPaymentModes = is_array($cityModes) && $cityModes
-            ? array_values(array_intersect($cityModes, ['CASH', 'RAZORPAY']))
-            : ['RAZORPAY'];
+        $cityPaymentModes = array_map('strtoupper', $paymentModeService->operatorModes());
         $showVehicleMakeModel = $citySetting ? (bool) $citySetting->show_vehicle_make_model : true;
 
         // Per-(city, kind) cancel-block radius so the rider's app can hide the
@@ -122,9 +120,9 @@ class FareNegotiationController extends Controller
             'negotiation' => $negotiation,
             'city_payment_modes' => $cityPaymentModes,
             'cancel_block_radius_m' => $cancelBlockRadiusM,
-            // Authoritative list the customer can actually pay with — city cap
-            // ∩ driver-effective modes (driver follows the city when the
-            // operator owns payment policy). The pay endpoints enforce the same.
+            // Authoritative list the customer can actually pay with — operator
+            // policy ∩ driver-effective modes (driver follows the operator when
+            // the operator owns payment policy). The pay endpoints enforce the same.
             'available_payment_methods' => $paymentModeService->allowedForTrip($trip),
             // Per-city toggle: hide the driver's make/model from the rider when off.
             'show_vehicle_make_model' => $showVehicleMakeModel,
@@ -162,7 +160,7 @@ class FareNegotiationController extends Controller
         $commission = $trip->commission_amount !== null
             ? (float) $trip->commission_amount
             : (float) app(\App\Services\CommissionSettlementService::class)
-                ->commissionForFare($trip->city_id, $fare, (float) ($trip->toll_amount ?? 0))['amount'];
+                ->commissionForFare($trip->city_vehicle_type_id, $fare, (float) ($trip->toll_amount ?? 0))['amount'];
 
         $paid = (float) \App\Models\Payment::query()
             ->where('trip_id', $trip->id)

@@ -6,6 +6,7 @@ import { FixedBookPage } from './fixed-book.page';
 import { FixedBookPageRoutingModule } from './fixed-book-routing.module';
 import { SeatGridComponent } from './seat-grid.component';
 import { HoldTimerComponent } from './hold-timer.component';
+import { PaymentMethodModalComponent } from '../../shared/payment-method-modal.component';
 
 @NgModule({
   imports: [
@@ -15,6 +16,7 @@ import { HoldTimerComponent } from './hold-timer.component';
     FixedBookPageRoutingModule,
     SeatGridComponent,
     HoldTimerComponent,
+    PaymentMethodModalComponent,
   ],
   declarations: [FixedBookPage],
 })

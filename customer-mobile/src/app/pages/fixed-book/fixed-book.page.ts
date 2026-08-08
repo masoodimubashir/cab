@@ -8,6 +8,7 @@ import { FixedCustomerLocationService } from '../../core/fixed-customer-location
 import { GeolocationService } from '../../core/geolocation.service';
 import { RealtimeService, TripLocationPayload } from '../../core/realtime.service';
 import { PlacesService } from '../../core/places.service';
+import { PaymentChoice } from '../../shared/payment-method-modal.component';
 
 interface FixedStop {
   id: number;
@@ -191,6 +192,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
   couponError: string | null = null;
   applyingCoupon = false;
   hold: SeatHold | null = null;
+  /** Shared payment-method sheet (Online / GPay / Cash) shown before booking. */
+  paymentModalOpen = false;
   confirmation: FixedReservation | null = null;
   activeBookings: FixedReservation[] = [];
   liveTrackingActive = false;
@@ -1023,9 +1026,31 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   confirm(testPayment = false): void {
     if (!this.canConfirm || !this.selectedDeparture) return;
+    // The dev/test path skips the chooser and pays online in full.
+    if (testPayment) {
+      this.createHoldAndPay('online', true);
+      return;
+    }
+    // Real bookings pick a method first (Online / GPay / Cash).
+    this.paymentModalOpen = true;
+  }
+
+  /** Chosen from the shared payment sheet — hold the seats tagged with the
+   *  method (cash charges only the deposit online), then run its payment. */
+  onFixedPayMethod(method: PaymentChoice): void {
+    this.paymentModalOpen = false;
+    this.createHoldAndPay(method, false);
+  }
+
+  private createHoldAndPay(method: PaymentChoice, testPayment: boolean): void {
+    if (!this.canConfirm || !this.selectedDeparture) return;
     this.booking = true;
     this.hold = null;
-    this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', this.bookingPayload(false), { 'Idempotency-Key': this.uuid() }).subscribe({
+    const payload = {
+      ...this.bookingPayload(false),
+      payment_method: method === 'cash' ? 'cash' : 'razorpay',
+    };
+    this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', payload, { 'Idempotency-Key': this.uuid() }).subscribe({
       next: (res) => {
         this.hold = res?.hold ?? null;
         if (!this.hold) {
@@ -1036,7 +1061,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
         if (testPayment) {
           this.confirmHoldTestPayment(this.hold);
         } else {
-          void this.startRazorpayPayment(this.hold);
+          void this.startRazorpayPayment(this.hold, method);
         }
       },
       error: async (err) => {
@@ -1046,7 +1071,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     });
   }
 
-  private async startRazorpayPayment(hold: SeatHold): Promise<void> {
+  private async startRazorpayPayment(hold: SeatHold, method: PaymentChoice = 'online'): Promise<void> {
     if (typeof Razorpay === 'undefined') {
       this.booking = false;
       await this.showToast('Payment library not loaded. Check your connection.');
@@ -1076,6 +1101,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
         name: user?.name || '',
         email: user?.email || '',
         contact: user?.phone || '',
+        // GPay → open Razorpay straight on UPI (still lets the user switch).
+        ...(method === 'gpay' ? { method: 'upi' } : {}),
       },
       theme: { color: '#000000' },
       handler: (resp: {

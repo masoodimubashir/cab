@@ -28,6 +28,7 @@ class RefundRegisterService
     public function __construct(
         private readonly NotificationCenter $notifier,
         private readonly FixedBookingEventService $fixedEvents,
+        private readonly CashDepositService $cashDeposit,
     ) {}
 
     /* ------------------------------------------------------------------ */
@@ -277,6 +278,12 @@ class RefundRegisterService
         $tripLabel = ($r->route?->name ?: 'Fixed route')
             . ($board && $drop ? " ({$board} → {$drop})" : '');
 
+        [$cashDeposit, $cashBalance] = $this->cashSplit(
+            (string) $r->payment_method,
+            (float) $r->fare_amount,
+            $r->refund_amount !== null ? (float) $r->refund_amount : null,
+        );
+
         return $this->baseRow(
             module: 'fixed',
             id: $r->id,
@@ -289,6 +296,8 @@ class RefundRegisterService
             fareAmount: (float) $r->fare_amount,
             refundStatus: (string) $r->refund_status,
             refundAmount: $r->refund_amount,
+            cashDeposit: $cashDeposit,
+            cashBalance: $cashBalance,
             refundMethod: $r->refund_method,
             refundReference: $r->refund_reference,
             refundNote: $r->refund_note,
@@ -306,6 +315,12 @@ class RefundRegisterService
                 ? ' (' . $this->shortPlace($b->pickup_address) . ' → ' . $this->shortPlace($b->drop_address) . ')'
                 : '');
 
+        [$cashDeposit, $cashBalance] = $this->cashSplit(
+            (string) ($b->payment_method ?: 'razorpay'),
+            (float) $b->fare_amount,
+            $b->refund_amount !== null ? (float) $b->refund_amount : null,
+        );
+
         return $this->baseRow(
             module: 'shuttle',
             id: $b->id,
@@ -318,6 +333,8 @@ class RefundRegisterService
             fareAmount: (float) $b->fare_amount,
             refundStatus: (string) $b->refund_status,
             refundAmount: $b->refund_amount,
+            cashDeposit: $cashDeposit,
+            cashBalance: $cashBalance,
             refundMethod: $b->refund_method,
             refundReference: $b->refund_reference,
             refundNote: $b->refund_note,
@@ -347,6 +364,8 @@ class RefundRegisterService
         $refundedAt,
         $owedSince,
         $createdAt,
+        ?float $cashDeposit = null,
+        ?float $cashBalance = null,
     ): array {
         $state = match ($refundStatus) {
             'APPROVED' => 'due',
@@ -360,6 +379,11 @@ class RefundRegisterService
             $refundMethod = 'razorpay';
         }
 
+        // A cash booking only put its deposit online, so THAT is the amount the
+        // register tracks — the balance was cash to the driver and never flows
+        // through a refund here (a physical-cash dispute is handled manually).
+        $isCash = strtolower($paymentMethod) === 'cash';
+
         return [
             'key' => $module . ':' . $id,
             'module' => $module,
@@ -372,7 +396,10 @@ class RefundRegisterService
             'travel_date' => $travelDate,
             'reason' => $reason,
             'payment_method' => $paymentMethod,
-            'amount' => round($refundAmount ?? $fareAmount, 2),
+            'is_cash' => $isCash,
+            'cash_deposit' => $isCash && $cashDeposit !== null ? round($cashDeposit, 2) : null,
+            'cash_balance' => $isCash && $cashBalance !== null ? round($cashBalance, 2) : null,
+            'amount' => round($isCash && $cashDeposit !== null ? $cashDeposit : ($refundAmount ?? $fareAmount), 2),
             'state' => $state,
             'refund_status' => $refundStatus,
             'refund_method' => $refundMethod,
@@ -384,6 +411,28 @@ class RefundRegisterService
             'owed_since' => optional($owedSince)->toIso8601String(),
             'created_at' => optional($createdAt)->toIso8601String(),
         ];
+    }
+
+    /**
+     * The online-deposit / cash-balance split for a cash booking, for display.
+     * Prefers the exact deposit recorded on the refund (what actually went back
+     * online); otherwise quotes it from the operator's current percentage. The
+     * balance is the cash the driver was to collect — never auto-refunded.
+     *
+     * @return array{0:?float,1:?float} [deposit, balance] — [null, null] if not cash
+     */
+    private function cashSplit(string $paymentMethod, float $fare, ?float $refundAmount): array
+    {
+        if (strtolower($paymentMethod) !== 'cash') {
+            return [null, null];
+        }
+
+        $deposit = $refundAmount !== null && $refundAmount > 0
+            ? round($refundAmount, 2)
+            : $this->cashDeposit->quote($fare)['deposit'];
+        $deposit = min($deposit, max(0.0, $fare));
+
+        return [$deposit, round(max(0.0, $fare - $deposit), 2)];
     }
 
     private function fixedReason(SeatReservation $r): string

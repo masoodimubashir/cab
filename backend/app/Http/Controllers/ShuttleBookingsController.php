@@ -45,6 +45,8 @@ class ShuttleBookingsController extends Controller
             'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
             'toll_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'tip_amount' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            // 'cash' collects only the upfront deposit online; anything else pays the full fare.
+            'payment_method' => ['nullable', 'in:cash,razorpay'],
         ]);
 
         $booking = $this->bookings->createBooking($request->user(), $data);

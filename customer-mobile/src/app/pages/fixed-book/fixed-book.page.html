@@ -303,4 +303,13 @@
       </div>
     </div>
   </div>
+
+  <app-payment-method-modal
+    [open]="paymentModalOpen"
+    [amount]="payableTotal"
+    [busy]="booking"
+    title="How would you like to pay?"
+    (select)="onFixedPayMethod($event)"
+    (dismiss)="paymentModalOpen = false">
+  </app-payment-method-modal>
 </ion-content>

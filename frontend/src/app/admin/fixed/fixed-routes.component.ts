@@ -40,12 +40,6 @@ interface FareConfig {
   fixed_commission?: number | null;
 }
 
-interface CityCommercialSettings {
-  commission_type: 'percent' | 'fixed';
-  commission_percent: number;
-  fixed_commission: number;
-}
-
 interface LatLng { lat: number; lng: number; }
 
 /** One real-road route Google returned between the start and the destination. */
@@ -430,11 +424,18 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               <span class="field__lbl">Flat fare (₹) <i>*</i> <span class="help" data-tip="Seat fare charged to the customer before any luggage surcharge.">!</span></span>
               <input type="number" min="0" step="0.01" [(ngModel)]="form.seat_fare" placeholder="150" />
             </label>
-            <label class="field" *ngIf="commissionType === 'percent'">
+            <label class="field">
+              <span class="field__lbl">Commission type <span class="help" data-tip="Percent = a share of the fixed fare. Fixed = a flat ₹ per booked seat.">!</span></span>
+              <div class="seg">
+                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'percent'" (click)="form.commission_type = 'percent'">Percent</button>
+                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'fixed'" (click)="form.commission_type = 'fixed'">Fixed</button>
+              </div>
+            </label>
+            <label class="field" *ngIf="form.commission_type === 'percent'">
               <span class="field__lbl">Commission (%) <span class="help" data-tip="Platform cut calculated as a percentage of the fixed booking fare.">!</span></span>
               <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" placeholder="20" />
             </label>
-            <label class="field" *ngIf="commissionType === 'fixed'">
+            <label class="field" *ngIf="form.commission_type === 'fixed'">
               <span class="field__lbl">Fixed commission (₹) <span class="help" data-tip="Flat platform cut per booked seat for this fixed route.">!</span></span>
               <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" placeholder="20" />
             </label>
@@ -618,6 +619,9 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .stops-popover__line + .stops-popover__line { border-top: 1px solid rgba(255,255,255,0.1); }
     .field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; outline: none; font-family: inherit; }
     .field input:focus, .field select:focus { border-color: var(--tm-green); }
+    .seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--tm-canvas-2, #eef1f5); border-radius: 9px; }
+    .seg__btn { border: 0; padding: 8px 14px; border-radius: 7px; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; background: transparent; color: var(--tm-text-muted); }
+    .seg__btn.is-on { background: var(--tm-surface, #fff); color: var(--tm-text); box-shadow: 0 1px 2px rgba(15,20,25,.12); }
     .field input.field--locked { background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text-muted); cursor: not-allowed; }
     .field input.field--locked:focus { border-color: var(--tm-line); }
     .endpoints { display: flex; flex-direction: column; gap: 8px; }
@@ -696,7 +700,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   scopeOptions = SCOPE_OPTIONS;
   scopeFilterOptions = SCOPE_OPTIONS.map((s) => ({ label: s.label, value: s.value }));
   statusFilterOptions = [{ label: 'Active', value: 'active' }, { label: 'Inactive', value: 'inactive' }];
-  cityCommercials: CityCommercialSettings = { commission_type: 'percent', commission_percent: 0, fixed_commission: 0 };
 
   open = false;
   editingId: number | null = null;
@@ -764,7 +767,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.subs.push(
       this.cityCtx.cityId$.subscribe((id) => {
         this.cityId = id;
-        this.loadCityCommercials();
         this.loadVehicleTypes();
         this.loadCityMeta();
         this.fetchRoutes();
@@ -813,15 +815,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   get endpointsSet(): boolean { return this.form.origin_lat != null && this.form.dest_lat != null; }
 
-  get commissionType(): 'percent' | 'fixed' {
-    return this.cityCommercials.commission_type === 'fixed' ? 'fixed' : 'percent';
-  }
-
   commissionLabel(row: FixedRouteRow): string {
     const fc: Partial<FareConfig> = row.fare_config || {};
-    const type = fc.commission_type ?? this.commissionType;
-    if (type === 'fixed') return '₹' + Number(fc.fixed_commission ?? this.cityCommercials.fixed_commission ?? 0).toFixed(2);
-    return Number(fc.commission_percent ?? this.cityCommercials.commission_percent ?? 0).toFixed(2) + '%';
+    const type = fc.commission_type ?? 'percent';
+    if (type === 'fixed') return '₹' + Number(fc.fixed_commission ?? 0).toFixed(2);
+    return Number(fc.commission_percent ?? 0).toFixed(2) + '%';
   }
 
   stopsTooltip(row: FixedRouteRow): string[] {
@@ -898,8 +896,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lat: null as number | null,
       dest_lng: null as number | null,
       seat_fare: null as number | null,
-      commission_percent: (this.cityCommercials.commission_type === 'percent' ? this.cityCommercials.commission_percent : null) as number | null,
-      fixed_commission: (this.cityCommercials.commission_type === 'fixed' ? this.cityCommercials.fixed_commission : null) as number | null,
+      commission_type: 'percent' as 'percent' | 'fixed',
+      commission_percent: null as number | null,
+      fixed_commission: null as number | null,
       city_vehicle_type_id: this.cityVehicleTypeId,
       booking_window_hours: 6,
       max_seats_per_booking: 4 as number | null,
@@ -936,24 +935,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (!v) return;
     this.form.max_seats_per_booking = v.max_people || this.form.max_seats_per_booking;
     this.form.max_luggage_per_vehicle = v.luggage_capacity ?? this.form.max_luggage_per_vehicle;
-  }
-
-  loadCityCommercials(): void {
-    this.cityCommercials = { commission_type: 'percent', commission_percent: 0, fixed_commission: 0 };
-    if (this.cityId == null) return;
-    this.api.get<{ settings: Partial<CityCommercialSettings> }>('/admin/cities/' + this.cityId + '/settings').subscribe({
-      next: (res) => {
-        const s = res?.settings ?? {};
-        this.cityCommercials = {
-          commission_type: s.commission_type === 'fixed' ? 'fixed' : 'percent',
-          commission_percent: Number(s.commission_percent ?? 0),
-          fixed_commission: Number(s.fixed_commission ?? 0),
-        };
-      },
-      error: () => {
-        this.cityCommercials = { commission_type: 'percent', commission_percent: 0, fixed_commission: 0 };
-      },
-    });
   }
 
   loadCityMeta(): void {
@@ -1026,8 +1007,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lat: r.dest_lat,
       dest_lng: r.dest_lng,
       seat_fare: fc.seat_fare ?? r.flat_fare,
-      commission_percent: fc.commission_percent ?? (this.commissionType === 'percent' ? this.cityCommercials.commission_percent : null),
-      fixed_commission: fc.fixed_commission ?? (this.commissionType === 'fixed' ? this.cityCommercials.fixed_commission : null),
+      commission_type: (fc.commission_type ?? 'percent') as 'percent' | 'fixed',
+      commission_percent: fc.commission_percent ?? null,
+      fixed_commission: fc.fixed_commission ?? null,
       city_vehicle_type_id: r.city_vehicle_type_id,
       booking_window_hours: r.booking_window_hours,
       max_seats_per_booking: r.max_seats_per_booking,
@@ -1094,8 +1076,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         origin_city_id: existing.origin_city_id,
         dest_city_id: existing.dest_city_id,
         seat_fare: fc.seat_fare ?? existing.flat_fare,
-        commission_percent: fc.commission_percent ?? (this.commissionType === 'percent' ? this.cityCommercials.commission_percent : null),
-        fixed_commission: fc.fixed_commission ?? (this.commissionType === 'fixed' ? this.cityCommercials.fixed_commission : null),
+        commission_type: (fc.commission_type ?? 'percent') as 'percent' | 'fixed',
+        commission_percent: fc.commission_percent ?? null,
+        fixed_commission: fc.fixed_commission ?? null,
         city_vehicle_type_id: existing.city_vehicle_type_id,
         booking_window_hours: existing.booking_window_hours,
         max_seats_per_booking: existing.max_seats_per_booking,
@@ -2056,9 +2039,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       sort_order: f.sort_order ?? 0,
       fare_config: {
         seat_fare: f.seat_fare,
-        commission_type: this.commissionType,
-        commission_percent: this.commissionType === 'percent' ? (f.commission_percent ?? 0) : 0,
-        fixed_commission: this.commissionType === 'fixed' ? (f.fixed_commission ?? 0) : 0,
+        commission_type: f.commission_type,
+        commission_percent: f.commission_type === 'percent' ? (f.commission_percent ?? 0) : 0,
+        fixed_commission: f.commission_type === 'fixed' ? (f.fixed_commission ?? 0) : 0,
       },
       stops,
     };

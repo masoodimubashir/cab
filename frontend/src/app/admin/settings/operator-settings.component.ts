@@ -22,6 +22,11 @@ interface OperatorSettings {
   check_driver_debt: boolean;
   update_driver_payment_modes_enabled: boolean;
 
+  payment_online_enabled: boolean;
+  payment_gpay_enabled: boolean;
+  payment_cash_enabled: boolean;
+  cash_deposit_percent: number;
+
   wallet_cash_min_capping: number;
   wallet_cash_max_capping: number;
 
@@ -47,6 +52,7 @@ interface OperatorSettings {
 type SectionKey =
   | 'tipping'
   | 'geofence'
+  | 'payments'
   | 'wallet'
   | 'subscription'
   | 'services'
@@ -184,6 +190,54 @@ interface SectionMeta {
                   <span class="switch__track"><span class="switch__thumb"></span></span>
                 </span>
               </label>
+            </ng-container>
+
+            <!-- ============= PAYMENTS ============= -->
+            <ng-container *ngIf="activeSection === 'payments'">
+              <div class="chan-note">
+                <span class="chan-note__title">These switches decide what customers can pay with — everywhere</span>
+                <span class="chan-note__sub">Turning a method on or off here changes the payment popup in every app (Private, Fixed and Shuttle) and in every city. At least one method must stay on.</span>
+              </div>
+              <p class="chan-note chan-note--error" *ngIf="!paymentsHasOne">At least one payment method must stay enabled.</p>
+
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">Online payment</span>
+                  <span class="switch-row__sub">Customer pays the full fare online (card / netbanking). Driver is paid automatically; commission is kept automatically.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.payment_online_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">GPay / UPI</span>
+                  <span class="switch-row__sub">Customer pays the full fare via a UPI app (Razorpay UPI intent). Same automatic driver payout and commission split as Online.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.payment_gpay_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">Cash</span>
+                  <span class="switch-row__sub">Customer pays an upfront deposit online (below), then hands the remaining balance to the driver in cash at trip end.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.payment_cash_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
+
+              <div class="fields" *ngIf="settings.payment_cash_enabled">
+                <div class="field">
+                  <span class="field__label">Cash upfront deposit (%)</span>
+                  <tm-input type="number" [(ngModel)]="settings.cash_deposit_percent" />
+                  <span class="field__hint">Percentage of the fare collected online before a cash ride starts (e.g. 20 = ₹20 of a ₹100 fare paid now, ₹80 in cash to the driver at the end). 0–100.</span>
+                </div>
+              </div>
             </ng-container>
 
             <!-- ============= WALLET ============= -->
@@ -538,6 +592,7 @@ export class OperatorSettingsComponent implements OnInit {
   readonly sections: SectionMeta[] = [
     { key: 'tipping',      label: 'Tipping',           icon: 'gift',          desc: 'Preset tip amounts shown to riders, and whether they are flat ₹ or a percentage of fare.' },
     { key: 'geofence',     label: 'Driver & Geofence', icon: 'driver-helmet', desc: 'Operational safety checks applied to drivers and trips.' },
+    { key: 'payments',     label: 'Payments',          icon: 'handshake',     desc: 'Which payment methods the apps offer everywhere: Online, GPay and Cash. Cash takes an upfront online deposit; the rest is paid to the driver in cash at trip end.' },
     { key: 'wallet',       label: 'Wallet',            icon: 'rupee',         desc: 'Cash-wallet limits and the terms shown to users.' },
     { key: 'subscription', label: 'Subscription',      icon: 'star',          desc: 'Copy for the driver subscription promo popup.' },
     { key: 'services',     label: 'Services',          icon: 'car',           desc: 'Which ride services the apps offer: Local & Outstation, each with Private, Fixed and Shuttle. Off = hidden in both the customer and driver apps.' },
@@ -548,6 +603,7 @@ export class OperatorSettingsComponent implements OnInit {
   saving: Record<SectionKey, boolean> = {
     tipping: false,
     geofence: false,
+    payments: false,
     wallet: false,
     subscription: false,
     services: false,
@@ -585,6 +641,12 @@ export class OperatorSettingsComponent implements OnInit {
       'check_destination_outside_geofence',
       'check_driver_debt',
       'update_driver_payment_modes_enabled',
+    ],
+    payments: [
+      'payment_online_enabled',
+      'payment_gpay_enabled',
+      'payment_cash_enabled',
+      'cash_deposit_percent',
     ],
     wallet: ['wallet_cash_min_capping', 'wallet_cash_max_capping'],
     subscription: [
@@ -624,6 +686,15 @@ export class OperatorSettingsComponent implements OnInit {
     return this.sections.find((s) => s.key === this.activeSection) ?? this.sections[0];
   }
 
+  /** At least one payment method must stay on (mirrors the backend guard). */
+  get paymentsHasOne(): boolean {
+    const s = this.settings;
+    return (
+      !!s &&
+      !!(s.payment_online_enabled || s.payment_gpay_enabled || s.payment_cash_enabled)
+    );
+  }
+
   setSection(key: SectionKey): void {
     this.activeSection = key;
   }
@@ -644,6 +715,14 @@ export class OperatorSettingsComponent implements OnInit {
 
   save(section: SectionKey): void {
     if (!this.settings) return;
+
+    // Block the save before it leaves the browser if it would disable every
+    // payment method — the backend rejects it too, this just spares the round trip.
+    if (section === 'payments' && !this.paymentsHasOne) {
+      this.toast.error('At least one payment method must stay enabled.', { title: 'Save failed' });
+      return;
+    }
+
     this.saving[section] = true;
 
     const fd = new FormData();

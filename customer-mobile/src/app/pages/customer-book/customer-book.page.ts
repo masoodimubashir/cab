@@ -4,6 +4,7 @@ import { AlertController, ModalController, ToastController } from '@ionic/angula
 import { Subject, debounceTime, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ModeSelectModalComponent, AssistantMode } from '../../shared/mode-select-modal/mode-select-modal.component';
+import { PaymentChoice } from '../../shared/payment-method-modal.component';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { GeolocationService, LatLng, GeoFix } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
@@ -250,6 +251,8 @@ export class CustomerBookPage implements OnDestroy {
   savedPlaces: SavedPlace[] = [];
 
   selectedPaymentMode: 'cash' | 'razorpay' = 'cash';
+  /** Shared payment-method sheet (Online / GPay / Cash) for the Shuttle flow. */
+  shuttlePaymentModalOpen = false;
 
   estimate: EstimateResponse | null = null;
 
@@ -1468,6 +1471,11 @@ export class CustomerBookPage implements OnDestroy {
     return this.selectedServiceMode === 'shuttle';
   }
 
+  /** Fare shown in the shared payment sheet for a Shuttle booking. */
+  get shuttlePayableAmount(): number {
+    return Number(this.estimate?.estimated_fare ?? 0);
+  }
+
   get shuttleQuoteNotice(): string {
     if (!this.isShuttleSelected) return '';
     if (!this.estimate) return 'Select a Shuttle vehicle to preview the fare.';
@@ -1845,6 +1853,23 @@ export class CustomerBookPage implements OnDestroy {
       return;
     }
 
+    // Pick a payment method first (Online / GPay / Cash), then book + pay.
+    this.error = null;
+    this.shuttlePaymentModalOpen = true;
+  }
+
+  /** Chosen from the shared payment sheet — book the shuttle seat tagged with
+   *  the method (cash charges only the deposit online), then run its payment. */
+  onShuttlePayMethod(method: PaymentChoice): void {
+    this.shuttlePaymentModalOpen = false;
+    void this.bookAndPayShuttle(method);
+  }
+
+  private async bookAndPayShuttle(method: PaymentChoice): Promise<void> {
+    if (!this.pickup || !this.drop) { this.state = "ride-list"; return; }
+    const cityId = this.selectedCity?.id;
+    if (!cityId) { this.error = "Pickup is outside the service area."; return; }
+
     this.loading = true;
     this.error = null;
     try {
@@ -1863,13 +1888,14 @@ export class CustomerBookPage implements OnDestroy {
           route_distance_km: this.routeDistanceKm,
           route_time_min: this.routeTimeMin,
           toll_amount: this.tollAmount,
+          payment_method: method === 'cash' ? 'cash' : 'razorpay',
         }, { "Idempotency-Key": this.uuid("shuttle") })
         .toPromise();
 
       if (!res?.booking?.id) {
         throw new Error("Shuttle booking was created but the booking id was missing.");
       }
-      await this.startShuttleRazorpayPayment(res.booking);
+      await this.startShuttleRazorpayPayment(res.booking, method);
     } catch (e: any) {
       this.error = e?.error?.message || e?.message || "Could not create Shuttle booking.";
     } finally {
@@ -1877,7 +1903,7 @@ export class CustomerBookPage implements OnDestroy {
     }
   }
 
-  private async startShuttleRazorpayPayment(booking: ShuttleBooking): Promise<void> {
+  private async startShuttleRazorpayPayment(booking: ShuttleBooking, method: PaymentChoice = 'online'): Promise<void> {
     if (typeof Razorpay === "undefined") {
       this.error = "Payment library not loaded. Check your connection.";
       return;
@@ -1905,6 +1931,8 @@ export class CustomerBookPage implements OnDestroy {
         name: user?.name || "",
         email: user?.email || "",
         contact: user?.phone || "",
+        // GPay → open Razorpay straight on UPI (still lets the user switch).
+        ...(method === 'gpay' ? { method: 'upi' } : {}),
       },
       theme: { color: "#000000" },
       handler: (resp: {
