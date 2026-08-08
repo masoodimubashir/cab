@@ -55,13 +55,6 @@ class ShuttleSettlementPhase5Test extends TestCase
         $this->seedPricing($cityId, $vehicleTypeId, $cityVehicleTypeId, $rideTypeId);
         $this->cityId = $cityId;
         $this->cityVehicleTypeId = $cityVehicleTypeId;
-
-        // The city's standard commission is what a Shuttle prepayment snapshots
-        // (the driver isn't known yet, so no subscription rate can apply).
-        CitySetting::query()->updateOrCreate(
-            ['city_id' => $cityId],
-            ['commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT],
-        );
     }
 
     /* ------------------------------------------------------------------ */
@@ -402,6 +395,11 @@ class ShuttleSettlementPhase5Test extends TestCase
             'threshold_time_1_min' => 5,
             'fare_per_min_after_threshold_time_1' => 1,
             'tax_percent' => 5,
+            // Commission lives on the vehicle rate card now — a shuttle prepayment
+            // snapshots it from here (the driver isn't known yet).
+            'commission_type' => 'percent',
+            'commission_percent' => self::COMMISSION_PCT,
+            'fixed_commission' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

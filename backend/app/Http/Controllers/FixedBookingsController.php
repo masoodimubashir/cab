@@ -71,6 +71,9 @@ class FixedBookingsController extends Controller
             'extra_luggage_count' => ['nullable', 'integer', 'min:0', 'max:200'],
             'coupon_title' => ['nullable', 'string', 'max:128'],
             'tip_amount' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            // 'cash' collects only the upfront deposit online; anything else is a
+            // full online prepayment.
+            'payment_method' => ['nullable', 'in:cash,razorpay'],
         ]);
 
         $hold = $this->seatHolds->createHold($request->user(), $data);

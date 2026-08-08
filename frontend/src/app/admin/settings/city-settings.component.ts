@@ -50,11 +50,7 @@ interface CitySettings {
   show_region_specific_fare: boolean;
   show_vehicle_make_model: boolean;
 
-  allowed_driver_payment_modes: string[];
   negotiation_floor_percent: number | null;
-  commission_type: 'percent' | 'fixed';
-  commission_percent: number;
-  fixed_commission: number;
   toll_mode: 'yes' | 'no';
   show_low_wallet_alert: boolean;
   private_no_show_threshold_minutes: number | null;
@@ -90,11 +86,6 @@ interface CitySettings {
   customer_support_no: string | null;
   support_email: string | null;
 }
-
-const PAYMENT_MODE_OPTIONS = [
-  { label: 'Cash', value: 'CASH' },
-  { label: 'Razorpay', value: 'RAZORPAY' },
-];
 
 const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
   { key: 'show_region_specific_fare', label: 'Region-specific fare', hint: 'Show area-based fares in the booking flow.' },
@@ -157,12 +148,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
           </header>
           <div class="sec__body">
             <div class="subsec"><h4 class="subsec__title">Feature toggles</h4><div class="toggles"><label class="tgl" *ngFor="let t of toggles"><input type="checkbox" [ngModel]="boolVal(t.key)" (ngModelChange)="setBool(t.key, $event)" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">{{ t.label }}</span><span class="tgl__hint">{{ t.hint }}</span></span></label></div></div>
-            <div class="subsec"><h4 class="subsec__title">Payments</h4><div class="chips"><button *ngFor="let p of paymentModeOptions" type="button" class="chip" [class.is-on]="isMode(p.value)" (click)="toggleMode(p.value)"><tm-icon [name]="isMode(p.value) ? 'check' : 'plus'" [size]="13" />{{ p.label }}</button></div></div>
             <div class="subsec"><h4 class="subsec__title">Ride commercials</h4>
-              <div class="seg">
-                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'percent'" (click)="form.commission_type = 'percent'">Percent commission</button>
-                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'fixed'" (click)="form.commission_type = 'fixed'">Fixed commission</button>
-              </div>
               <div class="toggles">
                 <label class="tgl"><input type="checkbox" [ngModel]="form.toll_mode === 'yes'" (ngModelChange)="form.toll_mode = $event ? 'yes' : 'no'" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Toll applicable</span><span class="tgl__hint">Allow route tolls returned by Google to be added to fares in this city.</span></span></label>
                 <label class="tgl"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Low wallet alert</span><span class="tgl__hint">Show wallet warning on the driver app for this city.</span></span></label>
@@ -311,9 +297,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="spb-group" *ngIf="copyOpts.private">
               <span class="spb-lbl">🚕 Private Taxi Settings:</span>
               <div class="spb-pills">
-                <span class="spb-pill">Commission: {{ sourcePreview.settings.commission_type === 'percent' ? sourcePreview.settings.commission_percent + '%' : '₹' + sourcePreview.settings.fixed_commission }}</span>
                 <span class="spb-pill">Floor Discount: {{ sourcePreview.settings.negotiation_floor_percent }}%</span>
-                <span class="spb-pill">Payments: {{ (sourcePreview.settings.allowed_driver_payment_modes || []).join(', ') || 'CASH' }}</span>
                 <span class="spb-pill">Tolls: {{ sourcePreview.settings.toll_mode }}</span>
               </div>
             </div>
@@ -722,7 +706,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     vehicleTypes: true,
   };
 
-  paymentModeOptions = PAYMENT_MODE_OPTIONS;
   dispatchModes = DISPATCH_MODES;
   toggles = TOGGLES;
   nav = NAV;
@@ -881,17 +864,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.form) (this.form as any)[key] = val;
   }
 
-  isMode(mode: string): boolean {
-    return (this.form?.allowed_driver_payment_modes ?? []).includes(mode);
-  }
-  toggleMode(mode: string): void {
-    if (!this.form) return;
-    const list = this.form.allowed_driver_payment_modes ?? [];
-    this.form.allowed_driver_payment_modes = list.includes(mode)
-      ? list.filter((m) => m !== mode)
-      : [...list, mode];
-  }
-
   get activeDispatcher(): DispatcherSetting | null {
     return this.dispatcherSettings.find((s) => s.kind === this.activeDispatcherKind) ?? this.dispatcherSettings[0] ?? null;
   }
@@ -924,13 +896,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: (res) => {
           const s = res.settings;
-          if (!Array.isArray(s.allowed_driver_payment_modes)) {
-            s.allowed_driver_payment_modes = [];
-          }
           s.negotiation_floor_percent = Number(s.negotiation_floor_percent ?? 10);
-          s.commission_type = s.commission_type ?? 'percent';
-          s.commission_percent = Number(s.commission_percent ?? 0);
-          s.fixed_commission = Number(s.fixed_commission ?? 0);
           s.toll_mode = s.toll_mode ?? 'no';
           s.show_low_wallet_alert = !!s.show_low_wallet_alert;
           this.form = s;
@@ -963,12 +929,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     append('show_region_specific_fare', f.show_region_specific_fare);
     append('show_vehicle_make_model', f.show_vehicle_make_model);
 
-    fd.append(
-      'allowed_driver_payment_modes',
-      JSON.stringify(f.allowed_driver_payment_modes ?? []),
-    );
     append('negotiation_floor_percent', f.negotiation_floor_percent ?? 10);
-    append('commission_type', f.commission_type ?? 'percent');
     append('toll_mode', f.toll_mode ?? 'no');
     append('show_low_wallet_alert', f.show_low_wallet_alert);
 
@@ -1015,13 +976,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
         this.saving = false;
         const cityRes = responses[0] as { settings: CitySettings };
         if (cityRes.settings) {
-          if (!Array.isArray(cityRes.settings.allowed_driver_payment_modes)) {
-            cityRes.settings.allowed_driver_payment_modes = [];
-          }
           cityRes.settings.negotiation_floor_percent = Number(cityRes.settings.negotiation_floor_percent ?? 10);
-          cityRes.settings.commission_type = cityRes.settings.commission_type ?? 'percent';
-          cityRes.settings.commission_percent = Number(cityRes.settings.commission_percent ?? 0);
-          cityRes.settings.fixed_commission = Number(cityRes.settings.fixed_commission ?? 0);
           cityRes.settings.toll_mode = cityRes.settings.toll_mode ?? 'no';
           cityRes.settings.show_low_wallet_alert = !!cityRes.settings.show_low_wallet_alert;
           this.form = cityRes.settings;

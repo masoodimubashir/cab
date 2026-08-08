@@ -11,11 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'city_id',
     'show_region_specific_fare',
     'show_vehicle_make_model',
-    'allowed_driver_payment_modes',
     'negotiation_floor_percent',
-    'commission_type',
-    'commission_percent',
-    'fixed_commission',
     'toll_mode',
     'show_low_wallet_alert',
     'private_no_show_threshold_minutes',
@@ -61,11 +57,7 @@ class CitySetting extends Model
     protected $casts = [
         'show_region_specific_fare' => 'boolean',
         'show_vehicle_make_model' => 'boolean',
-        'allowed_driver_payment_modes' => 'array',
         'negotiation_floor_percent' => 'float',
-        'commission_type' => 'string',
-        'commission_percent' => 'decimal:2',
-        'fixed_commission' => 'decimal:2',
         'show_low_wallet_alert' => 'boolean',
         'private_no_show_threshold_minutes' => 'float',
         'private_no_show_charge_per_minute' => 'float',
@@ -90,16 +82,6 @@ class CitySetting extends Model
         'shuttle_customer_grace_minutes' => 'integer',
         'shuttle_driver_payout_share_percent' => 'float',
     ];
-
-    protected static function booted(): void
-    {
-        static::creating(function (self $settings) {
-            // Every city defaults to Razorpay-only — cash stays opt-in.
-            if (empty($settings->allowed_driver_payment_modes)) {
-                $settings->allowed_driver_payment_modes = ['RAZORPAY'];
-            }
-        });
-    }
 
     public function city(): BelongsTo
     {

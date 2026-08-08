@@ -42,6 +42,7 @@ class GatewayFeeTest extends TestCase
 
     private int $cityId;
     private int $rideTypeId;
+    private int $cvtId;
     private User $customer;
 
     protected function setUp(): void
@@ -58,10 +59,19 @@ class GatewayFeeTest extends TestCase
             'name' => 'Mini', 'mode' => 'private', 'description' => 'Mini', 'sort_order' => 1,
             'created_at' => $now, 'updated_at' => $now,
         ]);
-        CitySetting::query()->updateOrCreate(
-            ['city_id' => $this->cityId],
-            ['commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT],
-        );
+        // Commission lives on the vehicle rate card now (20% for this vehicle).
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Mini', 'sort_order' => 1, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->cvtId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'display_name' => 'Mini', 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        \App\Models\PricingRule::query()->create([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'city_vehicle_type_id' => $this->cvtId, 'base_fare' => 0, 'surge_multiplier' => 1,
+            'commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT, 'fixed_commission' => 0,
+        ]);
 
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');
@@ -109,6 +119,7 @@ class GatewayFeeTest extends TestCase
             'driver_id' => $driver->id,
             'city_id' => $this->cityId,
             'ride_type_id' => $this->rideTypeId,
+            'city_vehicle_type_id' => $this->cvtId,
             'status' => 'CONFIRMED',
             'estimated_fare' => $agreedFare,
             'final_fare' => $agreedFare,

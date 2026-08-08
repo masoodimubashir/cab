@@ -478,6 +478,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/pay/razorpay', [PaymentsController::class, 'payRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/razorpay/verify', [PaymentsController::class, 'verifyRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash'])->middleware('idempotent');
+    Route::post('/trips/{trip}/pay/cash-deposit', [PaymentsController::class, 'payCashDeposit'])->middleware('idempotent');
     Route::get('/trips/{trip}/invoice', [InvoicesController::class, 'show']);
     Route::post('/trips/{trip}/invoice', [InvoicesController::class, 'generate']);
     Route::get('/trips/{trip}/invoice/download', [InvoicesController::class, 'download']);
@@ -494,6 +495,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 Route::middleware('auth:sanctum')->get('/operator/tipping', [OperatorPublicController::class, 'tipping']);
 Route::middleware('auth:sanctum')->get('/operator/subscription-popup', [OperatorPublicController::class, 'subscriptionPopup']);
 Route::middleware('auth:sanctum')->get('/operator/driver-payment-modes', [OperatorPublicController::class, 'driverPaymentModes']);
+Route::middleware('auth:sanctum')->get('/operator/payment-methods', [OperatorPublicController::class, 'paymentMethods']);
 
 Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayWebhook'])->middleware('throttle:webhooks');
 

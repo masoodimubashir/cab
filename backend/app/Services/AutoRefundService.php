@@ -128,7 +128,7 @@ class AutoRefundService
      *
      * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string,refund_id:?string}|null
      */
-    public function refundBookingCancellation(Payment $payment, bool $refundFull, string $cancelledBy = self::BY_SYSTEM): ?array
+    public function refundBookingCancellation(Payment $payment, bool $refundFull, string $cancelledBy = self::BY_SYSTEM, bool $forfeitToOperator = false): ?array
     {
         if (! $this->enabled()) {
             return null;
@@ -137,10 +137,16 @@ class AutoRefundService
         $capturedPaise = self::toPaise($payment->amount);
         $refundPaise = $refundFull ? $capturedPaise : 0;
 
+        // Book the operator's retained share now when we're refunding (it's then
+        // reversed to the customer) OR when a no-show forfeits to the operator
+        // (Shuttle). A Fixed forfeit passes false: the fare settles to the driver at
+        // departure completion instead, so we must not pre-book it to the operator.
+        $bookRetained = $refundPaise > 0 || $forfeitToOperator;
+
         // Claim + record the capture-to-operator atomically. Returns the locked
         // payment to act on, or null when there's nothing to do (already refunded
         // or a refund is in flight).
-        $claimed = DB::transaction(function () use ($payment, $capturedPaise, $refundPaise) {
+        $claimed = DB::transaction(function () use ($payment, $capturedPaise, $refundPaise, $bookRetained) {
             /** @var Payment|null $locked */
             $locked = Payment::query()->lockForUpdate()->find($payment->id);
             if (! $locked) {
@@ -153,7 +159,7 @@ class AutoRefundService
                 return null;
             }
 
-            $this->recordUnsettledCapture($locked, $capturedPaise);
+            $this->recordUnsettledCapture($locked, $capturedPaise, $bookRetained);
 
             // Stake a pending claim on the refund case so a racing cancel backs off.
             if ($refundPaise > 0) {
@@ -337,12 +343,26 @@ class AutoRefundService
      * at booking: the driver was never paid, so the whole captured amount rests
      * with the operator until (if) it goes back to the customer.
      *
-     * Idempotent on the presence of a capture row, and a no-op once the split has
-     * actually settled. Must be called inside the caller's transaction.
+     * Must be called inside the caller's transaction.
+     *
+     * $bookRetained decides whether the operator takes the whole fare now, and with
+     * it the idempotency guard — because the callers want different things:
+     *  - true (a refund, or a Shuttle forfeit): guard on payments.split_at. A prepaid
+     *    booking records its CAPTURE the moment it's confirmed (for immediate
+     *    /admin/ledger visibility) but does NOT split, so the capture can be present
+     *    while the operator's retained share is still missing — we must book that
+     *    retained here or the trip is left short by exactly it. For a refund the
+     *    retained is then reversed out to the customer; for a Shuttle no-show it
+     *    stays as the operator's forfeit.
+     *  - false (a Fixed forfeit): guard on the capture row (the historical
+     *    behaviour). A forfeited Fixed no-show still lets the departure COMPLETE and
+     *    settle the fare to the driver by the normal split, so we must NOT pre-book
+     *    the whole fare to the operator and stamp split_at — that would forfeit the
+     *    driver's earned share and block the completion settlement.
      */
-    private function recordUnsettledCapture(Payment $locked, int $capturedPaise): void
+    private function recordUnsettledCapture(Payment $locked, int $capturedPaise, bool $bookRetained = true): void
     {
-        if ($this->ledger->hasCapture($locked)) {
+        if ($bookRetained ? $locked->split_at !== null : $this->ledger->hasCapture($locked)) {
             return;
         }
 
@@ -351,26 +371,35 @@ class AutoRefundService
         $feePaise = max(0, min($capturedPaise, self::toPaise($locked->gateway_fee_amount)));
         $farePaise = $capturedPaise - $feePaise;
 
-        $this->ledger->record(
-            LedgerEntry::TYPE_CAPTURE,
-            LedgerEntry::PARTY_CUSTOMER,
-            'in',
-            $capturedPaise,
-            $locked->trip_id,
-            $locked->id,
-            $locked->razorpay_payment_id,
-        );
-        if ($feePaise > 0) {
+        // The capture (and its gateway fee) may already be on the ledger from
+        // confirmation time — only add them if they're missing, so the capture is
+        // never double-counted.
+        if (! $this->ledger->hasCapture($locked)) {
             $this->ledger->record(
-                LedgerEntry::TYPE_GATEWAY_FEE,
-                LedgerEntry::PARTY_GATEWAY,
-                'out',
-                $feePaise,
+                LedgerEntry::TYPE_CAPTURE,
+                LedgerEntry::PARTY_CUSTOMER,
+                'in',
+                $capturedPaise,
                 $locked->trip_id,
                 $locked->id,
                 $locked->razorpay_payment_id,
             );
+            if ($feePaise > 0) {
+                $this->ledger->record(
+                    LedgerEntry::TYPE_GATEWAY_FEE,
+                    LedgerEntry::PARTY_GATEWAY,
+                    'out',
+                    $feePaise,
+                    $locked->trip_id,
+                    $locked->id,
+                    $locked->razorpay_payment_id,
+                );
+            }
         }
+
+        // The whole fare rests with the operator — the driver was never paid for a
+        // ride that didn't run. This is the row that goes missing when the capture
+        // was already recorded but the split never settled.
         if ($farePaise > 0) {
             $this->ledger->record(
                 LedgerEntry::TYPE_RETAINED,
@@ -386,7 +415,7 @@ class AutoRefundService
             'commission_amount' => $farePaise / 100,
             'driver_amount' => 0,
             'transfer_status' => null,
-            'split_at' => $locked->split_at ?? now(),
+            'split_at' => now(),
         ])->save();
     }
 

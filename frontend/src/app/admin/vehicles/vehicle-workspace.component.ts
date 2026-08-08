@@ -322,7 +322,7 @@ interface TabDef { key: string; label: string; count?: number; }
                                 <b>{{ r.name }}</b>
                                 <span class="npbadge" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
                               </button>
-                              <button type="button" class="rx add" [disabled]="r.flat_fare == null" [title]="r.flat_fare == null ? 'Add a price before grouping this route' : 'Add to a group'" (click)="openAssignDrawer(r)">+</button>
+                              <button type="button" class="rx add" [title]="r.flat_fare == null ? 'Add a price before grouping this route' : 'Add to a group'" (click)="openAssignDrawer(r)">+</button>
                             </span>
                           </div>
                         </div>
@@ -489,10 +489,13 @@ interface TabDef { key: string; label: string; count?: number; }
               type="button"
               class="multi-chip"
               [class.is-selected]="unifiedForm.route_ids.includes(r.id)"
+              [class.multi-chip--nopr]="r.flat_fare == null"
+              [title]="r.flat_fare == null ? 'Add a price before grouping this route' : ''"
               (click)="toggleUnifiedRoute(r.id)"
             >
               <tm-icon [name]="unifiedForm.route_ids.includes(r.id) ? 'check' : 'plus'" [size]="12" />
               <span>{{ r.name }}</span>
+              <span class="npbadge npbadge--xs" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
             </button>
           </div>
           <ng-template #noUnifiedRoutes>
@@ -576,9 +579,10 @@ interface TabDef { key: string; label: string; count?: number; }
     <!-- Add an existing route into this group. -->
     <tm-drawer [open]="!!routeDrawerGroup" title="Add a route to this group" [subtitle]="routeDrawerGroup?.name || ''" [width]="480" (closed)="routeDrawerId = null">
       <div slot="body" class="form" *ngIf="routeDrawerGroup as g">
-        <button type="button" class="pick pick--bd" *ngFor="let r of routesForRouteDrawer" (click)="addRouteToGroup(g, r.id)">
+        <button type="button" class="pick pick--bd" [class.pick--nopr]="r.flat_fare == null" *ngFor="let r of routesForRouteDrawer" (click)="addRouteToGroup(g, r.id)">
           <span class="pick__main"><b>{{ r.name }}</b><small>{{ r.origin_name }} → {{ r.dest_name }}</small></span>
-          <span class="mini-btn">Add here</span>
+          <span class="npbadge npbadge--xs" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
+          <span class="mini-btn" *ngIf="r.flat_fare != null">Add here</span>
         </button>
         <p class="meta" *ngIf="!routesForRouteDrawer.length">All vehicle routes are already in this group.</p>
       </div>
@@ -708,21 +712,24 @@ interface TabDef { key: string; label: string; count?: number; }
             <span class="echoice__ic"><tm-icon name="upload" [size]="18" /></span>
             <span class="echoice__txt">
               <span class="echoice__t">{{ importingKml ? 'Importing…' : 'Bulk — import all now' }}</span>
-              <span class="echoice__d">Add every route in the file at once (name &amp; line only). They land as “Needs pricing” to finish later.</span>
+              <span class="echoice__d">Pick one or more My Maps files; every route in them is added at once (name &amp; line only). They land as “Needs pricing” to finish later.</span>
             </span>
           </button>
         </div>
       </ng-container>
     </tm-modal>
 
-    <!-- Hidden picker for "Bulk" import — creates Needs-pricing routes. -->
-    <input #bulkKmlInput type="file" accept=".kml,.kmz" hidden (change)="onBulkKmlFileSelected($event)" />
+    <!-- Hidden picker for "Bulk" import — creates Needs-pricing routes. Multiple files allowed. -->
+    <input #bulkKmlInput type="file" accept=".kml,.kmz" multiple hidden (change)="onBulkKmlFileSelected($event)" />
   `,
   styles: [`
     .ws { display: flex; flex-direction: column; gap: 14px; }
     .echoice__lead { margin: 0 0 14px; color: var(--tm-text-muted); }
     .rchip2--nopr { border-color: #ffe2a8; background: #fff7e6; }
     .npbadge { margin-left: 6px; font-size: 10px; font-weight: 800; color: #9a6700; white-space: nowrap; }
+    .npbadge--xs { margin-left: 4px; font-size: 9px; }
+    .multi-chip--nopr { border-color: #ffe2a8 !important; background: #fff7e6; color: #9a6700; }
+    .pick--nopr { border-color: #ffe2a8 !important; background: #fff7e6; }
     .rx.add[disabled] { opacity: .4; cursor: not-allowed; }
     .echoice { display: flex; flex-direction: column; gap: 10px; }
     .echoice__opt { display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left; padding: 14px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg, 12px); background: var(--tm-surface); cursor: pointer; transition: border-color .15s, background .15s, transform .05s; }
@@ -1317,8 +1324,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   toggleUnifiedRoute(routeId: number): void {
     const idx = this.unifiedForm.route_ids.indexOf(routeId);
     if (idx >= 0) {
-      this.unifiedForm.route_ids.splice(idx, 1);
+      this.unifiedForm.route_ids.splice(idx, 1); // removing is always allowed
     } else {
+      if (!this.routeIsGroupable(routeId)) return;
       this.unifiedForm.route_ids.push(routeId);
     }
   }
@@ -1995,14 +2003,29 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.fixedRoutes?.openEditById(id);
   }
 
+  /** A route can only join a group once it has a price. Warns + blocks otherwise —
+   *  an unpriced route ("Needs pricing") can't be run, so it isn't assignable yet. */
+  private routeIsGroupable(routeId: number): boolean {
+    const r = this.routes.find((x) => x.id === routeId);
+    if (r && r.flat_fare == null) {
+      this.toast.warning(`“${r.name}” isn’t assignable yet — add a price to the route first.`);
+      return false;
+    }
+    return true;
+  }
+
   /** Assign an ungrouped route into an existing group from the holding card.
    *  The route leaves the "Needs a group" list, so the drawer closes. */
   assignRouteToGroup(routeId: number, g: GroupRow): void {
+    if (!this.routeIsGroupable(routeId)) return;
     this.assignDrawerRouteId = null;
     this.saveGroupRoutes(g, [...g.route_ids, routeId], 'Route added to ' + g.name);
   }
 
-  openAssignDrawer(r: RouteLite): void { this.assignDrawerRouteId = r.id; }
+  openAssignDrawer(r: RouteLite): void {
+    if (!this.routeIsGroupable(r.id)) return;
+    this.assignDrawerRouteId = r.id;
+  }
   openRouteDrawer(g: GroupRow): void { this.routeDrawerId = g.id; }
 
   /** Seed the checklist from the group's current drivers so it opens pre-ticked. */
@@ -2074,6 +2097,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   addRouteToGroup(g: GroupRow, routeId: number): void {
+    if (!this.routeIsGroupable(routeId)) return;
     this.saveGroupRoutes(g, [...g.route_ids, routeId], 'Route added to ' + g.name);
   }
 
@@ -2397,37 +2421,65 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (el) { el.value = ''; el.click(); }
   }
 
-  /** Bulk import: create every route in the file for the chosen vehicle, with
-   *  name + line only (no stops/price) — they land as "Needs pricing". */
+  /** Bulk import: create every route across ALL chosen files for the vehicle,
+   *  with name + line only (no stops/price) — they land as "Needs pricing".
+   *  Files are sent one at a time and the counts are summed into one toast. */
   onBulkKmlFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
+    const files = Array.from(input.files ?? []);
     const v = this.importChoiceVehicle;
-    if (!file || this.cityId == null || !v) return;
+    if (!files.length || this.cityId == null || !v) return;
+
+    this.importingKml = true;
+    this.bulkImportNext(files, v.id, 0, { created: 0, skipped: 0, failed: 0 });
+  }
+
+  /** Sends one file, then recurses to the next — keeps a running tally. */
+  private bulkImportNext(
+    files: File[],
+    cityVehicleTypeId: number,
+    index: number,
+    tally: { created: number; skipped: number; failed: number },
+  ): void {
+    if (index >= files.length) {
+      this.importingKml = false;
+      this.reportBulkImport(files.length, tally);
+      this.loadRoutes();
+      return;
+    }
 
     const fd = new FormData();
-    fd.append('file', file);
-    fd.append('city_vehicle_type_id', String(v.id));
-    this.importingKml = true;
+    fd.append('file', files[index]);
+    fd.append('city_vehicle_type_id', String(cityVehicleTypeId));
     this.api.postMultipart<{ created_count: number; skipped_count: number }>(
       `/admin/cities/${this.cityId}/fixed-routes/import-kml-bulk`, fd,
     ).subscribe({
       next: (res) => {
-        this.importingKml = false;
-        const created = res?.created_count ?? 0;
-        const skipped = res?.skipped_count ?? 0;
-        if (created) {
-          this.toast.success(`Imported ${created} route${created === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} existing` : ''} — add a price to finish each.`);
-        } else {
-          this.toast.info(skipped ? (skipped === 1 ? 'Route already exists' : 'Routes already exist') : 'No routes were found in that file.');
-        }
-        this.loadRoutes();
+        tally.created += res?.created_count ?? 0;
+        tally.skipped += res?.skipped_count ?? 0;
+        this.bulkImportNext(files, cityVehicleTypeId, index + 1, tally);
       },
-      error: (err) => {
-        this.importingKml = false;
-        this.toast.error(err?.error?.message || 'Could not read that file.');
+      error: () => {
+        tally.failed += 1;
+        this.bulkImportNext(files, cityVehicleTypeId, index + 1, tally);
       },
     });
+  }
+
+  private reportBulkImport(fileCount: number, tally: { created: number; skipped: number; failed: number }): void {
+    const parts: string[] = [];
+    if (tally.skipped) parts.push(`skipped ${tally.skipped} existing`);
+    if (tally.failed) parts.push(`${tally.failed} file${tally.failed === 1 ? '' : 's'} could not be read`);
+    const tail = parts.length ? ` (${parts.join(', ')})` : '';
+
+    if (tally.created) {
+      const scope = fileCount > 1 ? ` from ${fileCount} files` : '';
+      this.toast.success(`Imported ${tally.created} route${tally.created === 1 ? '' : 's'}${scope}${tail} — add a price to finish each.`);
+    } else if (tally.failed && !tally.skipped) {
+      this.toast.error('Could not read those files.');
+    } else {
+      this.toast.info(tally.skipped ? (tally.skipped === 1 ? 'Route already exists' : 'Routes already exist') : 'No routes were found in those files.');
+    }
   }
 
   triggerKmlImport(v: CityVehicleRow): void {

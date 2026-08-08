@@ -63,12 +63,11 @@ class RideEndExtrasTest extends TestCase
             'base_fare' => 40, 'surge_multiplier' => 1,
             'threshold_distance_1_km' => 2, 'fare_per_km_after_threshold_1' => 8,
             'threshold_time_1_min' => 5, 'fare_per_min_after_threshold_time_1' => 1,
-            'tax_percent' => 0, 'created_at' => $now, 'updated_at' => $now,
+            'tax_percent' => 0,
+            // Commission lives on the vehicle rate card now (20% for this vehicle).
+            'commission_type' => 'percent', 'commission_percent' => 20, 'fixed_commission' => 0,
+            'created_at' => $now, 'updated_at' => $now,
         ]);
-        CitySetting::query()->updateOrCreate(
-            ['city_id' => $this->cityId],
-            ['commission_type' => 'percent', 'commission_percent' => 20],
-        );
 
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');

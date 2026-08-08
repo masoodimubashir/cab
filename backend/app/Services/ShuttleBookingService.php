@@ -42,7 +42,13 @@ class ShuttleBookingService
         $tipAmount = max(0.0, round((float) ($data['tip_amount'] ?? 0), 2));
         $totalFare = round((float) $estimate['estimated_fare'] + $tipAmount, 2);
 
-        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare) {
+        // Cash = pay a deposit online now, the rest to the driver in cash at trip end.
+        $paymentMethod = strtolower((string) ($data['payment_method'] ?? 'razorpay')) === 'cash' ? 'cash' : 'razorpay';
+        if ($paymentMethod === 'cash' && ! app(CashDepositService::class)->cashEnabled()) {
+            throw new ReservationException('Cash is not available for this operator.', 422);
+        }
+
+        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare, $paymentMethod) {
             $journey = ShuttleJourney::query()->create([
                 'city_id' => $cvt->city_id,
                 'city_vehicle_type_id' => $cvt->id,
@@ -71,6 +77,7 @@ class ShuttleBookingService
                 'tip_amount' => $tipAmount,
                 'fare_breakdown' => $estimate['fare_breakdown'] ?? [],
                 'currency' => 'INR',
+                'payment_method' => $paymentMethod,
                 'payment_status' => 'PENDING',
                 'status' => 'PAYMENT_PENDING',
             ]);
@@ -94,12 +101,16 @@ class ShuttleBookingService
                 return $this->razorpayOrderResponse($locked);
             }
 
-            $amountPaise = max(100, (int) round(((float) $locked->fare_amount) * 100));
+            // Cash pays only the upfront deposit online; online pays the full fare.
+            $onlineAmount = strtolower((string) $locked->payment_method) === 'cash'
+                ? app(CashDepositService::class)->quote((float) $locked->fare_amount)['deposit']
+                : (float) $locked->fare_amount;
+
+            $amountPaise = max(100, (int) round($onlineAmount * 100));
             $receipt = 'shuttle_' . $locked->id . '_' . now()->format('YmdHis');
             $order = $razorpay->createOrder($amountPaise, $receipt);
 
             $locked->update([
-                'payment_method' => 'razorpay',
                 'payment_status' => 'ORDER_CREATED',
                 'razorpay_order_id' => $order['order_id'],
             ]);
@@ -140,7 +151,6 @@ class ShuttleBookingService
             }
 
             $locked->update([
-                "payment_method" => "razorpay",
                 "payment_status" => "PAID",
                 "payment_reference" => $razorpayPaymentId,
                 "razorpay_payment_id" => $razorpayPaymentId,
@@ -191,7 +201,6 @@ class ShuttleBookingService
             }
 
             $locked->update([
-                'payment_method' => 'razorpay',
                 'payment_status' => 'PAID',
                 'payment_reference' => $razorpayPaymentId,
                 'razorpay_payment_id' => $razorpayPaymentId,
@@ -225,15 +234,30 @@ class ShuttleBookingService
      */
     private function recordSplitCapture(ShuttlePassengerBooking $booking, Trip $trip, string $razorpayPaymentId): void
     {
+        $fare = (float) $booking->fare_amount;
         $commission = app(CommissionSettlementService::class)
-            ->commissionForFare($booking->city_id, (float) $booking->fare_amount);
+            ->commissionForFare($trip->city_vehicle_type_id, $fare);
+
+        // Cash: only the upfront deposit was captured online (the rest is cash to
+        // the driver). The deposit settles wholly to the driver at completion and
+        // the operator's commission comes from the driver's wallet — the snapshot
+        // rides along to drive that debit, not a retention from the deposit.
+        $cashDeposit = null;
+        $cashBalance = null;
+        if (strtolower((string) $booking->payment_method) === 'cash') {
+            $quote = app(CashDepositService::class)->quote($fare);
+            $cashDeposit = $quote['deposit'];
+            $cashBalance = $quote['balance'];
+        }
 
         app(BookingPaymentService::class)->recordCapture(
             $trip->id,
             $razorpayPaymentId,
-            (float) $booking->fare_amount,
+            $fare,
             (float) $commission['amount'],
             (string) ($booking->currency ?: 'INR'),
+            $cashDeposit,
+            $cashBalance,
         );
     }
 
@@ -315,7 +339,9 @@ class ShuttleBookingService
             'estimated_fare' => $fare,
             'final_fare' => null,
             'currency' => $booking->currency ?: 'INR',
-            'payment_method' => null,
+            // Carry the seat's method so settlement takes a cash ride's commission
+            // from the driver's wallet (only the deposit was online).
+            'payment_method' => $booking->payment_method,
             'pickup_address' => $booking->pickup_address,
             'pickup_lat' => (float) $booking->pickup_lat,
             'pickup_lng' => (float) $booking->pickup_lng,

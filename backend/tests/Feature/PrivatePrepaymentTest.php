@@ -40,6 +40,7 @@ class PrivatePrepaymentTest extends TestCase
 
     private int $cityId;
     private int $rideTypeId;
+    private int $cvtId;
     private User $customer;
 
     protected function setUp(): void
@@ -55,10 +56,19 @@ class PrivatePrepaymentTest extends TestCase
             'name' => 'Mini', 'mode' => 'private', 'description' => 'Mini', 'sort_order' => 1,
             'created_at' => $now, 'updated_at' => $now,
         ]);
-        CitySetting::query()->updateOrCreate(
-            ['city_id' => $this->cityId],
-            ['commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT],
-        );
+        // Commission lives on the vehicle rate card now (20% for this vehicle).
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Mini', 'sort_order' => 1, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->cvtId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'display_name' => 'Mini', 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        \App\Models\PricingRule::query()->create([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'city_vehicle_type_id' => $this->cvtId, 'base_fare' => 0, 'surge_multiplier' => 1,
+            'commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT, 'fixed_commission' => 0,
+        ]);
 
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');
@@ -115,6 +125,7 @@ class PrivatePrepaymentTest extends TestCase
             'driver_id' => $driver->id,
             'city_id' => $this->cityId,
             'ride_type_id' => $this->rideTypeId,
+            'city_vehicle_type_id' => $this->cvtId,
             'status' => 'CONFIRMED',
             'estimated_fare' => $agreedFare,
             'final_fare' => $agreedFare,
@@ -215,7 +226,12 @@ class PrivatePrepaymentTest extends TestCase
         $this->assertSame(Payment::SETTLE_BOOKING, $payment->settlement_mode);
         $this->assertNull($payment->split_at, 'the driver is owed nothing until the ride happens');
         $this->assertNull($payment->driver_transfer_id);
-        $this->assertSame(0, LedgerEntry::query()->count());
+
+        // The capture is written to the ledger immediately (F6) for admin
+        // visibility, but nothing is split yet — no driver transfer, no operator
+        // retained until the ride actually runs.
+        $this->assertSame(1, LedgerEntry::query()->where('type', LedgerEntry::TYPE_CAPTURE)->count());
+        $this->assertSame(0, LedgerEntry::query()->whereIn('type', [LedgerEntry::TYPE_TRANSFER, LedgerEntry::TYPE_RETAINED])->count());
     }
 
     public function test_completing_the_ride_splits_the_prepayment_and_reconciles(): void

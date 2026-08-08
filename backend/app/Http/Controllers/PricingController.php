@@ -24,10 +24,14 @@ class PricingController extends Controller
         // boundary_polygon + center are returned so the customer mobile can
         // detect when a destination is outside the service area and steer the
         // user toward the Outstation flow without an extra round-trip.
-        // allowed_payment_modes is joined from city_settings so the booking
-        // sheet can render only the modes operators enabled for the city.
+        // Payment methods are a global operator policy now (Operator Settings →
+        // Payments), so every city advertises the same enabled rails.
+        $allowedPaymentModes = array_map(
+            'strtoupper',
+            app(\App\Services\PaymentModeService::class)->operatorModes(),
+        );
+
         $cities = City::query()
-            ->leftJoin('city_settings', 'city_settings.city_id', '=', 'cities.id')
             ->where('cities.is_active', true)
             ->orderBy('cities.name')
             ->get([
@@ -37,15 +41,9 @@ class PricingController extends Controller
                 'cities.center_lat',
                 'cities.center_lng',
                 'cities.boundary_polygon',
-                'city_settings.allowed_driver_payment_modes as allowed_payment_modes',
             ])
-            ->map(function ($row) {
-                $modes = is_string($row->allowed_payment_modes)
-                    ? json_decode($row->allowed_payment_modes, true)
-                    : $row->allowed_payment_modes;
-                $row->allowed_payment_modes = is_array($modes) && $modes
-                    ? array_values(array_intersect($modes, ['CASH', 'RAZORPAY']))
-                    : ['RAZORPAY'];
+            ->map(function ($row) use ($allowedPaymentModes) {
+                $row->allowed_payment_modes = $allowedPaymentModes;
                 return $row;
             });
 

@@ -84,8 +84,11 @@ class FixedSeatHoldService
         $hasExtraLuggage = $extraLuggageCount > 0;
         $couponTitle = $data["coupon_title"] ?? null;
         $tipAmount = max(0.0, round((float) ($data['tip_amount'] ?? 0), 2));
+        // Cash = pay a deposit online now, the rest to the driver in cash at trip
+        // end. Anything else is a full online prepayment.
+        $paymentMethod = strtolower((string) ($data['payment_method'] ?? 'razorpay')) === 'cash' ? 'cash' : 'razorpay';
 
-        $hold = DB::transaction(function () use ($customer, $departure, $seats, $seatLabels, $extraLuggageCount, $hasExtraLuggage, $boardStopId, $dropStopId, $couponTitle, $tipAmount) {
+        $hold = DB::transaction(function () use ($customer, $departure, $seats, $seatLabels, $extraLuggageCount, $hasExtraLuggage, $boardStopId, $dropStopId, $couponTitle, $tipAmount, $paymentMethod) {
             $dep = RouteDeparture::query()->with('route')->lockForUpdate()->find($departure->id);
             if (!$dep) {
                 throw new ReservationException('This departure could not be found.', 404);
@@ -133,6 +136,7 @@ class FixedSeatHoldService
                 'board_stop_id' => $boardStop->id,
                 'drop_stop_id' => $dropStop->id,
                 'seats' => $seats,
+                'payment_method' => $paymentMethod,
                 'amount' => $amount,
                 'original_amount' => $baseAmount,
                 'discount_amount' => $coupon["discount"],
@@ -249,7 +253,7 @@ class FixedSeatHoldService
                 'commission_amount' => (float) $commission['amount'],
                 'promo_discount_amount' => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
                 'coupon_assignment_id' => $lockedHold->coupon_assignment_id,
-                'payment_method' => 'razorpay',
+                'payment_method' => $lockedHold->payment_method ?? 'razorpay',
                 'payment_status' => 'PAID',
                 'payment_reference' => $razorpayPaymentId,
                 'has_extra_luggage' => $extraLuggageCount > 0,
@@ -276,11 +280,9 @@ class FixedSeatHoldService
             // Phase 5 — mirror the prepayment onto the shared money engine so the
             // driver's share is split at trip completion. No-op while the split
             // engine is disabled (the legacy wallet credit still applies then).
-            app(\App\Services\BookingPaymentService::class)->recordCapture(
-                $reservation->trip_id,
+            app(\App\Services\BookingPaymentService::class)->recordSeatCapture(
+                $reservation,
                 (string) $razorpayPaymentId,
-                (float) $reservation->fare_amount,
-                (float) $reservation->commission_amount,
             );
 
             $this->events->record(
@@ -414,7 +416,7 @@ class FixedSeatHoldService
                 'commission_amount' => (float) $commission['amount'],
                 'promo_discount_amount' => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
                 'coupon_assignment_id' => $lockedHold->coupon_assignment_id,
-                'payment_method' => 'razorpay',
+                'payment_method' => $lockedHold->payment_method ?? 'razorpay',
                 'payment_status' => 'PAID',
                 'payment_reference' => $razorpayPaymentId,
                 'has_extra_luggage' => $extraLuggageCount > 0,
@@ -440,11 +442,9 @@ class FixedSeatHoldService
 
             // Phase 5 — mirror the prepayment onto the shared money engine (see
             // confirmHold). No-op while the split engine is disabled.
-            app(\App\Services\BookingPaymentService::class)->recordCapture(
-                $reservation->trip_id,
+            app(\App\Services\BookingPaymentService::class)->recordSeatCapture(
+                $reservation,
                 (string) $razorpayPaymentId,
-                (float) $reservation->fare_amount,
-                (float) $reservation->commission_amount,
             );
 
             $this->events->record(
@@ -549,7 +549,7 @@ class FixedSeatHoldService
                 "commission_amount" => (float) $commission['amount'],
                 "promo_discount_amount" => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
                 "coupon_assignment_id" => $lockedHold->coupon_assignment_id,
-                "payment_method" => "razorpay",
+                "payment_method" => $lockedHold->payment_method ?? "razorpay",
                 "payment_status" => "PAID",
                 "payment_reference" => $paymentReference,
                 "has_extra_luggage" => $extraLuggageCount > 0,
@@ -577,11 +577,9 @@ class FixedSeatHoldService
             // Phase 5 — mirror the prepayment onto the shared money engine so the
             // driver's share is split at trip completion. No-op while the split
             // engine is disabled (the legacy wallet credit still applies then).
-            app(\App\Services\BookingPaymentService::class)->recordCapture(
-                $reservation->trip_id,
+            app(\App\Services\BookingPaymentService::class)->recordSeatCapture(
+                $reservation,
                 $paymentReference,
-                (float) $reservation->fare_amount,
-                (float) $reservation->commission_amount,
             );
 
             $this->events->record(
@@ -626,7 +624,12 @@ class FixedSeatHoldService
                 return $this->razorpayOrderResponse($lockedHold);
             }
 
-            $amountPaise = max(100, (int) round(((float) $lockedHold->amount) * 100));
+            // Cash pays only the upfront deposit online; online pays the full fare.
+            $onlineAmount = strtolower((string) $lockedHold->payment_method) === 'cash'
+                ? app(\App\Services\CashDepositService::class)->quote((float) $lockedHold->amount)['deposit']
+                : (float) $lockedHold->amount;
+
+            $amountPaise = max(100, (int) round($onlineAmount * 100));
             $receipt = 'fixed_' . $lockedHold->id . '_' . now()->format('YmdHis');
             $order = $razorpayService->createOrder($amountPaise, $receipt);
 

@@ -26,6 +26,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     private int $cityId;
     private int $rideTypeId;
+    private int $cvtId;
     private User $driver;
     private User $customer;
 
@@ -43,8 +44,21 @@ class DriverPayoutVisibilityTest extends TestCase
             'created_at' => $now, 'updated_at' => $now,
         ]);
         DB::table('city_settings')->insert([
-            'city_id' => $this->cityId, 'commission_type' => 'percent', 'commission_percent' => 20,
+            'city_id' => $this->cityId,
             'created_at' => $now, 'updated_at' => $now,
+        ]);
+        // Commission lives on the vehicle rate card now (20% for this vehicle).
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Mini', 'sort_order' => 1, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->cvtId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'display_name' => 'Mini', 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        \App\Models\PricingRule::query()->create([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'city_vehicle_type_id' => $this->cvtId, 'base_fare' => 0, 'surge_multiplier' => 1,
+            'commission_type' => 'percent', 'commission_percent' => 20, 'fixed_commission' => 0,
         ]);
 
         $this->driver = User::factory()->create();
@@ -70,6 +84,7 @@ class DriverPayoutVisibilityTest extends TestCase
             'driver_id' => $this->driver->id,
             'city_id' => $this->cityId,
             'ride_type_id' => $this->rideTypeId,
+            'city_vehicle_type_id' => $this->cvtId,
             'status' => $status,
             'estimated_fare' => $fare,
             'final_fare' => $status === 'COMPLETED' ? $fare : $fare,

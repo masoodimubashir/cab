@@ -24,11 +24,7 @@ class AdminCitySettingsController
             'show_region_specific_fare' => ['nullable', 'boolean'],
             'show_vehicle_make_model' => ['nullable', 'boolean'],
 
-            'allowed_driver_payment_modes' => ['nullable'],
             'negotiation_floor_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'commission_type' => ['nullable', 'in:percent,fixed'],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             'toll_mode' => ['nullable', 'in:no,yes'],
             'show_low_wallet_alert' => ['nullable', 'boolean'],
             'private_no_show_threshold_minutes' => ['nullable', 'numeric', 'min:0', 'max:180'],
@@ -69,47 +65,11 @@ class AdminCitySettingsController
 
         $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
 
-        if (($data['commission_type'] ?? $settings->commission_type ?? 'percent') === 'fixed') {
-            if (array_key_exists('commission_type', $data) || array_key_exists('fixed_commission', $data)) {
-                $data['commission_percent'] = 0;
-            }
-        } elseif (array_key_exists('commission_type', $data) || array_key_exists('commission_percent', $data)) {
-            $data['fixed_commission'] = 0;
-        }
+        // Commission moved off the city: Private/Shuttle read it from the vehicle
+        // rate card, Fixed from the route's own fare_config.
 
-        // Normalize + LOCK allowed_driver_payment_modes to the two supported
-        // values. Accept a JSON string, comma list, or array; upper-case each
-        // entry and require every one to be CASH or RAZORPAY — anything else is
-        // rejected (not silently dropped) so the stored value always matches
-        // what the apps actually honor. A city must keep at least one mode, or
-        // no rider there could pay.
-        if (array_key_exists('allowed_driver_payment_modes', $data)) {
-            $modes = $data['allowed_driver_payment_modes'];
-            if (is_string($modes)) {
-                $decoded = json_decode($modes, true);
-                $modes = is_array($decoded) ? $decoded : array_map('trim', explode(',', $modes));
-            }
-            $modes = is_array($modes) ? $modes : [];
-            $modes = array_values(array_unique(array_map(
-                fn ($m) => strtoupper(trim((string) $m)),
-                array_filter($modes, fn ($m) => trim((string) $m) !== ''),
-            )));
-
-            $allowed = ['CASH', 'RAZORPAY'];
-            if (array_diff($modes, $allowed)) {
-                return response()->json([
-                    'message' => 'Payment modes must be CASH or RAZORPAY only.',
-                ], 422);
-            }
-            if (empty($modes)) {
-                return response()->json([
-                    'message' => 'At least one payment mode (CASH or RAZORPAY) must be enabled for this city.',
-                ], 422);
-            }
-
-            $settings->allowed_driver_payment_modes = $modes;
-            unset($data['allowed_driver_payment_modes']);
-        }
+        // Payment methods moved to a global operator policy (Operator Settings →
+        // Payments); the city no longer carries allowed_driver_payment_modes.
 
         foreach ($data as $field => $value) {
             $settings->{$field} = $value;
@@ -166,13 +126,9 @@ class AdminCitySettingsController
                 $targetSettings->support_email = $sourceSettings->support_email;
             }
 
-            // Private Rides Settings (commission, floor, payment modes, cancellation)
+            // Private Rides Settings (floor, cancellation)
             if ($request->boolean('copy_private')) {
-                $targetSettings->allowed_driver_payment_modes = $sourceSettings->allowed_driver_payment_modes;
                 $targetSettings->negotiation_floor_percent = $sourceSettings->negotiation_floor_percent;
-                $targetSettings->commission_type = $sourceSettings->commission_type;
-                $targetSettings->commission_percent = $sourceSettings->commission_percent;
-                $targetSettings->fixed_commission = $sourceSettings->fixed_commission;
                 $targetSettings->toll_mode = $sourceSettings->toll_mode;
                 $targetSettings->show_low_wallet_alert = $sourceSettings->show_low_wallet_alert;
                 $targetSettings->private_no_show_threshold_minutes = $sourceSettings->private_no_show_threshold_minutes;
@@ -257,11 +213,7 @@ class AdminCitySettingsController
             'show_region_specific_fare' => (bool) $s->show_region_specific_fare,
             'show_vehicle_make_model' => (bool) $s->show_vehicle_make_model,
 
-            'allowed_driver_payment_modes' => $s->allowed_driver_payment_modes ?? [],
             'negotiation_floor_percent' => round((float) ($s->negotiation_floor_percent ?? 10), 2),
-            'commission_type' => $s->commission_type ?? 'percent',
-            'commission_percent' => round((float) ($s->commission_percent ?? 0), 2),
-            'fixed_commission' => round((float) ($s->fixed_commission ?? 0), 2),
             'toll_mode' => $s->toll_mode ?? 'no',
             'show_low_wallet_alert' => (bool) ($s->show_low_wallet_alert ?? true),
             'private_no_show_threshold_minutes' => $s->private_no_show_threshold_minutes !== null ? round((float) $s->private_no_show_threshold_minutes, 2) : null,

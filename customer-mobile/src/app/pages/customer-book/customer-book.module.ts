@@ -5,9 +5,10 @@ import { IonicModule } from '@ionic/angular';
 import { CustomerBookPage } from './customer-book.page';
 import { CustomerBookPageRoutingModule } from './customer-book-routing.module';
 import { ModeSelectModalModule } from '../../shared/mode-select-modal/mode-select-modal.module';
+import { PaymentMethodModalComponent } from '../../shared/payment-method-modal.component';
 
 @NgModule({
-  imports: [CommonModule, FormsModule, IonicModule, CustomerBookPageRoutingModule, ModeSelectModalModule],
+  imports: [CommonModule, FormsModule, IonicModule, CustomerBookPageRoutingModule, ModeSelectModalModule, PaymentMethodModalComponent],
   declarations: [CustomerBookPage],
 })
 export class CustomerBookPageModule {}

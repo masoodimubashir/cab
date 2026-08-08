@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'paid_at',
     'coupon_assignment_id',
     'discount_amount',
+    'cash_deposit_amount',
+    'cash_balance_due',
     'gateway_fee_amount',
     'payment_method_group',
     'commission_amount',
@@ -60,6 +62,8 @@ class Payment extends Model
     protected $casts = [
         'amount' => 'float',
         'discount_amount' => 'float',
+        'cash_deposit_amount' => 'float',
+        'cash_balance_due' => 'float',
         'gateway_fee_amount' => 'float',
         'commission_amount' => 'float',
         'driver_amount' => 'float',

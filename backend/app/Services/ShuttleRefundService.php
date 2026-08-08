@@ -154,6 +154,17 @@ class ShuttleRefundService
         $refundFull ??= true;
         $paidByRazorpay = $paid && (($booking->payment_method ?: 'razorpay') === 'razorpay');
         $paidByWallet = $paid && $booking->payment_method === 'wallet';
+        // A cash booking only put its upfront deposit online; that deposit rides on
+        // the shared engine and is auto-refunded through the same Razorpay rail as
+        // a razorpay booking — just for the deposit, not the whole fare. The cash
+        // balance was never collected online, so nothing is owed back for it here.
+        $paidByCash = $paid && $booking->payment_method === 'cash';
+        $cashDeposit = $paidByCash
+            ? app(CashDepositService::class)->depositForBooking(
+                $booking->razorpay_payment_id ?: $booking->payment_reference,
+                (float) $booking->fare_amount,
+            )
+            : null;
 
         // Forfeited: the money stays with the operator, so the booking is closed
         // out as rejected rather than left owing.
@@ -164,7 +175,7 @@ class ShuttleRefundService
             !$paid => 'none',
             !$refundFull => 'rejected',
             $paidByWallet => 'wallet_auto',
-            default => 'razorpay_manual_fallback', // razorpay default until auto succeeds
+            default => 'razorpay_manual_fallback', // razorpay/cash default until auto succeeds
         };
 
         // Either way the prepayment has to be booked through the shared engine —
@@ -178,13 +189,22 @@ class ShuttleRefundService
             // Razorpay's own refund id, so the refund.processed/failed webhook can
             // find this booking and the admin register can show the reference.
             $refundReference = $outcome['refund_id'] ?: $refundReference;
-            if ($paidByRazorpay) {
+            if ($paidByRazorpay || $paidByCash) {
                 $refundPath = 'razorpay_auto';
+            }
+            // A cash booking only refunded its deposit — record that exact figure so
+            // the register shows what actually went back online, not the full fare.
+            if ($paidByCash) {
+                $booking->refund_amount = ($outcome['refunded_paise'] ?? 0) > 0
+                    ? $outcome['refunded_paise'] / 100
+                    : $cashDeposit;
             }
         }
 
+        // For a cash booking the amount owed/refunded is the online deposit, never
+        // the full fare (the balance was cash to the driver).
         $refundAmount = in_array($refundStatus, ['APPROVED', 'REFUNDED'], true)
-            ? ($booking->refund_amount ?? (float) $booking->fare_amount)
+            ? ($booking->refund_amount ?? $cashDeposit ?? (float) $booking->fare_amount)
             : (float) ($booking->refund_amount ?? 0);
 
         $booking->update([
@@ -311,7 +331,10 @@ class ShuttleRefundService
             return null;
         }
 
-        $outcome = $this->bookingPayments->refundForBooking($paymentId, $refundFull, $cancelledBy);
+        // A Shuttle no-show/too-late cancel forfeits the fare to the operator (unlike
+        // Fixed, where the departure completes and the driver keeps their share), so
+        // the forfeit is booked to the operator here rather than settled at completion.
+        $outcome = $this->bookingPayments->refundForBooking($paymentId, $refundFull, $cancelledBy, forfeitToOperator: true);
 
         return $outcome !== null && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true)
             ? $outcome
