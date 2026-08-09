@@ -858,6 +858,7 @@ class TripsController extends Controller
 
         $tripStateMachineService->transition($trip, $data['status']);
         $fresh = $trip->fresh()->appendDriverRiderContact();
+        $fresh->setAttribute('tolls_enabled', $fresh->tollsEnabled());
 
         // On COMPLETED, return the breakdown so the driver app can render the
         // summary modal without an extra round-trip.
@@ -905,6 +906,18 @@ class TripsController extends Controller
     {
         $extraToll = max(0.0, round((float) ($data['extra_toll_amount'] ?? 0), 2));
         $extraWaiting = max(0.0, round((float) ($data['extra_waiting_amount'] ?? 0), 2));
+
+        // Tolls off (city toll_mode != 'yes'): never accept a driver-declared toll
+        // at trip end either, so "tolls off" holds everywhere, not just at booking.
+        if ($extraToll > 0) {
+            $tollMode = $trip->city_id
+                ? CitySetting::query()->where('city_id', $trip->city_id)->value('toll_mode')
+                : null;
+            if ($tollMode !== 'yes') {
+                $extraToll = 0.0;
+            }
+        }
+
         $total = $extraToll + $extraWaiting;
 
         if ($total <= 0) {
@@ -1294,6 +1307,10 @@ class TripsController extends Controller
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:1', 'max:10000'],
         ]);
+
+        if (! OperatorSetting::instance()->tips_enabled) {
+            return response()->json(['message' => 'Tipping is currently disabled.'], 403);
+        }
 
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {

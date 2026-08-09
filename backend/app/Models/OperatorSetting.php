@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
     'corporate_tip_value_2',
     'corporate_tip_value_3',
     'tip_in_percentage',
+    'tips_enabled',
 
     // Geofence / driver
     'check_destination_outside_geofence',
@@ -58,6 +59,7 @@ class OperatorSetting extends Model
 
     protected $casts = [
         'tip_in_percentage' => 'boolean',
+        'tips_enabled' => 'boolean',
         'subscription_popup_enabled' => 'boolean',
         'check_destination_outside_geofence' => 'boolean',
         'check_driver_debt' => 'boolean',

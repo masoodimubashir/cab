@@ -576,6 +576,10 @@ class DriversController extends Controller
         $payload['ride_type_name'] = $trip->cityVehicleType?->rideType?->name;
         $payload['is_prepaid'] = $payload['service_mode'] === 'shuttle';
 
+        // Whether tolls are on for this trip's city. When off, the driver app
+        // hides the end-of-ride toll box (the server ignores a toll anyway).
+        $payload['tolls_enabled'] = $trip->tollsEnabled();
+
         // Rider contact the driver should call to coordinate pickup. For a
         // "booked for a friend" trip that's the friend the booker named; for a
         // normal trip it's the account holder. (is_for_other / booked_for_* are

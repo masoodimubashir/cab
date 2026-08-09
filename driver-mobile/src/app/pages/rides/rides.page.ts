@@ -599,13 +599,19 @@ export class RidesPage implements OnInit, OnDestroy {
    * trip they didn't mean to close).
    */
   private async askForExtras(): Promise<Record<string, unknown> | null> {
+    // Hide the toll box when tolls are off for this city — the server ignores a
+    // declared toll then anyway, so there's nothing for the driver to enter.
+    const tollsEnabled = this.lastTrip?.['tolls_enabled'] !== false;
+    const inputs = [
+      ...(tollsEnabled
+        ? [{ name: 'toll', type: 'number' as const, placeholder: 'Toll you paid (₹)', min: 0 }]
+        : []),
+      { name: 'waiting', type: 'number' as const, placeholder: 'Extra waiting charge (₹)', min: 0 },
+    ];
     const alert = await this.alertCtrl.create({
       header: 'Anything to add?',
       message: 'Leave blank if not. The rider pays any extra online — never in cash.',
-      inputs: [
-        { name: 'toll', type: 'number', placeholder: 'Toll you paid (₹)', min: 0 },
-        { name: 'waiting', type: 'number', placeholder: 'Extra waiting charge (₹)', min: 0 },
-      ],
+      inputs,
       buttons: [
         { text: 'Back', role: 'cancel' },
         { text: 'Finish ride', role: 'confirm' },

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\FixedSeatHold;
+use App\Models\OperatorSetting;
 use App\Models\SeatReservation;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedBookingService;
@@ -75,6 +76,12 @@ class FixedBookingsController extends Controller
             // full online prepayment.
             'payment_method' => ['nullable', 'in:cash,razorpay'],
         ]);
+
+        // Tipping globally off (Operator Settings → Tips): ignore any tip the
+        // client sent so a stale app can't slip a tip through.
+        if (! OperatorSetting::instance()->tips_enabled) {
+            $data['tip_amount'] = 0;
+        }
 
         $hold = $this->seatHolds->createHold($request->user(), $data);
 
