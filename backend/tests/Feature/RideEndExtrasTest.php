@@ -69,6 +69,9 @@ class RideEndExtrasTest extends TestCase
             'created_at' => $now, 'updated_at' => $now,
         ]);
 
+        // Tolls are ON for this city so the ride-end toll extras below apply.
+        CitySetting::query()->updateOrCreate(['city_id' => $this->cityId], ['toll_mode' => 'yes']);
+
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');
 
@@ -166,6 +169,22 @@ class RideEndExtrasTest extends TestCase
         $this->assertSame(260.0, (float) $res->json('breakdown.final_fare'));
         // They prepaid ₹200, so ₹60 is left to settle.
         $this->assertSame(60.0, (float) $res->json('balance_due'));
+    }
+
+    public function test_a_declared_toll_is_dropped_when_tolls_are_off(): void
+    {
+        // Tolls off for this city — the driver's end-of-ride toll must be ignored,
+        // so "tolls off" holds at trip end, not just at booking.
+        CitySetting::query()->updateOrCreate(['city_id' => $this->cityId], ['toll_mode' => 'no']);
+
+        $trip = $this->rideAtDropPoint();
+
+        // Driver declares ₹60 toll + ₹50 waiting — only waiting should stick.
+        $res = $this->finish($trip, ['extra_toll_amount' => 60, 'extra_waiting_amount' => 50])->assertOk();
+
+        $this->assertSame(0.0, (float) $res->json('breakdown.toll_amount'));
+        $this->assertSame(250.0, (float) $res->json('breakdown.final_fare')); // 200 + 50 waiting, no toll
+        $this->assertSame(50.0, (float) $res->json('balance_due'));
     }
 
     public function test_declared_waiting_is_added_to_what_the_rider_owes(): void

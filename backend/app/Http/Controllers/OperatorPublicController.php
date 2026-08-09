@@ -21,7 +21,8 @@ class OperatorPublicController extends Controller
     /**
      * Tipping config used by the customer-mobile post-ride tip prompt.
      *
-     * Returns the 3 preset values and whether they should be rendered as
+     * Returns whether tipping is enabled at all (the app must hide the prompt
+     * when false), the 3 preset values, and whether they should be rendered as
      * rupees or percentages of the ride fare.
      */
     public function tipping(Request $request)
@@ -29,6 +30,7 @@ class OperatorPublicController extends Controller
         $s = OperatorSetting::instance();
 
         return response()->json([
+            'enabled' => (bool) $s->tips_enabled,
             'values' => [
                 (int) $s->customer_tip_value_1,
                 (int) $s->customer_tip_value_2,

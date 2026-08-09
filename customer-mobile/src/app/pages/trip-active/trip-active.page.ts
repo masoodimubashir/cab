@@ -93,6 +93,7 @@ type TripDetail = {
 };
 
 type TippingConfig = {
+  enabled: boolean;        // operator's global tips on/off switch — hide all tip UI when false
   values: number[];        // 3 presets: rupees or % depending on `in_percentage`
   in_percentage: boolean;
 };
@@ -1186,6 +1187,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     return (
       this.isCompleted() &&
       !!this.tipping &&
+      this.tipping.enabled &&
       !this.tipSkipped &&
       (this.trip?.tip_amount ?? null) === null
     );

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OperatorSetting;
 use App\Models\ShuttlePassengerBooking;
 use App\Services\RazorpayService;
 use App\Services\ShuttleBookingService;
@@ -48,6 +49,12 @@ class ShuttleBookingsController extends Controller
             // 'cash' collects only the upfront deposit online; anything else pays the full fare.
             'payment_method' => ['nullable', 'in:cash,razorpay'],
         ]);
+
+        // Tipping globally off (Operator Settings → Tips): ignore any tip the
+        // client sent so a stale app can't slip a tip through.
+        if (! OperatorSetting::instance()->tips_enabled) {
+            $data['tip_amount'] = 0;
+        }
 
         $booking = $this->bookings->createBooking($request->user(), $data);
 

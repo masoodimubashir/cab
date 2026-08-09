@@ -13,6 +13,7 @@ import {
 } from '../../ui';
 
 interface OperatorSettings {
+  tips_enabled: boolean;
   customer_tip_value_1: number;
   customer_tip_value_2: number;
   customer_tip_value_3: number;
@@ -136,6 +137,16 @@ interface SectionMeta {
           <div class="panel__body">
             <!-- ============= TIPPING ============= -->
             <ng-container *ngIf="activeSection === 'tipping'">
+              <label class="switch-row">
+                <span class="switch-row__text">
+                  <span class="switch-row__title">Enable tipping</span>
+                  <span class="switch-row__sub">Master switch. When off, riders never see the tip prompt on any ride type.</span>
+                </span>
+                <span class="switch">
+                  <input type="checkbox" [(ngModel)]="settings.tips_enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+              </label>
               <div class="fields">
                 <div class="field">
                   <span class="field__label">Customer tip presets</span>
@@ -632,6 +643,7 @@ export class OperatorSettingsComponent implements OnInit {
   /** Which form fields each section is responsible for. */
   private readonly sectionFields: Record<SectionKey, string[]> = {
     tipping: [
+      'tips_enabled',
       'customer_tip_value_1',
       'customer_tip_value_2',
       'customer_tip_value_3',

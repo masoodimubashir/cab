@@ -72,6 +72,20 @@ class OperatorPaymentSettingsTest extends TestCase
         $this->assertEquals(25, (float) $settings->cash_deposit_percent);
     }
 
+    public function test_update_persists_tips_enabled_toggle(): void
+    {
+        $this->asAdmin();
+
+        // Off by default.
+        $this->assertFalse((bool) OperatorSetting::instance()->tips_enabled);
+
+        $this->patchJson('/api/admin/operator-settings', ['tips_enabled' => true])->assertOk();
+        $this->assertTrue((bool) OperatorSetting::instance()->fresh()->tips_enabled);
+
+        $this->patchJson('/api/admin/operator-settings', ['tips_enabled' => false])->assertOk();
+        $this->assertFalse((bool) OperatorSetting::instance()->fresh()->tips_enabled);
+    }
+
     public function test_cannot_disable_all_payment_methods_at_once(): void
     {
         $this->asAdmin();

@@ -21,6 +21,7 @@ interface ShuttleBooking { id: number; trip_id?: number | null; }
 type Step = 'pickup' | 'drop' | 'fare' | 'paying' | 'forming';
 
 interface TippingConfig {
+  enabled: boolean;
   values: number[];
   in_percentage: boolean;
 }
@@ -77,7 +78,7 @@ export class ShuttleBookPage implements OnInit {
 
   private loadTippingConfig(): void {
     this.api.get<TippingConfig>('/operator/tipping').subscribe({
-      next: (cfg) => { this.tipping = cfg; this.cdr.markForCheck(); },
+      next: (cfg) => { this.tipping = cfg.enabled ? cfg : null; this.cdr.markForCheck(); },
       error: () => { this.tipping = null; this.cdr.markForCheck(); },
     });
   }

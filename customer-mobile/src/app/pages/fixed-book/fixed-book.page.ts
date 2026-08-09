@@ -100,6 +100,7 @@ declare const google: any;
 declare const Razorpay: any;
 
 interface TippingConfig {
+  enabled: boolean;
   values: number[];
   in_percentage: boolean;
 }
@@ -239,7 +240,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   private loadTippingConfig(): void {
     this.api.get<TippingConfig>('/operator/tipping').subscribe({
-      next: (cfg) => { this.tipping = cfg; },
+      next: (cfg) => { this.tipping = cfg.enabled ? cfg : null; },
       error: () => { this.tipping = null; },
     });
   }

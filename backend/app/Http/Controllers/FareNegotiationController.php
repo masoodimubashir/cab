@@ -73,6 +73,7 @@ class FareNegotiationController extends Controller
         $tripWithDriver->setAttribute('service_mode', str_contains(strtolower($rideTypeName), 'shuttle') ? 'shuttle' : 'private');
         $tripWithDriver->setAttribute('vehicle_name', $tripWithDriver->cityVehicleType?->display_name);
         $tripWithDriver->setAttribute('ride_type_name', $tripWithDriver->cityVehicleType?->rideType?->name);
+        $tripWithDriver->setAttribute('tolls_enabled', $trip->tollsEnabled());
 
         // So the driver sees + can call the actual rider (the friend on a
         // for-someone-else booking); the booker's relation stays hidden.

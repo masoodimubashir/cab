@@ -25,6 +25,7 @@ class AdminOperatorSettingsController
             'corporate_tip_value_2' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'corporate_tip_value_3' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'tip_in_percentage' => ['nullable', 'boolean'],
+            'tips_enabled' => ['nullable', 'boolean'],
 
             // Geofence / driver
             'check_destination_outside_geofence' => ['nullable', 'boolean'],
