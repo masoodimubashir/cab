@@ -148,14 +148,21 @@ class PaymentsController extends Controller
             ->sum(DB::raw('amount - COALESCE(gateway_fee_amount, 0)'));
         $payableAmount = round($payableAmount - $alreadyPaid, 2);
 
-        // The gateway's cut rides on top of the fare, so the customer covers it
-        // and commission stays whole. Zero while the fee is switched off.
+        // Who bears the gateway fee depends on the ride mode. This endpoint pays
+        // PRIVATE trips, where the OPERATOR bears it: the rider pays only the fare
+        // and the fee is booked against the operator at settlement. (Fixed's
+        // rider-pays flow lives in its own booking path.) Zero while the fee is off.
         $gatewayFees = app(GatewayFeeService::class);
         $methodGroup = $gatewayFees->isKnownMethod($data['payment_method'] ?? null)
             ? (string) $data['payment_method']
             : null;
-        $gatewayFeeAmount = $gatewayFees->feeFor($payableAmount, $methodGroup);
-        $chargeAmount = round($payableAmount + $gatewayFeeAmount, 2);
+        $operatorBearsFee = $gatewayFees->operatorBears('private');
+        // Operator-borne uses the default rate (the rider isn't picking a
+        // fee-bearing method); customer-borne uses the method they chose.
+        $feeAmount = $gatewayFees->feeFor($payableAmount, $operatorBearsFee ? null : $methodGroup);
+        $customerFeeAmount = $operatorBearsFee ? 0.0 : $feeAmount;
+        $operatorFeeAmount = $operatorBearsFee ? $feeAmount : 0.0;
+        $chargeAmount = round($payableAmount + $customerFeeAmount, 2);
 
         $amountPaise = (int) round($chargeAmount * 100);
         if ($amountPaise <= 0) {
@@ -169,7 +176,7 @@ class PaymentsController extends Controller
 
         $receipt = 'trip_' . $trip->id . '_' . now()->format('YmdHis');
 
-        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $gatewayFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
+        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $customerFeeAmount, $operatorFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
             // Reuse an abandoned checkout for this trip rather than piling up
             // rows; a settled payment is never touched (there may now be several
             // per trip: the prepayment plus a balance).
@@ -188,7 +195,8 @@ class PaymentsController extends Controller
                 // The fare inside it is amount − gateway_fee_amount, which is
                 // what the split runs on.
                 'amount' => $chargeAmount,
-                'gateway_fee_amount' => $gatewayFeeAmount > 0 ? $gatewayFeeAmount : null,
+                'gateway_fee_amount' => $customerFeeAmount > 0 ? $customerFeeAmount : null,
+                'operator_gateway_fee_amount' => $operatorFeeAmount > 0 ? $operatorFeeAmount : null,
                 'payment_method_group' => $methodGroup,
                 'currency' => 'INR',
                 'paid_at' => null,
@@ -230,7 +238,7 @@ class PaymentsController extends Controller
                 // shows this as the fare with a "Payment fee" line beneath it.
                 'breakdown' => [
                     'fare' => $payableAmount,
-                    'gateway_fee' => $gatewayFeeAmount,
+                    'gateway_fee' => $customerFeeAmount,
                     'total' => $chargeAmount,
                     'payment_method' => $methodGroup,
                 ],
@@ -521,6 +529,12 @@ class PaymentsController extends Controller
                 ->latest('id')
                 ->first();
 
+            // Private cash: the operator bears the gateway fee on the deposit. It's
+            // recorded on the payment for the operator's net-settlement; it is NOT a
+            // trip-ledger entry (the deposit is wholly the driver's).
+            $gatewayFees = app(\App\Services\GatewayFeeService::class);
+            $operatorFee = $gatewayFees->operatorBears('private') ? $gatewayFees->feeFor($deposit) : 0.0;
+
             $attributes = [
                 'trip_id' => $trip->id,
                 'method' => 'CASH',
@@ -529,6 +543,7 @@ class PaymentsController extends Controller
                 'amount' => $deposit,
                 'cash_deposit_amount' => $deposit,
                 'cash_balance_due' => $balance,
+                'operator_gateway_fee_amount' => $operatorFee > 0 ? $operatorFee : null,
                 'currency' => 'INR',
                 'paid_at' => null,
                 'razorpay_payment_id' => null,

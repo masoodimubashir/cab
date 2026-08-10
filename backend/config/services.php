@@ -69,6 +69,15 @@ return [
             'route_rate' => (float) env('PAYMENTS_GATEWAY_ROUTE_RATE', 0.1),
             'gst_rate' => (float) env('PAYMENTS_GATEWAY_GST_RATE', 18.0),
 
+            // Who bears the fee, by ride mode. 'customer' adds it on top of the
+            // fare (the rider sees + pays it); 'operator' keeps the rider's price
+            // at the fare and books the fee against the operator at settlement.
+            'borne_by' => [
+                'fixed' => env('PAYMENTS_GATEWAY_FEE_FIXED_BEARER', 'customer'),
+                'private' => env('PAYMENTS_GATEWAY_FEE_PRIVATE_BEARER', 'operator'),
+                'shuttle' => env('PAYMENTS_GATEWAY_FEE_SHUTTLE_BEARER', 'operator'),
+            ],
+
             // Keys are what the customer app sends back as `payment_method`.
             'methods' => [
                 'upi' => ['label' => 'UPI', 'hint' => 'GPay, PhonePe, Paytm & more', 'rate' => 2.0],

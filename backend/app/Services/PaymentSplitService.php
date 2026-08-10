@@ -229,9 +229,15 @@ class PaymentSplitService
                     $locked->razorpay_payment_id,
                 );
 
-                // 1b) Straight back out to the gateway.
-                $this->recordGatewayFee($locked, (int) $locked->trip_id, $feePaise);
+                // 1b) The customer-borne fee straight back out to the gateway.
+                $this->recordGatewayFee($locked, (int) $locked->trip_id, $this->customerFeePaise($locked));
             }
+
+            // 1c) The operator-borne fee is recognised HERE, at settlement — never
+            // at capture — so a cancelled/refunded booking never books it. It comes
+            // off the operator's slice below (the pool is captured − feePaise). No-op
+            // when there's no operator-borne fee.
+            $this->recordGatewayFee($locked, (int) $locked->trip_id, $this->operatorFeePaise($locked));
 
             // 2) Operator retains its commission.
             if ($operatorPaise > 0) {
@@ -271,7 +277,6 @@ class PaymentSplitService
         }
 
         $capturedPaise = self::toPaise($payment->amount);
-        $feePaise = $this->feePaise($payment, $capturedPaise);
 
         $this->ledger->record(
             LedgerEntry::TYPE_CAPTURE,
@@ -283,7 +288,9 @@ class PaymentSplitService
             $payment->razorpay_payment_id,
         );
 
-        $this->recordGatewayFee($payment, $payment->trip_id, $feePaise);
+        // Only the customer-borne fee is booked at capture (it's inside `amount`).
+        // The operator-borne fee is booked at settlement — see settleBookingPayment.
+        $this->recordGatewayFee($payment, $payment->trip_id, $this->customerFeePaise($payment));
     }
 
     /**
@@ -305,7 +312,41 @@ class PaymentSplitService
      */
     private function feePaise(Payment $payment, int $capturedPaise): int
     {
-        return max(0, min($capturedPaise, self::toPaise($payment->gateway_fee_amount)));
+        // The whole gateway cut for splitting the pool: `captured - feePaise` is
+        // what's shared, so the fee (either bearer) comes off before driver/
+        // operator. Only one of the two is ever set.
+        $fee = $this->customerFeePaise($payment) + $this->operatorFeePaise($payment);
+
+        return max(0, min($capturedPaise, $fee));
+    }
+
+    /**
+     * The customer-borne fee — the slice of `amount` that was Razorpay's cut, not
+     * the fare. Booked as the gateway line AT CAPTURE, because the customer's own
+     * money covers it. Zero on operator-borne rides.
+     */
+    private function customerFeePaise(Payment $payment): int
+    {
+        return max(0, self::toPaise($payment->gateway_fee_amount));
+    }
+
+    /**
+     * The operator-borne fee — the cut the operator absorbs (never part of
+     * `amount`). Booked as the gateway line only AT SETTLEMENT, so a cancelled/
+     * refunded ride (which never settles) carries no fee and the ledger balances.
+     *
+     * On a CASH deposit it returns 0: the deposit is wholly the driver's, so there
+     * is no operator slice to take it from. The absorbed fee is still stored on the
+     * payment (operator_gateway_fee_amount) for the operator's net-settlement — it
+     * just isn't a trip-ledger entry, exactly like the cash commission.
+     */
+    private function operatorFeePaise(Payment $payment): int
+    {
+        if ($payment->cash_deposit_amount !== null) {
+            return 0;
+        }
+
+        return max(0, self::toPaise($payment->operator_gateway_fee_amount));
     }
 
     /**

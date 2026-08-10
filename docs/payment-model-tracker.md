@@ -19,7 +19,7 @@ Companion to [payment-model-spec.md](payment-model-spec.md). Work is split into 
 | # | Module | Depends on | Status |
 |---|---|---|---|
 | 1 | Admin config foundations | — | `[x]` |
-| 2 | Gateway fee per ride type + Fixed checkout breakdown | — | `[ ]` |
+| 2 | Gateway fee per ride type + Fixed checkout breakdown | — | `[x]` |
 | 3 | Cancellation & refund overhaul | — | `[ ]` |
 | 4 | No-show → operator (all ride types) | 3 | `[ ]` |
 | 5 | Wallet records & visibility | — | `[ ]` |
@@ -71,20 +71,32 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 2 — Gateway fee per ride type + Fixed checkout breakdown `[ ]`
+## Module 2 — Gateway fee per ride type + Fixed checkout breakdown `[x]`
 
 **Goal:** the payment-gateway fee is borne per the per-ride rule, and Fixed shows it to the customer.
 **Spec:** §4
 
-**Build**
-- Config: gateway-fee bearer per ride type — **Fixed = customer**, **Private/Shuttle = operator**.
-- **Fixed checkout**: compute gateway fee (≈2%), add to total, display **Ride Fare + Gateway Charge + Final Total**.
-- **Private/Shuttle**: operator absorbs — fee booked to operator, not added to the customer.
+**Build (done)**
+- Config `services.payments.gateway_fee.borne_by` — **fixed=customer, private=operator, shuttle=operator** (env-overridable). `GatewayFeeService::customerBears()/operatorBears()`.
+- **Fixed** (`FixedSeatHoldService::createRazorpayOrder` + `BookingPaymentService::recordSeatCapture`): rider charged fare + fee; order returns `breakdown` (fare / gateway_fee / total). Customer-borne fee stored in `payments.gateway_fee_amount`.
+- **Private** (`PaymentsController::pay`) & **Shuttle** (`ShuttleBookingService::recordSplitCapture`): rider charged the fare only; operator-borne fee stored in new `payments.operator_gateway_fee_amount`.
+- **Split** (`PaymentSplitService`): customer-borne fee booked at capture; **operator-borne fee booked at settlement** (so a cancelled/refunded ride books no fee and the ledger balances). The existing `computeSplit` already floors the driver at the fare, so the operator's slice absorbs the operator-borne fee — no core-split change.
+- Migration: `..._add_operator_gateway_fee_to_payments.php`.
 
-**Acceptance / tests**
-- [ ] Fixed booking total = fare + gateway fee; breakdown returned to the client app.
-- [ ] Private booking total = fare (no fee added to customer); fee booked to operator in the ledger.
-- [ ] Shuttle booking total = fare (no fee added); fee booked to operator.
+**Acceptance / tests — all green**
+- [x] **Fixed** order = fare + fee, returns the 3-line breakdown; at completion driver paid on fare, **operator whole**, ledger balances (`GatewayFeeFixedTest`, 2).
+- [x] **Private** rider pays fare only; operator absorbs fee; driver on fare; refund returns the fare; ledger balances (`GatewayFeeTest`, 14).
+- [x] **Shuttle** rider pays fare only; operator absorbs fee; operator take = commission − fee; ledger balances (`GatewayFeeShuttleTest`, 1).
+- [x] **Regression:** 71 core payment/settlement/cash/refund tests green (fee-off default path unchanged).
+
+**Cash deposits — now covered (fee applies to the online-charged amount):**
+- [x] **Fixed cash** → customer pays **deposit + fee**; driver gets the full deposit; fee ledgered; balances (`GatewayFeeFixedTest`).
+- [x] **Shuttle/Private cash** → operator bears it; the fee on the deposit is **recorded on the payment** (`operator_gateway_fee_amount`) for net-settlement but **not** a trip-ledger entry (the deposit is wholly the driver's, so the ledger stays balanced) — `GatewayFeeShuttleTest`, `GatewayFeeTest::private_cash_deposit…`.
+
+**Notes:**
+- **Fixed checkout UI:** the customer app render of the fare/fee/total breakdown was completed by the user.
+- **Enablement:** the fee is **off by default** (`PAYMENTS_GATEWAY_FEE_ENABLED`); turn it on to charge Fixed riders / have the operator absorb it on Private/Shuttle.
+- **Fee figure:** published-rate **estimate** (see `GatewayFeeService`), not Razorpay's exact per-transaction fee — kept as-is by decision.
 
 ---
 
