@@ -250,6 +250,16 @@ class ShuttleBookingService
             $cashBalance = $quote['balance'];
         }
 
+        // Shuttle policy: the OPERATOR bears the gateway fee. The fee base is what's
+        // charged online — the full fare on an online seat, the deposit on a cash
+        // seat. Online: booked against the operator's slice at settlement. Cash: the
+        // deposit is wholly the driver's, so it's recorded on the payment for the
+        // operator's net-settlement but NOT booked in the trip ledger (see
+        // PaymentSplitService::operatorFeePaise).
+        $gatewayFees = app(\App\Services\GatewayFeeService::class);
+        $feeBase = $cashDeposit !== null ? (float) $cashDeposit : $fare;
+        $operatorFee = $gatewayFees->operatorBears('shuttle') ? $gatewayFees->feeFor($feeBase) : 0.0;
+
         app(BookingPaymentService::class)->recordCapture(
             $trip->id,
             $razorpayPaymentId,
@@ -258,6 +268,8 @@ class ShuttleBookingService
             (string) ($booking->currency ?: 'INR'),
             $cashDeposit,
             $cashBalance,
+            0.0,
+            $operatorFee,
         );
     }
 

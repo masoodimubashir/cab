@@ -49,6 +49,8 @@ class BookingPaymentService
         string $currency = 'INR',
         ?float $cashDeposit = null,
         ?float $cashBalance = null,
+        float $customerFee = 0.0,
+        float $operatorFee = 0.0,
     ): ?Payment {
         if (! $this->split->enabled()) {
             return null;
@@ -66,7 +68,14 @@ class BookingPaymentService
         $isCash = $cashDeposit !== null;
         $onlineAmount = $isCash ? round(max(0.0, $cashDeposit), 2) : round($fareAmount, 2);
 
-        return DB::transaction(function () use ($tripId, $razorpayPaymentId, $onlineAmount, $commissionAmount, $currency, $isCash, $cashBalance) {
+        // The gateway fee. Customer-borne rides ON TOP of what's charged online
+        // (so `amount` includes it); operator-borne is recorded but NOT added to
+        // the charge (the operator absorbs it, so it comes off their slice).
+        $customerFee = round(max(0.0, $customerFee), 2);
+        $operatorFee = round(max(0.0, $operatorFee), 2);
+        $chargedAmount = round($onlineAmount + $customerFee, 2);
+
+        return DB::transaction(function () use ($tripId, $razorpayPaymentId, $onlineAmount, $chargedAmount, $customerFee, $operatorFee, $commissionAmount, $currency, $isCash, $cashBalance) {
             $existing = Payment::query()
                 ->where('razorpay_payment_id', $razorpayPaymentId)
                 ->lockForUpdate()
@@ -81,7 +90,9 @@ class BookingPaymentService
                 'method' => $isCash ? 'CASH' : 'RAZORPAY',
                 'provider' => 'RAZORPAY',
                 'status' => 'SUCCESS',
-                'amount' => $onlineAmount,
+                'amount' => $chargedAmount,
+                'gateway_fee_amount' => $customerFee > 0 ? $customerFee : null,
+                'operator_gateway_fee_amount' => $operatorFee > 0 ? $operatorFee : null,
                 'currency' => $currency ?: 'INR',
                 'razorpay_payment_id' => $razorpayPaymentId,
                 'commission_amount' => round(max(0.0, $commissionAmount), 2),
@@ -109,8 +120,14 @@ class BookingPaymentService
         $fare = (float) $reservation->fare_amount;
         $commission = (float) $reservation->commission_amount;
 
+        // Fixed policy: the rider bears the gateway fee (customer-borne), added on
+        // top of what's charged online — the full fare on an online seat, the
+        // deposit on a cash seat.
+        $gatewayFees = app(\App\Services\GatewayFeeService::class);
+
         if (strtolower((string) ($reservation->payment_method ?? '')) === 'cash') {
             $quote = app(\App\Services\CashDepositService::class)->quote($fare);
+            $customerFee = $gatewayFees->customerBears('fixed') ? $gatewayFees->feeFor((float) $quote['deposit']) : 0.0;
 
             return $this->recordCapture(
                 $reservation->trip_id,
@@ -120,10 +137,14 @@ class BookingPaymentService
                 'INR',
                 $quote['deposit'],
                 $quote['balance'],
+                $customerFee,
+                0.0,
             );
         }
 
-        return $this->recordCapture($reservation->trip_id, $razorpayPaymentId, $fare, $commission);
+        $customerFee = $gatewayFees->customerBears('fixed') ? $gatewayFees->feeFor($fare) : 0.0;
+
+        return $this->recordCapture($reservation->trip_id, $razorpayPaymentId, $fare, $commission, 'INR', null, null, $customerFee, 0.0);
     }
 
     /**

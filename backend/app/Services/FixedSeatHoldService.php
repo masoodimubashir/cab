@@ -625,11 +625,22 @@ class FixedSeatHoldService
             }
 
             // Cash pays only the upfront deposit online; online pays the full fare.
-            $onlineAmount = strtolower((string) $lockedHold->payment_method) === 'cash'
+            $isCash = strtolower((string) $lockedHold->payment_method) === 'cash';
+            $fareOnline = $isCash
                 ? app(\App\Services\CashDepositService::class)->quote((float) $lockedHold->amount)['deposit']
                 : (float) $lockedHold->amount;
 
-            $amountPaise = max(100, (int) round($onlineAmount * 100));
+            // Fixed policy: the RIDER bears the gateway fee, added on top of what's
+            // charged online — the full fare on an online seat, the deposit on a
+            // cash seat — and shown as its own line at checkout. Must match the fee
+            // recorded on the Payment at confirm (BookingPaymentService::recordSeatCapture).
+            $gatewayFees = app(\App\Services\GatewayFeeService::class);
+            $fee = $gatewayFees->customerBears('fixed')
+                ? $gatewayFees->feeFor($fareOnline)
+                : 0.0;
+            $chargeOnline = round($fareOnline + $fee, 2);
+
+            $amountPaise = max(100, (int) round($chargeOnline * 100));
             $receipt = 'fixed_' . $lockedHold->id . '_' . now()->format('YmdHis');
             $order = $razorpayService->createOrder($amountPaise, $receipt);
 
@@ -642,6 +653,12 @@ class FixedSeatHoldService
                 'order_id' => $order['order_id'],
                 'amount_paise' => $order['amount'],
                 'currency' => $order['currency'],
+                // Checkout breakdown: fare + payment charge + total to pay.
+                'breakdown' => [
+                    'fare' => round($fareOnline, 2),
+                    'gateway_fee' => round($fee, 2),
+                    'total' => $chargeOnline,
+                ],
             ];
         });
     }
