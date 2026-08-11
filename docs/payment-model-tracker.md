@@ -22,8 +22,8 @@ Companion to [payment-model-spec.md](payment-model-spec.md). Work is split into 
 | 2 | Gateway fee per ride type + Fixed checkout breakdown | — | `[x]` |
 | 3 | Cancellation & refund overhaul | — | `[ ]` |
 | 4 | No-show → operator (all ride types) | 3 | `[ ]` |
-| 5 | Wallet records & visibility | — | `[ ]` |
-| 6 | Net settlement engine | 5 | `[ ]` |
+| 5 | Wallet records & visibility | — | `[x]` |
+| 6 | Net settlement engine | 5 | `[x]` |
 | 7 | Driver finance screens | 5, 6 | `[ ]` |
 | 8 | Shuttle shared-extra split | — | `[ ]` |
 
@@ -137,36 +137,52 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 5 — Wallet records & visibility `[ ]`
+## Module 5 — Wallet records & visibility `[x]`
 
-**Goal:** keep the wallet; make every movement a visible record for driver + admin.
+**Goal:** keep the wallet; make every movement a visible record for driver + admin — the foundation of Model B settlement (5 → 6 → 7).
 **Spec:** §6, §8
 
-**Build**
-- Ensure every **commission debit** / **earning credit** writes a wallet transaction record.
-- Expose wallet transaction history to the **driver app** and to **admin**.
+**Design decision (client, confirmed):** Razorpay **Route is being removed**. So the wallet becomes the **single settlement ledger** of who owes whom — every online earning a CREDIT, every cash commission a DEBIT, balance = what the operator owes the driver. This work builds that path **alongside** the existing Route path (gated by `services.payments.split_enabled`), so it can be cut over by flipping one flag — no big-bang rewrite.
 
-**Acceptance / tests**
-- [ ] Cash ride → driver wallet debited the commission, a record is created.
-- [ ] Online ride → driver earning credited, a record is created.
-- [ ] Records visible via the driver API and the admin API (same data, both sides).
+**Build (done)**
+- `CommissionSettlementService::settle()` — when **split is OFF (Model B)**:
+  - **Private online** → wallet **CREDIT** = fare − commission (`'Ride earnings'`).
+  - **Private cash** → **CREDIT** the online deposit (`'Cash deposit collected'`) + **DEBIT** the commission (`'Cash ride commission'`); net = deposit − commission. With no deposit it's just the commission debit.
+  - When **split is ON (Route)** the path is unchanged (driver paid at source; only cash commission hits the wallet).
+- `settleShared()` (Fixed) — split OFF, per seat: online seat **CREDIT** (fare − commission); cash seat **CREDIT** deposit + **DEBIT** commission. (Also fixed a latent bug in the old split-off path that over-credited cash seats by the cash the driver already holds.)
+- **Shuttle deferred to Module 8:** Shuttle carries no `route_departure_id`, so it reaches the solo path but actually settles per-passenger through `ShuttleBookingService`. The solo path now **skips shuttle** (guarded) rather than book a wrong trip-level entry; shuttle's Model B wallet settlement is handled with the shuttle shared-extra work.
+- **Visibility** — already exposed and confirmed: driver `GET /api/drivers/me/wallet` (balance + feed); admin `GET /api/admin/drivers/{driver}/wallet/transactions` (paginated) + `walletBreakdown` (earned vs deposits vs payouts) + `payoutsDue` worklist.
+
+**Acceptance / tests — all green (cab_test)**
+- [x] Cash ride → driver wallet debited the commission, a record is created. (`Module5WalletSettlementTest`, `CashCommissionWalletTest`)
+- [x] Online ride → driver earning credited, a record is created. (`Module5WalletSettlementTest`)
+- [x] Cash-with-deposit → deposit credited + commission debited, net = deposit − commission. (`Module5WalletSettlementTest`, `Module5SharedWalletTest`)
+- [x] Fixed shared (online + cash) settle onto the wallet correctly. (`Module5SharedWalletTest`)
+- [x] Records visible via the driver API and the admin API (same data, both sides). (`Module5WalletVisibilityTest`)
+- [x] **Regression:** 199 money-core tests green under **both** split states (Route path untouched: 27 split-forcing files, incl. GatewayFee*, Phase5, cash-deposit, refund, admin money screens, payout visibility).
+
+**⚠️ Cutover step (yours to run in production, when the client signs off):** set **`PAYMENTS_SPLIT_ENABLED=false`** in `backend/.env` to switch the live system from Route to the Model B wallet path. Until then the app keeps running on Route; the wallet path is built, tested, and dormant. (The Route code is intentionally left in place — rip-out is a later step, after cutover is proven.)
 
 ---
 
-## Module 6 — Net settlement engine `[ ]`
+## Module 6 — Net settlement engine `[x]`
 
 **Goal:** compute the net position per driver and enforce the exposure limit.
 **Spec:** §7 · **Depends on:** Module 5
 
-**Build**
-- Per driver, compute: **owed by driver** (cash commission held), **owed by company** (earnings), and the **net**.
-- Persist records of **both amounts + the net**.
-- Enforce the **cash-exposure limit** (Module 1): block go-online when the driver owes more than the limit.
+**Build (done)**
+- `NetSettlementService::position(User)` — reads the wallet and states the driver's position: **owed_by_company** (earnings + deposits held, less paid-out), **owed_by_driver** (cash commission debt), **net** (= wallet balance, one running account), plus gross earnings/commission/deposits/paid_out for the finance screens.
+- **Persisted records:** `driver_settlements` table + `DriverSettlement` model. A snapshot (owed_by_company / owed_by_driver / net / amount_paid / method / ref) is written each time the operator records a payout (`AdminDriversController::recordPayout`), giving the settlement **history** Module 7 reads.
+- **Endpoints:** admin `GET /api/admin/drivers/{driver}/settlement` (position + history); driver `GET /api/drivers/me/settlement` (their own position + history).
+- **Exposure limit:** `DriversController::goOnline` now blocks when `balance < wallet_cash_min_capping` (the configured signed floor — 0 = no debt allowed, −500 = up to ₹500 tolerated) instead of the old hard `balance < 0`. Response carries `error_code: driver_debt` + `limit`.
 
-**Acceptance / tests**
-- [ ] Mixed-ride driver → net = earnings − commission owed, with the correct sign.
-- [ ] Driver owes more than the exposure limit → go-online is blocked.
-- [ ] Settlement record shows both amounts and the net.
+**Acceptance / tests — all green (`Module6NetSettlementTest`, 6)**
+- [x] Mixed-ride driver → net = earnings − commission owed, correct sign (positive when owed, negative when owing); a top-up counts as the driver's own float, not earnings.
+- [x] Driver owes **more** than the exposure limit → go-online blocked (422 `driver_debt`); owes **within** the limit → allowed.
+- [x] Recording a payout snapshots the position (both amounts + net + amount paid) into `driver_settlements`; visible via the admin and driver settlement endpoints.
+- [x] **Regression:** Module 1 go-online, admin money screens, payout visibility, Module 5 visibility all green (34 tests) — payout/breakdown behaviour unchanged.
+
+**Migration:** `..._create_driver_settlements_table.php` (run `php artisan migrate` on the real DB yourself at deploy — never against `cab_db` from here).
 
 ---
 
@@ -196,6 +212,7 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 **Spec:** §9
 
 **Build**
+- **Carried over from Module 5:** Shuttle's **Model B wallet settlement** (online passenger → CREDIT fare − commission; cash passenger → CREDIT deposit + DEBIT commission) is handled here, since shuttle settles per-passenger through `ShuttleBookingService`, not the trip's solo path. Module 5 deliberately skips shuttle in the solo settlement to avoid a wrong trip-level entry.
 - On shuttle completion, if **time/distance thresholds** are exceeded, compute the vehicle overage and **split it by the number of passengers on board**.
 - Charge each rider their equal share — **cash**: added to their balance; **online**: collected as a shortfall.
 - Base seat price stays **locked**; only the overage is shared.

@@ -229,6 +229,8 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
     // Driver wallet: balance + Razorpay top-up.
     Route::get('/drivers/me/wallet', [DriverWalletController::class, 'show']);
+    // Model B net settlement position + past settlements (Module 6).
+    Route::get('/drivers/me/settlement', [DriverWalletController::class, 'settlement']);
     Route::post('/drivers/me/wallet/topup/razorpay', [DriverWalletController::class, 'topupRazorpay'])->middleware('idempotent');
     Route::post('/drivers/me/wallet/topup/razorpay/verify', [DriverWalletController::class, 'verifyTopupRazorpay'])->middleware('idempotent');
 });
@@ -277,6 +279,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/drivers/{driver}/rides', [AdminDriversController::class, 'rides'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/cancelled-rides', [AdminDriversController::class, 'cancelledRides'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'walletTransactions'])->middleware('permission:drivers');
+    // Model B net settlement: live position + settlement history (Module 6).
+    Route::get('/admin/drivers/{driver}/settlement', [AdminDriversController::class, 'settlement'])->middleware('permission:drivers');
     Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience'])->middleware('permission:contact_drivers');
     Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv'])->middleware('permission:contact_drivers');
     Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send'])->middleware('permission:contact_drivers');
