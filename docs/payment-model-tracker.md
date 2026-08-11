@@ -20,12 +20,12 @@ Companion to [payment-model-spec.md](payment-model-spec.md). Work is split into 
 |---|---|---|---|
 | 1 | Admin config foundations | — | `[x]` |
 | 2 | Gateway fee per ride type + Fixed checkout breakdown | — | `[x]` |
-| 3 | Cancellation & refund overhaul | — | `[ ]` |
+| 3 | Cancellation & refund overhaul | — | `[~]` |
 | 4 | No-show → operator (all ride types) | 3 | `[ ]` |
 | 5 | Wallet records & visibility | — | `[x]` |
 | 6 | Net settlement engine | 5 | `[x]` |
 | 7 | Driver finance screens | 5, 6 | `[x]` |
-| 8 | Shuttle shared-extra split | — | `[ ]` |
+| 8 | Shuttle shared-extra split | — | `[~]` |
 
 Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3; 6 follows 5; 7 follows 5 + 6.
 
@@ -100,23 +100,28 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 3 — Cancellation & refund overhaul `[ ]`
+## Module 3 — Cancellation & refund overhaul `[~]` (Private done; Fixed/Shuttle executor remaining)
 
-**Goal:** new refund rules for cash + online; Fixed per the client's chosen option.
+**Goal:** new refund rules for cancellations, Model B (Route off).
 **Spec:** §5.1, §5.2, §5.3
 
+**Client-confirmed rules (TWO levels, keyed on whether the driver had ARRIVED):**
+- **Driver's fault** (driver/operator/system cancel) → **100% refund**, all ride types.
+- **Customer cancels while driver still on the way** → **Fixed 100%**; **Private/Shuttle `100 − charge%`** (charge = `cancellation_charge_percent`, default 20).
+- **Customer cancels after the driver arrived, or no-show** → **0% refund**, all ride types. Kept money → operator.
+- **Cash**: only the online deposit is in play — the charge is `charge% of the full fare, capped at the deposit`; refund/keep apply to the deposit only.
+- **No middle 50% stage** (client dropped it). Timer/auto-no-show + forfeit routing = **Module 4**.
+
 **Build**
-- **Cash**: deposit **forfeited** on cancel — remove the current auto-refund of the deposit.
-- **Online (Private & Shuttle)**: 3-stage refund **80 / 50 / 0**, keyed on driver progress (`ASSIGNED` → not left base; `EN_ROUTE_PICKUP` → moving; `ARRIVED_PICKUP` → arrived/no-show). Percentages **configurable**.
-- **Fixed**: implement the chosen option (⚠️ **pending client** — §5.3). Default: keep **Option 1** until confirmed.
+- [x] **Setting:** `cancellation_charge_percent` in **City Settings** (per city, default 20, validated 0–100, copies between cities). `CitySetting` + migration + `AdminCitySettingsController`. *(Frontend input box: user's to add.)*
+- [x] **Rulebook:** `AutoRefundService::decideModelB()` — pure, exhaustively tested (`Module3RefundRulesTest`, 8): driver-fault/full, on-way charge (online + cash-capped), after-arrival/no-show 0, Fixed via charge%=0.
+- [x] **Private executor:** `AutoRefundService::refundForCancellationModelB()` — Razorpay refund of the computed amount, operator keeps the rest (kept = paid − refunded, visible on the admin money screen with the trip's driver + reason). Idempotent. Wired into `TripStateMachineService` cancel (runs when split is OFF). Tests: `Module3RefundExecutorTest` (4). Route cancel engine unchanged (`AutoRefundEngineTest` + Phase5 R6/R7 still green).
+- [ ] **Fixed/Shuttle executor (remaining):** these cancel through the booking rows (`SeatReservation` / `ShuttlePassengerBooking`), not `Payment` mirrors (no mirror under Model B), so they need their own Model B refund path in `FixedRefundService` / `ShuttleRefundService` (today Route-gated → falls to the manual register). Fixed = 100%/0% (matches the existing seat-release R6/R7 line); Shuttle adds the 20% charge in the before-arrival case.
 
 **Acceptance / tests**
-- [ ] Cash cancel → deposit kept, refund = 0.
-- [ ] Online cancel, not left base → refund 80%.
-- [ ] Online cancel, moving to customer → refund 50%.
-- [ ] Online cancel, driver arrived → refund 0%.
-- [ ] Configurable percentages honoured (change config → refund changes).
-- [ ] Fixed cancel behaves per the confirmed option.
+- [x] Online Private cancel before arrival → 80% (config honoured); after arrival → 0%; driver-fault → 100%. Cash charge capped at deposit; no-show forfeits deposit. *(`Module3RefundRulesTest`, `Module3RefundExecutorTest`)*
+- [ ] Fixed cancel: 100% before arrival / 0% after (booking path).
+- [ ] Shuttle cancel: `100 − charge%` before arrival / 0% after (booking path).
 
 ---
 
@@ -214,18 +219,26 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 8 — Shuttle shared-extra split `[ ]`
+## Module 8 — Shuttle shared-extra split `[~]` (half done, half blocked)
 
 **Goal:** shared extra charges are split evenly across the riders who were on board.
 **Spec:** §9
 
-**Build**
-- **Carried over from Module 5:** Shuttle's **Model B wallet settlement** (online passenger → CREDIT fare − commission; cash passenger → CREDIT deposit + DEBIT commission) is handled here, since shuttle settles per-passenger through `ShuttleBookingService`, not the trip's solo path. Module 5 deliberately skips shuttle in the solo settlement to avoid a wrong trip-level entry.
-- On shuttle completion, if **time/distance thresholds** are exceeded, compute the vehicle overage and **split it by the number of passengers on board**.
-- Charge each rider their equal share — **cash**: added to their balance; **online**: collected as a shortfall.
-- Base seat price stays **locked**; only the overage is shared.
+### Part A — Shuttle Model B wallet settlement (carried over from Module 5) — **DONE**
+Shuttle carries no `route_departure_id`, so it can't use the Fixed (`settleShared`) or solo path. `CommissionSettlementService::settleShuttle()` now settles a completed shuttle **per passenger booking**, the same Model B rules as Private/Fixed:
+- online passenger → wallet **CREDIT** (fare − commission) `'Shuttle ride earnings'`
+- cash passenger → **CREDIT** the online deposit + **DEBIT** the commission
+- under Route (split on) → only a cash passenger's commission hits the wallet; the online split + deposit settle via Route (unchanged).
+`settle()` now routes shuttle to this path early (parallel to `settleShared`); the old solo-path shuttle skip is removed.
 
-**Acceptance / tests**
+**Tests — green:** `Module8ShuttleWalletTest` (online credit; cash deposit+commission). Regression: all shuttle Route tests (`GatewayFeeShuttleTest`, `ShuttleSettlementPhase5Test`, `ShuttleCashDepositTest`, `ShuttleCashRefundTest`) + private/fixed suites still green (89 tests across the two regression batches).
+
+### Part B — split shared overage by passenger count — **⚠ BLOCKED (needs shuttle pooling)**
+The headline feature can't be built yet: **shuttle pooling isn't implemented.** `ShuttleBookingService::createBooking` gives **every booking its own `ShuttleJourney` and its own trip** (`seats_taken = 1`), and there's no completion-time vehicle-overage recompute. So a shuttle carries **one passenger per trip today** — there is no "N riders on one vehicle" to divide an overage across.
+
+**Needs the client / product to define:** how shuttle pooling works (do riders share a vehicle on a common corridor? how is the vehicle-level time/distance overage measured and attributed?). Once pooling exists, the split (overage ÷ boarded passengers, excluding no-shows, base seat locked) sits cleanly on top of `settleShuttle`. Treat like the Module 3 client blocker.
+
+**Acceptance / tests (Part B — pending pooling)**
 - [ ] Overage of ₹X across N boarded passengers → each charged **X ÷ N**.
 - [ ] No-show / cancelled seats are **excluded** from the divisor.
 - [ ] Base seat price unchanged; only the split extra is added.
@@ -245,6 +258,7 @@ These need eyes on the running app, not just feature tests:
 
 ## Pending client (blockers to close)
 
-- [ ] **§5.3 Fixed cancellation** — Option 1 (keep) vs Option 2 (3-stage by departure time).
+- [ ] **§5.3 Fixed cancellation** — Option 1 (keep) vs Option 2 (3-stage by departure time). *(Blocks Modules 3 → 4.)*
+- [ ] **Shuttle pooling model (§9 / Module 8 Part B)** — how many riders share one shuttle vehicle/trip, and how the vehicle-level time/distance overage is measured & attributed. *(Blocks the shared-extra split; Part A shuttle wallet settlement is already done.)*
 - [ ] **Toll rules** — deferred until defined.
 - [ ] **Tip distribution rules** — deferred until Tips are enabled.

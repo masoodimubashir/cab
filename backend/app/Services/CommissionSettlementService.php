@@ -49,6 +49,16 @@ class CommissionSettlementService
             return;
         }
 
+        // Shuttle carries no route_departure_id but is still shared (its own
+        // per-passenger bookings), so it can't go down the solo path. Settle it on
+        // its own path: the wallet under Model B, or the Route mirrors at
+        // completion when the split engine is on.
+        if (\App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists()) {
+            $this->settleShuttle($trip);
+            $this->settleBookingPayments($trip);
+            return;
+        }
+
         // Solo ride: take the platform commission from the driver's wallet.
         // Commission is charged on the RIDE only. Any toll folded into the fare
         // is the driver's own booth payment (FASTag) passing back through to
@@ -90,13 +100,6 @@ class CommissionSettlementService
         $splitEnabled = (bool) config('services.payments.split_enabled', false);
         $isCash = strtolower((string) ($trip->payment_method ?? '')) === 'cash';
 
-        // Shuttle carries no route_departure_id, so it reaches this solo path — but
-        // it settles per-passenger through its own engine (ShuttleBookingService),
-        // never on the trip's single fare. Its Model B wallet settlement is handled
-        // with the shuttle shared-extra work (Module 8), so the solo wallet logic
-        // below deliberately skips it rather than book a wrong trip-level entry.
-        $isShuttle = \App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists();
-
         if ($splitEnabled) {
             if ($isCash && $cut > 0 && $trip->driver) {
                 $this->wallet->recordTransaction(
@@ -108,8 +111,6 @@ class CommissionSettlementService
                     null,
                 );
             }
-        } elseif ($isShuttle) {
-            // Deferred to Module 8 — see the note above.
         } elseif ($isCash) {
             // A cash ride under Model B: the driver holds the cash balance, but an
             // upfront deposit (if the operator collects one) went online and now
@@ -350,6 +351,130 @@ class CommissionSettlementService
         if ($isFixed) {
             $this->subscriptions->consumeSharedTrip($trip, $gross);
         }
+    }
+
+    /**
+     * Per-passenger settlement for a Shuttle journey. Shuttle is shared but carries
+     * no route_departure_id, so it settles here rather than through settleShared.
+     * Each of the journey's paid, non-cancelled passenger bookings settles on its
+     * own fare and commission snapshot — the same Model B rules as a Fixed seat:
+     *   - online passenger: the operator holds the fare → CREDIT (fare − commission).
+     *   - cash passenger: the operator holds only the online deposit while the
+     *     driver holds the cash balance → CREDIT the deposit, DEBIT the commission.
+     * Under the Route engine the online split + deposit settle via Route
+     * (settleBookingPayments), so only a cash passenger's commission touches the
+     * wallet — exactly as the solo/Fixed cash path.
+     *
+     * NOTE (Module 8): a shuttle currently carries ONE passenger per journey/trip,
+     * so there is no vehicle-level overage to divide across riders yet. Splitting a
+     * shared time/distance overage by passenger count needs shuttle pooling (many
+     * riders on one vehicle), which isn't implemented — that half of Module 8 is
+     * blocked on the pooling model being defined.
+     */
+    private function settleShuttle(Trip $trip): void
+    {
+        $journey = \App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->first();
+        $bookings = $journey
+            ? \App\Models\ShuttlePassengerBooking::query()
+                ->where('shuttle_journey_id', $journey->id)
+                ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
+                ->where('payment_status', 'PAID')
+                ->get()
+            : collect();
+
+        // A subscription (if any) overrides the vehicle's commission percent.
+        $subPct = $this->subscriptions->effectiveCommissionPercentForTrip($trip, -1.0);
+
+        $rows = [];
+        $gross = 0.0;
+        $commissionTotal = 0.0;
+        $cashCommission = 0.0;
+        foreach ($bookings as $booking) {
+            $fare = round((float) ($booking->fare_amount ?? 0), 2);
+            if ($fare <= 0) {
+                continue;
+            }
+            $commission = round((float) $this->commissionForFare($trip->city_vehicle_type_id, $fare, 0.0, $subPct)['amount'], 2);
+            $commission = min($commission, $fare);
+            $isCash = strtolower((string) ($booking->payment_method ?? '')) === 'cash';
+
+            $gross += $fare;
+            $commissionTotal += $commission;
+            if ($isCash) {
+                $cashCommission += $commission;
+            }
+            $rows[] = ['fare' => $fare, 'commission' => $commission, 'cash' => $isCash];
+        }
+
+        $gross = round($gross, 2);
+        $commissionTotal = round(min($commissionTotal, $gross), 2);
+
+        $trip->final_fare = $gross;
+        $trip->commission_amount = $commissionTotal;
+        $trip->commission_percent = 0.0;
+        $trip->save();
+
+        if ($trip->driver) {
+            $splitEnabled = (bool) config('services.payments.split_enabled', false);
+
+            if ($splitEnabled) {
+                // ROUTE: the online fare split and the deposit settle at source via
+                // Route (settleBookingPayments). Only a cash passenger's commission
+                // is taken from the wallet float — nothing retained it at source.
+                if ($cashCommission > 0) {
+                    $this->wallet->recordTransaction(
+                        $trip->driver,
+                        WalletTransaction::TYPE_DEBIT,
+                        round($cashCommission, 2),
+                        'Cash ride commission',
+                        $trip->id,
+                        null,
+                    );
+                }
+            } else {
+                // MODEL B: the wallet is the settlement ledger, per passenger.
+                $deposits = app(CashDepositService::class);
+                foreach ($rows as $row) {
+                    if ($row['cash']) {
+                        $deposit = round((float) ($deposits->quote($row['fare'])['deposit'] ?? 0), 2);
+                        if ($deposit > 0) {
+                            $this->wallet->recordTransaction(
+                                $trip->driver,
+                                WalletTransaction::TYPE_CREDIT,
+                                $deposit,
+                                'Cash deposit collected',
+                                $trip->id,
+                                null,
+                            );
+                        }
+                        if ($row['commission'] > 0) {
+                            $this->wallet->recordTransaction(
+                                $trip->driver,
+                                WalletTransaction::TYPE_DEBIT,
+                                $row['commission'],
+                                'Cash ride commission',
+                                $trip->id,
+                                null,
+                            );
+                        }
+                    } else {
+                        $earning = round($row['fare'] - $row['commission'], 2);
+                        if ($earning > 0) {
+                            $this->wallet->recordTransaction(
+                                $trip->driver,
+                                WalletTransaction::TYPE_CREDIT,
+                                $earning,
+                                'Shuttle ride earnings',
+                                $trip->id,
+                                null,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        $this->subscriptions->consume($trip);
     }
 
     private function fixedBookingCommissionForTrip(Trip $trip, SeatReservation $seat, float $fare): array

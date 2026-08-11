@@ -122,8 +122,15 @@ class TripStateMachineService
         $isShared = $trip->route_departure_id !== null
             || ShuttleJourney::query()->where('trip_id', $trip->id)->exists();
 
-        if ($to === 'CANCELLED' && ! $isShared && $this->autoRefunds->enabled()) {
-            $this->autoRefunds->refundForCancellation($trip, $this->cancelledBy($trip, $meta));
+        if ($to === 'CANCELLED' && ! $isShared) {
+            if ($this->autoRefunds->enabled()) {
+                // Route engine: reverse the split + refund the customer.
+                $this->autoRefunds->refundForCancellation($trip, $this->cancelledBy($trip, $meta));
+            } else {
+                // Model B (Route off): refund per the Module 3 rulebook, operator
+                // keeps the cancellation charge / forfeit.
+                $this->autoRefunds->refundForCancellationModelB($trip, $this->cancelledBy($trip, $meta));
+            }
         }
 
         $tripId = $trip->id;
