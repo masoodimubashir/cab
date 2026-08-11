@@ -25,6 +25,26 @@ class DriverWalletController
     {
     }
 
+    /**
+     * The driver's own net settlement position (Module 6): what they're owed / owe
+     * right now, and their past settlements. The Model B answer to "how much am I
+     * owed and when did I last get paid" — the data behind the finance screens.
+     */
+    public function settlement(Request $request, \App\Services\NetSettlementService $settlement)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'position' => $settlement->position($user),
+            'history' => \App\Models\DriverSettlement::query()
+                ->where('user_id', $user->id)
+                ->orderByDesc('id')
+                ->limit(50)
+                ->get(['id', 'owed_by_company', 'owed_by_driver', 'net', 'amount_paid', 'method', 'reference', 'created_at']),
+            'currency' => 'INR',
+        ]);
+    }
+
     public function show(Request $request)
     {
         $user = $request->user();

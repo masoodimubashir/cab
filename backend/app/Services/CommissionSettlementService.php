@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Payment;
 use App\Models\PricingRule;
 use App\Models\SeatReservation;
 use App\Models\Trip;
@@ -67,28 +68,95 @@ class CommissionSettlementService
         $percent = $commission['percent'];
         $cut = $commission['amount'];
 
-        // Under the auto-split engine the commission is retained at the source of
-        // the customer's online payment (Route), so we must NOT also claw it back
-        // from the driver's wallet — that would double-charge them. We still record
-        // commission_amount/percent below for the split to read.
+        // How the driver's money is recorded depends on which settlement engine is
+        // live.
         //
-        // Cash is the exception: only the deposit is online (and that goes wholly
-        // to the driver), so nothing retains the operator's cut at source. For a
-        // cash ride the commission always comes from the driver's wallet float —
-        // this is what the wallet debt engine (and the go-online block) runs on —
-        // regardless of the split flag.
+        // ROUTE (split engine on): the operator's cut is retained at the source of
+        // the customer's online payment, and the driver's share is transferred to
+        // them via Route. We must NOT also touch the wallet for an online ride —
+        // that would double-count. Cash is the exception: only the deposit is
+        // online (paid wholly to the driver), so the commission comes from the
+        // driver's wallet float — what the debt engine + go-online block run on.
+        //
+        // MODEL B (split engine off): Route is gone, so the wallet is the single
+        // settlement ledger of who owes whom.
+        //   - Cash ride: the driver holds the whole fare, so they OWE the
+        //     commission → wallet DEBIT.
+        //   - Online ride: the operator collected the whole fare, so it OWES the
+        //     driver their share (fare − commission) → wallet CREDIT. The fare
+        //     includes any toll, which is the driver's own booth payment coming
+        //     back to them, so it rides along in the credit.
+        // We still stamp commission_amount/percent below either way.
         $splitEnabled = (bool) config('services.payments.split_enabled', false);
         $isCash = strtolower((string) ($trip->payment_method ?? '')) === 'cash';
 
-        if (($isCash || ! $splitEnabled) && $cut > 0 && $trip->driver) {
-            $this->wallet->recordTransaction(
-                $trip->driver,
-                WalletTransaction::TYPE_DEBIT,
-                $cut,
-                'Ride commission',
-                $trip->id,
-                null,
-            );
+        // Shuttle carries no route_departure_id, so it reaches this solo path — but
+        // it settles per-passenger through its own engine (ShuttleBookingService),
+        // never on the trip's single fare. Its Model B wallet settlement is handled
+        // with the shuttle shared-extra work (Module 8), so the solo wallet logic
+        // below deliberately skips it rather than book a wrong trip-level entry.
+        $isShuttle = \App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists();
+
+        if ($splitEnabled) {
+            if ($isCash && $cut > 0 && $trip->driver) {
+                $this->wallet->recordTransaction(
+                    $trip->driver,
+                    WalletTransaction::TYPE_DEBIT,
+                    $cut,
+                    'Ride commission',
+                    $trip->id,
+                    null,
+                );
+            }
+        } elseif ($isShuttle) {
+            // Deferred to Module 8 — see the note above.
+        } elseif ($isCash) {
+            // A cash ride under Model B: the driver holds the cash balance, but an
+            // upfront deposit (if the operator collects one) went online and now
+            // sits with the operator. Mirror both real movements so the wallet is
+            // faithful and the balance nets to what the operator owes:
+            //   + CREDIT the deposit  (operator holds it for the driver)
+            //   − DEBIT  the commission (the driver owes it)
+            // Net = deposit − commission. With no deposit this is just the debit,
+            // and the driver sits in commission debt as the go-online block expects.
+            $deposit = round((float) Payment::query()
+                ->where('trip_id', $trip->id)
+                ->where('status', 'SUCCESS')
+                ->whereNotNull('cash_deposit_amount')
+                ->sum('cash_deposit_amount'), 2);
+
+            if ($deposit > 0 && $trip->driver) {
+                $this->wallet->recordTransaction(
+                    $trip->driver,
+                    WalletTransaction::TYPE_CREDIT,
+                    $deposit,
+                    'Cash deposit collected',
+                    $trip->id,
+                    null,
+                );
+            }
+            if ($cut > 0 && $trip->driver) {
+                $this->wallet->recordTransaction(
+                    $trip->driver,
+                    WalletTransaction::TYPE_DEBIT,
+                    $cut,
+                    'Cash ride commission',
+                    $trip->id,
+                    null,
+                );
+            }
+        } else {
+            $earning = round($fare - $cut, 2);
+            if ($earning > 0 && $trip->driver) {
+                $this->wallet->recordTransaction(
+                    $trip->driver,
+                    WalletTransaction::TYPE_CREDIT,
+                    $earning,
+                    'Ride earnings',
+                    $trip->id,
+                    null,
+                );
+            }
         }
 
         $trip->commission_percent = round($percent, 2);
@@ -201,42 +269,82 @@ class CommissionSettlementService
 
         $gross = round($gross, 2);
         $commission = $isFixed ? min(round($commission, 2), $gross) : 0.0;
-        $driverCredit = max(0.0, round($gross - $commission, 2));
 
         $trip->final_fare = $gross;
         $trip->commission_amount = $commission;
         $trip->commission_percent = 0.0;
         $trip->save();
 
-        // Under the auto-split engine the driver is paid their share directly via
-        // Route (BookingPaymentService::settleTrip, from the completion hook), so
-        // we must NOT also credit the legacy wallet — that would double-pay them.
         $splitEnabled = (bool) config('services.payments.split_enabled', false);
 
-        if (! $splitEnabled && $driverCredit > 0 && $trip->driver) {
-            $this->wallet->recordTransaction(
-                $trip->driver,
-                WalletTransaction::TYPE_CREDIT,
-                $driverCredit,
-                $isFixed ? 'Fixed ride earnings' : 'Shared ride earnings',
-                $trip->id,
-                null,
-            );
-        }
+        if ($splitEnabled) {
+            // ROUTE mode: the driver's share is paid at source via Route
+            // (BookingPaymentService::settleTrip, from the completion hook), so we
+            // must NOT also credit the wallet — that would double-pay them. Only a
+            // cash seat's commission comes from the wallet float: the deposit was
+            // online and settles wholly to the driver, so nothing retained the
+            // operator's cut at source. This is what the go-online debt block runs
+            // on for shared cash rides.
+            if ($cashCommission > 0 && $trip->driver) {
+                $this->wallet->recordTransaction(
+                    $trip->driver,
+                    WalletTransaction::TYPE_DEBIT,
+                    round($cashCommission, 2),
+                    'Cash ride commission',
+                    $trip->id,
+                    null,
+                );
+            }
+        } elseif ($trip->driver) {
+            // MODEL B (Route off): the wallet is the settlement ledger. Record each
+            // seat's owed share the same way as a solo ride —
+            //   - online seat: the operator holds the whole fare → CREDIT
+            //     (fare − commission).
+            //   - cash seat: the operator holds only the online deposit while the
+            //     driver holds the cash balance → CREDIT the deposit and DEBIT the
+            //     commission (net = deposit − commission).
+            $deposits = app(CashDepositService::class);
+            foreach ($seats as $seat) {
+                $fare = round((float) ($seat->fare_amount ?? 0), 2);
+                $seatCommission = round(min($fare, max(0.0, (float) ($seat->commission_amount ?? 0))), 2);
+                $isCashSeat = strtolower((string) ($seat->payment_method ?? '')) === 'cash';
 
-        // Cash seats' commission comes from the driver's wallet, whatever the
-        // split flag — only the deposit was online and it went wholly to the
-        // driver, so nothing retained the operator's cut at source. This is what
-        // the wallet debt engine + go-online block run on for shared cash rides.
-        if ($cashCommission > 0 && $trip->driver) {
-            $this->wallet->recordTransaction(
-                $trip->driver,
-                WalletTransaction::TYPE_DEBIT,
-                round($cashCommission, 2),
-                'Cash ride commission',
-                $trip->id,
-                null,
-            );
+                if ($isCashSeat) {
+                    $deposit = round((float) ($deposits->quote($fare)['deposit'] ?? 0), 2);
+                    if ($deposit > 0) {
+                        $this->wallet->recordTransaction(
+                            $trip->driver,
+                            WalletTransaction::TYPE_CREDIT,
+                            $deposit,
+                            'Cash deposit collected',
+                            $trip->id,
+                            null,
+                        );
+                    }
+                    if ($seatCommission > 0) {
+                        $this->wallet->recordTransaction(
+                            $trip->driver,
+                            WalletTransaction::TYPE_DEBIT,
+                            $seatCommission,
+                            'Cash ride commission',
+                            $trip->id,
+                            null,
+                        );
+                    }
+                } else {
+                    $earning = round($fare - $seatCommission, 2);
+                    if ($earning > 0) {
+                        $this->wallet->recordTransaction(
+                            $trip->driver,
+                            WalletTransaction::TYPE_CREDIT,
+                            $earning,
+                            $isFixed ? 'Fixed ride earnings' : 'Shared ride earnings',
+                            $trip->id,
+                            null,
+                        );
+                    }
+                }
+            }
         }
 
         if ($isFixed) {
