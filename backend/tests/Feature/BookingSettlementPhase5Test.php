@@ -641,8 +641,11 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertSame(96.0, (float) $this->paymentFor($reservation)->driver_amount);
     }
 
-    public function test_with_the_engine_off_a_cancel_stays_on_the_manual_register(): void
+    public function test_with_the_engine_off_a_cancel_is_auto_refunded_via_razorpay(): void
     {
+        // Module 3: under Model B (Route off) a Fixed cancel before the vehicle
+        // reaches the pickup is now AUTO-refunded directly via Razorpay (it used to
+        // fall to the manual register). No Payment mirror / ledger under Model B.
         config()->set('services.payments.split_enabled', false);
         $this->mockRazorpay();
 
@@ -654,8 +657,11 @@ class BookingSettlementPhase5Test extends TestCase
         Sanctum::actingAs($customer, ['act-as:customer']);
         $this->postJson("/api/fixed/bookings/{$reservation->id}/cancel")
             ->assertOk()
-            ->assertJsonPath('refund_status', 'APPROVED');
+            ->assertJsonPath('refund_status', 'REFUNDED');
 
+        $reservation->refresh();
+        $this->assertSame('REFUNDED', $reservation->refund_status);
+        $this->assertSame(self::SEAT_FARE, (float) $reservation->refund_amount);
         $this->assertSame(0, Payment::query()->count());
         $this->assertSame(0, LedgerEntry::query()->count());
     }

@@ -263,6 +263,60 @@ class AutoRefundService
     }
 
     /**
+     * Module 3 — executes a Model B booking refund (Fixed/Shuttle, Route off).
+     * A booking (SeatReservation / ShuttlePassengerBooking) has no Payment mirror
+     * under Model B, so this refunds the customer directly against the booking's
+     * Razorpay payment id — no ledger, no driver clawback (the driver was never
+     * paid for a cancelled ride). The CALLER decides the amount per the rulebook
+     * and records the outcome on the booking row; this just moves the money.
+     *
+     * Returns null when the Route engine is on (that path owns it). Same result
+     * shape as the Route booking refund so the callers can treat both alike.
+     *
+     * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string,refund_id:?string}|null
+     */
+    public function refundBookingModelB(string $razorpayPaymentId, int $refundPaise, ?int $tripId = null, string $cancelledBy = self::BY_SYSTEM): ?array
+    {
+        if ($this->enabled()) {
+            return null; // the Route engine owns booking refunds when split is on
+        }
+
+        $razorpayPaymentId = trim($razorpayPaymentId);
+        if ($razorpayPaymentId === '' || $refundPaise <= 0) {
+            // Nothing to refund — a full forfeit (no-show / after arrival). The
+            // operator keeps the online payment; the caller records that.
+            return ['refunded_paise' => 0, 'reversed_paise' => 0, 'reason' => 'no_refund', 'status' => 'no_refund', 'refund_id' => null];
+        }
+
+        try {
+            $refund = $this->razorpay->refundPayment(
+                $razorpayPaymentId,
+                $refundPaise,
+                ['trip_id' => (string) $tripId, 'reason' => 'booking_cancelled', 'cancelled_by' => $cancelledBy],
+            );
+        } catch (\Throwable $e) {
+            Log::error('DreamCabs Model B booking refund failed at Razorpay — falls to the manual register', [
+                'razorpay_payment_id' => $razorpayPaymentId,
+                'trip_id' => $tripId,
+                'amount_paise' => $refundPaise,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['refunded_paise' => 0, 'reversed_paise' => 0, 'reason' => 'booking_cancelled', 'status' => 'refund_failed', 'refund_id' => null];
+        }
+
+        $status = ($refund['status'] ?? 'processed') === 'processed' ? 'refunded' : 'refund_pending';
+
+        return [
+            'refunded_paise' => $refundPaise,
+            'reversed_paise' => 0,
+            'reason' => 'booking_cancelled',
+            'status' => $status,
+            'refund_id' => (string) $refund['id'],
+        ];
+    }
+
+    /**
      * Executes a Fixed/Shuttle seat-release refund (Phase 5, rulebook R6/R7). The
      * caller — which owns the seat-release timing — has already decided the binary
      * outcome: a full refund when the seat went back to inventory in time or the
