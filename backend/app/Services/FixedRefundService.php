@@ -532,9 +532,32 @@ class FixedRefundService
             return null;
         }
 
-        return $this->bookingPayments->refundForBooking(
+        // Route engine first (split on).
+        $outcome = $this->bookingPayments->refundForBooking(
             (string) $reservation->payment_reference,
             $refundFull,
+            $cancelledBy,
+        );
+        if ($outcome !== null) {
+            return $outcome;
+        }
+
+        // Model B (Route off): execute the refund directly. Fixed is 100% before
+        // the vehicle reaches the pickup / 0% after — so a full refund returns the
+        // whole online amount (the deposit for a cash seat), a forfeit returns
+        // nothing (operator keeps it). No charge % applies to Fixed.
+        if (!$refundFull) {
+            return ['refunded_paise' => 0, 'reversed_paise' => 0, 'reason' => 'no_refund_seat_lost', 'status' => 'no_refund', 'refund_id' => null];
+        }
+
+        $onlineAmount = $reservation->payment_method === 'cash'
+            ? app(CashDepositService::class)->depositForBooking((string) $reservation->payment_reference, (float) $reservation->fare_amount)
+            : (float) $reservation->fare_amount;
+
+        return app(AutoRefundService::class)->refundBookingModelB(
+            (string) $reservation->payment_reference,
+            (int) round($onlineAmount * 100),
+            $reservation->trip_id ? (int) $reservation->trip_id : null,
             $cancelledBy,
         );
     }

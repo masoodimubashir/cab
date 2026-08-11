@@ -38,11 +38,35 @@ class ShuttleRefundService
                 throw new ReservationException('This Shuttle trip has already started and cannot be cancelled from the app.', 422);
             }
 
-            // The whole rule, read BEFORE the cancel transition touches the trip:
-            // no driver committed yet → the money goes back in full; a driver is
-            // already coming → the fare is forfeited, because they took this
-            // journey on the strength of the seats sold.
-            $refundFull = $trip?->driver_id === null;
+            // Read the driver state BEFORE the cancel transition touches the trip.
+            $driverAssigned = $trip?->driver_id !== null;
+            // Route engine (legacy) rule: no driver committed → full refund; a
+            // driver is coming → forfeit. Model B refines the forfeit into a
+            // partial charge (below), but the flag still drives the Route path.
+            $refundFull = ! $driverAssigned;
+
+            // Model B (Route off): compute the exact refund per the Module 3
+            // rulebook — no driver dispatched yet → full refund; a driver is on the
+            // way → keep the cancellation charge (% of fare, capped at the online
+            // payment) and return the rest.
+            $modelBRefundPaise = null;
+            if (! (bool) config('services.payments.split_enabled', false) && $locked->payment_status === 'PAID') {
+                $onlinePaise = $this->onlinePaidPaise($locked);
+                if (! $driverAssigned) {
+                    $modelBRefundPaise = $onlinePaise;
+                } else {
+                    $chargePct = (float) (\App\Models\CitySetting::query()
+                        ->where('city_id', $locked->city_id)
+                        ->value('cancellation_charge_percent') ?? 0);
+                    $modelBRefundPaise = app(AutoRefundService::class)->decideModelB(
+                        AutoRefundService::BY_CUSTOMER,
+                        false,
+                        $onlinePaise,
+                        (int) round((float) $locked->fare_amount * 100),
+                        $chargePct,
+                    )['refund_paise'];
+                }
+            }
 
             if ($trip && in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
                 app(TripStateMachineService::class)->transition($trip, 'CANCELLED', [
@@ -50,7 +74,7 @@ class ShuttleRefundService
                 ]);
             }
 
-            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER, $refundFull);
+            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER, $refundFull, $modelBRefundPaise);
 
             return [
                 'booking' => $locked->fresh(['journey:id,status,capacity,seats_taken,trip_id']),
@@ -149,6 +173,7 @@ class ShuttleRefundService
         ?string $reason,
         string $cancelledBy = AutoRefundService::BY_SYSTEM,
         ?bool $refundFull = null,
+        ?int $modelBRefundPaise = null,
     ): void {
         $paid = $booking->payment_status === 'PAID';
         $refundFull ??= true;
@@ -182,8 +207,12 @@ class ShuttleRefundService
         // a refund when one is due, otherwise a capture-to-operator so the
         // journey's ledger still closes. Falls through to the legacy manual
         // register when the engine is off.
-        $outcome = $paid ? $this->autoRefunded($booking, $refundFull, $cancelledBy) : null;
-        if ($outcome !== null && $refundFull) {
+        $outcome = $paid ? $this->autoRefunded($booking, $refundFull, $cancelledBy, $modelBRefundPaise) : null;
+        $refundedPaise = (int) ($outcome['refunded_paise'] ?? 0);
+        // Refunded when money actually went back — a full refund, or a PARTIAL one
+        // under Model B (the customer cancelled while the driver was on the way, so
+        // the operator kept the cancellation charge and returned the rest).
+        if ($outcome !== null && $refundedPaise > 0) {
             $refundStatus = 'REFUNDED';
             $paymentStatus = 'REFUNDED';
             // Razorpay's own refund id, so the refund.processed/failed webhook can
@@ -192,13 +221,10 @@ class ShuttleRefundService
             if ($paidByRazorpay || $paidByCash) {
                 $refundPath = 'razorpay_auto';
             }
-            // A cash booking only refunded its deposit — record that exact figure so
-            // the register shows what actually went back online, not the full fare.
-            if ($paidByCash) {
-                $booking->refund_amount = ($outcome['refunded_paise'] ?? 0) > 0
-                    ? $outcome['refunded_paise'] / 100
-                    : $cashDeposit;
-            }
+            // Record the exact amount returned online — the deposit for cash, or a
+            // possibly-partial refund for online. The kept remainder is the charge,
+            // visible to the operator as (paid − refunded).
+            $booking->refund_amount = $refundedPaise / 100;
         }
 
         // For a cash booking the amount owed/refunded is the online deposit, never
@@ -324,20 +350,48 @@ class ShuttleRefundService
      *
      * @return array{refunded_paise:int,reversed_paise:int,reason:string,status:string,refund_id:?string}|null
      */
-    private function autoRefunded(ShuttlePassengerBooking $booking, bool $refundFull, string $cancelledBy): ?array
+    private function autoRefunded(ShuttlePassengerBooking $booking, bool $refundFull, string $cancelledBy, ?int $modelBRefundPaise = null): ?array
     {
         $paymentId = (string) ($booking->razorpay_payment_id ?: $booking->payment_reference);
         if ($paymentId === '') {
             return null;
         }
 
-        // A Shuttle no-show/too-late cancel forfeits the fare to the operator (unlike
-        // Fixed, where the departure completes and the driver keeps their share), so
-        // the forfeit is booked to the operator here rather than settled at completion.
+        // Route engine (split on): a Shuttle no-show/too-late cancel forfeits the
+        // fare to the operator (unlike Fixed, where the departure completes and the
+        // driver keeps their share), so the forfeit is booked to the operator here.
         $outcome = $this->bookingPayments->refundForBooking($paymentId, $refundFull, $cancelledBy, forfeitToOperator: true);
+        if ($outcome !== null) {
+            return in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true) ? $outcome : null;
+        }
 
-        return $outcome !== null && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true)
-            ? $outcome
-            : null;
+        // Model B (Route off): refund directly. The amount is the rulebook figure
+        // when the caller computed one (a partial charge when a driver was on the
+        // way), otherwise the whole online payment for a full refund, or 0 for a
+        // forfeit. A 0/failed refund returns null → the operator keeps it / manual
+        // register, exactly as before.
+        $refundPaise = $modelBRefundPaise ?? ($refundFull ? $this->onlinePaidPaise($booking) : 0);
+
+        return app(AutoRefundService::class)->refundBookingModelB(
+            $paymentId,
+            $refundPaise,
+            $booking->journey?->trip_id ? (int) $booking->journey->trip_id : null,
+            $cancelledBy,
+        );
+    }
+
+    /** The money held online for this booking, in paise: the deposit for a cash
+     *  seat (only the deposit went online), the whole fare otherwise. */
+    private function onlinePaidPaise(ShuttlePassengerBooking $booking): int
+    {
+        $fare = (float) $booking->fare_amount;
+        $online = ($booking->payment_method === 'cash')
+            ? app(CashDepositService::class)->depositForBooking(
+                (string) ($booking->razorpay_payment_id ?: $booking->payment_reference),
+                $fare,
+            )
+            : $fare;
+
+        return (int) round($online * 100);
     }
 }

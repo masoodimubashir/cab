@@ -20,7 +20,7 @@ Companion to [payment-model-spec.md](payment-model-spec.md). Work is split into 
 |---|---|---|---|
 | 1 | Admin config foundations | — | `[x]` |
 | 2 | Gateway fee per ride type + Fixed checkout breakdown | — | `[x]` |
-| 3 | Cancellation & refund overhaul | — | `[~]` |
+| 3 | Cancellation & refund overhaul | — | `[x]` |
 | 4 | No-show → operator (all ride types) | 3 | `[ ]` |
 | 5 | Wallet records & visibility | — | `[x]` |
 | 6 | Net settlement engine | 5 | `[x]` |
@@ -100,7 +100,7 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 3 — Cancellation & refund overhaul `[~]` (Private done; Fixed/Shuttle executor remaining)
+## Module 3 — Cancellation & refund overhaul `[x]`
 
 **Goal:** new refund rules for cancellations, Model B (Route off).
 **Spec:** §5.1, §5.2, §5.3
@@ -116,12 +116,15 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 - [x] **Setting:** `cancellation_charge_percent` in **City Settings** (per city, default 20, validated 0–100, copies between cities). `CitySetting` + migration + `AdminCitySettingsController`. *(Frontend input box: user's to add.)*
 - [x] **Rulebook:** `AutoRefundService::decideModelB()` — pure, exhaustively tested (`Module3RefundRulesTest`, 8): driver-fault/full, on-way charge (online + cash-capped), after-arrival/no-show 0, Fixed via charge%=0.
 - [x] **Private executor:** `AutoRefundService::refundForCancellationModelB()` — Razorpay refund of the computed amount, operator keeps the rest (kept = paid − refunded, visible on the admin money screen with the trip's driver + reason). Idempotent. Wired into `TripStateMachineService` cancel (runs when split is OFF). Tests: `Module3RefundExecutorTest` (4). Route cancel engine unchanged (`AutoRefundEngineTest` + Phase5 R6/R7 still green).
-- [ ] **Fixed/Shuttle executor (remaining):** these cancel through the booking rows (`SeatReservation` / `ShuttlePassengerBooking`), not `Payment` mirrors (no mirror under Model B), so they need their own Model B refund path in `FixedRefundService` / `ShuttleRefundService` (today Route-gated → falls to the manual register). Fixed = 100%/0% (matches the existing seat-release R6/R7 line); Shuttle adds the 20% charge in the before-arrival case.
+- [x] **Fixed/Shuttle executor:** both cancel through booking rows (`SeatReservation` / `ShuttlePassengerBooking`), so `AutoRefundService::refundBookingModelB()` refunds directly against the booking's Razorpay id (no ledger, no clawback). Wired into `FixedRefundService::autoRefundBooking` (Fixed = 100% before pickup / 0% after — matches the existing seat-release line) and `ShuttleRefundService` (`cancelByCustomer` computes the amount via `decideModelB`; `markCancelled`/`autoRefunded` execute it — **no driver assigned → 100%; driver on the way → `100−charge%`; no-show → 0%**). Under the Route engine both paths are unchanged.
 
-**Acceptance / tests**
-- [x] Online Private cancel before arrival → 80% (config honoured); after arrival → 0%; driver-fault → 100%. Cash charge capped at deposit; no-show forfeits deposit. *(`Module3RefundRulesTest`, `Module3RefundExecutorTest`)*
-- [ ] Fixed cancel: 100% before arrival / 0% after (booking path).
-- [ ] Shuttle cancel: `100 − charge%` before arrival / 0% after (booking path).
+**Acceptance / tests — all green**
+- [x] Online Private cancel before arrival → 80% (config honoured); after arrival → 0%; driver-fault → 100%. Cash charge capped at deposit; no-show forfeits deposit. *(`Module3RefundRulesTest` 8, `Module3RefundExecutorTest` 4)*
+- [x] Fixed cancel: 100% before the vehicle reaches pickup / 0% after — auto-refunded via Razorpay under Model B. *(`BookingSettlementPhase5Test`, `FixedCashRefundTest`)*
+- [x] Shuttle cancel: no driver → 100%; driver on the way → `100−charge%`; no-show → 0%. *(`Module3ShuttleRefundTest` 3, `ShuttleSettlementPhase5Test`)*
+- [x] **Regression:** 60 refund/settlement tests green across Route + Model B; the Route cancel engine and its R6/R7 rulebook are unchanged. The two `engine-off …keeps its legacy behaviour` tests were updated to the new auto-refund behaviour (was: manual register).
+
+**Note:** the kept charge/forfeit is visible on the admin money screen as (paid − refunded), with the trip's driver + cancel reason — no separate cancellations list (per the client). Frontend: City Settings *Cancellation charge %* input box is the user's to add.
 
 ---
 
