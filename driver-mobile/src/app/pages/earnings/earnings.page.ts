@@ -89,10 +89,54 @@ export class EarningsPage implements OnInit {
   rides: RideRow[] = [];
   payout: PayoutSummary | null = null;
 
+  // Model B settlement position (replaces the old Route "paid to bank" card).
+  owedToYou = 0;
+  inDebt = false;
+  youOwe = 0;
+  lastPaidAmount: number | null = null;
+  lastPaidDate: string | null = null;
+  lastPaidMethod: string | null = null;
+
   constructor(private api: ApiService) {}
 
-  ngOnInit(): void { this.load(); }
-  ionViewWillEnter(): void { this.load(); }
+  ngOnInit(): void { this.load(); this.loadSettlement(); }
+  ionViewWillEnter(): void { this.load(); this.loadSettlement(); }
+
+  /** Model B: what the operator owes the driver right now, and the last payout. */
+  loadSettlement(): void {
+    this.api.get<{
+      position: { owed_by_company: number; owed_by_driver: number; net: number };
+      history: Array<{ amount_paid: number; method: string | null; created_at: string | null }>;
+    }>('/drivers/me/settlement').subscribe({
+      next: (res) => {
+        this.owedToYou = res.position?.owed_by_company ?? 0;
+        this.youOwe = res.position?.owed_by_driver ?? 0;
+        this.inDebt = (res.position?.net ?? 0) < 0;
+        const last = res.history?.length ? res.history[0] : null;
+        this.lastPaidAmount = last ? last.amount_paid : null;
+        this.lastPaidDate = last ? last.created_at : null;
+        this.lastPaidMethod = last ? last.method : null;
+      },
+      error: () => { /* card simply stays hidden on older backends */ },
+    });
+  }
+
+  methodLabel(m: string | null): string {
+    switch (m) {
+      case 'gpay': return 'GPay';
+      case 'bank': return 'Bank transfer';
+      case 'cash': return 'Cash';
+      case 'other': return 'Other';
+      default: return m || '';
+    }
+  }
+
+  lastPaidLabel(): string {
+    if (this.lastPaidAmount == null) return '';
+    const when = this.lastPaidDate ? this.rideDate({ id: 0, date: this.lastPaidDate, fare: 0, commission: 0, net: 0, commission_free: false, is_shared: false }) : '';
+    const method = this.methodLabel(this.lastPaidMethod);
+    return `₹${this.lastPaidAmount} · ${when}${method ? ' · ' + method : ''}`;
+  }
 
   load(): void {
     this.loading = true;
