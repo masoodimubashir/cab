@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'private_no_show_charge_per_minute',
     'private_driver_no_show_grace_minutes',
     'private_cancellation_rule',
+    // Model B cancellation charge — the % the operator keeps when a Private or
+    // Shuttle customer cancels while the driver is still on the way (Module 3).
+    'cancellation_charge_percent',
     'fixed_waiting_time_per_stop_minutes',
     'fixed_stop_arrival_radius_m',
     'fixed_stop_arrival_dwell_seconds',
@@ -62,6 +65,7 @@ class CitySetting extends Model
         'private_no_show_threshold_minutes' => 'float',
         'private_no_show_charge_per_minute' => 'float',
         'private_driver_no_show_grace_minutes' => 'integer',
+        'cancellation_charge_percent' => 'float',
         'fixed_waiting_time_per_stop_minutes' => 'integer',
         'fixed_stop_arrival_radius_m' => 'integer',
         'fixed_stop_arrival_dwell_seconds' => 'integer',

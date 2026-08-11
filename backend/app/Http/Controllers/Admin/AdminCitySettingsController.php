@@ -31,6 +31,7 @@ class AdminCitySettingsController
             'private_no_show_charge_per_minute' => ['nullable', 'numeric', 'min:0'],
             'private_driver_no_show_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'private_cancellation_rule' => ['nullable', 'string', 'max:32'],
+            'cancellation_charge_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fixed_waiting_time_per_stop_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'fixed_stop_arrival_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
             'fixed_stop_arrival_dwell_seconds' => ['nullable', 'integer', 'min:0', 'max:600'],
@@ -135,6 +136,7 @@ class AdminCitySettingsController
                 $targetSettings->private_no_show_charge_per_minute = $sourceSettings->private_no_show_charge_per_minute;
                 $targetSettings->private_driver_no_show_grace_minutes = $sourceSettings->private_driver_no_show_grace_minutes;
                 $targetSettings->private_cancellation_rule = $sourceSettings->private_cancellation_rule;
+                $targetSettings->cancellation_charge_percent = $sourceSettings->cancellation_charge_percent;
             }
 
             // Fixed Rides Settings (waiting times, radiuses, dwell times, boarding mode)
