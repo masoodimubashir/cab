@@ -91,4 +91,51 @@ class NetSettlementService
             'owed_by_driver' => round(max(0.0, -$balance), 2),
         ];
     }
+
+    /**
+     * The reconciliation check behind the driver's "Check" screen (Module 7).
+     *
+     * Two independent facts must agree:
+     *   1. the wallet identity — deposits + earnings − commission − paid_out must
+     *      equal the running balance (it always does, since both read the same
+     *      rows; surfaced so the driver can see the sum, not just trust it), and
+     *   2. no drift — the payouts recorded in the wallet (money that actually
+     *      left) must match the settlement records (driver_settlements). A gap
+     *      means a payout was booked without a settlement snapshot, or vice
+     *      versa, and is flagged so it's caught before a driver disputes it.
+     *
+     * @return array{
+     *   earnings:float, commission:float, deposits:float, paid_out:float,
+     *   balance:float, settlements_recorded:float, settlements_count:int,
+     *   drift:float, balanced:bool
+     * }
+     */
+    public function reconcile(User $driver): array
+    {
+        $p = $this->position($driver);
+
+        $settlementsRecorded = round((float) \App\Models\DriverSettlement::query()
+            ->where('user_id', $driver->id)
+            ->sum('amount_paid'), 2);
+
+        $settlementsCount = \App\Models\DriverSettlement::query()
+            ->where('user_id', $driver->id)
+            ->count();
+
+        // The payouts the wallet actually recorded, against the payouts the
+        // settlement ledger claims. These should be identical.
+        $drift = round($p['paid_out'] - $settlementsRecorded, 2);
+
+        return [
+            'earnings' => $p['earnings'],
+            'commission' => $p['commission'],
+            'deposits' => $p['deposits'],
+            'paid_out' => $p['paid_out'],
+            'balance' => $p['balance'],
+            'settlements_recorded' => $settlementsRecorded,
+            'settlements_count' => $settlementsCount,
+            'drift' => $drift,
+            'balanced' => abs($drift) < 0.01,
+        ];
+    }
 }

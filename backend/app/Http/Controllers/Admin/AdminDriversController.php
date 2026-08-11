@@ -779,6 +779,7 @@ class AdminDriversController
 
         return response()->json([
             'position' => $this->settlement->position($user),
+            'reconciliation' => $this->settlement->reconcile($user),
             'history' => \App\Models\DriverSettlement::query()
                 ->where('user_id', $user->id)
                 ->orderByDesc('id')

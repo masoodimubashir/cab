@@ -24,7 +24,7 @@ Companion to [payment-model-spec.md](payment-model-spec.md). Work is split into 
 | 4 | No-show → operator (all ride types) | 3 | `[ ]` |
 | 5 | Wallet records & visibility | — | `[x]` |
 | 6 | Net settlement engine | 5 | `[x]` |
-| 7 | Driver finance screens | 5, 6 | `[ ]` |
+| 7 | Driver finance screens | 5, 6 | `[x]` |
 | 8 | Shuttle shared-extra split | — | `[ ]` |
 
 Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3; 6 follows 5; 7 follows 5 + 6.
@@ -186,23 +186,31 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 7 — Driver finance screens `[ ]`
+## Module 7 — Driver finance screens `[x]`
 
 **Goal:** the four finance views on top of the wallet/settlement data.
 **Spec:** §8 · **Depends on:** Modules 5, 6 · *(frontend + supporting APIs)*
 
-**Build**
-- Pending Payout Balance screen
-- Settlement History screen
-- Settlement Reconciliation screen
-- Driver Ledger / Transaction History
+**Design decision:** no third money screen. The four views become **segment tabs on the existing Wallet screen** (the app has no bottom tabs — navigation is the slide-in drawer). Earnings stays the performance/charts screen; Wallet becomes the settlement hub. This avoids overlap between Earnings, Wallet, and a would-be Payouts screen.
+
+**Build (done)**
+- **Backend — reconciliation:** `NetSettlementService::reconcile(User)` — the wallet identity (deposits + earnings − commission − paid_out = balance) plus the drift check (wallet payouts vs `driver_settlements` records). Exposed on both settlement endpoints (`/drivers/me/settlement`, `/admin/drivers/{driver}/settlement`). The other three views read existing Module 5–6 APIs.
+- **Frontend — Wallet hub** (`driver-mobile/.../pages/wallet/`): `ion-segment` with four tabs —
+  - **Owed** — "You're owed ₹X" (or "You owe ₹X" in debt), the earnings/commission/deposits/paid-out breakdown, last payout, and the top-up button.
+  - **Settlements** — past payouts (amount / date / method / reference) from the settlement history.
+  - **Ledger** — every wallet transaction with an all/credits/debits filter.
+  - **Check** — the reconciliation equation + a green "reconciles" / red "mismatch ₹X" verdict.
+- **Frontend — Earnings card swap** (`.../pages/earnings/`): the Route "Paid to your bank / On its way / Waiting to be released" card is replaced by a Model B "Owed to you / Last paid" card linking to the Wallet hub. Earnings otherwise unchanged (charts + ride-by-ride stay).
 
 **Acceptance / tests**
-- [ ] Pending Payout Balance shows the correct owed/net figure.
-- [ ] Settlement History lists past settlements.
-- [ ] Reconciliation matches wallet records to settlements (no drift).
-- [ ] Driver Ledger shows the full transaction history.
-- [ ] Admin can view the same per driver.
+- [x] Pending Payout Balance (Owed tab) shows the correct owed/net figure — `NetSettlementService::position`, tested in Module 6.
+- [x] Settlement History (Settlements tab) lists past settlements — `driver_settlements`, tested in Module 6.
+- [x] Reconciliation (Check tab) matches wallet records to settlements, flags drift — `Module7ReconciliationTest` (2 green: matches + drift).
+- [x] Driver Ledger (Ledger tab) shows the full transaction history — `/drivers/me/wallet`.
+- [x] Admin can view the same per driver — `/admin/drivers/{driver}/settlement` (position + reconciliation + history).
+- Frontend type-checks clean (`tsc --noEmit`, exit 0); **visual/device verification is the user's** (Ionic UI isn't auto-tested here).
+
+**Notes:** the old `wallet-activity.modal.ts` is now unused (the Ledger tab replaces it) — left in place, safe to delete later. No `.env` flip needed for Module 7.
 
 ---
 

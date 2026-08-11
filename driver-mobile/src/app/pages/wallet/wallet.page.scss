@@ -81,3 +81,37 @@
   text-align: left;
 }
 .wallet-note ion-icon { font-size: 18px; color: #94a3b8; flex: none; }
+
+/* ── Segment tabs (the four money views) ── */
+.wallet-seg {
+  margin: 10px 12px 4px;
+  --background: transparent;
+}
+
+/* Owed hero turns to a debt tone when the driver owes the operator. */
+.wallet-hero--debt .pg-hero__amount { color: var(--ion-color-danger, #eb445a); }
+
+/* Ledger credit/debit filter pills. */
+.wallet-pills { margin: 0 0 14px; }
+
+/* ── Reconciliation verdict banner ── */
+.wallet-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.4;
+  ion-icon { font-size: 22px; flex: none; }
+}
+.wallet-check--ok {
+  background: rgba(16, 143, 71, 0.10);
+  color: #0e8f47;
+}
+.wallet-check--bad {
+  background: rgba(239, 68, 68, 0.10);
+  color: #ef4444;
+}
