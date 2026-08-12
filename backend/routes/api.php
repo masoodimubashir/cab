@@ -554,6 +554,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
     // Shuttle pool — driver's multi-passenger manifest + per-rider board/drop.
     Route::get('/shuttle/journeys/{journey}/manifest', [ShuttleDriverController::class, 'manifest']);
+    Route::get('/shuttle/trips/{trip}/manifest', [ShuttleDriverController::class, 'manifestForTrip']);
     Route::post('/shuttle/bookings/{booking}/board', [ShuttleDriverController::class, 'board']);
     Route::post('/shuttle/bookings/{booking}/drop', [ShuttleDriverController::class, 'drop']);
 });
