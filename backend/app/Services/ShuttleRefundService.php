@@ -15,6 +15,7 @@ class ShuttleRefundService
     public function __construct(
         private readonly BookingPaymentService $bookingPayments,
         private readonly NotificationCenter $notifier,
+        private readonly ShuttleSeatMapService $seatMaps,
     ) {}
 
     public function cancelByCustomer(ShuttlePassengerBooking $booking, ?string $reason = null): array
@@ -247,6 +248,10 @@ class ShuttleRefundService
                 ? ($booking->refunded_at ?? now())
                 : $booking->refunded_at,
         ]);
+
+        // Free the seat(s) this booking held back to AVAILABLE so another rider can
+        // pick them (no-op when the customer skipped seat selection).
+        $this->seatMaps->releaseSeats($booking);
 
         if ($booking->journey) {
             $booking->journey->update([

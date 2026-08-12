@@ -7,6 +7,7 @@ use App\Models\ShuttlePassengerBooking;
 use App\Services\RazorpayService;
 use App\Services\ShuttleBookingService;
 use App\Services\ShuttleRefundService;
+use App\Services\ShuttleSeatMapService;
 use Illuminate\Http\Request;
 
 class ShuttleBookingsController extends Controller
@@ -14,6 +15,7 @@ class ShuttleBookingsController extends Controller
     public function __construct(
         private readonly ShuttleBookingService $bookings,
         private readonly ShuttleRefundService $refunds,
+        private readonly ShuttleSeatMapService $seatMaps,
     ) {}
 
     public function index(Request $request)
@@ -62,6 +64,60 @@ class ShuttleBookingsController extends Controller
             'booking' => $this->bookings->shapeBooking($booking),
             'message' => 'Shuttle booking created. Payment is pending.',
         ], 201);
+    }
+
+    /**
+     * The car-like seat map for this booking's journey — which seats are free,
+     * held, booked, blocked. Same shape the Fixed picker uses. Snapshot is
+     * idempotent, so this is safe to call as soon as the booking exists.
+     */
+    public function seatMap(Request $request, ShuttlePassengerBooking $booking)
+    {
+        if ($booking->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $journey = $booking->journey;
+        if (! $journey) {
+            abort(404, 'This shuttle booking has no journey.');
+        }
+
+        return response()->json(['seat_map' => $this->seatMaps->mapForJourney($journey)]);
+    }
+
+    /**
+     * Hold the seat(s) the customer picked, before payment. Can be re-called to
+     * change the pick while the booking is still PAYMENT_PENDING.
+     */
+    public function selectSeats(Request $request, ShuttlePassengerBooking $booking)
+    {
+        if ($booking->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+        if ($booking->status !== 'PAYMENT_PENDING') {
+            return response()->json(['message' => 'Seats can only be picked before payment.'], 422);
+        }
+
+        $data = $request->validate([
+            'labels' => ['required', 'array', 'min:1'],
+            'labels.*' => ['string', 'max:32'],
+        ]);
+
+        $journey = $booking->journey;
+        if (! $journey) {
+            abort(404, 'This shuttle booking has no journey.');
+        }
+
+        // Re-picking replaces the previous hold: free what this booking held, then
+        // hold the new set (so a customer can change 1A → 2B cleanly).
+        $this->seatMaps->releaseSeats($booking);
+        $this->seatMaps->holdSeats($journey, $booking, $data['labels']);
+
+        return response()->json([
+            'booking' => $this->bookings->shapeBooking($booking->fresh()),
+            'seat_map' => $this->seatMaps->mapForJourney($journey->fresh()),
+            'message' => 'Seats held.',
+        ]);
     }
 
     public function confirmPayment(Request $request, ShuttlePassengerBooking $booking, RazorpayService $razorpay)

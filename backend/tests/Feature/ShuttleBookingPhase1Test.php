@@ -189,7 +189,9 @@ class ShuttleBookingPhase1Test extends TestCase
         $this->assertSame("local", $trip->scope);
         $this->assertSame("NEGOTIATION", $trip->status);
         $this->assertTrue((bool) $trip->is_manual_dispatch);
-        $this->assertNull($trip->payment_method);
+        // The dispatch trip carries the booking's payment method so settlement can
+        // take a cash ride's commission from the driver's wallet.
+        $this->assertSame("razorpay", $trip->payment_method);
 
         $this->assertDatabaseHas("fare_negotiations", [
             "trip_id" => $trip->id,
@@ -423,6 +425,10 @@ class ShuttleBookingPhase1Test extends TestCase
         ]);
         $rideTypeId = DB::table('ride_types')->insertGetId([
             'name' => $rideTypeName,
+            // Shuttle vehicle resolution filters on ride_types.mode, so the seed
+            // must set it: a "Shuttle" ride type is mode=shuttle, anything else
+            // (e.g. the "Mini" normal-vehicle case) is mode=private.
+            'mode' => $rideTypeName === 'Shuttle' ? 'shuttle' : 'private',
             'description' => $rideTypeName,
             'sort_order' => 1,
             'created_at' => $now,
