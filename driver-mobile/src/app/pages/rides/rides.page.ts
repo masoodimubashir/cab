@@ -59,6 +59,25 @@ type ManifestPassenger = {
 
 type ManifestStop = { id: number; seq: number; name: string; lat: number; lng: number };
 
+type ShuttlePoolPassenger = {
+  booking_id: number;
+  name: string | null;
+  seat: string | null;
+  status: string;
+  payment_method: string | null;
+  pickup: { lat: number; lng: number; address: string | null };
+  drop: { lat: number; lng: number; address: string | null };
+  boarded_at: string | null;
+  dropped_at: string | null;
+};
+
+type ShuttlePool = {
+  journey: { id: number; trip_id: number | null; status: string; capacity: number };
+  aboard: number;
+  remaining: number;
+  passengers: ShuttlePoolPassenger[];
+};
+
 /**
  * What this trip pays the driver, from the server. `collect_cash` is the one
  * that changes behaviour: once fares are paid online and split automatically,
@@ -95,6 +114,10 @@ export class RidesPage implements OnInit, OnDestroy {
   // Shared (fixed/shuttle) journey manifest — passengers + ordered stops.
   // Null for a private trip.
   sharedManifest: { route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] } | null = null;
+
+  // Shuttle pool manifest — the driver's live rider list for a multi-passenger
+  // shuttle. Null unless the active trip is a shuttle pool.
+  shuttlePool: ShuttlePool | null = null;
 
   /** Server's view of what this trip pays the driver. Null on older backends. */
   driverPayout: DriverPayout | null = null;
@@ -723,6 +746,7 @@ export class RidesPage implements OnInit, OnDestroy {
           // Latch the vehicle's reverse-bidding rule from the loaded trip.
           this.allowCountering = this.readReverseBidding(this.lastTrip);
           this.maybeRefreshManifest();
+          this.maybeRefreshPool();
 
           // Pull the city-configured negotiation floor — offers below it are rejected.
           const cfg = res['negotiation_config'] || {};
@@ -865,7 +889,9 @@ export class RidesPage implements OnInit, OnDestroy {
           this.stopSelfPositionWatch();
         }
       },
-      (payload) => this.onCustomerLocation(payload)
+      (payload) => this.onCustomerLocation(payload),
+      // A rider boarded / was dropped on this pool — refresh the manifest live.
+      () => this.maybeRefreshPool()
     );
 
     void this.initLiveMap();
@@ -1095,6 +1121,58 @@ export class RidesPage implements OnInit, OnDestroy {
         },
         error: () => undefined,
       });
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Shuttle pool — the driver's live multi-passenger rider list
+  // ─────────────────────────────────────────────────────────────────
+
+  get poolPassengers(): ShuttlePoolPassenger[] {
+    return this.shuttlePool?.passengers ?? [];
+  }
+
+  /** True once we've loaded a pool with at least one rider on it. */
+  get isShuttlePool(): boolean {
+    return !!this.shuttlePool && this.poolPassengers.length > 0;
+  }
+
+  poolStatusLabel(p: ShuttlePoolPassenger): string {
+    switch (p.status) {
+      case 'BOARDED': return 'Aboard';
+      case 'DROPPED': return 'Dropped';
+      case 'NO_SHOW': return 'No-show';
+      default: return 'Waiting';
+    }
+  }
+
+  /** Fetch the pool manifest when the active trip is a shuttle. */
+  maybeRefreshPool(): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id || !this.isShuttleTrip(this.lastTrip)) {
+      this.shuttlePool = null;
+      return;
+    }
+    this.api.get<ShuttlePool>(`/shuttle/trips/${id}/manifest`).subscribe({
+      next: (res) => { this.shuttlePool = res; },
+      error: () => { this.shuttlePool = null; },
+    });
+  }
+
+  boardShuttle(bookingId: number): void {
+    this.poolAction(bookingId, 'board');
+  }
+  dropShuttle(bookingId: number): void {
+    this.poolAction(bookingId, 'drop');
+  }
+  private poolAction(bookingId: number, action: 'board' | 'drop'): void {
+    if (this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.api.post(`/shuttle/bookings/${bookingId}/${action}`, {}).subscribe({
+      next: () => this.maybeRefreshPool(),
+      error: (err) => { this.error = err?.error?.message || 'Could not update passenger'; },
+      complete: () => { this.busy = false; },
+    });
   }
 
   boardPassenger(reservationId: number): void {

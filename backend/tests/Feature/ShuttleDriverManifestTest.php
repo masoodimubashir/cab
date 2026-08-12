@@ -142,4 +142,15 @@ class ShuttleDriverManifestTest extends TestCase
             ->assertOk()
             ->assertJsonPath('remaining', 2);
     }
+
+    public function test_trip_based_manifest_endpoint_resolves_the_pool(): void
+    {
+        [$journey, , $trip] = $this->journeyWithRiders(2);
+
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+        $this->getJson("/api/shuttle/trips/{$trip->id}/manifest")
+            ->assertOk()
+            ->assertJsonPath('journey.id', $journey->id)
+            ->assertJsonPath('remaining', 2);
+    }
 }

@@ -173,6 +173,28 @@
         </div>
       </div>
 
+      <!-- Shuttle pool — multi-passenger live manifest (board/drop each rider) -->
+      <div class="pg-card trip-card manifest-card" *ngIf="isShuttlePool">
+        <div class="manifest-head">
+          <span class="manifest-title">Pool riders</span>
+          <span class="manifest-count">{{ shuttlePool?.aboard }} aboard · {{ shuttlePool?.remaining }} to go</span>
+        </div>
+        <div class="pax-row" *ngFor="let p of poolPassengers">
+          <div class="pax-main">
+            <span class="pax-name">{{ p.name || 'Guest' }}<small *ngIf="p.seat"> · seat {{ p.seat }}</small></span>
+            <span class="pax-board">{{ p.pickup.address || '—' }} → {{ p.drop.address || '—' }}</span>
+          </div>
+          <div class="pax-actions" *ngIf="p.status === 'CONFIRMED'">
+            <button class="pax-btn pax-btn--board dc-press" type="button" [disabled]="busy" (click)="boardShuttle(p.booking_id)">Board</button>
+          </div>
+          <div class="pax-actions" *ngIf="p.status === 'BOARDED'">
+            <button class="pax-btn pax-btn--board dc-press" type="button" [disabled]="busy" (click)="dropShuttle(p.booking_id)">Drop off</button>
+          </div>
+          <span class="pax-status" [attr.data-s]="p.status"
+                *ngIf="p.status !== 'CONFIRMED' && p.status !== 'BOARDED'">{{ poolStatusLabel(p) }}</span>
+        </div>
+      </div>
+
       <!-- Secondary actions -->
       <div class="secondary-actions">
         <button

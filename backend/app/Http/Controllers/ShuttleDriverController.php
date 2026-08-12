@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ShuttleJourney;
 use App\Models\ShuttlePassengerBooking;
+use App\Models\Trip;
 use App\Services\ShuttleDriverService;
 use Illuminate\Http\Request;
 
@@ -18,6 +19,17 @@ class ShuttleDriverController extends Controller
 
     public function manifest(Request $request, ShuttleJourney $journey)
     {
+        return response()->json($this->driver->manifest($request->user(), $journey));
+    }
+
+    /** Same manifest, resolved from the driver's trip id (what the app holds). */
+    public function manifestForTrip(Request $request, Trip $trip)
+    {
+        $journey = ShuttleJourney::query()->where('trip_id', $trip->id)->first();
+        if (! $journey) {
+            abort(404, 'This trip has no shuttle pool.');
+        }
+
         return response()->json($this->driver->manifest($request->user(), $journey));
     }
 
