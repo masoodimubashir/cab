@@ -263,6 +263,29 @@ These need eyes on the running app, not just feature tests:
 
 ---
 
+## Open issue — coupon cost is handled inconsistently across ride types ⚠️
+
+**Finding (needs a decision, then a fix):** when a customer uses a coupon, *who absorbs the discount* differs by ride type today. Example — ₹100 ride, 20% coupon, customer pays ₹80, commission ignored:
+
+| Ride type | Driver settles on | Driver gets | Who eats the ₹20 |
+|-----------|-------------------|-------------|------------------|
+| **Private** | full fare (`trip.final_fare` = ₹100) | **₹100** | Operator |
+| **Fixed** | discounted seat price (`seat.fare_amount` = ₹80) | **₹80** | **Driver** |
+| **Shuttle** | — | — | Coupons not wired into shuttle bookings at all |
+
+**Where in code:**
+- Private: `PaymentsController` records `discount_amount` + charges the net, but `CommissionSettlementService::settle()` pays the driver on `trip.final_fare` (never reduced by the coupon) → operator absorbs it.
+- Fixed: `FixedSeatHoldService` stores the seat at `amount = coupon.final_amount` (already discounted, with `original_amount`/`discount_amount` kept alongside), and `settleShared()` pays on `seat.fare_amount` → driver absorbs it.
+- Shuttle: `ShuttleBookingService::createBooking` has no coupon resolution.
+
+**Decision needed — who funds a coupon?**
+- **(A)** Always the **operator** (driver always earns on the full fare). Driver-friendly; matches Private today. → fix = Fixed settles on `original_amount`, not the discounted `amount`.
+- **(B)** Always **shared with the driver** (driver settles on the discounted amount). Matches Fixed today. → fix = Private settles on `final_fare − discount`.
+
+**Then:** apply the chosen rule to all three ride types consistently, and **add coupon support to Shuttle** so it follows the same rule (under Model B / wallet). Add tests pinning the chosen behaviour per type.
+
+---
+
 ## Pending client (blockers to close)
 
 - [ ] **§5.3 Fixed cancellation** — Option 1 (keep) vs Option 2 (3-stage by departure time). *(Blocks Modules 3 → 4.)*
