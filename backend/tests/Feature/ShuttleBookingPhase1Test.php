@@ -203,7 +203,10 @@ class ShuttleBookingPhase1Test extends TestCase
             "from_role" => "customer",
             "status" => "PENDING",
         ]);
-        Queue::assertPushed(DispatchHopJob::class, fn (DispatchHopJob $job) => $job->tripId === $trip->id);
+        // Decision 6C: a lone rider on a multi-seat van does NOT dispatch instantly —
+        // the pool forms and waits for the van to fill or the window to expire.
+        Queue::assertNotPushed(DispatchHopJob::class);
+        $this->assertNotNull($journey->fresh()->forming_deadline_at);
 
         $driver = User::factory()->create();
         $trip->driver_id = $driver->id;
