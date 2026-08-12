@@ -21,7 +21,7 @@ Companion to [payment-model-spec.md](payment-model-spec.md). Work is split into 
 | 1 | Admin config foundations | — | `[x]` |
 | 2 | Gateway fee per ride type + Fixed checkout breakdown | — | `[x]` |
 | 3 | Cancellation & refund overhaul | — | `[x]` |
-| 4 | No-show → operator (all ride types) | 3 | `[ ]` |
+| 4 | No-show → operator (all ride types) | 3 | `[x]` |
 | 5 | Wallet records & visibility | — | `[x]` |
 | 6 | Net settlement engine | 5 | `[x]` |
 | 7 | Driver finance screens | 5, 6 | `[x]` |
@@ -128,20 +128,24 @@ Modules 1, 2, 3, 5, 8 have no dependencies and can run in parallel. 4 follows 3;
 
 ---
 
-## Module 4 — No-show → operator (all ride types) `[ ]`
+## Module 4 — No-show → operator (all ride types) `[x]` (done — money side was Module 3; this added Private auto-detect + fixed the attribution bug)
 
-**Goal:** every no-show amount lands with the operator.
+**Goal:** every no-show amount lands with the operator, and no-shows are auto-detected.
 **Spec:** §5.4 · **Depends on:** Module 3
 
-**Build**
-- **Fixed** no-show forfeits to **operator** (was: driver).
-- **Private** no-show: replace the per-minute fee with **full forfeit to operator** (0% refund).
-- **Shuttle** no-show: already to operator — verify (regression).
+**Already covered by earlier modules:**
+- ✅ **Money → operator (all 3 types):** handled by Module 3 under Model B — a no-show = 0% refund, operator keeps the online payment; a NO_SHOW seat is excluded from the driver's wallet settlement (Module 5 `settleShared`/`settleShuttle` filter out CANCELLED/NO_SHOW). So "forfeit → operator" is met.
+- ✅ **Auto-detect (Fixed + Shuttle):** already automatic — `FixedStopAutomationService` + `ShuttleStopAutomationService` mark no-show on wait-timer expiry.
 
-**Acceptance / tests**
-- [ ] Fixed no-show → amount books to operator, driver gets 0.
-- [ ] Private no-show → 0% refund, amount to operator.
-- [ ] Shuttle no-show → to operator (regression, unchanged).
+**Build (done)**
+- [x] **Fixed the Private no-show attribution bug.** `TripStateMachineService::cancelledBy()` mapped the no-show reason strings **backwards**: `no_show_by:customer` → `BY_DRIVER` (full refund) and `no_show_by:driver` → `BY_CUSTOMER` (charge). Against `TripsController::markNoShow` (line 626/635: `role=customer` = *the customer was the no-show*) that inverted the money — a **customer** no-show refunded the customer in full instead of forfeiting to the operator, and a **driver** no-show wrongly charged the customer. Swapped to the correct mapping (`no_show_by:customer` → `BY_CUSTOMER`, `no_show_by:driver` → `BY_DRIVER`) + corrected the docblock. No existing test pinned it (all cancel tests passed `cancelled_by` explicitly) — now pinned both ways.
+- [x] **Private auto-detect sweep.** New `PrivateNoShowService::sweep(Trip)` — a solo driver waiting at `ARRIVED_PICKUP` past the city's `private_no_show_threshold_minutes` (the driver-waits-for-customer field; fallback PricingRule → 5; `0` disables) auto-cancels as a **customer** no-show through the state machine, which runs the Module 3 rulebook (forfeit to operator). Guarded to solo rides only (skips Fixed `route_departure_id` + Shuttle journeys). Wired into the driver's per-trip location stream `TripTrackingController::updateLocation`, so it fires only while the driver is actually present. The manual button still works for ending the wait early; the old per-minute fee (`private_no_show_charge_per_minute`) is intentionally **not** applied under Model B (whole online payment is forfeited).
+
+**Acceptance / tests — all green** *(`Module4PrivateNoShowTest`, 7)*
+- [x] Private customer no-show → 0% refund, operator keeps (attribution correct); driver no-show → 100% refund.
+- [x] Private no-show auto-marked after the grace timer; no-op before the timer, when the driver hasn't arrived, for shared trips, and when threshold = 0.
+- [x] Fixed no-show → operator, driver gets 0 (regression, `BookingSettlementPhase5Test` R7).
+- [x] Shuttle no-show → operator (regression, `Module3ShuttleRefundTest`, `ShuttleSettlementPhase5Test`).
 
 ---
 
