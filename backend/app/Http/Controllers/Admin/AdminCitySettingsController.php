@@ -222,6 +222,7 @@ class AdminCitySettingsController
             'private_no_show_charge_per_minute' => $s->private_no_show_charge_per_minute !== null ? round((float) $s->private_no_show_charge_per_minute, 2) : null,
             'private_driver_no_show_grace_minutes' => (int) ($s->private_driver_no_show_grace_minutes ?? 5),
             'private_cancellation_rule' => $s->private_cancellation_rule ?? 'standard',
+            'cancellation_charge_percent' => round((float) ($s->cancellation_charge_percent ?? 20), 2),
             'fixed_waiting_time_per_stop_minutes' => (int) ($s->fixed_waiting_time_per_stop_minutes ?? 5),
             'fixed_stop_arrival_radius_m' => (int) ($s->fixed_stop_arrival_radius_m ?? 150),
             'fixed_stop_arrival_dwell_seconds' => (int) ($s->fixed_stop_arrival_dwell_seconds ?? 20),
