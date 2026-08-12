@@ -12,11 +12,12 @@ use App\Models\TripShareLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Services\FixedStopAutomationService;
+use App\Services\PrivateNoShowService;
 use App\Services\ShuttleStopAutomationService;
 
 class TripTrackingController extends Controller
 {
-    public function updateLocation(Request $request, Trip $trip, FixedStopAutomationService $fixedStops, ShuttleStopAutomationService $shuttleStops)
+    public function updateLocation(Request $request, Trip $trip, FixedStopAutomationService $fixedStops, ShuttleStopAutomationService $shuttleStops, PrivateNoShowService $privateNoShow)
     {
         $data = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
@@ -86,6 +87,11 @@ class TripTrackingController extends Controller
 
         $fixedStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
         $shuttleStops->processDriverLocation($user->id, (float) $data['lat'], (float) $data['lng']);
+
+        // Module 4 — auto-mark a customer no-show once this solo driver has waited
+        // at pickup past the city threshold. No-op for Fixed/Shuttle and for a
+        // driver who isn't waiting at pickup yet.
+        $privateNoShow->sweep($trip);
 
         return response()->json(['location' => $location]);
     }
