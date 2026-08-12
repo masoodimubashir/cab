@@ -16,7 +16,10 @@ use Illuminate\Support\Facades\DB;
 
 class ShuttleBookingService
 {
-    public function __construct(private readonly FareEstimationService $fares) {}
+    public function __construct(
+        private readonly FareEstimationService $fares,
+        private readonly ShuttleSeatMapService $seatMaps,
+    ) {}
 
     public function createBooking(User $customer, array $data): ShuttlePassengerBooking
     {
@@ -163,6 +166,10 @@ class ShuttleBookingService
                 $dispatch = [$trip->id, (float) $locked->fare_amount];
             }
 
+            // Commit any seats the customer held for this booking (HELD → BOOKED).
+            // No-op when the customer skipped seat selection.
+            $this->seatMaps->bookSeats($locked);
+
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
 
             return $locked->fresh();
@@ -212,6 +219,9 @@ class ShuttleBookingService
             if ($trip->wasRecentlyCreated) {
                 $dispatch = [$trip->id, (float) $locked->fare_amount];
             }
+
+            // Commit any seats the customer held for this booking (HELD → BOOKED).
+            $this->seatMaps->bookSeats($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
 
@@ -277,10 +287,18 @@ class ShuttleBookingService
     {
         $booking->loadMissing(['journey:id,status,capacity,seats_taken,trip_id', 'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id']);
 
+        $seatLabels = \App\Models\JourneySeat::query()
+            ->where('shuttle_passenger_booking_id', $booking->id)
+            ->whereIn('status', ['HELD', 'BOOKED'])
+            ->orderBy('label')
+            ->pluck('label')
+            ->all();
+
         return [
             'id' => $booking->id,
             'shuttle_journey_id' => $booking->shuttle_journey_id,
             'trip_id' => $booking->journey?->trip_id,
+            'seat_labels' => $seatLabels,
             'journey_status' => $booking->journey?->status,
             'city_id' => $booking->city_id,
             'city_vehicle_type_id' => $booking->city_vehicle_type_id,

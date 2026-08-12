@@ -46,4 +46,9 @@ class ShuttleJourney extends Model
     {
         return $this->hasMany(ShuttlePassengerBooking::class, 'shuttle_journey_id');
     }
+
+    public function seats(): HasMany
+    {
+        return $this->hasMany(JourneySeat::class, 'shuttle_journey_id');
+    }
 }

@@ -525,6 +525,8 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 
     Route::get('/shuttle/bookings', [ShuttleBookingsController::class, 'index']);
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
+    Route::get('/shuttle/bookings/{booking}/seats', [ShuttleBookingsController::class, 'seatMap']);
+    Route::post('/shuttle/bookings/{booking}/seats', [ShuttleBookingsController::class, 'selectSeats'])->middleware('throttle:booking');
     Route::post('/shuttle/bookings/{booking}/razorpay-order', [ShuttleBookingsController::class, 'createRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/confirm-payment', [ShuttleBookingsController::class, 'confirmPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/cancel', [ShuttleBookingsController::class, 'cancel'])->middleware('throttle:booking');

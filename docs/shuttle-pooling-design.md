@@ -116,15 +116,30 @@ each boarded passenger finally owes:  base seat fare  +  per_head
 
 ---
 
-## 6. The few product decisions to confirm (these are yours)
+## 6. Product decisions — CONFIRMED
 
-Everything above uses sensible defaults, but these are genuine choices that affect real money/matching — confirm or change each:
+| # | Decision | Chosen |
+|---|----------|--------|
+| 1 | **Matching rule** | **1A** — join an existing forming journey when: same vehicle type **AND** pickup within `shuttle_pickup_match_distance_km` **AND** drop within `shuttle_drop_match_distance_km` **AND** a seat is free **AND** no existing rider delayed past `shuttle_max_passenger_delay_minutes`; else new journey |
+| 2 | **How the extra is split** | **2A** — `extra = metered vehicle fare − sum(base seat fares)`, **split equally** across boarded passengers, never negative |
+| 3 | **Base seat price** | **3A** — **locked**; pooling never changes a rider's own quote, only adds their share of the extra |
+| 4 | **No-show / cancelled riders** | **4A** — **excluded from the divisor**; handled by the Module 3 refund/forfeit rules |
+| 5 | **Boarding confirmation** | **5B** — **reuse the Fixed boarding modes** (`driver_only` / `customer_otp` / `qr_scan` / `driver_customer`), configurable per city |
+| 6 | **When the van dispatches a driver** | **6C** — **whichever comes first:** the van is full **or** the wait timer expires |
 
-1. **Matching rule:** join an existing journey when pickup & drop are each within the City-Settings match distances **and** capacity is left **and** no existing rider is delayed beyond `shuttle_max_passenger_delay_minutes`. ✅ recommended — reuses settings you already have.
-2. **The extra = metered vehicle fare − sum of base seat quotes, split equally across boarded riders, never negative.** ✅ recommended (matches your "divide the extra by passengers" ask). *Alternative: split by each rider's distance share instead of equally — more complex.*
-3. **Base seat price is locked** (pooling never changes a rider's own quote). ✅ recommended.
-4. **No-show / cancelled riders are excluded from the divisor** and handled by the Module 3 rulebook. ✅ recommended.
-5. **Boarding OTP per passenger** (yes/no, or reuse fixed's QR/OTP modes).
-6. **When does the van dispatch a driver** — as soon as it's full, or when a wait timer expires, or a mix? (uses the existing shuttle wait settings.)
+## 7. Seat selection (customer-facing) — mirror the Fixed ride
 
-Once you're happy with Section 6, Part B is fully defined and I build it in this order: **(3) the split (small, testable now) → (1) matching → (4) journey dispatch → (2) per-passenger OTP.**
+On top of the above, the customer must **pick their seat(s)** when booking a shuttle, using the **same car-like seat-map UI already built for Fixed rides** (the "select seat" step that shows the seats and a car layout in the app).
+
+This means shuttle needs the **same seat-inventory backbone as Fixed:**
+- A **per-journey seat map** (seat numbers/positions up to the vehicle's `capacity`), so the app can show which seats are taken vs free.
+- **Seat holds** while the customer is paying (so two people can't grab the same seat), then the seat is committed on payment — same lifecycle as Fixed's `departure_seats` / seat-hold flow.
+- The chosen seat number(s) stored on the `ShuttlePassengerBooking`.
+
+**Build order (updated):**
+1. **The split** (Decision 2A) — small, self-contained, testable now → wire into `settleShuttle`.
+2. **Shuttle seat inventory + seat-selection API** — mirror Fixed's `departure_seats` + seat-hold, keyed on `ShuttleJourney`.
+3. **Customer app seat-picker UI** — reuse the Fixed seat-map component for the shuttle booking flow.
+4. **Matching** (Decision 1A) — join a compatible forming journey.
+5. **Journey dispatch** (Decision 6C) — full-or-timer.
+6. **Per-passenger boarding** (Decision 5B) — reuse Fixed boarding modes.
