@@ -27,8 +27,8 @@
     title="Your pool fare"
     [from]="fromLabel" [to]="toLabel"
     [step]="3" [total]="total"
-    cta="Confirm pool"
-    [disabled]="estimating || !canConfirm"
+    [cta]="busy ? 'Working…' : 'Pick your seat'"
+    [disabled]="estimating || busy || !canConfirm"
     (back)="back()"
     (primary)="confirm()">
 
@@ -41,27 +41,6 @@
       <span class="bk-opt__r" *ngIf="fare">₹{{ fare }}<small>a seat</small></span>
     </div>
 
-    <p class="bk-note">A fixed price per seat — no bargaining. Cheaper than the whole car.</p>
-    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
-  </app-step-shell>
-
-  <!-- Step 4 — pay -->
-  <app-step-shell
-    *ngIf="step === 'paying'"
-    title="Pay for your seat"
-    subtitle="Pools are paid before we find the car."
-    [from]="fromLabel" [to]="toLabel"
-    [step]="4" [total]="total"
-    [cta]="busy ? 'Working…' : ('Pay ₹' + (payableTotal || 0))"
-    [disabled]="busy"
-    (back)="back()"
-    (primary)="pay()">
-
-    <div class="bk-money">
-      <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
-      <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
-      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ payableTotal }}</span></div>
-    </div>
     <div class="fb-tip-chips" *ngIf="tipping && tipping.values && tipping.values.length > 0" style="margin: 12px 0; display: flex; gap: 8px;">
       <button type="button"
               *ngFor="let val of tipping.values"
@@ -79,6 +58,61 @@
         Tip {{ tipPresetLabel(val) }}
       </button>
     </div>
+
+    <p class="bk-note">A fixed price per seat — no bargaining. Cheaper than the whole car.</p>
+    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+  </app-step-shell>
+
+  <!-- Step 4 — pick a seat -->
+  <app-step-shell
+    *ngIf="step === 'seats'"
+    title="Choose your seat"
+    subtitle="Tap where you'd like to sit."
+    [from]="fromLabel" [to]="toLabel"
+    [step]="4" [total]="total"
+    [cta]="selectedSeats.length ? ('Continue · seat ' + selectedSeats[0]) : 'Pick a seat'"
+    [disabled]="!canPayForSeat"
+    (back)="back()"
+    (primary)="continueToPay()">
+
+    <div class="sh-seatwrap">
+      <app-seat-grid
+        [rows]="seatRows"
+        [cols]="seatCols"
+        [cells]="seatCells"
+        [selectedLabels]="selectedSeats"
+        (pick)="onSeatPick($event)">
+      </app-seat-grid>
+    </div>
+
+    <div class="sh-seatlegend">
+      <span><i class="dot dot--free"></i> Free</span>
+      <span><i class="dot dot--mine"></i> Yours</span>
+      <span><i class="dot dot--taken"></i> Taken</span>
+    </div>
+
+    <p class="bk-note" *ngIf="!seatError">You'll be alone or share the car — your seat is reserved either way.</p>
+    <p class="bk-note bk-note--warn" *ngIf="seatError">{{ seatError }}</p>
+  </app-step-shell>
+
+  <!-- Step 5 — pay -->
+  <app-step-shell
+    *ngIf="step === 'paying'"
+    title="Pay for your seat"
+    subtitle="Pools are paid before we find the car."
+    [from]="fromLabel" [to]="toLabel"
+    [step]="5" [total]="total"
+    [cta]="busy ? 'Working…' : ('Pay ₹' + (payableTotal || 0))"
+    [disabled]="busy"
+    (back)="back()"
+    (primary)="pay()">
+
+    <div class="bk-money">
+      <div class="bk-money__row" *ngIf="selectedSeats.length"><span>Seat</span><span>{{ selectedSeats[0] }}</span></div>
+      <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
+      <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
+      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ payableTotal }}</span></div>
+    </div>
     <div class="bk-note bk-note--warn"><b>Refunded in full</b> if no car forms.</div>
     <p class="bk-note bk-note--danger" *ngIf="error">{{ error }}</p>
   </app-step-shell>
@@ -88,7 +122,7 @@
     *ngIf="step === 'forming'"
     title="Finding people to share with"
     barLabel="Pool ride"
-    [step]="4" [total]="total"
+    [step]="5" [total]="total"
     cta="View my pools"
     (back)="viewPools()"
     (primary)="viewPools()">

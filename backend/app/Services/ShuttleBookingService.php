@@ -52,13 +52,9 @@ class ShuttleBookingService
         }
 
         return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare, $paymentMethod) {
-            $journey = ShuttleJourney::query()->create([
-                'city_id' => $cvt->city_id,
-                'city_vehicle_type_id' => $cvt->id,
-                'status' => 'DISPATCH_DISABLED',
-                'capacity' => max(1, (int) $cvt->max_people),
-                'seats_taken' => 1,
-            ]);
+            // Pooling (decision 1A): join a still-forming journey heading the same
+            // way if one fits, otherwise start a fresh one.
+            $journey = $this->resolveJourneyForBooking($cvt, $data);
 
             return ShuttlePassengerBooking::query()->create([
                 'shuttle_journey_id' => $journey->id,
@@ -85,6 +81,87 @@ class ShuttleBookingService
                 'status' => 'PAYMENT_PENDING',
             ]);
         });
+    }
+
+    /**
+     * Pooling matcher (decision 1A). Returns a still-forming journey this rider
+     * can share, or a fresh one. A journey is joinable when it's the same vehicle
+     * type + scope, still open for riders (DISPATCH_DISABLED / FORMING), has a free
+     * seat, and an existing rider's pickup AND drop are each within the city's
+     * shuttle match distances of this rider's. The chosen journey is row-locked and
+     * re-checked before its seat count is bumped, so two riders can't overfill it.
+     *
+     * NOTE: the per-rider added-delay cap (shuttle_max_passenger_delay_minutes) is a
+     * routing-based refinement not evaluated here — matching is by corridor
+     * (pickup-near-pickup, drop-near-drop) for now.
+     */
+    private function resolveJourneyForBooking(CityVehicleType $cvt, array $data): ShuttleJourney
+    {
+        $settings = CitySetting::query()->where('city_id', $cvt->city_id)->first();
+        $pickupKm = (float) ($settings?->shuttle_pickup_match_distance_km ?? 1.5);
+        $dropKm = (float) ($settings?->shuttle_drop_match_distance_km ?? 1.5);
+        $scope = $data['scope'] ?? 'local';
+
+        $pLat = (float) $data['pickup_lat'];
+        $pLng = (float) $data['pickup_lng'];
+        $dLat = (float) $data['drop_lat'];
+        $dLng = (float) $data['drop_lng'];
+
+        $candidates = ShuttleJourney::query()
+            ->where('city_vehicle_type_id', $cvt->id)
+            ->whereIn('status', ['DISPATCH_DISABLED', 'FORMING'])
+            ->whereColumn('seats_taken', '<', 'capacity')
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get();
+
+        foreach ($candidates as $candidate) {
+            $anchor = ShuttlePassengerBooking::query()
+                ->where('shuttle_journey_id', $candidate->id)
+                ->whereIn('status', ['PAYMENT_PENDING', 'CONFIRMED', 'BOARDED'])
+                ->where('scope', $scope)
+                ->orderBy('id')
+                ->first();
+            if (! $anchor) {
+                continue;
+            }
+
+            $pickupClose = $this->kmBetween($pLat, $pLng, (float) $anchor->pickup_lat, (float) $anchor->pickup_lng) <= $pickupKm;
+            $dropClose = $this->kmBetween($dLat, $dLng, (float) $anchor->drop_lat, (float) $anchor->drop_lng) <= $dropKm;
+            if (! $pickupClose || ! $dropClose) {
+                continue;
+            }
+
+            // Lock and re-check before committing to the join.
+            $locked = ShuttleJourney::query()->whereKey($candidate->id)->lockForUpdate()->first();
+            if ($locked
+                && in_array($locked->status, ['DISPATCH_DISABLED', 'FORMING'], true)
+                && (int) $locked->seats_taken < (int) $locked->capacity) {
+                $locked->increment('seats_taken');
+
+                return $locked;
+            }
+        }
+
+        // Nobody to share with → a fresh journey carrying this one rider.
+        return ShuttleJourney::query()->create([
+            'city_id' => $cvt->city_id,
+            'city_vehicle_type_id' => $cvt->id,
+            'status' => 'DISPATCH_DISABLED',
+            'capacity' => max(1, (int) $cvt->max_people),
+            'seats_taken' => 1,
+        ]);
+    }
+
+    /** Great-circle distance in kilometres. */
+    private function kmBetween(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthKm = 6371.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return $earthKm * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
     public function createRazorpayOrder(User $customer, ShuttlePassengerBooking $booking, RazorpayService $razorpay): array
@@ -162,15 +239,19 @@ class ShuttleBookingService
             ]);
 
             $trip = $this->ensureDispatchTrip($locked);
-            if ($trip->wasRecentlyCreated) {
-                $dispatch = [$trip->id, (float) $locked->fare_amount];
-            }
 
             // Commit any seats the customer held for this booking (HELD → BOOKED).
             // No-op when the customer skipped seat selection.
             $this->seatMaps->bookSeats($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
+
+            // Dispatch a driver as soon as the van is full (decision 6C). Otherwise
+            // the pool keeps forming and the timer sweep (shuttle:dispatch-due)
+            // dispatches it once the wait window expires.
+            if ($this->claimDispatchIfFull($locked->shuttle_journey_id)) {
+                $dispatch = [$trip->id, $this->journeyPaidFareTotal($locked->shuttle_journey_id)];
+            }
 
             return $locked->fresh();
         });
@@ -216,14 +297,16 @@ class ShuttleBookingService
             ]);
 
             $trip = $this->ensureDispatchTrip($locked);
-            if ($trip->wasRecentlyCreated) {
-                $dispatch = [$trip->id, (float) $locked->fare_amount];
-            }
 
             // Commit any seats the customer held for this booking (HELD → BOOKED).
             $this->seatMaps->bookSeats($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
+
+            // Dispatch when the van is full; otherwise the timer sweep handles it.
+            if ($this->claimDispatchIfFull($locked->shuttle_journey_id)) {
+                $dispatch = [$trip->id, $this->journeyPaidFareTotal($locked->shuttle_journey_id)];
+            }
 
             return $locked->fresh();
         });
@@ -395,12 +478,58 @@ class ShuttleBookingService
             'status' => 'PENDING',
         ]);
 
+        // Start the pool-forming window (decision 6C): a driver is dispatched when
+        // the van fills or this deadline passes, whichever comes first. A window of
+        // 0 means dispatch as soon as the first rider pays (instant, no pooling wait).
+        $window = (int) (CitySetting::query()
+            ->where('city_id', $booking->city_id)
+            ->value('shuttle_forming_window_minutes') ?? 2);
+
         $journey->update([
             'trip_id' => $trip->id,
             'status' => 'FORMING',
+            'forming_deadline_at' => now()->addMinutes(max(0, $window)),
         ]);
 
         return $trip;
+    }
+
+    /**
+     * Claim the dispatch for a journey that is now full, exactly once. Row-locks
+     * the journey and stamps dispatched_at so neither a racing payment nor the
+     * timer sweep can dispatch the same van twice. Returns true when THIS call won
+     * the claim. Must run inside the caller's transaction.
+     */
+    private function claimDispatchIfFull(int $journeyId): bool
+    {
+        $journey = ShuttleJourney::query()->whereKey($journeyId)->lockForUpdate()->first();
+        if (! $journey || $journey->dispatched_at !== null) {
+            return false;
+        }
+
+        $paidSeats = ShuttlePassengerBooking::query()
+            ->where('shuttle_journey_id', $journeyId)
+            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
+            ->where('payment_status', 'PAID')
+            ->count();
+
+        if ($paidSeats < (int) $journey->capacity) {
+            return false;
+        }
+
+        $journey->forceFill(['dispatched_at' => now()])->save();
+
+        return true;
+    }
+
+    /** Total paid fare across the journey's confirmed riders (the pool's value). */
+    private function journeyPaidFareTotal(int $journeyId): float
+    {
+        return round((float) ShuttlePassengerBooking::query()
+            ->where('shuttle_journey_id', $journeyId)
+            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
+            ->where('payment_status', 'PAID')
+            ->sum('fare_amount'), 2);
     }
 
     private function resolveShuttleVehicle(array $data): CityVehicleType

@@ -136,10 +136,11 @@ This means shuttle needs the **same seat-inventory backbone as Fixed:**
 - **Seat holds** while the customer is paying (so two people can't grab the same seat), then the seat is committed on payment — same lifecycle as Fixed's `departure_seats` / seat-hold flow.
 - The chosen seat number(s) stored on the `ShuttlePassengerBooking`.
 
-**Build order (updated):**
-1. **The split** (Decision 2A) — small, self-contained, testable now → wire into `settleShuttle`.
-2. **Shuttle seat inventory + seat-selection API** — mirror Fixed's `departure_seats` + seat-hold, keyed on `ShuttleJourney`.
-3. **Customer app seat-picker UI** — reuse the Fixed seat-map component for the shuttle booking flow.
-4. **Matching** (Decision 1A) — join a compatible forming journey.
-5. **Journey dispatch** (Decision 6C) — full-or-timer.
-6. **Per-passenger boarding** (Decision 5B) — reuse Fixed boarding modes.
+**Build order & status:**
+1. ✅ **Shuttle seat inventory** — `journey_seats` + `JourneySeat` + `ShuttleSeatMapService` (mirror of Fixed `departure_seats`). Tests: `ShuttleSeatMapTest` (7).
+2. ✅ **Seat-selection API** — `GET/POST /shuttle/bookings/{id}/seats`; hold→book→release wired into the booking lifecycle; seat labels on the booking. Tests: `ShuttleSeatSelectionApiTest` (4).
+3. ✅ **Customer app seat-picker** — new "Choose your seat" step in `booking/shuttle`, reusing the Fixed `app-seat-grid`; tip moved to the fare step; AOT build clean.
+4. ✅ **Matching** (1A) — `ShuttleBookingService::resolveJourneyForBooking`: join a forming journey when same vehicle+scope, pickup & drop within the city match distances, seat free; else new journey. Tests: `ShuttlePoolingMatchTest` (3). *(The `shuttle_max_passenger_delay_minutes` cap is a routing refinement, not yet evaluated.)*
+5. ✅ **Dispatch full-or-timer** (6C) — dispatch inline when the van fills; else the `shuttle:dispatch-due` sweep dispatches once the per-city `shuttle_forming_window_minutes` window (City Settings → Shuttle) expires; `dispatched_at` guards against double-dispatch. Tests: `ShuttlePoolingDispatchTest` (4).
+6. ⏸️ **The extra-charge split** (2A) — DEFERRED: blocked on how the extra is collected from prepaid online riders (see memory `shuttle-split-collection-pending`).
+7. ⬜ **Per-passenger boarding** (5B) — reuse Fixed boarding modes; part of the larger multi-passenger driver-app experience (not built).

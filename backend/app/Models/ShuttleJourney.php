@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'city_id', 'city_vehicle_type_id', 'driver_id', 'trip_id', 'status', 'capacity', 'seats_taken', 'started_at', 'completed_at',
+    'forming_deadline_at', 'dispatched_at',
 ])]
 class ShuttleJourney extends Model
 {
@@ -20,6 +21,8 @@ class ShuttleJourney extends Model
         'seats_taken' => 'integer',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'forming_deadline_at' => 'datetime',
+        'dispatched_at' => 'datetime',
     ];
 
     public function city(): BelongsTo

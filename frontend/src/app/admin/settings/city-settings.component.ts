@@ -71,6 +71,7 @@ interface CitySettings {
   shuttle_pickup_match_distance_km: number;
   shuttle_drop_match_distance_km: number;
   shuttle_max_passenger_delay_minutes: number;
+  shuttle_forming_window_minutes: number;
   shuttle_join_after_start_enabled: boolean;
   shuttle_fare_lock_enabled: boolean;
   shuttle_driver_waiting_time_minutes: number;
@@ -213,6 +214,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="field"><span class="field__lbl">Pickup match distance (km)<span class="info" tabindex="0" aria-label="Maximum pickup detour allowed when matching shuttle passengers." data-tip="Maximum pickup detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_pickup_match_distance_km" /></label>
                 <label class="field"><span class="field__lbl">Drop match distance (km)<span class="info" tabindex="0" aria-label="Maximum drop detour allowed when matching shuttle passengers." data-tip="Maximum drop detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_drop_match_distance_km" /></label>
                 <label class="field"><span class="field__lbl">Max passenger delay (min)<span class="info" tabindex="0" aria-label="Maximum extra delay allowed for existing shuttle passengers." data-tip="Maximum extra delay allowed for existing shuttle passengers.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_max_passenger_delay_minutes" /></label>
+                <label class="field"><span class="field__lbl">Pool forming wait (min)<span class="info" tabindex="0" aria-label="How long a shuttle waits to gather more riders before a driver is dispatched. It dispatches sooner if the vehicle fills up. 0 = dispatch immediately." data-tip="How long the shuttle waits to gather riders before dispatching a driver (dispatches sooner if full; 0 = instant).">!</span></span><input type="number" min="0" max="60" step="1" [(ngModel)]="form.shuttle_forming_window_minutes" /></label>
               </div>
               <div class="toggles">
                 <label class="tgl"><input type="checkbox" [(ngModel)]="form.shuttle_join_after_start_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Allow joining after ride start</span></span></label>
@@ -937,7 +939,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     const cityRuleFields: (keyof CitySettings)[] = [
       'private_no_show_threshold_minutes', 'private_no_show_charge_per_minute', 'private_driver_no_show_grace_minutes', 'cancellation_charge_percent',
       'fixed_waiting_time_per_stop_minutes', 'fixed_stop_arrival_radius_m', 'fixed_stop_arrival_dwell_seconds', 'fixed_driver_missed_stop_grace_minutes', 'fixed_customer_pickup_radius_m', 'fixed_vehicle_approaching_alert_radius_m', 'fixed_customer_grace_minutes',
-      'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
+      'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_forming_window_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
       'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes',
     ];
     cityRuleFields.forEach((key) => append(key, f[key]));

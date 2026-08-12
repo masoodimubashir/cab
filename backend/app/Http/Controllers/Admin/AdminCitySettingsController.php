@@ -51,6 +51,7 @@ class AdminCitySettingsController
             'shuttle_customer_pickup_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
             'shuttle_approaching_alert_radius_m' => ['nullable', 'integer', 'min:50', 'max:10000'],
             'shuttle_customer_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
+            'shuttle_forming_window_minutes' => ['nullable', 'integer', 'min:0', 'max:60'],
             'shuttle_capacity_source' => ['nullable', 'in:vehicle_type,vehicle,city_default'],
             'shuttle_customer_privacy_rule' => ['nullable', 'in:hide_other_passengers,show_stop_sequence'],
             'shuttle_cancellation_refund_rule' => ['nullable', 'string', 'max:32'],
@@ -164,6 +165,7 @@ class AdminCitySettingsController
                 $targetSettings->shuttle_customer_pickup_radius_m = $sourceSettings->shuttle_customer_pickup_radius_m;
                 $targetSettings->shuttle_approaching_alert_radius_m = $sourceSettings->shuttle_approaching_alert_radius_m;
                 $targetSettings->shuttle_customer_grace_minutes = $sourceSettings->shuttle_customer_grace_minutes;
+                $targetSettings->shuttle_forming_window_minutes = $sourceSettings->shuttle_forming_window_minutes;
                 $targetSettings->shuttle_capacity_source = $sourceSettings->shuttle_capacity_source;
                 $targetSettings->shuttle_customer_privacy_rule = $sourceSettings->shuttle_customer_privacy_rule;
                 $targetSettings->shuttle_cancellation_refund_rule = $sourceSettings->shuttle_cancellation_refund_rule;
@@ -242,6 +244,7 @@ class AdminCitySettingsController
             'shuttle_customer_pickup_radius_m' => (int) ($s->shuttle_customer_pickup_radius_m ?? 150),
             'shuttle_approaching_alert_radius_m' => (int) ($s->shuttle_approaching_alert_radius_m ?? 500),
             'shuttle_customer_grace_minutes' => (int) ($s->shuttle_customer_grace_minutes ?? 2),
+            'shuttle_forming_window_minutes' => (int) ($s->shuttle_forming_window_minutes ?? 2),
             'shuttle_capacity_source' => $s->shuttle_capacity_source ?? 'vehicle_type',
             'shuttle_customer_privacy_rule' => $s->shuttle_customer_privacy_rule ?? 'hide_other_passengers',
             'shuttle_cancellation_refund_rule' => $s->shuttle_cancellation_refund_rule ?? 'standard',
