@@ -377,7 +377,7 @@ class CommissionSettlementService
         $bookings = $journey
             ? \App\Models\ShuttlePassengerBooking::query()
                 ->where('shuttle_journey_id', $journey->id)
-                ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
+                ->whereIn('status', ['CONFIRMED', 'BOARDED', 'DROPPED'])
                 ->where('payment_status', 'PAID')
                 ->get()
             : collect();

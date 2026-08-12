@@ -14,6 +14,7 @@ use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ShuttleBookingsController;
+use App\Http\Controllers\ShuttleDriverController;
 use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FixedRoutesController;
 use App\Http\Controllers\FixedBookingsController;
@@ -550,6 +551,11 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
     Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
+
+    // Shuttle pool — driver's multi-passenger manifest + per-rider board/drop.
+    Route::get('/shuttle/journeys/{journey}/manifest', [ShuttleDriverController::class, 'manifest']);
+    Route::post('/shuttle/bookings/{booking}/board', [ShuttleDriverController::class, 'board']);
+    Route::post('/shuttle/bookings/{booking}/drop', [ShuttleDriverController::class, 'drop']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rides'])->group(function () {
