@@ -1,4 +1,8 @@
 <ion-content class="fixed-active-page" [fullscreen]="true">
+
+  <!-- Full-screen boarding-code prompt — pops when the code arrives -->
+  <app-boarding-code-prompt [code]="booking?.boarding_code ?? null"></app-boarding-code-prompt>
+
   <div class="fixed-active-top">
     <button class="icon-btn" type="button" (click)="back()" aria-label="Back">
       <ion-icon name="arrow-back-outline"></ion-icon>

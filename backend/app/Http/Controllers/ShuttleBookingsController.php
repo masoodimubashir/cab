@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\OperatorSetting;
 use App\Models\ShuttlePassengerBooking;
+use App\Models\Trip;
 use App\Services\RazorpayService;
 use App\Services\ShuttleBookingService;
 use App\Services\ShuttleRefundService;
@@ -118,6 +119,26 @@ class ShuttleBookingsController extends Controller
             'seat_map' => $this->seatMaps->mapForJourney($journey->fresh()),
             'message' => 'Seats held.',
         ]);
+    }
+
+    /**
+     * The requesting rider's own shuttle booking on a given trip — used by the
+     * active-ride screen to pick up their live boarding code (otp mode) during
+     * the ride without loading their whole booking list.
+     */
+    public function forTrip(Request $request, Trip $trip)
+    {
+        $booking = ShuttlePassengerBooking::query()
+            ->where('customer_id', $request->user()->id)
+            ->whereHas('journey', fn ($q) => $q->where('trip_id', $trip->id))
+            ->latest('id')
+            ->first();
+
+        if (! $booking) {
+            abort(404, 'No shuttle booking of yours on this trip.');
+        }
+
+        return response()->json(['booking' => $this->bookings->shapeBooking($booking)]);
     }
 
     public function confirmPayment(Request $request, ShuttlePassengerBooking $booking, RazorpayService $razorpay)
