@@ -66,7 +66,7 @@ interface CitySettings {
   fixed_customer_pickup_radius_m: number;
   fixed_vehicle_approaching_alert_radius_m: number;
   fixed_customer_grace_minutes: number;
-  fixed_boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'qr_scan' | 'driver_customer';
+  fixed_boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'driver_customer';
 
   shuttle_pickup_match_distance_km: number;
   shuttle_drop_match_distance_km: number;
@@ -80,6 +80,7 @@ interface CitySettings {
   shuttle_customer_pickup_radius_m: number;
   shuttle_approaching_alert_radius_m: number;
   shuttle_customer_grace_minutes: number;
+  shuttle_boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'driver_customer';
   shuttle_driver_payout_share_percent: number | null;
 
   emergency_no: string | null;
@@ -230,6 +231,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_customer_pickup_radius_m" /></label>
                 <label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.shuttle_approaching_alert_radius_m" /></label>
                 <label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_customer_grace_minutes" /></label>
+                <label class="field"><span class="field__lbl">Boarding confirmation<span class="info" tabindex="0" aria-label="How the driver confirms each rider boarded. Driver only = tap; Customer OTP = rider reads a system code; Driver + customer = both." data-tip="How the driver confirms each rider boarded (tap / OTP).">!</span></span><select [(ngModel)]="form.shuttle_boarding_confirmation_mode"><option value="driver_only">Driver only (tap)</option><option value="customer_otp">Customer OTP</option><option value="driver_customer">Driver + customer</option></select></label>
               </div>
             </div>
           </div>
@@ -940,7 +942,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       'private_no_show_threshold_minutes', 'private_no_show_charge_per_minute', 'private_driver_no_show_grace_minutes', 'cancellation_charge_percent',
       'fixed_waiting_time_per_stop_minutes', 'fixed_stop_arrival_radius_m', 'fixed_stop_arrival_dwell_seconds', 'fixed_driver_missed_stop_grace_minutes', 'fixed_customer_pickup_radius_m', 'fixed_vehicle_approaching_alert_radius_m', 'fixed_customer_grace_minutes',
       'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_forming_window_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
-      'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes',
+      'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes', 'shuttle_boarding_confirmation_mode',
     ];
     cityRuleFields.forEach((key) => append(key, f[key]));
 

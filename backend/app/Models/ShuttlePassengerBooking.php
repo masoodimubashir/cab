@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'shuttle_pickup_arrived_at', 'shuttle_no_show_after_at', 'shuttle_driver_missed_after_at',
     'shuttle_approaching_notified_at', 'shuttle_arrived_notified_at', 'shuttle_leaving_soon_notified_at',
     'shuttle_auto_processed_at', 'shuttle_auto_outcome',
+    'boarding_otp_hash', 'boarding_otp_attempts', 'boarding_otp_expires_at',
+    'boarding_otp_last_sent_at', 'boarding_otp_locked_until',
 ])]
 class ShuttlePassengerBooking extends Model
 {
@@ -46,6 +48,10 @@ class ShuttlePassengerBooking extends Model
         'shuttle_arrived_notified_at' => 'datetime',
         'shuttle_leaving_soon_notified_at' => 'datetime',
         'shuttle_auto_processed_at' => 'datetime',
+        'boarding_otp_attempts' => 'integer',
+        'boarding_otp_expires_at' => 'datetime',
+        'boarding_otp_last_sent_at' => 'datetime',
+        'boarding_otp_locked_until' => 'datetime',
     ];
 
     public function journey(): BelongsTo

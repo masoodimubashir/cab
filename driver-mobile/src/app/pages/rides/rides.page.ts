@@ -72,7 +72,7 @@ type ShuttlePoolPassenger = {
 };
 
 type ShuttlePool = {
-  journey: { id: number; trip_id: number | null; status: string; capacity: number };
+  journey: { id: number; trip_id: number | null; status: string; capacity: number; boarding_mode?: string };
   aboard: number;
   remaining: number;
   passengers: ShuttlePoolPassenger[];
@@ -1158,9 +1158,47 @@ export class RidesPage implements OnInit, OnDestroy {
     });
   }
 
-  boardShuttle(bookingId: number): void {
-    this.poolAction(bookingId, 'board');
+  async boardShuttle(bookingId: number): Promise<void> {
+    const mode = this.shuttlePool?.journey?.boarding_mode ?? 'driver_only';
+    // Driver-only = tap to board. Every other mode needs the rider's code first.
+    if (mode === 'driver_only') {
+      this.poolAction(bookingId, 'board');
+      return;
+    }
+    if (this.busy) return;
+    this.busy = true;
+    this.error = null;
+    // Generate the rider's code (they see it on their own screen), then ask for it.
+    this.api.post(`/shuttle/bookings/${bookingId}/boarding-otp`, {}).subscribe({
+      next: () => { this.busy = false; void this.promptBoardingCode(bookingId); },
+      error: (err) => { this.busy = false; this.error = err?.error?.message || 'Could not start boarding.'; },
+    });
   }
+
+  private async promptBoardingCode(bookingId: number): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Boarding code',
+      message: 'Ask the rider for their boarding code.',
+      inputs: [{ name: 'code', type: 'text', attributes: { inputmode: 'numeric', maxlength: 4 }, placeholder: '4-digit code' }],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Board', handler: (data) => this.boardWithCode(bookingId, String(data?.code || '').trim()) },
+      ],
+    });
+    await alert.present();
+  }
+
+  private boardWithCode(bookingId: number, code: string): void {
+    if (!code) { this.error = "Enter the rider's code."; return; }
+    this.busy = true;
+    this.error = null;
+    this.api.post(`/shuttle/bookings/${bookingId}/board`, { code }).subscribe({
+      next: () => this.maybeRefreshPool(),
+      error: (err) => { this.error = err?.error?.message || 'Wrong or expired code.'; },
+      complete: () => { this.busy = false; },
+    });
+  }
+
   dropShuttle(bookingId: number): void {
     this.poolAction(bookingId, 'drop');
   }
