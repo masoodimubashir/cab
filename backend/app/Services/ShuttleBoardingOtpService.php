@@ -71,6 +71,13 @@ class ShuttleBoardingOtpService
             );
         }
 
+        // Live nudge so the rider's active-ride screen pops the full-screen prompt
+        // instantly instead of waiting for its next poll.
+        $tripId = $booking->journey?->trip_id;
+        if ($tripId) {
+            broadcast(new \App\Events\ShuttleBoardingCodeReady((int) $tripId));
+        }
+
         return ['sent' => true];
     }
 
