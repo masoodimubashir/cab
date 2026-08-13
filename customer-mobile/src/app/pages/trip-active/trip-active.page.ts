@@ -113,6 +113,11 @@ export class TripActivePage implements OnInit, OnDestroy {
   // the booker read it off-screen and relay it if the SMS didn't arrive.
   startOtp: string | null = null;
   private startOtpInFlight = false;
+
+  // Shuttle pool boarding code (otp mode) — the rider's own code for THIS trip,
+  // fed to the shared full-screen boarding prompt. Private uses startOtp instead.
+  shuttleBoardingCode: string | null = null;
+  private shuttleCodeInFlight = false;
   driverAccepts: PaymentMethod[] = ['cash', 'razorpay'];
   cityAcceptsUpper: string[] = ['CASH', 'RAZORPAY'];
   // Authoritative list the backend computed (city ∩ driver-effective, honoring
@@ -188,6 +193,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   cancelCustomReason = '';
 
   private poll: any = null;
+  private shuttleCodePoll: any = null;
   private unsubscribeRealtime: (() => void) | null = null;
   private map: any | null = null;
   private driverMarker: any | null = null;
@@ -350,6 +356,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.loadTippingConfig();
     // Slow polling fallback for status, in case Reverb is down.
     this.poll = setInterval(() => this.refresh(), 15000);
+    // A shuttle rider's boarding code can appear mid-ride (driver boards each
+    // passenger); poll it faster so the full-screen prompt pops promptly.
+    this.shuttleCodePoll = setInterval(() => this.syncShuttleBoardingCode(), 5000);
   }
 
   /**
@@ -365,6 +374,7 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.poll) clearInterval(this.poll);
+    if (this.shuttleCodePoll) clearInterval(this.shuttleCodePoll);
     if (this.unsubscribeRealtime) this.unsubscribeRealtime();
     if (this.etaDebounceHandle) clearTimeout(this.etaDebounceHandle);
     if (this.routeFadeHandle) clearInterval(this.routeFadeHandle);
@@ -1007,7 +1017,40 @@ export class TripActivePage implements OnInit, OnDestroy {
    * otherwise. Owner-only endpoint — returns the code only after the driver has
    * requested it, so the booker sees it appear the moment the driver taps Start.
    */
+  /** The code fed to the shared full-screen prompt — shuttle vs private source. */
+  get boardingPromptCode(): string | null {
+    return this.isShuttleTrip ? this.shuttleBoardingCode : this.startOtp;
+  }
+
+  /**
+   * A shuttle rider's boarding code can appear at any point during the ride (the
+   * driver boards each passenger in turn), so we poll it while the ride is live —
+   * unlike the private start-code which is tied to ARRIVED_PICKUP.
+   */
+  private syncShuttleBoardingCode(): void {
+    const active = ['ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP', 'EN_ROUTE_DROP', 'ARRIVED_DROP'];
+    if (!this.tripId || !this.isShuttleTrip || !active.includes(this.trip?.status ?? '')) {
+      this.shuttleBoardingCode = null;
+      return;
+    }
+    if (this.shuttleCodeInFlight) return;
+    this.shuttleCodeInFlight = true;
+    this.api.get<{ booking?: { boarding_code?: string | null } }>(`/shuttle/trips/${this.tripId}/my-booking`).subscribe({
+      next: (res) => {
+        this.shuttleCodeInFlight = false;
+        this.shuttleBoardingCode = res?.booking?.boarding_code ?? null;
+      },
+      error: () => { this.shuttleCodeInFlight = false; },
+    });
+  }
+
   private syncStartOtp(): void {
+    // Shuttle pools carry their own per-rider code, not the private start-OTP.
+    if (this.isShuttleTrip) {
+      this.startOtp = null;
+      this.syncShuttleBoardingCode();
+      return;
+    }
     if (this.trip?.status !== 'ARRIVED_PICKUP') {
       this.startOtp = null;
       return;
