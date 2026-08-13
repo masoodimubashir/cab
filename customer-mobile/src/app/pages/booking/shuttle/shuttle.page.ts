@@ -19,6 +19,7 @@ interface Estimate {
 }
 interface ShuttleBooking { id: number; trip_id?: number | null; seat_labels?: string[]; }
 interface SeatMap { layout: { rows: number; cols: number }; cells: SeatCell[]; }
+interface CouponPreview { base_amount: number; discount: number; final_amount: number; coupon?: { title: string } | null; }
 
 type Step = 'pickup' | 'drop' | 'fare' | 'seats' | 'paying' | 'forming';
 
@@ -67,6 +68,13 @@ export class ShuttleBookPage implements OnInit {
 
   tipping: TippingConfig | null = null;
   selectedTipPreset: number | null = null;
+
+  // Coupon (operator-funded): the discount comes off what the rider pays; the
+  // driver still earns on the full fare (handled server-side at settlement).
+  couponTitle = '';
+  coupon: CouponPreview | null = null;
+  couponError: string | null = null;
+  couponBusy = false;
 
   constructor(
     private api: ApiService,
@@ -124,6 +132,9 @@ export class ShuttleBookPage implements OnInit {
 
     this.estimating = true;
     this.error = null;
+    // The fare is being recomputed — any applied coupon no longer matches it.
+    this.coupon = null;
+    this.couponError = null;
     this.cdr.markForCheck();
 
     try {
@@ -164,8 +175,44 @@ export class ShuttleBookPage implements OnInit {
     return this.selectedTipPreset;
   }
 
+  get couponDiscount(): number {
+    return this.coupon?.discount ?? 0;
+  }
+
   get payableTotal(): number {
-    return (this.fare || 0) + this.tipAmount;
+    return Math.max(0, (this.fare || 0) - this.couponDiscount) + this.tipAmount;
+  }
+
+  applyCoupon(): void {
+    const code = this.couponTitle.trim();
+    if (!code || this.couponBusy) return;
+    const { pickup, drop, cityId } = this.bookingSvc.trip;
+    if (!pickup || !drop || !cityId) { this.couponError = 'Add a pickup and drop first.'; this.cdr.markForCheck(); return; }
+
+    this.couponBusy = true;
+    this.couponError = null;
+    this.cdr.markForCheck();
+
+    this.api.post<CouponPreview>('/shuttle/coupon-preview', {
+      city_vehicle_type_id: this.estimate?.city_vehicle_type_id ?? null,
+      city_id: cityId,
+      vehicle_type_id: null,
+      pickup_lat: pickup.lat,
+      pickup_lng: pickup.lng,
+      drop_lat: drop.lat,
+      drop_lng: drop.lng,
+      coupon_title: code,
+    }).subscribe({
+      next: (res) => { this.coupon = res; this.couponBusy = false; this.cdr.markForCheck(); },
+      error: (err) => { this.coupon = null; this.couponBusy = false; this.couponError = err?.error?.message || 'Coupon could not be applied.'; this.cdr.markForCheck(); },
+    });
+  }
+
+  removeCoupon(): void {
+    this.couponTitle = '';
+    this.coupon = null;
+    this.couponError = null;
+    this.cdr.markForCheck();
   }
 
   pickTipPreset(val: number): void {
@@ -211,6 +258,7 @@ export class ShuttleBookPage implements OnInit {
           drop_lat: drop.lat,
           drop_lng: drop.lng,
           tip_amount: this.tipAmount,
+          coupon_title: this.couponTitle.trim() || undefined,
         }, { 'Idempotency-Key': this.uuid('shuttle') }).toPromise();
         const b = res?.booking ?? null;
         if (!b?.id) throw new Error('Booking failed.');

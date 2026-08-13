@@ -263,26 +263,26 @@ These need eyes on the running app, not just feature tests:
 
 ---
 
-## Open issue — coupon cost is handled inconsistently across ride types ⚠️
+## Coupon cost — RESOLVED (Decision A: operator always funds it) ✅
 
-**Finding (needs a decision, then a fix):** when a customer uses a coupon, *who absorbs the discount* differs by ride type today. Example — ₹100 ride, 20% coupon, customer pays ₹80, commission ignored:
+**Decision:** the **operator always funds a coupon**. The driver **always earns on the gross (pre-coupon) fare** in Private, Fixed, and Shuttle. The customer pays the discounted amount; the operator absorbs the difference. Everything is logged.
 
-| Ride type | Driver settles on | Driver gets | Who eats the ₹20 |
-|-----------|-------------------|-------------|------------------|
-| **Private** | full fare (`trip.final_fare` = ₹100) | **₹100** | Operator |
-| **Fixed** | discounted seat price (`seat.fare_amount` = ₹80) | **₹80** | **Driver** |
-| **Shuttle** | — | — | Coupons not wired into shuttle bookings at all |
+**The invariant** (₹100 ride, ₹20 coupon, 10% commission → driver nets ₹90 everywhere):
+- **Online ride** → the operator collected ₹80 but credits the driver `gross − commission` = ₹90. Absorption is implicit in the difference.
+- **Cash ride** → the driver holds only the discounted cash, so settlement posts an explicit wallet CREDIT = the discount, reason **"Coupon reimbursement (operator-funded)"**, leaving them whole on the gross.
 
-**Where in code:**
-- Private: `PaymentsController` records `discount_amount` + charges the net, but `CommissionSettlementService::settle()` pays the driver on `trip.final_fare` (never reduced by the coupon) → operator absorbs it.
-- Fixed: `FixedSeatHoldService` stores the seat at `amount = coupon.final_amount` (already discounted, with `original_amount`/`discount_amount` kept alongside), and `settleShared()` pays on `seat.fare_amount` → driver absorbs it.
-- Shuttle: `ShuttleBookingService::createBooking` has no coupon resolution.
+**What changed (implemented + tested):**
+- `CommissionSettlementService`:
+  - `grossSettlementFare($row)` helper = `fare_amount + promo_discount_amount` (the driver's basis).
+  - **Fixed** (`settleShared`) now settles the driver on the gross, commission on the gross (was the discounted `seat.fare_amount` → the bug), + cash reimbursement credit.
+  - **Shuttle** (`settleShuttle`) settles on the gross + cash reimbursement.
+  - **Private** (`settle`) online was already gross; the **cash** path now adds the operator-funded reimbursement from `Payment.discount_amount`.
+- **Shuttle coupons wired end-to-end:** `ShuttleBookingService::createBooking` resolves the coupon (`resolveShuttleCoupon`), stores the discounted `fare_amount` + `promo_discount_amount` + `coupon_assignment_id` (new migration `2026_08_13_100000_add_shuttle_coupon_fields`), burns it at payment confirm, and exposes it in `shapeBooking`. New `previewCoupon` service + `POST /shuttle/coupon-preview` endpoint. Customer app: coupon input on the shuttle fare step.
+- **Tests:** `CouponOperatorFundedSettlementTest` (6, settlement across all 3 types × online/cash) + `ShuttleCouponBookingTest` (booking-path + preview).
 
-**Decision needed — who funds a coupon?**
-- **(A)** Always the **operator** (driver always earns on the full fare). Driver-friendly; matches Private today. → fix = Fixed settles on `original_amount`, not the discounted `amount`.
-- **(B)** Always **shared with the driver** (driver settles on the discounted amount). Matches Fixed today. → fix = Private settles on `final_fare − discount`.
+**Consistency note:** a redeemed coupon stays consumed on cancel (matches Fixed/Private — no auto-release).
 
-**Then:** apply the chosen rule to all three ride types consistently, and **add coupon support to Shuttle** so it follows the same rule (under Model B / wallet). Add tests pinning the chosen behaviour per type.
+Memory: [[coupon-cost-inconsistent-across-ride-types]].
 
 ---
 

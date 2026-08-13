@@ -96,6 +96,47 @@ class ShuttleBookingService
     }
 
     /**
+     * Read-only coupon check for the shuttle fare step. Prices the trip the same
+     * way createBooking does, resolves the coupon against the pre-tip fare, and
+     * returns the discount so the customer sees it before booking. Does NOT create
+     * a booking or burn the coupon. Mirrors the Fixed coupon-preview.
+     *
+     * @return array{base_amount:float,discount:float,final_amount:float,coupon:?array{title:string}}
+     */
+    public function previewCoupon(User $customer, array $data): array
+    {
+        $cvt = $this->resolveShuttleVehicle($data);
+        $pricingRule = PricingRule::resolveFor((int) $cvt->id);
+        if (!$pricingRule) {
+            throw new ReservationException('Shuttle fare is not configured for this vehicle yet.', 404);
+        }
+
+        $estimate = $this->fares->estimateFare(
+            $pricingRule->toArray(),
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (float) $data['drop_lat'],
+            (float) $data['drop_lng'],
+            null,
+            null,
+            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
+            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            (CitySetting::query()->firstOrCreate(['city_id' => $cvt->city_id])->toll_mode === 'yes') ? (float) ($data['toll_amount'] ?? 0) : 0.0,
+        );
+
+        $baseAmount = round((float) $estimate['estimated_fare'], 2);
+        $coupon = $this->resolveShuttleCoupon($customer, $cvt, $data, $baseAmount);
+        $discount = round((float) $coupon['discount'], 2);
+
+        return [
+            'base_amount' => $baseAmount,
+            'discount' => $discount,
+            'final_amount' => round(max(0.0, $baseAmount - $discount), 2),
+            'coupon' => $coupon['assignment_id'] ? ['title' => trim((string) ($data['coupon_title'] ?? ''))] : null,
+        ];
+    }
+
+    /**
      * Pooling matcher (decision 1A). Returns a still-forming journey this rider
      * can share, or a fresh one. A journey is joinable when it's the same vehicle
      * type + scope, still open for riders (DISPATCH_DISABLED / FORMING), has a free

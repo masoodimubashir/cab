@@ -59,6 +59,35 @@
       </button>
     </div>
 
+    <!-- Coupon (operator-funded) -->
+    <div class="sh-coupon" *ngIf="fare" style="margin: 12px 0;">
+      <div style="display: flex; gap: 8px;" *ngIf="!coupon">
+        <input
+          type="text"
+          [(ngModel)]="couponTitle"
+          (keyup.enter)="applyCoupon()"
+          placeholder="Coupon code"
+          autocapitalize="characters"
+          style="flex: 1; padding: 10px 12px; border: 1.5px solid #EEF0F2; border-radius: 12px; font-weight: 700; font-size: 14px;" />
+        <button type="button"
+                [disabled]="!couponTitle.trim() || couponBusy"
+                (click)="applyCoupon()"
+                style="padding: 10px 16px; border: none; border-radius: 12px; background: #0D1B2A; color: #fff; font-weight: 850; font-size: 13px; cursor: pointer;">
+          {{ couponBusy ? '…' : 'Apply' }}
+        </button>
+      </div>
+      <div *ngIf="coupon" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #E7F8EF; border-radius: 12px;">
+        <span style="font-weight: 800; color: #12B35B; font-size: 13px;">
+          Coupon applied · −₹{{ couponDiscount }}
+        </span>
+        <button type="button" (click)="removeCoupon()"
+                style="border: none; background: transparent; color: #0D1B2A; font-weight: 800; font-size: 13px; cursor: pointer;">
+          Remove
+        </button>
+      </div>
+      <p class="bk-note bk-note--warn" *ngIf="couponError" style="margin-top: 6px;">{{ couponError }}</p>
+    </div>
+
     <p class="bk-note">A fixed price per seat — no bargaining. Cheaper than the whole car.</p>
     <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
   </app-step-shell>
@@ -110,6 +139,7 @@
     <div class="bk-money">
       <div class="bk-money__row" *ngIf="selectedSeats.length"><span>Seat</span><span>{{ selectedSeats[0] }}</span></div>
       <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
+      <div class="bk-money__row" *ngIf="couponDiscount > 0"><span style="color: #12B35B;">Coupon</span><span style="color: #12B35B;">−₹{{ couponDiscount }}</span></div>
       <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
       <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ payableTotal }}</span></div>
     </div>
