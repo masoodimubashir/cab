@@ -136,6 +136,27 @@ class CommissionSettlementService
                     null,
                 );
             }
+
+            // Coupon rule (Model A): final_fare is the GROSS (pre-coupon) fare, and
+            // commission below is charged on it, so an ONLINE ride's driver is
+            // already whole. A CASH driver, though, only collected the discounted
+            // cash, so reimburse the operator-funded coupon here to make them whole.
+            $couponDiscount = round((float) Payment::query()
+                ->where('trip_id', $trip->id)
+                ->where('status', 'SUCCESS')
+                ->whereNotNull('discount_amount')
+                ->sum('discount_amount'), 2);
+            if ($couponDiscount > 0 && $trip->driver) {
+                $this->wallet->recordTransaction(
+                    $trip->driver,
+                    WalletTransaction::TYPE_CREDIT,
+                    $couponDiscount,
+                    'Coupon reimbursement (operator-funded)',
+                    $trip->id,
+                    null,
+                );
+            }
+
             if ($cut > 0 && $trip->driver) {
                 $this->wallet->recordTransaction(
                     $trip->driver,
@@ -224,6 +245,22 @@ class CommissionSettlementService
     }
 
     /**
+     * The driver's settlement basis for a settled unit under the coupon rule
+     * (Model A): the GROSS, pre-coupon fare. A row's fare_amount is what the
+     * customer paid (already discounted), and promo_discount_amount is the coupon
+     * that was taken off — the operator funds it, so the driver earns on the sum.
+     *
+     * @param \App\Models\SeatReservation|\App\Models\ShuttlePassengerBooking $row
+     */
+    private function grossSettlementFare($row): float
+    {
+        $paid = (float) ($row->fare_amount ?? 0);
+        $discount = max(0.0, (float) ($row->promo_discount_amount ?? 0));
+
+        return round($paid + $discount, 2);
+    }
+
+    /**
      * Per-seat settlement for a shared journey. Fixed routes subtract the
      * platform commission snapshotted on each carried seat; shuttle routes keep
      * the previous full-fare driver credit until shuttle commission is enabled.
@@ -242,7 +279,11 @@ class CommissionSettlementService
         $commission = 0.0;
         $cashCommission = 0.0;
         foreach ($seats as $seat) {
-            $fare = (float) ($seat->fare_amount ?? 0);
+            // Coupon rule (Model A): the driver earns on the GROSS, pre-coupon fare.
+            // fare_amount is what the customer PAID (already discounted); adding the
+            // coupon discount back gives the driver's settlement basis. The operator
+            // funds the discount — see the cash reimbursement credit below.
+            $fare = $this->grossSettlementFare($seat);
             $gross += $fare;
 
             if ($isFixed) {
@@ -306,18 +347,36 @@ class CommissionSettlementService
             //     commission (net = deposit − commission).
             $deposits = app(CashDepositService::class);
             foreach ($seats as $seat) {
-                $fare = round((float) ($seat->fare_amount ?? 0), 2);
+                // The customer PAID the discounted fare; the driver settles on the
+                // GROSS (pre-coupon) fare so the operator absorbs the coupon.
+                $paid = round((float) ($seat->fare_amount ?? 0), 2);
+                $discount = round(max(0.0, (float) ($seat->promo_discount_amount ?? 0)), 2);
+                $fare = round($paid + $discount, 2);
                 $seatCommission = round(min($fare, max(0.0, (float) ($seat->commission_amount ?? 0))), 2);
                 $isCashSeat = strtolower((string) ($seat->payment_method ?? '')) === 'cash';
 
                 if ($isCashSeat) {
-                    $deposit = round((float) ($deposits->quote($fare)['deposit'] ?? 0), 2);
+                    // The deposit is a fraction of what the customer actually paid
+                    // (the discounted fare), so quote it on $paid, not the gross.
+                    $deposit = round((float) ($deposits->quote($paid)['deposit'] ?? 0), 2);
                     if ($deposit > 0) {
                         $this->wallet->recordTransaction(
                             $trip->driver,
                             WalletTransaction::TYPE_CREDIT,
                             $deposit,
                             'Cash deposit collected',
+                            $trip->id,
+                            null,
+                        );
+                    }
+                    // Cash driver holds only the discounted cash, so reimburse the
+                    // coupon here to make them whole on the gross fare.
+                    if ($discount > 0) {
+                        $this->wallet->recordTransaction(
+                            $trip->driver,
+                            WalletTransaction::TYPE_CREDIT,
+                            $discount,
+                            'Coupon reimbursement (operator-funded)',
                             $trip->id,
                             null,
                         );
@@ -333,6 +392,9 @@ class CommissionSettlementService
                         );
                     }
                 } else {
+                    // Online seat: the operator collected the discounted fare but
+                    // credits the driver on the gross — the difference is the
+                    // operator's coupon cost, absorbed implicitly.
                     $earning = round($fare - $seatCommission, 2);
                     if ($earning > 0) {
                         $this->wallet->recordTransaction(
@@ -390,7 +452,12 @@ class CommissionSettlementService
         $commissionTotal = 0.0;
         $cashCommission = 0.0;
         foreach ($bookings as $booking) {
-            $fare = round((float) ($booking->fare_amount ?? 0), 2);
+            // Coupon rule (Model A): the driver earns on the GROSS, pre-coupon fare.
+            // fare_amount is what the customer paid (discounted); the coupon is added
+            // back for the driver's basis, and the operator funds the difference.
+            $paid = round((float) ($booking->fare_amount ?? 0), 2);
+            $discount = round(max(0.0, (float) ($booking->promo_discount_amount ?? 0)), 2);
+            $fare = $this->grossSettlementFare($booking);
             if ($fare <= 0) {
                 continue;
             }
@@ -403,7 +470,7 @@ class CommissionSettlementService
             if ($isCash) {
                 $cashCommission += $commission;
             }
-            $rows[] = ['fare' => $fare, 'commission' => $commission, 'cash' => $isCash];
+            $rows[] = ['fare' => $fare, 'paid' => $paid, 'discount' => $discount, 'commission' => $commission, 'cash' => $isCash];
         }
 
         $gross = round($gross, 2);
@@ -436,13 +503,27 @@ class CommissionSettlementService
                 $deposits = app(CashDepositService::class);
                 foreach ($rows as $row) {
                     if ($row['cash']) {
-                        $deposit = round((float) ($deposits->quote($row['fare'])['deposit'] ?? 0), 2);
+                        // The deposit is a fraction of what the customer actually
+                        // paid (the discounted fare), so quote it on 'paid'.
+                        $deposit = round((float) ($deposits->quote($row['paid'])['deposit'] ?? 0), 2);
                         if ($deposit > 0) {
                             $this->wallet->recordTransaction(
                                 $trip->driver,
                                 WalletTransaction::TYPE_CREDIT,
                                 $deposit,
                                 'Cash deposit collected',
+                                $trip->id,
+                                null,
+                            );
+                        }
+                        // Cash driver holds only the discounted cash — reimburse the
+                        // operator-funded coupon so they net the gross fare.
+                        if ($row['discount'] > 0) {
+                            $this->wallet->recordTransaction(
+                                $trip->driver,
+                                WalletTransaction::TYPE_CREDIT,
+                                $row['discount'],
+                                'Coupon reimbursement (operator-funded)',
                                 $trip->id,
                                 null,
                             );
