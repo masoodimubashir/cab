@@ -526,6 +526,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 
     Route::get('/shuttle/bookings', [ShuttleBookingsController::class, 'index']);
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/shuttle/coupon-preview', [ShuttleBookingsController::class, 'couponPreview'])->middleware('throttle:booking');
     Route::get('/shuttle/trips/{trip}/my-booking', [ShuttleBookingsController::class, 'forTrip']);
     Route::get('/shuttle/bookings/{booking}/seats', [ShuttleBookingsController::class, 'seatMap']);
     Route::post('/shuttle/bookings/{booking}/seats', [ShuttleBookingsController::class, 'selectSeats'])->middleware('throttle:booking');

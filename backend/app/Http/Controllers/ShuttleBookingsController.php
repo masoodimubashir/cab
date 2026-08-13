@@ -32,6 +32,28 @@ class ShuttleBookingsController extends Controller
         return response()->json(['data' => $rows]);
     }
 
+    /**
+     * Read-only coupon check for the shuttle fare step: validate a typed coupon
+     * against this trip and return the discount, without creating a booking.
+     */
+    public function couponPreview(Request $request)
+    {
+        $data = $request->validate([
+            'city_vehicle_type_id' => ['nullable', 'integer', 'exists:city_vehicle_types,id'],
+            'city_id' => ['required_without:city_vehicle_type_id', 'integer', 'exists:cities,id'],
+            'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
+            'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
+            'drop_lat' => ['required', 'numeric', 'between:-90,90'],
+            'drop_lng' => ['required', 'numeric', 'between:-180,180'],
+            'route_distance_km' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'route_time_min' => ['nullable', 'numeric', 'min:0', 'max:1440'],
+            'coupon_title' => ['required', 'string', 'max:128'],
+        ]);
+
+        return response()->json($this->bookings->previewCoupon($request->user(), $data));
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([
