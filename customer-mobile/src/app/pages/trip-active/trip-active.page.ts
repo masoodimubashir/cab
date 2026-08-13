@@ -356,9 +356,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.loadTippingConfig();
     // Slow polling fallback for status, in case Reverb is down.
     this.poll = setInterval(() => this.refresh(), 15000);
-    // A shuttle rider's boarding code can appear mid-ride (driver boards each
-    // passenger); poll it faster so the full-screen prompt pops promptly.
-    this.shuttleCodePoll = setInterval(() => this.syncShuttleBoardingCode(), 5000);
+    // The shuttle boarding code pops instantly via the ShuttleBoardingCodeReady
+    // live event; this poll is just a fallback if the socket is down.
+    this.shuttleCodePoll = setInterval(() => this.syncShuttleBoardingCode(), 15000);
   }
 
   /**
