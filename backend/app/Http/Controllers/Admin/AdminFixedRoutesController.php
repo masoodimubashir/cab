@@ -188,7 +188,7 @@ class AdminFixedRoutesController
             'fixed_settings_json.customer_pickup_radius_m' => ['nullable', 'integer', 'min:25', 'max:1000'],
             'fixed_settings_json.vehicle_approaching_alert_radius_m' => ['nullable', 'integer', 'min:50', 'max:5000'],
             'fixed_settings_json.customer_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
-            'fixed_settings_json.boarding_confirmation_mode' => ['nullable', 'in:driver_only,customer_otp,qr_scan,driver_customer'],
+            'fixed_settings_json.boarding_confirmation_mode' => ['nullable', 'in:driver_only,customer_otp,driver_customer'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'fare_config' => ['required', 'array'],

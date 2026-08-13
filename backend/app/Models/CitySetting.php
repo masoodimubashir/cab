@@ -41,6 +41,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'shuttle_approaching_alert_radius_m',
     'shuttle_customer_grace_minutes',
     'shuttle_forming_window_minutes',
+    'shuttle_boarding_confirmation_mode',
     'shuttle_capacity_source',
     'shuttle_customer_privacy_rule',
     'shuttle_cancellation_refund_rule',

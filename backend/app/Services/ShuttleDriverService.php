@@ -24,6 +24,8 @@ class ShuttleDriverService
     /** Statuses that still count as "on the manifest / needs handling". */
     private const ACTIVE = ['CONFIRMED', 'BOARDED'];
 
+    public function __construct(private readonly ShuttleBoardingOtpService $otp) {}
+
     /**
      * The driver's view of a pool: every rider with their pickup, drop, seat and
      * live status, plus aboard / remaining counts.
@@ -46,6 +48,7 @@ class ShuttleDriverService
                 'trip_id' => $journey->trip_id ? (int) $journey->trip_id : null,
                 'status' => $journey->status,
                 'capacity' => (int) $journey->capacity,
+                'boarding_mode' => $this->boardingMode($journey),
             ],
             'aboard' => $active->where('status', 'BOARDED')->count(),
             'remaining' => $active->count(),
@@ -64,6 +67,20 @@ class ShuttleDriverService
 
         if ($booking->status !== 'CONFIRMED') {
             abort(422, 'This passenger cannot be boarded from the current status.');
+        }
+
+        // Boarding confirmation mode (5B). driver_only = plain tap; every other
+        // mode (customer_otp / driver_customer) requires the rider's
+        // system-generated code, read out by the rider and typed by the driver.
+        if ($this->boardingMode($journey) !== 'driver_only') {
+            $code = trim((string) $code);
+            if ($code === '') {
+                abort(422, "Enter the rider's boarding code to board them.");
+            }
+            $check = $this->otp->verify($booking, $code);
+            if (! ($check['ok'] ?? false)) {
+                abort(422, $this->otpErrorMessage($check));
+            }
         }
 
         $updated = DB::transaction(function () use ($booking) {
@@ -111,6 +128,40 @@ class ShuttleDriverService
         $this->broadcast($journey);
 
         return $updated;
+    }
+
+    /**
+     * Generate + surface a rider's boarding code (for otp / qr modes). The rider
+     * sees it on their own booking screen; the driver types or scans it.
+     *
+     * @return array{sent:bool,retry_after?:int,locked_for?:int}
+     */
+    public function sendBoardingCode(User $driver, ShuttlePassengerBooking $booking): array
+    {
+        $this->guard($driver, $booking->journey);
+
+        if ($booking->status !== 'CONFIRMED') {
+            abort(422, 'This passenger cannot be boarded from the current status.');
+        }
+
+        return $this->otp->send($booking);
+    }
+
+    /** The city's boarding-confirmation mode for this pool (default driver_only). */
+    public function boardingMode(ShuttleJourney $journey): string
+    {
+        return (string) (\App\Models\CitySetting::query()
+            ->where('city_id', $journey->city_id)
+            ->value('shuttle_boarding_confirmation_mode') ?? 'driver_only');
+    }
+
+    private function otpErrorMessage(array $check): string
+    {
+        return match ($check['error'] ?? 'wrong') {
+            'locked' => 'Too many wrong codes. Wait '.ceil(($check['locked_for'] ?? 300) / 60).' min, then resend.',
+            'expired' => 'This code has expired. Resend a fresh code to the rider.',
+            default => 'Wrong code. '.($check['attempts_left'] ?? 0).' '.(($check['attempts_left'] ?? 0) === 1 ? 'try' : 'tries').' left.',
+        };
     }
 
     /**

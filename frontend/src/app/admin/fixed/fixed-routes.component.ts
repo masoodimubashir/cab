@@ -56,7 +56,7 @@ interface FixedNoShowSettings {
   customer_pickup_radius_m: number;
   vehicle_approaching_alert_radius_m: number;
   customer_grace_minutes: number;
-  boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'qr_scan' | 'driver_customer';
+  boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'driver_customer';
 }
 
 interface FixedRouteRow {

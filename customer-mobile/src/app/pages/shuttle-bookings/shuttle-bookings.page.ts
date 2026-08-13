@@ -19,6 +19,9 @@ interface ShuttleBooking {
   refund_reference?: string | null;
   refund_amount?: number | null;
   status: string;
+  seat_labels?: string[] | null;
+  boarding_mode?: string | null;
+  boarding_code?: string | null;
   cancelled_reason?: string | null;
   shuttle_auto_outcome?: string | null;
   shuttle_auto_processed_at?: string | null;

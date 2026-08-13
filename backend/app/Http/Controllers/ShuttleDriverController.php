@@ -33,6 +33,22 @@ class ShuttleDriverController extends Controller
         return response()->json($this->driver->manifest($request->user(), $journey));
     }
 
+    /** otp / qr modes: generate + surface the rider's boarding code. */
+    public function sendBoardingOtp(Request $request, ShuttlePassengerBooking $booking)
+    {
+        $result = $this->driver->sendBoardingCode($request->user(), $booking);
+
+        if (! ($result['sent'] ?? false)) {
+            if (isset($result['locked_for'])) {
+                return response()->json(['message' => 'Locked after too many wrong codes. Try again shortly.', 'locked_for' => $result['locked_for']], 429);
+            }
+
+            return response()->json(['message' => 'Please wait before resending the code.', 'retry_after' => $result['retry_after'] ?? 30], 429);
+        }
+
+        return response()->json(['message' => 'Boarding code sent to the rider.']);
+    }
+
     public function board(Request $request, ShuttlePassengerBooking $booking)
     {
         $data = $request->validate([

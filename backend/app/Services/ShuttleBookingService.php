@@ -377,11 +377,23 @@ class ShuttleBookingService
             ->pluck('label')
             ->all();
 
+        // Boarding confirmation (5B): the mode the operator set, and — for otp/qr
+        // modes — the rider's own system-generated code (in-app, no SMS). The
+        // customer app shows the number or renders it as a QR for the driver.
+        $boardingMode = (string) (CitySetting::query()
+            ->where('city_id', $booking->city_id)
+            ->value('shuttle_boarding_confirmation_mode') ?? 'driver_only');
+        $boardingCode = $boardingMode === 'driver_only'
+            ? null
+            : app(ShuttleBoardingOtpService::class)->codeForCustomer($booking);
+
         return [
             'id' => $booking->id,
             'shuttle_journey_id' => $booking->shuttle_journey_id,
             'trip_id' => $booking->journey?->trip_id,
             'seat_labels' => $seatLabels,
+            'boarding_mode' => $boardingMode,
+            'boarding_code' => $boardingCode,
             'journey_status' => $booking->journey?->status,
             'city_id' => $booking->city_id,
             'city_vehicle_type_id' => $booking->city_vehicle_type_id,

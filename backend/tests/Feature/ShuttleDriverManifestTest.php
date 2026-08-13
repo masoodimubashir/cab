@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\CitySetting;
 use App\Models\ShuttleJourney;
 use App\Models\ShuttlePassengerBooking;
 use App\Models\Trip;
 use App\Models\User;
+use App\Services\ShuttleBoardingOtpService;
 use App\Services\ShuttleDriverService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -141,6 +143,46 @@ class ShuttleDriverManifestTest extends TestCase
         $this->getJson("/api/shuttle/journeys/{$journey->id}/manifest")
             ->assertOk()
             ->assertJsonPath('remaining', 2);
+    }
+
+    public function test_otp_mode_requires_a_valid_code_to_board(): void
+    {
+        CitySetting::query()->create(['city_id' => $this->cityId, 'shuttle_boarding_confirmation_mode' => 'customer_otp']);
+        [, $bookings] = $this->journeyWithRiders(1);
+        $svc = app(ShuttleDriverService::class);
+        $booking = $bookings[0];
+
+        // No code under otp mode → rejected.
+        $rejected = false;
+        try {
+            $svc->board($this->driver, $booking->fresh());
+        } catch (HttpException) {
+            $rejected = true;
+        }
+        $this->assertTrue($rejected, 'boarding without a code should be rejected under otp mode');
+
+        // Generate the rider's code, then board with it.
+        $svc->sendBoardingCode($this->driver, $booking->fresh());
+        $code = app(ShuttleBoardingOtpService::class)->codeForCustomer($booking->fresh());
+        $this->assertNotNull($code);
+
+        $boarded = $svc->board($this->driver, $booking->fresh(), $code);
+        $this->assertSame('BOARDED', $boarded->status);
+    }
+
+    public function test_otp_mode_rejects_a_wrong_code(): void
+    {
+        CitySetting::query()->create(['city_id' => $this->cityId, 'shuttle_boarding_confirmation_mode' => 'customer_otp']);
+        [, $bookings] = $this->journeyWithRiders(1);
+        $svc = app(ShuttleDriverService::class);
+        $booking = $bookings[0];
+
+        $svc->sendBoardingCode($this->driver, $booking->fresh());
+        $code = app(ShuttleBoardingOtpService::class)->codeForCustomer($booking->fresh());
+        $wrong = $code === '1234' ? '5678' : '1234';
+
+        $this->expectException(HttpException::class);
+        $svc->board($this->driver, $booking->fresh(), $wrong);
     }
 
     public function test_trip_based_manifest_endpoint_resolves_the_pool(): void
