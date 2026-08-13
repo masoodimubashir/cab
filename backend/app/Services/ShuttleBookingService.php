@@ -19,6 +19,7 @@ class ShuttleBookingService
     public function __construct(
         private readonly FareEstimationService $fares,
         private readonly ShuttleSeatMapService $seatMaps,
+        private readonly CouponService $coupons,
     ) {}
 
     public function createBooking(User $customer, array $data): ShuttlePassengerBooking
@@ -43,7 +44,16 @@ class ShuttleBookingService
         );
 
         $tipAmount = max(0.0, round((float) ($data['tip_amount'] ?? 0), 2));
-        $totalFare = round((float) $estimate['estimated_fare'] + $tipAmount, 2);
+        $estimatedFare = round((float) $estimate['estimated_fare'], 2);
+
+        // Coupon (Model A — the OPERATOR funds it). The coupon discounts the fare;
+        // fare_amount stores what the customer PAYS (fare − discount + tip). The
+        // driver later settles on the GROSS fare (fare + tip) so the operator
+        // absorbs the discount — see CommissionSettlementService::settleShuttle.
+        $coupon = $this->resolveShuttleCoupon($customer, $cvt, $data, $estimatedFare);
+        $discount = round((float) $coupon['discount'], 2);
+        $payableFare = round(max(0.0, $estimatedFare - $discount), 2);
+        $totalFare = round($payableFare + $tipAmount, 2);
 
         // Cash = pay a deposit online now, the rest to the driver in cash at trip end.
         $paymentMethod = strtolower((string) ($data['payment_method'] ?? 'razorpay')) === 'cash' ? 'cash' : 'razorpay';
@@ -51,7 +61,7 @@ class ShuttleBookingService
             throw new ReservationException('Cash is not available for this operator.', 422);
         }
 
-        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare, $paymentMethod) {
+        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare, $discount, $coupon, $paymentMethod) {
             // Pooling (decision 1A): join a still-forming journey heading the same
             // way if one fits, otherwise start a fresh one.
             $journey = $this->resolveJourneyForBooking($cvt, $data);
@@ -74,6 +84,8 @@ class ShuttleBookingService
                 'quote_time_min' => $estimate['time_min'] ?? null,
                 'fare_amount' => $totalFare,
                 'tip_amount' => $tipAmount,
+                'coupon_assignment_id' => $coupon['assignment_id'],
+                'promo_discount_amount' => $discount > 0 ? $discount : null,
                 'fare_breakdown' => $estimate['fare_breakdown'] ?? [],
                 'currency' => 'INR',
                 'payment_method' => $paymentMethod,
@@ -244,6 +256,9 @@ class ShuttleBookingService
             // No-op when the customer skipped seat selection.
             $this->seatMaps->bookSeats($locked);
 
+            // Burn the coupon (if any) now that payment is real.
+            $this->markCouponRedeemed($locked);
+
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
 
             // Dispatch a driver as soon as the van is full (decision 6C). Otherwise
@@ -300,6 +315,9 @@ class ShuttleBookingService
 
             // Commit any seats the customer held for this booking (HELD → BOOKED).
             $this->seatMaps->bookSeats($locked);
+
+            // Burn the coupon (if any) now that payment is real.
+            $this->markCouponRedeemed($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
 
@@ -410,6 +428,7 @@ class ShuttleBookingService
                 'address' => $booking->drop_address,
             ],
             'fare_amount' => (float) $booking->fare_amount,
+            'promo_discount_amount' => $booking->promo_discount_amount !== null ? (float) $booking->promo_discount_amount : 0.0,
             'currency' => $booking->currency,
             'payment_method' => $booking->payment_method,
             'payment_status' => $booking->payment_status,
@@ -542,6 +561,60 @@ class ShuttleBookingService
             ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
             ->where('payment_status', 'PAID')
             ->sum('fare_amount'), 2);
+    }
+
+    /**
+     * Resolve an optional customer-typed coupon against this shuttle fare. Returns
+     * the assignment id + discount (0 when no coupon), or throws when the coupon is
+     * invalid. baseAmount is the pre-coupon FARE (no tip). Mirrors the Fixed flow.
+     *
+     * @return array{assignment_id:?int,discount:float}
+     */
+    private function resolveShuttleCoupon(User $customer, CityVehicleType $cvt, array $data, float $baseAmount): array
+    {
+        $couponTitle = trim((string) ($data['coupon_title'] ?? ''));
+        if ($couponTitle === '' || $baseAmount <= 0) {
+            return ['assignment_id' => null, 'discount' => 0.0];
+        }
+
+        $result = $this->coupons->resolveForUser(
+            code: $couponTitle,
+            userId: (int) $customer->id,
+            cityId: (int) $cvt->city_id,
+            baseAmount: $baseAmount,
+            cityVehicleTypeId: (int) $cvt->id,
+            pickupLat: isset($data['pickup_lat']) ? (float) $data['pickup_lat'] : null,
+            pickupLng: isset($data['pickup_lng']) ? (float) $data['pickup_lng'] : null,
+            dropLat: isset($data['drop_lat']) ? (float) $data['drop_lat'] : null,
+            dropLng: isset($data['drop_lng']) ? (float) $data['drop_lng'] : null,
+        );
+
+        if (! $result['ok']) {
+            throw new ReservationException($result['error'], 422);
+        }
+
+        // Online payment minimum: the payable fare must stay at or above ₹1.
+        if ((float) $result['final_amount'] < 1.0) {
+            throw new ReservationException('This coupon makes the payable amount below the online payment minimum. Please use a smaller coupon.', 422);
+        }
+
+        return [
+            'assignment_id' => (int) $result['assignment']->id,
+            'discount' => (float) $result['discount'],
+        ];
+    }
+
+    /** Burn the coupon assignment tied to a booking once its payment confirms. */
+    private function markCouponRedeemed(ShuttlePassengerBooking $booking): void
+    {
+        if (! $booking->coupon_assignment_id) {
+            return;
+        }
+
+        \App\Models\CouponAssignment::query()
+            ->where('id', $booking->coupon_assignment_id)
+            ->whereNull('used_at')
+            ->update(['used_at' => now()]);
     }
 
     private function resolveShuttleVehicle(array $data): CityVehicleType

@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'shuttle_journey_id', 'city_id', 'city_vehicle_type_id', 'scope', 'pricing_rule_id', 'customer_id', 'seats',
     'pickup_lat', 'pickup_lng', 'pickup_address', 'drop_lat', 'drop_lng', 'drop_address',
-    'quote_distance_km', 'quote_time_min', 'fare_amount', 'tip_amount', 'fare_breakdown', 'currency',
+    'quote_distance_km', 'quote_time_min', 'fare_amount', 'tip_amount', 'coupon_assignment_id', 'promo_discount_amount', 'fare_breakdown', 'currency',
     'payment_method', 'payment_status', 'payment_reference', 'razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature',
     'refund_status', 'refund_reference', 'refund_amount', 'refund_method', 'refund_note', 'refunded_by', 'refunded_at',
     'status', 'boarded_at', 'dropped_at', 'cancelled_at', 'cancelled_reason',
@@ -34,6 +34,8 @@ class ShuttlePassengerBooking extends Model
         'quote_time_min' => 'float',
         'fare_amount' => 'float',
         'tip_amount' => 'float',
+        'coupon_assignment_id' => 'integer',
+        'promo_discount_amount' => 'float',
         'fare_breakdown' => 'array',
         'refund_amount' => 'float',
         'refunded_by' => 'integer',
