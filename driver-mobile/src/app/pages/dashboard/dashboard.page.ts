@@ -8,6 +8,8 @@ import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.s
 import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
+import { RealtimeService } from '../../core/realtime.service';
+import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
 
@@ -159,6 +161,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private markerHeading: HTMLElement | null = null;
   private visualWatchId: string | null = null;
   private lastPos: { lat: number; lng: number } | null = null;
+  /** Live "your verification changed" listener (admin approval/rejection). */
+  private driverVerifyUnsub: (() => void) | null = null;
   // Default map centre (Mumbai) until we have a real fix.
   private readonly defaultCentre = { lat: 19.0760, lng: 72.8777 };
 
@@ -172,6 +176,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     private alertCtrl: AlertController,
     private push: PushService,
     private modalCtrl: ModalController,
+    private realtime: RealtimeService,
   ) {
     this.presence.onError((err) => {
       this.error = err.message;
@@ -290,6 +295,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   async ngAfterViewInit(): Promise<void> {
+    this.subscribeVerificationUpdates();
     try {
       await this.mapsLoader.ensureLoaded();
       this.initMap();
@@ -312,6 +318,23 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     void this.stopVisualWatch();
     this.stopOnlineTimer();
+    this.driverVerifyUnsub?.();
+    this.driverVerifyUnsub = null;
+  }
+
+  /**
+   * Live-update the moment the operator approves (or rejects) this driver, so the
+   * "under review" banner clears and Go Online appears with no manual refresh.
+   * The backend broadcasts DriverVerificationUpdated on the driver's private
+   * channel; we just re-pull /drivers/me when it fires.
+   */
+  private subscribeVerificationUpdates(): void {
+    if (this.driverVerifyUnsub) return;
+    const uid = this.auth.getUser()?.id;
+    if (!uid) return;
+    this.driverVerifyUnsub = this.realtime.subscribeDriverVerification(uid, () => {
+      this.refresh();
+    });
   }
 
   // ---------------------------------------------------------------- display --
@@ -567,6 +590,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     }>('/drivers/me').subscribe({
       next: (res) => {
         this.driver = res.driver;
+        // Keep the route guard's cached state in step with reality so navigation
+        // (e.g. via "View application") never bounces on a stale "pending".
+        if (this.driver?.['approval_status'] === 'approved') {
+          ApprovedDriverGuard.setStateApproved();
+        }
         // Wallet gate config for this driver's (city, vehicle type), null-safe.
         this.cityVehicleTypeConfig = res.city_vehicle_type_config ?? null;
         // Prefer a balance served alongside the profile; otherwise the wallet
