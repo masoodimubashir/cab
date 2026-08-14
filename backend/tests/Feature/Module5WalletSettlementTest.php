@@ -2,28 +2,31 @@
 
 namespace Tests\Feature;
 
+use App\Models\DriverPayoutLedger;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\CommissionSettlementService;
+use App\Services\PayoutLedgerService;
 use App\Services\WalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * Module 5 — Wallet as the single settlement ledger (Model B, Route off).
+ * Module 5 — Financial System Refactoring: Separation of Driver Wallet & Driver Payout Ledger.
  *
- * With the split/Route engine OFF the wallet becomes the one record of who owes
- * whom:
- *   - Online ride  → the operator collected the fare, so it OWES the driver
- *                    (fare − commission) → wallet CREDIT ("Ride earnings").
- *   - Cash ride    → the driver holds the fare, so they OWE the commission
- *                    → wallet DEBIT ("Cash ride commission").
- * The wallet balance then equals exactly what the operator owes the driver.
+ * Principle: Wallet and Payouts are completely different systems and must never be combined.
  *
- * Route mode (engine ON) is unchanged and guarded here as a regression: an
- * online ride under Route never touches the wallet (it settles via Route).
+ * System 1 (Driver Wallet - Liability):
+ *   - Commission debits
+ *   - Subscription debits
+ *   - Platform charges
+ *   - Wallet recharges
+ *
+ * System 2 (Driver Payout Ledger):
+ *   - Online upfront payments collected by operator (online fare, cash ride deposit, coupon reimbursement)
+ *   - Pending payouts & completed operator payouts
  */
 class Module5WalletSettlementTest extends TestCase
 {
@@ -93,36 +96,38 @@ class Module5WalletSettlementTest extends TestCase
         ]);
     }
 
-    public function test_online_private_ride_credits_the_earning_to_the_wallet_when_route_is_off(): void
+    public function test_online_private_ride_debits_commission_from_wallet_and_records_fare_in_payout_ledger(): void
     {
-        config()->set('services.payments.split_enabled', false);
-
         $driver = $this->driver();
         $trip = $this->soloTrip($driver, 'razorpay', 100);
 
         app(CommissionSettlementService::class)->settle($trip);
 
-        // ₹100 fare − ₹10 commission = ₹90 owed to the driver by the operator.
-        $this->assertSame(90.0, app(WalletService::class)->balance($driver->fresh()));
+        // Commission of ₹10 is debited from driver's wallet liability account
+        $this->assertSame(-10.0, app(WalletService::class)->balance($driver->fresh()));
 
-        $txn = WalletTransaction::query()->where('user_id', $driver->id)->latest('id')->first();
-        $this->assertNotNull($txn);
-        $this->assertSame(WalletTransaction::TYPE_CREDIT, $txn->type);
-        $this->assertSame(90.0, (float) $txn->amount);
-        $this->assertSame('Ride earnings', $txn->reason);
-        $this->assertSame($trip->id, (int) $txn->engagement_id);
+        $walletTxn = WalletTransaction::query()->where('user_id', $driver->id)->latest('id')->first();
+        $this->assertNotNull($walletTxn);
+        $this->assertSame(WalletTransaction::TYPE_DEBIT, $walletTxn->type);
+        $this->assertSame(10.0, (float) $walletTxn->amount);
+
+        // Operator collected ₹100 online fare on driver's behalf into Payout Ledger
+        $this->assertSame(100.0, app(PayoutLedgerService::class)->pendingPayout($driver->fresh()));
+        $payoutRow = DriverPayoutLedger::query()->where('driver_user_id', $driver->id)->first();
+        $this->assertNotNull($payoutRow);
+        $this->assertSame(DriverPayoutLedger::TYPE_COLLECTED, $payoutRow->type);
+        $this->assertSame(100.0, (float) $payoutRow->amount);
+        $this->assertSame(DriverPayoutLedger::SOURCE_ONLINE_FARE, $payoutRow->source);
     }
 
-    public function test_cash_private_ride_debits_the_commission_when_route_is_off(): void
+    public function test_cash_private_ride_debits_the_commission_from_wallet(): void
     {
-        config()->set('services.payments.split_enabled', false);
-
         $driver = $this->driver();
         $trip = $this->soloTrip($driver, 'cash', 100);
 
         app(CommissionSettlementService::class)->settle($trip);
 
-        // Driver holds the ₹100 cash; owes ₹10 commission → wallet at −10.
+        // Driver holds the ₹100 cash; platform debits ₹10 commission from wallet liability
         $this->assertSame(-10.0, app(WalletService::class)->balance($driver->fresh()));
 
         $txn = WalletTransaction::query()->where('user_id', $driver->id)->latest('id')->first();
@@ -130,16 +135,17 @@ class Module5WalletSettlementTest extends TestCase
         $this->assertSame(WalletTransaction::TYPE_DEBIT, $txn->type);
         $this->assertSame(10.0, (float) $txn->amount);
         $this->assertSame('Cash ride commission', $txn->reason);
+
+        // No online money was collected by operator for this cash ride
+        $this->assertSame(0.0, app(PayoutLedgerService::class)->pendingPayout($driver->fresh()));
     }
 
-    public function test_cash_private_ride_with_a_deposit_credits_the_deposit_and_debits_commission(): void
+    public function test_cash_private_ride_with_a_deposit_records_deposit_in_payout_ledger_and_debits_commission_from_wallet(): void
     {
-        config()->set('services.payments.split_enabled', false);
-
         $driver = $this->driver();
         $trip = $this->soloTrip($driver, 'cash', 100);
 
-        // The customer paid a ₹25 deposit online; it now sits with the operator.
+        // Customer paid ₹25 upfront deposit online; operator holds it on driver's behalf
         \App\Models\Payment::query()->create([
             'trip_id' => $trip->id,
             'method' => 'CASH',
@@ -156,31 +162,19 @@ class Module5WalletSettlementTest extends TestCase
 
         app(CommissionSettlementService::class)->settle($trip);
 
-        // Operator holds ₹25 deposit, less ₹10 commission → owes the driver ₹15.
-        $this->assertSame(15.0, app(WalletService::class)->balance($driver->fresh()));
+        // Wallet records ONLY the commission deduction (₹10)
+        $this->assertSame(-10.0, app(WalletService::class)->balance($driver->fresh()));
+        $rows = WalletTransaction::query()->where('user_id', $driver->id)->get();
+        $this->assertCount(1, $rows);
+        $this->assertSame(WalletTransaction::TYPE_DEBIT, $rows[0]->type);
+        $this->assertSame(10.0, (float) $rows[0]->amount);
 
-        $rows = WalletTransaction::query()->where('user_id', $driver->id)->orderBy('id')->get();
-        $this->assertCount(2, $rows);
-        $this->assertSame(WalletTransaction::TYPE_CREDIT, $rows[0]->type);
-        $this->assertSame(25.0, (float) $rows[0]->amount);
-        $this->assertSame('Cash deposit collected', $rows[0]->reason);
-        $this->assertSame(WalletTransaction::TYPE_DEBIT, $rows[1]->type);
-        $this->assertSame(10.0, (float) $rows[1]->amount);
-        $this->assertSame('Cash ride commission', $rows[1]->reason);
-    }
-
-    public function test_online_private_ride_leaves_the_wallet_untouched_under_route(): void
-    {
-        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
-        config()->set('services.payments.split_enabled', true);
-
-        $driver = $this->driver();
-        $trip = $this->soloTrip($driver, 'razorpay', 100);
-
-        app(CommissionSettlementService::class)->settle($trip);
-
-        // Route settles the driver's share at source — the wallet is not used.
-        $this->assertSame(0.0, app(WalletService::class)->balance($driver->fresh()));
-        $this->assertSame(0, WalletTransaction::query()->where('user_id', $driver->id)->count());
+        // Payout ledger records the ₹25 deposit waiting to be transferred to driver
+        $this->assertSame(25.0, app(PayoutLedgerService::class)->pendingPayout($driver->fresh()));
+        $payoutRow = DriverPayoutLedger::query()->where('driver_user_id', $driver->id)->first();
+        $this->assertNotNull($payoutRow);
+        $this->assertSame(DriverPayoutLedger::TYPE_COLLECTED, $payoutRow->type);
+        $this->assertSame(25.0, (float) $payoutRow->amount);
+        $this->assertSame(DriverPayoutLedger::SOURCE_ONLINE_DEPOSIT, $payoutRow->source);
     }
 }

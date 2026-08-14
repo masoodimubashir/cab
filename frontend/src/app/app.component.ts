@@ -168,10 +168,15 @@ export class AppComponent implements OnInit {
 
     if (can('safety'))          operations.push({ label: 'Safety',          icon: 'shield',     route: '/safety' });
 
-    // --- Finance (money in, where it went, refunds out) ---
-    if (can('finance')) finance.push({ label: 'Payment In',  icon: 'rupee',      route: '/finance/money-in' });
-    if (can('finance')) finance.push({ label: 'Money Ledger', icon: 'chart-line', route: '/finance/ledger' });
-    if (can('finance')) finance.push({ label: 'Refunds',   icon: 'send',       route: '/refunds' });
+    // --- Finance (independent ledgers and reports) ---
+    if (can('finance')) finance.push({ label: 'Payment In',          icon: 'rupee',      route: '/finance/money-in' });
+    if (can('finance')) finance.push({ label: 'Wallet Management',   icon: 'tag',        route: '/finance/wallets' });
+    if (can('finance')) finance.push({ label: 'Pending Transfers',   icon: 'arrow-right', route: '/finance/transfers/pending' });
+    if (can('finance')) finance.push({ label: 'Completed Transfers', icon: 'check',      route: '/finance/transfers/completed' });
+    if (can('finance')) finance.push({ label: 'Ride Commissions',    icon: 'tag',        route: '/finance/commissions' });
+    if (can('finance')) finance.push({ label: 'Driver Earnings',     icon: 'chart-bar',  route: '/finance/driver-earnings' });
+    if (can('finance')) finance.push({ label: 'Money Ledger',        icon: 'chart-line', route: '/finance/ledger' });
+    if (can('finance')) finance.push({ label: 'Refunds',             icon: 'send',       route: '/refunds' });
 
     // --- Insights ---
     if (canAny(['analytics','reports'])) {

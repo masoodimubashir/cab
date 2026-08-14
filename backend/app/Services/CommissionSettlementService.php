@@ -9,23 +9,23 @@ use App\Models\Trip;
 use App\Models\WalletTransaction;
 
 /**
- * Settles a completed trip's earnings.
+ * Settles a completed trip's earnings and platform charges.
  *
- *   - Solo (normal) rides: the platform takes a commission from the driver,
- *     debited from their prepaid wallet float. The cut is sourced from the
- *     vehicle's rate card (PricingRule) — either fare × commission_percent/100,
- *     or a flat fixed_commission (₹) — UNLESS an active subscription overrides the rate
- *     (its percent wins, usually 0% = commission-free). The subscription then
- *     consumes one ride against its allowance.
- *   - Fixed journeys: riders paid the platform at booking, so the driver is
- *     credited carried fares minus the platform commission snapshotted on each
- *     seat reservation.
- *   - Shuttle journeys: unchanged for now; the driver is credited full carried fares.
+ * Principle: Wallet and Payouts are completely separate systems and must never be combined.
+ *
+ * System 1 (Driver Wallet):
+ *   - Liabilities owed by driver to platform (Commission deductions, Subscription charges, etc.)
+ *   - Only debited for commission/platform charges; never credited with earnings or customer payments.
+ *
+ * System 2 (Driver Payout Ledger):
+ *   - Money collected by operator on behalf of driver (online fares, online upfront deposits, coupon reimbursements)
+ *   - Tracks pending payouts and completed operator payouts.
  */
 class CommissionSettlementService
 {
     public function __construct(
         private WalletService $wallet,
+        private PayoutLedgerService $payoutLedger,
         private SubscriptionService $subscriptions,
         private FixedPricingService $fixedPricing,
         private BookingPaymentService $bookingPayments,
@@ -35,128 +35,96 @@ class CommissionSettlementService
     public function settle(Trip $trip): void
     {
         if (! $trip->driver_id) {
-            // Nothing to charge or credit, but a prepayment may still be sitting
-            // on this trip — book it so the ledger closes.
             $this->settleBookingPayments($trip);
             return;
         }
 
-        // Shared journeys settle PER SEAT and flow the other way (credit, not
-        // debit), so they have their own path.
+        // Shared journeys settle PER SEAT.
         if ($trip->route_departure_id !== null) {
             $this->settleShared($trip);
             $this->settleBookingPayments($trip);
             return;
         }
 
-        // Shuttle carries no route_departure_id but is still shared (its own
-        // per-passenger bookings), so it can't go down the solo path. Settle it on
-        // its own path: the wallet under Model B, or the Route mirrors at
-        // completion when the split engine is on.
+        // Shuttle journeys settle PER PASSENGER.
         if (\App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists()) {
             $this->settleShuttle($trip);
             $this->settleBookingPayments($trip);
             return;
         }
 
-        // Solo ride: take the platform commission from the driver's wallet.
-        // Commission is charged on the RIDE only. Any toll folded into the fare
-        // is the driver's own booth payment (FASTag) passing back through to
-        // them, so it is never commissionable — strip it before computing the cut.
+        // Solo ride:
         $fare = (float) ($trip->final_fare ?? 0);
         $toll = (float) ($trip->toll_amount ?? 0);
 
-        // The vehicle's rate card (pricing_rules) is the source of the standard
-        // commission rule now. Subscription plans can still override it below.
-
-        // An active subscription overrides the vehicle's commission with its own
-        // percent (usually 0%). Use a sentinel default of -1 so we can tell
-        // "no active sub" (default returned) apart from a real 0% sub rate.
+        // Subscription percent override (-1 = no active sub)
         $subPct = $this->subscriptions->effectiveCommissionPercentForTrip($trip, -1.0);
 
         $commission = $this->commissionForFare($trip->city_vehicle_type_id, $fare, $toll, $subPct);
         $percent = $commission['percent'];
         $cut = $commission['amount'];
 
-        // Route is gone — the wallet is the single settlement ledger of who owes
-        // whom (Model B, the only model now).
-        //   - Cash ride: the driver holds the whole fare, so they OWE the
-        //     commission → wallet DEBIT (net against any online deposit the
-        //     operator collected, which is CREDITed back).
-        //   - Online ride: the operator collected the whole fare, so it OWES the
-        //     driver their share (fare − commission) → wallet CREDIT. The fare
-        //     includes any toll, which is the driver's own booth payment coming
-        //     back to them, so it rides along in the credit.
-        // We still stamp commission_amount/percent below either way.
         $isCash = strtolower((string) ($trip->payment_method ?? '')) === 'cash';
 
-        if ($isCash) {
-            // A cash ride under Model B: the driver holds the cash balance, but an
-            // upfront deposit (if the operator collects one) went online and now
-            // sits with the operator. Mirror both real movements so the wallet is
-            // faithful and the balance nets to what the operator owes:
-            //   + CREDIT the deposit  (operator holds it for the driver)
-            //   − DEBIT  the commission (the driver owes it)
-            // Net = deposit − commission. With no deposit this is just the debit,
-            // and the driver sits in commission debt as the go-online block expects.
-            $deposit = round((float) Payment::query()
-                ->where('trip_id', $trip->id)
-                ->where('status', 'SUCCESS')
-                ->whereNotNull('cash_deposit_amount')
-                ->sum('cash_deposit_amount'), 2);
-
-            if ($deposit > 0 && $trip->driver) {
-                $this->wallet->recordTransaction(
-                    $trip->driver,
-                    WalletTransaction::TYPE_CREDIT,
-                    $deposit,
-                    'Cash deposit collected',
-                    $trip->id,
-                    null,
-                );
-            }
-
-            // Coupon rule (Model A): final_fare is the GROSS (pre-coupon) fare, and
-            // commission below is charged on it, so an ONLINE ride's driver is
-            // already whole. A CASH driver, though, only collected the discounted
-            // cash, so reimburse the operator-funded coupon here to make them whole.
-            $couponDiscount = round((float) Payment::query()
-                ->where('trip_id', $trip->id)
-                ->where('status', 'SUCCESS')
-                ->whereNotNull('discount_amount')
-                ->sum('discount_amount'), 2);
-            if ($couponDiscount > 0 && $trip->driver) {
-                $this->wallet->recordTransaction(
-                    $trip->driver,
-                    WalletTransaction::TYPE_CREDIT,
-                    $couponDiscount,
-                    'Coupon reimbursement (operator-funded)',
-                    $trip->id,
-                    null,
-                );
-            }
-
-            if ($cut > 0 && $trip->driver) {
+        if ($trip->driver) {
+            // 1. Commission is debited from Driver Wallet
+            if ($cut > 0) {
                 $this->wallet->recordTransaction(
                     $trip->driver,
                     WalletTransaction::TYPE_DEBIT,
                     $cut,
-                    'Cash ride commission',
+                    $isCash ? 'Cash ride commission' : 'Ride commission',
                     $trip->id,
                     null,
                 );
             }
-        } else {
-            $earning = round($fare - $cut, 2);
-            if ($earning > 0 && $trip->driver) {
-                $this->wallet->recordTransaction(
-                    $trip->driver,
-                    WalletTransaction::TYPE_CREDIT,
-                    $earning,
-                    'Ride earnings',
-                    $trip->id,
-                    null,
-                );
+
+            // 2. Online money collected by operator goes into Driver Payout Ledger
+            if ($isCash) {
+                // Online upfront deposit collected on cash ride
+                $deposit = round((float) Payment::query()
+                    ->where('trip_id', $trip->id)
+                    ->where('status', 'SUCCESS')
+                    ->whereNotNull('cash_deposit_amount')
+                    ->sum('cash_deposit_amount'), 2);
+
+                if ($deposit > 0) {
+                    $this->payoutLedger->recordCollection(
+                        $trip->driver,
+                        $deposit,
+                        \App\Models\DriverPayoutLedger::SOURCE_ONLINE_DEPOSIT,
+                        $trip->id,
+                        ['notes' => 'Cash ride online upfront deposit']
+                    );
+                }
+
+                // Operator-funded coupon discount
+                $couponDiscount = round((float) Payment::query()
+                    ->where('trip_id', $trip->id)
+                    ->where('status', 'SUCCESS')
+                    ->whereNotNull('discount_amount')
+                    ->sum('discount_amount'), 2);
+
+                if ($couponDiscount > 0) {
+                    $this->payoutLedger->recordCollection(
+                        $trip->driver,
+                        $couponDiscount,
+                        \App\Models\DriverPayoutLedger::SOURCE_COUPON_REIMBURSEMENT,
+                        $trip->id,
+                        ['notes' => 'Coupon reimbursement (operator-funded)']
+                    );
+                }
+            } else {
+                // Online ride: operator collected the full online fare on behalf of driver
+                if ($fare > 0) {
+                    $this->payoutLedger->recordCollection(
+                        $trip->driver,
+                        $fare,
+                        \App\Models\DriverPayoutLedger::SOURCE_ONLINE_FARE,
+                        $trip->id,
+                        ['notes' => 'Online ride fare']
+                    );
+                }
             }
         }
 
@@ -164,20 +132,12 @@ class CommissionSettlementService
         $trip->commission_amount = $cut;
         $trip->save();
 
-        // Only now is the ride's real worth known, so this is the earliest point
-        // a prepayment can be divided correctly.
         $this->settleBookingPayments($trip);
-
-        // Count this ride against any active subscription (expiring it when used up).
         $this->subscriptions->consume($trip);
     }
 
     /**
-     * Settles any prepayment riding on this trip through the shared engine: hand
-     * back whatever the ride turned out not to cost, then divide the rest into
-     * the driver's Route share and the operator's commission. Deliberately runs
-     * AFTER the trip's own figures are final — they are what the split is
-     * computed from. No-op while the split engine is disabled.
+     * Settles any prepayment riding on this trip.
      */
     private function settleBookingPayments(Trip $trip): void
     {
@@ -186,12 +146,7 @@ class CommissionSettlementService
     }
 
     /**
-     * The standard commission on a fare, sourced from the vehicle's rate card
-     * (pricing_rules, keyed by city_vehicle_type_id) — the same place the fare is
-     * set. Toll is never commissionable — it's the driver's booth payment passing
-     * back through — so it's stripped first. A subscription percent (>= 0) overrides
-     * the rate card; pass -1 for "no active subscription". No rate card / no
-     * commission set → 0. (Fixed uses its own per-route commission, not this.)
+     * The standard commission on a fare.
      *
      * @return array{percent:float,amount:float}
      */
@@ -201,21 +156,16 @@ class CommissionSettlementService
         $rule ??= $cityVehicleTypeId ? PricingRule::resolveFor($cityVehicleTypeId) : null;
 
         if ($subPercent >= 0.0) {
-            // Active subscription: its percent rate wins.
             $percent = max(0.0, $subPercent);
             $cut = round($commissionable * $percent / 100, 2);
         } elseif ($rule && $rule->commission_type === 'fixed') {
-            // Flat per-ride fee from the vehicle's rate card.
             $percent = 0.0;
             $cut = round((float) $rule->fixed_commission, 2);
         } else {
-            // Percentage of the fare from the vehicle's rate card.
             $percent = $rule ? (float) $rule->commission_percent : 0.0;
             $cut = round($commissionable * $percent / 100, 2);
         }
 
-        // A fixed fee can't exceed the fare; never push the driver into debt and
-        // never let it eat into the toll they're owed back.
         if ($cut > $commissionable) {
             $cut = $commissionable;
         }
@@ -224,10 +174,7 @@ class CommissionSettlementService
     }
 
     /**
-     * The driver's settlement basis for a settled unit under the coupon rule
-     * (Model A): the GROSS, pre-coupon fare. A row's fare_amount is what the
-     * customer paid (already discounted), and promo_discount_amount is the coupon
-     * that was taken off — the operator funds it, so the driver earns on the sum.
+     * Gross settlement fare.
      *
      * @param \App\Models\SeatReservation|\App\Models\ShuttlePassengerBooking $row
      */
@@ -240,9 +187,7 @@ class CommissionSettlementService
     }
 
     /**
-     * Per-seat settlement for a shared journey. Fixed routes subtract the
-     * platform commission snapshotted on each carried seat; shuttle routes keep
-     * the previous full-fare driver credit until shuttle commission is enabled.
+     * Per-seat settlement for a shared fixed journey.
      */
     private function settleShared(Trip $trip): void
     {
@@ -256,12 +201,7 @@ class CommissionSettlementService
 
         $gross = 0.0;
         $commission = 0.0;
-        $cashCommission = 0.0;
         foreach ($seats as $seat) {
-            // Coupon rule (Model A): the driver earns on the GROSS, pre-coupon fare.
-            // fare_amount is what the customer PAID (already discounted); adding the
-            // coupon discount back gives the driver's settlement basis. The operator
-            // funds the discount — see the cash reimbursement credit below.
             $fare = $this->grossSettlementFare($seat);
             $gross += $fare;
 
@@ -270,13 +210,6 @@ class CommissionSettlementService
                 $seat->commission_percent = (float) $seatCommission['percent'];
                 $seat->commission_amount = (float) $seatCommission['amount'];
                 $commission += min($fare, max(0.0, (float) $seat->commission_amount));
-
-                // A cash seat only put its deposit online (paid wholly to the
-                // driver), so the operator's commission on it comes from the
-                // driver's wallet — same model as a solo cash ride.
-                if (strtolower((string) ($seat->payment_method ?? '')) === 'cash') {
-                    $cashCommission += min($fare, max(0.0, (float) $seat->commission_amount));
-                }
             } else {
                 $seat->commission_amount = 0.0;
             }
@@ -297,72 +230,55 @@ class CommissionSettlementService
         $trip->save();
 
         if ($trip->driver) {
-            // Model B: the wallet is the settlement ledger. Record each
-            // seat's owed share the same way as a solo ride —
-            //   - online seat: the operator holds the whole fare → CREDIT
-            //     (fare − commission).
-            //   - cash seat: the operator holds only the online deposit while the
-            //     driver holds the cash balance → CREDIT the deposit and DEBIT the
-            //     commission (net = deposit − commission).
             $deposits = app(CashDepositService::class);
             foreach ($seats as $seat) {
-                // The customer PAID the discounted fare; the driver settles on the
-                // GROSS (pre-coupon) fare so the operator absorbs the coupon.
                 $paid = round((float) ($seat->fare_amount ?? 0), 2);
                 $discount = round(max(0.0, (float) ($seat->promo_discount_amount ?? 0)), 2);
                 $fare = round($paid + $discount, 2);
                 $seatCommission = round(min($fare, max(0.0, (float) ($seat->commission_amount ?? 0))), 2);
                 $isCashSeat = strtolower((string) ($seat->payment_method ?? '')) === 'cash';
 
+                // 1. Commission is debited from Wallet
+                if ($seatCommission > 0) {
+                    $this->wallet->recordTransaction(
+                        $trip->driver,
+                        WalletTransaction::TYPE_DEBIT,
+                        $seatCommission,
+                        'Fixed ride commission - Seat ' . ($seat->seat_number ?? $seat->id),
+                        $trip->id,
+                        null,
+                    );
+                }
+
+                // 2. Online money collected by operator recorded in Payout Ledger
                 if ($isCashSeat) {
-                    // The deposit is a fraction of what the customer actually paid
-                    // (the discounted fare), so quote it on $paid, not the gross.
                     $deposit = round((float) ($deposits->quote($paid)['deposit'] ?? 0), 2);
                     if ($deposit > 0) {
-                        $this->wallet->recordTransaction(
+                        $this->payoutLedger->recordCollection(
                             $trip->driver,
-                            WalletTransaction::TYPE_CREDIT,
                             $deposit,
-                            'Cash deposit collected',
+                            \App\Models\DriverPayoutLedger::SOURCE_ONLINE_DEPOSIT,
                             $trip->id,
-                            null,
+                            ['seat_reservation_id' => $seat->id, 'notes' => 'Fixed seat online deposit']
                         );
                     }
-                    // Cash driver holds only the discounted cash, so reimburse the
-                    // coupon here to make them whole on the gross fare.
                     if ($discount > 0) {
-                        $this->wallet->recordTransaction(
+                        $this->payoutLedger->recordCollection(
                             $trip->driver,
-                            WalletTransaction::TYPE_CREDIT,
                             $discount,
-                            'Coupon reimbursement (operator-funded)',
+                            \App\Models\DriverPayoutLedger::SOURCE_COUPON_REIMBURSEMENT,
                             $trip->id,
-                            null,
-                        );
-                    }
-                    if ($seatCommission > 0) {
-                        $this->wallet->recordTransaction(
-                            $trip->driver,
-                            WalletTransaction::TYPE_DEBIT,
-                            $seatCommission,
-                            'Cash ride commission',
-                            $trip->id,
-                            null,
+                            ['seat_reservation_id' => $seat->id, 'notes' => 'Coupon reimbursement (operator-funded)']
                         );
                     }
                 } else {
-                    // Online seat: the operator collected the discounted fare but
-                    // credits the driver on the gross — the difference is the
-                    // operator's coupon cost, absorbed implicitly.
-                    $earning = round($fare - $seatCommission, 2);
-                    if ($earning > 0) {
-                        $this->wallet->recordTransaction(
+                    if ($fare > 0) {
+                        $this->payoutLedger->recordCollection(
                             $trip->driver,
-                            WalletTransaction::TYPE_CREDIT,
-                            $earning,
-                            $isFixed ? 'Fixed ride earnings' : 'Shared ride earnings',
+                            $fare,
+                            \App\Models\DriverPayoutLedger::SOURCE_FIXED_BOOKING,
                             $trip->id,
-                            null,
+                            ['seat_reservation_id' => $seat->id, 'notes' => 'Fixed seat online fare']
                         );
                     }
                 }
@@ -375,22 +291,7 @@ class CommissionSettlementService
     }
 
     /**
-     * Per-passenger settlement for a Shuttle journey. Shuttle is shared but carries
-     * no route_departure_id, so it settles here rather than through settleShared.
-     * Each of the journey's paid, non-cancelled passenger bookings settles on its
-     * own fare and commission snapshot — the same Model B rules as a Fixed seat:
-     *   - online passenger: the operator holds the fare → CREDIT (fare − commission).
-     *   - cash passenger: the operator holds only the online deposit while the
-     *     driver holds the cash balance → CREDIT the deposit, DEBIT the commission.
-     * Under the Route engine the online split + deposit settle via Route
-     * (settleBookingPayments), so only a cash passenger's commission touches the
-     * wallet — exactly as the solo/Fixed cash path.
-     *
-     * NOTE (Module 8): a shuttle currently carries ONE passenger per journey/trip,
-     * so there is no vehicle-level overage to divide across riders yet. Splitting a
-     * shared time/distance overage by passenger count needs shuttle pooling (many
-     * riders on one vehicle), which isn't implemented — that half of Module 8 is
-     * blocked on the pooling model being defined.
+     * Per-passenger settlement for a Shuttle journey.
      */
     private function settleShuttle(Trip $trip): void
     {
@@ -403,17 +304,12 @@ class CommissionSettlementService
                 ->get()
             : collect();
 
-        // A subscription (if any) overrides the vehicle's commission percent.
         $subPct = $this->subscriptions->effectiveCommissionPercentForTrip($trip, -1.0);
 
         $rows = [];
         $gross = 0.0;
         $commissionTotal = 0.0;
-        $cashCommission = 0.0;
         foreach ($bookings as $booking) {
-            // Coupon rule (Model A): the driver earns on the GROSS, pre-coupon fare.
-            // fare_amount is what the customer paid (discounted); the coupon is added
-            // back for the driver's basis, and the operator funds the difference.
             $paid = round((float) ($booking->fare_amount ?? 0), 2);
             $discount = round(max(0.0, (float) ($booking->promo_discount_amount ?? 0)), 2);
             $fare = $this->grossSettlementFare($booking);
@@ -426,10 +322,7 @@ class CommissionSettlementService
 
             $gross += $fare;
             $commissionTotal += $commission;
-            if ($isCash) {
-                $cashCommission += $commission;
-            }
-            $rows[] = ['fare' => $fare, 'paid' => $paid, 'discount' => $discount, 'commission' => $commission, 'cash' => $isCash];
+            $rows[] = ['fare' => $fare, 'paid' => $paid, 'discount' => $discount, 'commission' => $commission, 'cash' => $isCash, 'booking_id' => $booking->id];
         }
 
         $gross = round($gross, 2);
@@ -441,58 +334,50 @@ class CommissionSettlementService
         $trip->save();
 
         if ($trip->driver) {
-            // Model B: the wallet is the settlement ledger, per passenger.
-            {
-                $deposits = app(CashDepositService::class);
-                foreach ($rows as $row) {
-                    if ($row['cash']) {
-                        // The deposit is a fraction of what the customer actually
-                        // paid (the discounted fare), so quote it on 'paid'.
-                        $deposit = round((float) ($deposits->quote($row['paid'])['deposit'] ?? 0), 2);
-                        if ($deposit > 0) {
-                            $this->wallet->recordTransaction(
-                                $trip->driver,
-                                WalletTransaction::TYPE_CREDIT,
-                                $deposit,
-                                'Cash deposit collected',
-                                $trip->id,
-                                null,
-                            );
-                        }
-                        // Cash driver holds only the discounted cash — reimburse the
-                        // operator-funded coupon so they net the gross fare.
-                        if ($row['discount'] > 0) {
-                            $this->wallet->recordTransaction(
-                                $trip->driver,
-                                WalletTransaction::TYPE_CREDIT,
-                                $row['discount'],
-                                'Coupon reimbursement (operator-funded)',
-                                $trip->id,
-                                null,
-                            );
-                        }
-                        if ($row['commission'] > 0) {
-                            $this->wallet->recordTransaction(
-                                $trip->driver,
-                                WalletTransaction::TYPE_DEBIT,
-                                $row['commission'],
-                                'Cash ride commission',
-                                $trip->id,
-                                null,
-                            );
-                        }
-                    } else {
-                        $earning = round($row['fare'] - $row['commission'], 2);
-                        if ($earning > 0) {
-                            $this->wallet->recordTransaction(
-                                $trip->driver,
-                                WalletTransaction::TYPE_CREDIT,
-                                $earning,
-                                'Shuttle ride earnings',
-                                $trip->id,
-                                null,
-                            );
-                        }
+            $deposits = app(CashDepositService::class);
+            foreach ($rows as $row) {
+                // 1. Commission is debited from Wallet
+                if ($row['commission'] > 0) {
+                    $this->wallet->recordTransaction(
+                        $trip->driver,
+                        WalletTransaction::TYPE_DEBIT,
+                        $row['commission'],
+                        'Shuttle ride commission',
+                        $trip->id,
+                        null,
+                    );
+                }
+
+                // 2. Online money collected by operator goes to Payout Ledger
+                if ($row['cash']) {
+                    $deposit = round((float) ($deposits->quote($row['paid'])['deposit'] ?? 0), 2);
+                    if ($deposit > 0) {
+                        $this->payoutLedger->recordCollection(
+                            $trip->driver,
+                            $deposit,
+                            \App\Models\DriverPayoutLedger::SOURCE_ONLINE_DEPOSIT,
+                            $trip->id,
+                            ['shuttle_booking_id' => $row['booking_id'], 'notes' => 'Shuttle booking online deposit']
+                        );
+                    }
+                    if ($row['discount'] > 0) {
+                        $this->payoutLedger->recordCollection(
+                            $trip->driver,
+                            $row['discount'],
+                            \App\Models\DriverPayoutLedger::SOURCE_COUPON_REIMBURSEMENT,
+                            $trip->id,
+                            ['shuttle_booking_id' => $row['booking_id'], 'notes' => 'Coupon reimbursement (operator-funded)']
+                        );
+                    }
+                } else {
+                    if ($row['fare'] > 0) {
+                        $this->payoutLedger->recordCollection(
+                            $trip->driver,
+                            $row['fare'],
+                            \App\Models\DriverPayoutLedger::SOURCE_SHUTTLE_BOOKING,
+                            $trip->id,
+                            ['shuttle_booking_id' => $row['booking_id'], 'notes' => 'Shuttle online fare']
+                        );
                     }
                 }
             }

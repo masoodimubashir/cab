@@ -222,16 +222,16 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/drivers/me/active-trip', [DriversController::class, 'activeTrip']);
     Route::get('/drivers/me/earnings', [DriversController::class, 'earnings']);
 
-    // Driver subscriptions: browse plans, see the active plan, buy one, cancel auto-renew.
+    // Driver subscriptions: browse plans, see the active plan, buy one via Wallet/UPI, cancel auto-renew.
     Route::get('/drivers/me/subscriptions/plans', [DriverSubscriptionsController::class, 'plans']);
     Route::get('/drivers/me/subscription', [DriverSubscriptionsController::class, 'current']);
     Route::post('/drivers/me/subscriptions', [DriverSubscriptionsController::class, 'purchase']);
+    Route::post('/drivers/me/subscriptions/upi/create-order', [DriverSubscriptionsController::class, 'createUpiOrder']);
+    Route::post('/drivers/me/subscriptions/upi/verify', [DriverSubscriptionsController::class, 'verifyUpiPurchase']);
     Route::post('/drivers/me/subscriptions/cancel', [DriverSubscriptionsController::class, 'cancel']);
 
-    // Driver wallet: balance + Razorpay top-up.
+    // Driver wallet: platform charges balance + deductions + Razorpay top-up.
     Route::get('/drivers/me/wallet', [DriverWalletController::class, 'show']);
-    // Model B net settlement position + past settlements (Module 6).
-    Route::get('/drivers/me/settlement', [DriverWalletController::class, 'settlement']);
     Route::post('/drivers/me/wallet/topup/razorpay', [DriverWalletController::class, 'topupRazorpay'])->middleware('idempotent');
     Route::post('/drivers/me/wallet/topup/razorpay/verify', [DriverWalletController::class, 'verifyTopupRazorpay'])->middleware('idempotent');
 });
@@ -279,8 +279,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/drivers/{driver}/profile', [AdminDriversController::class, 'profile'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/rides', [AdminDriversController::class, 'rides'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/cancelled-rides', [AdminDriversController::class, 'cancelledRides'])->middleware('permission:drivers');
+    Route::get('/admin/drivers/{driver}/wallet', [AdminDriversController::class, 'wallet'])->middleware('permission:drivers');
+    Route::post('/admin/drivers/{driver}/wallet/adjust', [AdminDriversController::class, 'adjustWallet'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'walletTransactions'])->middleware('permission:drivers');
-    // Model B net settlement: live position + settlement history (Module 6).
     Route::get('/admin/drivers/{driver}/settlement', [AdminDriversController::class, 'settlement'])->middleware('permission:drivers');
     Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience'])->middleware('permission:contact_drivers');
     Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv'])->middleware('permission:contact_drivers');
@@ -614,15 +615,19 @@ Route::middleware(['auth:sanctum', 'role:admin', 'permission:finance'])->group(f
     Route::get('/admin/finance/overview', [FinanceController::class, 'overview']);
     Route::get('/admin/finance/money-in', [FinanceController::class, 'moneyIn']);
 
+    // Independent financial sections
+    Route::get('/admin/finance/wallets', [FinanceController::class, 'wallets']);
+    Route::get('/admin/finance/transfers/pending', [FinanceController::class, 'pendingTransfers']);
+    Route::get('/admin/finance/transfers/completed', [FinanceController::class, 'completedTransfers']);
+    Route::get('/admin/finance/commissions', [FinanceController::class, 'commissions']);
+    Route::get('/admin/finance/driver-earnings', [FinanceController::class, 'driverEarnings']);
+
     // The customer-refund register: who is owed money, why, and the proof
     // trail once the operator sends it (GPay/bank, outside the app).
     Route::get('/admin/refunds', [RefundsController::class, 'adminIndex']);
     Route::post('/admin/refunds/{module}/{id}/mark-refunded', [RefundsController::class, 'adminMarkRefunded'])->whereIn('module', ['fixed', 'shuttle'])->whereNumber('id');
 
-    // Phase 4 — read-only monitors onto the auto-split engine. The driver-payout
-    // status monitor (Route paid / pending / failed / held) replaces the manual
-    // payout worklist, and the ledger is the single "where did every rupee go"
-    // source of truth with a per-trip reconciliation.
+    // Phase 4 — read-only monitors onto the auto-split engine.
     Route::get('/admin/payouts/monitor', [\App\Http\Controllers\Admin\PayoutMonitorController::class, 'payouts']);
     Route::get('/admin/ledger', [\App\Http\Controllers\Admin\PayoutMonitorController::class, 'ledger']);
 });

@@ -52,6 +52,24 @@ class RideAssignmentController extends Controller
             ], 422);
         }
 
+        // Commission Validation During Ride Allocation
+        $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+        $subPct = app(\App\Services\SubscriptionService::class)->effectiveCommissionPercentForTrip($trip, -1.0);
+        $expectedCommission = app(\App\Services\CommissionSettlementService::class)->commissionForFare(
+            $trip->city_vehicle_type_id,
+            $fare,
+            (float) ($trip->toll_amount ?? 0),
+            $subPct
+        )['amount'];
+
+        if (!app(\App\Services\WalletService::class)->canAffordCommission($user, $expectedCommission)) {
+            $minLimit = app(\App\Services\WalletService::class)->minimumLimit();
+            return response()->json([
+                'message' => "Your wallet balance is too low to accept this ride. Projected balance would fall below the minimum limit of ₹{$minLimit} after the ₹{$expectedCommission} commission charge. Please recharge your wallet.",
+                'error_code' => 'insufficient_wallet_for_commission',
+            ], 422);
+        }
+
         // Authoritative one-trip-per-driver guard: serialise on the driver row
         // and reject if they already hold another committed trip (e.g. a
         // pre-assigned shared trip). This is the backstop that makes a

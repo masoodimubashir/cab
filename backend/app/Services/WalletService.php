@@ -2,16 +2,38 @@
 
 namespace App\Services;
 
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use RuntimeException;
 
+/**
+ * Driver Wallet Engine.
+ *
+ * System 1: Driver Wallet exists only to record money that the driver owes to the platform (liability).
+ *
+ * Wallet transactions include:
+ *   - Commission deductions (debit)
+ *   - Subscription deductions paid through the wallet (debit)
+ *   - Other platform charges (debit)
+ *   - Wallet top-up / recharge (credit)
+ *
+ * Wallet transactions do NOT include:
+ *   - Driver earnings
+ *   - Customer cash payments
+ *   - Customer online payments
+ *   - Pending operator payouts
+ *   - Completed operator payouts
+ *
+ * Wallet calculation:
+ *   Wallet Balance = Previous Wallet Balance - Commission Deductions - Subscription Deductions - Other Platform Charges + Recharges
+ */
 class WalletService
 {
     /**
-     * Record a single wallet transaction and return it. Wrapped in a DB
-     * transaction so the row is durable before the API returns.
+     * Record a single wallet transaction and return it.
      */
     public function recordTransaction(
         User $user,
@@ -28,6 +50,8 @@ class WalletService
             throw new InvalidArgumentException('Wallet transaction amount must be positive.');
         }
 
+        $amount = round($amount, 2);
+
         return DB::transaction(function () use ($user, $type, $amount, $reason, $tripId, $by) {
             return WalletTransaction::query()->create([
                 'user_id' => $user->id,
@@ -41,7 +65,7 @@ class WalletService
     }
 
     /**
-     * Net balance = credit + cashback + driver_added_cash − debit.
+     * Wallet balance: (credits + topups + cashback) - (debits: commission, subscriptions, platform charges).
      */
     public function balance(User $user): float
     {
@@ -60,22 +84,58 @@ class WalletService
     }
 
     /**
-     * Check a MANUAL wallet move (Razorpay top-up / admin credit-debit) against
-     * the operator's configured min/max balance caps. Returns a human-readable
-     * error message when the move would breach a cap, or null when it's fine.
-     *
-     * Only the manual money-move flows call this. Automatic, system-originated
-     * entries (ride earnings, refunds, commission, tips) deliberately bypass the
-     * caps so money a user is owed is never trapped and the ledger stays correct.
-     *
-     *  - max cap: 0 = no upper limit; otherwise a balance-increasing move may not
-     *    push the balance above it.
-     *  - min cap: signed (may be negative, e.g. -500 allows up to ₹500 of debt);
-     *    a balance-decreasing move (debit) may not drop the balance below it.
+     * Minimum wallet limit configured by operator (e.g. -77).
+     */
+    public function minimumLimit(): float
+    {
+        $settings = OperatorSetting::instance();
+        return (float) ($settings->wallet_cash_min_capping ?? 0);
+    }
+
+    /**
+     * Universal Wallet Validation Rule:
+     * Projected Balance = Current Wallet Balance - Deduction Amount
+     * If Projected Balance < Minimum Wallet Limit -> throws exception or returns error.
+     */
+    public function universalValidation(User $user, float $deductionAmount): void
+    {
+        $min = $this->minimumLimit();
+        $current = $this->balance($user);
+        $projected = round($current - $deductionAmount, 2);
+
+        if ($projected < $min) {
+            throw new RuntimeException("Projected wallet balance (₹{$projected}) falls below the minimum wallet limit (₹{$min}).");
+        }
+    }
+
+    /**
+     * Checks if driver can afford a deduction without breaching minimum limit.
+     */
+    public function canAffordDeduction(User $user, float $deductionAmount): bool
+    {
+        $min = $this->minimumLimit();
+        $current = $this->balance($user);
+        $projected = round($current - $deductionAmount, 2);
+
+        return $projected >= $min;
+    }
+
+    /**
+     * Commission validation during ride allocation:
+     * Projected Balance = Current Wallet Balance - Expected Commission
+     * If Projected Balance < Minimum Wallet Limit -> false (ineligible).
+     */
+    public function canAffordCommission(User $user, float $commissionAmount): bool
+    {
+        return $this->canAffordDeduction($user, $commissionAmount);
+    }
+
+    /**
+     * Check a manual wallet move against operator min/max caps.
      */
     public function capViolation(User $user, string $type, float $amount): ?string
     {
-        $settings = \App\Models\OperatorSetting::instance();
+        $settings = OperatorSetting::instance();
         $max = (int) $settings->wallet_cash_max_capping;
         $min = (int) $settings->wallet_cash_min_capping;
         $current = $this->balance($user);
@@ -94,11 +154,61 @@ class WalletService
             return null;
         }
 
-        // Debit: must not drop below the configured floor.
+        // Debit: must not drop below the configured minimum floor.
         if (($current - $amount) < $min) {
-            $room = $current - $min;
-            return "This would take the wallet below the minimum of ₹{$min} (current balance ₹{$current}). At most ₹{$room} can be removed.";
+            $room = round($current - $min, 2);
+            return "This would take the wallet below the minimum limit of ₹{$min} (current balance ₹{$current}). At most ₹{$room} can be deducted.";
         }
         return null;
+    }
+
+    /**
+     * Wallet breakdown (platform charges & recharges only).
+     */
+    public function breakdown(User $user): array
+    {
+        $rows = WalletTransaction::query()
+            ->where('user_id', $user->id)
+            ->get(['type', 'amount', 'reason', 'created_at']);
+
+        $commissionCharges = 0.0;
+        $subscriptionCharges = 0.0;
+        $platformCharges = 0.0;
+        $recharges = 0.0;
+        $cashbacks = 0.0;
+
+        foreach ($rows as $row) {
+            $amt = (float) $row->amount;
+            $reason = strtolower((string) $row->reason);
+
+            if ($row->type === WalletTransaction::TYPE_DEBIT) {
+                if (str_contains($reason, 'commission')) {
+                    $commissionCharges += $amt;
+                } elseif (str_contains($reason, 'subscription')) {
+                    $subscriptionCharges += $amt;
+                } else {
+                    $platformCharges += $amt;
+                }
+            } elseif ($row->type === WalletTransaction::TYPE_CREDIT || $row->type === WalletTransaction::TYPE_DRIVER_ADDED_CASH) {
+                $recharges += $amt;
+            } elseif ($row->type === WalletTransaction::TYPE_CASHBACK) {
+                $cashbacks += $amt;
+            }
+        }
+
+        $balance = $this->balance($user);
+        $minLimit = $this->minimumLimit();
+
+        return [
+            'balance' => $balance,
+            'minimum_wallet_limit' => $minLimit,
+            'maximum_wallet_limit' => (float) (OperatorSetting::instance()->wallet_cash_max_capping ?? 0),
+            'commission_charges' => round($commissionCharges, 2),
+            'subscription_charges' => round($subscriptionCharges, 2),
+            'other_platform_charges' => round($platformCharges, 2),
+            'wallet_recharges' => round($recharges, 2),
+            'cashbacks' => round($cashbacks, 2),
+            'total_deductions' => round($commissionCharges + $subscriptionCharges + $platformCharges, 2),
+        ];
     }
 }

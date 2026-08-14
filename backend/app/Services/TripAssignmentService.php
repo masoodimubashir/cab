@@ -5,24 +5,29 @@ namespace App\Services;
 use App\Events\FareNegotiationLocked;
 use App\Models\FareNegotiationOffer;
 use App\Models\Trip;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class TripAssignmentService
 {
-    public function __construct(private TripStateMachineService $stateMachine)
-    {
+    public function __construct(
+        private TripStateMachineService $stateMachine,
+        private WalletService $walletService,
+        private CommissionSettlementService $commissionService,
+        private SubscriptionService $subscriptionService,
+    ) {
     }
 
     /**
      * Atomically confirm a trip against a specific driver offer.
      *
-     * Locks the trip, validates the offer belongs to it and is from a driver,
-     * binds the driver, writes the final fare, and transitions NEGOTIATION
-     * -> CONFIRMED. Broadcasts the lock event after the DB transaction commits
-     * so listeners never read stale state.
+     * Validates:
+     *   1. Trip is in NEGOTIATION
+     *   2. Offer belongs to trip and is from driver
+     *   3. Driver is not busy with another trip
+     *   4. Driver's wallet projected balance meets the minimum limit for the commission
      *
-     * Returns the fresh trip on success, null if the trip is no longer in
-     * NEGOTIATION or the offer is invalid for this trip.
+     * Returns the fresh trip on success, null if invalid or ineligible.
      */
     public function confirm(int $tripId, int $acceptedOfferId, float $finalFare): ?Trip
     {
@@ -50,9 +55,23 @@ class TripAssignmentService
                 return null;
             }
 
-            // One-trip-per-driver: don't bind a driver already committed
-            // elsewhere (e.g. a pre-assigned shared trip). The /driver-accept
-            // guard is the locked backstop; this stops the obvious case early.
+            // Universal Wallet Validation Rule during ride allocation
+            $driverUser = User::query()->find($offer->from_user_id);
+            if ($driverUser) {
+                $subPct = $this->subscriptionService->effectiveCommissionPercentForTrip($trip, -1.0);
+                $comm = $this->commissionService->commissionForFare(
+                    $trip->city_vehicle_type_id,
+                    $finalFare,
+                    (float) ($trip->toll_amount ?? 0),
+                    $subPct
+                )['amount'];
+
+                if (!$this->walletService->canAffordCommission($driverUser, $comm)) {
+                    return null;
+                }
+            }
+
+            // One-trip-per-driver guard
             $driverBusy = Trip::query()
                 ->where('driver_id', $offer->from_user_id)
                 ->where('id', '!=', $trip->id)
