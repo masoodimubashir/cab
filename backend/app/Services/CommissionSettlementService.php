@@ -413,7 +413,6 @@ class CommissionSettlementService
                     );
                 }
             }
-            }
         }
 
         $this->subscriptions->consume($trip);
