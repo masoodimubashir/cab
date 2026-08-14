@@ -113,6 +113,7 @@ class PaymentSplitEngineTest extends TestCase
 
     public function test_p1_verified_driver_gets_a_live_transfer(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(transferSucceeds: true);
         $driver = $this->driver(verified: true);
         $trip = $this->completedTrip($driver, fare: 100, commission: 10);
@@ -137,6 +138,7 @@ class PaymentSplitEngineTest extends TestCase
 
     public function test_p4_unverified_driver_share_is_held(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(transferSucceeds: true);
         $driver = $this->driver(verified: false);
         $trip = $this->completedTrip($driver, fare: 100, commission: 10);
@@ -158,6 +160,7 @@ class PaymentSplitEngineTest extends TestCase
 
     public function test_p7_zero_commission_pays_driver_the_whole_fare(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(transferSucceeds: true);
         $driver = $this->driver(verified: true);
         $trip = $this->completedTrip($driver, fare: 100, commission: 0);
@@ -175,6 +178,7 @@ class PaymentSplitEngineTest extends TestCase
 
     public function test_f3_transfer_failure_after_capture_parks_the_share(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         // Verified driver, but the transfer call fails. Payment must stand and
         // the driver's share must be held (never silently lost).
         $this->mockRazorpay(transferSucceeds: false);
@@ -194,6 +198,7 @@ class PaymentSplitEngineTest extends TestCase
 
     public function test_f6_second_split_is_a_no_op(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(transferSucceeds: true);
         $driver = $this->driver(verified: true);
         $trip = $this->completedTrip($driver, fare: 100, commission: 10);
@@ -227,6 +232,7 @@ class PaymentSplitEngineTest extends TestCase
 
     public function test_k1_held_earnings_release_on_verification(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         // Two rides taken while unverified → held. Then the driver verifies and
         // all held earnings are released via transfers.
         $this->mockRazorpay(transferSucceeds: true);

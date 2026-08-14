@@ -97,6 +97,7 @@ class FinanceLedgerImmediateCaptureF6Test extends TestCase
 
     public function test_booking_payment_capture_creates_ledger_entry_immediately(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $bookingService = app(BookingPaymentService::class);
         $monitorService = app(PayoutMonitorService::class);
 

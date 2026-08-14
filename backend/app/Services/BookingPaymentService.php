@@ -47,6 +47,10 @@ class BookingPaymentService
         float $fareAmount,
         float $commissionAmount,
         string $currency = 'INR',
+        ?float $cashDeposit = null,
+        ?float $cashBalance = null,
+        float $customerFee = 0.0,
+        float $operatorFee = 0.0,
     ): ?Payment {
         if (! $this->split->enabled()) {
             return null;
@@ -56,7 +60,22 @@ class BookingPaymentService
             return null;
         }
 
-        return DB::transaction(function () use ($tripId, $razorpayPaymentId, $fareAmount, $commissionAmount, $currency) {
+        // Cash seat: only the upfront deposit is online, so THAT is what was
+        // captured — the rest is cash the driver collects. The deposit settles
+        // wholly to the driver at completion; the operator's commission comes
+        // from the driver's wallet, not from this money (see settleTrip +
+        // CommissionSettlementService). Online seats mirror the full fare.
+        $isCash = $cashDeposit !== null;
+        $onlineAmount = $isCash ? round(max(0.0, $cashDeposit), 2) : round($fareAmount, 2);
+
+        // The gateway fee. Customer-borne rides ON TOP of what's charged online
+        // (so `amount` includes it); operator-borne is recorded but NOT added to
+        // the charge (the operator absorbs it, so it comes off their slice).
+        $customerFee = round(max(0.0, $customerFee), 2);
+        $operatorFee = round(max(0.0, $operatorFee), 2);
+        $chargedAmount = round($onlineAmount + $customerFee, 2);
+
+        return DB::transaction(function () use ($tripId, $razorpayPaymentId, $onlineAmount, $chargedAmount, $customerFee, $operatorFee, $commissionAmount, $currency, $isCash, $cashBalance) {
             $existing = Payment::query()
                 ->where('razorpay_payment_id', $razorpayPaymentId)
                 ->lockForUpdate()
@@ -68,13 +87,17 @@ class BookingPaymentService
 
             $payment = Payment::query()->create([
                 'trip_id' => $tripId,
-                'method' => 'RAZORPAY',
+                'method' => $isCash ? 'CASH' : 'RAZORPAY',
                 'provider' => 'RAZORPAY',
                 'status' => 'SUCCESS',
-                'amount' => round($fareAmount, 2),
+                'amount' => $chargedAmount,
+                'gateway_fee_amount' => $customerFee > 0 ? $customerFee : null,
+                'operator_gateway_fee_amount' => $operatorFee > 0 ? $operatorFee : null,
                 'currency' => $currency ?: 'INR',
                 'razorpay_payment_id' => $razorpayPaymentId,
                 'commission_amount' => round(max(0.0, $commissionAmount), 2),
+                'cash_deposit_amount' => $isCash ? $onlineAmount : null,
+                'cash_balance_due' => $isCash ? round(max(0.0, (float) $cashBalance), 2) : null,
                 'paid_at' => now(),
                 'settlement_mode' => Payment::SETTLE_BOOKING,
             ]);
@@ -83,6 +106,45 @@ class BookingPaymentService
 
             return $payment;
         });
+    }
+
+    /**
+     * Mirror a confirmed Fixed seat capture, cash-aware. A cash seat paid only
+     * its upfront deposit online (the rest is cash to the driver), so the
+     * mirrored payment records the deposit and the cash balance; an online seat
+     * mirrors the whole fare. The seat's commission snapshot rides along either
+     * way — for cash it drives the wallet debit, not a retention from the deposit.
+     */
+    public function recordSeatCapture(SeatReservation $reservation, string $razorpayPaymentId): ?Payment
+    {
+        $fare = (float) $reservation->fare_amount;
+        $commission = (float) $reservation->commission_amount;
+
+        // Fixed policy: the rider bears the gateway fee (customer-borne), added on
+        // top of what's charged online — the full fare on an online seat, the
+        // deposit on a cash seat.
+        $gatewayFees = app(\App\Services\GatewayFeeService::class);
+
+        if (strtolower((string) ($reservation->payment_method ?? '')) === 'cash') {
+            $quote = app(\App\Services\CashDepositService::class)->quote($fare);
+            $customerFee = $gatewayFees->customerBears('fixed') ? $gatewayFees->feeFor((float) $quote['deposit']) : 0.0;
+
+            return $this->recordCapture(
+                $reservation->trip_id,
+                $razorpayPaymentId,
+                $fare,
+                $commission,
+                'INR',
+                $quote['deposit'],
+                $quote['balance'],
+                $customerFee,
+                0.0,
+            );
+        }
+
+        $customerFee = $gatewayFees->customerBears('fixed') ? $gatewayFees->feeFor($fare) : 0.0;
+
+        return $this->recordCapture($reservation->trip_id, $razorpayPaymentId, $fare, $commission, 'INR', null, null, $customerFee, 0.0);
     }
 
     /**
@@ -182,14 +244,34 @@ class BookingPaymentService
         // payment settles against its own seat fare and commission snapshot.
         if ($trip->route_departure_id !== null) {
             foreach ($payments as $payment) {
+                // A cash seat only put its deposit online, and that goes WHOLLY to
+                // the driver — the operator's commission is taken from the wallet
+                // (CommissionSettlementService), not retained here. Online seats
+                // settle against their fare and commission snapshot.
+                $isCashSeat = $payment->cash_deposit_amount !== null;
+
                 // The seat's fare, not the charge: a customer-borne gateway fee
                 // rides inside `amount` and belongs to Razorpay, not the seat.
                 $this->split->settleBookingPayment(
                     $payment,
                     $driver,
                     self::farePaise($payment),
-                    self::toPaise($payment->commission_amount),
+                    $isCashSeat ? 0 : self::toPaise($payment->commission_amount),
                 );
+            }
+
+            return;
+        }
+
+        // Cash ride: only the upfront deposit is online, and it belongs WHOLLY to
+        // the driver — the operator's commission came from the driver's wallet,
+        // not from this money (see CommissionSettlementService). So each deposit
+        // capture settles entirely to the driver with zero commission retained;
+        // the rest of the fare is the cash the driver already holds and never
+        // flows through the engine.
+        if (strtolower((string) ($trip->payment_method ?? '')) === 'cash') {
+            foreach ($payments as $payment) {
+                $this->split->settleBookingPayment($payment, $driver, self::farePaise($payment), 0);
             }
 
             return;
@@ -327,7 +409,7 @@ class BookingPaymentService
      * cancel isn't the customer's fault, false on a no-show / too-late cancel.
      * Returns null while the engine is disabled or when no mirrored payment exists.
      */
-    public function refundForBooking(string $razorpayPaymentId, bool $refundFull, string $cancelledBy = AutoRefundService::BY_SYSTEM): ?array
+    public function refundForBooking(string $razorpayPaymentId, bool $refundFull, string $cancelledBy = AutoRefundService::BY_SYSTEM, bool $forfeitToOperator = false): ?array
     {
         if (! $this->refunds->enabled()) {
             return null;
@@ -347,7 +429,7 @@ class BookingPaymentService
             return null;
         }
 
-        return $this->refunds->refundBookingCancellation($payment, $refundFull, $cancelledBy);
+        return $this->refunds->refundBookingCancellation($payment, $refundFull, $cancelledBy, $forfeitToOperator);
     }
 
     private static function toPaise($rupees): int

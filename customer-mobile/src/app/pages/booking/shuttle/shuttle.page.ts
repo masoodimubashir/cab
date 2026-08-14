@@ -4,8 +4,11 @@ import { ToastController } from '@ionic/angular';
 
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
+import { PaymentOptionsService } from '../../../core/payment-options.service';
+import { PaymentChoice } from '../../../shared/payment-method-modal.component';
 import { BookingService } from '../booking.service';
 import { Place } from '../booking.models';
+import { SeatCell } from '../fixed/seat-grid.component';
 
 declare const Razorpay: any;
 
@@ -16,11 +19,14 @@ interface Estimate {
   available?: boolean;
   message?: string;
 }
-interface ShuttleBooking { id: number; trip_id?: number | null; }
+interface ShuttleBooking { id: number; trip_id?: number | null; seat_labels?: string[]; }
+interface SeatMap { layout: { rows: number; cols: number }; cells: SeatCell[]; }
+interface CouponPreview { base_amount: number; discount: number; final_amount: number; coupon?: { title: string } | null; }
 
-type Step = 'pickup' | 'drop' | 'fare' | 'paying' | 'forming';
+type Step = 'pickup' | 'drop' | 'fare' | 'seats' | 'paying' | 'forming';
 
 interface TippingConfig {
+  enabled: boolean;
   values: number[];
   in_percentage: boolean;
 }
@@ -45,17 +51,38 @@ interface TippingConfig {
 })
 export class ShuttleBookPage implements OnInit {
   step: Step = 'pickup';
-  readonly total = 4;
+  readonly total = 5;
 
   estimate: Estimate | null = null;
   estimating = false;
   booking: ShuttleBooking | null = null;
+
+  // Seat selection (step 4)
+  seatCells: SeatCell[] = [];
+  seatRows = 1;
+  seatCols = 1;
+  selectedSeats: string[] = [];
+  seatBusy = false;
+  seatError: string | null = null;
 
   busy = false;
   error: string | null = null;
 
   tipping: TippingConfig | null = null;
   selectedTipPreset: number | null = null;
+
+  // Coupon (operator-funded): the discount comes off what the rider pays; the
+  // driver still earns on the full fare (handled server-side at settlement).
+  couponTitle = '';
+  coupon: CouponPreview | null = null;
+  couponError: string | null = null;
+  couponBusy = false;
+
+  // Payment method chooser (Online / UPI / Cash). Cash pays only the upfront
+  // deposit online; the rest is cash to the driver at trip end.
+  paymentModalOpen = false;
+  payMethod: PaymentChoice = 'online';
+  cashDepositPercent = 0;
 
   constructor(
     private api: ApiService,
@@ -64,6 +91,7 @@ export class ShuttleBookPage implements OnInit {
     private router: Router,
     private toastCtrl: ToastController,
     private cdr: ChangeDetectorRef,
+    private paymentOptions: PaymentOptionsService,
   ) {}
 
   ngOnInit(): void {
@@ -73,18 +101,23 @@ export class ShuttleBookPage implements OnInit {
     }
     if (this.bookingSvc.trip.pickup) this.step = 'drop';
     this.loadTippingConfig();
+    // Know the operator's cash deposit split so the pay step can show it.
+    void this.paymentOptions.load().then((m) => {
+      this.cashDepositPercent = m.cash_deposit_percent || 0;
+      this.cdr.markForCheck();
+    });
   }
 
   private loadTippingConfig(): void {
     this.api.get<TippingConfig>('/operator/tipping').subscribe({
-      next: (cfg) => { this.tipping = cfg; this.cdr.markForCheck(); },
+      next: (cfg) => { this.tipping = cfg.enabled ? cfg : null; this.cdr.markForCheck(); },
       error: () => { this.tipping = null; this.cdr.markForCheck(); },
     });
   }
 
   get fromLabel(): string { return this.bookingSvc.trip.pickup?.address ?? ''; }
   get toLabel(): string { return this.bookingSvc.trip.drop?.address ?? ''; }
-  get stepIndex(): number { return { pickup: 1, drop: 2, fare: 3, paying: 4, forming: 4 }[this.step]; }
+  get stepIndex(): number { return { pickup: 1, drop: 2, fare: 3, seats: 4, paying: 5, forming: 5 }[this.step]; }
   get near(): { lat: number; lng: number } | undefined {
     const p = this.bookingSvc.trip.pickup;
     return p ? { lat: p.lat, lng: p.lng } : undefined;
@@ -113,6 +146,9 @@ export class ShuttleBookPage implements OnInit {
 
     this.estimating = true;
     this.error = null;
+    // The fare is being recomputed — any applied coupon no longer matches it.
+    this.coupon = null;
+    this.couponError = null;
     this.cdr.markForCheck();
 
     try {
@@ -153,8 +189,44 @@ export class ShuttleBookPage implements OnInit {
     return this.selectedTipPreset;
   }
 
+  get couponDiscount(): number {
+    return this.coupon?.discount ?? 0;
+  }
+
   get payableTotal(): number {
-    return (this.fare || 0) + this.tipAmount;
+    return Math.max(0, (this.fare || 0) - this.couponDiscount) + this.tipAmount;
+  }
+
+  applyCoupon(): void {
+    const code = this.couponTitle.trim();
+    if (!code || this.couponBusy) return;
+    const { pickup, drop, cityId } = this.bookingSvc.trip;
+    if (!pickup || !drop || !cityId) { this.couponError = 'Add a pickup and drop first.'; this.cdr.markForCheck(); return; }
+
+    this.couponBusy = true;
+    this.couponError = null;
+    this.cdr.markForCheck();
+
+    this.api.post<CouponPreview>('/shuttle/coupon-preview', {
+      city_vehicle_type_id: this.estimate?.city_vehicle_type_id ?? null,
+      city_id: cityId,
+      vehicle_type_id: null,
+      pickup_lat: pickup.lat,
+      pickup_lng: pickup.lng,
+      drop_lat: drop.lat,
+      drop_lng: drop.lng,
+      coupon_title: code,
+    }).subscribe({
+      next: (res) => { this.coupon = res; this.couponBusy = false; this.cdr.markForCheck(); },
+      error: (err) => { this.coupon = null; this.couponBusy = false; this.couponError = err?.error?.message || 'Coupon could not be applied.'; this.cdr.markForCheck(); },
+    });
+  }
+
+  removeCoupon(): void {
+    this.couponTitle = '';
+    this.coupon = null;
+    this.couponError = null;
+    this.cdr.markForCheck();
   }
 
   pickTipPreset(val: number): void {
@@ -170,16 +242,32 @@ export class ShuttleBookPage implements OnInit {
     return !!this.fare && this.estimate?.available !== false;
   }
 
-  confirm(): void {
-    if (!this.canConfirm) return;
-    this.step = 'paying';
+  // ---- step 4: pick a seat ---------------------------------------------
+
+  /**
+   * Confirm the pool → create the pending booking (with the tip baked in) so it
+   * has a journey to show a seat map for, then open the seat picker. The booking
+   * sits PAYMENT_PENDING until the rider pays; backing out cancels it.
+   */
+  /** Fare-step CTA. A pool is prepaid, so pick how to pay before we create the
+   *  booking — the booking is tagged with the method (cash charges only the
+   *  upfront deposit online). If a pending booking already exists, reopen seats. */
+  choosePayment(): void {
+    if (!this.canConfirm || this.busy) return;
+    if (this.booking?.id) { void this.confirm(this.payMethod); return; }
+    this.paymentModalOpen = true;
     this.cdr.markForCheck();
   }
 
-  // ---- step 4: pay ------------------------------------------------------
+  /** Chosen from the shared payment sheet. */
+  onPayMethod(method: PaymentChoice): void {
+    this.paymentModalOpen = false;
+    this.payMethod = method;
+    void this.confirm(method);
+  }
 
-  pay(): void {
-    if (this.busy) return;
+  async confirm(method: PaymentChoice = this.payMethod): Promise<void> {
+    if (!this.canConfirm || this.busy) return;
     const { pickup, drop, cityId, scope } = this.bookingSvc.trip;
     if (!pickup || !drop || !cityId) { this.error = 'Missing trip details.'; return; }
 
@@ -187,27 +275,114 @@ export class ShuttleBookPage implements OnInit {
     this.error = null;
     this.cdr.markForCheck();
 
-    this.api.post<{ booking?: ShuttleBooking }>('/shuttle/bookings', {
-      city_vehicle_type_id: this.estimate?.city_vehicle_type_id ?? null,
-      city_id: cityId,
-      vehicle_type_id: null,
-      scope,
-      pickup_address: pickup.address,
-      pickup_lat: pickup.lat,
-      pickup_lng: pickup.lng,
-      drop_address: drop.address,
-      drop_lat: drop.lat,
-      drop_lng: drop.lng,
-      tip_amount: this.tipAmount,
-    }, { 'Idempotency-Key': this.uuid('shuttle') }).subscribe({
-      next: (res) => {
+    try {
+      if (!this.booking?.id) {
+        const res = await this.api.post<{ booking?: ShuttleBooking }>('/shuttle/bookings', {
+          city_vehicle_type_id: this.estimate?.city_vehicle_type_id ?? null,
+          city_id: cityId,
+          vehicle_type_id: null,
+          scope,
+          pickup_address: pickup.address,
+          pickup_lat: pickup.lat,
+          pickup_lng: pickup.lng,
+          drop_address: drop.address,
+          drop_lat: drop.lat,
+          drop_lng: drop.lng,
+          tip_amount: this.tipAmount,
+          coupon_title: this.couponTitle.trim() || undefined,
+          payment_method: method === 'cash' ? 'cash' : 'razorpay',
+        }, { 'Idempotency-Key': this.uuid('shuttle') }).toPromise();
         const b = res?.booking ?? null;
-        if (!b?.id) { this.busy = false; void this.toast('Booking failed. Try again.', 'danger'); this.cdr.markForCheck(); return; }
+        if (!b?.id) throw new Error('Booking failed.');
         this.booking = b;
-        void this.startRazorpay(b);
+      }
+      await this.loadSeatMap();
+      this.step = 'seats';
+    } catch (err: any) {
+      this.error = err?.error?.message || 'Could not open seat selection.';
+    } finally {
+      this.busy = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** For a cash pool: the upfront deposit charged online now (rest is cash). */
+  get cashDeposit(): number {
+    if (this.payMethod !== 'cash' || this.cashDepositPercent <= 0) return 0;
+    return Math.round(this.payableTotal * this.cashDepositPercent / 100);
+  }
+  get cashBalance(): number {
+    return Math.max(0, this.payableTotal - this.cashDeposit);
+  }
+  /** What the rider actually pays online at the pay step. */
+  get payNowAmount(): number {
+    return this.payMethod === 'cash' ? this.cashDeposit : this.payableTotal;
+  }
+
+  private async loadSeatMap(): Promise<void> {
+    if (!this.booking?.id) return;
+    const res = await this.api
+      .get<{ seat_map: SeatMap }>(`/shuttle/bookings/${this.booking.id}/seats`)
+      .toPromise();
+    const map = res?.seat_map;
+    this.seatRows = map?.layout?.rows ?? 1;
+    this.seatCols = map?.layout?.cols ?? 1;
+    this.seatCells = map?.cells ?? [];
+  }
+
+  /** Tapping a free seat picks it (one seat per rider) and holds it server-side. */
+  onSeatPick(label: string): void {
+    if (this.seatBusy) return;
+    this.selectedSeats = this.selectedSeats.includes(label) ? [] : [label];
+    if (this.selectedSeats.length === 0) { this.cdr.markForCheck(); return; }
+    this.holdSeats();
+  }
+
+  private holdSeats(): void {
+    if (!this.booking?.id || this.selectedSeats.length === 0) { this.cdr.markForCheck(); return; }
+    this.seatBusy = true;
+    this.seatError = null;
+    this.cdr.markForCheck();
+
+    this.api.post<{ seat_map?: SeatMap }>(
+      `/shuttle/bookings/${this.booking.id}/seats`,
+      { labels: this.selectedSeats },
+    ).subscribe({
+      next: (res) => {
+        this.seatBusy = false;
+        if (res?.seat_map?.cells) this.seatCells = res.seat_map.cells;
+        this.cdr.markForCheck();
       },
-      error: (err) => { this.busy = false; this.error = err?.error?.message || 'Could not create the pool booking.'; this.cdr.markForCheck(); },
+      error: (err) => {
+        this.seatBusy = false;
+        this.selectedSeats = [];
+        this.seatError = err?.error?.message || 'That seat was just taken. Pick another.';
+        void this.loadSeatMap().finally(() => this.cdr.markForCheck());
+      },
     });
+  }
+
+  get canPayForSeat(): boolean {
+    return this.selectedSeats.length > 0 && !this.seatBusy;
+  }
+
+  continueToPay(): void {
+    if (!this.canPayForSeat) { this.seatError = 'Pick a seat to continue.'; this.cdr.markForCheck(); return; }
+    this.step = 'paying';
+    this.cdr.markForCheck();
+  }
+
+  // ---- step 5: pay ------------------------------------------------------
+
+  pay(): void {
+    if (this.busy) return;
+    if (!this.booking?.id) { this.error = 'Missing booking. Please start again.'; this.cdr.markForCheck(); return; }
+
+    this.busy = true;
+    this.error = null;
+    this.cdr.markForCheck();
+
+    void this.startRazorpay(this.booking);
   }
 
   private async startRazorpay(booking: ShuttleBooking): Promise<void> {
@@ -297,10 +472,28 @@ export class ShuttleBookPage implements OnInit {
     switch (this.step) {
       case 'drop': this.step = 'pickup'; break;
       case 'fare': this.step = 'drop'; break;
-      case 'paying': this.step = 'fare'; break;
+      case 'seats':
+        // Leaving seat selection abandons the pending booking + its held seat;
+        // a fresh one is made if the rider confirms again.
+        this.cancelPendingBooking();
+        this.step = 'fare';
+        break;
+      case 'paying': this.step = 'seats'; break;
       default: void this.router.navigate(['/customer-tabs/go']);
     }
     this.cdr.markForCheck();
+  }
+
+  /** Cancel the current PAYMENT_PENDING booking and clear the seat state. */
+  private cancelPendingBooking(): void {
+    const b = this.booking;
+    this.booking = null;
+    this.selectedSeats = [];
+    this.seatCells = [];
+    this.seatError = null;
+    if (b?.id) {
+      this.api.post(`/shuttle/bookings/${b.id}/cancel`, {}).subscribe({ next: () => {}, error: () => {} });
+    }
   }
 
   private uuid(prefix: string): string {

@@ -216,13 +216,21 @@ export class RealtimeService {
     channel.bind('TripLocationUpdated', locHandler);
     channel.bind('TripStatusUpdated', statusHandler);
     if (onCustomerLocation) channel.bind('TripCustomerLocationUpdated', custLocHandler);
-    if (onStartOtp) channel.bind('StartOtpReady', startOtpHandler);
+    // Both signals mean "your code is ready — fetch it now": StartOtpReady for the
+    // private start-code, ShuttleBoardingCodeReady for a shuttle pool rider.
+    if (onStartOtp) {
+      channel.bind('StartOtpReady', startOtpHandler);
+      channel.bind('ShuttleBoardingCodeReady', startOtpHandler);
+    }
 
     return () => {
       channel.unbind('TripLocationUpdated', locHandler);
       channel.unbind('TripStatusUpdated', statusHandler);
       if (onCustomerLocation) channel.unbind('TripCustomerLocationUpdated', custLocHandler);
-      if (onStartOtp) channel.unbind('StartOtpReady', startOtpHandler);
+      if (onStartOtp) {
+        channel.unbind('StartOtpReady', startOtpHandler);
+        channel.unbind('ShuttleBoardingCodeReady', startOtpHandler);
+      }
       pusher.unsubscribe(channelName);
     };
   }

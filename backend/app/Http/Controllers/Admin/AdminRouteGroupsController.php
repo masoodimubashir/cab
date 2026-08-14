@@ -33,6 +33,7 @@ class AdminRouteGroupsController
 
         $group = RouteGroup::query()->create([
             'city_id' => $city->id,
+            'city_vehicle_type_id' => $data['city_vehicle_type_id'] ?? null,
             'name' => trim($data['name']),
             'is_active' => $data['is_active'] ?? true,
         ]);
@@ -52,10 +53,16 @@ class AdminRouteGroupsController
         $this->assertCityOwnsGroup($city, $routeGroup);
         $data = $this->validatePayload($request, $city, $routeGroup);
 
-        $routeGroup->update([
+        $update = [
             'name' => trim($data['name']),
             'is_active' => $data['is_active'] ?? $routeGroup->is_active,
-        ]);
+        ];
+        // Only rebind when the caller sends the field — so a plain rename or a
+        // route-only save never clears an existing binding.
+        if (array_key_exists('city_vehicle_type_id', $data)) {
+            $update['city_vehicle_type_id'] = $data['city_vehicle_type_id'];
+        }
+        $routeGroup->update($update);
 
         if (array_key_exists('route_ids', $data)) {
             $routeGroup->routes()->sync($this->validRouteIds($city, $data['route_ids'] ?? []));
@@ -143,6 +150,10 @@ class AdminRouteGroupsController
                     ->ignore($group?->id),
             ],
             'is_active' => ['nullable', 'boolean'],
+            'city_vehicle_type_id' => [
+                'nullable', 'integer',
+                Rule::exists('city_vehicle_types', 'id')->where(fn ($q) => $q->where('city_id', $city->id)),
+            ],
             'route_ids' => ['nullable', 'array'],
             'route_ids.*' => ['integer'],
         ]);
@@ -162,16 +173,25 @@ class AdminRouteGroupsController
             return [];
         }
 
-        $valid = Route::query()
+        $routes = Route::query()
             ->whereIn('id', $routeIds)
             ->where('city_id', $city->id)
             ->where('mode', 'fixed')
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+            ->get(['id', 'fare_config']);
+
+        $valid = $routes->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         if (array_diff($routeIds, $valid)) {
             abort(422, 'Some selected routes are not fixed routes in this city.');
+        }
+
+        // A bulk-imported route with no fare is "Needs pricing" — it must not be
+        // grouped (and so go live) until an admin adds a price to it.
+        $needsPricing = $routes->contains(fn ($r) => ! (is_array($r->fare_config)
+            && isset($r->fare_config['seat_fare'])
+            && (float) $r->fare_config['seat_fare'] > 0));
+        if ($needsPricing) {
+            abort(422, 'Add a price to these routes before grouping them — they are still marked “Needs pricing”.');
         }
 
         return $valid;
@@ -195,6 +215,7 @@ class AdminRouteGroupsController
             'id' => $group->id,
             'name' => $group->name,
             'is_active' => (bool) $group->is_active,
+            'city_vehicle_type_id' => $group->city_vehicle_type_id !== null ? (int) $group->city_vehicle_type_id : null,
             'route_ids' => $routes->pluck('id')->map(fn ($id) => (int) $id)->values(),
             'route_count' => $routes->count(),
             'driver_user_ids' => $driverIds,

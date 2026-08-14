@@ -189,7 +189,9 @@ class ShuttleBookingPhase1Test extends TestCase
         $this->assertSame("local", $trip->scope);
         $this->assertSame("NEGOTIATION", $trip->status);
         $this->assertTrue((bool) $trip->is_manual_dispatch);
-        $this->assertNull($trip->payment_method);
+        // The dispatch trip carries the booking's payment method so settlement can
+        // take a cash ride's commission from the driver's wallet.
+        $this->assertSame("razorpay", $trip->payment_method);
 
         $this->assertDatabaseHas("fare_negotiations", [
             "trip_id" => $trip->id,
@@ -201,7 +203,10 @@ class ShuttleBookingPhase1Test extends TestCase
             "from_role" => "customer",
             "status" => "PENDING",
         ]);
-        Queue::assertPushed(DispatchHopJob::class, fn (DispatchHopJob $job) => $job->tripId === $trip->id);
+        // Decision 6C: a lone rider on a multi-seat van does NOT dispatch instantly —
+        // the pool forms and waits for the van to fill or the window to expire.
+        Queue::assertNotPushed(DispatchHopJob::class);
+        $this->assertNotNull($journey->fresh()->forming_deadline_at);
 
         $driver = User::factory()->create();
         $trip->driver_id = $driver->id;
@@ -423,6 +428,10 @@ class ShuttleBookingPhase1Test extends TestCase
         ]);
         $rideTypeId = DB::table('ride_types')->insertGetId([
             'name' => $rideTypeName,
+            // Shuttle vehicle resolution filters on ride_types.mode, so the seed
+            // must set it: a "Shuttle" ride type is mode=shuttle, anything else
+            // (e.g. the "Mini" normal-vehicle case) is mode=private.
+            'mode' => $rideTypeName === 'Shuttle' ? 'shuttle' : 'private',
             'description' => $rideTypeName,
             'sort_order' => 1,
             'created_at' => $now,

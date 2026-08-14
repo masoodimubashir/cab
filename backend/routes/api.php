@@ -14,6 +14,7 @@ use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ShuttleBookingsController;
+use App\Http\Controllers\ShuttleDriverController;
 use App\Http\Controllers\TripsController;
 use App\Http\Controllers\FixedRoutesController;
 use App\Http\Controllers\FixedBookingsController;
@@ -52,7 +53,6 @@ use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InvoicesController;
 use App\Http\Controllers\RatingsController;
 use App\Http\Controllers\SafetyController;
-use App\Http\Controllers\TripMessagesController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\Admin\AdminVehicleSetsController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
@@ -155,7 +155,6 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips', [TripsController::class, 'store'])->middleware('throttle:booking');
     Route::post('/trips/{trip}/cancel', [TripsController::class, 'cancel']);
     Route::post('/trips/{trip}/confirm', [TripsController::class, 'confirm']);
-    Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
     // List drivers eligible for this trip + customer picks one to negotiate with.
     Route::get('/trips/{trip}/nearby-drivers', [TripsController::class, 'nearbyDrivers']);
     Route::post('/trips/{trip}/select-driver', [TripsController::class, 'selectDriver']);
@@ -167,7 +166,6 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/trips/available', [TripsController::class, 'available']);
     Route::post('/trips/{trip}/start-otp', [TripsController::class, 'requestStartOtp'])->middleware('throttle:otp');
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
-    Route::post('/trips/{trip}/messages', [TripMessagesController::class, 'send'])->middleware('throttle:chat');
     Route::post('/trips/{trip}/no-show', [TripsController::class, 'markNoShow']);
 
     // Shared-departure manifest: read + per-seat board / no-show.
@@ -178,7 +176,6 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/trips/{trip}/negotiation', [FareNegotiationController::class, 'show']);
-    Route::get('/trips/{trip}/messages', [TripMessagesController::class, 'index']);
     Route::get('/drivers/me', [DriversController::class, 'me']);
     // Anonymized nearby-drivers list for the customer "searching" map.
     // Returns lat/lng + opaque driver id only — no PII.
@@ -233,6 +230,8 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
 
     // Driver wallet: balance + Razorpay top-up.
     Route::get('/drivers/me/wallet', [DriverWalletController::class, 'show']);
+    // Model B net settlement position + past settlements (Module 6).
+    Route::get('/drivers/me/settlement', [DriverWalletController::class, 'settlement']);
     Route::post('/drivers/me/wallet/topup/razorpay', [DriverWalletController::class, 'topupRazorpay'])->middleware('idempotent');
     Route::post('/drivers/me/wallet/topup/razorpay/verify', [DriverWalletController::class, 'verifyTopupRazorpay'])->middleware('idempotent');
 });
@@ -281,6 +280,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/drivers/{driver}/rides', [AdminDriversController::class, 'rides'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/cancelled-rides', [AdminDriversController::class, 'cancelledRides'])->middleware('permission:drivers');
     Route::get('/admin/drivers/{driver}/wallet/transactions', [AdminDriversController::class, 'walletTransactions'])->middleware('permission:drivers');
+    // Model B net settlement: live position + settlement history (Module 6).
+    Route::get('/admin/drivers/{driver}/settlement', [AdminDriversController::class, 'settlement'])->middleware('permission:drivers');
     Route::get('/admin/contact-drivers/audience', [AdminContactDriversController::class, 'audience'])->middleware('permission:contact_drivers');
     Route::post('/admin/contact-drivers/upload-csv', [AdminContactDriversController::class, 'uploadCsv'])->middleware('permission:contact_drivers');
     Route::post('/admin/contact-drivers/send', [AdminContactDriversController::class, 'send'])->middleware('permission:contact_drivers');
@@ -417,7 +418,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/trips', [AdminTripsController::class, 'index'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation'])->middleware('permission:rides|live_operations');
-    Route::patch('/admin/messages/{message}/moderation', [TripMessagesController::class, 'moderate'])->middleware('permission:rides');
 
     Route::middleware('manager.city')->group(function () {
         // ── Promotions: coupons ─────────────────────────────────────────
@@ -483,6 +483,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::post('/trips/{trip}/pay/razorpay', [PaymentsController::class, 'payRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/razorpay/verify', [PaymentsController::class, 'verifyRazorpay'])->middleware('idempotent');
     Route::post('/trips/{trip}/pay/cash', [PaymentsController::class, 'payCash'])->middleware('idempotent');
+    Route::post('/trips/{trip}/pay/cash-deposit', [PaymentsController::class, 'payCashDeposit'])->middleware('idempotent');
     Route::get('/trips/{trip}/invoice', [InvoicesController::class, 'show']);
     Route::post('/trips/{trip}/invoice', [InvoicesController::class, 'generate']);
     Route::get('/trips/{trip}/invoice/download', [InvoicesController::class, 'download']);
@@ -499,6 +500,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 Route::middleware('auth:sanctum')->get('/operator/tipping', [OperatorPublicController::class, 'tipping']);
 Route::middleware('auth:sanctum')->get('/operator/subscription-popup', [OperatorPublicController::class, 'subscriptionPopup']);
 Route::middleware('auth:sanctum')->get('/operator/driver-payment-modes', [OperatorPublicController::class, 'driverPaymentModes']);
+Route::middleware('auth:sanctum')->get('/operator/payment-methods', [OperatorPublicController::class, 'paymentMethods']);
 
 Route::post('/payments/webhook/razorpay', [PaymentsController::class, 'razorpayWebhook'])->middleware('throttle:webhooks');
 
@@ -524,6 +526,10 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
 
     Route::get('/shuttle/bookings', [ShuttleBookingsController::class, 'index']);
     Route::post('/shuttle/bookings', [ShuttleBookingsController::class, 'store'])->middleware(['throttle:booking', 'idempotent']);
+    Route::post('/shuttle/coupon-preview', [ShuttleBookingsController::class, 'couponPreview'])->middleware('throttle:booking');
+    Route::get('/shuttle/trips/{trip}/my-booking', [ShuttleBookingsController::class, 'forTrip']);
+    Route::get('/shuttle/bookings/{booking}/seats', [ShuttleBookingsController::class, 'seatMap']);
+    Route::post('/shuttle/bookings/{booking}/seats', [ShuttleBookingsController::class, 'selectSeats'])->middleware('throttle:booking');
     Route::post('/shuttle/bookings/{booking}/razorpay-order', [ShuttleBookingsController::class, 'createRazorpayOrder'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/confirm-payment', [ShuttleBookingsController::class, 'confirmPayment'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/shuttle/bookings/{booking}/cancel', [ShuttleBookingsController::class, 'cancel'])->middleware('throttle:booking');
@@ -547,6 +553,13 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
     Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
+
+    // Shuttle pool — driver's multi-passenger manifest + per-rider board/drop.
+    Route::get('/shuttle/journeys/{journey}/manifest', [ShuttleDriverController::class, 'manifest']);
+    Route::get('/shuttle/trips/{trip}/manifest', [ShuttleDriverController::class, 'manifestForTrip']);
+    Route::post('/shuttle/bookings/{booking}/boarding-otp', [ShuttleDriverController::class, 'sendBoardingOtp'])->middleware('throttle:otp');
+    Route::post('/shuttle/bookings/{booking}/board', [ShuttleDriverController::class, 'board']);
+    Route::post('/shuttle/bookings/{booking}/drop', [ShuttleDriverController::class, 'drop']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rides'])->group(function () {
@@ -558,6 +571,8 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::patch('/admin/cities/{city}/ride-products/scopes/{scope}/modes/{mode}', [AdminCityRideProductsController::class, 'updateMode']);
 
     Route::get('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'index']);
+    Route::post('/admin/cities/{city}/fixed-routes/import-kml', [AdminFixedRoutesController::class, 'importKml']);
+    Route::post('/admin/cities/{city}/fixed-routes/import-kml-bulk', [AdminFixedRoutesController::class, 'bulkImportKml']);
     Route::post('/admin/cities/{city}/fixed-routes', [AdminFixedRoutesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-routes/{route}', [AdminFixedRoutesController::class, 'update']);
 

@@ -21,21 +21,17 @@ class AdminCitySettingsController
     public function update(Request $request, City $city)
     {
         $data = $request->validate([
-            'chat_enabled' => ['nullable', 'boolean'],
             'show_region_specific_fare' => ['nullable', 'boolean'],
             'show_vehicle_make_model' => ['nullable', 'boolean'],
 
-            'allowed_driver_payment_modes' => ['nullable'],
             'negotiation_floor_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'commission_type' => ['nullable', 'in:percent,fixed'],
-            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             'toll_mode' => ['nullable', 'in:no,yes'],
             'show_low_wallet_alert' => ['nullable', 'boolean'],
             'private_no_show_threshold_minutes' => ['nullable', 'numeric', 'min:0', 'max:180'],
             'private_no_show_charge_per_minute' => ['nullable', 'numeric', 'min:0'],
             'private_driver_no_show_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'private_cancellation_rule' => ['nullable', 'string', 'max:32'],
+            'cancellation_charge_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fixed_waiting_time_per_stop_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
             'fixed_stop_arrival_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
             'fixed_stop_arrival_dwell_seconds' => ['nullable', 'integer', 'min:0', 'max:600'],
@@ -43,7 +39,7 @@ class AdminCitySettingsController
             'fixed_customer_pickup_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
             'fixed_vehicle_approaching_alert_radius_m' => ['nullable', 'integer', 'min:50', 'max:10000'],
             'fixed_customer_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
-            'fixed_boarding_confirmation_mode' => ['nullable', 'in:driver_only,customer_otp,qr_scan,driver_customer'],
+            'fixed_boarding_confirmation_mode' => ['nullable', 'in:driver_only,customer_otp,driver_customer'],
             'shuttle_pickup_match_distance_km' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'shuttle_drop_match_distance_km' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'shuttle_max_passenger_delay_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
@@ -55,6 +51,8 @@ class AdminCitySettingsController
             'shuttle_customer_pickup_radius_m' => ['nullable', 'integer', 'min:25', 'max:5000'],
             'shuttle_approaching_alert_radius_m' => ['nullable', 'integer', 'min:50', 'max:10000'],
             'shuttle_customer_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
+            'shuttle_forming_window_minutes' => ['nullable', 'integer', 'min:0', 'max:60'],
+            'shuttle_boarding_confirmation_mode' => ['nullable', 'in:driver_only,customer_otp,driver_customer'],
             'shuttle_capacity_source' => ['nullable', 'in:vehicle_type,vehicle,city_default'],
             'shuttle_customer_privacy_rule' => ['nullable', 'in:hide_other_passengers,show_stop_sequence'],
             'shuttle_cancellation_refund_rule' => ['nullable', 'string', 'max:32'],
@@ -70,47 +68,11 @@ class AdminCitySettingsController
 
         $settings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
 
-        if (($data['commission_type'] ?? $settings->commission_type ?? 'percent') === 'fixed') {
-            if (array_key_exists('commission_type', $data) || array_key_exists('fixed_commission', $data)) {
-                $data['commission_percent'] = 0;
-            }
-        } elseif (array_key_exists('commission_type', $data) || array_key_exists('commission_percent', $data)) {
-            $data['fixed_commission'] = 0;
-        }
+        // Commission moved off the city: Private/Shuttle read it from the vehicle
+        // rate card, Fixed from the route's own fare_config.
 
-        // Normalize + LOCK allowed_driver_payment_modes to the two supported
-        // values. Accept a JSON string, comma list, or array; upper-case each
-        // entry and require every one to be CASH or RAZORPAY — anything else is
-        // rejected (not silently dropped) so the stored value always matches
-        // what the apps actually honor. A city must keep at least one mode, or
-        // no rider there could pay.
-        if (array_key_exists('allowed_driver_payment_modes', $data)) {
-            $modes = $data['allowed_driver_payment_modes'];
-            if (is_string($modes)) {
-                $decoded = json_decode($modes, true);
-                $modes = is_array($decoded) ? $decoded : array_map('trim', explode(',', $modes));
-            }
-            $modes = is_array($modes) ? $modes : [];
-            $modes = array_values(array_unique(array_map(
-                fn ($m) => strtoupper(trim((string) $m)),
-                array_filter($modes, fn ($m) => trim((string) $m) !== ''),
-            )));
-
-            $allowed = ['CASH', 'RAZORPAY'];
-            if (array_diff($modes, $allowed)) {
-                return response()->json([
-                    'message' => 'Payment modes must be CASH or RAZORPAY only.',
-                ], 422);
-            }
-            if (empty($modes)) {
-                return response()->json([
-                    'message' => 'At least one payment mode (CASH or RAZORPAY) must be enabled for this city.',
-                ], 422);
-            }
-
-            $settings->allowed_driver_payment_modes = $modes;
-            unset($data['allowed_driver_payment_modes']);
-        }
+        // Payment methods moved to a global operator policy (Operator Settings →
+        // Payments); the city no longer carries allowed_driver_payment_modes.
 
         foreach ($data as $field => $value) {
             $settings->{$field} = $value;
@@ -156,9 +118,8 @@ class AdminCitySettingsController
         $targetSettings = CitySetting::query()->firstOrCreate(['city_id' => $city->id]);
 
         if ($sourceSettings) {
-            // General Settings (chat, fare features, emergency/support contacts)
+            // General Settings (fare features, emergency/support contacts)
             if ($request->boolean('copy_general')) {
-                $targetSettings->chat_enabled = $sourceSettings->chat_enabled;
                 $targetSettings->show_region_specific_fare = $sourceSettings->show_region_specific_fare;
                 $targetSettings->show_vehicle_make_model = $sourceSettings->show_vehicle_make_model;
                 $targetSettings->emergency_no = $sourceSettings->emergency_no;
@@ -168,19 +129,16 @@ class AdminCitySettingsController
                 $targetSettings->support_email = $sourceSettings->support_email;
             }
 
-            // Private Rides Settings (commission, floor, payment modes, cancellation)
+            // Private Rides Settings (floor, cancellation)
             if ($request->boolean('copy_private')) {
-                $targetSettings->allowed_driver_payment_modes = $sourceSettings->allowed_driver_payment_modes;
                 $targetSettings->negotiation_floor_percent = $sourceSettings->negotiation_floor_percent;
-                $targetSettings->commission_type = $sourceSettings->commission_type;
-                $targetSettings->commission_percent = $sourceSettings->commission_percent;
-                $targetSettings->fixed_commission = $sourceSettings->fixed_commission;
                 $targetSettings->toll_mode = $sourceSettings->toll_mode;
                 $targetSettings->show_low_wallet_alert = $sourceSettings->show_low_wallet_alert;
                 $targetSettings->private_no_show_threshold_minutes = $sourceSettings->private_no_show_threshold_minutes;
                 $targetSettings->private_no_show_charge_per_minute = $sourceSettings->private_no_show_charge_per_minute;
                 $targetSettings->private_driver_no_show_grace_minutes = $sourceSettings->private_driver_no_show_grace_minutes;
                 $targetSettings->private_cancellation_rule = $sourceSettings->private_cancellation_rule;
+                $targetSettings->cancellation_charge_percent = $sourceSettings->cancellation_charge_percent;
             }
 
             // Fixed Rides Settings (waiting times, radiuses, dwell times, boarding mode)
@@ -208,6 +166,8 @@ class AdminCitySettingsController
                 $targetSettings->shuttle_customer_pickup_radius_m = $sourceSettings->shuttle_customer_pickup_radius_m;
                 $targetSettings->shuttle_approaching_alert_radius_m = $sourceSettings->shuttle_approaching_alert_radius_m;
                 $targetSettings->shuttle_customer_grace_minutes = $sourceSettings->shuttle_customer_grace_minutes;
+                $targetSettings->shuttle_forming_window_minutes = $sourceSettings->shuttle_forming_window_minutes;
+                $targetSettings->shuttle_boarding_confirmation_mode = $sourceSettings->shuttle_boarding_confirmation_mode;
                 $targetSettings->shuttle_capacity_source = $sourceSettings->shuttle_capacity_source;
                 $targetSettings->shuttle_customer_privacy_rule = $sourceSettings->shuttle_customer_privacy_rule;
                 $targetSettings->shuttle_cancellation_refund_rule = $sourceSettings->shuttle_cancellation_refund_rule;
@@ -256,21 +216,17 @@ class AdminCitySettingsController
             'id' => $s->id,
             'city_id' => $s->city_id,
 
-            'chat_enabled' => (bool) $s->chat_enabled,
             'show_region_specific_fare' => (bool) $s->show_region_specific_fare,
             'show_vehicle_make_model' => (bool) $s->show_vehicle_make_model,
 
-            'allowed_driver_payment_modes' => $s->allowed_driver_payment_modes ?? [],
             'negotiation_floor_percent' => round((float) ($s->negotiation_floor_percent ?? 10), 2),
-            'commission_type' => $s->commission_type ?? 'percent',
-            'commission_percent' => round((float) ($s->commission_percent ?? 0), 2),
-            'fixed_commission' => round((float) ($s->fixed_commission ?? 0), 2),
             'toll_mode' => $s->toll_mode ?? 'no',
             'show_low_wallet_alert' => (bool) ($s->show_low_wallet_alert ?? true),
             'private_no_show_threshold_minutes' => $s->private_no_show_threshold_minutes !== null ? round((float) $s->private_no_show_threshold_minutes, 2) : null,
             'private_no_show_charge_per_minute' => $s->private_no_show_charge_per_minute !== null ? round((float) $s->private_no_show_charge_per_minute, 2) : null,
             'private_driver_no_show_grace_minutes' => (int) ($s->private_driver_no_show_grace_minutes ?? 5),
             'private_cancellation_rule' => $s->private_cancellation_rule ?? 'standard',
+            'cancellation_charge_percent' => round((float) ($s->cancellation_charge_percent ?? 20), 2),
             'fixed_waiting_time_per_stop_minutes' => (int) ($s->fixed_waiting_time_per_stop_minutes ?? 5),
             'fixed_stop_arrival_radius_m' => (int) ($s->fixed_stop_arrival_radius_m ?? 150),
             'fixed_stop_arrival_dwell_seconds' => (int) ($s->fixed_stop_arrival_dwell_seconds ?? 20),
@@ -290,6 +246,8 @@ class AdminCitySettingsController
             'shuttle_customer_pickup_radius_m' => (int) ($s->shuttle_customer_pickup_radius_m ?? 150),
             'shuttle_approaching_alert_radius_m' => (int) ($s->shuttle_approaching_alert_radius_m ?? 500),
             'shuttle_customer_grace_minutes' => (int) ($s->shuttle_customer_grace_minutes ?? 2),
+            'shuttle_forming_window_minutes' => (int) ($s->shuttle_forming_window_minutes ?? 2),
+            'shuttle_boarding_confirmation_mode' => $s->shuttle_boarding_confirmation_mode ?? 'driver_only',
             'shuttle_capacity_source' => $s->shuttle_capacity_source ?? 'vehicle_type',
             'shuttle_customer_privacy_rule' => $s->shuttle_customer_privacy_rule ?? 'hide_other_passengers',
             'shuttle_cancellation_refund_rule' => $s->shuttle_cancellation_refund_rule ?? 'standard',

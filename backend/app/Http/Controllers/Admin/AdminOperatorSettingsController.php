@@ -25,11 +25,18 @@ class AdminOperatorSettingsController
             'corporate_tip_value_2' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'corporate_tip_value_3' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'tip_in_percentage' => ['nullable', 'boolean'],
+            'tips_enabled' => ['nullable', 'boolean'],
 
             // Geofence / driver
             'check_destination_outside_geofence' => ['nullable', 'boolean'],
             'check_driver_debt' => ['nullable', 'boolean'],
             'update_driver_payment_modes_enabled' => ['nullable', 'boolean'],
+
+            // Payment methods (global switches + cash upfront-deposit percentage)
+            'payment_online_enabled' => ['nullable', 'boolean'],
+            'payment_gpay_enabled' => ['nullable', 'boolean'],
+            'payment_cash_enabled' => ['nullable', 'boolean'],
+            'cash_deposit_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
 
             // Notifications
             'notifications_sms_enabled' => ['nullable', 'boolean'],
@@ -73,6 +80,27 @@ class AdminOperatorSettingsController
         if ($max > 0 && $min > $max) {
             return response()->json([
                 'message' => 'Wallet minimum capping cannot be greater than the maximum.',
+            ], 422);
+        }
+
+        // At least one payment method must stay enabled or the apps have nothing
+        // to offer. Resolve each switch against the STORED value when the request
+        // omits it, so a partial update can't turn the last one off unseen.
+        $paymentSwitches = [
+            'payment_online_enabled',
+            'payment_gpay_enabled',
+            'payment_cash_enabled',
+        ];
+        $anyPaymentOn = false;
+        foreach ($paymentSwitches as $switch) {
+            $on = array_key_exists($switch, $data)
+                ? (bool) $data[$switch]
+                : (bool) $settings->{$switch};
+            $anyPaymentOn = $anyPaymentOn || $on;
+        }
+        if (!$anyPaymentOn) {
+            return response()->json([
+                'message' => 'At least one payment method (Online, GPay or Cash) must stay enabled.',
             ], 422);
         }
 

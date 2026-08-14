@@ -1,19 +1,67 @@
 import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
-import { AlertController, ModalController, ToastController } from '@ionic/angular';
+import { AlertController, ToastController } from '@ionic/angular';
+import { forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { WalletActivityModalComponent } from './wallet-activity.modal';
 
 declare const Razorpay: any;
 
-interface EarningsSummary {
-  total_earnings: number;
-  total_commission: number;
-  net_earnings: number;
-  topup_total: number;
-  wallet_balance: number;
+interface Position {
+  earnings: number;
+  commission: number;
+  deposits: number;
+  paid_out: number;
+  balance: number;
+  net: number;
+  owed_by_company: number;
+  owed_by_driver: number;
+}
+
+interface Reconciliation {
+  earnings: number;
+  commission: number;
+  deposits: number;
+  paid_out: number;
+  balance: number;
+  settlements_recorded: number;
+  settlements_count: number;
+  drift: number;
+  balanced: boolean;
+}
+
+interface SettlementRow {
+  id: number;
+  owed_by_company: number;
+  owed_by_driver: number;
+  net: number;
+  amount_paid: number;
+  method: string | null;
+  reference: string | null;
+  created_at: string | null;
+}
+
+interface SettlementResponse {
+  position: Position;
+  reconciliation: Reconciliation;
+  history: SettlementRow[];
   currency: string;
+}
+
+interface Txn {
+  id: number;
+  type: string;
+  amount: number;
+  reason: string | null;
+  created_at: string | null;
+}
+
+interface WalletResponse {
+  balance: number;
+  currency: string;
+  transactions: Txn[];
+}
+
+interface EarningsSummary {
   caps: { min: number; max: number };
   subscription_active: boolean;
 }
@@ -23,16 +71,21 @@ interface TopupOrder {
   razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
 }
 
+type Segment = 'owed' | 'settlements' | 'ledger' | 'check';
+type LedgerFilter = 'all' | 'credit' | 'debit';
+
 /**
- * Earnings & Wallet — one screen that reconciles the two so the numbers never
- * look inconsistent. It shows, top-down:
- *   • Wallet balance (the real money you hold) + top-up.
- *   • A plain-language summary: gross earnings, commission taken, net, top-ups.
- *   • Links out to the ride-by-ride breakdown and the full wallet ledger — the
- *     detail lives there, so this page stays clean.
+ * Wallet — the driver's Model B settlement hub. Four segments answer four
+ * questions:
+ *   • Owed        — how much the operator owes me right now (or I owe), + top-up.
+ *   • Settlements — every payout I've been paid, newest first.
+ *   • Ledger      — every wallet movement (earnings, commission, deposits, payouts).
+ *   • Check       — proof the numbers reconcile (no drift between the wallet and
+ *                   the settlement records).
  *
- * All the numbers come from /drivers/me/earnings, which uses the SAME wallet
- * balance formula as the ledger, so the two can't disagree.
+ * Reads /drivers/me/settlement (position + reconciliation + history) and
+ * /drivers/me/wallet (the transaction ledger). Earnings performance/charts live
+ * on the separate Earnings screen — this one is about the money itself.
  */
 @Component({
   selector: 'app-wallet',
@@ -45,22 +98,22 @@ export class WalletPage implements OnInit {
   error: string | null = null;
   toppingUp = false;
 
+  segment: Segment = 'owed';
+  ledgerFilter: LedgerFilter = 'all';
+
   currency = 'INR';
-  balance = 0;
-  totalEarnings = 0;
-  totalCommission = 0;
-  netEarnings = 0;
-  topupTotal = 0;
+  position: Position | null = null;
+  reconciliation: Reconciliation | null = null;
+  settlements: SettlementRow[] = [];
+  transactions: Txn[] = [];
   caps: { min: number; max: number } = { min: 0, max: 0 };
   subscriptionActive = false;
 
   constructor(
     private api: ApiService,
     private auth: AuthService,
-    private router: Router,
     private toastCtrl: ToastController,
     private alertCtrl: AlertController,
-    private modalCtrl: ModalController,
   ) {}
 
   ngOnInit(): void { this.load(); }
@@ -69,16 +122,19 @@ export class WalletPage implements OnInit {
   load(): void {
     this.loading = true;
     this.error = null;
-    this.api.get<EarningsSummary>('/drivers/me/earnings').subscribe({
-      next: (res) => {
-        this.balance = res.wallet_balance ?? 0;
-        this.totalEarnings = res.total_earnings ?? 0;
-        this.totalCommission = res.total_commission ?? 0;
-        this.netEarnings = res.net_earnings ?? 0;
-        this.topupTotal = res.topup_total ?? 0;
-        this.caps = res.caps ?? { min: 0, max: 0 };
-        this.subscriptionActive = !!res.subscription_active;
-        this.currency = res.currency || 'INR';
+    forkJoin({
+      settlement: this.api.get<SettlementResponse>('/drivers/me/settlement'),
+      wallet: this.api.get<WalletResponse>('/drivers/me/wallet'),
+      earnings: this.api.get<EarningsSummary>('/drivers/me/earnings'),
+    }).subscribe({
+      next: ({ settlement, wallet, earnings }) => {
+        this.position = settlement.position;
+        this.reconciliation = settlement.reconciliation;
+        this.settlements = settlement.history ?? [];
+        this.transactions = wallet.transactions ?? [];
+        this.caps = earnings.caps ?? { min: 0, max: 0 };
+        this.subscriptionActive = !!earnings.subscription_active;
+        this.currency = settlement.currency || 'INR';
         this.loading = false;
       },
       error: (err) => {
@@ -88,13 +144,55 @@ export class WalletPage implements OnInit {
     });
   }
 
-  openRideBreakdown(): void {
-    void this.router.navigateByUrl('/tabs/earnings');
+  setSegment(value: unknown): void {
+    this.segment = (value as Segment) || 'owed';
   }
 
-  async openActivity(): Promise<void> {
-    const modal = await this.modalCtrl.create({ component: WalletActivityModalComponent });
-    await modal.present();
+  // ── Owed ──
+  get owed(): number { return this.position?.owed_by_company ?? 0; }
+  get owes(): number { return this.position?.owed_by_driver ?? 0; }
+  get inDebt(): boolean { return (this.position?.net ?? 0) < 0; }
+
+  get lastSettlement(): SettlementRow | null {
+    return this.settlements.length ? this.settlements[0] : null;
+  }
+
+  // ── Ledger ──
+  get ledger(): Txn[] {
+    if (this.ledgerFilter === 'all') return this.transactions;
+    if (this.ledgerFilter === 'debit') return this.transactions.filter((t) => t.type === 'debit');
+    return this.transactions.filter((t) => t.type !== 'debit');
+  }
+
+  isCredit(t: Txn): boolean { return t.type !== 'debit'; }
+
+  txnLabel(t: Txn): string {
+    if (t.reason) return t.reason;
+    switch (t.type) {
+      case 'credit': return 'Credit';
+      case 'debit': return 'Debit';
+      case 'cashback': return 'Cashback';
+      case 'driver_added_cash': return 'Cash added';
+      default: return t.type;
+    }
+  }
+
+  methodLabel(m: string | null): string {
+    switch (m) {
+      case 'gpay': return 'GPay';
+      case 'bank': return 'Bank transfer';
+      case 'cash': return 'Cash';
+      case 'other': return 'Other';
+      default: return m || '—';
+    }
+  }
+
+  fmtDate(iso: string | null): string {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}, ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    } catch { return ''; }
   }
 
   async explainLimits(): Promise<void> {
@@ -106,19 +204,21 @@ export class WalletPage implements OnInit {
     const alert = await this.alertCtrl.create({
       header: 'How your wallet works',
       message:
-        `Ride commission is taken from this wallet, and subscriptions (if you buy one) are paid from it too.\n\n` +
+        `Your online ride earnings are credited here and your cash-ride commission is debited here. ` +
+        `The operator pays out what you're owed.\n\n` +
         `• Maximum balance: ${max}\n` +
-        `• Minimum balance: ${min}` +
+        `• Debt allowed before you're blocked from going online: ${min}` +
         sub,
       buttons: ['Got it'],
     });
     await alert.present();
   }
 
+  // ── Top-up (unchanged) ──
   async promptTopUp(): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: 'Top up wallet',
-      message: 'Enter the amount to add to your wallet.',
+      message: 'Add your own money to clear commission owed and keep driving.',
       inputs: [
         { name: 'amount', type: 'number', placeholder: 'Amount (₹)', min: 1 },
       ],

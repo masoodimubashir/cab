@@ -6,7 +6,6 @@ import { DashboardPage } from './dashboard.page';
 import { DashboardPageRoutingModule } from './dashboard-routing.module';
 import { ModeSelectModalModule } from '../../shared/mode-select-modal/mode-select-modal.module';
 import { SubscriptionPromptModalModule } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.module';
-import { PayoutPromptModalModule } from '../../shared/payout-prompt-modal/payout-prompt-modal.module';
 
 @NgModule({
   imports: [
@@ -16,7 +15,6 @@ import { PayoutPromptModalModule } from '../../shared/payout-prompt-modal/payout
     DashboardPageRoutingModule,
     ModeSelectModalModule,
     SubscriptionPromptModalModule,
-    PayoutPromptModalModule,
   ],
   declarations: [DashboardPage],
 })

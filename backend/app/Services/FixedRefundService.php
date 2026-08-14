@@ -443,21 +443,36 @@ class FixedRefundService
             ];
         }
 
-        if ($reservation->payment_method === 'razorpay') {
+        if (in_array($reservation->payment_method, ['razorpay', 'cash'], true)) {
             // R6 — the seat went back to inventory in time (or the cancel isn't the
-            // customer's fault), so the whole prepayment is returned automatically
-            // through the shared engine. The booking was cancelled before the trip
+            // customer's fault), so the prepayment is returned automatically through
+            // the shared engine. The booking was cancelled before the trip
             // completed, so its split never settled and the driver was never paid.
+            //
+            // A CASH seat only put its upfront deposit online, so ONLY the deposit
+            // can be returned here — the balance was never collected (it was to be
+            // cash to the driver at trip end). An online seat returns the whole fare.
+            $isCash = $reservation->payment_method === 'cash';
+            $onlineAmount = $isCash
+                ? app(CashDepositService::class)->depositForBooking($reservation->payment_reference, (float) $reservation->fare_amount)
+                : (float) $reservation->fare_amount;
+
             $outcome = $this->autoRefundBooking($reservation, true, $cancelledBy);
 
             if ($outcome !== null && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true)) {
+                // The engine refunds the captured amount (the deposit for cash);
+                // trust its figure, falling back to our computed online amount.
+                $refunded = ($outcome['refunded_paise'] ?? 0) > 0
+                    ? $outcome['refunded_paise'] / 100
+                    : $onlineAmount;
+
                 $reservation->forceFill([
-                    'refund_amount' => (float) $reservation->fare_amount,
+                    'refund_amount' => $refunded,
                     'refund_method' => 'razorpay',
                     // Keep Razorpay's own refund id on the booking so the
                     // refund.processed/failed webhook can find it, and the admin
                     // register can show what to look up in the dashboard.
-                    'refund_reference' => $outcome['refund_id'] ?: $reservation->refund_reference,
+                    'refund_reference' => ($outcome['refund_id'] ?? null) ?: $reservation->refund_reference,
                     'refunded_at' => now(),
                 ])->save();
 
@@ -467,15 +482,16 @@ class FixedRefundService
                     'refund_status' => 'REFUNDED',
                     'payment_status' => 'REFUNDED',
                     'refund_path' => 'razorpay_auto',
-                    'refund_amount' => (float) $reservation->fare_amount,
+                    'refund_amount' => $refunded,
                 ];
             }
 
             // Auto-refund failed (engine off, nothing mirrored, or Razorpay
             // rejected). Falls to the manual register: refund_status = APPROVED
-            // means "owed", operator sees it under /admin/refunds and GPays.
+            // means "owed", operator sees it under /admin/refunds and GPays back
+            // the online amount (the deposit for cash).
             $reservation->forceFill([
-                'refund_amount' => (float) $reservation->fare_amount,
+                'refund_amount' => $onlineAmount,
             ])->save();
 
             return [
@@ -484,7 +500,7 @@ class FixedRefundService
                 'refund_status' => 'APPROVED',
                 'payment_status' => $reservation->payment_status ?: 'PAID',
                 'refund_path' => 'razorpay_manual_fallback',
-                'refund_amount' => (float) $reservation->fare_amount,
+                'refund_amount' => $onlineAmount,
             ];
         }
 
@@ -509,13 +525,39 @@ class FixedRefundService
      */
     private function autoRefundBooking(SeatReservation $reservation, bool $refundFull, string $cancelledBy): ?array
     {
-        if ($reservation->payment_method !== 'razorpay') {
+        // Razorpay seats mirror the whole fare; cash seats mirror only the online
+        // deposit. Both are settled through the shared engine and can be
+        // auto-refunded. Wallet/none never touch the engine.
+        if (!in_array($reservation->payment_method, ['razorpay', 'cash'], true)) {
             return null;
         }
 
-        return $this->bookingPayments->refundForBooking(
+        // Route engine first (split on).
+        $outcome = $this->bookingPayments->refundForBooking(
             (string) $reservation->payment_reference,
             $refundFull,
+            $cancelledBy,
+        );
+        if ($outcome !== null) {
+            return $outcome;
+        }
+
+        // Model B (Route off): execute the refund directly. Fixed is 100% before
+        // the vehicle reaches the pickup / 0% after — so a full refund returns the
+        // whole online amount (the deposit for a cash seat), a forfeit returns
+        // nothing (operator keeps it). No charge % applies to Fixed.
+        if (!$refundFull) {
+            return ['refunded_paise' => 0, 'reversed_paise' => 0, 'reason' => 'no_refund_seat_lost', 'status' => 'no_refund', 'refund_id' => null];
+        }
+
+        $onlineAmount = $reservation->payment_method === 'cash'
+            ? app(CashDepositService::class)->depositForBooking((string) $reservation->payment_reference, (float) $reservation->fare_amount)
+            : (float) $reservation->fare_amount;
+
+        return app(AutoRefundService::class)->refundBookingModelB(
+            (string) $reservation->payment_reference,
+            (int) round($onlineAmount * 100),
+            $reservation->trip_id ? (int) $reservation->trip_id : null,
             $cancelledBy,
         );
     }

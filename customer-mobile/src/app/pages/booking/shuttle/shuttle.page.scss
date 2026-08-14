@@ -25,3 +25,28 @@
   .sh-pulse { animation: sh-breathe 2.4s ease-in-out infinite; }
   @keyframes sh-breathe { 50% { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0.10); } }
 }
+
+/* Seat picker (step 4) */
+.sh-seatwrap {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 4px;
+}
+.sh-seatlegend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dc-ink-soft, #6b7280);
+
+  span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+  .dot--free { background: #eefaf2; border: 1px solid #b7e8ca; }
+  .dot--mine { background: var(--dc-green, #12b35b); border: 1px solid #0e7a3d; }
+  .dot--taken {
+    background: repeating-linear-gradient(45deg, #eef1f4, #eef1f4 4px, #e2e7ec 4px, #e2e7ec 8px);
+    border: 1px solid #d3d8de;
+  }
+}

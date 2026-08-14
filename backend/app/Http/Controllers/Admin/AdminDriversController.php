@@ -23,6 +23,7 @@ class AdminDriversController
     public function __construct(
         private readonly WalletService $walletService,
         private readonly SmsService $smsService,
+        private readonly \App\Services\NetSettlementService $settlement,
     ) {
     }
 
@@ -729,6 +730,12 @@ class AdminDriversController
             . (filled($data['reference'] ?? null) ? ', ref ' . trim($data['reference']) : '')
             . (filled($data['note'] ?? null) ? ' — ' . trim($data['note']) : '');
 
+        // Snapshot the settlement position BEFORE the payout debit — that's the
+        // "owed" figure this payout is settling. The wallet keeps the live running
+        // balance; driver_settlements keeps the record of each settlement event
+        // (Module 6), which the finance screens (Module 7) read as history.
+        $position = $this->settlement->position($user);
+
         $txn = $this->walletService->recordTransaction(
             $user,
             WalletTransaction::TYPE_DEBIT,
@@ -738,11 +745,47 @@ class AdminDriversController
             $request->user(),
         );
 
+        \App\Models\DriverSettlement::query()->create([
+            'user_id' => $user->id,
+            'owed_by_company' => $position['owed_by_company'],
+            'owed_by_driver' => $position['owed_by_driver'],
+            'net' => $position['net'],
+            'amount_paid' => $amount,
+            'method' => $data['method'],
+            'reference' => $data['reference'] ?? null,
+            'wallet_transaction_id' => $txn->id,
+            'created_by_user_id' => $request->user()?->id,
+        ]);
+
         return response()->json([
             'message' => 'Payout recorded.',
             'transaction' => $txn,
             'wallet' => $this->walletBreakdown((int) $driver->user_id),
+            'settlement' => $this->settlement->position($user->fresh()),
         ], 201);
+    }
+
+    /**
+     * The driver's live net settlement position (Module 6): what the operator owes
+     * them vs what they owe, the net, and the gross earnings/commission behind it.
+     * Plus the recorded settlement history — one row per past payout.
+     */
+    public function settlement(Driver $driver)
+    {
+        $user = $driver->user;
+        if (! $user) {
+            return response()->json(['message' => 'This driver has no linked user account.'], 422);
+        }
+
+        return response()->json([
+            'position' => $this->settlement->position($user),
+            'reconciliation' => $this->settlement->reconcile($user),
+            'history' => \App\Models\DriverSettlement::query()
+                ->where('user_id', $user->id)
+                ->orderByDesc('id')
+                ->limit(50)
+                ->get(),
+        ]);
     }
 
     /**

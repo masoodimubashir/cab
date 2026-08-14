@@ -26,6 +26,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     private int $cityId;
     private int $rideTypeId;
+    private int $cvtId;
     private User $driver;
     private User $customer;
 
@@ -43,8 +44,21 @@ class DriverPayoutVisibilityTest extends TestCase
             'created_at' => $now, 'updated_at' => $now,
         ]);
         DB::table('city_settings')->insert([
-            'city_id' => $this->cityId, 'commission_type' => 'percent', 'commission_percent' => 20,
+            'city_id' => $this->cityId,
             'created_at' => $now, 'updated_at' => $now,
+        ]);
+        // Commission lives on the vehicle rate card now (20% for this vehicle).
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Mini', 'sort_order' => 1, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->cvtId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'display_name' => 'Mini', 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        \App\Models\PricingRule::query()->create([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'city_vehicle_type_id' => $this->cvtId, 'base_fare' => 0, 'surge_multiplier' => 1,
+            'commission_type' => 'percent', 'commission_percent' => 20, 'fixed_commission' => 0,
         ]);
 
         $this->driver = User::factory()->create();
@@ -70,6 +84,7 @@ class DriverPayoutVisibilityTest extends TestCase
             'driver_id' => $this->driver->id,
             'city_id' => $this->cityId,
             'ride_type_id' => $this->rideTypeId,
+            'city_vehicle_type_id' => $this->cvtId,
             'status' => $status,
             'estimated_fare' => $fare,
             'final_fare' => $status === 'COMPLETED' ? $fare : $fare,
@@ -108,6 +123,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_a_paid_out_ride_shows_as_received(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->verifyPayout();
         $this->splitPayment($this->trip(), Payment::TRANSFER_PROCESSED);
 
@@ -121,6 +137,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_a_transfer_still_in_flight_shows_as_on_its_way(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->verifyPayout();
         $this->splitPayment($this->trip(), Payment::TRANSFER_CREATED);
 
@@ -132,6 +149,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_money_stuck_behind_kyc_is_shown_with_the_reason(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $trip = $this->trip();
         $payment = $this->splitPayment($trip, Payment::TRANSFER_HELD);
         HeldEarning::query()->create([
@@ -149,6 +167,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_held_money_for_a_verified_driver_is_not_blamed_on_kyc(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         // A bounced transfer, not a missing account — the app must not tell them
         // to go add details they already gave us.
         $this->verifyPayout();
@@ -167,6 +186,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_another_drivers_payouts_are_not_counted(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->verifyPayout();
         $this->splitPayment($this->trip(), Payment::TRANSFER_PROCESSED);
 
@@ -187,6 +207,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_earnings_payout_respects_week_and_month_period_filters(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->verifyPayout();
 
         // 1. Trip inside this week (today)
@@ -260,6 +281,7 @@ class DriverPayoutVisibilityTest extends TestCase
 
     public function test_a_prepaid_ride_is_labelled_as_already_paid(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $trip = $this->trip(status: 'ASSIGNED');
         Payment::query()->create([
             'trip_id' => $trip->id,

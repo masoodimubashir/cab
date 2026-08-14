@@ -447,7 +447,7 @@
         <!-- Onboarding Step 3 Navigation Buttons -->
         <div *ngIf="onboarding && onboardingStep === 'documents'" style="margin-top: 24px; display: flex; flex-direction: column; gap: 10px;">
           <button class="dc-cta pf-save" type="button" (click)="finishOnboardingDocuments()" [disabled]="!requiredDocsSubmitted">
-            Continue to Bank Account / Payout Details &rarr;
+            Continue to Dashboard &rarr;
           </button>
           <p *ngIf="!requiredDocsSubmitted" style="text-align:center;color:var(--ion-color-medium);font-size:13px;margin:0;">
             Upload your required documents to continue.
@@ -468,11 +468,11 @@
     <ion-header class="ion-no-border">
       <ion-toolbar class="pg-toolbar">
         <ion-buttons slot="start">
-          <ion-button class="pg-action" (click)="closeAddressMap()" aria-label="Close map">
-            <ion-icon name="close-outline" slot="icon-only"></ion-icon>
+          <ion-button class="header-refresh-btn" (click)="closeAddressMap()" aria-label="Back">
+            <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title class="pg-brandtitle">Pick Address</ion-title>
+        <ion-title class="pf-map-title">Pick Address</ion-title>
       </ion-toolbar>
     </ion-header>
 

@@ -40,7 +40,6 @@
 - [Trips, Dispatch & Safety](#trips-dispatch--safety)
   - [`trips`](#trips)
   - [`trip_assignments`](#trip_assignments)
-  - [`trip_messages`](#trip_messages)
   - [`trip_share_links`](#trip_share_links)
   - [`fare_negotiations`](#fare_negotiations)
   - [`fare_negotiation_offers`](#fare_negotiation_offers)
@@ -429,12 +428,10 @@ Per-city configuration for features, contact numbers, and payment modes.
 |---|---|---|---|
 | id | bigint unsigned | No | Unique identifier |
 | city_id | bigint unsigned | No | Foreign key to cities; one-to-one relationship |
-| chat_enabled | tinyint(1) | No | Enable in-trip messaging between driver and customer; defaults to 1 (true) |
 | show_region_specific_fare | tinyint(1) | No | Display zone-specific pricing; defaults to 0 (false) |
 | show_vehicle_make_model | tinyint(1) | No | Show driver's vehicle make/model to customer; defaults to 1 (true) |
 | customer_login_otp_message | text | Yes | Custom OTP message template for Android customers |
 | customer_login_otp_message_ios | text | Yes | Custom OTP message template for iOS customers |
-| allowed_driver_payment_modes | json | Yes | JSON array of payment methods drivers can use (e.g., ["RAZORPAY", "CASH"]); defaults to ["RAZORPAY"] |
 | emergency_no | varchar(20) | Yes | Emergency contact number for the city |
 | emergency_police_no | varchar(20) | Yes | Police emergency contact number |
 | driver_support_no | varchar(20) | Yes | Support number for drivers |
@@ -617,22 +614,6 @@ _Driver dispatch offer for a trip; tracks when a driver was offered the trip and
 | decided_at | timestamp | Yes | When the driver accepted or rejected the assignment |
 | created_at | timestamp | Yes | When the assignment record was created |
 | updated_at | timestamp | Yes | When the assignment record was last updated |
-
-### trip_messages
-_In-trip communication between customer and driver; messages are moderated._
-
-| Field | Type | Null | Description |
-|---|---|---|---|
-| id | bigint unsigned | No | Primary key, unique identifier for the message |
-| trip_id | bigint unsigned | No | FK→trips.id; the trip this message is for |
-| sender_user_id | bigint unsigned | No | FK→users.id; user who sent the message |
-| message_type | enum | No | Type of message: TEXT (default: TEXT) |
-| body | text | No | Message content |
-| moderation_status | enum | No | Moderation state: VISIBLE, FLAGGED, REMOVED (default: VISIBLE) |
-| moderated_by_user_id | bigint unsigned | Yes | FK→users.id; moderator who reviewed this message |
-| moderation_reason | text | Yes | Reason why message was flagged or removed |
-| created_at | timestamp | Yes | When the message was sent |
-| updated_at | timestamp | Yes | When the message record was last updated |
 
 ### trip_share_links
 _Shareable link that allows anonymous viewers to track a trip's live location and status._
@@ -828,6 +809,10 @@ _Global operator configuration singleton storing tipping amounts, notification t
 | check_destination_outside_geofence | tinyint(1) | No | 1 to prevent rides with drop-off outside city geofence, 0 to allow, defaults to 0 |
 | check_driver_debt | tinyint(1) | No | 1 to check driver outstanding debt before accepting rides, 0 to skip check, defaults to 0 |
 | update_driver_payment_modes_enabled | tinyint(1) | No | 1 to allow drivers to update payment methods during operation, defaults to 0 |
+| payment_online_enabled | tinyint(1) | No | Global switch: customers may pay the full fare online (card/netbanking). Defaults to 1 |
+| payment_gpay_enabled | tinyint(1) | No | Global switch: customers may pay the full fare via GPay/UPI (Razorpay UPI intent). Defaults to 1 |
+| payment_cash_enabled | tinyint(1) | No | Global switch: cash allowed (upfront online deposit + balance in cash to the driver). Defaults to 0 |
+| cash_deposit_percent | decimal(5,2) | No | Percentage of the fare taken online as an upfront deposit on a cash ride. Defaults to 20.00 |
 | wallet_cash_tnc | text | Yes | Terms and conditions text displayed to customers for wallet cash feature |
 | wallet_cash_max_capping | int unsigned | No | Maximum wallet cash amount (in INR or base currency) that can be added per transaction, defaults to 20 |
 | subscription_popup_title | varchar(255) | Yes | Title text for subscription offer popup shown to customers |

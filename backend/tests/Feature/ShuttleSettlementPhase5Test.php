@@ -55,13 +55,6 @@ class ShuttleSettlementPhase5Test extends TestCase
         $this->seedPricing($cityId, $vehicleTypeId, $cityVehicleTypeId, $rideTypeId);
         $this->cityId = $cityId;
         $this->cityVehicleTypeId = $cityVehicleTypeId;
-
-        // The city's standard commission is what a Shuttle prepayment snapshots
-        // (the driver isn't known yet, so no subscription rate can apply).
-        CitySetting::query()->updateOrCreate(
-            ['city_id' => $cityId],
-            ['commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT],
-        );
     }
 
     /* ------------------------------------------------------------------ */
@@ -164,6 +157,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_a_shuttle_prepayment_is_mirrored_but_not_split_at_capture(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
 
         $payment = $this->payment();
@@ -183,6 +177,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_completing_the_journey_splits_the_prepayment_and_reconciles(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
         $fare = (float) $booking->fare_amount;
@@ -208,6 +203,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_r6_cancelling_before_the_journey_runs_is_refunded_in_full(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);
@@ -231,6 +227,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_cancelling_once_a_driver_is_assigned_forfeits_the_fare(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
 
@@ -261,6 +258,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_an_operator_cancel_refunds_in_full_even_with_a_driver_assigned(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
         $trip->forceFill(['driver_id' => $this->makeVerifiedDriver()->id])->save();
@@ -274,6 +272,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_r6_a_replayed_cancel_refunds_only_once(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);
@@ -285,6 +284,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_r7_a_no_show_forfeits_the_fare_to_the_operator(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
 
@@ -309,6 +309,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_a_failed_razorpay_refund_leaves_the_debt_on_the_manual_register(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay(refundThrows: true);
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);
@@ -327,8 +328,11 @@ class ShuttleSettlementPhase5Test extends TestCase
     /* The flag                                                            */
     /* ------------------------------------------------------------------ */
 
-    public function test_with_the_engine_off_shuttle_keeps_its_legacy_behaviour(): void
+    public function test_with_the_engine_off_a_cancel_is_auto_refunded_via_razorpay(): void
     {
+        // Module 3: under Model B (Route off) a Shuttle cancel with NO driver
+        // assigned yet is now AUTO-refunded in full directly via Razorpay (it used
+        // to fall to the manual register). No Payment mirror / ledger under Model B.
         config()->set('services.payments.split_enabled', false);
 
         $booking = $this->bookAndPay();
@@ -338,8 +342,8 @@ class ShuttleSettlementPhase5Test extends TestCase
         $this->postJson("/api/shuttle/bookings/{$booking->id}/cancel", [])->assertOk();
 
         $booking->refresh();
-        $this->assertSame('APPROVED', $booking->refund_status);
-        $this->assertSame('PAID', $booking->payment_status);
+        $this->assertSame('REFUNDED', $booking->refund_status);
+        $this->assertSame('REFUNDED', $booking->payment_status);
         $this->assertSame(0, Payment::query()->count());
         $this->assertSame(0, LedgerEntry::query()->count());
     }
@@ -402,6 +406,11 @@ class ShuttleSettlementPhase5Test extends TestCase
             'threshold_time_1_min' => 5,
             'fare_per_min_after_threshold_time_1' => 1,
             'tax_percent' => 5,
+            // Commission lives on the vehicle rate card now — a shuttle prepayment
+            // snapshots it from here (the driver isn't known yet).
+            'commission_type' => 'percent',
+            'commission_percent' => self::COMMISSION_PCT,
+            'fixed_commission' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

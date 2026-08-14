@@ -102,6 +102,18 @@ class Trip extends Model
             || in_array($status, self::PRE_ASSIGN_STATUSES, true);
     }
 
+    /**
+     * Whether tolls are enabled for this trip's city (CitySetting toll_mode).
+     * Drives the driver app hiding the end-of-ride toll box when tolls are off;
+     * the server ignores a declared toll in that case regardless.
+     */
+    public function tollsEnabled(): bool
+    {
+        return $this->city_id
+            ? CitySetting::query()->where('city_id', $this->city_id)->value('toll_mode') === 'yes'
+            : false;
+    }
+
     protected $casts = [
         'pickup_lat' => 'float',
         'pickup_lng' => 'float',
@@ -289,9 +301,5 @@ class Trip extends Model
         return $this->hasMany(SafetyEvent::class, 'trip_id');
     }
 
-    public function messages(): HasMany
-    {
-        return $this->hasMany(TripMessage::class, 'trip_id');
-    }
 }
 

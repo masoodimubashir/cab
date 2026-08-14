@@ -15,11 +15,18 @@ use Illuminate\Database\Eloquent\Model;
     'corporate_tip_value_2',
     'corporate_tip_value_3',
     'tip_in_percentage',
+    'tips_enabled',
 
     // Geofence / driver
     'check_destination_outside_geofence',
     'check_driver_debt',
     'update_driver_payment_modes_enabled',
+
+    // Payment methods (global — replaces per-city allowed_driver_payment_modes)
+    'payment_online_enabled',
+    'payment_gpay_enabled',
+    'payment_cash_enabled',
+    'cash_deposit_percent',
 
     // Wallet
     'wallet_cash_min_capping',
@@ -52,10 +59,15 @@ class OperatorSetting extends Model
 
     protected $casts = [
         'tip_in_percentage' => 'boolean',
+        'tips_enabled' => 'boolean',
         'subscription_popup_enabled' => 'boolean',
         'check_destination_outside_geofence' => 'boolean',
         'check_driver_debt' => 'boolean',
         'update_driver_payment_modes_enabled' => 'boolean',
+        'payment_online_enabled' => 'boolean',
+        'payment_gpay_enabled' => 'boolean',
+        'payment_cash_enabled' => 'boolean',
+        'cash_deposit_percent' => 'decimal:2',
         'notifications_sms_enabled' => 'boolean',
         'notifications_email_enabled' => 'boolean',
         'fixed_customer_sms_enabled' => 'boolean',

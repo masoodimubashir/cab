@@ -45,6 +45,13 @@ Schedule::command('routes:dispatch-due')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Dispatch shuttle pools whose forming window has expired (full pools dispatch
+// inline at payment; this is the timer half — decision 6C).
+Schedule::command('shuttle:dispatch-due')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // B1: reconcile anything stuck PENDING >15 min against the Razorpay API —
 // the safety net for webhooks that never arrived.
 Schedule::command('payments:reconcile-pending')

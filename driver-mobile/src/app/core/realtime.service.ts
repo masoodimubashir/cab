@@ -39,6 +39,12 @@ export type TripCustomerLocationPayload = {
   };
 };
 
+export type ShuttleManifestPayload = {
+  type: 'shuttle_manifest_updated';
+  trip_id: number;
+  journey_id: number;
+};
+
 export type FixedRouteCatalogUpdatedPayload = {
   type: 'fixed_route_catalog_updated';
   city_id: number;
@@ -188,7 +194,8 @@ export class RealtimeService {
   subscribeTripStatus(
     tripId: number,
     onStatus: (p: TripStatusPayload) => void,
-    onCustomerLocation?: (p: TripCustomerLocationPayload) => void
+    onCustomerLocation?: (p: TripCustomerLocationPayload) => void,
+    onShuttleManifest?: (p: ShuttleManifestPayload) => void
   ): () => void {
     const pusher = this.ensure();
     if (!pusher) return () => {};
@@ -198,13 +205,16 @@ export class RealtimeService {
 
     const statusHandler = (data: TripStatusPayload) => onStatus(data);
     const custLocHandler = (data: TripCustomerLocationPayload) => onCustomerLocation?.(data);
+    const manifestHandler = (data: ShuttleManifestPayload) => onShuttleManifest?.(data);
 
     channel.bind('TripStatusUpdated', statusHandler);
     if (onCustomerLocation) channel.bind('TripCustomerLocationUpdated', custLocHandler);
+    if (onShuttleManifest) channel.bind('ShuttleManifestUpdated', manifestHandler);
 
     return () => {
       channel.unbind('TripStatusUpdated', statusHandler);
       if (onCustomerLocation) channel.unbind('TripCustomerLocationUpdated', custLocHandler);
+      if (onShuttleManifest) channel.unbind('ShuttleManifestUpdated', manifestHandler);
       pusher.unsubscribe(channelName);
     };
   }

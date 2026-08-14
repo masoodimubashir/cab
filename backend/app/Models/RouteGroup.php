@@ -17,8 +17,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  *
  * A group is a pure set of routes — it carries no fare/commission/capacity
  * (those live on the route), so groups never re-couple economics.
+ *
+ * A group is bound to the city vehicle it belongs to (city_vehicle_type_id).
+ * This scopes the group to one vehicle in the admin workspace even when it holds
+ * no routes yet — an empty group no longer leaks onto every vehicle. It is still
+ * only a scoping hint: driver route access is decided purely by group routes.
  */
-#[Fillable(['city_id', 'name', 'is_active'])]
+#[Fillable(['city_id', 'city_vehicle_type_id', 'name', 'is_active'])]
 class RouteGroup extends Model
 {
     use HasFactory;
@@ -30,6 +35,12 @@ class RouteGroup extends Model
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class, 'city_id');
+    }
+
+    /** The city vehicle this group belongs to (nullable — legacy groups may be unbound). */
+    public function cityVehicleType(): BelongsTo
+    {
+        return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
     }
 
     /** Fixed routes in this group (many-to-many). */

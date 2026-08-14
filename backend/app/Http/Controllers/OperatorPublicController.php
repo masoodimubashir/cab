@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Driver;
 use App\Models\OperatorSetting;
+use App\Services\CashDepositService;
 use App\Services\PaymentModeService;
 use Illuminate\Http\Request;
 
@@ -20,7 +21,8 @@ class OperatorPublicController extends Controller
     /**
      * Tipping config used by the customer-mobile post-ride tip prompt.
      *
-     * Returns the 3 preset values and whether they should be rendered as
+     * Returns whether tipping is enabled at all (the app must hide the prompt
+     * when false), the 3 preset values, and whether they should be rendered as
      * rupees or percentages of the ride fare.
      */
     public function tipping(Request $request)
@@ -28,6 +30,7 @@ class OperatorPublicController extends Controller
         $s = OperatorSetting::instance();
 
         return response()->json([
+            'enabled' => (bool) $s->tips_enabled,
             'values' => [
                 (int) $s->customer_tip_value_1,
                 (int) $s->customer_tip_value_2,
@@ -77,6 +80,25 @@ class OperatorPublicController extends Controller
         return response()->json([
             'can_update' => $canUpdate,
             'effective_modes' => $effectiveModes,
+        ]);
+    }
+
+    /**
+     * Which payment methods the customer app should offer, straight from the
+     * operator's Payments switches (Operator Settings → Payments). The shared
+     * payment modal renders only the enabled ones. `cash_deposit_percent` is
+     * the upfront share paid online when Cash is chosen (the rest is cash to
+     * the driver at trip end).
+     */
+    public function paymentMethods(Request $request, CashDepositService $cashDeposits)
+    {
+        $s = OperatorSetting::instance();
+
+        return response()->json([
+            'online' => (bool) $s->payment_online_enabled,
+            'gpay' => (bool) $s->payment_gpay_enabled,
+            'cash' => (bool) $s->payment_cash_enabled,
+            'cash_deposit_percent' => round($cashDeposits->depositPercent(), 2),
         ]);
     }
 }

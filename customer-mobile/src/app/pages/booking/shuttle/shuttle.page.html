@@ -27,10 +27,10 @@
     title="Your pool fare"
     [from]="fromLabel" [to]="toLabel"
     [step]="3" [total]="total"
-    cta="Confirm pool"
-    [disabled]="estimating || !canConfirm"
+    [cta]="busy ? 'Working…' : 'Pick your seat'"
+    [disabled]="estimating || busy || !canConfirm"
     (back)="back()"
-    (primary)="confirm()">
+    (primary)="choosePayment()">
 
     <div class="bk-opt bk-opt--on">
       <span class="bk-opt__ic">🚐</span>
@@ -41,27 +41,6 @@
       <span class="bk-opt__r" *ngIf="fare">₹{{ fare }}<small>a seat</small></span>
     </div>
 
-    <p class="bk-note">A fixed price per seat — no bargaining. Cheaper than the whole car.</p>
-    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
-  </app-step-shell>
-
-  <!-- Step 4 — pay -->
-  <app-step-shell
-    *ngIf="step === 'paying'"
-    title="Pay for your seat"
-    subtitle="Pools are paid before we find the car."
-    [from]="fromLabel" [to]="toLabel"
-    [step]="4" [total]="total"
-    [cta]="busy ? 'Working…' : ('Pay ₹' + (payableTotal || 0))"
-    [disabled]="busy"
-    (back)="back()"
-    (primary)="pay()">
-
-    <div class="bk-money">
-      <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
-      <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
-      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ payableTotal }}</span></div>
-    </div>
     <div class="fb-tip-chips" *ngIf="tipping && tipping.values && tipping.values.length > 0" style="margin: 12px 0; display: flex; gap: 8px;">
       <button type="button"
               *ngFor="let val of tipping.values"
@@ -79,16 +58,112 @@
         Tip {{ tipPresetLabel(val) }}
       </button>
     </div>
+
+    <!-- Coupon (operator-funded) -->
+    <div class="sh-coupon" *ngIf="fare" style="margin: 12px 0;">
+      <div style="display: flex; gap: 8px;" *ngIf="!coupon">
+        <input
+          type="text"
+          [(ngModel)]="couponTitle"
+          (keyup.enter)="applyCoupon()"
+          placeholder="Coupon code"
+          autocapitalize="characters"
+          style="flex: 1; padding: 10px 12px; border: 1.5px solid #EEF0F2; border-radius: 12px; font-weight: 700; font-size: 14px;" />
+        <button type="button"
+                [disabled]="!couponTitle.trim() || couponBusy"
+                (click)="applyCoupon()"
+                style="padding: 10px 16px; border: none; border-radius: 12px; background: #0D1B2A; color: #fff; font-weight: 850; font-size: 13px; cursor: pointer;">
+          {{ couponBusy ? '…' : 'Apply' }}
+        </button>
+      </div>
+      <div *ngIf="coupon" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #E7F8EF; border-radius: 12px;">
+        <span style="font-weight: 800; color: #12B35B; font-size: 13px;">
+          Coupon applied · −₹{{ couponDiscount }}
+        </span>
+        <button type="button" (click)="removeCoupon()"
+                style="border: none; background: transparent; color: #0D1B2A; font-weight: 800; font-size: 13px; cursor: pointer;">
+          Remove
+        </button>
+      </div>
+      <p class="bk-note bk-note--warn" *ngIf="couponError" style="margin-top: 6px;">{{ couponError }}</p>
+    </div>
+
+    <p class="bk-note">A fixed price per seat — no bargaining. Cheaper than the whole car.</p>
+    <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
+  </app-step-shell>
+
+  <!-- Step 4 — pick a seat -->
+  <app-step-shell
+    *ngIf="step === 'seats'"
+    title="Choose your seat"
+    subtitle="Tap where you'd like to sit."
+    [from]="fromLabel" [to]="toLabel"
+    [step]="4" [total]="total"
+    [cta]="selectedSeats.length ? ('Continue · seat ' + selectedSeats[0]) : 'Pick a seat'"
+    [disabled]="!canPayForSeat"
+    (back)="back()"
+    (primary)="continueToPay()">
+
+    <div class="sh-seatwrap">
+      <app-seat-grid
+        [rows]="seatRows"
+        [cols]="seatCols"
+        [cells]="seatCells"
+        [selectedLabels]="selectedSeats"
+        (pick)="onSeatPick($event)">
+      </app-seat-grid>
+    </div>
+
+    <div class="sh-seatlegend">
+      <span><i class="dot dot--free"></i> Free</span>
+      <span><i class="dot dot--mine"></i> Yours</span>
+      <span><i class="dot dot--taken"></i> Taken</span>
+    </div>
+
+    <p class="bk-note" *ngIf="!seatError">You'll be alone or share the car — your seat is reserved either way.</p>
+    <p class="bk-note bk-note--warn" *ngIf="seatError">{{ seatError }}</p>
+  </app-step-shell>
+
+  <!-- Step 5 — pay -->
+  <app-step-shell
+    *ngIf="step === 'paying'"
+    title="Pay for your seat"
+    subtitle="Pools are paid before we find the car."
+    [from]="fromLabel" [to]="toLabel"
+    [step]="5" [total]="total"
+    [cta]="busy ? 'Working…' : ('Pay ₹' + (payNowAmount || 0))"
+    [disabled]="busy"
+    (back)="back()"
+    (primary)="pay()">
+
+    <div class="bk-money">
+      <div class="bk-money__row" *ngIf="selectedSeats.length"><span>Seat</span><span>{{ selectedSeats[0] }}</span></div>
+      <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
+      <div class="bk-money__row" *ngIf="couponDiscount > 0"><span style="color: #12B35B;">Coupon</span><span style="color: #12B35B;">−₹{{ couponDiscount }}</span></div>
+      <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
+      <div class="bk-money__row bk-money__tot"><span>{{ payMethod === 'cash' ? 'Total fare' : 'You pay now' }}</span><span>₹{{ payableTotal }}</span></div>
+      <div class="bk-money__row" *ngIf="payMethod === 'cash'"><span>Pay online now</span><span>₹{{ cashDeposit }}</span></div>
+      <div class="bk-money__row" *ngIf="payMethod === 'cash'"><span>Cash to driver</span><span>₹{{ cashBalance }}</span></div>
+    </div>
     <div class="bk-note bk-note--warn"><b>Refunded in full</b> if no car forms.</div>
     <p class="bk-note bk-note--danger" *ngIf="error">{{ error }}</p>
   </app-step-shell>
+
+  <app-payment-method-modal
+    [open]="paymentModalOpen"
+    [amount]="payableTotal"
+    [busy]="busy"
+    title="How would you like to pay?"
+    (select)="onPayMethod($event)"
+    (dismiss)="paymentModalOpen = false">
+  </app-payment-method-modal>
 
   <!-- Forming -->
   <app-step-shell
     *ngIf="step === 'forming'"
     title="Finding people to share with"
     barLabel="Pool ride"
-    [step]="4" [total]="total"
+    [step]="5" [total]="total"
     cta="View my pools"
     (back)="viewPools()"
     (primary)="viewPools()">

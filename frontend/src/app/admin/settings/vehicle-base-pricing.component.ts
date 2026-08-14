@@ -106,6 +106,30 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
       <div class="bp__cue" *ngIf="loading">Loading rate card…</div>
 
       <ng-container *ngIf="!loading">
+        <section class="psec">
+          <h4 class="psec__title">Commission</h4>
+          <div class="seg">
+            <button type="button" class="seg__btn" [class.is-on]="commissionType === 'percent'" (click)="commissionType = 'percent'">Percent</button>
+            <button type="button" class="seg__btn" [class.is-on]="commissionType === 'fixed'" (click)="commissionType = 'fixed'">Fixed</button>
+          </div>
+          <div class="pgrid">
+            <label class="pfield">
+              <span class="pfield__lbl">{{ commissionType === 'percent' ? 'Commission %' : 'Commission (₹ per ride)' }}</span>
+              <input
+                *ngIf="commissionType === 'percent'"
+                type="number" min="0" max="100"
+                [ngModel]="commissionPercent" (ngModelChange)="commissionPercent = $event"
+              />
+              <input
+                *ngIf="commissionType === 'fixed'"
+                type="number" min="0"
+                [ngModel]="fixedCommission" (ngModelChange)="fixedCommission = $event"
+              />
+            </label>
+          </div>
+          <p class="psec__hint">The platform's cut on each ride, taken from the driver. Percent = a share of the fare; Fixed = a flat ₹ per ride. Also used as the cancellation fee.</p>
+        </section>
+
         <section class="psec" *ngFor="let sec of sections">
           <h4 class="psec__title">{{ sec.title }}</h4>
           <div class="pgrid">
@@ -149,6 +173,14 @@ const ALL_KEYS: string[] = FARE_SECTIONS.flatMap((s) => s.fields.map((f) => f.ke
       font-size: 13px; outline: none;
     }
     .pfield input:focus { border-color: var(--tm-green); }
+    .psec__hint { margin: 2px 0 0; font-size: 11px; color: var(--tm-text-muted); line-height: 1.4; }
+    .seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--tm-canvas-2, #eef1f5); border-radius: 9px; }
+    .seg__btn {
+      border: 0; padding: 6px 14px; border-radius: 7px; cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 700;
+      background: transparent; color: var(--tm-text-muted);
+    }
+    .seg__btn.is-on { background: var(--tm-surface, #fff); color: var(--tm-text); box-shadow: 0 1px 2px rgba(15,20,25,.12); }
   `],
 })
 export class VehicleBasePricingComponent implements OnChanges {
@@ -160,6 +192,9 @@ export class VehicleBasePricingComponent implements OnChanges {
   readonly sections = FARE_SECTIONS;
 
   form: Record<string, number | null> = this.blankForm();
+  commissionType: 'percent' | 'fixed' = 'percent';
+  commissionPercent: number | null = null;
+  fixedCommission: number | null = null;
   loading = false;
   saving = false;
 
@@ -192,6 +227,9 @@ export class VehicleBasePricingComponent implements OnChanges {
           }
         }
         this.form = f;
+        this.commissionType = rule?.['commission_type'] === 'fixed' ? 'fixed' : 'percent';
+        this.commissionPercent = rule?.['commission_percent'] != null ? Number(rule['commission_percent']) : null;
+        this.fixedCommission = rule?.['fixed_commission'] != null ? Number(rule['fixed_commission']) : null;
         this.loading = false;
       },
       error: () => { this.loading = false; this.toast.error('Failed to load rate card'); },
@@ -204,6 +242,9 @@ export class VehicleBasePricingComponent implements OnChanges {
     const payload: Record<string, unknown> = {
       city_vehicle_type_id: this.cityVehicleTypeId,
       surge_multiplier: 1,
+      commission_type: this.commissionType,
+      commission_percent: this.commissionType === 'percent' ? (this.commissionPercent ?? 0) : 0,
+      fixed_commission: this.commissionType === 'fixed' ? (this.fixedCommission ?? 0) : 0,
     };
     for (const k of ALL_KEYS) {
       const v = this.form[k];
