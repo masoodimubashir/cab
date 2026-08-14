@@ -282,6 +282,18 @@ class CommissionSettlementService
                         );
                     }
                 }
+
+                // 3. Tip collected online
+                $tip = round((float) ($seat->tip_amount ?? 0), 2);
+                if ($tip > 0) {
+                    $this->payoutLedger->recordCollection(
+                        $trip->driver,
+                        $tip,
+                        \App\Models\DriverPayoutLedger::SOURCE_TIP,
+                        $trip->id,
+                        ['seat_reservation_id' => $seat->id, 'notes' => 'Fixed seat customer tip']
+                    );
+                }
             }
         }
 
@@ -312,6 +324,7 @@ class CommissionSettlementService
         foreach ($bookings as $booking) {
             $paid = round((float) ($booking->fare_amount ?? 0), 2);
             $discount = round(max(0.0, (float) ($booking->promo_discount_amount ?? 0)), 2);
+            $tip = round(max(0.0, (float) ($booking->tip_amount ?? 0)), 2);
             $fare = $this->grossSettlementFare($booking);
             if ($fare <= 0) {
                 continue;
@@ -322,7 +335,15 @@ class CommissionSettlementService
 
             $gross += $fare;
             $commissionTotal += $commission;
-            $rows[] = ['fare' => $fare, 'paid' => $paid, 'discount' => $discount, 'commission' => $commission, 'cash' => $isCash, 'booking_id' => $booking->id];
+            $rows[] = [
+                'fare' => $fare,
+                'paid' => $paid,
+                'discount' => $discount,
+                'tip' => $tip,
+                'commission' => $commission,
+                'cash' => $isCash,
+                'booking_id' => $booking->id,
+            ];
         }
 
         $gross = round($gross, 2);
@@ -380,6 +401,18 @@ class CommissionSettlementService
                         );
                     }
                 }
+
+                // 3. Tip collected online
+                if ($row['tip'] > 0) {
+                    $this->payoutLedger->recordCollection(
+                        $trip->driver,
+                        $row['tip'],
+                        \App\Models\DriverPayoutLedger::SOURCE_TIP,
+                        $trip->id,
+                        ['shuttle_booking_id' => $row['booking_id'], 'notes' => 'Shuttle customer tip']
+                    );
+                }
+            }
             }
         }
 
