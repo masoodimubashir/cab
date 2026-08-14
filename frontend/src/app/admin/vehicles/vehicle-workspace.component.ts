@@ -1362,7 +1362,13 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   get availableDriversForUnifiedDrawer(): DriverOpt[] {
     const v = this.targetVehicleForGroup;
     if (!v) return this.cityDrivers;
-    return this.driversFor(v);
+    // Match by the car's vehicle TYPE, not the exact per-service row. One physical
+    // car (e.g. Swift Dzire) is stored as separate Private/Shuttle/Fixed rows, so a
+    // driver bound to any of them must still be assignable to this car's route
+    // groups — otherwise a Fixed driver bound to the Private row is invisible here.
+    return this.cityDrivers.filter((d) =>
+      d.city_vehicle_type_id === v.id ||
+      (d.vehicle_type_id != null && d.vehicle_type_id === v.vehicle_type_id));
   }
 
   saveUnifiedGroup(): void {
