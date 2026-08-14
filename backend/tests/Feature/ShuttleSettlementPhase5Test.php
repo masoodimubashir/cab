@@ -157,6 +157,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_a_shuttle_prepayment_is_mirrored_but_not_split_at_capture(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
 
         $payment = $this->payment();
@@ -176,6 +177,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_completing_the_journey_splits_the_prepayment_and_reconciles(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
         $fare = (float) $booking->fare_amount;
@@ -201,6 +203,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_r6_cancelling_before_the_journey_runs_is_refunded_in_full(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);
@@ -224,6 +227,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_cancelling_once_a_driver_is_assigned_forfeits_the_fare(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
 
@@ -254,6 +258,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_an_operator_cancel_refunds_in_full_even_with_a_driver_assigned(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
         $trip->forceFill(['driver_id' => $this->makeVerifiedDriver()->id])->save();
@@ -267,6 +272,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_r6_a_replayed_cancel_refunds_only_once(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);
@@ -278,6 +284,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_r7_a_no_show_forfeits_the_fare_to_the_operator(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);
 
@@ -302,6 +309,7 @@ class ShuttleSettlementPhase5Test extends TestCase
 
     public function test_a_failed_razorpay_refund_leaves_the_debt_on_the_manual_register(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $booking = $this->bookAndPay(refundThrows: true);
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);

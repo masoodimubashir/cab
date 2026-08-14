@@ -102,6 +102,7 @@ class CashCommissionWalletTest extends TestCase
 
     public function test_online_ride_under_the_engine_does_not_touch_the_wallet(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         config()->set('services.payments.split_enabled', true);
 
         $driver = $this->driver();

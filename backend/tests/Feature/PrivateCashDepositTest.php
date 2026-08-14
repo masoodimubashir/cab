@@ -168,6 +168,7 @@ class PrivateCashDepositTest extends TestCase
 
     public function test_verified_deposit_is_a_cash_payment_that_defers_to_completion(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 100);
 
@@ -183,6 +184,7 @@ class PrivateCashDepositTest extends TestCase
 
     public function test_at_completion_the_deposit_goes_wholly_to_the_driver_and_commission_comes_from_the_wallet(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->driver();
         $trip = $this->confirmedTrip($driver, 100);

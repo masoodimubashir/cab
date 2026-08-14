@@ -205,6 +205,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_private_customer_is_charged_only_the_fare_operator_bears_the_fee(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
 
@@ -222,6 +223,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_private_customer_pays_the_fare_whatever_the_method(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
 
@@ -241,6 +243,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_the_driver_is_paid_on_the_fare_not_on_the_fee(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->driver();
         $trip = $this->confirmedTrip($driver, 1000);
@@ -262,6 +265,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_the_driver_earns_the_same_however_the_customer_paid(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
 
         $cheap = $this->confirmedTrip($this->driver(), 1000);
@@ -285,6 +289,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_the_ledger_names_the_fee_and_still_balances(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
 
@@ -316,6 +321,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_private_cancellation_refunds_the_fare_the_rider_paid(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
         $payment = $this->pay($trip, 'upi');
@@ -343,6 +349,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_with_the_fee_off_the_customer_pays_exactly_the_fare(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         config()->set('services.payments.gateway_fee.enabled', false);
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);

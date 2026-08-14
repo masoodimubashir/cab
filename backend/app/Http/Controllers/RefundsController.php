@@ -27,9 +27,13 @@ class RefundsController extends Controller
         // sitting here unpaid is therefore an EXCEPTION — a Razorpay refund that
         // failed, or a legacy row from before the migration — so the screen says
         // so instead of implying every row is routine manual work.
+        // Refunds are automatic: under Model B the app refunds the card directly
+        // (AutoRefundService::refundBookingModelB), so this register is an EXCEPTIONS
+        // list (a Razorpay refund that failed, or a legacy row), not a routine
+        // worklist. Always true now that Route is gone and Model B is the only model.
         return response()->json(
             $this->register->adminList($data['status'] ?? 'all')
-            + ['auto_refunds' => (bool) config('services.payments.split_enabled', false)],
+            + ['auto_refunds' => true],
         );
     }
 

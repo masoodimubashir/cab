@@ -191,6 +191,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_a_confirmed_ride_can_be_paid_before_it_starts(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
 
@@ -204,6 +205,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_the_cancellation_fee_is_known_from_the_moment_of_payment(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $this->assertNull($trip->commission_amount);
@@ -217,6 +219,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_a_prepayment_is_captured_but_not_split_until_the_ride_runs(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
 
@@ -236,6 +239,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_completing_the_ride_splits_the_prepayment_and_reconciles(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $payment = $this->pay($trip);
@@ -253,6 +257,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_an_unverified_drivers_share_is_held_after_a_prepaid_ride(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(verified: false), 200);
         $payment = $this->pay($trip);
@@ -272,6 +277,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_a_cheaper_ride_refunds_the_difference_automatically(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $payment = $this->pay($trip);
@@ -291,6 +297,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_a_longer_ride_leaves_a_balance_to_pay_and_settles_it_on_payment(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $prepayment = $this->pay($trip);
@@ -321,6 +328,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_a_fully_paid_ride_reports_nothing_left_to_pay(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $this->pay($trip);
@@ -335,6 +343,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_an_overpayment_refund_that_razorpay_rejects_is_flagged_and_the_ride_still_settles(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(refundThrows: true);
         $trip = $this->confirmedTrip($this->driver(), 200);
         $payment = $this->pay($trip);
@@ -357,6 +366,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_cancelling_a_prepaid_ride_refunds_the_fare_minus_the_cancel_fee(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $payment = $this->pay($trip);
@@ -375,6 +385,7 @@ class PrivatePrepaymentTest extends TestCase
 
     public function test_cancelling_a_prepaid_ride_that_is_not_the_customers_fault_refunds_everything(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $payment = $this->pay($trip);

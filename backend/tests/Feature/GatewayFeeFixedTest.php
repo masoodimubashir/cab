@@ -183,6 +183,7 @@ class GatewayFeeFixedTest extends TestCase
 
     public function test_fixed_customer_pays_the_fee_driver_on_fare_operator_whole(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $customer = $this->makeCustomer();
         $driver = $this->makeDriver();
@@ -226,6 +227,7 @@ class GatewayFeeFixedTest extends TestCase
 
     public function test_fixed_cash_deposit_charges_the_customer_the_fee_on_the_deposit(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         OperatorSetting::instance()->forceFill(['payment_cash_enabled' => true, 'cash_deposit_percent' => 25])->save();
         $this->mockRazorpay();
         $customer = $this->makeCustomer();

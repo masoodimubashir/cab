@@ -138,6 +138,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_a_transfer_that_quietly_succeeded_is_picked_up(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(['fetchTransfer' => ['id' => 'trf_1', 'status' => 'processed', 'amount' => 9000]]);
         $payment = $this->stalePayment($this->driver(User::PAYOUT_VERIFIED));
 
@@ -150,6 +151,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_a_transfer_that_quietly_failed_is_requeued_for_payout(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(['fetchTransfer' => ['id' => 'trf_1', 'status' => 'failed', 'amount' => 9000]]);
         $driver = $this->driver(User::PAYOUT_VERIFIED);
         $payment = $this->stalePayment($driver);
@@ -174,6 +176,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_a_transfer_razorpay_still_calls_pending_is_left_alone(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(['fetchTransfer' => ['id' => 'trf_1', 'status' => 'pending', 'amount' => 9000]]);
         $payment = $this->stalePayment($this->driver(User::PAYOUT_VERIFIED));
 
@@ -200,6 +203,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_parked_earnings_are_paid_out_once_the_driver_is_verified(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->driver(User::PAYOUT_VERIFIED);
         $payment = $this->stalePayment($driver, Payment::TRANSFER_HELD);
@@ -234,6 +238,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_a_kyc_that_cleared_without_a_webhook_is_found_and_pays_out(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(['fetchLinkedAccount' => ['id' => 'acc_D1', 'status' => 'activated']]);
         $driver = $this->driver(User::PAYOUT_PENDING);
         $payment = $this->stalePayment($driver, Payment::TRANSFER_HELD);
@@ -258,6 +263,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_a_failed_booking_refund_is_retried_and_recovers(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $payment = $this->stalePayment($this->driver(User::PAYOUT_VERIFIED), Payment::TRANSFER_HELD);
         $payment->forceFill([
@@ -309,6 +315,7 @@ class PayoutSweeperTest extends TestCase
 
     public function test_the_command_runs_and_reports(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(['fetchTransfer' => ['id' => 'trf_1', 'status' => 'processed', 'amount' => 9000]]);
         $this->stalePayment($this->driver(User::PAYOUT_VERIFIED));
 

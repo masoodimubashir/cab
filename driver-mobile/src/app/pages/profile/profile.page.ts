@@ -701,9 +701,9 @@ export class ProfilePage implements OnInit, OnDestroy {
       this.error = 'Please upload your required documents before continuing.';
       return;
     }
-    // Bank is optional (owner's rule): the driver may add it now or later. The
-    // payout page carries a "skip to home" action.
-    this.router.navigateByUrl('/payout-account?next=onboarding', { replaceUrl: true });
+    // No bank/UPI step — the operator pays drivers from their wallet balance, not
+    // a per-driver payout account. Straight to the dashboard once documents are in.
+    this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
   }
 
   /**

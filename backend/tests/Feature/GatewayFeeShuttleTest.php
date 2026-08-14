@@ -114,6 +114,7 @@ class GatewayFeeShuttleTest extends TestCase
 
     public function test_shuttle_customer_pays_only_the_fare_operator_absorbs_the_fee(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $booking = $this->bookOnlineAndPay();
 
@@ -155,6 +156,7 @@ class GatewayFeeShuttleTest extends TestCase
 
     public function test_shuttle_cash_deposit_records_operator_fee_but_never_ledgers_it(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         OperatorSetting::instance()->forceFill(['payment_cash_enabled' => true, 'cash_deposit_percent' => 25])->save();
         $this->mockRazorpay();
 

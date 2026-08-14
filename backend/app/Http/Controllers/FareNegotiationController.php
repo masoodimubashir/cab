@@ -153,7 +153,9 @@ class FareNegotiationController extends Controller
      */
     private function driverPayout(Trip $trip): array
     {
-        $engineOn = (bool) config('services.payments.split_enabled', false);
+        // Route removed — a private ride is never prepaid/split. The driver's net is
+        // fare − commission, settled to their wallet after the ride, and cash is
+        // collected in person when the ride is a cash ride.
         $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
 
         // Before completion the commission may not be stamped yet; fall back to
@@ -163,22 +165,13 @@ class FareNegotiationController extends Controller
             : (float) app(\App\Services\CommissionSettlementService::class)
                 ->commissionForFare($trip->city_vehicle_type_id, $fare, (float) ($trip->toll_amount ?? 0))['amount'];
 
-        $paid = (float) \App\Models\Payment::query()
-            ->where('trip_id', $trip->id)
-            ->whereIn('status', ['SUCCESS', 'REFUNDED'])
-            ->sum('amount');
-
-        $prepaid = $engineOn && $paid > 0;
-
         return [
             'fare' => round($fare, 2),
             'commission' => round(min($commission, $fare), 2),
             'net' => round(max(0.0, $fare - min($commission, $fare)), 2),
-            'collect_cash' => ! $engineOn && $trip->payment_method === 'cash',
-            'prepaid' => $prepaid,
-            'label' => $engineOn
-                ? ($prepaid ? 'Paid online' : 'Pays online')
-                : strtoupper((string) ($trip->payment_method ?: '—')),
+            'collect_cash' => $trip->payment_method === 'cash',
+            'prepaid' => false,
+            'label' => strtoupper((string) ($trip->payment_method ?: '—')),
         ];
     }
 
@@ -194,14 +187,9 @@ class FareNegotiationController extends Controller
      */
     private function paymentDue(Trip $trip): array
     {
-        $prepayEnabled = (bool) config('services.payments.split_enabled', false);
-        $prepay = $prepayEnabled && in_array($trip->status, [
-            'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP',
-        ], true);
-
-        $fare = $prepay
-            ? (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0)
-            : (float) ($trip->final_fare ?? 0);
+        // Route removed — nothing is payable until the trip completes (postpaid).
+        $prepay = false;
+        $fare = (float) ($trip->final_fare ?? 0);
 
         $paid = (float) \App\Models\Payment::query()
             ->where('trip_id', $trip->id)
