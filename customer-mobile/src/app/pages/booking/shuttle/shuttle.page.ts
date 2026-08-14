@@ -4,6 +4,8 @@ import { ToastController } from '@ionic/angular';
 
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
+import { PaymentOptionsService } from '../../../core/payment-options.service';
+import { PaymentChoice } from '../../../shared/payment-method-modal.component';
 import { BookingService } from '../booking.service';
 import { Place } from '../booking.models';
 import { SeatCell } from '../fixed/seat-grid.component';
@@ -76,6 +78,12 @@ export class ShuttleBookPage implements OnInit {
   couponError: string | null = null;
   couponBusy = false;
 
+  // Payment method chooser (Online / UPI / Cash). Cash pays only the upfront
+  // deposit online; the rest is cash to the driver at trip end.
+  paymentModalOpen = false;
+  payMethod: PaymentChoice = 'online';
+  cashDepositPercent = 0;
+
   constructor(
     private api: ApiService,
     private auth: AuthService,
@@ -83,6 +91,7 @@ export class ShuttleBookPage implements OnInit {
     private router: Router,
     private toastCtrl: ToastController,
     private cdr: ChangeDetectorRef,
+    private paymentOptions: PaymentOptionsService,
   ) {}
 
   ngOnInit(): void {
@@ -92,6 +101,11 @@ export class ShuttleBookPage implements OnInit {
     }
     if (this.bookingSvc.trip.pickup) this.step = 'drop';
     this.loadTippingConfig();
+    // Know the operator's cash deposit split so the pay step can show it.
+    void this.paymentOptions.load().then((m) => {
+      this.cashDepositPercent = m.cash_deposit_percent || 0;
+      this.cdr.markForCheck();
+    });
   }
 
   private loadTippingConfig(): void {
@@ -235,7 +249,24 @@ export class ShuttleBookPage implements OnInit {
    * has a journey to show a seat map for, then open the seat picker. The booking
    * sits PAYMENT_PENDING until the rider pays; backing out cancels it.
    */
-  async confirm(): Promise<void> {
+  /** Fare-step CTA. A pool is prepaid, so pick how to pay before we create the
+   *  booking — the booking is tagged with the method (cash charges only the
+   *  upfront deposit online). If a pending booking already exists, reopen seats. */
+  choosePayment(): void {
+    if (!this.canConfirm || this.busy) return;
+    if (this.booking?.id) { void this.confirm(this.payMethod); return; }
+    this.paymentModalOpen = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Chosen from the shared payment sheet. */
+  onPayMethod(method: PaymentChoice): void {
+    this.paymentModalOpen = false;
+    this.payMethod = method;
+    void this.confirm(method);
+  }
+
+  async confirm(method: PaymentChoice = this.payMethod): Promise<void> {
     if (!this.canConfirm || this.busy) return;
     const { pickup, drop, cityId, scope } = this.bookingSvc.trip;
     if (!pickup || !drop || !cityId) { this.error = 'Missing trip details.'; return; }
@@ -259,6 +290,7 @@ export class ShuttleBookPage implements OnInit {
           drop_lng: drop.lng,
           tip_amount: this.tipAmount,
           coupon_title: this.couponTitle.trim() || undefined,
+          payment_method: method === 'cash' ? 'cash' : 'razorpay',
         }, { 'Idempotency-Key': this.uuid('shuttle') }).toPromise();
         const b = res?.booking ?? null;
         if (!b?.id) throw new Error('Booking failed.');
@@ -272,6 +304,19 @@ export class ShuttleBookPage implements OnInit {
       this.busy = false;
       this.cdr.markForCheck();
     }
+  }
+
+  /** For a cash pool: the upfront deposit charged online now (rest is cash). */
+  get cashDeposit(): number {
+    if (this.payMethod !== 'cash' || this.cashDepositPercent <= 0) return 0;
+    return Math.round(this.payableTotal * this.cashDepositPercent / 100);
+  }
+  get cashBalance(): number {
+    return Math.max(0, this.payableTotal - this.cashDeposit);
+  }
+  /** What the rider actually pays online at the pay step. */
+  get payNowAmount(): number {
+    return this.payMethod === 'cash' ? this.cashDeposit : this.payableTotal;
   }
 
   private async loadSeatMap(): Promise<void> {

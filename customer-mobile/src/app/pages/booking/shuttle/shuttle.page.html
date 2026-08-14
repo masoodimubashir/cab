@@ -30,7 +30,7 @@
     [cta]="busy ? 'Working…' : 'Pick your seat'"
     [disabled]="estimating || busy || !canConfirm"
     (back)="back()"
-    (primary)="confirm()">
+    (primary)="choosePayment()">
 
     <div class="bk-opt bk-opt--on">
       <span class="bk-opt__ic">🚐</span>
@@ -131,7 +131,7 @@
     subtitle="Pools are paid before we find the car."
     [from]="fromLabel" [to]="toLabel"
     [step]="5" [total]="total"
-    [cta]="busy ? 'Working…' : ('Pay ₹' + (payableTotal || 0))"
+    [cta]="busy ? 'Working…' : ('Pay ₹' + (payNowAmount || 0))"
     [disabled]="busy"
     (back)="back()"
     (primary)="pay()">
@@ -141,11 +141,22 @@
       <div class="bk-money__row"><span>Seat fare</span><span>₹{{ fare }}</span></div>
       <div class="bk-money__row" *ngIf="couponDiscount > 0"><span style="color: #12B35B;">Coupon</span><span style="color: #12B35B;">−₹{{ couponDiscount }}</span></div>
       <div class="bk-money__row" *ngIf="tipAmount > 0"><span style="color: #12B35B;">Driver tip</span><span style="color: #12B35B;">+₹{{ tipAmount }}</span></div>
-      <div class="bk-money__row bk-money__tot"><span>You pay now</span><span>₹{{ payableTotal }}</span></div>
+      <div class="bk-money__row bk-money__tot"><span>{{ payMethod === 'cash' ? 'Total fare' : 'You pay now' }}</span><span>₹{{ payableTotal }}</span></div>
+      <div class="bk-money__row" *ngIf="payMethod === 'cash'"><span>Pay online now</span><span>₹{{ cashDeposit }}</span></div>
+      <div class="bk-money__row" *ngIf="payMethod === 'cash'"><span>Cash to driver</span><span>₹{{ cashBalance }}</span></div>
     </div>
     <div class="bk-note bk-note--warn"><b>Refunded in full</b> if no car forms.</div>
     <p class="bk-note bk-note--danger" *ngIf="error">{{ error }}</p>
   </app-step-shell>
+
+  <app-payment-method-modal
+    [open]="paymentModalOpen"
+    [amount]="payableTotal"
+    [busy]="busy"
+    title="How would you like to pay?"
+    (select)="onPayMethod($event)"
+    (dismiss)="paymentModalOpen = false">
+  </app-payment-method-modal>
 
   <!-- Forming -->
   <app-step-shell
