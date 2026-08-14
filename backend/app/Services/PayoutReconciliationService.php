@@ -58,9 +58,13 @@ class PayoutReconciliationService
         );
     }
 
+    /**
+     * Route removed — there are no Route payouts to reconcile. Hard-wired off so the
+     * transfer-webhook / reconciliation entry-points short-circuit.
+     */
     public function enabled(): bool
     {
-        return (bool) config('services.payments.split_enabled', false);
+        return false;
     }
 
     /* ------------------------------------------------------------------ */

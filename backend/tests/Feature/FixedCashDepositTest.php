@@ -220,6 +220,7 @@ class FixedCashDepositTest extends TestCase
 
     public function test_fixed_cash_seat_settles_deposit_to_driver_and_commission_from_wallet(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $customer = $this->makeCustomer();
         $driver = $this->makeDriver();

@@ -494,50 +494,14 @@ class DriversController extends Controller
      */
     private function payoutSummary(\App\Models\User $user, ?\Carbon\Carbon $windowStart = null): array
     {
-        $enabled = (bool) config('services.payments.split_enabled', false);
-        if (! $enabled) {
-            return [
-                'enabled' => false,
-                'paid' => 0.0, 'pending' => 0.0, 'held' => 0.0,
-                'account_status' => (string) ($user->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
-                'blocked_by_kyc' => false,
-            ];
-        }
-
-        $tripIdsQuery = Trip::query()
-            ->where('driver_id', $user->id)
-            ->when($windowStart, fn ($q) => $q->where('completed_at', '>=', $windowStart))
-            ->select('id');
-
-        $transferred = \App\Models\Payment::query()
-            ->whereIn('transfer_status', [
-                \App\Models\Payment::TRANSFER_CREATED,
-                \App\Models\Payment::TRANSFER_PROCESSED,
-            ])
-            ->whereIn('trip_id', $tripIdsQuery)
-            ->selectRaw("
-                COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as paid,
-                COALESCE(SUM(CASE WHEN transfer_status = ? THEN driver_amount ELSE 0 END), 0) as pending
-            ", [\App\Models\Payment::TRANSFER_PROCESSED, \App\Models\Payment::TRANSFER_CREATED])
-            ->first();
-
-        $heldQuery = \App\Models\HeldEarning::query()
-            ->where('driver_id', $user->id)
-            ->where('status', \App\Models\HeldEarning::STATUS_HELD);
-
-        if ($windowStart) {
-            $heldQuery->where('created_at', '>=', $windowStart);
-        }
-
-        $heldPaise = (int) $heldQuery->sum('amount_paise');
-
+        // Route removed: there are no Route payouts/held-earnings to summarise. The
+        // wallet is the single source of truth for what the driver is owed, so this
+        // section is always disabled and the app shows the wallet instead.
         return [
-            'enabled' => true,
-            'paid' => round((float) ($transferred->paid ?? 0), 2),
-            'pending' => round((float) ($transferred->pending ?? 0), 2),
-            'held' => round($heldPaise / 100, 2),
+            'enabled' => false,
+            'paid' => 0.0, 'pending' => 0.0, 'held' => 0.0,
             'account_status' => (string) ($user->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
-            'blocked_by_kyc' => $heldPaise > 0 && ! $user->hasVerifiedPayoutAccount(),
+            'blocked_by_kyc' => false,
         ];
     }
 

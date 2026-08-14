@@ -171,6 +171,7 @@ class Module5WalletSettlementTest extends TestCase
 
     public function test_online_private_ride_leaves_the_wallet_untouched_under_route(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         config()->set('services.payments.split_enabled', true);
 
         $driver = $this->driver();

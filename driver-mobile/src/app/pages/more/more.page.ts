@@ -40,10 +40,6 @@ export class MorePage {
     this.router.navigateByUrl('/performance');
   }
 
-  goPayoutAccount(): void {
-    this.router.navigateByUrl('/payout-account');
-  }
-
   goSubscriptions(): void {
     this.router.navigateByUrl('/subscriptions');
   }

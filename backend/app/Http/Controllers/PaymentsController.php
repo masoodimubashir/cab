@@ -286,10 +286,14 @@ class PaymentsController extends Controller
         ]);
     }
 
-    /** Is the customer expected to pay up front on a private ride? */
+    /**
+     * Is the customer expected to pay up front on a private ride? No — Route/prepay
+     * was removed. Private rides are postpaid (pay at completion); the wallet
+     * settles the driver afterwards (Model B).
+     */
     private function prepaymentsEnabled(): bool
     {
-        return (bool) config('services.payments.split_enabled', false);
+        return false;
     }
 
     /**

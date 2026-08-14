@@ -139,6 +139,7 @@ class ShuttleCashDepositTest extends TestCase
 
     public function test_only_the_deposit_is_charged_online_and_the_balance_is_recorded(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $booking = $this->bookCashAndPayDeposit();
 
@@ -159,6 +160,7 @@ class ShuttleCashDepositTest extends TestCase
 
     public function test_at_completion_the_deposit_goes_to_the_driver_and_commission_comes_from_the_wallet(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $booking = $this->bookCashAndPayDeposit();
         $trip = Trip::query()->findOrFail($booking->journey->trip_id);

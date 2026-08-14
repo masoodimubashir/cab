@@ -27,10 +27,15 @@ class PaymentSplitService
         private readonly HeldEarningsService $heldEarnings,
     ) {}
 
-    /** Is the auto-split engine turned on for this environment? */
+    /**
+     * The Razorpay Route auto-split engine has been REMOVED — money always goes to
+     * the operator now (Model B, wallet settlement). This is hard-wired off, so
+     * every split/transfer/settle entry-point below short-circuits and no money is
+     * ever routed to a driver at the payment source.
+     */
     public function enabled(): bool
     {
-        return (bool) config('services.payments.split_enabled', false);
+        return false;
     }
 
     /**

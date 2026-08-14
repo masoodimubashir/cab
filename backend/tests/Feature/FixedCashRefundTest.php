@@ -162,6 +162,7 @@ class FixedCashRefundTest extends TestCase
 
     public function test_cancelling_a_cash_seat_before_pickup_refunds_only_the_deposit(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $customer = $this->makeCustomer();
         $driver = $this->makeDriver();

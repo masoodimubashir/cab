@@ -42,10 +42,14 @@ class AutoRefundService
         private readonly HeldEarningsService $heldEarnings,
     ) {}
 
-    /** Is the auto-split/refund engine turned on for this environment? */
+    /**
+     * The Route-based auto-refund engine is off — Razorpay Route has been removed.
+     * Refunds now run through the Model B path (refundBookingModelB), which still
+     * returns money to the customer's card directly. Hard-wired off.
+     */
     public function enabled(): bool
     {
-        return (bool) config('services.payments.split_enabled', false);
+        return false;
     }
 
     /**
@@ -312,7 +316,7 @@ class AutoRefundService
             'reversed_paise' => 0,
             'reason' => 'booking_cancelled',
             'status' => $status,
-            'refund_id' => (string) $refund['id'],
+            'refund_id' => (string) ($refund['id'] ?? ''),
         ];
     }
 

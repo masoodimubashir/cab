@@ -58,12 +58,6 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
-    path: 'payout-account',
-    loadChildren: () =>
-      import('./pages/payout-account/payout-account.module').then((m) => m.PayoutAccountPageModule),
-    canActivate: [AuthGuard],
-  },
-  {
     path: 'subscriptions',
     loadChildren: () =>
       import('./pages/subscriptions/subscriptions.module').then((m) => m.SubscriptionsPageModule),

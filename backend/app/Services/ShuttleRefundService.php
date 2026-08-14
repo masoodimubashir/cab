@@ -46,12 +46,12 @@ class ShuttleRefundService
             // partial charge (below), but the flag still drives the Route path.
             $refundFull = ! $driverAssigned;
 
-            // Model B (Route off): compute the exact refund per the Module 3
+            // Model B (Route removed): compute the exact refund per the Module 3
             // rulebook — no driver dispatched yet → full refund; a driver is on the
             // way → keep the cancellation charge (% of fare, capped at the online
             // payment) and return the rest.
             $modelBRefundPaise = null;
-            if (! (bool) config('services.payments.split_enabled', false) && $locked->payment_status === 'PAID') {
+            if ($locked->payment_status === 'PAID') {
                 $onlinePaise = $this->onlinePaidPaise($locked);
                 if (! $driverAssigned) {
                     $modelBRefundPaise = $onlinePaise;
