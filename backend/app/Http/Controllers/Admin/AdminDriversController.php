@@ -25,7 +25,6 @@ class AdminDriversController
         private readonly WalletService $walletService,
         private readonly PayoutLedgerService $payoutLedger,
         private readonly SmsService $smsService,
-        private readonly \App\Services\NetSettlementService $settlement,
     ) {
     }
 
