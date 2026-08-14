@@ -421,8 +421,23 @@ class FareNegotiationController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->first();
 
-            if (!$customerOffer) {
-                return response()->json(['message' => 'No customer offer found to accept.'], 422);
+            $amount = (float) $customerOffer->amount;
+
+            // Universal Wallet Validation Rule for ride allocation
+            $subPct = app(\App\Services\SubscriptionService::class)->effectiveCommissionPercentForTrip($trip, -1.0);
+            $expectedComm = app(\App\Services\CommissionSettlementService::class)->commissionForFare(
+                $trip->city_vehicle_type_id,
+                $amount,
+                (float) ($trip->toll_amount ?? 0),
+                $subPct
+            )['amount'];
+
+            if (!app(\App\Services\WalletService::class)->canAffordCommission($user, $expectedComm)) {
+                $minLimit = app(\App\Services\WalletService::class)->minimumLimit();
+                return response()->json([
+                    'message' => "Your wallet balance is too low for this ride. Projected balance would fall below the minimum limit of ₹{$minLimit} after the ₹{$expectedComm} commission charge. Please recharge your wallet.",
+                    'error_code' => 'insufficient_wallet_for_commission',
+                ], 422);
             }
 
             // Supersede only THIS driver's own prior pending offers. The
@@ -433,8 +448,6 @@ class FareNegotiationController extends Controller
                 ->where('status', 'PENDING')
                 ->where('from_user_id', $user->id)
                 ->update(['status' => 'SUPERSEDED']);
-
-            $amount = (float) $customerOffer->amount;
             $offer = $negotiation->offers()->create([
                 'from_user_id' => $user->id,
                 'from_role' => 'driver',
@@ -477,6 +490,23 @@ class FareNegotiationController extends Controller
         }
 
         $amount = (float) $data['amount'];
+
+        // Universal Wallet Validation Rule for ride allocation
+        $subPct = app(\App\Services\SubscriptionService::class)->effectiveCommissionPercentForTrip($trip, -1.0);
+        $expectedComm = app(\App\Services\CommissionSettlementService::class)->commissionForFare(
+            $trip->city_vehicle_type_id,
+            $amount,
+            (float) ($trip->toll_amount ?? 0),
+            $subPct
+        )['amount'];
+
+        if (!app(\App\Services\WalletService::class)->canAffordCommission($user, $expectedComm)) {
+            $minLimit = app(\App\Services\WalletService::class)->minimumLimit();
+            return response()->json([
+                'message' => "Your wallet balance is too low to submit this offer. Projected balance would fall below the minimum limit of ₹{$minLimit} after the ₹{$expectedComm} commission charge. Please recharge your wallet.",
+                'error_code' => 'insufficient_wallet_for_commission',
+            ], 422);
+        }
 
         // Floor: a driver's price can't drop below the negotiation floor
         // (the apps clamp their step buttons to the same value; this is the

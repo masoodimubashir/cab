@@ -340,7 +340,7 @@ class DriversController extends Controller
      *  - weekly           [{ date, amount, weekday }, ...] always the last 7 days
      *                     so the dashboard's "weekly earnings" list stays stable
      */
-    public function earnings(Request $request, WalletService $wallet)
+    public function earnings(Request $request, \App\Services\PayoutLedgerService $payoutLedger)
     {
         $user = $request->user();
         $period = $request->query('period', 'week');
@@ -389,8 +389,7 @@ class DriversController extends Controller
         // Always also return last-7-days for the weekly breakdown list.
         $weekly = array_slice($buckets, -7);
 
-        // Per-ride breakdown for the selected window: fare − commission = net.
-        // This is what the driver sees as "how much was cut for each ride".
+        // Per-ride breakdown for the selected window: show fare and payment method.
         $ridesQuery = Trip::query()
             ->where('driver_id', $user->id)
             ->where('status', 'COMPLETED')
@@ -403,17 +402,16 @@ class DriversController extends Controller
         $rides = $ridesQuery
             ->orderByDesc('completed_at')
             ->limit(500)
-            ->get(['id', 'completed_at', 'final_fare', 'commission_amount', 'route_departure_id'])
+            ->get(['id', 'completed_at', 'final_fare', 'payment_method', 'route_departure_id'])
             ->map(function (Trip $t) {
                 $fare = (float) ($t->final_fare ?? 0);
-                $commission = (float) ($t->commission_amount ?? 0);
+                $isCash = strtolower((string) ($t->payment_method ?? '')) === 'cash';
                 return [
                     'id' => $t->id,
                     'date' => optional($t->completed_at)->toIso8601String(),
                     'fare' => round($fare, 2),
-                    'commission' => round($commission, 2),
-                    'net' => round($fare - $commission, 2),
-                    'commission_free' => $commission <= 0 && $fare > 0,
+                    'payment_method' => $t->payment_method,
+                    'is_cash' => $isCash,
                     'is_shared' => $t->route_departure_id !== null,
                 ];
             })
@@ -428,81 +426,54 @@ class DriversController extends Controller
             $totalsQuery->where('completed_at', '>=', $windowStart);
         }
 
-        $totalEarnings = (float) (clone $totalsQuery)->sum('final_fare');
-        $totalCommission = (float) (clone $totalsQuery)->sum('commission_amount');
+        $tripsList = $totalsQuery->get(['id', 'final_fare', 'payment_method']);
+        $totalRideEarnings = 0.0;
+        $cashCollected = 0.0;
+        $onlineCollected = 0.0;
 
-        // What the driver has added to their own wallet (successful Razorpay
-        // top-ups only) — the piece that makes the wallet differ from earnings.
-        $topupTotal = (float) \App\Models\WalletTopup::query()
-            ->where('user_id', $user->id)
-            ->where('status', \App\Models\WalletTopup::STATUS_SUCCESS)
-            ->sum('amount');
+        foreach ($tripsList as $trip) {
+            $fare = (float) ($trip->final_fare ?? 0);
+            $totalRideEarnings += $fare;
+            if (strtolower((string) $trip->payment_method) === 'cash') {
+                $cashCollected += $fare;
+            } else {
+                $onlineCollected += $fare;
+            }
+        }
 
-        // Wallet balance uses the SAME formula as the wallet screen
-        // (credit + cashback + driver_added_cash − debit) so the two never
-        // disagree — this was the source of the 100-vs-140 confusion.
-        $walletBalance = $wallet->balance($user);
+        // Payout Ledger summary (money operator collected for driver & transfers)
+        $payoutSummary = $payoutLedger->summary($user);
 
-        // Operator wallet caps — shown for transparency. Enforcement itself stays
-        // in WalletService (top-up / admin flows); this is display-only.
-        $settings = OperatorSetting::instance();
-
-        // Does the driver currently hold an active (non-queued, started) plan?
-        // Commission-free rides come from this — logic unchanged, just surfaced.
-        $subscriptionActive = \App\Models\DriverSubscription::query()
+        // Recent operator transfers / payments to this driver
+        $recentTransfers = \App\Models\DriverPayoutLedger::query()
             ->where('driver_user_id', $user->id)
-            ->where('status', \App\Models\DriverSubscription::STATUS_ACTIVE)
-            ->where('is_queued', false)
-            ->where('starts_at', '<=', now())
-            ->exists();
+            ->where('type', \App\Models\DriverPayoutLedger::TYPE_TRANSFER)
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get()
+            ->map(fn (\App\Models\DriverPayoutLedger $t) => [
+                'id' => $t->id,
+                'amount' => (float) $t->amount,
+                'method' => $t->method,
+                'reference' => $t->reference,
+                'notes' => $t->notes,
+                'created_at' => optional($t->created_at)->toIso8601String(),
+            ]);
 
         return response()->json([
-            'total_earnings' => round($totalEarnings, 2),
-            'total_commission' => round($totalCommission, 2),
-            'net_earnings' => round($totalEarnings - $totalCommission, 2),
-            'topup_total' => round($topupTotal, 2),
-            'wallet_balance' => round($walletBalance, 2),
+            'ride_earnings' => round($totalRideEarnings, 2),
+            'cash_collected' => round($cashCollected, 2),
+            'online_collected' => round($onlineCollected, 2),
+            'money_collected_by_operator' => $payoutSummary['money_collected'],
+            'pending_transfers' => $payoutSummary['pending_payout'],
+            'completed_transfers' => $payoutSummary['completed_payout'],
+            'operator_payments' => $recentTransfers,
             'currency' => 'INR',
             'period' => $period,
             'buckets' => $buckets,
             'weekly' => $weekly,
             'rides' => $rides,
-            'caps' => [
-                'min' => (int) $settings->wallet_cash_min_capping,
-                'max' => (int) $settings->wallet_cash_max_capping,
-            ],
-            'subscription_active' => $subscriptionActive,
-            'payout' => $this->payoutSummary($user, $windowStart),
         ]);
-    }
-
-    /**
-     * Where the driver's money actually IS, under the auto-split engine: their
-     * share of each fare is transferred straight to their own bank account, so
-     * "earnings" and "money you have" are no longer the same question.
-     *
-     * Three numbers matter to them:
-     *   paid    — reached their account (or is on its way).
-     *   held    — earned, but stuck: usually payout KYC isn't verified yet,
-     *             sometimes a transfer bounced. Never lost, always retried.
-     *   pending — split, but Razorpay hasn't confirmed the transfer landed.
-     *
-     * `enabled` is false on the legacy model, where the wallet is still the
-     * source of truth and the app hides this whole section.
-     *
-     * @return array{enabled:bool,paid:float,pending:float,held:float,account_status:string,blocked_by_kyc:bool}
-     */
-    private function payoutSummary(\App\Models\User $user, ?\Carbon\Carbon $windowStart = null): array
-    {
-        // Route removed: there are no Route payouts/held-earnings to summarise. The
-        // wallet is the single source of truth for what the driver is owed, so this
-        // section is always disabled and the app shows the wallet instead.
-        return [
-            'enabled' => false,
-            'paid' => 0.0, 'pending' => 0.0, 'held' => 0.0,
-            'account_status' => (string) ($user->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
-            'blocked_by_kyc' => false,
-        ];
     }
 
     /**

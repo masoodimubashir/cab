@@ -162,6 +162,27 @@ class DispatchHopJob implements ShouldQueue
             })
             ->pluck('user_id');
 
+        // Universal Wallet Validation Rule: filter out drivers who cannot afford expected ride commission
+        $walletService = app(\App\Services\WalletService::class);
+        $commissionService = app(\App\Services\CommissionSettlementService::class);
+        $subscriptionService = app(\App\Services\SubscriptionService::class);
+
+        $eligible = $eligible->filter(function ($userId) use ($trip, $walletService, $commissionService, $subscriptionService) {
+            $driverUser = \App\Models\User::query()->find($userId);
+            if (!$driverUser) {
+                return false;
+            }
+            $subPct = $subscriptionService->effectiveCommissionPercentForTrip($trip, -1.0);
+            $comm = $commissionService->commissionForFare(
+                $trip->city_vehicle_type_id,
+                $this->amount,
+                (float) ($trip->toll_amount ?? 0),
+                $subPct
+            )['amount'];
+
+            return $walletService->canAffordCommission($driverUser, $comm);
+        })->values();
+
         if ($eligible->isEmpty()) {
             $this->requeue($emptyRequeueCap, $intervalSec);
             return;

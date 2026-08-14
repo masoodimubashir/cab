@@ -11,48 +11,47 @@ interface RideRow {
   id: number;
   date: string | null;
   fare: number;
-  commission: number;
-  net: number;
-  commission_free: boolean;
+  payment_method: string | null;
+  is_cash: boolean;
   is_shared: boolean;
 }
 
-/**
- * Where the driver's money actually is. Under the auto-split model their share
- * of every fare goes straight to their own bank account, so "earned" and
- * "received" stop being the same number — this is the difference.
- */
-interface PayoutSummary {
-  enabled: boolean;
-  paid: number;
-  pending: number;
-  held: number;
-  account_status: string;
-  blocked_by_kyc: boolean;
+interface OperatorPayment {
+  id: number;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  created_at: string | null;
 }
 
 interface EarningsResponse {
-  total_earnings: number;
-  total_commission: number;
-  net_earnings: number;
-  wallet_balance: number;
+  ride_earnings: number;
+  cash_collected: number;
+  online_collected: number;
+  money_collected_by_operator: number;
+  pending_transfers: number;
+  completed_transfers: number;
+  operator_payments: OperatorPayment[];
   currency: string;
-  period: 'week' | 'month';
+  period: 'week' | 'month' | 'all';
   buckets: Bucket[];
   weekly: Bucket[];
   rides: RideRow[];
-  payout?: PayoutSummary;
 }
 
 /**
- * Ride earnings — the detail behind the Earnings & Wallet page.
+ * Driver Earnings & Payouts Page (System 2: Driver Income & Payouts).
  *
- *   1. Hero — lifetime gross / commission / net.
- *   2. Bar chart — per-day earnings for a selected window (week | month).
- *   3. Ride-by-ride — every ride in the window with fare − commission = net,
- *      so the driver sees exactly how much was cut on each trip.
+ * Dedicated strictly to driver income:
+ *   - Cash Collected
+ *   - Money Waiting To Be Transferred
+ *   - Pending Transfers
+ *   - Completed Transfers
+ *   - Operator Payments history
+ *   - Ride Earnings
  *
- * Chart is a hand-rolled CSS bar grid (no chart library needed).
+ * Platform wallet charges live independently in the Driver Wallet tab.
  */
 @Component({
   selector: 'app-earnings',
@@ -64,12 +63,17 @@ export class EarningsPage implements OnInit {
   loading = false;
   error: string | null = null;
 
-  total = 0;
-  totalCommission = 0;
-  net = 0;
-  currency = 'INR';
+  rideEarnings = 0;
+  cashCollected = 0;
+  onlineCollected = 0;
+  moneyCollectedByOperator = 0;
+  pendingTransfers = 0;
+  completedTransfers = 0;
+  operatorPayments: OperatorPayment[] = [];
 
+  currency = 'INR';
   period: 'week' | 'month' | 'all' = 'week';
+
   periodLabelMap: Record<'week' | 'month' | 'all', string> = {
     week: 'this week',
     month: 'this month',
@@ -85,79 +89,18 @@ export class EarningsPage implements OnInit {
     month: 'Monthly Overview',
     all: 'All time Activity',
   };
+
   buckets: Bucket[] = [];
   rides: RideRow[] = [];
-  payout: PayoutSummary | null = null;
-
-  // Model B settlement position (replaces the old Route "paid to bank" card).
-  owedToYou = 0;
-  inDebt = false;
-  youOwe = 0;
-  lastPaidAmount: number | null = null;
-  lastPaidDate: string | null = null;
-  lastPaidMethod: string | null = null;
 
   constructor(private api: ApiService) {}
 
-  ngOnInit(): void { this.load(); this.loadSettlement(); }
-  ionViewWillEnter(): void { this.load(); this.loadSettlement(); }
-
-  /** Model B: what the operator owes the driver right now, and the last payout. */
-  loadSettlement(): void {
-    this.api.get<{
-      position: { owed_by_company: number; owed_by_driver: number; net: number };
-      history: Array<{ amount_paid: number; method: string | null; created_at: string | null }>;
-    }>('/drivers/me/settlement').subscribe({
-      next: (res) => {
-        this.owedToYou = res.position?.owed_by_company ?? 0;
-        this.youOwe = res.position?.owed_by_driver ?? 0;
-        this.inDebt = (res.position?.net ?? 0) < 0;
-        const last = res.history?.length ? res.history[0] : null;
-        this.lastPaidAmount = last ? last.amount_paid : null;
-        this.lastPaidDate = last ? last.created_at : null;
-        this.lastPaidMethod = last ? last.method : null;
-      },
-      error: () => { /* card simply stays hidden on older backends */ },
-    });
+  ngOnInit(): void {
+    this.load();
   }
 
-  methodLabel(m: string | null): string {
-    switch (m) {
-      case 'gpay': return 'GPay';
-      case 'bank': return 'Bank transfer';
-      case 'cash': return 'Cash';
-      case 'other': return 'Other';
-      default: return m || '';
-    }
-  }
-
-  lastPaidLabel(): string {
-    if (this.lastPaidAmount == null) return '';
-    const when = this.lastPaidDate ? this.rideDate({ id: 0, date: this.lastPaidDate, fare: 0, commission: 0, net: 0, commission_free: false, is_shared: false }) : '';
-    const method = this.methodLabel(this.lastPaidMethod);
-    return `₹${this.lastPaidAmount} · ${when}${method ? ' · ' + method : ''}`;
-  }
-
-  load(): void {
-    this.loading = true;
-    this.error = null;
-    this.api.get<EarningsResponse>(`/drivers/me/earnings?period=${this.period}`).subscribe({
-      next: (res) => {
-        this.total = res.total_earnings ?? 0;
-        this.totalCommission = res.total_commission ?? 0;
-        this.net = res.net_earnings ?? 0;
-        this.currency = res.currency || 'INR';
-        this.buckets = res.buckets ?? [];
-        this.rides = res.rides ?? [];
-        // Absent on older backends — the payout card simply stays hidden.
-        this.payout = res.payout?.enabled ? res.payout : null;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load earnings.';
-        this.loading = false;
-      },
-    });
+  ionViewWillEnter(): void {
+    this.load();
   }
 
   setPeriod(p: 'week' | 'month' | 'all'): void {
@@ -166,63 +109,71 @@ export class EarningsPage implements OnInit {
     this.load();
   }
 
-  get maxBucket(): number {
+  load(): void {
+    this.loading = true;
+    this.error = null;
+
+    this.api.get<EarningsResponse>(`/drivers/me/earnings?period=${this.period}`).subscribe({
+      next: (res) => {
+        this.loading = false;
+        this.rideEarnings = res.ride_earnings ?? 0;
+        this.cashCollected = res.cash_collected ?? 0;
+        this.onlineCollected = res.online_collected ?? 0;
+        this.moneyCollectedByOperator = res.money_collected_by_operator ?? 0;
+        this.pendingTransfers = res.pending_transfers ?? 0;
+        this.completedTransfers = res.completed_transfers ?? 0;
+        this.operatorPayments = res.operator_payments ?? [];
+        this.currency = res.currency || 'INR';
+        this.buckets = res.buckets || [];
+        this.rides = res.rides || [];
+      },
+      error: (err) => {
+        this.loading = false;
+        this.error = err?.error?.message || 'Could not load driver earnings.';
+      },
+    });
+  }
+
+  maxBucketAmount(): number {
     return Math.max(1, ...this.buckets.map((b) => b.amount));
   }
 
-  /** Height percentage for a bar, 0–100. Minimum visible height of 2% so
-   *  zero-earning days still have a hairline visible on the chart. */
   barHeight(amount: number): number {
-    const max = this.maxBucket;
-    if (max <= 0) return 0;
-    return Math.max(2, Math.round((amount / max) * 100));
+    const max = this.maxBucketAmount();
+    if (max <= 0 || amount <= 0) return 4;
+    return Math.max(4, Math.round((amount / max) * 100));
   }
 
-  /** Show only every other label on the month view so the X-axis doesn't crowd. */
-  showLabel(index: number): boolean {
+  showLabel(idx: number): boolean {
     if (this.period === 'week') return true;
-    return index % 3 === 0;
+    return idx % 5 === 0;
   }
 
-  // Compact date label "12 May" for the chart's X-axis.
   shortLabel(b: Bucket): string {
+    if (!b.date) return '';
+    const parts = b.date.split('-');
+    return parts.length >= 3 ? `${parts[2]}/${parts[1]}` : b.date;
+  }
+
+  fmtDate(dt: string | null): string {
+    if (!dt) return '—';
     try {
-      const d = new Date(b.date);
-      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}`;
-    } catch { return b.weekday; }
-  }
-
-  // ── Ride-by-ride period totals (sum of the rides shown) ──
-  get periodFare(): number { return this.rides.reduce((s, r) => s + (r.fare || 0), 0); }
-  get periodCommission(): number { return this.rides.reduce((s, r) => s + (r.commission || 0), 0); }
-  get periodNet(): number { return this.rides.reduce((s, r) => s + (r.net || 0), 0); }
-
-  // ── Payouts ──
-  /** Money earned that hasn't reached the bank yet — held plus in-flight. */
-  get payoutOnTheWay(): number {
-    return (this.payout?.held ?? 0) + (this.payout?.pending ?? 0);
-  }
-
-  /**
-   * Why money is stuck, in words the driver can act on. Null when nothing is
-   * stuck — the card then just shows what's been paid.
-   */
-  get payoutBlockedReason(): string | null {
-    if (!this.payout) return null;
-    if (this.payout.blocked_by_kyc) {
-      return 'Add your payout account to release this money. It is yours — it just has nowhere to go yet.';
+      const d = new Date(dt);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return dt;
     }
-    if (this.payout.held > 0) {
-      return 'A transfer to your bank did not go through. We retry automatically — nothing is lost.';
-    }
-    return null;
   }
 
-  rideDate(r: RideRow): string {
-    if (!r.date) return '';
-    try {
-      const d = new Date(r.date);
-      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}, ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } catch { return ''; }
+  methodLabel(m: string | null): string {
+    if (!m) return 'Direct Transfer';
+    const map: Record<string, string> = {
+      gpay: 'GPay',
+      bank: 'Bank Transfer',
+      cash: 'Cash Handover',
+      upi: 'UPI',
+      razorpay: 'Razorpay',
+    };
+    return map[m.toLowerCase()] || m;
   }
 }

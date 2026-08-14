@@ -182,48 +182,33 @@ export class SubscriptionsPage implements OnInit {
       ? `You'll pay ${p.commission_percent}% commission on each ride while active.`
       : 'Keep 100% of your fares while active.';
 
-    // Buying while a plan is active charges the wallet NOW and queues the new
-    // plan to start (with no further charge) when the current plan ends.
-    if (this.current) {
-      const when = this.current.expires_at ? ` on ${this.fmtDate(this.current.expires_at)}` : '';
-      const lead = paid
-        ? `₹${p.amount} will be debited from your wallet now and “${p.title}” will start when your current plan ends${when}.`
-        : `“${p.title}” will start when your current plan ends${when}.`;
-      const alert = await this.alertCtrl.create({
-        header: 'Buy this plan?',
-        message: `You already have an active plan. ${lead} ${rate}`,
-        buttons: [
-          { text: 'Cancel', role: 'cancel' },
-          { text: paid ? 'Buy & queue' : 'Queue plan', handler: () => this.buy(p) },
-        ],
-      });
-      await alert.present();
-      return;
-    }
-
-    // Lead line depends on whether there's an up-front charge.
-    const lead = paid
-      ? `${p.title} — ₹${p.amount} will be debited from your wallet.`
-      : `${p.title} — no upfront payment.`;
-    const renew = paid
-      ? 'It auto-renews from your wallet when it ends — you can cancel anytime.'
-      : 'It renews automatically (no upfront charge) when it ends — you can cancel anytime.';
-
+    // Let the driver choose payment method: Wallet vs UPI / Online
     const alert = await this.alertCtrl.create({
-      header: 'Subscribe?',
-      message: `${lead} ${rate} ${renew}`,
+      header: `Subscribe to ${p.title}`,
+      subHeader: `Cost: ₹${p.amount} · ${rate}`,
+      message: 'Choose how you want to pay for this subscription:',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Subscribe', handler: () => this.buy(p) },
+        {
+          text: 'Pay via Wallet',
+          handler: () => this.buy(p, 'wallet'),
+        },
+        {
+          text: 'Pay via UPI / Online',
+          handler: () => this.buyViaUpi(p),
+        },
       ],
     });
     await alert.present();
   }
 
-  buy(p: Plan): void {
+  buy(p: Plan, paymentMethod: 'wallet' | 'upi' = 'wallet'): void {
     if (this.buyingId) return;
     this.buyingId = p.id;
-    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', { plan_id: p.id }).subscribe({
+    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', {
+      plan_id: p.id,
+      payment_method: paymentMethod,
+    }).subscribe({
       next: async (res) => {
         this.buyingId = null;
         await this.presentToast(res?.message || (res?.queued ? 'Plan queued' : 'Subscription activated'), 'success');
@@ -232,6 +217,69 @@ export class SubscriptionsPage implements OnInit {
       error: async (err) => {
         this.buyingId = null;
         await this.presentToast(err?.error?.message || 'Could not subscribe', 'danger');
+      },
+    });
+  }
+
+  buyViaUpi(p: Plan): void {
+    if (this.buyingId) return;
+    this.buyingId = p.id;
+
+    this.api.post<any>('/drivers/me/subscriptions/upi/create-order', { plan_id: p.id }).subscribe({
+      next: (order) => {
+        this.openRazorpayUpi(order, p);
+      },
+      error: async (err) => {
+        this.buyingId = null;
+        await this.presentToast(err?.error?.message || 'Failed to initiate UPI payment', 'danger');
+      },
+    });
+  }
+
+  private openRazorpayUpi(order: any, p: Plan): void {
+    const Razorpay = (window as any).Razorpay;
+    if (!Razorpay) {
+      this.buyingId = null;
+      this.presentToast('Payment system unavailable. Please try again.', 'danger');
+      return;
+    }
+
+    const rzp = new Razorpay({
+      key: order.key_id,
+      amount: order.amount_paise,
+      currency: order.currency || 'INR',
+      name: 'Dream Cabs',
+      description: `Subscription: ${p.title}`,
+      order_id: order.order_id,
+      handler: (response: any) => {
+        this.verifyUpiSubscription(response, p);
+      },
+      modal: {
+        ondismiss: () => {
+          this.buyingId = null;
+        },
+      },
+      theme: { color: '#00C06A' },
+    });
+
+    rzp.open();
+  }
+
+  private verifyUpiSubscription(response: any, p: Plan): void {
+    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions/upi/verify', {
+      plan_id: p.id,
+      razorpay_order_id: response.razorpay_order_id,
+      razorpay_payment_id: response.razorpay_payment_id,
+      razorpay_signature: response.razorpay_signature,
+    }).subscribe({
+      next: async (res) => {
+        this.buyingId = null;
+        await this.presentToast(res?.message || 'Subscription activated via UPI!', 'success');
+        this.load();
+      },
+      error: async (err) => {
+        this.buyingId = null;
+        await this.presentToast(err?.error?.message || 'UPI verification failed', 'danger');
       },
     });
   }

@@ -11,13 +11,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Driver wallet: view balance + recent activity, and top up via Razorpay.
+ * Driver Wallet Controller.
  *
- * Top-up is a two-step Razorpay flow mirroring trip payments:
- *   1. topupRazorpay()       → create an order, return checkout params
- *   2. verifyTopupRazorpay() → verify the signature, credit the wallet
- * A WalletTopup row tracks each order so crediting is idempotent (a replayed
- * verify on an already-SUCCESS order just returns the balance).
+ * System 1 (Driver Wallet):
+ * Displays only platform charges (commission, subscriptions, charges) and wallet recharges.
+ * Never includes driver earnings, customer cash/online payments, or operator payouts.
  */
 class DriverWalletController
 {
@@ -26,26 +24,8 @@ class DriverWalletController
     }
 
     /**
-     * The driver's own net settlement position (Module 6): what they're owed / owe
-     * right now, and their past settlements. The Model B answer to "how much am I
-     * owed and when did I last get paid" — the data behind the finance screens.
+     * Show driver wallet balance, minimum wallet limit, recent deductions, and recharges.
      */
-    public function settlement(Request $request, \App\Services\NetSettlementService $settlement)
-    {
-        $user = $request->user();
-
-        return response()->json([
-            'position' => $settlement->position($user),
-            'reconciliation' => $settlement->reconcile($user),
-            'history' => \App\Models\DriverSettlement::query()
-                ->where('user_id', $user->id)
-                ->orderByDesc('id')
-                ->limit(50)
-                ->get(['id', 'owed_by_company', 'owed_by_driver', 'net', 'amount_paid', 'method', 'reference', 'created_at']),
-            'currency' => 'INR',
-        ]);
-    }
-
     public function show(Request $request)
     {
         $user = $request->user();
@@ -53,23 +33,37 @@ class DriverWalletController
         $transactions = WalletTransaction::query()
             ->where('user_id', $user->id)
             ->orderByDesc('id')
-            ->limit(20)
+            ->limit(50)
             ->get()
             ->map(fn (WalletTransaction $t) => [
                 'id' => $t->id,
                 'type' => $t->type,
                 'amount' => (float) $t->amount,
                 'reason' => $t->reason,
+                'is_debit' => $t->type === WalletTransaction::TYPE_DEBIT,
                 'created_at' => optional($t->created_at)->toIso8601String(),
             ]);
 
+        $breakdown = $this->wallet->breakdown($user);
+
+        $recentDeductions = $transactions->filter(fn ($t) => $t['is_debit'])->values()->take(10);
+        $recentRecharges = $transactions->filter(fn ($t) => !$t['is_debit'])->values()->take(10);
+
         return response()->json([
-            'balance' => $this->wallet->balance($user),
+            'balance' => $breakdown['balance'],
+            'minimum_wallet_limit' => $breakdown['minimum_wallet_limit'],
+            'maximum_wallet_limit' => $breakdown['maximum_wallet_limit'],
             'currency' => 'INR',
+            'breakdown' => $breakdown,
+            'recent_deductions' => $recentDeductions,
+            'recent_recharges' => $recentRecharges,
             'transactions' => $transactions,
         ]);
     }
 
+    /**
+     * Top-up / recharge driver wallet via Razorpay.
+     */
     public function topupRazorpay(Request $request, RazorpayService $razorpayService)
     {
         $data = $request->validate([
@@ -79,9 +73,6 @@ class DriverWalletController
         $user = $request->user();
         $amount = round((float) $data['amount'], 2);
 
-        // Enforce the operator's wallet max-cap BEFORE the rider pays — a top-up
-        // may not push the balance over the cap. We gate here (not at verify):
-        // once Razorpay has captured the money, refusing the credit would lose it.
         if ($msg = $this->wallet->capViolation($user, WalletTransaction::TYPE_CREDIT, $amount)) {
             return response()->json(['message' => $msg], 422);
         }
@@ -113,6 +104,9 @@ class DriverWalletController
         });
     }
 
+    /**
+     * Verify Razorpay top-up and credit wallet.
+     */
     public function verifyTopupRazorpay(Request $request, RazorpayService $razorpayService)
     {
         $data = $request->validate([
@@ -156,14 +150,11 @@ class DriverWalletController
             $topup->paid_at = now();
             $topup->save();
 
-            // No cap re-check here: the payment is already captured by Razorpay,
-            // so the wallet must be credited. The max-cap gate runs at order
-            // creation (topupRazorpay), before the rider pays.
             $this->wallet->recordTransaction(
                 $user,
                 WalletTransaction::TYPE_CREDIT,
                 (float) $topup->amount,
-                'Wallet top-up (Razorpay)',
+                'Wallet recharge (Razorpay)',
                 null,
                 null,
             );
@@ -171,7 +162,7 @@ class DriverWalletController
             return response()->json([
                 'balance' => $this->wallet->balance($user),
                 'currency' => 'INR',
-                'message' => 'Wallet topped up.',
+                'message' => 'Wallet recharge successful.',
             ]);
         });
     }

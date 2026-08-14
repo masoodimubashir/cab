@@ -4,39 +4,41 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
+use App\Models\DriverPayoutLedger;
+use App\Models\OperatorSetting;
 use App\Models\SeatReservation;
+use App\Models\Trip;
 use App\Models\WalletTopup;
 use App\Models\WalletTransaction;
+use App\Services\PayoutLedgerService;
 use App\Services\RefundRegisterService;
+use App\Services\WalletService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * B6 — the "Finance" reporting surface. Two read-only views over the money
- * that actually moves through the company's gateway:
+ * Admin Finance Controller.
  *
- *   overview()  → the financial-health snapshot (tiles + cross-links)
- *   moneyIn()   → the itemised ledger of every rupee that arrived
- *
- * What counts as "money in" (cash that landed in the company's Razorpay/bank):
- *   1. Paid seat reservations (fixed + shuttle) taken online (razorpay).
- *   2. Successful wallet top-ups (customer AND driver float deposits).
- *
- * What is deliberately EXCLUDED, so the totals never lie:
- *   - Wallet-paid bookings — that cash already arrived as a top-up; counting
- *     it again here would double-count.
- *   - Subscriptions & commission — paid FROM the wallet float, not fresh cash.
- *   - Cash bookings — money the driver holds, not the company; shown as a
- *     separate line, never folded into the online total.
+ * Provides independent endpoints for:
+ *   - Wallet Management
+ *   - Pending Driver Transfers
+ *   - Completed Driver Transfers
+ *   - Ride Commissions
+ *   - Driver Earnings
+ *   - Money-In & Financial Overview
  */
 class FinanceController extends Controller
 {
-    public function __construct(private readonly RefundRegisterService $refunds) {}
+    public function __construct(
+        private readonly RefundRegisterService $refunds,
+        private readonly PayoutLedgerService $payoutLedger,
+        private readonly WalletService $walletService,
+    ) {
+    }
 
     /**
-     * Financial-health snapshot for a date range. Everything range-bound is
-     * driven by from/to; "held for drivers" is a live snapshot (not a flow).
+     * Financial-health snapshot for a date range.
      */
     public function overview(Request $request)
     {
@@ -51,20 +53,21 @@ class FinanceController extends Controller
             ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$from, $to])
             ->sum('amount');
 
-        // Cash bookings — held by the driver, shown apart from the online total.
+        // Cash bookings — held by the driver.
         $fixedCash = (float) $this->paidBookings($from, $to)
             ->where('payment_method', 'cash')->sum('fare_amount');
 
-        // Money returned to customers (settled refunds) in the same window.
+        // Settled customer refunds.
         $refundsReturned = (float) SeatReservation::query()
             ->where('refund_status', 'REFUNDED')
             ->whereBetween('refunded_at', [$from, $to])
             ->sum('refund_amount');
 
         $onlineIn = round($fixedOnline + $topups, 2);
-
-        // Refunds still owed — a live worklist snapshot, not range-bound.
         $due = $this->refunds->adminList('due');
+
+        // Pending driver payouts
+        $pendingWorklist = $this->payoutLedger->pendingTransfersWorklist();
 
         return response()->json([
             'range' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
@@ -76,18 +79,18 @@ class FinanceController extends Controller
             'net_online' => round($onlineIn - $refundsReturned, 2),
             'refunds_due_total' => (float) ($due['total_due'] ?? 0),
             'refunds_due_count' => (int) ($due['due_count'] ?? 0),
-            'held_for_drivers' => $this->heldForDrivers(),
+            'pending_driver_payouts' => $pendingWorklist['total_pending'],
+            'drivers_with_pending_payouts' => $pendingWorklist['drivers_count'],
         ]);
     }
 
     /**
-     * The itemised money-in ledger for a date range. Fixed/shuttle bookings
-     * (razorpay + cash) unioned with successful wallet top-ups, newest first.
+     * Itemised money-in ledger for a date range.
      */
     public function moneyIn(Request $request)
     {
         [$from, $to] = $this->range($request);
-        $source = $request->query('source'); // fixed | shuttle | topup | null(all)
+        $source = $request->query('source');
 
         $rows = collect();
 
@@ -98,24 +101,23 @@ class FinanceController extends Controller
                 ->when(in_array($source, ['fixed', 'shuttle'], true),
                     fn ($q) => $q->whereHas('route', fn ($r) => $r->where('mode', $source)))
                 ->orderByDesc('created_at')
-                ->limit(2000)
+                ->limit(200)
                 ->get();
 
             foreach ($bookings as $b) {
-                $mode = $b->route?->mode === 'shuttle' ? 'shuttle' : 'fixed';
                 $rows->push([
-                    'key' => "res-{$b->id}",
-                    'source' => $mode,
-                    'source_label' => $mode === 'shuttle' ? 'Shuttle booking' : 'Fixed booking',
+                    'id' => 'booking_' . $b->id,
+                    'source' => $b->route?->mode === 'shuttle' ? 'shuttle' : 'fixed',
+                    'kind' => 'booking',
                     'at' => optional($b->created_at)->toIso8601String(),
-                    'who_name' => $b->customer?->name,
-                    'who_phone' => $b->customer?->phone,
-                    'who_type' => 'customer',
-                    'details' => $b->route?->name ?? '—',
                     'amount' => (float) $b->fare_amount,
                     'method' => $b->payment_method,
+                    'user_id' => $b->passenger_user_id,
+                    'user_name' => $b->customer?->name ?? 'Guest',
+                    'user_phone' => $b->customer?->phone ?? '—',
+                    'label' => ($b->route?->name ?? 'Ride') . ' (Seat ' . ($b->seat_number ?? $b->id) . ')',
                     'reference' => $b->payment_reference,
-                    'status' => $b->payment_status,
+                    'status' => 'PAID',
                 ]);
             }
         }
@@ -125,28 +127,22 @@ class FinanceController extends Controller
                 ->where('status', 'SUCCESS')
                 ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$from, $to])
                 ->with('user:id,name,phone')
-                ->orderByDesc('paid_at')
-                ->limit(2000)
+                ->orderByDesc(DB::raw('COALESCE(paid_at, created_at)'))
+                ->limit(200)
                 ->get();
-
-            // Which toppers are drivers (float deposit) vs customers?
-            $driverIds = Driver::query()
-                ->whereIn('user_id', $topups->pluck('user_id')->unique())
-                ->pluck('user_id')
-                ->flip();
 
             foreach ($topups as $t) {
                 $rows->push([
-                    'key' => "top-{$t->id}",
+                    'id' => 'topup_' . $t->id,
                     'source' => 'topup',
-                    'source_label' => 'Wallet top-up',
+                    'kind' => 'topup',
                     'at' => optional($t->paid_at ?? $t->created_at)->toIso8601String(),
-                    'who_name' => $t->user?->name,
-                    'who_phone' => $t->user?->phone,
-                    'who_type' => $driverIds->has($t->user_id) ? 'driver' : 'customer',
-                    'details' => 'Wallet top-up',
                     'amount' => (float) $t->amount,
                     'method' => 'razorpay',
+                    'user_id' => $t->user_id,
+                    'user_name' => $t->user?->name ?? 'Driver/Customer',
+                    'user_phone' => $t->user?->phone ?? '—',
+                    'label' => 'Wallet recharge',
                     'reference' => $t->razorpay_payment_id,
                     'status' => 'SUCCESS',
                 ]);
@@ -155,7 +151,6 @@ class FinanceController extends Controller
 
         $rows = $rows->sortByDesc('at')->values();
 
-        // Totals for the current view (online cash only; cash shown apart).
         $online = $rows->whereIn('source', ['fixed', 'shuttle'])->where('method', 'razorpay')->sum('amount')
             + $rows->where('source', 'topup')->sum('amount');
         $cash = $rows->where('method', 'cash')->sum('amount');
@@ -166,6 +161,197 @@ class FinanceController extends Controller
             'count' => $rows->count(),
             'total_online' => round((float) $online, 2),
             'total_cash' => round((float) $cash, 2),
+        ]);
+    }
+
+    /**
+     * 1. Wallet Management Endpoint.
+     * List driver wallets with balances, min limits, and platform charges status.
+     */
+    public function wallets(Request $request)
+    {
+        $minLimit = (float) (OperatorSetting::instance()->wallet_cash_min_capping ?? 0);
+        $maxLimit = (float) (OperatorSetting::instance()->wallet_cash_max_capping ?? 0);
+
+        $drivers = Driver::query()
+            ->with(['user:id,name,phone,email', 'vehicleType:id,name'])
+            ->get();
+
+        $rows = [];
+        $totalBalance = 0.0;
+        $inDebtCount = 0;
+
+        foreach ($drivers as $driver) {
+            if (!$driver->user) {
+                continue;
+            }
+            $balance = $this->walletService->balance($driver->user);
+            $totalBalance += $balance;
+            if ($balance < 0) {
+                $inDebtCount++;
+            }
+
+            $rows[] = [
+                'driver_id' => $driver->id,
+                'user_id' => $driver->user_id,
+                'name' => $driver->user->name,
+                'phone' => $driver->user->phone,
+                'vehicle_reg_no' => $driver->vehicle_reg_no,
+                'vehicle_type' => $driver->vehicleType?->name ?? '—',
+                'balance' => $balance,
+                'minimum_wallet_limit' => $minLimit,
+                'maximum_wallet_limit' => $maxLimit,
+                'is_in_debt' => $balance < 0,
+                'can_accept_rides' => $balance >= $minLimit,
+            ];
+        }
+
+        return response()->json([
+            'data' => $rows,
+            'total_balance' => round($totalBalance, 2),
+            'total_drivers' => count($rows),
+            'in_debt_count' => $inDebtCount,
+            'minimum_wallet_limit' => $minLimit,
+            'maximum_wallet_limit' => $maxLimit,
+        ]);
+    }
+
+    /**
+     * 2. Pending Driver Transfers Endpoint.
+     * Drivers whom the operator owes money (collected online on driver's behalf).
+     */
+    public function pendingTransfers(Request $request)
+    {
+        return response()->json($this->payoutLedger->pendingTransfersWorklist(500));
+    }
+
+    /**
+     * 3. Completed Driver Transfers Endpoint.
+     * Audit log of all completed payouts to drivers.
+     */
+    public function completedTransfers(Request $request)
+    {
+        [$from, $to] = $this->range($request);
+        return response()->json($this->payoutLedger->completedTransfersList($from, $to, 500));
+    }
+
+    /**
+     * 4. Ride Commissions Endpoint.
+     * Itemised platform commission deductions across all trips.
+     */
+    public function commissions(Request $request)
+    {
+        [$from, $to] = $this->range($request);
+
+        $query = Trip::query()
+            ->where('status', 'COMPLETED')
+            ->where('commission_amount', '>', 0)
+            ->whereBetween('completed_at', [$from, $to])
+            ->with(['driver:id,name,phone', 'customer:id,name', 'vehicleType:id,name'])
+            ->orderByDesc('completed_at');
+
+        if ($request->filled('driver_id')) {
+            $query->where('driver_id', $request->query('driver_id'));
+        }
+
+        $trips = $query->limit(500)->get();
+
+        $rows = $trips->map(fn (Trip $t) => [
+            'trip_id' => $t->id,
+            'date' => optional($t->completed_at)->toIso8601String(),
+            'driver_id' => $t->driver_id,
+            'driver_name' => $t->driver?->name ?? '—',
+            'driver_phone' => $t->driver?->phone ?? '—',
+            'vehicle_type' => $t->vehicleType?->name ?? '—',
+            'fare' => (float) ($t->final_fare ?? 0),
+            'commission_percent' => (float) ($t->commission_percent ?? 0),
+            'commission_amount' => (float) ($t->commission_amount ?? 0),
+            'net_driver_earnings' => round((float) ($t->final_fare ?? 0) - (float) ($t->commission_amount ?? 0), 2),
+            'payment_method' => $t->payment_method,
+            'is_shared' => $t->route_departure_id !== null,
+        ]);
+
+        $totalCommission = round((float) $trips->sum('commission_amount'), 2);
+        $totalFare = round((float) $trips->sum('final_fare'), 2);
+
+        return response()->json([
+            'range' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
+            'data' => $rows,
+            'count' => $rows->count(),
+            'total_commission' => $totalCommission,
+            'total_fare' => $totalFare,
+        ]);
+    }
+
+    /**
+     * 5. Driver Earnings Report Endpoint.
+     * Report of gross fares, cash collected, online collected per driver.
+     */
+    public function driverEarnings(Request $request)
+    {
+        [$from, $to] = $this->range($request);
+
+        $trips = Trip::query()
+            ->where('status', 'COMPLETED')
+            ->whereNotNull('driver_id')
+            ->whereBetween('completed_at', [$from, $to])
+            ->get(['id', 'driver_id', 'final_fare', 'commission_amount', 'payment_method']);
+
+        $grouped = $trips->groupBy('driver_id');
+
+        $driverUsers = \App\Models\User::query()
+            ->whereIn('id', $grouped->keys())
+            ->with('driver')
+            ->get()
+            ->keyBy('id');
+
+        $rows = [];
+        $totalGross = 0.0;
+        $totalCash = 0.0;
+        $totalOnline = 0.0;
+
+        foreach ($grouped as $driverId => $driverTrips) {
+            $user = $driverUsers->get($driverId);
+            $gross = 0.0;
+            $cash = 0.0;
+            $online = 0.0;
+
+            foreach ($driverTrips as $t) {
+                $fare = (float) ($t->final_fare ?? 0);
+                $gross += $fare;
+                if (strtolower((string) $t->payment_method) === 'cash') {
+                    $cash += $fare;
+                } else {
+                    $online += $fare;
+                }
+            }
+
+            $totalGross += $gross;
+            $totalCash += $cash;
+            $totalOnline += $online;
+
+            $rows[] = [
+                'user_id' => $driverId,
+                'driver_id' => $user?->driver?->id,
+                'name' => $user?->name ?? 'Driver #' . $driverId,
+                'phone' => $user?->phone ?? '—',
+                'vehicle_reg_no' => $user?->driver?->vehicle_reg_no ?? '—',
+                'rides_count' => $driverTrips->count(),
+                'gross_earnings' => round($gross, 2),
+                'cash_collected' => round($cash, 2),
+                'online_collected' => round($online, 2),
+            ];
+        }
+
+        usort($rows, fn ($a, $b) => $b['gross_earnings'] <=> $a['gross_earnings']);
+
+        return response()->json([
+            'range' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
+            'data' => $rows,
+            'total_gross' => round($totalGross, 2),
+            'total_cash' => round($totalCash, 2),
+            'total_online' => round($totalOnline, 2),
+            'drivers_count' => count($rows),
         ]);
     }
 
@@ -181,30 +367,7 @@ class FinanceController extends Controller
             ->whereBetween('created_at', [$from, $to]);
     }
 
-    /**
-     * Live snapshot of the driver float the company is holding: the sum of
-     * every driver's positive wallet balance (their own parked money +
-     * unpaid earnings). Mirrors the payout worklist's "total owed".
-     */
-    private function heldForDrivers(): float
-    {
-        $balances = WalletTransaction::query()
-            ->selectRaw("user_id, ROUND(SUM(CASE WHEN type = 'debit' THEN -amount ELSE amount END), 2) AS balance")
-            ->groupBy('user_id')
-            ->havingRaw('balance > 0')
-            ->pluck('balance', 'user_id');
-
-        $driverUserIds = Driver::query()
-            ->whereIn('user_id', $balances->keys())
-            ->pluck('user_id');
-
-        return round((float) $driverUserIds->sum(fn ($id) => (float) ($balances[$id] ?? 0)), 2);
-    }
-
-    /**
-     * Parse from/to (Y-m-d) query params into a day-bounded range.
-     * Default: the last 30 days ending today.
-     */
+    /** Parse from/to query params. */
     private function range(Request $request): array
     {
         if ($request->filled('date')) {

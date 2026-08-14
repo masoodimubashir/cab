@@ -138,12 +138,42 @@ export const routes: Routes = [
     data: { permission: 'finance' },
   },
 
-  // B6 — Finance: money-in ledger (overview screen removed per operator request).
+  // Finance sections
   { path: 'finance', redirectTo: 'finance/money-in', pathMatch: 'full' },
   { path: 'finance/overview', redirectTo: 'finance/money-in', pathMatch: 'full' },
   {
     path: 'finance/money-in',
     loadComponent: () => import('./admin/finance/finance-money-in.component').then((m) => m.FinanceMoneyInComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
+  {
+    path: 'finance/wallets',
+    loadComponent: () => import('./admin/finance/finance-wallets.component').then((m) => m.FinanceWalletsComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
+  {
+    path: 'finance/transfers/pending',
+    loadComponent: () => import('./admin/finance/finance-pending-transfers.component').then((m) => m.FinancePendingTransfersComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
+  {
+    path: 'finance/transfers/completed',
+    loadComponent: () => import('./admin/finance/finance-completed-transfers.component').then((m) => m.FinanceCompletedTransfersComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
+  {
+    path: 'finance/commissions',
+    loadComponent: () => import('./admin/finance/finance-commissions.component').then((m) => m.FinanceCommissionsComponent),
+    canActivate: [adminAuthGuard],
+    data: { permission: 'finance' },
+  },
+  {
+    path: 'finance/driver-earnings',
+    loadComponent: () => import('./admin/finance/finance-driver-earnings.component').then((m) => m.FinanceDriverEarningsComponent),
     canActivate: [adminAuthGuard],
     data: { permission: 'finance' },
   },

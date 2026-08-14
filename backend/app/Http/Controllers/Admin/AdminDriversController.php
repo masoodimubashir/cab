@@ -8,6 +8,7 @@ use App\Models\DriverDocument;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Services\PayoutLedgerService;
 use App\Services\SmsService;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class AdminDriversController
 {
     public function __construct(
         private readonly WalletService $walletService,
+        private readonly PayoutLedgerService $payoutLedger,
         private readonly SmsService $smsService,
         private readonly \App\Services\NetSettlementService $settlement,
     ) {
@@ -639,62 +641,37 @@ class AdminDriversController
     }
 
     /**
-     * Payout worklist: every driver the company currently owes money to
-     * (positive derived wallet balance), biggest first. The operator works
-     * down this list — GPay the driver, then "Record payout" on their page.
+     * Pending driver transfers worklist: every driver the operator owes money to
+     * (online fares/deposits/coupon reimbursements held by operator > transfers made).
      */
     public function payoutsDue()
     {
-        $balances = WalletTransaction::query()
-            ->selectRaw("user_id, ROUND(SUM(CASE WHEN type = 'debit' THEN -amount ELSE amount END), 2) AS balance")
-            ->groupBy('user_id')
-            ->havingRaw('balance > 0')
-            ->pluck('balance', 'user_id');
-
-        $drivers = Driver::query()
-            ->whereIn('user_id', $balances->keys())
-            ->with('user:id,name,phone')
-            ->get(['id', 'user_id', 'vehicle_reg_no']);
-
-        $rows = $drivers
-            ->map(fn (Driver $d) => [
-                'driver_id' => $d->id,
-                'user_id' => $d->user_id,
-                'name' => $d->user?->name,
-                'phone' => $d->user?->phone,
-                'vehicle_reg_no' => $d->vehicle_reg_no,
-                'balance' => (float) ($balances[$d->user_id] ?? 0),
-            ])
-            ->sortByDesc('balance')
-            ->values();
-
-        return response()->json([
-            'data' => $rows,
-            'total_owed' => round($rows->sum('balance'), 2),
-        ]);
+        return response()->json($this->payoutLedger->pendingTransfersWorklist());
     }
 
     /**
-     * Numbers for the Record-payout modal: total balance split into "he
-     * earned" (payable) vs "he deposited" (his own float — leave it).
-     * Convention: the driver's own spending (commission, subscriptions)
-     * consumes his deposits first; payouts consume earnings.
+     * Summary for the Record-transfer modal: money collected vs transferred.
      */
     public function payoutSummary(Driver $driver)
     {
-        return response()->json($this->walletBreakdown((int) $driver->user_id));
+        $user = $driver->user;
+        if (! $user) {
+            return response()->json(['message' => 'This driver has no linked user account.'], 422);
+        }
+
+        return response()->json($this->payoutLedger->summary($user));
     }
 
     /**
-     * Record a payout that was made OUTSIDE the app (GPay/bank/cash) as a
-     * wallet debit, so the ledger keeps matching reality. Guarded by the
-     * operator's min-balance cap and by the current balance itself.
+     * Record a payout transfer from operator to driver (GPay/bank/cash/upi).
+     * Records into DriverPayoutLedger (System 2: Payout Ledger).
+     * NEVER debits or modifies driver's wallet (System 1: Wallet).
      */
     public function recordPayout(Request $request, Driver $driver)
     {
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01', 'max:10000000'],
-            'method' => ['required', 'in:gpay,bank,cash,other'],
+            'method' => ['required', 'in:gpay,bank,cash,upi,other'],
             'reference' => ['nullable', 'string', 'max:120'],
             'note' => ['nullable', 'string', 'max:300'],
         ]);
@@ -705,70 +682,96 @@ class AdminDriversController
         }
 
         $amount = round((float) $data['amount'], 2);
-        $balance = $this->walletService->balance($user);
 
-        // A payout can never exceed what the wallet actually holds — paying a
-        // driver into debt makes no sense and would corrupt the ledger's story.
-        if ($amount > $balance) {
-            return response()->json([
-                'message' => "Payout exceeds the wallet balance (₹" . number_format($balance, 2) . "). Record what was actually owed.",
-            ], 422);
+        try {
+            $transfer = $this->payoutLedger->recordTransfer(
+                $user,
+                $amount,
+                $data['method'],
+                $data['reference'] ?? null,
+                $data['note'] ?? null,
+                $request->user(),
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
-
-        // Operator wallet floor (manual moves only) — protects against typos.
-        if ($msg = $this->walletService->capViolation($user, WalletTransaction::TYPE_DEBIT, $amount)) {
-            return response()->json(['message' => $msg], 422);
-        }
-
-        $methodLabel = match ($data['method']) {
-            'gpay' => 'GPay',
-            'bank' => 'Bank transfer',
-            'cash' => 'Cash',
-            default => 'Other',
-        };
-        $reason = 'Payout — ' . $methodLabel
-            . (filled($data['reference'] ?? null) ? ', ref ' . trim($data['reference']) : '')
-            . (filled($data['note'] ?? null) ? ' — ' . trim($data['note']) : '');
-
-        // Snapshot the settlement position BEFORE the payout debit — that's the
-        // "owed" figure this payout is settling. The wallet keeps the live running
-        // balance; driver_settlements keeps the record of each settlement event
-        // (Module 6), which the finance screens (Module 7) read as history.
-        $position = $this->settlement->position($user);
-
-        $txn = $this->walletService->recordTransaction(
-            $user,
-            WalletTransaction::TYPE_DEBIT,
-            $amount,
-            $reason,
-            null,
-            $request->user(),
-        );
-
-        \App\Models\DriverSettlement::query()->create([
-            'user_id' => $user->id,
-            'owed_by_company' => $position['owed_by_company'],
-            'owed_by_driver' => $position['owed_by_driver'],
-            'net' => $position['net'],
-            'amount_paid' => $amount,
-            'method' => $data['method'],
-            'reference' => $data['reference'] ?? null,
-            'wallet_transaction_id' => $txn->id,
-            'created_by_user_id' => $request->user()?->id,
-        ]);
 
         return response()->json([
-            'message' => 'Payout recorded.',
-            'transaction' => $txn,
-            'wallet' => $this->walletBreakdown((int) $driver->user_id),
-            'settlement' => $this->settlement->position($user->fresh()),
+            'message' => 'Payout transfer recorded successfully.',
+            'transfer' => $transfer,
+            'summary' => $this->payoutLedger->summary($user),
         ], 201);
     }
 
     /**
-     * The driver's live net settlement position (Module 6): what the operator owes
-     * them vs what they owe, the net, and the gross earnings/commission behind it.
-     * Plus the recorded settlement history — one row per past payout.
+     * Driver's standalone wallet breakdown & transactions (platform charges only).
+     */
+    public function wallet(Driver $driver)
+    {
+        $user = $driver->user;
+        if (!$user) {
+            return response()->json(['message' => 'This driver has no linked user account.'], 422);
+        }
+
+        $breakdown = $this->walletService->breakdown($user);
+        $transactions = WalletTransaction::query()
+            ->where('user_id', $user->id)
+            ->with('createdBy:id,name')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'breakdown' => $breakdown,
+            'transactions' => $transactions,
+        ]);
+    }
+
+    /**
+     * Admin manual wallet adjustment (credit or debit platform charges).
+     */
+    public function adjustWallet(Request $request, Driver $driver)
+    {
+        $data = $request->validate([
+            'type' => ['required', 'in:credit,debit'],
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        $user = $driver->user;
+        if (!$user) {
+            return response()->json(['message' => 'This driver has no linked user account.'], 422);
+        }
+
+        $amount = round((float) $data['amount'], 2);
+        $type = $data['type'] === 'credit' ? WalletTransaction::TYPE_CREDIT : WalletTransaction::TYPE_DEBIT;
+
+        if ($type === WalletTransaction::TYPE_DEBIT) {
+            try {
+                $this->walletService->universalValidation($user, $amount);
+            } catch (\RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+        }
+
+        $txn = $this->walletService->recordTransaction(
+            $user,
+            $type,
+            $amount,
+            $data['reason'],
+            null,
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => 'Wallet balance adjusted.',
+            'transaction' => $txn,
+            'breakdown' => $this->walletService->breakdown($user),
+        ], 201);
+    }
+
+    /**
+     * Driver's earnings & payouts summary.
      */
     public function settlement(Driver $driver)
     {
@@ -778,69 +781,16 @@ class AdminDriversController
         }
 
         return response()->json([
-            'position' => $this->settlement->position($user),
-            'reconciliation' => $this->settlement->reconcile($user),
-            'history' => \App\Models\DriverSettlement::query()
-                ->where('user_id', $user->id)
-                ->orderByDesc('id')
+            'earnings' => $this->payoutLedger->earningsSummary($user),
+            'payout_summary' => $this->payoutLedger->summary($user),
+            'transfers' => \App\Models\DriverPayoutLedger::query()
+                ->where('driver_user_id', $user->id)
+                ->where('type', \App\Models\DriverPayoutLedger::TYPE_TRANSFER)
+                ->with('createdBy:id,name')
+                ->orderByDesc('created_at')
                 ->limit(50)
                 ->get(),
         ]);
-    }
-
-    /**
-     * Split one derived balance into earned vs deposited.
-     *
-     *   deposits  = top-ups + driver-added cash (his own parked money)
-     *   payouts   = debits whose reason starts with "Payout"
-     *   spending  = every other debit (commission, subscriptions, …)
-     *   earnings  = every other credit (ride earnings, tips, cashback)
-     *
-     * Spending eats deposits first; payouts eat earnings. What remains of
-     * earnings is the amount the company still owes the driver.
-     */
-    private function walletBreakdown(int $userId): array
-    {
-        $rows = WalletTransaction::query()
-            ->where('user_id', $userId)
-            ->get(['type', 'amount', 'reason']);
-
-        $deposits = 0.0;
-        $earnings = 0.0;
-        $spending = 0.0;
-        $payouts = 0.0;
-
-        foreach ($rows as $row) {
-            $amount = (float) $row->amount;
-            if ($row->type === WalletTransaction::TYPE_DEBIT) {
-                if (str_starts_with((string) $row->reason, 'Payout')) {
-                    $payouts += $amount;
-                } else {
-                    $spending += $amount;
-                }
-                continue;
-            }
-            // Credit-side rows: top-ups and driver-added cash are the driver's
-            // own money; everything else (earnings, tips, cashback, refunds)
-            // is money the company owes him.
-            if ($row->type === WalletTransaction::TYPE_DRIVER_ADDED_CASH
-                || str_starts_with((string) $row->reason, 'Wallet top-up')) {
-                $deposits += $amount;
-            } else {
-                $earnings += $amount;
-            }
-        }
-
-        $balance = round($deposits + $earnings - $spending - $payouts, 2);
-        $depositsRemaining = round(max(0.0, $deposits - $spending), 2);
-        $earnedRemaining = round(max(0.0, $balance - $depositsRemaining), 2);
-
-        return [
-            'balance' => $balance,
-            'earned_remaining' => $earnedRemaining,
-            'deposits_remaining' => $depositsRemaining,
-            'total_paid_out' => round($payouts, 2),
-        ];
     }
 
     /**
