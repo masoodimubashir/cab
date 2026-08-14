@@ -20,7 +20,7 @@ type LabelType = 'text' | 'number' | 'date' | 'url';
 
 interface CityOpt { id: number; name: string; country_code: string | null; }
 interface VehicleTypeOpt { id: number; name: string; description: string | null; image_url: string | null; }
-interface CityVehicleOpt { id: number; display_name: string; max_people: number; luggage_capacity: number; vehicle_type_id: number; }
+interface CityVehicleOpt { id: number; display_name: string; max_people: number; luggage_capacity: number; vehicle_type_id: number; ride_type_id: number | null; }
 interface FleetOpt { id: number; name: string; city_id: number | null; }
 interface DocumentLabelDef { id: number; label: string; label_type: LabelType; mandatory: boolean; sort_order: number; }
 interface RideModeOption { id: number; scope: ServiceScope; mode: ServiceMode; name: string; image_url: string | null; sort_order: number; }
@@ -333,9 +333,32 @@ export class ProfilePage implements OnInit, OnDestroy {
       catchError(() => of({ data: [] as CityVehicleOpt[] })),
     ).subscribe({
       next: (res) => {
-        this.cityVehicles = res.data ?? [];
+        this.cityVehicles = this.dedupeVehicles(res.data ?? []);
       },
     });
+  }
+
+  /**
+   * A car set up for several services (Private/Fixed/Shuttle) comes back as
+   * multiple rows with the same name — the driver picks their CAR, not a service,
+   * so show each vehicle once. Preference when collapsing duplicates:
+   *   1. the row the driver already registered with (keep their choice visible),
+   *   2. a row wired to a service (non-null ride type) over an unconfigured leftover,
+   *   3. otherwise the first one seen.
+   */
+  private dedupeVehicles(rows: CityVehicleOpt[]): CityVehicleOpt[] {
+    const byName = new Map<string, CityVehicleOpt>();
+    for (const row of rows) {
+      const key = (row.display_name || '').trim().toLowerCase();
+      const current = byName.get(key);
+      if (!current) { byName.set(key, row); continue; }
+      // Never replace the driver's already-selected vehicle.
+      if (current.id === this.city_vehicle_type_id) continue;
+      if (row.id === this.city_vehicle_type_id) { byName.set(key, row); continue; }
+      // Prefer a service-wired row over an unconfigured (null ride type) leftover.
+      if (current.ride_type_id == null && row.ride_type_id != null) byName.set(key, row);
+    }
+    return Array.from(byName.values());
   }
 
   get dobDisplay(): string {
@@ -422,6 +445,18 @@ export class ProfilePage implements OnInit, OnDestroy {
     } catch { /* ignore fallback */ }
 
     this.mapSelectedPosition = { lat, lng };
+
+    // The picker can be opened before the address autocomplete has loaded the
+    // Google Maps SDK (e.g. tapping the map icon straight away in onboarding),
+    // so ensure it's loaded before we try to draw the map.
+    try {
+      await this.places.ensureLoaded();
+    } catch {
+      this.mapLoading = false;
+      this.mapError = 'Could not load the map. Check your connection and try again.';
+      return;
+    }
+
     setTimeout(() => this.initAddressMap(lat, lng), 250);
   }
 
@@ -679,7 +714,7 @@ export class ProfilePage implements OnInit, OnDestroy {
         this.submitting = false;
         if (res.user) this.auth.updateUser(res.user);
         this.draft.clear();
-        this.message = 'Vehicle details saved! Step 3: Upload your required verification documents.';
+        this.message = 'Last step! Upload your documents to get on the road.';
         this.onboardingStep = 'documents';
         this.refreshDocuments();
       },
