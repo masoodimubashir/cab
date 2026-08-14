@@ -191,15 +191,28 @@
           <span class="fx-tdetail__val">{{ selected.join(', ') }}</span>
         </div>
         <div class="fx-tdetail__row">
-          <span class="fx-tdetail__label">Amount paid</span>
-          <span class="fx-tdetail__val fx-tdetail__val--green">₹{{ finalTotal }}</span>
+          <span class="fx-tdetail__label">{{ payMethod === 'cash' ? 'Paid now' : 'Amount paid' }}</span>
+          <span class="fx-tdetail__val fx-tdetail__val--green">₹{{ payMethod === 'cash' ? cashDeposit : finalTotal }}</span>
+        </div>
+        <div class="fx-tdetail__row" *ngIf="payMethod === 'cash' && cashBalance > 0">
+          <span class="fx-tdetail__label">Cash to driver</span>
+          <span class="fx-tdetail__val">₹{{ cashBalance }}</span>
         </div>
         <div class="fx-tdetail__row">
           <span class="fx-tdetail__label">Payment method</span>
-          <span class="fx-tdetail__val">Razorpay</span>
+          <span class="fx-tdetail__val">{{ payMethodLabel }}</span>
         </div>
       </div>
     </div>
   </app-step-shell>
+
+  <app-payment-method-modal
+    [open]="paymentModalOpen"
+    [amount]="finalTotal"
+    [busy]="busy"
+    title="How would you like to pay?"
+    (select)="onPayMethod($event)"
+    (dismiss)="paymentModalOpen = false">
+  </app-payment-method-modal>
 
 </ion-content>

@@ -4,6 +4,8 @@ import { AlertController, ToastController } from '@ionic/angular';
 
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
+import { PaymentOptionsService } from '../../../core/payment-options.service';
+import { PaymentChoice } from '../../../shared/payment-method-modal.component';
 import { BookingService } from '../booking.service';
 
 import { SeatCell } from './seat-grid.component';
@@ -79,6 +81,12 @@ export class FixedBookPage implements OnInit {
 
   paymentMethod: 'gpay' | 'all' = 'gpay';
 
+  // Payment method chooser (Online / UPI / Cash). Cash pays only the upfront
+  // deposit online; the rest is cash to the driver at drop-off.
+  paymentModalOpen = false;
+  payMethod: PaymentChoice = 'online';
+  cashDepositPercent = 0;
+
   reservation: Reservation | null = null;
   boardingCode = '';
 
@@ -94,11 +102,17 @@ export class FixedBookPage implements OnInit {
     private alertCtrl: AlertController,
     private toastCtrl: ToastController,
     private cdr: ChangeDetectorRef,
+    private paymentOptions: PaymentOptionsService,
   ) {}
 
   ngOnInit(): void {
     this.cityId = this.booking.trip.cityId;
     this.loadRoutes();
+    // Know the operator's cash deposit split so the ticket can show it.
+    void this.paymentOptions.load().then((m) => {
+      this.cashDepositPercent = m.cash_deposit_percent || 0;
+      this.cdr.markForCheck();
+    });
   }
 
   // ---- shell inputs -----------------------------------------------------
@@ -284,13 +298,29 @@ export class FixedBookPage implements OnInit {
   }
   removeCoupon(): void { this.couponTitle = ''; this.coupon = null; this.couponError = null; }
 
+  /** Opens the shared payment sheet so the rider picks Online / UPI / Cash. */
   pay(): void {
+    if (this.busy || !this.selected.length) return;
+    this.paymentModalOpen = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Chosen from the shared payment sheet — hold the seats tagged with the
+   *  method (cash charges only the deposit online), then run its payment. */
+  onPayMethod(method: PaymentChoice): void {
+    this.paymentModalOpen = false;
+    this.payMethod = method;
+    this.createHoldAndPay(method);
+  }
+
+  private createHoldAndPay(method: PaymentChoice): void {
     if (this.busy || !this.selected.length) return;
     this.busy = true;
     this.error = null;
     this.cdr.markForCheck();
 
-    this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', this.payload(false), { 'Idempotency-Key': this.uuid() }).subscribe({
+    const payload = { ...this.payload(false), payment_method: method === 'cash' ? 'cash' : 'razorpay' };
+    this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', payload, { 'Idempotency-Key': this.uuid() }).subscribe({
       next: (res) => {
         const hold = res?.hold ?? null;
         if (!hold) { this.busy = false; void this.toast('Could not hold seats. Try again.', 'danger'); this.cdr.markForCheck(); return; }
@@ -298,6 +328,18 @@ export class FixedBookPage implements OnInit {
       },
       error: (err) => { this.busy = false; void this.toast(err?.error?.message || 'Could not hold seats.', 'danger'); this.cdr.markForCheck(); },
     });
+  }
+
+  /** For a cash ticket: the upfront deposit charged online now (rest is cash). */
+  get cashDeposit(): number {
+    if (this.payMethod !== 'cash' || this.cashDepositPercent <= 0) return 0;
+    return Math.round(this.finalTotal * this.cashDepositPercent / 100);
+  }
+  get cashBalance(): number {
+    return Math.max(0, this.finalTotal - this.cashDeposit);
+  }
+  get payMethodLabel(): string {
+    return this.payMethod === 'cash' ? 'Cash' : this.payMethod === 'gpay' ? 'UPI / GPay' : 'Online';
   }
 
   private async startRazorpay(hold: SeatHold): Promise<void> {
