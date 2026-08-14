@@ -7,6 +7,8 @@ import { RouterModule, Routes } from '@angular/router';
 import { ShuttleBookPage } from './shuttle.page';
 import { StepShellComponent } from '../step-shell.component';
 import { PlaceSearchComponent } from '../place-search.component';
+import { SeatGridComponent } from '../fixed/seat-grid.component';
+import { PaymentMethodModalComponent } from '../../../shared/payment-method-modal.component';
 
 const routes: Routes = [{ path: '', component: ShuttleBookPage }];
 
@@ -18,6 +20,8 @@ const routes: Routes = [{ path: '', component: ShuttleBookPage }];
     RouterModule.forChild(routes),
     StepShellComponent,
     PlaceSearchComponent,
+    SeatGridComponent,
+    PaymentMethodModalComponent,
   ],
   declarations: [ShuttleBookPage],
 })

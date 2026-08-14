@@ -122,8 +122,15 @@ class TripStateMachineService
         $isShared = $trip->route_departure_id !== null
             || ShuttleJourney::query()->where('trip_id', $trip->id)->exists();
 
-        if ($to === 'CANCELLED' && ! $isShared && $this->autoRefunds->enabled()) {
-            $this->autoRefunds->refundForCancellation($trip, $this->cancelledBy($trip, $meta));
+        if ($to === 'CANCELLED' && ! $isShared) {
+            if ($this->autoRefunds->enabled()) {
+                // Route engine: reverse the split + refund the customer.
+                $this->autoRefunds->refundForCancellation($trip, $this->cancelledBy($trip, $meta));
+            } else {
+                // Model B (Route off): refund per the Module 3 rulebook, operator
+                // keeps the cancellation charge / forfeit.
+                $this->autoRefunds->refundForCancellationModelB($trip, $this->cancelledBy($trip, $meta));
+            }
         }
 
         $tripId = $trip->id;
@@ -181,9 +188,11 @@ class TripStateMachineService
     /**
      * Works out who a cancellation is attributed to, for the refund rulebook.
      * An explicit meta['cancelled_by'] always wins; otherwise we read it off the
-     * no-show reason ("no_show_by:driver" means the customer didn't board, so
-     * it's on the customer; "no_show_by:customer" means the driver never showed,
-     * so it's on the driver). Everything else defaults to a customer cancel.
+     * no-show reason. The reason mirrors TripsController::markNoShow, where the
+     * role names WHO the no-show was: "no_show_by:customer" means the customer
+     * never showed (the driver waited at pickup) → it's on the customer;
+     * "no_show_by:driver" means the driver never showed → it's on the driver, so
+     * the customer is not at fault. Everything else defaults to a customer cancel.
      */
     private function cancelledBy(Trip $trip, array $meta): string
     {
@@ -199,10 +208,10 @@ class TripStateMachineService
 
         $reason = (string) ($meta['cancelled_reason'] ?? $trip->cancelled_reason ?? '');
         if ($reason === 'no_show_by:customer') {
-            return AutoRefundService::BY_DRIVER;   // driver never showed → not the customer's fault
+            return AutoRefundService::BY_CUSTOMER;  // the customer never showed → on them (forfeit)
         }
         if ($reason === 'no_show_by:driver') {
-            return AutoRefundService::BY_CUSTOMER;  // customer didn't board → on them
+            return AutoRefundService::BY_DRIVER;    // the driver never showed → not the customer's fault (full refund)
         }
 
         return AutoRefundService::BY_CUSTOMER;

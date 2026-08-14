@@ -8,9 +8,10 @@ import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.s
 import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
 import { PushService } from '../../core/push.service';
+import { RealtimeService } from '../../core/realtime.service';
+import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
-import { PayoutPromptModalComponent } from '../../shared/payout-prompt-modal/payout-prompt-modal.component';
 
 declare const google: any;
 
@@ -92,15 +93,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   walletBalance = 0;
 
   /**
-   * True when an approved driver has no usable payout account, so their share
-   * of every fare is piling up as held earnings. Drives the dashboard banner —
-   * the standing reminder for anyone who skipped the one-time prompt.
-   */
-  payoutNeeded = false;
-  /** Banner hidden for this app session only; it returns on the next launch. */
-  payoutBannerDismissed = false;
-
-  /**
    * Full-screen cold-start skeleton — covers the whole dashboard (map + top
    * bar + sheet) until BOTH the driver profile and the map are ready, then it
    * fades out to reveal the live screen.
@@ -139,7 +131,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Rides', sub: 'Available & active trips', icon: 'car-outline', path: '/tabs/rides' },
         { label: 'Scheduled rides', sub: 'Upcoming booked trips', icon: 'calendar-outline', path: '/tabs/scheduled' },
         { label: 'Earnings', sub: 'Gross earnings, chart & commission', icon: 'bar-chart-outline', path: '/tabs/earnings' },
-        { label: 'Wallet', sub: 'Balance, top-ups & payout account', icon: 'wallet-outline', path: '/tabs/wallet' },
+        { label: 'Wallet', sub: 'Balance & top-ups', icon: 'wallet-outline', path: '/tabs/wallet' },
         { label: 'Trip history', sub: 'Your past rides', icon: 'time-outline', path: '/tabs/history' },
         { label: 'Trip refunds', sub: 'Passenger refunds — paid by DreamCabs, not you', icon: 'receipt-outline', path: '/refunds' },
       ],
@@ -149,7 +141,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       items: [
         { label: 'Performance', sub: 'Rating & trip metrics', icon: 'stats-chart-outline', path: '/performance' },
         { label: 'Profile', sub: 'Name, vehicle & documents', icon: 'person-outline', path: '/profile' },
-        { label: 'Payout account', sub: 'Bank or UPI details — we pay you here', icon: 'card-outline', path: '/payout-account' },
         { label: 'Documents', sub: 'Verification & uploads', icon: 'document-text-outline', path: '/profile' },
         { label: 'Subscriptions', sub: 'Commission-free plans', icon: 'ribbon-outline', path: '/subscriptions' },
         { label: 'Notifications', sub: 'Messages & ride updates', icon: 'notifications-outline', path: '/notifications' },
@@ -170,6 +161,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private markerHeading: HTMLElement | null = null;
   private visualWatchId: string | null = null;
   private lastPos: { lat: number; lng: number } | null = null;
+  /** Live "your verification changed" listener (admin approval/rejection). */
+  private driverVerifyUnsub: (() => void) | null = null;
   // Default map centre (Mumbai) until we have a real fix.
   private readonly defaultCentre = { lat: 19.0760, lng: 72.8777 };
 
@@ -183,6 +176,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     private alertCtrl: AlertController,
     private push: PushService,
     private modalCtrl: ModalController,
+    private realtime: RealtimeService,
   ) {
     this.presence.onError((err) => {
       this.error = err.message;
@@ -290,80 +284,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     }
   }
 
-  // ------------------------------------------------------------ payout setup --
-
-  /** Set once the driver has seen (and answered) the one-time payout prompt. */
-  private static readonly PAYOUT_PROMPT_KEY = 'dc_payout_prompt_seen';
-  /** Guards against a second fire while the first is still in flight. */
-  private payoutPromptBusy = false;
-
-  /**
-   * Works out whether this driver still needs a payout account, then nudges them
-   * about it. Runs after the profile loads, because the nudge only applies to an
-   * approved driver — someone still under review has nothing to be paid yet.
-   *
-   * First time: a full-screen skippable prompt. Every time after: the banner.
-   * Best-effort throughout — a failure here must never disturb the dashboard.
-   */
-  private async refreshPayoutState(): Promise<void> {
-    if (!this.isApproved || this.payoutPromptBusy) return;
-    this.payoutPromptBusy = true;
-    try {
-      const account = await firstValueFrom(
-        this.api.get<{ status: string; can_receive_payouts: boolean }>('/me/driver/payout-account'),
-      ).catch(() => null);
-      if (!account) return;
-
-      // 'pending' counts as done — the details are in, verification is ours to
-      // finish, and nagging them about our own queue would just be noise.
-      this.payoutNeeded = account.status === 'none' || account.status === 'rejected';
-      if (!this.payoutNeeded) return;
-
-      if (this.readPayoutPromptSeen()) return;
-      await this.showPayoutPrompt();
-    } catch {
-      /* best-effort — never block the dashboard */
-    } finally {
-      this.payoutPromptBusy = false;
-    }
-  }
-
-  /**
-   * The one-time full-screen prompt. Marked seen before it opens so a slow
-   * render can't present it twice, and so a driver who dismisses it by gesture
-   * isn't shown it again — the banner covers them from then on.
-   */
-  private async showPayoutPrompt(): Promise<void> {
-    this.writePayoutPromptSeen();
-
-    const modal = await this.modalCtrl.create({ component: PayoutPromptModalComponent });
-    await modal.present();
-    const { data } = await modal.onWillDismiss<{ add?: boolean }>();
-    if (data?.add) this.goPayoutAccount();
-  }
-
-  /** Open the payout form — from the banner or the prompt's primary action. */
-  goPayoutAccount(): void {
-    void this.router.navigateByUrl('/payout-account');
-  }
-
-  /** Hide the banner until the next app launch. */
-  dismissPayoutBanner(): void {
-    this.payoutBannerDismissed = true;
-  }
-
-  private readPayoutPromptSeen(): boolean {
-    try {
-      return localStorage.getItem(DashboardPage.PAYOUT_PROMPT_KEY) === '1';
-    } catch {
-      return false;
-    }
-  }
-
-  private writePayoutPromptSeen(): void {
-    try { localStorage.setItem(DashboardPage.PAYOUT_PROMPT_KEY, '1'); } catch { /* ignore */ }
-  }
-
   /** The driver's last-picked mode, if any (used to highlight it on reopen). */
   private readDriverMode(): DriverMode | null {
     try {
@@ -375,6 +295,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   async ngAfterViewInit(): Promise<void> {
+    this.subscribeVerificationUpdates();
     try {
       await this.mapsLoader.ensureLoaded();
       this.initMap();
@@ -397,6 +318,23 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     void this.stopVisualWatch();
     this.stopOnlineTimer();
+    this.driverVerifyUnsub?.();
+    this.driverVerifyUnsub = null;
+  }
+
+  /**
+   * Live-update the moment the operator approves (or rejects) this driver, so the
+   * "under review" banner clears and Go Online appears with no manual refresh.
+   * The backend broadcasts DriverVerificationUpdated on the driver's private
+   * channel; we just re-pull /drivers/me when it fires.
+   */
+  private subscribeVerificationUpdates(): void {
+    if (this.driverVerifyUnsub) return;
+    const uid = this.auth.getUser()?.id;
+    if (!uid) return;
+    this.driverVerifyUnsub = this.realtime.subscribeDriverVerification(uid, () => {
+      this.refresh();
+    });
   }
 
   // ---------------------------------------------------------------- display --
@@ -426,38 +364,17 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return !!this.driver?.['is_online'];
   }
 
-  /** Payout (bank) review state, fetched alongside the profile. */
-  payoutStatus: 'none' | 'pending' | 'verified' | 'rejected' | null = null;
-  get payoutVerified(): boolean { return this.payoutStatus === 'verified'; }
-
   /**
-   * Owner's rule: a driver may go ONLINE only once BOTH their documents (admin
-   * approval) AND their bank/payout account are approved.
+   * A driver may go ONLINE once their documents are admin-approved. (No bank/UPI
+   * requirement — the operator pays drivers from their wallet balance, not via
+   * a per-driver payout account.)
    */
-  get canGoOnline(): boolean { return this.isApproved && this.payoutVerified; }
+  get canGoOnline(): boolean { return this.isApproved; }
 
-  /** The "under review / action needed" banner text, or null when fully cleared. */
+  /** The "documents under review" banner text, or null when approved. */
   get reviewBannerText(): string | null {
-    if (this.canGoOnline) return null;
-    const bankMissing = this.payoutStatus === 'none' || this.payoutStatus === 'rejected' || this.payoutStatus == null;
-    if (!this.isApproved && bankMissing) {
-      return 'Your documents are under review and no bank account is added yet. Once both are approved you can take rides and get paid.';
-    }
-    if (!this.isApproved) {
-      return 'Your documents are under review. You can go online once they are approved.';
-    }
-    if (bankMissing) {
-      return 'Add your bank account so it can be approved — you need it to go online and receive payments.';
-    }
-    return 'Your bank details are under review. You can go online once they are approved.';
-  }
-
-  /** Fetches the payout status for the banner + go-online gate (any driver). */
-  private loadReviewStatus(): void {
-    this.api.get<{ status: string }>('/me/driver/payout-account').subscribe({
-      next: (a) => { this.payoutStatus = (a?.status as 'none' | 'pending' | 'verified' | 'rejected') ?? 'none'; },
-      error: () => { /* leave as-is; banner falls back to "add bank" */ },
-    });
+    if (this.isApproved) return null;
+    return 'Your documents are under review. You can go online once they are approved.';
   }
 
   // ------------------------------------------------------------------ drawer --
@@ -673,6 +590,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     }>('/drivers/me').subscribe({
       next: (res) => {
         this.driver = res.driver;
+        // Keep the route guard's cached state in step with reality so navigation
+        // (e.g. via "View application") never bounces on a stale "pending".
+        if (this.driver?.['approval_status'] === 'approved') {
+          ApprovedDriverGuard.setStateApproved();
+        }
         // Wallet gate config for this driver's (city, vehicle type), null-safe.
         this.cityVehicleTypeConfig = res.city_vehicle_type_config ?? null;
         // Prefer a balance served alongside the profile; otherwise the wallet
@@ -681,7 +603,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           this.walletBalance = res.wallet_balance;
         }
         this.refreshWalletBalance();
-        this.loadReviewStatus();
         if (res.user) {
           // Keep the locally-stored user in sync with the server — crucially the
           // avatar, so a photo uploaded anywhere (app or admin) shows up here,
@@ -724,8 +645,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         this.loading = false;
         this.profileReady = true;
         this.maybeFinishHome();
-        // Approval status is known now, so the payout nudge can decide.
-        void this.refreshPayoutState();
       },
     });
   }
@@ -982,7 +901,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   async goOnline(): Promise<void> {
     if (this.toggling) return;
     if (!this.canGoOnline) {
-      this.error = this.reviewBannerText || 'You cannot go online until your documents and bank account are approved.';
+      this.error = this.reviewBannerText || 'You cannot go online until your documents are approved.';
       return;
     }
     this.toggling = true;

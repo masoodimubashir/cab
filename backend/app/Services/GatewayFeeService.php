@@ -31,6 +31,32 @@ class GatewayFeeService
     }
 
     /**
+     * Who bears the fee for a ride mode: 'customer' (added on top of the fare —
+     * the rider sees and pays it) or 'operator' (the rider pays only the fare and
+     * the fee is booked against the operator at settlement). Unknown modes default
+     * to 'customer', the visible-to-rider choice.
+     */
+    public function borneBy(?string $rideMode): string
+    {
+        $map = (array) config('services.payments.gateway_fee.borne_by', []);
+        $who = strtolower((string) ($map[strtolower((string) $rideMode)] ?? 'customer'));
+
+        return $who === 'operator' ? 'operator' : 'customer';
+    }
+
+    /** Does the customer pay the fee on top of the fare for this ride mode? */
+    public function customerBears(?string $rideMode): bool
+    {
+        return $this->enabled() && $this->borneBy($rideMode) === 'customer';
+    }
+
+    /** Does the operator absorb the fee (rider pays only the fare) for this ride mode? */
+    public function operatorBears(?string $rideMode): bool
+    {
+        return $this->enabled() && $this->borneBy($rideMode) === 'operator';
+    }
+
+    /**
      * The methods a customer may pick, with the fee each one attracts, ready to
      * render as a chooser. `rate` is the all-in percentage (gateway + Route +
      * GST) purely so the UI can explain itself; the charged figure is always

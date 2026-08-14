@@ -657,4 +657,13 @@
       </ion-button>
     </div>
   </div>
+
+  <app-payment-method-modal
+    [open]="shuttlePaymentModalOpen"
+    [amount]="shuttlePayableAmount"
+    [busy]="loading"
+    title="How would you like to pay?"
+    (select)="onShuttlePayMethod($event)"
+    (dismiss)="shuttlePaymentModalOpen = false">
+  </app-payment-method-modal>
 </ion-content>

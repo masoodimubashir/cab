@@ -11,6 +11,7 @@ import {
   TripLocationPayload,
   TripStatusPayload,
 } from '../../core/realtime.service';
+import { PaymentChoice } from '../../shared/payment-method-modal.component';
 
 declare const google: any;
 declare const Razorpay: any;
@@ -26,6 +27,15 @@ type UpiOrderResponse = {
     /** Set when a gateway fee was priced — checkout is locked to this method. */
     method?: string | null;
   };
+};
+
+/** Response from /pay/cash-deposit: the upfront deposit order, or nothing to
+ *  charge when the operator's deposit is 0%. */
+type CashDepositResponse = {
+  deposit_required: boolean;
+  cash_balance_due?: number;
+  breakdown?: { fare: number; deposit: number; cash_balance_due: number };
+  razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
 };
 
 /** One row of the pre-checkout method chooser, priced for this fare. */
@@ -83,6 +93,7 @@ type TripDetail = {
 };
 
 type TippingConfig = {
+  enabled: boolean;        // operator's global tips on/off switch — hide all tip UI when false
   values: number[];        // 3 presets: rupees or % depending on `in_percentage`
   in_percentage: boolean;
 };
@@ -102,6 +113,11 @@ export class TripActivePage implements OnInit, OnDestroy {
   // the booker read it off-screen and relay it if the SMS didn't arrive.
   startOtp: string | null = null;
   private startOtpInFlight = false;
+
+  // Shuttle pool boarding code (otp mode) — the rider's own code for THIS trip,
+  // fed to the shared full-screen boarding prompt. Private uses startOtp instead.
+  shuttleBoardingCode: string | null = null;
+  private shuttleCodeInFlight = false;
   driverAccepts: PaymentMethod[] = ['cash', 'razorpay'];
   cityAcceptsUpper: string[] = ['CASH', 'RAZORPAY'];
   // Authoritative list the backend computed (city ∩ driver-effective, honoring
@@ -109,6 +125,8 @@ export class TripActivePage implements OnInit, OnDestroy {
   // city∩driver fallback when present.
   serverAllowedMethods: PaymentMethod[] | null = null;
   selectedPaymentMethod: PaymentMethod | null = null;
+  /** Shared payment-method sheet (Online / GPay / Cash). */
+  payModalOpen = false;
   // What the server says is still owed on this trip, and whether it's payable
   // yet. `prepay` means the ride hasn't run — the rider is paying up front.
   // Absent on older backends, where the page falls back to "pay once completed".
@@ -175,6 +193,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   cancelCustomReason = '';
 
   private poll: any = null;
+  private shuttleCodePoll: any = null;
   private unsubscribeRealtime: (() => void) | null = null;
   private map: any | null = null;
   private driverMarker: any | null = null;
@@ -337,6 +356,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     this.loadTippingConfig();
     // Slow polling fallback for status, in case Reverb is down.
     this.poll = setInterval(() => this.refresh(), 15000);
+    // The shuttle boarding code pops instantly via the ShuttleBoardingCodeReady
+    // live event; this poll is just a fallback if the socket is down.
+    this.shuttleCodePoll = setInterval(() => this.syncShuttleBoardingCode(), 15000);
   }
 
   /**
@@ -352,6 +374,7 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.poll) clearInterval(this.poll);
+    if (this.shuttleCodePoll) clearInterval(this.shuttleCodePoll);
     if (this.unsubscribeRealtime) this.unsubscribeRealtime();
     if (this.etaDebounceHandle) clearTimeout(this.etaDebounceHandle);
     if (this.routeFadeHandle) clearInterval(this.routeFadeHandle);
@@ -468,7 +491,7 @@ export class TripActivePage implements OnInit, OnDestroy {
 
   /**
    * Methods the customer can actually use on this trip — intersection of:
-   *   • city_settings.allowed_driver_payment_modes (operator-level cap)
+   *   • the operator payment policy (Operator Settings → Payments)
    *   • driver.accepted_payment_methods (what this driver opted into)
    */
   get availablePaymentMethods(): PaymentMethod[] {
@@ -994,7 +1017,40 @@ export class TripActivePage implements OnInit, OnDestroy {
    * otherwise. Owner-only endpoint — returns the code only after the driver has
    * requested it, so the booker sees it appear the moment the driver taps Start.
    */
+  /** The code fed to the shared full-screen prompt — shuttle vs private source. */
+  get boardingPromptCode(): string | null {
+    return this.isShuttleTrip ? this.shuttleBoardingCode : this.startOtp;
+  }
+
+  /**
+   * A shuttle rider's boarding code can appear at any point during the ride (the
+   * driver boards each passenger in turn), so we poll it while the ride is live —
+   * unlike the private start-code which is tied to ARRIVED_PICKUP.
+   */
+  private syncShuttleBoardingCode(): void {
+    const active = ['ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP', 'EN_ROUTE_DROP', 'ARRIVED_DROP'];
+    if (!this.tripId || !this.isShuttleTrip || !active.includes(this.trip?.status ?? '')) {
+      this.shuttleBoardingCode = null;
+      return;
+    }
+    if (this.shuttleCodeInFlight) return;
+    this.shuttleCodeInFlight = true;
+    this.api.get<{ booking?: { boarding_code?: string | null } }>(`/shuttle/trips/${this.tripId}/my-booking`).subscribe({
+      next: (res) => {
+        this.shuttleCodeInFlight = false;
+        this.shuttleBoardingCode = res?.booking?.boarding_code ?? null;
+      },
+      error: () => { this.shuttleCodeInFlight = false; },
+    });
+  }
+
   private syncStartOtp(): void {
+    // Shuttle pools carry their own per-rider code, not the private start-OTP.
+    if (this.isShuttleTrip) {
+      this.startOtp = null;
+      this.syncShuttleBoardingCode();
+      return;
+    }
     if (this.trip?.status !== 'ARRIVED_PICKUP') {
       this.startOtp = null;
       return;
@@ -1174,6 +1230,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     return (
       this.isCompleted() &&
       !!this.tipping &&
+      this.tipping.enabled &&
       !this.tipSkipped &&
       (this.trip?.tip_amount ?? null) === null
     );
@@ -1304,56 +1361,77 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   async pay(): Promise<void> {
-    const allowed = this.availablePaymentMethods;
-    if (!allowed.length) {
-      const t = await this.toastCtrl.create({
-        message: 'No payment methods available for this trip.',
-        duration: 2500,
-        color: 'danger',
-      });
-      await t.present();
-      return;
-    }
-
-    const sheet = await this.actionSheetCtrl.create({
-      header: 'Pay with',
-      buttons: [
-        ...allowed.map((m) => ({
-          text: m.toUpperCase(),
-          handler: () => this.doPay(m),
-        })),
-        { text: 'Cancel', role: 'cancel' },
-      ],
-    });
-    await sheet.present();
+    // The shared sheet renders only the operator's enabled methods
+    // (Online / GPay / Cash) and shows the cash deposit split.
+    this.payModalOpen = true;
   }
 
-  private async doPay(method: PaymentMethod): Promise<void> {
-    if (method === 'razorpay') {
-      await this.doPayRazorpay();
+  /** Chosen from the shared payment sheet. Online/GPay run the Razorpay flow
+   *  (GPay locked to UPI); Cash runs the upfront-deposit flow. */
+  onPrivatePayMethod(method: PaymentChoice): void {
+    this.payModalOpen = false;
+    if (method === 'cash') {
+      void this.doPayCashDeposit();
       return;
     }
+    void this.doPayRazorpay(method === 'gpay' ? 'upi' : undefined);
+  }
+
+  /** Cash = pay the upfront deposit online now (the rest is cash to the driver
+   *  at trip end). A 0% operator deposit needs no online charge at all. */
+  private async doPayCashDeposit(): Promise<void> {
+    if (typeof Razorpay === 'undefined') {
+      const t = await this.toastCtrl.create({ message: 'Payment library not loaded. Check your connection.', duration: 2500, color: 'danger' });
+      await t.present();
+      return;
+    }
+
+    let res: CashDepositResponse;
     try {
-      await this.api
-        .post(`/trips/${this.tripId}/pay/${method}`, {
+      res = (await this.api
+        .post<CashDepositResponse>(`/trips/${this.tripId}/pay/cash-deposit`, {
           coupon_title: this.couponPreview?.coupon.title ?? null,
         })
-        .toPromise();
-      const t = await this.toastCtrl.create({
-        message: 'Payment recorded.',
-        duration: 2000,
-        color: 'success',
-      });
+        .toPromise()) as CashDepositResponse;
+    } catch (e: any) {
+      const t = await this.toastCtrl.create({ message: e?.error?.message || 'Could not start the cash deposit.', duration: 2500, color: 'danger' });
+      await t.present();
+      return;
+    }
+
+    // No upfront deposit — pure cash ride, nothing to charge online.
+    if (!res?.deposit_required) {
+      const t = await this.toastCtrl.create({ message: 'Booked — pay the driver in cash at drop-off.', duration: 2500, color: 'success' });
       await t.present();
       this.refresh();
-    } catch (e: any) {
-      const t = await this.toastCtrl.create({
-        message: e?.error?.message || 'Payment failed.',
-        duration: 2500,
-        color: 'danger',
-      });
-      await t.present();
+      return;
     }
+
+    const user = this.auth.getUser();
+    const rzp = new Razorpay({
+      key: res.razorpay.key_id,
+      order_id: res.razorpay.order_id,
+      amount: res.razorpay.amount_paise,
+      currency: res.razorpay.currency,
+      name: 'DreamCabs',
+      description: `Trip #${this.tripId} deposit`,
+      prefill: { name: user?.name || '', email: user?.email || '', contact: user?.phone || '' },
+      theme: { color: '#000000' },
+      handler: (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+        this.verifyUpiPayment(resp);
+      },
+      modal: {
+        ondismiss: async () => {
+          const t = await this.toastCtrl.create({ message: 'Deposit cancelled.', duration: 2000, color: 'warning' });
+          await t.present();
+        },
+      },
+    });
+    rzp.on('payment.failed', async (resp: any) => {
+      const t = await this.toastCtrl.create({ message: resp?.error?.description || 'Deposit failed.', duration: 3000, color: 'danger' });
+      await t.present();
+    });
+    rzp.open();
   }
 
   /**
@@ -1429,7 +1507,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     };
   }
 
-  private async doPayRazorpay(): Promise<void> {
+  private async doPayRazorpay(forcedMethod?: string): Promise<void> {
     if (typeof Razorpay === 'undefined') {
       const t = await this.toastCtrl.create({
         message: 'Payment library not loaded. Check your connection.',
@@ -1440,11 +1518,12 @@ export class TripActivePage implements OnInit, OnDestroy {
       return;
     }
 
-    // Razorpay fixes an order's amount before checkout opens, and the fee it
-    // charges us depends on how the customer pays — so the method has to be
-    // picked here, priced, and then locked at checkout. Returns null when the
-    // fee is switched off (no chooser shown) or the customer backed out.
-    const method = await this.chooseGatewayMethod();
+    // GPay locks to UPI outright. Otherwise Razorpay fixes an order's amount
+    // before checkout opens, and the fee it charges us depends on how the
+    // customer pays — so the instrument is picked here, priced, and then locked
+    // at checkout. chooseGatewayMethod returns null when the fee is switched off
+    // (no chooser shown) or 'cancelled' when the customer backed out.
+    const method = forcedMethod ?? (await this.chooseGatewayMethod());
     if (method === 'cancelled') {
       return;
     }

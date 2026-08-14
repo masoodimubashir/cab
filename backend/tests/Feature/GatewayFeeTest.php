@@ -42,6 +42,7 @@ class GatewayFeeTest extends TestCase
 
     private int $cityId;
     private int $rideTypeId;
+    private int $cvtId;
     private User $customer;
 
     protected function setUp(): void
@@ -58,10 +59,19 @@ class GatewayFeeTest extends TestCase
             'name' => 'Mini', 'mode' => 'private', 'description' => 'Mini', 'sort_order' => 1,
             'created_at' => $now, 'updated_at' => $now,
         ]);
-        CitySetting::query()->updateOrCreate(
-            ['city_id' => $this->cityId],
-            ['commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT],
-        );
+        // Commission lives on the vehicle rate card now (20% for this vehicle).
+        $vehicleTypeId = DB::table('vehicle_types')->insertGetId([
+            'name' => 'Mini', 'sort_order' => 1, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->cvtId = DB::table('city_vehicle_types')->insertGetId([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'display_name' => 'Mini', 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        \App\Models\PricingRule::query()->create([
+            'city_id' => $this->cityId, 'ride_type_id' => $this->rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
+            'city_vehicle_type_id' => $this->cvtId, 'base_fare' => 0, 'surge_multiplier' => 1,
+            'commission_type' => 'percent', 'commission_percent' => self::COMMISSION_PCT, 'fixed_commission' => 0,
+        ]);
 
         $this->customer = User::factory()->create();
         $this->customer->addRole('customer');
@@ -109,6 +119,7 @@ class GatewayFeeTest extends TestCase
             'driver_id' => $driver->id,
             'city_id' => $this->cityId,
             'ride_type_id' => $this->rideTypeId,
+            'city_vehicle_type_id' => $this->cvtId,
             'status' => 'CONFIRMED',
             'estimated_fare' => $agreedFare,
             'final_fare' => $agreedFare,
@@ -192,8 +203,9 @@ class GatewayFeeTest extends TestCase
     /* Charging                                                            */
     /* ------------------------------------------------------------------ */
 
-    public function test_the_customer_is_charged_the_fare_plus_the_fee(): void
+    public function test_private_customer_is_charged_only_the_fare_operator_bears_the_fee(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
 
@@ -202,23 +214,27 @@ class GatewayFeeTest extends TestCase
             ->postJson("/api/trips/{$trip->id}/pay/razorpay", ['payment_method' => 'upi'])
             ->assertOk()
             ->assertJsonPath('breakdown.fare', 1000)
-            ->assertJsonPath('breakdown.gateway_fee', 24.78)
-            ->assertJsonPath('breakdown.total', 1024.78)
-            // Razorpay is asked for the total, not the fare.
-            ->assertJsonPath('razorpay.amount_paise', 102478);
+            // Private: the operator bears the fee, so the rider is charged 0 extra.
+            ->assertJsonPath('breakdown.gateway_fee', 0)
+            ->assertJsonPath('breakdown.total', 1000)
+            // Razorpay is asked for the fare only.
+            ->assertJsonPath('razorpay.amount_paise', 100000);
     }
 
-    public function test_a_dearer_method_costs_the_customer_more(): void
+    public function test_private_customer_pays_the_fare_whatever_the_method(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
 
+        // A dearer method never costs the rider more, because they don't pay the
+        // fee at all on Private — the operator absorbs it.
         Sanctum::actingAs($this->customer, ['act-as:customer']);
         $this->withHeaders(['Idempotency-Key' => 'fee-charge-2'])
             ->postJson("/api/trips/{$trip->id}/pay/razorpay", ['payment_method' => 'premium_card'])
             ->assertOk()
-            ->assertJsonPath('breakdown.gateway_fee', 36.58)
-            ->assertJsonPath('razorpay.amount_paise', 103658);
+            ->assertJsonPath('breakdown.gateway_fee', 0)
+            ->assertJsonPath('razorpay.amount_paise', 100000);
     }
 
     /* ------------------------------------------------------------------ */
@@ -227,26 +243,29 @@ class GatewayFeeTest extends TestCase
 
     public function test_the_driver_is_paid_on_the_fare_not_on_the_fee(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->driver();
         $trip = $this->confirmedTrip($driver, 1000);
 
         $payment = $this->pay($trip, 'upi');
-        $this->assertSame(1024.78, (float) $payment->amount, 'customer charged fare + fee');
-        $this->assertSame(24.78, (float) $payment->gateway_fee_amount);
-        $this->assertSame('upi', $payment->payment_method_group);
+        $this->assertSame(1000.0, (float) $payment->amount, 'customer charged the fare only');
+        $this->assertNull($payment->gateway_fee_amount, 'no customer-borne fee on Private');
+        $this->assertSame(24.78, (float) $payment->operator_gateway_fee_amount, 'the operator absorbs the fee');
 
         $this->complete($trip);
         $payment->refresh();
 
-        // 20% of ₹1,000 = ₹200 commission, so the driver gets ₹800 — exactly what
-        // they'd have got with no fee in play.
+        // The driver still gets ₹800 (20% of ₹1,000 commission) — their share is
+        // computed on the fare, never touched by the fee.
         $this->assertSame(800.0, (float) $payment->driver_amount, 'driver share must ignore the fee');
-        $this->assertSame(200.0, (float) $payment->commission_amount, 'operator keeps its full commission');
+        // The operator's take is ₹200 commission minus the ₹24.78 fee it absorbed.
+        $this->assertSame(175.22, (float) $payment->commission_amount, 'operator eats the fee');
     }
 
     public function test_the_driver_earns_the_same_however_the_customer_paid(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
 
         $cheap = $this->confirmedTrip($this->driver(), 1000);
@@ -270,6 +289,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_the_ledger_names_the_fee_and_still_balances(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
 
@@ -279,12 +299,12 @@ class GatewayFeeTest extends TestCase
         $balance = app(LedgerService::class)->tripBalance($trip->id);
 
         $this->assertTrue($balance['balanced'], "imbalance of {$balance['imbalance']} paise");
-        $this->assertSame(102478, $balance['captured'], 'captured is what the customer paid');
+        $this->assertSame(100000, $balance['captured'], 'captured is the fare only (rider paid no fee)');
         $this->assertSame(2478, $balance['gateway_fee'], "Razorpay's cut is named");
-        $this->assertSame(80000, $balance['to_driver']);
-        $this->assertSame(20000, $balance['to_operator']);
-        // The operator keeps its commission — the fee came off the top, not out of it.
-        $this->assertSame(20000, $balance['operator_net']);
+        $this->assertSame(80000, $balance['to_driver'], 'driver paid on the fare');
+        // Operator's slice = fare − driver − fee it absorbed.
+        $this->assertSame(17522, $balance['to_operator']);
+        $this->assertSame(17522, $balance['operator_net'], 'the operator absorbs the fee');
 
         $this->assertDatabaseHas('ledger_entries', [
             'trip_id' => $trip->id,
@@ -299,8 +319,9 @@ class GatewayFeeTest extends TestCase
     /* Refunds — the customer gets the fee back too                        */
     /* ------------------------------------------------------------------ */
 
-    public function test_a_cancellation_that_is_not_the_customers_fault_returns_the_fee_as_well(): void
+    public function test_private_cancellation_refunds_the_fare_the_rider_paid(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
         $payment = $this->pay($trip, 'upi');
@@ -313,13 +334,13 @@ class GatewayFeeTest extends TestCase
 
         $payment->refresh();
 
-        // Razorpay keeps its ₹24.78 either way — refunding it is the operator's
-        // cost, and that is the decision this platform made.
-        $this->assertSame(1024.78, (float) $payment->refund_amount, 'the fee goes back to the customer');
+        // The rider paid only the fare (the operator bore the fee), so the fare is
+        // exactly what comes back — there's no fee on the rider's side to return.
+        $this->assertSame(1000.0, (float) $payment->refund_amount, 'the fare comes back');
 
         $balance = app(LedgerService::class)->tripBalance($trip->id);
         $this->assertTrue($balance['balanced'], "imbalance of {$balance['imbalance']} paise");
-        $this->assertSame(102478, $balance['refunded']);
+        $this->assertSame(100000, $balance['refunded']);
     }
 
     /* ------------------------------------------------------------------ */
@@ -328,6 +349,7 @@ class GatewayFeeTest extends TestCase
 
     public function test_with_the_fee_off_the_customer_pays_exactly_the_fare(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         config()->set('services.payments.gateway_fee.enabled', false);
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 1000);
@@ -342,6 +364,30 @@ class GatewayFeeTest extends TestCase
         $this->assertTrue($balance['balanced']);
         $this->assertSame(0, $balance['gateway_fee']);
         $this->assertSame(80000, $balance['to_driver']);
+    }
+
+    public function test_private_cash_deposit_records_the_operator_fee_on_the_payment(): void
+    {
+        \App\Models\OperatorSetting::instance()->forceFill(['payment_cash_enabled' => true, 'cash_deposit_percent' => 20])->save();
+        $this->mockRazorpay();
+        $trip = $this->confirmedTrip($this->driver(), 1000);
+
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->withHeaders(['Idempotency-Key' => 'cashdep-fee-1'])
+            ->postJson("/api/trips/{$trip->id}/pay/cash-deposit")
+            ->assertOk();
+
+        $deposit = 200.0;                                       // 20% of ₹1,000
+        $fee = app(GatewayFeeService::class)->feeFor($deposit); // operator fee on the deposit
+
+        // The rider is charged only the deposit; the operator's fee on the deposit
+        // is recorded on the payment (never a customer charge, never a ledger entry).
+        $payment = Payment::query()->where('trip_id', $trip->id)->whereNotNull('cash_deposit_amount')->latest('id')->first();
+        $this->assertNotNull($payment);
+        $this->assertSame($deposit, (float) $payment->cash_deposit_amount);
+        $this->assertSame($deposit, (float) $payment->amount, 'rider charged the deposit only');
+        $this->assertNull($payment->gateway_fee_amount);
+        $this->assertSame($fee, (float) $payment->operator_gateway_fee_amount, 'operator fee recorded');
     }
 
     /* ---- the quote-time fee, shown before a method is picked ---------- */

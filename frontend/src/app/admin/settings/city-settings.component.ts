@@ -47,21 +47,17 @@ interface CitySettings {
   id: number;
   city_id: number;
 
-  chat_enabled: boolean;
   show_region_specific_fare: boolean;
   show_vehicle_make_model: boolean;
 
-  allowed_driver_payment_modes: string[];
   negotiation_floor_percent: number | null;
-  commission_type: 'percent' | 'fixed';
-  commission_percent: number;
-  fixed_commission: number;
   toll_mode: 'yes' | 'no';
   show_low_wallet_alert: boolean;
   private_no_show_threshold_minutes: number | null;
   private_no_show_charge_per_minute: number | null;
   private_driver_no_show_grace_minutes: number;
   private_cancellation_rule: string | null;
+  cancellation_charge_percent: number | null;
 
   fixed_waiting_time_per_stop_minutes: number;
   fixed_stop_arrival_radius_m: number;
@@ -70,11 +66,12 @@ interface CitySettings {
   fixed_customer_pickup_radius_m: number;
   fixed_vehicle_approaching_alert_radius_m: number;
   fixed_customer_grace_minutes: number;
-  fixed_boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'qr_scan' | 'driver_customer';
+  fixed_boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'driver_customer';
 
   shuttle_pickup_match_distance_km: number;
   shuttle_drop_match_distance_km: number;
   shuttle_max_passenger_delay_minutes: number;
+  shuttle_forming_window_minutes: number;
   shuttle_join_after_start_enabled: boolean;
   shuttle_fare_lock_enabled: boolean;
   shuttle_driver_waiting_time_minutes: number;
@@ -83,6 +80,7 @@ interface CitySettings {
   shuttle_customer_pickup_radius_m: number;
   shuttle_approaching_alert_radius_m: number;
   shuttle_customer_grace_minutes: number;
+  shuttle_boarding_confirmation_mode: 'driver_only' | 'customer_otp' | 'driver_customer';
   shuttle_driver_payout_share_percent: number | null;
 
   emergency_no: string | null;
@@ -92,13 +90,7 @@ interface CitySettings {
   support_email: string | null;
 }
 
-const PAYMENT_MODE_OPTIONS = [
-  { label: 'Cash', value: 'CASH' },
-  { label: 'Razorpay', value: 'RAZORPAY' },
-];
-
 const TOGGLES: { key: keyof CitySettings; label: string; hint: string }[] = [
-  { key: 'chat_enabled', label: 'In-app chat', hint: 'Let riders and drivers message during a trip.' },
   { key: 'show_region_specific_fare', label: 'Region-specific fare', hint: 'Show area-based fares in the booking flow.' },
   { key: 'show_vehicle_make_model', label: 'Vehicle make & model', hint: 'Display the car make/model to the rider.' },
 ];
@@ -159,12 +151,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
           </header>
           <div class="sec__body">
             <div class="subsec"><h4 class="subsec__title">Feature toggles</h4><div class="toggles"><label class="tgl" *ngFor="let t of toggles"><input type="checkbox" [ngModel]="boolVal(t.key)" (ngModelChange)="setBool(t.key, $event)" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">{{ t.label }}</span><span class="tgl__hint">{{ t.hint }}</span></span></label></div></div>
-            <div class="subsec"><h4 class="subsec__title">Payments</h4><div class="chips"><button *ngFor="let p of paymentModeOptions" type="button" class="chip" [class.is-on]="isMode(p.value)" (click)="toggleMode(p.value)"><tm-icon [name]="isMode(p.value) ? 'check' : 'plus'" [size]="13" />{{ p.label }}</button></div></div>
             <div class="subsec"><h4 class="subsec__title">Ride commercials</h4>
-              <div class="seg">
-                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'percent'" (click)="form.commission_type = 'percent'">Percent commission</button>
-                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'fixed'" (click)="form.commission_type = 'fixed'">Fixed commission</button>
-              </div>
               <div class="toggles">
                 <label class="tgl"><input type="checkbox" [ngModel]="form.toll_mode === 'yes'" (ngModelChange)="form.toll_mode = $event ? 'yes' : 'no'" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Toll applicable</span><span class="tgl__hint">Allow route tolls returned by Google to be added to fares in this city.</span></span></label>
                 <label class="tgl"><input type="checkbox" [(ngModel)]="form.show_low_wallet_alert" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Low wallet alert</span><span class="tgl__hint">Show wallet warning on the driver app for this city.</span></span></label>
@@ -207,7 +194,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="field"><span class="field__lbl">Cancel window (min)<span class="info" tabindex="0" aria-label="How long before pickup scheduled rides can still be cancelled." data-tip="How long before pickup scheduled rides can still be cancelled.">!</span></span><input type="number" min="0" max="1440" [(ngModel)]="d.schedule_cancel_window_min" /></label>
               </div>
             </div>
-            <div class="subsec"><h4 class="subsec__title">No-show / cancellation</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Customer no-show threshold (min)<span class="info" tabindex="0" aria-label="Time after which a private ride customer can be treated as no-show." data-tip="Time after which a private ride customer can be treated as no-show.">!</span></span><input type="number" min="0" max="180" step="0.01" [(ngModel)]="form.private_no_show_threshold_minutes" /></label><label class="field"><span class="field__lbl">No-show charge / min<span class="info" tabindex="0" aria-label="Charge applied per minute for private ride no-show rules." data-tip="Charge applied per minute for private ride no-show rules.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.private_no_show_charge_per_minute" /></label><label class="field"><span class="field__lbl">Driver no-show grace (min)<span class="info" tabindex="0" aria-label="Extra time before treating the driver as no-show." data-tip="Extra time before treating the driver as no-show.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.private_driver_no_show_grace_minutes" /></label></div></div>
+            <div class="subsec"><h4 class="subsec__title">No-show / cancellation</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Customer no-show threshold (min)<span class="info" tabindex="0" aria-label="Time after which a private ride customer can be treated as no-show." data-tip="Time after which a private ride customer can be treated as no-show.">!</span></span><input type="number" min="0" max="180" step="0.01" [(ngModel)]="form.private_no_show_threshold_minutes" /></label><label class="field"><span class="field__lbl">No-show charge / min<span class="info" tabindex="0" aria-label="Charge applied per minute for private ride no-show rules." data-tip="Charge applied per minute for private ride no-show rules.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.private_no_show_charge_per_minute" /></label><label class="field"><span class="field__lbl">Driver no-show grace (min)<span class="info" tabindex="0" aria-label="Extra time before treating the driver as no-show." data-tip="Extra time before treating the driver as no-show.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.private_driver_no_show_grace_minutes" /></label><label class="field"><span class="field__lbl">Cancellation charge (%)<span class="info" tabindex="0" aria-label="Percent of the fare the operator keeps when a customer cancels a private or shuttle ride while the driver is on the way. Applies to Private and Shuttle; Fixed is always a full refund before arrival." data-tip="Percent of the fare kept when a customer cancels while the driver is on the way (Private & Shuttle).">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.cancellation_charge_percent" /></label></div></div>
           </div>
         </section>
         <section class="sec" id="sec-fixed"><header class="sec__head"><span class="sec__icon"><tm-icon name="map-marker" [size]="16" /></span><div><h3 class="sec__title">Fixed Ride Settings</h3><p class="sec__desc">City-level boarding and no-show rules for fixed shared rides.</p></div></header><div class="sec__body"><div class="subsec"><h4 class="subsec__title">Boarding & no-show</h4><div class="grid grid-4"><label class="field"><span class="field__lbl">Wait time per stop (min)<span class="info" tabindex="0" aria-label="How long the driver waits after confirmed arrival before no-show starts." data-tip="How long the driver waits after confirmed arrival before no-show starts.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_waiting_time_per_stop_minutes" /></label><label class="field"><span class="field__lbl">Stop arrival radius (m)<span class="info" tabindex="0" aria-label="Driver must be inside this distance from the stop." data-tip="Driver must be inside this distance from the stop.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_stop_arrival_radius_m" /></label><label class="field"><span class="field__lbl">Arrival dwell time (sec)<span class="info" tabindex="0" aria-label="Driver must stay inside the stop radius for this many seconds before arrival is confirmed." data-tip="Driver must stay inside the stop radius for this many seconds before arrival is confirmed.">!</span></span><input type="number" min="0" max="600" step="1" [(ngModel)]="form.fixed_stop_arrival_dwell_seconds" /></label><label class="field"><span class="field__lbl">Driver missed stop grace (min)<span class="info" tabindex="0" aria-label="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first." data-tip="Extra time before cancelling when the customer is at pickup but driver reaches a later stop first.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_driver_missed_stop_grace_minutes" /></label><label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.fixed_customer_pickup_radius_m" /></label><label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.fixed_vehicle_approaching_alert_radius_m" /></label><label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.fixed_customer_grace_minutes" /></label></div></div></div></section>
@@ -228,6 +215,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="field"><span class="field__lbl">Pickup match distance (km)<span class="info" tabindex="0" aria-label="Maximum pickup detour allowed when matching shuttle passengers." data-tip="Maximum pickup detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_pickup_match_distance_km" /></label>
                 <label class="field"><span class="field__lbl">Drop match distance (km)<span class="info" tabindex="0" aria-label="Maximum drop detour allowed when matching shuttle passengers." data-tip="Maximum drop detour allowed when matching shuttle passengers.">!</span></span><input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.shuttle_drop_match_distance_km" /></label>
                 <label class="field"><span class="field__lbl">Max passenger delay (min)<span class="info" tabindex="0" aria-label="Maximum extra delay allowed for existing shuttle passengers." data-tip="Maximum extra delay allowed for existing shuttle passengers.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_max_passenger_delay_minutes" /></label>
+                <label class="field"><span class="field__lbl">Pool forming wait (min)<span class="info" tabindex="0" aria-label="How long a shuttle waits to gather more riders before a driver is dispatched. It dispatches sooner if the vehicle fills up. 0 = dispatch immediately." data-tip="How long the shuttle waits to gather riders before dispatching a driver (dispatches sooner if full; 0 = instant).">!</span></span><input type="number" min="0" max="60" step="1" [(ngModel)]="form.shuttle_forming_window_minutes" /></label>
               </div>
               <div class="toggles">
                 <label class="tgl"><input type="checkbox" [(ngModel)]="form.shuttle_join_after_start_enabled" /><span class="tgl__track"></span><span class="tgl__meta"><span class="tgl__label">Allow joining after ride start</span></span></label>
@@ -243,6 +231,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
                 <label class="field"><span class="field__lbl">Customer pickup radius (m)<span class="info" tabindex="0" aria-label="Customer must be within this distance from pickup to be treated as present." data-tip="Customer must be within this distance from pickup to be treated as present.">!</span></span><input type="number" min="25" max="5000" step="5" [(ngModel)]="form.shuttle_customer_pickup_radius_m" /></label>
                 <label class="field"><span class="field__lbl">Approaching alert radius (m)<span class="info" tabindex="0" aria-label="Customer gets a vehicle approaching alert inside this distance." data-tip="Customer gets a vehicle approaching alert inside this distance.">!</span></span><input type="number" min="50" max="10000" step="50" [(ngModel)]="form.shuttle_approaching_alert_radius_m" /></label>
                 <label class="field"><span class="field__lbl">Customer grace (min)<span class="info" tabindex="0" aria-label="Extra time allowed after wait time if the customer is detected near pickup." data-tip="Extra time allowed after wait time if the customer is detected near pickup.">!</span></span><input type="number" min="0" max="180" step="1" [(ngModel)]="form.shuttle_customer_grace_minutes" /></label>
+                <label class="field"><span class="field__lbl">Boarding confirmation<span class="info" tabindex="0" aria-label="How the driver confirms each rider boarded. Driver only = tap; Customer OTP = rider reads a system code; Driver + customer = both." data-tip="How the driver confirms each rider boarded (tap / OTP).">!</span></span><select [(ngModel)]="form.shuttle_boarding_confirmation_mode"><option value="driver_only">Driver only (tap)</option><option value="customer_otp">Customer OTP</option><option value="driver_customer">Driver + customer</option></select></label>
               </div>
             </div>
           </div>
@@ -301,7 +290,6 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="spb-group" *ngIf="copyOpts.general">
               <span class="spb-lbl">⚙️ General & Contacts:</span>
               <div class="spb-pills">
-                <span class="spb-pill">Chat: {{ sourcePreview.settings.chat_enabled ? 'ON' : 'OFF' }}</span>
                 <span class="spb-pill">Region Fares: {{ sourcePreview.settings.show_region_specific_fare ? 'ON' : 'OFF' }}</span>
                 <span class="spb-pill">Make/Model: {{ sourcePreview.settings.show_vehicle_make_model ? 'ON' : 'OFF' }}</span>
                 <span class="spb-pill" *ngIf="sourcePreview.settings.emergency_no">Emergency: {{ sourcePreview.settings.emergency_no }}</span>
@@ -314,9 +302,7 @@ const NAV: { id: string; label: string; icon: IconName }[] = [
             <div class="spb-group" *ngIf="copyOpts.private">
               <span class="spb-lbl">🚕 Private Taxi Settings:</span>
               <div class="spb-pills">
-                <span class="spb-pill">Commission: {{ sourcePreview.settings.commission_type === 'percent' ? sourcePreview.settings.commission_percent + '%' : '₹' + sourcePreview.settings.fixed_commission }}</span>
                 <span class="spb-pill">Floor Discount: {{ sourcePreview.settings.negotiation_floor_percent }}%</span>
-                <span class="spb-pill">Payments: {{ (sourcePreview.settings.allowed_driver_payment_modes || []).join(', ') || 'CASH' }}</span>
                 <span class="spb-pill">Tolls: {{ sourcePreview.settings.toll_mode }}</span>
               </div>
             </div>
@@ -725,7 +711,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     vehicleTypes: true,
   };
 
-  paymentModeOptions = PAYMENT_MODE_OPTIONS;
   dispatchModes = DISPATCH_MODES;
   toggles = TOGGLES;
   nav = NAV;
@@ -884,17 +869,6 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.form) (this.form as any)[key] = val;
   }
 
-  isMode(mode: string): boolean {
-    return (this.form?.allowed_driver_payment_modes ?? []).includes(mode);
-  }
-  toggleMode(mode: string): void {
-    if (!this.form) return;
-    const list = this.form.allowed_driver_payment_modes ?? [];
-    this.form.allowed_driver_payment_modes = list.includes(mode)
-      ? list.filter((m) => m !== mode)
-      : [...list, mode];
-  }
-
   get activeDispatcher(): DispatcherSetting | null {
     return this.dispatcherSettings.find((s) => s.kind === this.activeDispatcherKind) ?? this.dispatcherSettings[0] ?? null;
   }
@@ -927,13 +901,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: (res) => {
           const s = res.settings;
-          if (!Array.isArray(s.allowed_driver_payment_modes)) {
-            s.allowed_driver_payment_modes = [];
-          }
           s.negotiation_floor_percent = Number(s.negotiation_floor_percent ?? 10);
-          s.commission_type = s.commission_type ?? 'percent';
-          s.commission_percent = Number(s.commission_percent ?? 0);
-          s.fixed_commission = Number(s.fixed_commission ?? 0);
           s.toll_mode = s.toll_mode ?? 'no';
           s.show_low_wallet_alert = !!s.show_low_wallet_alert;
           this.form = s;
@@ -963,24 +931,18 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
       else fd.append(key, String(val));
     };
 
-    append('chat_enabled', f.chat_enabled);
     append('show_region_specific_fare', f.show_region_specific_fare);
     append('show_vehicle_make_model', f.show_vehicle_make_model);
 
-    fd.append(
-      'allowed_driver_payment_modes',
-      JSON.stringify(f.allowed_driver_payment_modes ?? []),
-    );
     append('negotiation_floor_percent', f.negotiation_floor_percent ?? 10);
-    append('commission_type', f.commission_type ?? 'percent');
     append('toll_mode', f.toll_mode ?? 'no');
     append('show_low_wallet_alert', f.show_low_wallet_alert);
 
     const cityRuleFields: (keyof CitySettings)[] = [
-      'private_no_show_threshold_minutes', 'private_no_show_charge_per_minute', 'private_driver_no_show_grace_minutes',
+      'private_no_show_threshold_minutes', 'private_no_show_charge_per_minute', 'private_driver_no_show_grace_minutes', 'cancellation_charge_percent',
       'fixed_waiting_time_per_stop_minutes', 'fixed_stop_arrival_radius_m', 'fixed_stop_arrival_dwell_seconds', 'fixed_driver_missed_stop_grace_minutes', 'fixed_customer_pickup_radius_m', 'fixed_vehicle_approaching_alert_radius_m', 'fixed_customer_grace_minutes',
-      'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
-      'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes',
+      'shuttle_pickup_match_distance_km', 'shuttle_drop_match_distance_km', 'shuttle_max_passenger_delay_minutes', 'shuttle_forming_window_minutes', 'shuttle_join_after_start_enabled', 'shuttle_fare_lock_enabled',
+      'shuttle_driver_waiting_time_minutes', 'shuttle_pickup_arrival_radius_m', 'shuttle_driver_missed_pickup_grace_minutes', 'shuttle_customer_pickup_radius_m', 'shuttle_approaching_alert_radius_m', 'shuttle_customer_grace_minutes', 'shuttle_boarding_confirmation_mode',
     ];
     cityRuleFields.forEach((key) => append(key, f[key]));
 
@@ -1019,13 +981,7 @@ export class CitySettingsComponent implements OnInit, AfterViewInit, OnDestroy {
         this.saving = false;
         const cityRes = responses[0] as { settings: CitySettings };
         if (cityRes.settings) {
-          if (!Array.isArray(cityRes.settings.allowed_driver_payment_modes)) {
-            cityRes.settings.allowed_driver_payment_modes = [];
-          }
           cityRes.settings.negotiation_floor_percent = Number(cityRes.settings.negotiation_floor_percent ?? 10);
-          cityRes.settings.commission_type = cityRes.settings.commission_type ?? 'percent';
-          cityRes.settings.commission_percent = Number(cityRes.settings.commission_percent ?? 0);
-          cityRes.settings.fixed_commission = Number(cityRes.settings.fixed_commission ?? 0);
           cityRes.settings.toll_mode = cityRes.settings.toll_mode ?? 'no';
           cityRes.settings.show_low_wallet_alert = !!cityRes.settings.show_low_wallet_alert;
           this.form = cityRes.settings;

@@ -16,7 +16,11 @@ use Illuminate\Support\Facades\DB;
 
 class ShuttleBookingService
 {
-    public function __construct(private readonly FareEstimationService $fares) {}
+    public function __construct(
+        private readonly FareEstimationService $fares,
+        private readonly ShuttleSeatMapService $seatMaps,
+        private readonly CouponService $coupons,
+    ) {}
 
     public function createBooking(User $customer, array $data): ShuttlePassengerBooking
     {
@@ -40,16 +44,27 @@ class ShuttleBookingService
         );
 
         $tipAmount = max(0.0, round((float) ($data['tip_amount'] ?? 0), 2));
-        $totalFare = round((float) $estimate['estimated_fare'] + $tipAmount, 2);
+        $estimatedFare = round((float) $estimate['estimated_fare'], 2);
 
-        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare) {
-            $journey = ShuttleJourney::query()->create([
-                'city_id' => $cvt->city_id,
-                'city_vehicle_type_id' => $cvt->id,
-                'status' => 'DISPATCH_DISABLED',
-                'capacity' => max(1, (int) $cvt->max_people),
-                'seats_taken' => 1,
-            ]);
+        // Coupon (Model A — the OPERATOR funds it). The coupon discounts the fare;
+        // fare_amount stores what the customer PAYS (fare − discount + tip). The
+        // driver later settles on the GROSS fare (fare + tip) so the operator
+        // absorbs the discount — see CommissionSettlementService::settleShuttle.
+        $coupon = $this->resolveShuttleCoupon($customer, $cvt, $data, $estimatedFare);
+        $discount = round((float) $coupon['discount'], 2);
+        $payableFare = round(max(0.0, $estimatedFare - $discount), 2);
+        $totalFare = round($payableFare + $tipAmount, 2);
+
+        // Cash = pay a deposit online now, the rest to the driver in cash at trip end.
+        $paymentMethod = strtolower((string) ($data['payment_method'] ?? 'razorpay')) === 'cash' ? 'cash' : 'razorpay';
+        if ($paymentMethod === 'cash' && ! app(CashDepositService::class)->cashEnabled()) {
+            throw new ReservationException('Cash is not available for this operator.', 422);
+        }
+
+        return DB::transaction(function () use ($customer, $data, $cvt, $pricingRule, $estimate, $tipAmount, $totalFare, $discount, $coupon, $paymentMethod) {
+            // Pooling (decision 1A): join a still-forming journey heading the same
+            // way if one fits, otherwise start a fresh one.
+            $journey = $this->resolveJourneyForBooking($cvt, $data);
 
             return ShuttlePassengerBooking::query()->create([
                 'shuttle_journey_id' => $journey->id,
@@ -69,12 +84,137 @@ class ShuttleBookingService
                 'quote_time_min' => $estimate['time_min'] ?? null,
                 'fare_amount' => $totalFare,
                 'tip_amount' => $tipAmount,
+                'coupon_assignment_id' => $coupon['assignment_id'],
+                'promo_discount_amount' => $discount > 0 ? $discount : null,
                 'fare_breakdown' => $estimate['fare_breakdown'] ?? [],
                 'currency' => 'INR',
+                'payment_method' => $paymentMethod,
                 'payment_status' => 'PENDING',
                 'status' => 'PAYMENT_PENDING',
             ]);
         });
+    }
+
+    /**
+     * Read-only coupon check for the shuttle fare step. Prices the trip the same
+     * way createBooking does, resolves the coupon against the pre-tip fare, and
+     * returns the discount so the customer sees it before booking. Does NOT create
+     * a booking or burn the coupon. Mirrors the Fixed coupon-preview.
+     *
+     * @return array{base_amount:float,discount:float,final_amount:float,coupon:?array{title:string}}
+     */
+    public function previewCoupon(User $customer, array $data): array
+    {
+        $cvt = $this->resolveShuttleVehicle($data);
+        $pricingRule = PricingRule::resolveFor((int) $cvt->id);
+        if (!$pricingRule) {
+            throw new ReservationException('Shuttle fare is not configured for this vehicle yet.', 404);
+        }
+
+        $estimate = $this->fares->estimateFare(
+            $pricingRule->toArray(),
+            (float) $data['pickup_lat'],
+            (float) $data['pickup_lng'],
+            (float) $data['drop_lat'],
+            (float) $data['drop_lng'],
+            null,
+            null,
+            isset($data['route_distance_km']) ? (float) $data['route_distance_km'] : null,
+            isset($data['route_time_min']) ? (float) $data['route_time_min'] : null,
+            (CitySetting::query()->firstOrCreate(['city_id' => $cvt->city_id])->toll_mode === 'yes') ? (float) ($data['toll_amount'] ?? 0) : 0.0,
+        );
+
+        $baseAmount = round((float) $estimate['estimated_fare'], 2);
+        $coupon = $this->resolveShuttleCoupon($customer, $cvt, $data, $baseAmount);
+        $discount = round((float) $coupon['discount'], 2);
+
+        return [
+            'base_amount' => $baseAmount,
+            'discount' => $discount,
+            'final_amount' => round(max(0.0, $baseAmount - $discount), 2),
+            'coupon' => $coupon['assignment_id'] ? ['title' => trim((string) ($data['coupon_title'] ?? ''))] : null,
+        ];
+    }
+
+    /**
+     * Pooling matcher (decision 1A). Returns a still-forming journey this rider
+     * can share, or a fresh one. A journey is joinable when it's the same vehicle
+     * type + scope, still open for riders (DISPATCH_DISABLED / FORMING), has a free
+     * seat, and an existing rider's pickup AND drop are each within the city's
+     * shuttle match distances of this rider's. The chosen journey is row-locked and
+     * re-checked before its seat count is bumped, so two riders can't overfill it.
+     *
+     * NOTE: the per-rider added-delay cap (shuttle_max_passenger_delay_minutes) is a
+     * routing-based refinement not evaluated here — matching is by corridor
+     * (pickup-near-pickup, drop-near-drop) for now.
+     */
+    private function resolveJourneyForBooking(CityVehicleType $cvt, array $data): ShuttleJourney
+    {
+        $settings = CitySetting::query()->where('city_id', $cvt->city_id)->first();
+        $pickupKm = (float) ($settings?->shuttle_pickup_match_distance_km ?? 1.5);
+        $dropKm = (float) ($settings?->shuttle_drop_match_distance_km ?? 1.5);
+        $scope = $data['scope'] ?? 'local';
+
+        $pLat = (float) $data['pickup_lat'];
+        $pLng = (float) $data['pickup_lng'];
+        $dLat = (float) $data['drop_lat'];
+        $dLng = (float) $data['drop_lng'];
+
+        $candidates = ShuttleJourney::query()
+            ->where('city_vehicle_type_id', $cvt->id)
+            ->whereIn('status', ['DISPATCH_DISABLED', 'FORMING'])
+            ->whereColumn('seats_taken', '<', 'capacity')
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get();
+
+        foreach ($candidates as $candidate) {
+            $anchor = ShuttlePassengerBooking::query()
+                ->where('shuttle_journey_id', $candidate->id)
+                ->whereIn('status', ['PAYMENT_PENDING', 'CONFIRMED', 'BOARDED'])
+                ->where('scope', $scope)
+                ->orderBy('id')
+                ->first();
+            if (! $anchor) {
+                continue;
+            }
+
+            $pickupClose = $this->kmBetween($pLat, $pLng, (float) $anchor->pickup_lat, (float) $anchor->pickup_lng) <= $pickupKm;
+            $dropClose = $this->kmBetween($dLat, $dLng, (float) $anchor->drop_lat, (float) $anchor->drop_lng) <= $dropKm;
+            if (! $pickupClose || ! $dropClose) {
+                continue;
+            }
+
+            // Lock and re-check before committing to the join.
+            $locked = ShuttleJourney::query()->whereKey($candidate->id)->lockForUpdate()->first();
+            if ($locked
+                && in_array($locked->status, ['DISPATCH_DISABLED', 'FORMING'], true)
+                && (int) $locked->seats_taken < (int) $locked->capacity) {
+                $locked->increment('seats_taken');
+
+                return $locked;
+            }
+        }
+
+        // Nobody to share with → a fresh journey carrying this one rider.
+        return ShuttleJourney::query()->create([
+            'city_id' => $cvt->city_id,
+            'city_vehicle_type_id' => $cvt->id,
+            'status' => 'DISPATCH_DISABLED',
+            'capacity' => max(1, (int) $cvt->max_people),
+            'seats_taken' => 1,
+        ]);
+    }
+
+    /** Great-circle distance in kilometres. */
+    private function kmBetween(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthKm = 6371.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return $earthKm * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
     public function createRazorpayOrder(User $customer, ShuttlePassengerBooking $booking, RazorpayService $razorpay): array
@@ -94,12 +234,16 @@ class ShuttleBookingService
                 return $this->razorpayOrderResponse($locked);
             }
 
-            $amountPaise = max(100, (int) round(((float) $locked->fare_amount) * 100));
+            // Cash pays only the upfront deposit online; online pays the full fare.
+            $onlineAmount = strtolower((string) $locked->payment_method) === 'cash'
+                ? app(CashDepositService::class)->quote((float) $locked->fare_amount)['deposit']
+                : (float) $locked->fare_amount;
+
+            $amountPaise = max(100, (int) round($onlineAmount * 100));
             $receipt = 'shuttle_' . $locked->id . '_' . now()->format('YmdHis');
             $order = $razorpay->createOrder($amountPaise, $receipt);
 
             $locked->update([
-                'payment_method' => 'razorpay',
                 'payment_status' => 'ORDER_CREATED',
                 'razorpay_order_id' => $order['order_id'],
             ]);
@@ -140,7 +284,6 @@ class ShuttleBookingService
             }
 
             $locked->update([
-                "payment_method" => "razorpay",
                 "payment_status" => "PAID",
                 "payment_reference" => $razorpayPaymentId,
                 "razorpay_payment_id" => $razorpayPaymentId,
@@ -149,11 +292,22 @@ class ShuttleBookingService
             ]);
 
             $trip = $this->ensureDispatchTrip($locked);
-            if ($trip->wasRecentlyCreated) {
-                $dispatch = [$trip->id, (float) $locked->fare_amount];
-            }
+
+            // Commit any seats the customer held for this booking (HELD → BOOKED).
+            // No-op when the customer skipped seat selection.
+            $this->seatMaps->bookSeats($locked);
+
+            // Burn the coupon (if any) now that payment is real.
+            $this->markCouponRedeemed($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
+
+            // Dispatch a driver as soon as the van is full (decision 6C). Otherwise
+            // the pool keeps forming and the timer sweep (shuttle:dispatch-due)
+            // dispatches it once the wait window expires.
+            if ($this->claimDispatchIfFull($locked->shuttle_journey_id)) {
+                $dispatch = [$trip->id, $this->journeyPaidFareTotal($locked->shuttle_journey_id)];
+            }
 
             return $locked->fresh();
         });
@@ -191,7 +345,6 @@ class ShuttleBookingService
             }
 
             $locked->update([
-                'payment_method' => 'razorpay',
                 'payment_status' => 'PAID',
                 'payment_reference' => $razorpayPaymentId,
                 'razorpay_payment_id' => $razorpayPaymentId,
@@ -200,11 +353,19 @@ class ShuttleBookingService
             ]);
 
             $trip = $this->ensureDispatchTrip($locked);
-            if ($trip->wasRecentlyCreated) {
-                $dispatch = [$trip->id, (float) $locked->fare_amount];
-            }
+
+            // Commit any seats the customer held for this booking (HELD → BOOKED).
+            $this->seatMaps->bookSeats($locked);
+
+            // Burn the coupon (if any) now that payment is real.
+            $this->markCouponRedeemed($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
+
+            // Dispatch when the van is full; otherwise the timer sweep handles it.
+            if ($this->claimDispatchIfFull($locked->shuttle_journey_id)) {
+                $dispatch = [$trip->id, $this->journeyPaidFareTotal($locked->shuttle_journey_id)];
+            }
 
             return $locked->fresh();
         });
@@ -225,15 +386,42 @@ class ShuttleBookingService
      */
     private function recordSplitCapture(ShuttlePassengerBooking $booking, Trip $trip, string $razorpayPaymentId): void
     {
+        $fare = (float) $booking->fare_amount;
         $commission = app(CommissionSettlementService::class)
-            ->commissionForFare($booking->city_id, (float) $booking->fare_amount);
+            ->commissionForFare($trip->city_vehicle_type_id, $fare);
+
+        // Cash: only the upfront deposit was captured online (the rest is cash to
+        // the driver). The deposit settles wholly to the driver at completion and
+        // the operator's commission comes from the driver's wallet — the snapshot
+        // rides along to drive that debit, not a retention from the deposit.
+        $cashDeposit = null;
+        $cashBalance = null;
+        if (strtolower((string) $booking->payment_method) === 'cash') {
+            $quote = app(CashDepositService::class)->quote($fare);
+            $cashDeposit = $quote['deposit'];
+            $cashBalance = $quote['balance'];
+        }
+
+        // Shuttle policy: the OPERATOR bears the gateway fee. The fee base is what's
+        // charged online — the full fare on an online seat, the deposit on a cash
+        // seat. Online: booked against the operator's slice at settlement. Cash: the
+        // deposit is wholly the driver's, so it's recorded on the payment for the
+        // operator's net-settlement but NOT booked in the trip ledger (see
+        // PaymentSplitService::operatorFeePaise).
+        $gatewayFees = app(\App\Services\GatewayFeeService::class);
+        $feeBase = $cashDeposit !== null ? (float) $cashDeposit : $fare;
+        $operatorFee = $gatewayFees->operatorBears('shuttle') ? $gatewayFees->feeFor($feeBase) : 0.0;
 
         app(BookingPaymentService::class)->recordCapture(
             $trip->id,
             $razorpayPaymentId,
-            (float) $booking->fare_amount,
+            $fare,
             (float) $commission['amount'],
             (string) ($booking->currency ?: 'INR'),
+            $cashDeposit,
+            $cashBalance,
+            0.0,
+            $operatorFee,
         );
     }
 
@@ -241,10 +429,30 @@ class ShuttleBookingService
     {
         $booking->loadMissing(['journey:id,status,capacity,seats_taken,trip_id', 'cityVehicleType:id,display_name,vehicle_type_id,ride_type_id']);
 
+        $seatLabels = \App\Models\JourneySeat::query()
+            ->where('shuttle_passenger_booking_id', $booking->id)
+            ->whereIn('status', ['HELD', 'BOOKED'])
+            ->orderBy('label')
+            ->pluck('label')
+            ->all();
+
+        // Boarding confirmation (5B): the mode the operator set, and — for otp/qr
+        // modes — the rider's own system-generated code (in-app, no SMS). The
+        // customer app shows the number or renders it as a QR for the driver.
+        $boardingMode = (string) (CitySetting::query()
+            ->where('city_id', $booking->city_id)
+            ->value('shuttle_boarding_confirmation_mode') ?? 'driver_only');
+        $boardingCode = $boardingMode === 'driver_only'
+            ? null
+            : app(ShuttleBoardingOtpService::class)->codeForCustomer($booking);
+
         return [
             'id' => $booking->id,
             'shuttle_journey_id' => $booking->shuttle_journey_id,
             'trip_id' => $booking->journey?->trip_id,
+            'seat_labels' => $seatLabels,
+            'boarding_mode' => $boardingMode,
+            'boarding_code' => $boardingCode,
             'journey_status' => $booking->journey?->status,
             'city_id' => $booking->city_id,
             'city_vehicle_type_id' => $booking->city_vehicle_type_id,
@@ -261,6 +469,7 @@ class ShuttleBookingService
                 'address' => $booking->drop_address,
             ],
             'fare_amount' => (float) $booking->fare_amount,
+            'promo_discount_amount' => $booking->promo_discount_amount !== null ? (float) $booking->promo_discount_amount : 0.0,
             'currency' => $booking->currency,
             'payment_method' => $booking->payment_method,
             'payment_status' => $booking->payment_status,
@@ -315,7 +524,9 @@ class ShuttleBookingService
             'estimated_fare' => $fare,
             'final_fare' => null,
             'currency' => $booking->currency ?: 'INR',
-            'payment_method' => null,
+            // Carry the seat's method so settlement takes a cash ride's commission
+            // from the driver's wallet (only the deposit was online).
+            'payment_method' => $booking->payment_method,
             'pickup_address' => $booking->pickup_address,
             'pickup_lat' => (float) $booking->pickup_lat,
             'pickup_lng' => (float) $booking->pickup_lng,
@@ -339,12 +550,112 @@ class ShuttleBookingService
             'status' => 'PENDING',
         ]);
 
+        // Start the pool-forming window (decision 6C): a driver is dispatched when
+        // the van fills or this deadline passes, whichever comes first. A window of
+        // 0 means dispatch as soon as the first rider pays (instant, no pooling wait).
+        $window = (int) (CitySetting::query()
+            ->where('city_id', $booking->city_id)
+            ->value('shuttle_forming_window_minutes') ?? 2);
+
         $journey->update([
             'trip_id' => $trip->id,
             'status' => 'FORMING',
+            'forming_deadline_at' => now()->addMinutes(max(0, $window)),
         ]);
 
         return $trip;
+    }
+
+    /**
+     * Claim the dispatch for a journey that is now full, exactly once. Row-locks
+     * the journey and stamps dispatched_at so neither a racing payment nor the
+     * timer sweep can dispatch the same van twice. Returns true when THIS call won
+     * the claim. Must run inside the caller's transaction.
+     */
+    private function claimDispatchIfFull(int $journeyId): bool
+    {
+        $journey = ShuttleJourney::query()->whereKey($journeyId)->lockForUpdate()->first();
+        if (! $journey || $journey->dispatched_at !== null) {
+            return false;
+        }
+
+        $paidSeats = ShuttlePassengerBooking::query()
+            ->where('shuttle_journey_id', $journeyId)
+            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
+            ->where('payment_status', 'PAID')
+            ->count();
+
+        if ($paidSeats < (int) $journey->capacity) {
+            return false;
+        }
+
+        $journey->forceFill(['dispatched_at' => now()])->save();
+
+        return true;
+    }
+
+    /** Total paid fare across the journey's confirmed riders (the pool's value). */
+    private function journeyPaidFareTotal(int $journeyId): float
+    {
+        return round((float) ShuttlePassengerBooking::query()
+            ->where('shuttle_journey_id', $journeyId)
+            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
+            ->where('payment_status', 'PAID')
+            ->sum('fare_amount'), 2);
+    }
+
+    /**
+     * Resolve an optional customer-typed coupon against this shuttle fare. Returns
+     * the assignment id + discount (0 when no coupon), or throws when the coupon is
+     * invalid. baseAmount is the pre-coupon FARE (no tip). Mirrors the Fixed flow.
+     *
+     * @return array{assignment_id:?int,discount:float}
+     */
+    private function resolveShuttleCoupon(User $customer, CityVehicleType $cvt, array $data, float $baseAmount): array
+    {
+        $couponTitle = trim((string) ($data['coupon_title'] ?? ''));
+        if ($couponTitle === '' || $baseAmount <= 0) {
+            return ['assignment_id' => null, 'discount' => 0.0];
+        }
+
+        $result = $this->coupons->resolveForUser(
+            code: $couponTitle,
+            userId: (int) $customer->id,
+            cityId: (int) $cvt->city_id,
+            baseAmount: $baseAmount,
+            cityVehicleTypeId: (int) $cvt->id,
+            pickupLat: isset($data['pickup_lat']) ? (float) $data['pickup_lat'] : null,
+            pickupLng: isset($data['pickup_lng']) ? (float) $data['pickup_lng'] : null,
+            dropLat: isset($data['drop_lat']) ? (float) $data['drop_lat'] : null,
+            dropLng: isset($data['drop_lng']) ? (float) $data['drop_lng'] : null,
+        );
+
+        if (! $result['ok']) {
+            throw new ReservationException($result['error'], 422);
+        }
+
+        // Online payment minimum: the payable fare must stay at or above ₹1.
+        if ((float) $result['final_amount'] < 1.0) {
+            throw new ReservationException('This coupon makes the payable amount below the online payment minimum. Please use a smaller coupon.', 422);
+        }
+
+        return [
+            'assignment_id' => (int) $result['assignment']->id,
+            'discount' => (float) $result['discount'],
+        ];
+    }
+
+    /** Burn the coupon assignment tied to a booking once its payment confirms. */
+    private function markCouponRedeemed(ShuttlePassengerBooking $booking): void
+    {
+        if (! $booking->coupon_assignment_id) {
+            return;
+        }
+
+        \App\Models\CouponAssignment::query()
+            ->where('id', $booking->coupon_assignment_id)
+            ->whereNull('used_at')
+            ->update(['used_at' => now()]);
     }
 
     private function resolveShuttleVehicle(array $data): CityVehicleType

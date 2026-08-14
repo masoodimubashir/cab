@@ -34,6 +34,9 @@ export interface RefundRow {
   travel_date?: string | null;
   reason: string;
   payment_method: string;
+  is_cash?: boolean;
+  cash_deposit?: number | null;
+  cash_balance?: number | null;
   amount: number;
   state: 'due' | 'refunded' | 'rejected' | 'none';
   refund_status: string;
@@ -62,6 +65,7 @@ const MODULE_OPTIONS = [
 
 const PAID_OPTIONS = [
   { value: 'razorpay' as const, label: 'Razorpay' },
+  { value: 'cash' as const, label: 'Cash' },
   { value: 'wallet' as const, label: 'Wallet' },
 ];
 
@@ -289,11 +293,18 @@ const PAID_OPTIONS = [
               </td>
               <td class="reason">{{ row.reason }}</td>
               <td>
-                <span class="paychip" [ngClass]="'paychip--' + (row.payment_method === 'wallet' ? 'wallet' : 'razorpay')">
-                  <span class="paychip__dot"></span>{{ row.payment_method === 'wallet' ? 'Wallet' : 'Razorpay' }}
+                <span class="paychip" [ngClass]="'paychip--' + payTone(row)">
+                  <span class="paychip__dot"></span>{{ payLabel(row) }}
+                </span>
+                <span class="paytag" *ngIf="row.is_cash">Deposit online · balance in cash</span>
+              </td>
+              <td class="num amount">
+                ₹ {{ row.amount | number:'1.2-2' }}
+                <span class="submeta" *ngIf="row.is_cash">{{ row.state === 'refunded' ? 'deposit refunded' : 'online deposit' }}</span>
+                <span class="submeta submeta--cash" *ngIf="row.is_cash && (row.cash_balance || 0) > 0">
+                  + ₹{{ row.cash_balance | number:'1.2-2' }} was cash with driver
                 </span>
               </td>
-              <td class="num amount">₹ {{ row.amount | number:'1.2-2' }}</td>
               <td>
                 <div class="stack">
                   <ng-container *ngIf="row.state === 'due'">
@@ -342,9 +353,14 @@ const PAID_OPTIONS = [
             <p class="who__reason">{{ m.reason }}</p>
 
             <div class="lockedAmount">
-              <span class="lockedAmount__label">Amount owed (locked)</span>
+              <span class="lockedAmount__label">{{ m.is_cash ? 'Online deposit owed (locked)' : 'Amount owed (locked)' }}</span>
               <span class="lockedAmount__value">₹ {{ m.amount | number:'1.2-2' }}</span>
             </div>
+            <p class="cashNote" *ngIf="m.is_cash">
+              Cash booking — this is the <strong>online deposit</strong> only.
+              <ng-container *ngIf="(m.cash_balance || 0) > 0">₹{{ m.cash_balance | number:'1.2-2' }} of the fare was to be collected in cash by the driver and is not refunded here;</ng-container>
+              settle any physical-cash dispute with the driver directly.
+            </p>
 
             <label class="field">
               <span>How was it sent? <em class="req">*</em></span>
@@ -546,6 +562,11 @@ const PAID_OPTIONS = [
     .paychip--razorpay .paychip__dot { background: var(--tm-info); }
     .paychip--wallet { background: var(--tm-green-tint); color: var(--tm-green-deep); }
     .paychip--wallet .paychip__dot { background: var(--tm-green); }
+    .paychip--cash { background: var(--tm-warning-bg, #fff4e5); color: var(--tm-warning-fg, #92400e); }
+    .paychip--cash .paychip__dot { background: var(--tm-warning-fg, #92400e); }
+    .paytag { display: block; margin-top: 4px; font-size: 10.5px; font-weight: 700; color: var(--tm-text-soft); }
+    .submeta { display: block; font-size: 10.5px; font-weight: 700; color: var(--tm-text-soft); white-space: nowrap; }
+    .submeta--cash { color: var(--tm-warning-fg, #92400e); }
 
     /* Drawer — "who" summary card at the top of the form */
     .who { display: flex; align-items: center; gap: 12px; }
@@ -567,6 +588,10 @@ const PAID_OPTIONS = [
       padding: 10px 12px; border: 1px dashed var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
     .lockedAmount__label { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--tm-text-muted); font-weight: 800; }
     .lockedAmount__value { font-size: 18px; font-weight: 850; color: var(--tm-text); font-variant-numeric: tabular-nums; }
+    .cashNote { display: flex; align-items: flex-start; gap: 7px; margin: 0; padding: 9px 11px; font-size: 11.5px; font-weight: 650;
+      line-height: 1.45; color: var(--tm-warning-fg, #92400e); background: var(--tm-warning-bg, #fff4e5);
+      border-radius: var(--tm-radius-md); }
+    .cashNote strong { font-weight: 850; }
     .field { display: flex; flex-direction: column; gap: 6px; color: var(--tm-text-muted); font-size: 12px; font-weight: 800; }
     .field input, .field textarea, .field select { border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md);
       background: var(--tm-canvas); color: var(--tm-text); padding: 9px 10px; font: inherit; font-weight: 650; }
@@ -593,7 +618,7 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   // Extra filters (all client-side over the loaded register)
   search = '';
   moduleFilter: 'all' | 'fixed' | 'shuttle' = 'all';
-  paidVia: 'all' | 'razorpay' | 'wallet' = 'all';
+  paidVia: 'all' | 'razorpay' | 'cash' | 'wallet' = 'all';
   dateFrom = moment().startOf('month').format('YYYY-MM-DD');
   dateTo = moment().format('YYYY-MM-DD');
   activePreset: 'today' | 'yesterday' | '7days' | 'thisMonth' | null = 'thisMonth';
@@ -717,11 +742,13 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
       if (this.filter === 'refunded' && r.state !== 'refunded') return false;
       // Module
       if (this.moduleFilter !== 'all' && r.module !== this.moduleFilter) return false;
-      // Paid via (wallet vs razorpay)
+      // Paid via (wallet / cash / razorpay)
       if (this.paidVia !== 'all') {
         const isWallet = r.payment_method === 'wallet';
+        const isCash = !!r.is_cash || r.payment_method === 'cash';
         if (this.paidVia === 'wallet' && !isWallet) return false;
-        if (this.paidVia === 'razorpay' && isWallet) return false;
+        if (this.paidVia === 'cash' && !isCash) return false;
+        if (this.paidVia === 'razorpay' && (isWallet || isCash)) return false;
       }
       // Date range on the row's activity date
       if (from || to) {
@@ -825,7 +852,7 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
       : this.paidOptions.find((o) => o.value === this.paidVia)?.label ?? 'Any payment';
   }
   togglePaidMenu(event: MouseEvent): void { event.stopPropagation(); this.moduleOpen = false; this.paidOpen = !this.paidOpen; }
-  selectPaid(value: 'all' | 'razorpay' | 'wallet'): void { this.paidOpen = false; this.paidVia = value; this.triggerCardPulse(); }
+  selectPaid(value: 'all' | 'razorpay' | 'cash' | 'wallet'): void { this.paidOpen = false; this.paidVia = value; this.triggerCardPulse(); }
 
   clearAllFilters(): void {
     this.search = '';
@@ -909,6 +936,18 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   formatDate(iso?: string | null): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  /** Payment-brand tone for the "Paid via" chip — cash is its own rail now. */
+  payTone(row: RefundRow): 'wallet' | 'cash' | 'razorpay' {
+    if (row.payment_method === 'wallet') return 'wallet';
+    if (row.is_cash || row.payment_method === 'cash') return 'cash';
+    return 'razorpay';
+  }
+
+  payLabel(row: RefundRow): string {
+    const tone = this.payTone(row);
+    return tone === 'wallet' ? 'Wallet' : tone === 'cash' ? 'Cash' : 'Razorpay';
   }
 
   /** Up to 2 initials for the customer avatar. */

@@ -224,3 +224,31 @@
   width: 16px;
   height: 16px;
 }
+
+.boarding-code {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  padding: 14px 12px;
+  margin-bottom: 12px;
+  border: 1px dashed #12B35B;
+  border-radius: 14px;
+  background: #E7F8EF;
+}
+.boarding-code__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e7a3d;
+}
+.boarding-code__value {
+  font-size: 34px;
+  font-weight: 850;
+  letter-spacing: 8px;
+  color: #0D1B2A;
+}
+.boarding-code__hint {
+  font-size: 11px;
+  color: #6b7280;
+}

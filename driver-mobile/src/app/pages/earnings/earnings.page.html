@@ -43,50 +43,35 @@
       <p class="dc-error">{{ error }}</p>
     </ion-text>
 
-    <!-- ─── Payouts: what has actually reached the bank, and what hasn't ─── -->
-    <div class="pg-card ec-payout-card" *ngIf="payout">
+    <!-- ─── Model B settlement: what the operator owes you, and your last payout ─── -->
+    <div class="pg-card ec-payout-card">
       <div class="pg-card__head">
         <div class="pg-card__icon"><ion-icon name="wallet-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Paid to your bank <small class="ec-scope">· {{ periodLabelMap[period] }}</small></h2>
+        <h2 class="pg-card__title">{{ inDebt ? 'You owe the operator' : 'Owed to you' }}</h2>
       </div>
 
       <div class="ec-payout">
         <div class="ec-payout__row">
           <span class="ec-payout__label">
-            <ion-icon name="checkmark-circle" class="is-paid"></ion-icon> Received
+            <ion-icon [name]="inDebt ? 'alert-circle-outline' : 'checkmark-circle'" [class.is-paid]="!inDebt"></ion-icon>
+            {{ inDebt ? 'To settle' : 'Pending payout' }}
           </span>
-          <strong class="ec-payout__val">₹{{ payout.paid | number:'1.0-2' }}</strong>
+          <strong class="ec-payout__val">₹{{ (inDebt ? youOwe : owedToYou) | number:'1.0-2' }}</strong>
         </div>
-        <div class="ec-payout__row" *ngIf="payout.pending > 0">
+        <div class="ec-payout__row" *ngIf="lastPaidAmount != null">
           <span class="ec-payout__label">
-            <ion-icon name="time-outline" class="is-pending"></ion-icon> On its way
+            <ion-icon name="time-outline" class="is-pending"></ion-icon> Last paid
           </span>
-          <strong class="ec-payout__val">₹{{ payout.pending | number:'1.0-2' }}</strong>
-        </div>
-        <div class="ec-payout__row" *ngIf="payout.held > 0">
-          <span class="ec-payout__label">
-            <ion-icon name="lock-closed-outline" class="is-held"></ion-icon> Waiting to be released
-          </span>
-          <strong class="ec-payout__val ec-payout__val--held">₹{{ payout.held | number:'1.0-2' }}</strong>
+          <strong class="ec-payout__val">{{ lastPaidLabel() }}</strong>
         </div>
       </div>
 
-      <p class="ec-payout__note" *ngIf="payoutBlockedReason">
-        <ion-icon name="information-circle-outline"></ion-icon>
-        <span>{{ payoutBlockedReason }}</span>
-      </p>
-
-      <ion-button
-        *ngIf="payout.blocked_by_kyc"
-        expand="block"
-        class="ec-payout__cta"
-        routerLink="/payout-account"
-      >
-        Add payout account
+      <ion-button expand="block" class="ec-payout__cta" routerLink="/tabs/wallet">
+        View wallet &amp; payouts
       </ion-button>
 
-      <p class="ec-payout__hint" *ngIf="!payoutBlockedReason">
-        Your share of each fare goes straight to your bank after the ride — no collecting, no waiting for us.
+      <p class="ec-payout__hint">
+        The operator holds your fares and pays you what you're owed. See every movement in your wallet.
       </p>
     </div>
 

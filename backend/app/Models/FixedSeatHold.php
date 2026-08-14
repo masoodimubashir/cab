@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'board_stop_id',
     'drop_stop_id',
     'seats',
+    'payment_method',
     'amount',
     'original_amount',
     'discount_amount',

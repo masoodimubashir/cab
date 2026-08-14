@@ -148,14 +148,21 @@ class PaymentsController extends Controller
             ->sum(DB::raw('amount - COALESCE(gateway_fee_amount, 0)'));
         $payableAmount = round($payableAmount - $alreadyPaid, 2);
 
-        // The gateway's cut rides on top of the fare, so the customer covers it
-        // and commission stays whole. Zero while the fee is switched off.
+        // Who bears the gateway fee depends on the ride mode. This endpoint pays
+        // PRIVATE trips, where the OPERATOR bears it: the rider pays only the fare
+        // and the fee is booked against the operator at settlement. (Fixed's
+        // rider-pays flow lives in its own booking path.) Zero while the fee is off.
         $gatewayFees = app(GatewayFeeService::class);
         $methodGroup = $gatewayFees->isKnownMethod($data['payment_method'] ?? null)
             ? (string) $data['payment_method']
             : null;
-        $gatewayFeeAmount = $gatewayFees->feeFor($payableAmount, $methodGroup);
-        $chargeAmount = round($payableAmount + $gatewayFeeAmount, 2);
+        $operatorBearsFee = $gatewayFees->operatorBears('private');
+        // Operator-borne uses the default rate (the rider isn't picking a
+        // fee-bearing method); customer-borne uses the method they chose.
+        $feeAmount = $gatewayFees->feeFor($payableAmount, $operatorBearsFee ? null : $methodGroup);
+        $customerFeeAmount = $operatorBearsFee ? 0.0 : $feeAmount;
+        $operatorFeeAmount = $operatorBearsFee ? $feeAmount : 0.0;
+        $chargeAmount = round($payableAmount + $customerFeeAmount, 2);
 
         $amountPaise = (int) round($chargeAmount * 100);
         if ($amountPaise <= 0) {
@@ -169,7 +176,7 @@ class PaymentsController extends Controller
 
         $receipt = 'trip_' . $trip->id . '_' . now()->format('YmdHis');
 
-        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $gatewayFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
+        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $customerFeeAmount, $operatorFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
             // Reuse an abandoned checkout for this trip rather than piling up
             // rows; a settled payment is never touched (there may now be several
             // per trip: the prepayment plus a balance).
@@ -188,7 +195,8 @@ class PaymentsController extends Controller
                 // The fare inside it is amount − gateway_fee_amount, which is
                 // what the split runs on.
                 'amount' => $chargeAmount,
-                'gateway_fee_amount' => $gatewayFeeAmount > 0 ? $gatewayFeeAmount : null,
+                'gateway_fee_amount' => $customerFeeAmount > 0 ? $customerFeeAmount : null,
+                'operator_gateway_fee_amount' => $operatorFeeAmount > 0 ? $operatorFeeAmount : null,
                 'payment_method_group' => $methodGroup,
                 'currency' => 'INR',
                 'paid_at' => null,
@@ -230,7 +238,7 @@ class PaymentsController extends Controller
                 // shows this as the fare with a "Payment fee" line beneath it.
                 'breakdown' => [
                     'fare' => $payableAmount,
-                    'gateway_fee' => $gatewayFeeAmount,
+                    'gateway_fee' => $customerFeeAmount,
                     'total' => $chargeAmount,
                     'payment_method' => $methodGroup,
                 ],
@@ -278,10 +286,14 @@ class PaymentsController extends Controller
         ]);
     }
 
-    /** Is the customer expected to pay up front on a private ride? */
+    /**
+     * Is the customer expected to pay up front on a private ride? No — Route/prepay
+     * was removed. Private rides are postpaid (pay at completion); the wallet
+     * settles the driver afterwards (Model B).
+     */
     private function prepaymentsEnabled(): bool
     {
-        return (bool) config('services.payments.split_enabled', false);
+        return false;
     }
 
     /**
@@ -300,7 +312,7 @@ class PaymentsController extends Controller
             ->effectiveCommissionPercentForTrip($trip, -1.0);
 
         $commission = app(\App\Services\CommissionSettlementService::class)->commissionForFare(
-            $trip->city_id,
+            $trip->city_vehicle_type_id,
             $fare,
             (float) ($trip->toll_amount ?? 0),
             $subPercent,
@@ -457,6 +469,123 @@ class PaymentsController extends Controller
             $this->markCouponRedeemed($payment, $trip);
 
             return response()->json(['payment' => $payment]);
+        });
+    }
+
+    /**
+     * Cash hybrid deposit (Private): the customer pays an upfront deposit online
+     * at booking and hands the rest to the driver in cash at trip end. The
+     * deposit is a real Razorpay charge that settles WHOLLY to the driver at
+     * completion (the operator's commission is taken from the driver's wallet,
+     * not from this money). A 0% operator deposit means nothing is charged online.
+     */
+    public function payCashDeposit(Request $request, Trip $trip, RazorpayService $razorpayService, PaymentModeService $paymentModeService)
+    {
+        $user = $request->user();
+        if ($trip->customer_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        // The deposit is collected up front, as soon as the fare is agreed.
+        if (!in_array($trip->status, self::PREPAY_STATUSES, true)) {
+            return response()->json(['message' => 'This trip is not ready for a deposit yet.'], 409);
+        }
+
+        // Server-side guard: cash must actually be an offered method.
+        if (!in_array('cash', $paymentModeService->allowedForTrip($trip), true)) {
+            return response()->json(['message' => 'Cash is not available for this trip.'], 422);
+        }
+
+        $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+        if ($fare <= 0) {
+            return response()->json(['message' => 'Fare not available yet.'], 422);
+        }
+
+        $quote = app(\App\Services\CashDepositService::class)->quote($fare);
+        $deposit = $quote['deposit'];
+        $balance = $quote['balance'];
+
+        // Mark the trip as cash so completion settles it as cash (commission from
+        // the wallet, deposit wholly to the driver).
+        if (strtolower((string) $trip->payment_method) !== 'cash') {
+            $trip->forceFill(['payment_method' => 'cash'])->save();
+        }
+
+        // A 0% operator deposit means nothing is collected online — pure cash ride.
+        if ($deposit <= 0) {
+            return response()->json([
+                'deposit_required' => false,
+                'cash_balance_due' => $balance,
+                'message' => 'No upfront deposit — pay the driver in cash at trip end.',
+            ]);
+        }
+
+        $amountPaise = (int) round($deposit * 100);
+        $receipt = 'trip_' . $trip->id . '_dep_' . now()->format('YmdHis');
+
+        return DB::transaction(function () use ($trip, $fare, $amountPaise, $deposit, $balance, $receipt, $razorpayService) {
+            // Reuse an abandoned deposit checkout for this trip rather than piling
+            // up rows; a settled deposit is never touched.
+            $payment = Payment::query()
+                ->where('trip_id', $trip->id)
+                ->where('status', 'PENDING')
+                ->whereNotNull('cash_deposit_amount')
+                ->latest('id')
+                ->first();
+
+            // Private cash: the operator bears the gateway fee on the deposit. It's
+            // recorded on the payment for the operator's net-settlement; it is NOT a
+            // trip-ledger entry (the deposit is wholly the driver's).
+            $gatewayFees = app(\App\Services\GatewayFeeService::class);
+            $operatorFee = $gatewayFees->operatorBears('private') ? $gatewayFees->feeFor($deposit) : 0.0;
+
+            $attributes = [
+                'trip_id' => $trip->id,
+                'method' => 'CASH',
+                'provider' => 'RAZORPAY',
+                'status' => 'PENDING',
+                'amount' => $deposit,
+                'cash_deposit_amount' => $deposit,
+                'cash_balance_due' => $balance,
+                'operator_gateway_fee_amount' => $operatorFee > 0 ? $operatorFee : null,
+                'currency' => 'INR',
+                'paid_at' => null,
+                'razorpay_payment_id' => null,
+                'razorpay_order_id' => null,
+                'provider_response' => null,
+                // Settles at completion (deposit → driver), like any booking prepay.
+                'settlement_mode' => $this->prepaymentsEnabled() ? Payment::SETTLE_BOOKING : null,
+            ];
+
+            if ($payment) {
+                $payment->forceFill($attributes)->save();
+            } else {
+                $payment = Payment::query()->create($attributes);
+            }
+
+            // Cancel fee = commission from the moment of booking (§5 rulebook),
+            // computed on the whole fare since that is what the wallet is charged.
+            $this->stampExpectedCommission($trip, $fare);
+
+            $order = $razorpayService->createOrder($amountPaise, $receipt);
+            $payment->razorpay_order_id = $order['order_id'];
+            $payment->save();
+
+            return response()->json([
+                'payment' => $payment,
+                'deposit_required' => true,
+                'breakdown' => [
+                    'fare' => $fare,
+                    'deposit' => $deposit,
+                    'cash_balance_due' => $balance,
+                ],
+                'razorpay' => [
+                    'key_id' => env('RAZORPAY_KEY_ID'),
+                    'order_id' => $order['order_id'],
+                    'amount_paise' => $order['amount'],
+                    'currency' => $order['currency'],
+                ],
+            ]);
         });
     }
 

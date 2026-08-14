@@ -59,6 +59,25 @@ type ManifestPassenger = {
 
 type ManifestStop = { id: number; seq: number; name: string; lat: number; lng: number };
 
+type ShuttlePoolPassenger = {
+  booking_id: number;
+  name: string | null;
+  seat: string | null;
+  status: string;
+  payment_method: string | null;
+  pickup: { lat: number; lng: number; address: string | null };
+  drop: { lat: number; lng: number; address: string | null };
+  boarded_at: string | null;
+  dropped_at: string | null;
+};
+
+type ShuttlePool = {
+  journey: { id: number; trip_id: number | null; status: string; capacity: number; boarding_mode?: string };
+  aboard: number;
+  remaining: number;
+  passengers: ShuttlePoolPassenger[];
+};
+
 /**
  * What this trip pays the driver, from the server. `collect_cash` is the one
  * that changes behaviour: once fares are paid online and split automatically,
@@ -95,6 +114,10 @@ export class RidesPage implements OnInit, OnDestroy {
   // Shared (fixed/shuttle) journey manifest — passengers + ordered stops.
   // Null for a private trip.
   sharedManifest: { route_name?: string; passengers: ManifestPassenger[]; stops: ManifestStop[] } | null = null;
+
+  // Shuttle pool manifest — the driver's live rider list for a multi-passenger
+  // shuttle. Null unless the active trip is a shuttle pool.
+  shuttlePool: ShuttlePool | null = null;
 
   /** Server's view of what this trip pays the driver. Null on older backends. */
   driverPayout: DriverPayout | null = null;
@@ -599,13 +622,19 @@ export class RidesPage implements OnInit, OnDestroy {
    * trip they didn't mean to close).
    */
   private async askForExtras(): Promise<Record<string, unknown> | null> {
+    // Hide the toll box when tolls are off for this city — the server ignores a
+    // declared toll then anyway, so there's nothing for the driver to enter.
+    const tollsEnabled = this.lastTrip?.['tolls_enabled'] !== false;
+    const inputs = [
+      ...(tollsEnabled
+        ? [{ name: 'toll', type: 'number' as const, placeholder: 'Toll you paid (₹)', min: 0 }]
+        : []),
+      { name: 'waiting', type: 'number' as const, placeholder: 'Extra waiting charge (₹)', min: 0 },
+    ];
     const alert = await this.alertCtrl.create({
       header: 'Anything to add?',
       message: 'Leave blank if not. The rider pays any extra online — never in cash.',
-      inputs: [
-        { name: 'toll', type: 'number', placeholder: 'Toll you paid (₹)', min: 0 },
-        { name: 'waiting', type: 'number', placeholder: 'Extra waiting charge (₹)', min: 0 },
-      ],
+      inputs,
       buttons: [
         { text: 'Back', role: 'cancel' },
         { text: 'Finish ride', role: 'confirm' },
@@ -717,6 +746,7 @@ export class RidesPage implements OnInit, OnDestroy {
           // Latch the vehicle's reverse-bidding rule from the loaded trip.
           this.allowCountering = this.readReverseBidding(this.lastTrip);
           this.maybeRefreshManifest();
+          this.maybeRefreshPool();
 
           // Pull the city-configured negotiation floor — offers below it are rejected.
           const cfg = res['negotiation_config'] || {};
@@ -859,7 +889,9 @@ export class RidesPage implements OnInit, OnDestroy {
           this.stopSelfPositionWatch();
         }
       },
-      (payload) => this.onCustomerLocation(payload)
+      (payload) => this.onCustomerLocation(payload),
+      // A rider boarded / was dropped on this pool — refresh the manifest live.
+      () => this.maybeRefreshPool()
     );
 
     void this.initLiveMap();
@@ -1089,6 +1121,96 @@ export class RidesPage implements OnInit, OnDestroy {
         },
         error: () => undefined,
       });
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Shuttle pool — the driver's live multi-passenger rider list
+  // ─────────────────────────────────────────────────────────────────
+
+  get poolPassengers(): ShuttlePoolPassenger[] {
+    return this.shuttlePool?.passengers ?? [];
+  }
+
+  /** True once we've loaded a pool with at least one rider on it. */
+  get isShuttlePool(): boolean {
+    return !!this.shuttlePool && this.poolPassengers.length > 0;
+  }
+
+  poolStatusLabel(p: ShuttlePoolPassenger): string {
+    switch (p.status) {
+      case 'BOARDED': return 'Aboard';
+      case 'DROPPED': return 'Dropped';
+      case 'NO_SHOW': return 'No-show';
+      default: return 'Waiting';
+    }
+  }
+
+  /** Fetch the pool manifest when the active trip is a shuttle. */
+  maybeRefreshPool(): void {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id || !this.isShuttleTrip(this.lastTrip)) {
+      this.shuttlePool = null;
+      return;
+    }
+    this.api.get<ShuttlePool>(`/shuttle/trips/${id}/manifest`).subscribe({
+      next: (res) => { this.shuttlePool = res; },
+      error: () => { this.shuttlePool = null; },
+    });
+  }
+
+  async boardShuttle(bookingId: number): Promise<void> {
+    const mode = this.shuttlePool?.journey?.boarding_mode ?? 'driver_only';
+    // Driver-only = tap to board. Every other mode needs the rider's code first.
+    if (mode === 'driver_only') {
+      this.poolAction(bookingId, 'board');
+      return;
+    }
+    if (this.busy) return;
+    this.busy = true;
+    this.error = null;
+    // Generate the rider's code (they see it on their own screen), then ask for it.
+    this.api.post(`/shuttle/bookings/${bookingId}/boarding-otp`, {}).subscribe({
+      next: () => { this.busy = false; void this.promptBoardingCode(bookingId); },
+      error: (err) => { this.busy = false; this.error = err?.error?.message || 'Could not start boarding.'; },
+    });
+  }
+
+  private async promptBoardingCode(bookingId: number): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Boarding code',
+      message: 'Ask the rider for their boarding code.',
+      inputs: [{ name: 'code', type: 'text', attributes: { inputmode: 'numeric', maxlength: 4 }, placeholder: '4-digit code' }],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Board', handler: (data) => this.boardWithCode(bookingId, String(data?.code || '').trim()) },
+      ],
+    });
+    await alert.present();
+  }
+
+  private boardWithCode(bookingId: number, code: string): void {
+    if (!code) { this.error = "Enter the rider's code."; return; }
+    this.busy = true;
+    this.error = null;
+    this.api.post(`/shuttle/bookings/${bookingId}/board`, { code }).subscribe({
+      next: () => this.maybeRefreshPool(),
+      error: (err) => { this.error = err?.error?.message || 'Wrong or expired code.'; },
+      complete: () => { this.busy = false; },
+    });
+  }
+
+  dropShuttle(bookingId: number): void {
+    this.poolAction(bookingId, 'drop');
+  }
+  private poolAction(bookingId: number, action: 'board' | 'drop'): void {
+    if (this.busy) return;
+    this.busy = true;
+    this.error = null;
+    this.api.post(`/shuttle/bookings/${bookingId}/${action}`, {}).subscribe({
+      next: () => this.maybeRefreshPool(),
+      error: (err) => { this.error = err?.error?.message || 'Could not update passenger'; },
+      complete: () => { this.busy = false; },
+    });
   }
 
   boardPassenger(reservationId: number): void {

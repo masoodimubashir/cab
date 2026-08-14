@@ -1,5 +1,8 @@
 <ion-content class="trip-page" [scrollY]="false">
 
+  <!-- Full-screen boarding-code prompt (private + shuttle) — pops when a code arrives -->
+  <app-boarding-code-prompt [code]="boardingPromptCode"></app-boarding-code-prompt>
+
   <!-- Loading -->
   <div class="trip-loading" *ngIf="loading">
     <ion-spinner name="crescent"></ion-spinner>
@@ -394,4 +397,12 @@
       </div>
     </ng-template>
   </ion-modal>
+
+  <app-payment-method-modal
+    [open]="payModalOpen"
+    [amount]="payableAmount"
+    title="How would you like to pay?"
+    (select)="onPrivatePayMethod($event)"
+    (dismiss)="payModalOpen = false">
+  </app-payment-method-modal>
 </ion-content>

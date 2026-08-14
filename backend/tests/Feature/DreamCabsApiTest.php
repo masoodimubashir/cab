@@ -278,10 +278,13 @@ class DreamCabsApiTest extends TestCase
 
         $settings = \App\Models\OperatorSetting::instance();
         $settings->tip_in_percentage = true;
+        $settings->tips_enabled = true;
         $settings->save();
 
-        $customer = User::factory()->create(['role' => 'customer']);
-        $driver = User::factory()->create(['role' => 'driver']);
+        $customer = User::factory()->create();
+        $customer->addRole('customer');
+        $driver = User::factory()->create();
+        $driver->addRole('driver');
 
         $trip = Trip::query()->create([
             'customer_id' => $customer->id,
@@ -300,8 +303,8 @@ class DreamCabsApiTest extends TestCase
         ]);
 
         // The client already turned "20%" of ₹200 into ₹40 before posting.
-        Sanctum::actingAs($customer);
-        $this->postJson("/api/trips/{$trip->id}/tip", ['amount' => 40])->assertOk();
+        Sanctum::actingAs($customer, ['act-as:customer']);
+        $this->postJson("/api/trips/{$trip->id}/tip", ['amount' => 40])->assertCreated();
 
         // Stored as ₹40 — not re-converted to 40% of ₹200 (₹80).
         $this->assertEquals(40.0, (float) $trip->fresh()->tip_amount);

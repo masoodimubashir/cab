@@ -708,9 +708,15 @@ class FixedDriverController extends Controller
             return;
         }
 
-        $departure->loadMissing('route:id,fixed_settings_json');
-        $settings = is_array($departure->route?->fixed_settings_json) ? $departure->route->fixed_settings_json : [];
-        $radiusM = max(25, min(1000, (int) ($settings['stop_arrival_radius_m'] ?? 150)));
+        // The arrival radius always comes from live City Settings — the same source
+        // the automatic stop-reached check uses — so board/drop/no-show agree with
+        // what the operator configured. Falls back to the route's own value, then a
+        // floor, only when City Settings is missing. No upper cap: the operator's
+        // number wins everywhere.
+        $departure->loadMissing('route:id,city_id,fixed_settings_json');
+        $legacy = is_array($departure->route?->fixed_settings_json) ? $departure->route->fixed_settings_json : [];
+        $citySettings = \App\Models\CitySetting::query()->where('city_id', $departure->route?->city_id)->first();
+        $radiusM = max(25, (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacy['stop_arrival_radius_m'] ?? 150)));
 
         $location = DriverLocation::query()
             ->where('driver_id', $driverId)

@@ -48,10 +48,13 @@ return [
     // source of a captured online payment and the driver's share is transferred
     // (or held, if their payout account isn't verified) — no wallet debit.
     //
-    // Keep this OFF until cash is gone (Phase 4) and Razorpay Route is activated,
-    // otherwise cash rides would settle without collecting commission.
+    // Razorpay Route (the split-to-driver engine) has been REMOVED. Money always
+    // goes to the operator now, and the driver wallet is the single settlement
+    // ledger (Model B). This flag is permanently false and no longer reads the
+    // environment — it stays only as a hard guard so any residual reader takes the
+    // operator path. Do NOT re-enable; the Route code paths are dead.
     'payments' => [
-        'split_enabled' => (bool) env('PAYMENTS_SPLIT_ENABLED', false),
+        'split_enabled' => false,
 
         // The gateway fee the customer pays on top of the fare, so Razorpay's
         // cut doesn't come out of commission. Rates below are Razorpay's own
@@ -68,6 +71,15 @@ return [
             'default_rate' => (float) env('PAYMENTS_GATEWAY_FEE_DEFAULT_RATE', 2.0),
             'route_rate' => (float) env('PAYMENTS_GATEWAY_ROUTE_RATE', 0.1),
             'gst_rate' => (float) env('PAYMENTS_GATEWAY_GST_RATE', 18.0),
+
+            // Who bears the fee, by ride mode. 'customer' adds it on top of the
+            // fare (the rider sees + pays it); 'operator' keeps the rider's price
+            // at the fare and books the fee against the operator at settlement.
+            'borne_by' => [
+                'fixed' => env('PAYMENTS_GATEWAY_FEE_FIXED_BEARER', 'customer'),
+                'private' => env('PAYMENTS_GATEWAY_FEE_PRIVATE_BEARER', 'operator'),
+                'shuttle' => env('PAYMENTS_GATEWAY_FEE_SHUTTLE_BEARER', 'operator'),
+            ],
 
             // Keys are what the customer app sends back as `payment_method`.
             'methods' => [

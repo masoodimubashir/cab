@@ -260,6 +260,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_a_fixed_prepayment_is_mirrored_with_no_trip_and_no_split(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -280,6 +281,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_starting_the_departure_attaches_the_prepayment_to_the_trip(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -293,6 +295,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_completing_the_ride_splits_the_prepayment_and_reconciles(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -314,6 +317,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_several_bookings_on_one_trip_settle_independently(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -338,6 +342,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_settlement_is_idempotent_when_completion_runs_twice(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -361,6 +366,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_an_unverified_drivers_share_is_held_not_transferred(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver(verifiedPayout: false);
         $departure = $this->openDeparture($driver);
@@ -387,6 +393,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_r6_customer_cancelling_in_time_is_refunded_in_full(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -419,6 +426,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_r6_refund_is_claimed_only_once_on_a_double_cancel(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -435,6 +443,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_r7_a_no_show_gets_no_refund_but_the_fare_still_settles_by_the_split(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -472,6 +481,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_cancelling_once_the_vehicle_has_reached_the_pickup_stop_gets_no_refund_but_still_settles(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -509,6 +519,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_cancelling_while_the_vehicle_is_still_forming_is_refunded_in_full(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -529,6 +540,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_operator_cancelling_a_booking_refunds_it_in_full(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -544,6 +556,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_a_failed_razorpay_refund_falls_back_to_the_manual_register(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay(refundThrows: true);
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -569,6 +582,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_a_departure_that_expires_without_a_driver_refunds_every_seat_online(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -625,6 +639,7 @@ class BookingSettlementPhase5Test extends TestCase
 
     public function test_with_the_engine_on_the_legacy_wallet_credit_is_suppressed(): void
     {
+        $this->markTestSkipped('Razorpay Route removed — money always goes to the operator (Model B).');
         $this->mockRazorpay();
         $driver = $this->makeDriver();
         $departure = $this->openDeparture($driver);
@@ -641,8 +656,11 @@ class BookingSettlementPhase5Test extends TestCase
         $this->assertSame(96.0, (float) $this->paymentFor($reservation)->driver_amount);
     }
 
-    public function test_with_the_engine_off_a_cancel_stays_on_the_manual_register(): void
+    public function test_with_the_engine_off_a_cancel_is_auto_refunded_via_razorpay(): void
     {
+        // Module 3: under Model B (Route off) a Fixed cancel before the vehicle
+        // reaches the pickup is now AUTO-refunded directly via Razorpay (it used to
+        // fall to the manual register). No Payment mirror / ledger under Model B.
         config()->set('services.payments.split_enabled', false);
         $this->mockRazorpay();
 
@@ -654,8 +672,11 @@ class BookingSettlementPhase5Test extends TestCase
         Sanctum::actingAs($customer, ['act-as:customer']);
         $this->postJson("/api/fixed/bookings/{$reservation->id}/cancel")
             ->assertOk()
-            ->assertJsonPath('refund_status', 'APPROVED');
+            ->assertJsonPath('refund_status', 'REFUNDED');
 
+        $reservation->refresh();
+        $this->assertSame('REFUNDED', $reservation->refund_status);
+        $this->assertSame(self::SEAT_FARE, (float) $reservation->refund_amount);
         $this->assertSame(0, Payment::query()->count());
         $this->assertSame(0, LedgerEntry::query()->count());
     }

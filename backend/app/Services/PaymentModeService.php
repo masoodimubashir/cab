@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\CitySetting;
 use App\Models\OperatorSetting;
 use App\Models\Trip;
 use App\Models\User;
@@ -10,17 +9,23 @@ use App\Models\User;
 /**
  * Single source of truth for "which payment methods may be used".
  *
+ * Payment methods are a GLOBAL operator policy now (Operator Settings →
+ * Payments), no longer a per-city setting. The three switches — Online, GPay
+ * and Cash — decide the enforceable payment rails:
+ *   • Online OR GPay on → 'razorpay' (both ride the Razorpay rail; the customer
+ *     app draws the Online-vs-GPay choice straight from the two switches).
+ *   • Cash on → 'cash'.
+ *
  * Both the customer payment screen (via the negotiation endpoint) and the pay
  * endpoints resolve through here, so the buttons the rider sees and what the
  * server will accept can never disagree.
  *
  * Layers:
- *   • City ceiling — city_settings.allowed_driver_payment_modes (the operator's
- *     per-city cap; defaults to RAZORPAY when unset).
+ *   • Operator policy — the three switches above (the ceiling).
  *   • Driver layer — Operator Settings → "Update driver payment modes":
- *       ON  → the driver's own accepted_payment_methods narrow the city cap.
- *       OFF → the driver simply follows the city (the operator owns the policy).
- *   • Result = city ∩ driver-effective.
+ *       ON  → the driver's own accepted_payment_methods narrow the operator set.
+ *       OFF → the driver simply follows the operator policy.
+ *   • Result = operator ∩ driver-effective.
  */
 class PaymentModeService
 {
@@ -32,16 +37,7 @@ class PaymentModeService
      */
     public function allowedForTrip(Trip $trip): array
     {
-        // Once the auto-split engine is live, cash is dead: the customer always
-        // pays online so the fare can be split at source. This one gate makes
-        // both the customer payment screen and the payCash server guard drop
-        // cash together — no ride settles as cash while commission is collected
-        // by retaining it from an online payment.
-        if ((bool) config('services.payments.split_enabled', false)) {
-            return ['razorpay'];
-        }
-
-        $city = $this->cityModes($trip->city_id);
+        $operator = $this->operatorModes();
 
         if ($this->driverManagesOwnModes()) {
             $driver = $trip->driver_id ? User::query()->find($trip->driver_id) : null;
@@ -49,28 +45,46 @@ class PaymentModeService
                 ? $this->normalize($driver->accepted_payment_methods)
                 : ['CASH', 'RAZORPAY']; // a driver who set nothing accepts both
         } else {
-            $driverModes = $city; // operator owns it → driver follows the city
+            $driverModes = $operator; // operator owns it → driver follows
         }
 
-        $allowed = array_values(array_intersect($city, $driverModes));
+        $allowed = array_values(array_intersect($operator, $driverModes));
+        $allowed = $allowed ?: $operator; // never strand a trip with no method
 
         return array_map('strtolower', $allowed);
     }
 
     /**
-     * A city's allowed modes (UPPERCASE), defaulting to RAZORPAY when unset.
+     * The operator's globally enabled payment rails (UPPERCASE). Online and
+     * GPay both map to RAZORPAY; Cash maps to CASH. Falls back to RAZORPAY so a
+     * misconfigured row can never leave a trip unpayable.
      *
      * @return array<int, string>
      */
-    public function cityModes(?int $cityId): array
+    public function operatorModes(): array
     {
-        $raw = $cityId
-            ? CitySetting::query()->where('city_id', $cityId)->value('allowed_driver_payment_modes')
-            : null;
+        $s = OperatorSetting::instance();
 
-        $modes = is_array($raw) ? $this->normalize($raw) : [];
+        $modes = [];
+        if ($s->payment_online_enabled || $s->payment_gpay_enabled) {
+            $modes[] = 'RAZORPAY';
+        }
+        if ($s->payment_cash_enabled) {
+            $modes[] = 'CASH';
+        }
 
         return $modes ?: ['RAZORPAY'];
+    }
+
+    /**
+     * @deprecated Payment policy is global now, so the city id is ignored — kept
+     * only so existing callers keep resolving. Prefer operatorModes().
+     *
+     * @return array<int, string>
+     */
+    public function cityModes(?int $cityId = null): array
+    {
+        return $this->operatorModes();
     }
 
     /** Whether the operator lets drivers manage their own accepted methods. */
@@ -80,7 +94,7 @@ class PaymentModeService
     }
 
     /**
-     * Upper-case, trim, dedupe and keep only the two supported modes.
+     * Upper-case, trim, dedupe and keep only the two supported rails.
      *
      * @param  array<int, mixed>  $modes
      * @return array<int, string>

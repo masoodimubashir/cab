@@ -50,6 +50,15 @@
         </div>
 
         <div class="details" *ngIf="expandedId === booking.id">
+          <div class="boarding-code" *ngIf="booking.boarding_code">
+            <span class="boarding-code__label">Show this boarding code to the driver</span>
+            <span class="boarding-code__value">{{ booking.boarding_code }}</span>
+            <span class="boarding-code__hint">Only share it once you're getting into the vehicle.</span>
+          </div>
+          <div class="detail-row" *ngIf="booking.seat_labels?.length">
+            <span>Your seat</span>
+            <strong>{{ booking.seat_labels?.join(', ') }}</strong>
+          </div>
           <div class="detail-row">
             <span>Booking status</span>
             <strong>{{ booking.status }}</strong>

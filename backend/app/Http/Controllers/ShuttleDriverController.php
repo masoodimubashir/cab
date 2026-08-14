@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\ShuttleJourney;
+use App\Models\ShuttlePassengerBooking;
+use App\Models\Trip;
+use App\Services\ShuttleDriverService;
+use Illuminate\Http\Request;
+
+/**
+ * Driver-facing endpoints for a multi-passenger shuttle pool: the live manifest
+ * and the per-rider board / drop actions. All guarded to the pool's own driver
+ * inside ShuttleDriverService.
+ */
+class ShuttleDriverController extends Controller
+{
+    public function __construct(private readonly ShuttleDriverService $driver) {}
+
+    public function manifest(Request $request, ShuttleJourney $journey)
+    {
+        return response()->json($this->driver->manifest($request->user(), $journey));
+    }
+
+    /** Same manifest, resolved from the driver's trip id (what the app holds). */
+    public function manifestForTrip(Request $request, Trip $trip)
+    {
+        $journey = ShuttleJourney::query()->where('trip_id', $trip->id)->first();
+        if (! $journey) {
+            abort(404, 'This trip has no shuttle pool.');
+        }
+
+        return response()->json($this->driver->manifest($request->user(), $journey));
+    }
+
+    /** otp / qr modes: generate + surface the rider's boarding code. */
+    public function sendBoardingOtp(Request $request, ShuttlePassengerBooking $booking)
+    {
+        $result = $this->driver->sendBoardingCode($request->user(), $booking);
+
+        if (! ($result['sent'] ?? false)) {
+            if (isset($result['locked_for'])) {
+                return response()->json(['message' => 'Locked after too many wrong codes. Try again shortly.', 'locked_for' => $result['locked_for']], 429);
+            }
+
+            return response()->json(['message' => 'Please wait before resending the code.', 'retry_after' => $result['retry_after'] ?? 30], 429);
+        }
+
+        return response()->json(['message' => 'Boarding code sent to the rider.']);
+    }
+
+    public function board(Request $request, ShuttlePassengerBooking $booking)
+    {
+        $data = $request->validate([
+            'code' => ['nullable', 'string', 'max:12'],
+        ]);
+
+        $updated = $this->driver->board($request->user(), $booking, $data['code'] ?? null);
+
+        return response()->json([
+            'passenger' => ['booking_id' => $updated->id, 'status' => $updated->status],
+            'message' => 'Passenger marked as boarded.',
+        ]);
+    }
+
+    public function drop(Request $request, ShuttlePassengerBooking $booking)
+    {
+        $updated = $this->driver->drop($request->user(), $booking);
+
+        return response()->json([
+            'passenger' => ['booking_id' => $updated->id, 'status' => $updated->status],
+            'message' => 'Passenger marked as dropped off.',
+        ]);
+    }
+}

@@ -15,6 +15,13 @@
   margin: 0;
 }
 
+/* Pick-address map popup title — plain visible title (not the hidden brand). */
+.pf-map-title {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 16px;
+}
+
 /* ---------------------------------------------------------- segment switcher */
 .segment-wrap {
   margin: 16px 16px 20px;
