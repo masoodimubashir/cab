@@ -233,10 +233,10 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
         <div class="card card--operator" (click)="setViewMode('commissions')">
           <span class="card__label">Platform Commissions</span>
           <span class="card__value" [class.card__value--pulse]="cardsUpdating">
-            ₹ {{ activeSummary.to_operator | number:'1.2-2' }}
+            ₹ {{ totalPlatformCommissions | number:'1.2-2' }}
           </span>
           <span class="card__meta">
-            {{ activeSummary.captured > 0 ? ((activeSummary.to_operator / activeSummary.captured) * 100 | number:'1.1-1') : 0 }}% take-rate
+            {{ totalDriverGross > 0 ? ((totalPlatformCommissions / totalDriverGross) * 100 | number:'1.1-1') : (activeSummary.captured > 0 ? ((totalPlatformCommissions / activeSummary.captured) * 100 | number:'1.1-1') : 0) }}% take-rate
           </span>
         </div>
 
@@ -1058,6 +1058,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
   totalDriverGross = 0;
   totalDriverCash = 0;
   totalDriverOnline = 0;
+  totalPlatformCommissions = 0;
 
   // General State
   loading = false;
@@ -1241,6 +1242,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
 
         // 3. Process Commissions & Completed Transfers
         this.commissionsList = res.commissions?.data || [];
+        this.totalPlatformCommissions = res.commissions?.total_commission ?? this.commissionsList.reduce((sum, c) => sum + (c.commission_amount || 0), 0);
         this.transfersList = res.completed?.data || [];
       },
       error: (err) => {

@@ -314,6 +314,18 @@ class FinanceController extends Controller
 
         $trips = $query->get(['id', 'driver_id', 'final_fare', 'commission_amount', 'payment_method']);
 
+        $tripIds = $trips->pluck('id')->all();
+        $payoutCollectionsByTrip = DriverPayoutLedger::query()
+            ->where('type', DriverPayoutLedger::TYPE_COLLECTED)
+            ->whereIn('trip_id', $tripIds)
+            ->get()
+            ->groupBy('trip_id');
+
+        $seatReservationsByTrip = SeatReservation::query()
+            ->whereIn('trip_id', $tripIds)
+            ->get()
+            ->groupBy('trip_id');
+
         $grouped = $trips->groupBy('driver_id');
 
         $driverUsers = \App\Models\User::query()
@@ -336,12 +348,38 @@ class FinanceController extends Controller
             foreach ($driverTrips as $t) {
                 $fare = (float) ($t->final_fare ?? 0);
                 $gross += $fare;
-                $m = trim(strtolower((string) $t->payment_method));
-                if ($m === 'cash' || $m === '') {
-                    $cash += $fare;
+
+                $tripCollections = $payoutCollectionsByTrip->get($t->id);
+                $tripSeats = $seatReservationsByTrip->get($t->id);
+
+                if ($tripCollections && $tripCollections->isNotEmpty()) {
+                    $tripOnline = (float) $tripCollections->sum('amount');
+                    $tripCash = max(0.0, round($fare - $tripOnline, 2));
+                } elseif ($tripSeats && $tripSeats->isNotEmpty()) {
+                    $tripOnline = 0.0;
+                    $tripCash = 0.0;
+                    foreach ($tripSeats as $seat) {
+                        $sFare = (float) ($seat->fare_amount ?? 0);
+                        $sMethod = trim(strtolower((string) $seat->payment_method));
+                        if ($sMethod === 'razorpay' || $sMethod === 'online') {
+                            $tripOnline += $sFare;
+                        } else {
+                            $tripCash += $sFare;
+                        }
+                    }
                 } else {
-                    $online += $fare;
+                    $m = trim(strtolower((string) $t->payment_method));
+                    if ($m === 'cash' || $m === '') {
+                        $tripCash = $fare;
+                        $tripOnline = 0.0;
+                    } else {
+                        $tripCash = 0.0;
+                        $tripOnline = $fare;
+                    }
                 }
+
+                $cash += $tripCash;
+                $online += $tripOnline;
             }
 
             $totalGross += $gross;

@@ -60,21 +60,37 @@ class PayoutLedgerService
             ]);
 
             try {
-                app(LedgerService::class)->record(
+                $amtPaise = (int) round($amount * 100);
+                $ledgerSvc = app(LedgerService::class);
+                $entryMeta = [
+                    'driver_id' => $driver->id,
+                    'driver_name' => $driver->name,
+                    'driver_phone' => $driver->phone,
+                    'source' => $source,
+                    'notes' => $meta['notes'] ?? null,
+                ];
+
+                $ledgerSvc->record(
                     'capture',
                     'customer',
                     'in',
-                    (int) round($amount * 100),
+                    $amtPaise,
                     $tripId,
                     $meta['payment_id'] ?? null,
                     $meta['payment_reference'] ?? null,
-                    [
-                        'driver_id' => $driver->id,
-                        'driver_name' => $driver->name,
-                        'driver_phone' => $driver->phone,
-                        'source' => $source,
-                        'notes' => $meta['notes'] ?? null,
-                    ]
+                    $entryMeta
+                );
+
+                // Balance the capture by recording the amount held as a pending transfer owed to the driver
+                $ledgerSvc->record(
+                    'held',
+                    'driver',
+                    'out',
+                    $amtPaise,
+                    $tripId,
+                    $meta['payment_id'] ?? null,
+                    $meta['payment_reference'] ?? null,
+                    $entryMeta
                 );
             } catch (\Throwable $e) {
                 // Non-blocking
