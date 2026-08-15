@@ -385,6 +385,9 @@
               </span>
               <span class="dc-row__text">
                 <strong>₹{{ r.fare | number:'1.0-2' }} <span class="dc-badge" [class.dc-badge--warn]="r.is_cash" [class.dc-badge--ok]="!r.is_cash">{{ r.is_cash ? 'Cash Handover' : 'Online Booking' }}</span></strong>
+                <small *ngIf="(r.cash_amount ?? 0) > 0 && (r.online_amount ?? 0) > 0" class="ec-hybrid-breakdown">
+                  Cash: ₹{{ r.cash_amount | number:'1.0-2' }} · Online Deposit: ₹{{ r.online_amount | number:'1.0-2' }}
+                </small>
                 <small>{{ fmtDate(r.date) }} · Trip #{{ r.id }}<ng-container *ngIf="r.is_shared"> · Shared</ng-container></small>
               </span>
             </div>
