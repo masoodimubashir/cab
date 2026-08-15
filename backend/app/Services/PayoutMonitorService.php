@@ -228,8 +228,7 @@ class PayoutMonitorService
             $tripsQuery = \App\Models\Trip::query()
                 ->where('status', 'COMPLETED')
                 ->where('final_fare', '>', 0)
-                ->whereNotIn('id', $existingTripIds)
-                ->with(['customer:id,name,phone', 'driver:id,name,phone'])
+                ->with(['customer:id,name,phone', 'driver:id,name,phone', 'seatReservations'])
                 ->orderByDesc('completed_at');
 
             if ($tripId !== null) {
@@ -249,79 +248,126 @@ class PayoutMonitorService
                 });
             }
 
-            $unrecordedTrips = $tripsQuery->limit(200)->get();
-            foreach ($unrecordedTrips as $t) {
+            $allTrips = $tripsQuery->limit(200)->get();
+            $payoutCollectionsByTrip = \App\Models\DriverPayoutLedger::query()
+                ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+                ->whereIn('trip_id', $allTrips->pluck('id')->all())
+                ->get()
+                ->groupBy('trip_id');
+
+            foreach ($allTrips as $t) {
                 $fare = (float) ($t->final_fare ?? 0);
                 $comm = (float) ($t->commission_amount ?? 0);
                 $driverShare = round(max(0, $fare - $comm), 2);
-                $rawMethod = trim(strtolower((string) $t->payment_method));
-                $isCash = $rawMethod === 'cash' || $rawMethod === '';
-                $isOnline = !$isCash;
 
-                // 1. Capture row (Fare in from customer)
-                $rowsCollection->push([
-                    'id' => 'trip_' . $t->id . '_cap',
-                    'trip_id' => $t->id,
-                    'payment_id' => null,
-                    'type' => 'capture',
-                    'party' => 'customer',
-                    'direction' => 'in',
-                    'amount' => $fare,
-                    'razorpay_ref' => $isCash ? 'Cash' : ($t->payment_method ?: 'Online'),
-                    'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
-                    'customer_name' => $t->customer?->name,
-                    'customer_phone' => $t->customer?->phone,
-                    'driver_name' => $t->driver?->name,
-                    'driver_phone' => $t->driver?->phone,
-                ]);
+                $tripCollections = $payoutCollectionsByTrip->get($t->id);
+                $onlineAmt = $tripCollections ? (float) $tripCollections->sum('amount') : 0.0;
+                $cashAmt = max(0.0, round($fare - $onlineAmt, 2));
 
-                // 2. Retained commission row
-                if ($comm > 0) {
+                $isTripInLedger = in_array($t->id, $existingTripIds, true);
+
+                if (!$isTripInLedger) {
+                    // 1. Capture row (Fare in from customer)
                     $rowsCollection->push([
-                        'id' => 'trip_' . $t->id . '_ret',
+                        'id' => 'trip_' . $t->id . '_cap',
                         'trip_id' => $t->id,
                         'payment_id' => null,
-                        'type' => 'retained',
-                        'party' => 'operator',
+                        'type' => 'capture',
+                        'party' => 'customer',
                         'direction' => 'in',
-                        'amount' => $comm,
-                        'razorpay_ref' => 'Platform Fee',
+                        'amount' => $fare,
+                        'razorpay_ref' => $cashAmt > 0 && $onlineAmt > 0 ? 'Hybrid Payment' : ($cashAmt > 0 ? 'Cash' : 'Online'),
                         'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
                         'customer_name' => $t->customer?->name,
                         'customer_phone' => $t->customer?->phone,
                         'driver_name' => $t->driver?->name,
                         'driver_phone' => $t->driver?->phone,
                     ]);
-                }
 
-                // 3. Driver share row
-                if ($driverShare > 0) {
-                    $rowsCollection->push([
-                        'id' => 'trip_' . $t->id . '_drv',
-                        'trip_id' => $t->id,
-                        'payment_id' => null,
-                        'type' => $isOnline ? 'held' : 'cash_retained',
-                        'party' => 'driver',
-                        'direction' => 'out',
-                        'amount' => $driverShare,
-                        'razorpay_ref' => $isOnline ? 'Pending Payout' : 'Cash in Hand',
-                        'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
-                        'customer_name' => $t->customer?->name,
-                        'customer_phone' => $t->customer?->phone,
-                        'driver_name' => $t->driver?->name,
-                        'driver_phone' => $t->driver?->phone,
-                    ]);
-                }
+                    // 2. Retained commission row
+                    if ($comm > 0) {
+                        $rowsCollection->push([
+                            'id' => 'trip_' . $t->id . '_ret',
+                            'trip_id' => $t->id,
+                            'payment_id' => null,
+                            'type' => 'retained',
+                            'party' => 'operator',
+                            'direction' => 'in',
+                            'amount' => $comm,
+                            'razorpay_ref' => 'Platform Commission',
+                            'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                            'customer_name' => $t->customer?->name,
+                            'customer_phone' => $t->customer?->phone,
+                            'driver_name' => $t->driver?->name,
+                            'driver_phone' => $t->driver?->phone,
+                        ]);
+                    }
 
-                $reconciliation[(int) $t->id] = [
-                    'captured' => $fare,
-                    'driver_net' => $driverShare,
-                    'operator_net' => $comm,
-                    'gateway_fee' => 0.0,
-                    'refunded' => 0.0,
-                    'balanced' => true,
-                    'imbalance_paise' => 0,
-                ];
+                    // 3. Driver share row
+                    if ($driverShare > 0) {
+                        $rowsCollection->push([
+                            'id' => 'trip_' . $t->id . '_drv',
+                            'trip_id' => $t->id,
+                            'payment_id' => null,
+                            'type' => $onlineAmt > 0 ? 'held' : 'cash_retained',
+                            'party' => 'driver',
+                            'direction' => 'out',
+                            'amount' => $driverShare,
+                            'razorpay_ref' => $onlineAmt > 0 ? 'Pending Payout' : 'Cash in Hand',
+                            'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                            'customer_name' => $t->customer?->name,
+                            'customer_phone' => $t->customer?->phone,
+                            'driver_name' => $t->driver?->name,
+                            'driver_phone' => $t->driver?->phone,
+                        ]);
+                    }
+
+                    $reconciliation[(int) $t->id] = [
+                        'captured' => $fare,
+                        'driver_net' => $driverShare,
+                        'operator_net' => $comm,
+                        'gateway_fee' => 0.0,
+                        'refunded' => 0.0,
+                        'balanced' => true,
+                        'imbalance_paise' => 0,
+                    ];
+                } else {
+                    // For trips already partially in ledger (e.g. online deposit), add the cash in hand and commission movement if not present
+                    if ($cashAmt > 0) {
+                        $rowsCollection->push([
+                            'id' => 'trip_' . $t->id . '_cash',
+                            'trip_id' => $t->id,
+                            'payment_id' => null,
+                            'type' => 'cash_retained',
+                            'party' => 'driver',
+                            'direction' => 'in',
+                            'amount' => $cashAmt,
+                            'razorpay_ref' => 'Cash in Hand (Driver)',
+                            'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                            'customer_name' => $t->customer?->name,
+                            'customer_phone' => $t->customer?->phone,
+                            'driver_name' => $t->driver?->name,
+                            'driver_phone' => $t->driver?->phone,
+                        ]);
+                    }
+                    if ($comm > 0) {
+                        $rowsCollection->push([
+                            'id' => 'trip_' . $t->id . '_ret',
+                            'trip_id' => $t->id,
+                            'payment_id' => null,
+                            'type' => 'retained',
+                            'party' => 'operator',
+                            'direction' => 'in',
+                            'amount' => $comm,
+                            'razorpay_ref' => 'Platform Commission',
+                            'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                            'customer_name' => $t->customer?->name,
+                            'customer_phone' => $t->customer?->phone,
+                            'driver_name' => $t->driver?->name,
+                            'driver_phone' => $t->driver?->phone,
+                        ]);
+                    }
+                }
             }
 
             // Include completed transfers recorded in driver_payout_ledger (deduplicated against ledger_entries)
@@ -364,6 +410,51 @@ class PayoutMonitorService
                     'customer_phone' => null,
                     'driver_name' => $driver?->name,
                     'driver_phone' => $driver?->phone,
+                ]);
+            }
+
+            // Include driver wallet top-ups / recharges
+            $topupsQuery = \App\Models\WalletTopup::query()
+                ->where('status', 'SUCCESS')
+                ->with(['user.driver'])
+                ->orderByDesc('paid_at');
+
+            if (!empty($fromDate) && !empty($toDate)) {
+                $topupsQuery->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$fromDate, $toDate]);
+            } elseif (!empty($fromDate)) {
+                $topupsQuery->whereDate(DB::raw('COALESCE(paid_at, created_at)'), $fromDate);
+            }
+            if (!empty($search)) {
+                $term = trim($search);
+                $topupsQuery->where(function ($tq) use ($term) {
+                    $tq->where('razorpay_payment_id', 'LIKE', "%{$term}%")
+                       ->orWhere('razorpay_order_id', 'LIKE', "%{$term}%")
+                       ->orWhereHas('user', fn ($uq) => $uq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
+                });
+            }
+
+            $unrecordedTopups = $topupsQuery->limit(100)->get();
+            foreach ($unrecordedTopups as $topup) {
+                $ref = trim((string) ($topup->razorpay_payment_id ?? ''));
+                if ($ref !== '' && in_array($ref, $existingRefs, true)) {
+                    continue;
+                }
+
+                $user = $topup->user;
+                $rowsCollection->push([
+                    'id' => 'topup_' . $topup->id,
+                    'trip_id' => null,
+                    'payment_id' => null,
+                    'type' => 'topup',
+                    'party' => 'driver',
+                    'direction' => 'in',
+                    'amount' => (float) $topup->amount,
+                    'razorpay_ref' => $topup->razorpay_payment_id ?: 'Wallet Recharge',
+                    'created_at' => optional($topup->paid_at ?? $topup->created_at)->toIso8601String(),
+                    'customer_name' => null,
+                    'customer_phone' => null,
+                    'driver_name' => $user?->name,
+                    'driver_phone' => $user?->phone,
                 ]);
             }
         }

@@ -135,7 +135,10 @@ export interface CommissionRecord {
   fare: number;
   commission_percent: number;
   commission_amount: number;
+  is_fixed_commission?: boolean;
   net_driver_earnings: number;
+  cash_amount?: number;
+  online_amount?: number;
   payment_method: string;
   mode?: 'private' | 'fixed' | 'shuttle' | string;
   route_name?: string | null;
@@ -660,7 +663,9 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
                   <span class="amount-cell">₹ {{ c.fare | number:'1.2-2' }}</span>
                 </td>
                 <td>
-                  <span class="rate-badge">{{ c.commission_percent }}%</span>
+                  <span class="rate-badge" [class.rate-badge--fixed]="c.is_fixed_commission || c.commission_percent <= 0">
+                    {{ (c.is_fixed_commission || c.commission_percent <= 0) ? 'Fixed' : (c.commission_percent + '%') }}
+                  </span>
                 </td>
                 <td>
                   <strong class="comm-amount">₹ {{ c.commission_amount | number:'1.2-2' }}</strong>
@@ -1097,6 +1102,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
   readonly movementTypes = [
     { key: 'capture', label: 'Payments' },
     { key: 'transfer', label: 'Payouts' },
+    { key: 'topup', label: 'Wallet Recharges' },
     { key: 'retained', label: 'Commissions' },
     { key: 'gateway_fee', label: 'Gateway Fee' },
     { key: 'held', label: 'On Hold' },
@@ -1503,6 +1509,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
     switch (type) {
       case 'capture': return 'Payment';
       case 'transfer': return 'Driver Payout';
+      case 'topup': return 'Wallet Recharge';
       case 'cash_retained': return 'Cash In Hand';
       case 'retained': return 'Platform Fee';
       case 'gateway_fee': return 'Gateway Fee';
@@ -1527,9 +1534,9 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
 
   formatTripMode(c: CommissionRecord): string {
     const mode = c.mode || (c.is_shared ? 'fixed' : 'private');
-    if (mode === 'fixed') return `Fixed (${c.payment_method || 'Cash'})`;
-    if (mode === 'shuttle') return `Shuttle (${c.payment_method || 'Cash'})`;
-    return `Private (${c.payment_method || 'Cash'})`;
+    const modeLabel = mode === 'fixed' ? 'Fixed' : (mode === 'shuttle' ? 'Shuttle' : 'Private');
+    const method = c.payment_method || 'Cash';
+    return `${modeLabel} · ${method}`;
   }
 
   setTypeFilter(key: string): void {

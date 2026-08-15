@@ -130,12 +130,12 @@ export class WalletPage implements OnInit {
   async promptTopUp(): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: 'Recharge Wallet',
-      subHeader: `Minimum limit: ₹${this.minLimit}. Recharge to clear platform charges.`,
+      subHeader: `Add money to keep your wallet active and accept new rides. Minimum balance required: ₹${this.minLimit}.`,
       inputs: [
         {
           name: 'amount',
           type: 'number',
-          placeholder: 'Amount in ₹ (e.g. 500)',
+          placeholder: 'Enter amount (e.g. 500)',
           min: 1,
           max: 100000,
         },
@@ -220,8 +220,8 @@ export class WalletPage implements OnInit {
 
   async explainLimits(): Promise<void> {
     const alert = await this.alertCtrl.create({
-      header: 'Wallet Limit Information',
-      message: `Your minimum allowed wallet limit is ₹${this.minLimit}.\n\nWhen your balance is above this limit, you can accept rides freely. Platform commissions and subscription charges are deducted from this balance.`,
+      header: 'Ride Acceptance Rules',
+      message: `You need a minimum balance of ₹${this.minLimit} in your wallet to receive and accept ride bookings.\n\nWhen you complete rides, platform commissions are automatically deducted from this wallet. Keep your balance topped up to continue accepting rides without interruption.`,
       buttons: ['Got it'],
     });
     await alert.present();
