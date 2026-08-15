@@ -53,6 +53,7 @@ interface DriverProfile {
   rating_avg: number | null;
   rating_count: number | null;
   wallet_balance: number;
+  pending_payout?: number;
   total_rides: number;
   current_lat?: number | null;
   current_lng?: number | null;
@@ -77,12 +78,14 @@ interface DriverProfile {
   } | null;
 }
 
-type TabKey = 'rides' | 'wallet' | 'cancelled';
+type TabKey = 'rides' | 'wallet' | 'cancelled' | 'routes' | 'specs';
 
 const BLOCK_REASONS = [
   'Spam / fraud',
   'Abusive behaviour',
   'Payment dispute',
+  'Safety violation',
+  'Document issue',
   'Other',
 ];
 
@@ -105,681 +108,624 @@ const BLOCK_REASONS = [
     DriverRouteGroupsPanelComponent,
   ],
   template: `
-    <div class="page" *ngIf="profile; else loading">
-      <!-- ============= Back link ============= -->
-      <a routerLink="/drivers" class="back-link">
-        <tm-icon name="chevron-left" [size]="14" /> Back to drivers
-      </a>
+    <div class="stripe-console" *ngIf="profile; else loadingTpl">
+      
+      <!-- Top Action Bar -->
+      <div class="top-action-bar">
+        <div class="top-action-bar__left">
+          <a routerLink="/drivers" class="crumb-back">
+            <tm-icon name="chevron-left" [size]="14" />
+            <span>Drivers</span>
+          </a>
+          <span class="crumb-divider">/</span>
+          <span class="crumb-id mono">#{{ profile.id }}</span>
+          <span class="crumb-title">{{ profile.name || 'Driver' }}</span>
+        </div>
 
-      <!-- ============= Profile cover ============= -->
-      <header class="cover">
-        <div class="cover__banner" aria-hidden="true"></div>
-        <div class="cover__inner">
-          <span
-            class="cover__avatar"
-            [class.cover__avatar--photo]="profile.avatar_url || profile.avatar_path"
-            [style.backgroundImage]="(profile.avatar_url || profile.avatar_path) ? 'url(' + (profile.avatar_url || profile.avatar_path) + ')' : null"
-          >
-            <ng-container *ngIf="!(profile.avatar_url || profile.avatar_path)">{{ initials(profile.name) }}</ng-container>
-          </span>
-          <div class="cover__body">
-            <div class="cover__title-row">
-              <h1 class="cover__name">{{ profile.name || 'Unnamed driver' }}</h1>
+        <div class="top-action-bar__right">
+          <button class="btn-action btn-action--primary" (click)="openPayout()">
+            <tm-icon name="rupee" [size]="13" />
+            <span>Record Payout</span>
+          </button>
+          <button class="btn-action" (click)="openEditProfile()">
+            <tm-icon name="edit" [size]="13" />
+            <span>Edit Profile</span>
+          </button>
+          <button class="btn-action" (click)="sendOtp()" [disabled]="otpSending || !profile.phone">
+            <tm-icon name="key" [size]="13" />
+            <span>{{ otpSending ? 'Sending…' : 'Send OTP' }}</span>
+          </button>
+          <button class="btn-action" [class.btn-action--danger]="!profile.is_suspended" (click)="openBlockDelete()">
+            <tm-icon [name]="profile.is_suspended ? 'check' : 'shield'" [size]="13" />
+            <span>{{ profile.is_suspended ? 'Unblock' : 'Block / Delete' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Hero Header & Overview Strip -->
+      <section class="console-hero">
+        <div class="hero-identity">
+          <div class="hero-avatar" [class.is-online]="profile.is_online">
+            <img *ngIf="profile.avatar_url || profile.avatar_path" [src]="profile.avatar_url || profile.avatar_path" alt="" />
+            <span *ngIf="!(profile.avatar_url || profile.avatar_path)">{{ initials(profile.name) }}</span>
+          </div>
+
+          <div class="hero-headings">
+            <div class="hero-row-1">
+              <h1 class="hero-name">{{ profile.name || 'Unnamed Driver' }}</h1>
+              <span class="hero-badge mono">ID: #{{ profile.id }}</span>
               <tm-status-pill [tone]="approvalTone">{{ profile.approval_status | titlecase }}</tm-status-pill>
               <tm-status-pill *ngIf="profile.is_online" tone="success">Online</tm-status-pill>
-              <tm-status-pill *ngIf="!profile.is_active" tone="danger">Deactivated</tm-status-pill>
+              <tm-status-pill *ngIf="!profile.is_online" tone="neutral">Offline</tm-status-pill>
+              <span *ngIf="profile.active_subscription" class="plan-tag">
+                <tm-icon name="shield" [size]="11" />
+                {{ profile.active_subscription.plan_title }} ({{ profile.active_subscription.commission_percent }}% Comm)
+              </span>
               <tm-status-pill *ngIf="profile.is_suspended" tone="danger">Blocked</tm-status-pill>
             </div>
-            <div class="cover__handle">
-              <span class="mono">#{{ profile.id }}</span>
-              <span class="cover__handle-sep">·</span>
-              <span>Registered {{ profile.date_registered | date:'MMMM y' }}</span>
+
+            <div class="hero-row-2">
+              <span class="meta-item mono"><tm-icon name="phone" [size]="12" /> {{ profile.phone || 'No phone' }}</span>
+              <span class="meta-dot">·</span>
+              <span class="meta-item" *ngIf="profile.email"><tm-icon name="envelope" [size]="12" /> {{ profile.email }}</span>
+              <span class="meta-dot" *ngIf="profile.email">·</span>
+              <span class="meta-item mono"><tm-icon name="car" [size]="12" /> {{ profile.vehicle_reg_no || 'No reg' }} {{ profile.vehicle_model ? '(' + profile.vehicle_model + ')' : '' }}</span>
+              <span class="meta-dot">·</span>
+              <span class="meta-item"><tm-icon name="star" [size]="12" /> {{ profile.rating_count ? (profile.rating_avg | number:'1.1-1') + ' ★ (' + profile.rating_count + ')' : '5.0 ★' }}</span>
+              <span class="meta-dot">·</span>
+              <span class="meta-item">Joined {{ profile.date_registered | date:'mediumDate' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 Unified Metric Columns -->
+        <div class="hero-metrics-strip">
+          <div class="metric-cell" [class.metric-cell--neg]="(profile.wallet_balance || 0) < 0">
+            <span class="m-label">Wallet Balance</span>
+            <div class="m-value-wrap">
+              <strong class="m-value">₹ {{ (profile.wallet_balance || 0) | number:'1.2-2' }}</strong>
+              <span class="m-sub" [class.text-danger]="(profile.wallet_balance || 0) < 0" [class.text-emerald]="(profile.wallet_balance || 0) >= 0">
+                {{ (profile.wallet_balance || 0) < 0 ? 'Negative' : 'Available' }}
+              </span>
             </div>
           </div>
 
-          <div class="cover__actions">
-            <tm-button variant="outline" size="sm" icon="edit" (clicked)="openEditProfile()">
-              Edit profile
-            </tm-button>
-            <tm-button variant="outline" size="sm" icon="key" (clicked)="sendOtp()" [loading]="otpSending" [disabled]="!profile.phone">
-              Send OTP
-            </tm-button>
-            <tm-button variant="green" size="sm" icon="rupee" (clicked)="openPayout()">
-              Record payout
-            </tm-button>
-            <tm-button variant="outline" size="sm" [icon]="profile.is_suspended ? 'check' : 'shield'" (clicked)="openBlockDelete()">
-              {{ profile.is_suspended ? 'Manage access' : 'Block or delete' }}
-            </tm-button>
+          <div class="metric-cell metric-cell--payout">
+            <span class="m-label">Pending Payout</span>
+            <div class="m-value-wrap">
+              <strong class="m-value text-emerald">₹ {{ (profile.pending_payout || 0) | number:'1.2-2' }}</strong>
+              <button class="m-link text-emerald font-bold" (click)="openPayout()">Pay Now →</button>
+            </div>
           </div>
-        </div>
-      </header>
 
-      <!-- ============= Stat row ============= -->
-      <section class="stats">
-        <div class="stat-card">
-          <span class="stat-card__icon stat-card__icon--green">
-            <tm-icon name="tag" [size]="14" />
-          </span>
-          <span class="stat-card__value">₹ {{ (profile.wallet_balance || 0) | number:'1.2-2' }}</span>
-          <span class="stat-card__label">Wallet balance</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card__icon">
-            <tm-icon name="car" [size]="14" />
-          </span>
-          <span class="stat-card__value">{{ profile.total_rides || 0 }}</span>
-          <span class="stat-card__label">Completed rides</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card__icon">
-            <tm-icon name="star" [size]="14" />
-          </span>
-          <span class="stat-card__value">
-            {{ profile.rating_count ? (profile.rating_avg | number:'1.1-1') : '—' }}
-          </span>
-          <span class="stat-card__label">Rating ({{ profile.rating_count || 0 }})</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card__icon" [class.stat-card__icon--green]="profile.is_online">
-            <tm-icon name="pin" [size]="14" />
-          </span>
-          <span class="stat-card__value">{{ profile.is_online ? 'Online' : 'Offline' }}</span>
-          <span class="stat-card__label">Status</span>
+          <div class="metric-cell">
+            <span class="m-label">Subscription Plan</span>
+            <div class="m-value-wrap">
+              <strong class="m-value m-value--sm">
+                {{ profile.active_subscription ? profile.active_subscription.plan_title : 'Standard 10%' }}
+              </strong>
+              <span class="m-tag" *ngIf="profile.active_subscription">0% Comm</span>
+            </div>
+          </div>
+
+          <div class="metric-cell">
+            <span class="m-label">Completed Rides</span>
+            <div class="m-value-wrap">
+              <strong class="m-value">{{ profile.total_rides || 0 }}</strong>
+              <span class="m-sub">All-time</span>
+            </div>
+          </div>
+
+          <div class="metric-cell">
+            <span class="m-label">GPS Telemetry</span>
+            <div class="m-value-wrap">
+              <strong class="m-value m-value--sm" [class.text-danger]="isLocationStale" [class.text-emerald]="!isLocationStale && profile.is_online">
+                {{ profile.current_location_updated_at ? timeAgo(profile.current_location_updated_at) : 'Offline' }}
+              </strong>
+              <a *ngIf="profile.current_lat != null && profile.current_lng != null" [href]="'https://www.google.com/maps?q=' + profile.current_lat + ',' + profile.current_lng" target="_blank" class="m-link">
+                Maps ↗
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 
-      <!-- ============= Overview ============= -->
-      <section class="overview">
-        <article class="overview__main">
-          <header class="section-head">
-            <div class="section-head__copy">
-              <h2 class="section-head__title">Overview</h2>
-              <p class="section-head__sub">Driver identity, vehicle registration, and system state in a single view.</p>
-            </div>
-            <div class="section-head__meta">
-              <span class="meta-chip meta-chip--strong">#{{ profile.id }}</span>
-              <span class="meta-chip">{{ profile.date_registered | date:'MMMM d, y' }}</span>
-              <tm-status-pill [tone]="approvalTone">{{ profile.approval_status | titlecase }}</tm-status-pill>
-              <tm-status-pill *ngIf="profile.is_online" tone="success">Online</tm-status-pill>
-              <tm-status-pill *ngIf="!profile.is_active" tone="danger">Deactivated</tm-status-pill>
-              <tm-status-pill *ngIf="profile.is_suspended" tone="danger">Blocked</tm-status-pill>
-            </div>
-          </header>
+      <!-- Compact 4-Column Specification Strip (Always on page) -->
+      <section class="overview-specs-bar">
+        <div class="spec-col">
+          <span class="sc-head"><tm-icon name="user" [size]="12" /> Driver Identity</span>
+          <div class="sc-row"><span class="sc-lbl">Address:</span><span class="sc-val">{{ profile.address || '—' }}</span></div>
+          <div class="sc-row"><span class="sc-lbl">DOB:</span><span class="sc-val">{{ profile.dob || '—' }}</span></div>
+          <div class="sc-row"><span class="sc-lbl">App Login:</span><span class="sc-val">{{ profile.last_login_at ? timeAgo(profile.last_login_at) : '—' }}</span></div>
+        </div>
 
-          <div class="overview-grid">
-            <section class="detail-card detail-card--wide">
-              <div class="detail-card__head">
-                <h3 class="detail-card__title">Identity</h3>
-                <span class="detail-card__hint">Core person data</span>
-              </div>
-              <div class="kv-list">
-                <div class="kv-row"><span>Name</span><strong>{{ profile.name || 'Unnamed driver' }}</strong></div>
-                <div class="kv-row"><span>Phone</span><strong class="mono">{{ profile.phone || '—' }}</strong></div>
-                <div class="kv-row"><span>Email</span><strong>{{ profile.email || '—' }}</strong></div>
-                <div class="kv-row"><span>DOB</span><strong>{{ profile.dob || '—' }}</strong></div>
-                <div class="kv-row"><span>Address</span><strong>{{ profile.address || '—' }}</strong></div>
-              </div>
-            </section>
+        <div class="spec-col">
+          <span class="sc-head"><tm-icon name="car" [size]="12" /> Vehicle Specifications</span>
+          <div class="sc-row"><span class="sc-lbl">Reg Plate:</span><span class="sc-val mono">{{ profile.vehicle_reg_no || '—' }}</span></div>
+          <div class="sc-row"><span class="sc-lbl">Model & Color:</span><span class="sc-val">{{ profile.vehicle_model || '—' }} ({{ profile.vehicle_color || '—' }})</span></div>
+          <div class="sc-row"><span class="sc-lbl">Category & City:</span><span class="sc-val">{{ profile.vehicle_type_name || profile.vehicle_type || '—' }} · {{ profile.city_name || 'All' }}</span></div>
+        </div>
 
-            <section class="detail-card">
-              <div class="detail-card__head">
-                <h3 class="detail-card__title">Vehicle</h3>
-                <span class="detail-card__hint">Registration and type</span>
-              </div>
-              <div class="kv-list">
-                <div class="kv-row"><span>Model</span><strong>{{ profile.vehicle_model || '—' }}</strong></div>
-                <div class="kv-row"><span>Colour</span><strong>{{ profile.vehicle_color || '—' }}</strong></div>
-                <div class="kv-row"><span>Reg no</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
-                <div class="kv-row"><span>Vehicle type</span><strong>{{ profile.vehicle_type_name || profile.vehicle_type || '—' }}</strong></div>
-                <div class="kv-row"><span>Car</span><strong>{{ profile.city_vehicle_type_name || '—' }}</strong></div>
-                <div class="kv-row"><span>Ride type</span><strong>{{ profile.ride_type_name || '—' }}</strong></div>
-                <div class="kv-row"><span>City</span><strong>{{ profile.city_name || '—' }}</strong></div>
-              </div>
-            </section>
+        <div class="spec-col">
+          <span class="sc-head"><tm-icon name="shield" [size]="12" /> Subscription Details</span>
+          <ng-container *ngIf="profile.active_subscription; else noSubCol">
+            <div class="sc-row"><span class="sc-lbl">Fee Paid:</span><span class="sc-val mono">₹ {{ profile.active_subscription.amount_paid | number:'1.2-2' }} ({{ profile.active_subscription.payment_method | uppercase }})</span></div>
+            <div class="sc-row"><span class="sc-lbl">Commission:</span><span class="sc-val text-emerald font-bold">{{ profile.active_subscription.commission_percent }}% (Keep {{ 100 - profile.active_subscription.commission_percent }}%)</span></div>
+            <div class="sc-row"><span class="sc-lbl">Expires:</span><span class="sc-val">{{ profile.active_subscription.expires_at | date:'mediumDate' }}</span></div>
+          </ng-container>
+          <ng-template #noSubCol>
+            <div class="sc-row"><span class="sc-lbl">Status:</span><span class="sc-val text-muted">No active plan · 10% Platform fee</span></div>
+          </ng-template>
+        </div>
 
-            <section class="detail-card">
-              <div class="detail-card__head">
-                <h3 class="detail-card__title">System</h3>
-                <span class="detail-card__hint">App and live state</span>
-              </div>
-              <div class="kv-list">
-                <div class="kv-row"><span>App version</span><strong class="mono">{{ profile.app_version || '—' }}</strong></div>
-                <div class="kv-row"><span>OS version</span><strong class="mono">{{ profile.os_version || '—' }}</strong></div>
-                <div class="kv-row"><span>Device</span><strong>{{ profile.device_type || '—' }}</strong></div>
-                <div class="kv-row"><span>Last login</span><strong>{{ profile.last_login_at ? timeAgo(profile.last_login_at) : '—' }}</strong></div>
-                <div class="kv-row"><span>Rating</span><strong>{{ profile.rating_count ? (profile.rating_avg | number:'1.1-1') : '—' }}</strong></div>
-                <div class="kv-row"><span>Trips</span><strong>{{ profile.total_rides || 0 }}</strong></div>
-                <div class="kv-row"><span>Location</span><strong *ngIf="profile.current_lat != null && profile.current_lng != null; else driverLocEmpty">{{ profile.current_lat | number:'1.4-4' }}, {{ profile.current_lng | number:'1.4-4' }}</strong></div>
-                <ng-template #driverLocEmpty><div class="kv-row"><span>Location</span><strong>—</strong></div></ng-template>
-                <div class="kv-row"><span>Ping</span><strong [class.is-stale]="isLocationStale">{{ profile.current_location_updated_at ? timeAgo(profile.current_location_updated_at) : '—' }}</strong></div>
-              </div>
-            </section>
+        <div class="spec-col">
+          <span class="sc-head"><tm-icon name="shield" [size]="12" /> Governance & App</span>
+          <div class="sc-row"><span class="sc-lbl">App Version:</span><span class="sc-val mono">v{{ profile.app_version || '1.0' }} ({{ profile.os_version || 'Android' }})</span></div>
+          <div class="sc-row"><span class="sc-lbl">Notifications:</span><span class="sc-val">{{ profile.push_unsubscribed ? 'Opted Out' : 'Subscribed' }}</span></div>
+          <div class="sc-row">
+            <span class="sc-lbl">Settings:</span>
+            <button class="sc-btn" (click)="openUnsub()">Manage Push Alerts</button>
           </div>
-        </article>
-
-        <aside class="overview__side">
-          <section class="detail-card">
-            <div class="detail-card__head">
-              <h3 class="detail-card__title">Status</h3>
-              <span class="detail-card__hint">Current approval and account state</span>
-            </div>
-            <div class="kv-list">
-              <div class="kv-row"><span>Driver ID</span><strong class="mono">#{{ profile.id }}</strong></div>
-              <div class="kv-row"><span>Approval</span><strong>{{ profile.approval_status | titlecase }}</strong></div>
-              <div class="kv-row"><span>Online</span><strong>{{ profile.is_online ? 'Yes' : 'No' }}</strong></div>
-              <div class="kv-row"><span>Account</span><strong>{{ profile.is_active ? 'Active' : 'Inactive' }}</strong></div>
-              <div class="kv-row" *ngIf="!profile.is_active"><span>Reason</span><strong>{{ profile.deactivated_reason || '—' }}</strong></div>
-              <div class="kv-row"><span>Registered</span><strong>{{ profile.date_registered | date:'MMMM d, y' }}</strong></div>
-            </div>
-          </section>
-
-          <section class="detail-card">
-            <div class="detail-card__head">
-              <h3 class="detail-card__title">Subscription Plan</h3>
-              <span class="detail-card__hint">Active subscription & perks</span>
-            </div>
-            <div class="kv-list" *ngIf="profile.active_subscription; else noSub">
-              <div class="kv-row">
-                <span>Active Plan</span>
-                <strong>{{ profile.active_subscription.plan_title }}</strong>
-              </div>
-              <div class="kv-row">
-                <span>Fee Paid</span>
-                <strong class="mono">₹{{ profile.active_subscription.amount_paid | number:'1.0-2' }}</strong>
-              </div>
-              <div class="kv-row">
-                <span>Commission</span>
-                <strong style="color: var(--tm-green, #12B35B);">{{ profile.active_subscription.commission_percent }}% (Keep {{ 100 - profile.active_subscription.commission_percent }}%)</strong>
-              </div>
-              <div class="kv-row">
-                <span>Payment</span>
-                <strong>{{ profile.active_subscription.payment_method | uppercase }}</strong>
-              </div>
-              <div class="kv-row">
-                <span>Expires</span>
-                <strong>{{ profile.active_subscription.expires_at | date:'MMM d, y' }}</strong>
-              </div>
-              <div class="kv-row">
-                <span>Auto Renew</span>
-                <strong>{{ profile.active_subscription.auto_renew ? 'Active' : 'Disabled' }}</strong>
-              </div>
-            </div>
-            <ng-template #noSub>
-              <div style="padding: 6px 0; font-size: 12.5px; color: var(--tm-text-muted);">
-                No active subscription (standard commission applies).
-              </div>
-            </ng-template>
-          </section>
-
-          <section class="detail-card">
-            <div class="detail-card__head">
-              <h3 class="detail-card__title">Notification preferences</h3>
-              <span class="detail-card__hint">App channels</span>
-            </div>
-            <div class="kv-list">
-              <div class="kv-row"><span>Push</span><strong>{{ profile.push_unsubscribed ? 'Opted out' : 'Subscribed' }}</strong></div>
-            </div>
-            <tm-button variant="outline" size="sm" icon="bell" (clicked)="openUnsub()">
-              Manage preferences
-            </tm-button>
-          </section>
-        </aside>
+        </div>
       </section>
-      <!-- Fixed route allocation — route groups grant this driver's fixed routes. -->
-      <app-driver-route-groups-panel [driverId]="driverId"></app-driver-route-groups-panel>
-      <!-- ============= Activity feed ============= -->
-      <section class="feed">
-        <header class="feed__head">
-          <div class="feed__title">
-            <h2 class="feed__heading">Activity</h2>
-            <p class="feed__sub">Recent rides, wallet activity and cancellations in one timeline.</p>
-          </div>
 
-          <div class="feed__nav-wrap">
-            <nav class="feed__nav" role="tablist" aria-label="Activity">
-              <button
-                *ngFor="let t of historyTabs"
-                type="button"
-                class="feed-tab"
-                [class.is-active]="activeTab === t.key"
-                (click)="setTab(t.key)"
-                role="tab"
-                [attr.aria-selected]="activeTab === t.key"
-              >
-                <tm-icon [name]="t.icon" [size]="13" />
-                <span class="feed-tab__label">{{ t.label }}</span>
-                <span class="feed-tab__count">{{ tabCount(t.key) }}</span>
-              </button>
-            </nav>
-
-            <select
-              class="feed__select"
-              [(ngModel)]="activeTab"
-              (ngModelChange)="setTab($event)"
-              aria-label="Section"
+      <!-- Centerpiece Workspace Container -->
+      <main class="console-workspace">
+        
+        <!-- Tab Navigation Bar -->
+        <header class="workspace-tabs-header">
+          <nav class="console-tabs-nav" role="tablist">
+            <button
+              *ngFor="let t of historyTabs"
+              type="button"
+              class="c-tab-btn"
+              [class.is-active]="activeTab === t.key"
+              (click)="setTab(t.key)"
             >
-              <option *ngFor="let t of historyTabs" [ngValue]="t.key">
-                {{ t.label }} ({{ tabCount(t.key) }})
-              </option>
-            </select>
-          </div>
-        </header>
+              <tm-icon [name]="t.icon" [size]="13" />
+              <span>{{ t.label }}</span>
+              <span class="c-tab-badge" *ngIf="t.key !== 'routes' && t.key !== 'specs'">{{ tabCount(t.key) }}</span>
+            </button>
+          </nav>
 
-        <div class="feed__toolbar">
-          <div class="feed__toolbar-main">
-            <div class="feed__search">
+          <!-- Search & Filter Controls -->
+          <div class="workspace-toolbar" *ngIf="activeTab === 'rides' || activeTab === 'wallet' || activeTab === 'cancelled'">
+            <div class="search-wrap">
               <tm-input icon="search" [placeholder]="searchPlaceholder" [(ngModel)]="tabSearch" />
             </div>
 
-            <div *ngIf="activeTab === 'rides'" class="feed__filters">
-              <div class="feed__filters-main">
-                <tm-filter-select
-                  icon="car"
-                  ariaLabel="Ride mode filter"
-                  allLabel="All rides"
-                  [includeAll]="true"
-                  [options]="rideModeOptions"
-                  [value]="rideMode"
-                  (valueChange)="rideMode = $event"
+            <div *ngIf="activeTab === 'rides'" class="rides-toolbar-group">
+              <tm-filter-select
+                icon="car"
+                ariaLabel="Ride mode"
+                allLabel="All Modes"
+                [includeAll]="true"
+                [options]="rideModeOptions"
+                [value]="rideMode"
+                (valueChange)="rideMode = $event"
+              />
+              
+              <div class="date-range-box" [class.has-value]="rideDateFrom || rideDateTo" (click)="triggerDatePicker()">
+                <tm-icon name="calendar" [size]="12" />
+                <input
+                  #rideRange
+                  type="text"
+                  readonly
+                  class="date-input"
+                  placeholder="Date range"
+                  [value]="rangeLabel"
                 />
-                <div class="date-range" [class.has-value]="rideDateFrom || rideDateTo">
-                  <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
-                  <input
-                    #rideRange
-                    type="text"
-                    readonly
-                    class="date-range__input"
-                    placeholder="Ride date · any"
-                    [value]="rangeLabel"
-                    aria-label="Filter rides by date range"
-                  />
-                  <button
-                    *ngIf="rideDateFrom || rideDateTo"
-                    type="button"
-                    class="date-range__clear"
-                    (click)="clearRideDates(); $event.stopPropagation()"
-                    aria-label="Clear date range"
-                  >
-                    <tm-icon name="x" [size]="12" />
-                  </button>
+                <button *ngIf="rideDateFrom || rideDateTo" type="button" class="btn-x" (click)="clearRideDates(); $event.stopPropagation()">
+                  <tm-icon name="x" [size]="11" />
+                </button>
+              </div>
+
+              <button *ngIf="tabSearch.trim() || rideMode !== 'all' || rideDateFrom || rideDateTo" type="button" class="btn-reset" (click)="clearRideFilters()">
+                Reset
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Rides Live Financial Ribbon -->
+        <div *ngIf="activeTab === 'rides' && rideSummary" class="rides-financial-ribbon">
+          <div class="rf-pill"><span class="rf-lbl">Showing:</span><strong>{{ filteredRides.length }} Trips</strong></div>
+          <div class="rf-pill"><span class="rf-lbl">Fares Collected:</span><strong class="text-emerald">₹ {{ rideSummary.fares_collected | number:'1.2-2' }}</strong></div>
+          <div class="rf-pill" *ngIf="rideSummary.refunded > 0"><span class="rf-lbl">Refunds:</span><strong class="text-danger">₹ {{ rideSummary.refunded | number:'1.2-2' }}</strong></div>
+        </div>
+
+        <!-- Loading State -->
+        <div *ngIf="loadingTab" class="view-loading">
+          <div class="spinner"></div>
+          <span>Loading records…</span>
+        </div>
+
+        <!-- =================== TAB 1: RIDES TABLE =================== -->
+        <div *ngIf="!loadingTab && activeTab === 'rides'" class="console-table-wrap">
+          <table class="console-table">
+            <thead>
+              <tr>
+                <th style="width: 85px;">Trip ID</th>
+                <th style="width: 155px;">Date & Time</th>
+                <th>Rider Details</th>
+                <th>Route (Pickup → Destination)</th>
+                <th style="width: 110px;">Mode</th>
+                <th style="width: 110px; text-align: right;">Fare (₹)</th>
+                <th style="width: 130px;">Payment</th>
+                <th style="width: 105px; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of filteredRides" class="c-row">
+                <td class="cell-id mono"><strong>#{{ r.id }}</strong></td>
+                <td class="cell-time">
+                  <div class="time-main">{{ r.created_at | date:'MMM d, y' }}</div>
+                  <div class="time-sub text-muted">{{ r.created_at | date:'HH:mm' }}<span *ngIf="r.completed_at"> → {{ r.completed_at | date:'HH:mm' }}</span></div>
+                </td>
+                <td class="cell-rider">
+                  <div class="rider-row">
+                    <strong>{{ r.rider_name || r.customer?.name || 'Passenger' }}</strong>
+                    <span *ngIf="r.rider_extra_count" class="extra-pill">+{{ r.rider_extra_count }}</span>
+                  </div>
+                  <div class="rider-phone mono text-muted">{{ r.customer?.phone || r.rider_phone || '—' }}</div>
+                </td>
+                <td class="cell-route">
+                  <div class="point-row">
+                    <span class="dot dot-from"></span>
+                    <span class="addr-text" [title]="r.pickup_address || pretty(r.pickup_lat, r.pickup_lng)">
+                      {{ r.pickup_address || pretty(r.pickup_lat, r.pickup_lng) }}
+                    </span>
+                  </div>
+                  <div class="point-row">
+                    <span class="dot dot-to"></span>
+                    <span class="addr-text" [title]="r.drop_address || pretty(r.drop_lat, r.drop_lng)">
+                      {{ r.drop_address || pretty(r.drop_lat, r.drop_lng) }}
+                    </span>
+                  </div>
+                  <div class="route-sub" *ngIf="r.distance_km">
+                    <span>{{ r.distance_km }} km</span>
+                    <span *ngIf="r.duration_min"> · {{ r.duration_min }} mins</span>
+                  </div>
+                </td>
+                <td class="cell-mode">
+                  <span class="mode-badge" [attr.data-mode]="rideModeOf(r)">
+                    {{ rideModeLabel(r) }}
+                  </span>
+                  <div *ngIf="r.route?.name" class="route-title text-muted">{{ r.route.name }}</div>
+                </td>
+                <td class="cell-fare" style="text-align: right;">
+                  <strong class="fare-num">₹ {{ (r.final_fare ?? r.estimated_fare ?? 0) | number:'1.2-2' }}</strong>
+                  <div *ngIf="r.final_fare != null && r.estimated_fare != null && r.final_fare !== r.estimated_fare" class="fare-est text-muted">
+                    Est. ₹{{ r.estimated_fare | number:'1.2-2' }}
+                  </div>
+                </td>
+                <td class="cell-pay">
+                  <span class="pay-chip" [class.is-paid]="r.payment_status === 'PAID'">
+                    {{ r.payment_method ? (r.payment_method | uppercase) : 'UNPAID' }}
+                    <span *ngIf="r.payment_status">· {{ paymentStatusText(r.payment_status) }}</span>
+                  </span>
+                  <div *ngIf="r.refund_status === 'REFUNDED'" class="refund-chip text-danger">
+                    Refunded ₹{{ r.refund_amount | number:'1.2-2' }}
+                  </div>
+                </td>
+                <td class="cell-status" style="text-align: center;">
+                  <span class="status-pill" [attr.data-status]="statusBucket(r.status)">
+                    {{ statusDisplay(r.status) }}
+                  </span>
+                </td>
+              </tr>
+              <tr *ngIf="filteredRides.length === 0">
+                <td colspan="8" class="empty-cell">
+                  <div class="empty-box">
+                    <tm-icon name="car" [size]="24" />
+                    <h4>No rides match your filter</h4>
+                    <p>Change keyword search, ride mode or clear the date range.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- =================== TAB 2: WALLET LEDGER TABLE =================== -->
+        <div *ngIf="!loadingTab && activeTab === 'wallet'" class="console-table-wrap">
+          <table class="console-table">
+            <thead>
+              <tr>
+                <th style="width: 55px; text-align: center;">Type</th>
+                <th style="width: 155px;">Date & Time</th>
+                <th>Transaction Details & Description</th>
+                <th style="width: 150px;">Reference ID</th>
+                <th style="width: 130px; text-align: right;">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let t of filteredWallet" class="c-row">
+                <td style="text-align: center;">
+                  <span class="txn-bubble" [class.is-debit]="t.type === 'debit'" [class.is-credit]="t.type !== 'debit'">
+                    <tm-icon [name]="t.type === 'debit' ? 'trash' : 'plus'" [size]="11" />
+                  </span>
+                </td>
+                <td class="cell-time">
+                  <div class="time-main">{{ t.created_at | date:'MMM d, y' }}</div>
+                  <div class="time-sub text-muted">{{ t.created_at | date:'HH:mm:ss' }}</div>
+                </td>
+                <td class="cell-desc">
+                  <strong class="txn-title">{{ t.type | titlecase }}</strong>
+                  <p class="txn-reason">{{ t.reason || 'No description recorded.' }}</p>
+                </td>
+                <td class="cell-ref mono text-muted">
+                  <span *ngIf="t.engagement_id">#ENG-{{ t.engagement_id }}</span>
+                  <span *ngIf="!t.engagement_id">—</span>
+                </td>
+                <td class="cell-amount" style="text-align: right;">
+                  <strong class="amount-val" [class.is-debit]="t.type === 'debit'" [class.is-credit]="t.type !== 'debit'">
+                    {{ t.type === 'debit' ? '−' : '+' }} ₹ {{ t.amount | number:'1.2-2' }}
+                  </strong>
+                </td>
+              </tr>
+              <tr *ngIf="filteredWallet.length === 0">
+                <td colspan="5" class="empty-cell">
+                  <div class="empty-box">
+                    <tm-icon name="tag" [size]="24" />
+                    <h4>No wallet ledger transactions</h4>
+                    <p>All driver debits, subscriptions, topups, and adjustments will appear here.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- =================== TAB 3: CANCELLATIONS TABLE =================== -->
+        <div *ngIf="!loadingTab && activeTab === 'cancelled'" class="console-table-wrap">
+          <table class="console-table">
+            <thead>
+              <tr>
+                <th style="width: 90px;">Trip ID</th>
+                <th style="width: 155px;">Cancelled At</th>
+                <th>Rider Details</th>
+                <th>Cancellation Reason</th>
+                <th style="width: 110px; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let c of filteredCancelled" class="c-row">
+                <td class="cell-id mono"><strong>#{{ c.id }}</strong></td>
+                <td class="cell-time">
+                  <div class="time-main">{{ c.created_at | date:'MMM d, y' }}</div>
+                  <div class="time-sub text-muted">{{ c.created_at | date:'HH:mm' }}</div>
+                </td>
+                <td class="cell-rider">
+                  <strong>{{ c.rider_name || c.customer?.name || 'Passenger' }}</strong>
+                  <div class="mono text-muted">{{ c.customer?.phone || '—' }}</div>
+                </td>
+                <td class="cell-desc">
+                  <span class="cancel-msg">{{ c.cancelled_reason || 'No cancellation reason provided.' }}</span>
+                </td>
+                <td class="cell-status" style="text-align: center;">
+                  <span class="status-pill is-cancelled">Cancelled</span>
+                </td>
+              </tr>
+              <tr *ngIf="filteredCancelled.length === 0">
+                <td colspan="5" class="empty-cell">
+                  <div class="empty-box">
+                    <tm-icon name="x" [size]="24" />
+                    <h4>0 cancellations on record</h4>
+                    <p>This driver has fulfilled all accepted booking requests.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- =================== TAB 4: ROUTE ALLOCATION =================== -->
+        <div *ngIf="!loadingTab && activeTab === 'routes'" class="routes-container">
+          <app-driver-route-groups-panel [driverId]="driverId"></app-driver-route-groups-panel>
+        </div>
+
+        <!-- =================== TAB 5: FULL SPECIFICATIONS =================== -->
+        <div *ngIf="!loadingTab && activeTab === 'specs'" class="full-specs-container">
+          <div class="specs-grid">
+            <div class="spec-panel">
+              <div class="spec-panel-head">
+                <tm-icon name="user" [size]="13" />
+                <h3>Personal Identity</h3>
+                <button class="sp-edit-btn" (click)="openEditProfile()">Edit</button>
+              </div>
+              <div class="sp-list">
+                <div class="sp-row"><span>Full Name</span><strong>{{ profile.name || 'Unnamed Driver' }}</strong></div>
+                <div class="sp-row"><span>Phone Number</span><strong class="mono">{{ profile.phone || '—' }}</strong></div>
+                <div class="sp-row"><span>Email Address</span><strong>{{ profile.email || '—' }}</strong></div>
+                <div class="sp-row"><span>Date of Birth</span><strong>{{ profile.dob || '—' }}</strong></div>
+                <div class="sp-row"><span>Residential Address</span><strong>{{ profile.address || '—' }}</strong></div>
+              </div>
+            </div>
+
+            <div class="spec-panel">
+              <div class="spec-panel-head">
+                <tm-icon name="car" [size]="13" />
+                <h3>Vehicle & Fleet Specs</h3>
+                <button class="sp-edit-btn" (click)="openEditProfile()">Edit</button>
+              </div>
+              <div class="sp-list">
+                <div class="sp-row"><span>Registration No</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
+                <div class="sp-row"><span>Vehicle Model</span><strong>{{ profile.vehicle_model || '—' }}</strong></div>
+                <div class="sp-row"><span>Vehicle Colour</span><strong>{{ profile.vehicle_color || '—' }}</strong></div>
+                <div class="sp-row"><span>Vehicle Category</span><strong>{{ profile.vehicle_type_name || profile.vehicle_type || '—' }}</strong></div>
+                <div class="sp-row"><span>City Vehicle Type</span><strong>{{ profile.city_vehicle_type_name || '—' }}</strong></div>
+                <div class="sp-row"><span>Assigned City</span><strong>{{ profile.city_name || 'All Cities' }}</strong></div>
+              </div>
+            </div>
+
+            <div class="spec-panel">
+              <div class="spec-panel-head">
+                <tm-icon name="shield" [size]="13" />
+                <h3>Subscription Plan</h3>
+              </div>
+              <div class="sp-list" *ngIf="profile.active_subscription; else noSubTab">
+                <div class="sp-row"><span>Plan Title</span><strong class="text-purple">{{ profile.active_subscription.plan_title }}</strong></div>
+                <div class="sp-row"><span>Fee Paid</span><strong class="mono">₹ {{ profile.active_subscription.amount_paid | number:'1.2-2' }}</strong></div>
+                <div class="sp-row"><span>Commission</span><strong class="text-emerald">{{ profile.active_subscription.commission_percent }}% (Keep {{ 100 - profile.active_subscription.commission_percent }}%)</strong></div>
+                <div class="sp-row"><span>Payment Channel</span><strong>{{ profile.active_subscription.payment_method | uppercase }}</strong></div>
+                <div class="sp-row"><span>Expiration Date</span><strong>{{ profile.active_subscription.expires_at | date:'mediumDate' }}</strong></div>
+                <div class="sp-row"><span>Auto-Renew</span><strong>{{ profile.active_subscription.auto_renew ? 'Active' : 'Disabled' }}</strong></div>
+              </div>
+              <ng-template #noSubTab>
+                <p class="text-muted" style="font-size: 12px; margin: 4px 0;">No active subscription plan. Standard 10% platform fee applies.</p>
+              </ng-template>
+            </div>
+
+            <div class="spec-panel">
+              <div class="spec-panel-head">
+                <tm-icon name="pin" [size]="13" />
+                <h3>System Telemetry & Status</h3>
+              </div>
+              <div class="sp-list">
+                <div class="sp-row"><span>App Version</span><strong class="mono">v{{ profile.app_version || '1.0' }} ({{ profile.os_version || 'Android' }})</strong></div>
+                <div class="sp-row"><span>Last Login</span><strong>{{ profile.last_login_at ? timeAgo(profile.last_login_at) : '—' }}</strong></div>
+                <div class="sp-row">
+                  <span>GPS Coords</span>
+                  <strong class="mono" *ngIf="profile.current_lat != null">{{ profile.current_lat | number:'1.4-4' }}, {{ profile.current_lng | number:'1.4-4' }}</strong>
+                  <strong *ngIf="profile.current_lat == null">—</strong>
                 </div>
-              </div>
-              <tm-button variant="ghost" size="sm" icon="x" (clicked)="clearRideFilters()">Clear rides</tm-button>
-            </div>
-          </div>
-
-          <div class="feed__pills">
-            <tm-filter-pill *ngIf="tabSearch.trim()" icon="search" label="Search" [value]="tabSearch" (clear)="tabSearch = ''" />
-            <tm-filter-pill *ngIf="activeTab === 'rides' && rideMode !== 'all'" icon="car" label="Ride mode" [value]="rideModeText(rideMode)" (clear)="rideMode = 'all'" />
-            <tm-filter-pill *ngIf="activeTab === 'rides' && (rideDateFrom || rideDateTo)" icon="calendar" label="Ride date" [value]="(rideDateFrom || '…') + ' → ' + (rideDateTo || '…')" (clear)="clearRideDates()" />
-          </div>
-        </div>
-
-        <!-- Money summary (rides tab) — what riders paid on this driver's trips -->
-        <div *ngIf="activeTab === 'rides' && rideSummary" class="ride-summary">
-          <div class="ride-summary__card">
-            <span class="ride-summary__label">Rides</span>
-            <strong class="ride-summary__value">{{ rideSummary.rides_count }}</strong>
-          </div>
-          <div class="ride-summary__card">
-            <span class="ride-summary__label">Fares collected</span>
-            <strong class="ride-summary__value">₹ {{ rideSummary.fares_collected | number:'1.0-2' }}</strong>
-          </div>
-          <div class="ride-summary__card" [class.is-refund]="rideSummary.refunded > 0">
-            <span class="ride-summary__label">Refunded</span>
-            <strong class="ride-summary__value">₹ {{ rideSummary.refunded | number:'1.0-2' }}</strong>
-          </div>
-        </div>
-
-        <!-- Loading skeleton -->
-        <div *ngIf="loadingTab" class="feed__loading">
-          <div class="feed__skel" *ngFor="let _ of [0,1,2]"></div>
-        </div>
-
-        <!-- Empty state -->
-        <div *ngIf="!loadingTab && !currentActivity.length" class="feed__empty">
-          <span class="feed__empty-icon"><tm-icon [name]="currentTabIcon" [size]="24" /></span>
-          <div class="feed__empty-title">{{ emptyTitleFor(activeTab) }}</div>
-          <div class="feed__empty-hint">{{ emptyHintFor(activeTab) }}</div>
-        </div>
-
-        <!-- ============= RIDES feed ============= -->
-        <div *ngIf="!loadingTab && activeTab === 'rides'" class="feed__list">
-          <article *ngFor="let r of currentActivity" class="post post--ride">
-            <div class="post__leading">
-              <span class="post__icon post__icon--ride">
-                <tm-icon name="car" [size]="14" />
-              </span>
-            </div>
-            <div class="post__body">
-              <header class="post__head">
-                <span class="post__who">
-                  <span class="post__role">Rider</span>
-                  <strong class="post__title">{{ r.rider_name || 'Unknown rider' }}</strong>
-                  <span class="rider-extra" *ngIf="r.rider_extra_count">+{{ r.rider_extra_count }} more</span>
-                </span>
-                <span class="ride-status" [attr.data-s]="statusBucket(r.status)">{{ statusDisplay(r.status) }}</span>
-              </header>
-              <div class="route-mini">
-                <div class="route-mini__line"><span class="pin pin--from"></span>
-                  <span class="route-mini__addr">{{ r.pickup_address || pretty(r.pickup_lat, r.pickup_lng) }}</span>
+                <div class="sp-row" *ngIf="profile.current_lat != null">
+                  <span>Google Maps</span>
+                  <a [href]="'https://www.google.com/maps?q=' + profile.current_lat + ',' + profile.current_lng" target="_blank" class="sp-link">Open in Maps ↗</a>
                 </div>
-                <div class="route-mini__line"><span class="pin pin--to"></span>
-                  <span class="route-mini__addr">{{ r.drop_address || pretty(r.drop_lat, r.drop_lng) }}</span>
-                </div>
+                <div class="sp-row"><span>Push Alerts</span><strong>{{ profile.push_unsubscribed ? 'Opted Out' : 'Subscribed' }}</strong></div>
               </div>
-              <div class="ride-meta">
-                <span class="ride-meta__item ride-meta__item--mode">{{ rideModeLabel(r) }}</span>
-                <span class="ride-meta__item" *ngIf="r.ride_type?.name"><tm-icon name="road" [size]="11" /> {{ r.ride_type.name }}</span>
-                <span class="ride-meta__item" *ngIf="r.distance_km"><tm-icon name="pin" [size]="11" /> {{ r.distance_km }} km</span>
-                <span class="ride-meta__item" *ngIf="r.duration_min"><tm-icon name="calendar" [size]="11" /> {{ r.duration_min }} min</span>
-              </div>
-              <div class="ride-pay" *ngIf="r.payment_method || r.refund_status !== 'NONE'">
-                <span class="pay-chip"
-                      *ngIf="r.payment_method"
-                      [class.pay-chip--paid]="r.payment_status === 'PAID'"
-                      [class.pay-chip--pending]="r.payment_status === 'PENDING' || r.payment_status === 'PARTIAL'">
-                  <tm-icon name="rupee" [size]="11" />
-                  {{ r.payment_method | uppercase }}<ng-container *ngIf="r.payment_status"> · {{ paymentStatusText(r.payment_status) }}</ng-container><ng-container *ngIf="r.paid_amount"> · ₹{{ r.paid_amount | number:'1.0-2' }}</ng-container>
-                </span>
-                <span class="pay-chip pay-chip--refund" *ngIf="r.refund_status === 'REFUNDED'">
-                  <tm-icon name="refresh" [size]="11" /> Refunded ₹{{ r.refund_amount | number:'1.0-2' }}
-                </span>
-                <span class="pay-chip pay-chip--due" *ngIf="r.refund_status === 'APPROVED'">
-                  <tm-icon name="refresh" [size]="11" /> Refund due ₹{{ r.refund_due | number:'1.0-2' }}
-                </span>
-              </div>
-              <footer class="post__foot">
-                <span class="post__meta mono">#{{ r.id }}</span>
-                <span class="post__meta">
-                  {{ r.created_at | date:'MMM d, HH:mm' }}<ng-container *ngIf="r.completed_at"> → {{ r.completed_at | date:'HH:mm' }}</ng-container>
-                </span>
-              </footer>
-            </div>
-            <div class="post__trailing">
-              <div class="ride-fare">
-                <span class="post__amount post__amount--credit">₹ {{ r.final_fare ?? r.estimated_fare ?? 0 }}</span>
-                <span class="ride-fare__est"
-                      *ngIf="r.final_fare != null && r.estimated_fare != null && r.final_fare !== r.estimated_fare">
-                  est ₹{{ r.estimated_fare }}
-                </span>
+              <div class="sp-footer">
+                <tm-button variant="outline" size="sm" icon="bell" (clicked)="openUnsub()">
+                  Manage Notifications
+                </tm-button>
               </div>
             </div>
-          </article>
+          </div>
         </div>
 
-        <!-- ============= WALLET feed ============= -->
-        <div *ngIf="!loadingTab && activeTab === 'wallet'" class="feed__list">
-          <article *ngFor="let t of currentActivity" class="post">
-            <div class="post__leading">
-              <span class="post__icon" [class.post__icon--ride]="t.type === 'credit'"
-                                     [class.post__icon--debit]="t.type === 'debit'"
-                                     [class.post__icon--warn]="t.type === 'cashback'">
-                <tm-icon [name]="t.type === 'debit' ? 'trash' : 'plus'" [size]="14" />
-              </span>
-            </div>
-            <div class="post__body">
-              <header class="post__head">
-                <strong class="post__title">{{ t.type | titlecase }}</strong>
-                <span class="post__time">{{ t.created_at | date:'MMM d, HH:mm' }}</span>
-              </header>
-              <p class="post__text" [class.muted]="!t.reason">
-                {{ t.reason || 'No note attached.' }}
-              </p>
-              <footer class="post__foot" *ngIf="t.engagement_id">
-                <span class="post__meta mono">Engagement #{{ t.engagement_id }}</span>
-              </footer>
-            </div>
-            <div class="post__trailing">
-              <span class="post__amount"
-                    [class.post__amount--credit]="t.type !== 'debit'"
-                    [class.post__amount--debit]="t.type === 'debit'">
-                {{ t.type === 'debit' ? '−' : '+' }} ₹ {{ t.amount }}
-              </span>
-            </div>
-          </article>
-        </div>
-
-        <!-- ============= CANCELLED feed ============= -->
-        <div *ngIf="!loadingTab && activeTab === 'cancelled'" class="feed__list">
-          <article *ngFor="let c of currentActivity" class="post">
-            <div class="post__leading">
-              <span class="post__icon post__icon--debit">
-                <tm-icon name="x" [size]="14" />
-              </span>
-            </div>
-            <div class="post__body">
-              <header class="post__head">
-                <strong class="post__title">Ride cancelled</strong>
-                <span class="post__time">{{ c.created_at | date:'MMM d, HH:mm' }}</span>
-              </header>
-              <p class="post__text" [class.muted]="!c.cancelled_reason">
-                {{ c.cancelled_reason || 'No reason recorded.' }}
-              </p>
-              <footer class="post__foot">
-                <span class="post__meta mono">#{{ c.id }}</span>
-              </footer>
-            </div>
-          </article>
-        </div>
-      </section>
+      </main>
 
     </div>
 
-    <ng-template #loading>
-      <div class="page-loading">
-        <span class="spinner" aria-hidden="true"></span>
-        <span>Loading driver…</span>
+    <!-- Loading State -->
+    <ng-template #loadingTpl>
+      <div class="page-loading-wrap">
+        <div class="spinner"></div>
+        <span>Loading driver workspace…</span>
       </div>
     </ng-template>
 
-    <!-- =================== Block / Delete modal =================== -->
-    <tm-modal
-      [open]="blockDeleteOpen"
-      [title]="profile?.is_suspended ? 'Manage driver access' : 'Restrict this driver'"
-      (closed)="blockDeleteOpen = false"
-    >
-      <div slot="body">
-        <p class="hint hint--top">
-          Pick an action below. Blocking can be reversed later — deletion cannot.
-        </p>
-
-        <!-- Action selector -->
-        <div class="action-toggle">
-          <button
-            type="button"
-            class="action-toggle__btn"
-            [class.is-active]="blockMode === 'block'"
-            [class.is-warn]="blockMode === 'block'"
-            (click)="blockMode = 'block'"
-          >
-            <span class="action-toggle__icon">
-              <tm-icon [name]="profile?.is_suspended ? 'check' : 'shield'" [size]="14" />
-            </span>
-            <span class="action-toggle__title">
-              {{ profile?.is_suspended ? 'Unblock' : 'Block' }}
-            </span>
-            <span class="action-toggle__sub">Reversible</span>
-          </button>
-          <button
-            type="button"
-            class="action-toggle__btn"
-            [class.is-active]="blockMode === 'delete'"
-            [class.is-danger]="blockMode === 'delete'"
-            (click)="blockMode = 'delete'"
-          >
-            <span class="action-toggle__icon">
-              <tm-icon name="trash" [size]="14" />
-            </span>
-            <span class="action-toggle__title">Delete</span>
-            <span class="action-toggle__sub">Permanent</span>
-          </button>
-        </div>
-
-        <!-- Block path -->
-        <ng-container *ngIf="blockMode === 'block' && !profile?.is_suspended">
-          <label class="lbl"><span class="req">*</span> Reason for blocking</label>
-          <select class="form-input" [(ngModel)]="blockReason">
-            <option value="">Select a reason…</option>
-            <option *ngFor="let r of blockReasons" [value]="r">{{ r }}</option>
-          </select>
-        </ng-container>
-
-        <div class="notice notice--info" *ngIf="blockMode === 'block' && profile?.is_suspended">
-          <tm-icon name="check" [size]="14" />
-          <span>
-            Unblocking will restore the driver's full access immediately.
-            They will be able to log in and take rides again.
-          </span>
-        </div>
-
-        <!-- Delete path -->
-        <ng-container *ngIf="blockMode === 'delete'">
-          <div class="notice notice--danger">
-            <tm-icon name="trash" [size]="14" />
-            <span>
-              This action <strong>cannot be undone</strong>. The driver's account
-              will be permanently deleted.
-            </span>
-          </div>
-          <label class="lbl">
-            <span class="req">*</span> Reason for deletion
-            <span class="hint">{{ deleteReason.length }} / 50</span>
-          </label>
-          <textarea
-            class="form-input form-textarea"
-            rows="3"
-            maxlength="50"
-            [(ngModel)]="deleteReason"
-            placeholder="Why is this driver being deleted?"
-          ></textarea>
-        </ng-container>
-      </div>
-
-      <ng-container slot="footer">
-        <tm-button variant="ghost" (clicked)="blockDeleteOpen = false">Cancel</tm-button>
-
-        <tm-button
-          *ngIf="blockMode === 'block'"
-          [variant]="profile?.is_suspended ? 'green' : 'ink'"
-          [icon]="profile?.is_suspended ? 'check' : 'shield'"
-          [loading]="blockSaving"
-          [disabled]="!profile?.is_suspended && !blockReason"
-          (clicked)="submitBlock()"
-        >
-          {{ profile?.is_suspended ? 'Unblock driver' : 'Block driver' }}
-        </tm-button>
-
-        <tm-button
-          *ngIf="blockMode === 'delete'"
-          variant="danger"
-          icon="trash"
-          [loading]="deleteSaving"
-          [disabled]="!deleteReason.trim()"
-          (clicked)="submitDelete()"
-        >
-          Delete permanently
-        </tm-button>
-      </ng-container>
-    </tm-modal>
-
-    <!-- =================== Record payout modal =================== -->
+    <!-- =================== Record Payout Modal =================== -->
     <tm-modal
       [open]="payoutOpen"
-      title="Record a payout"
+      title="Record Driver Payout Transfer"
       (closed)="payoutOpen = false"
     >
-      <div slot="body">
-        <p class="hint hint--top">
-          The money moves by GPay/bank outside the app — this only records it,
-          so the wallet balance stays true.
+      <div slot="body" class="modal-form-body">
+        <p class="form-hint">
+          Bank and UPI transfers occur outside DreamCabs. Recording this entry credits the driver settlement ledger.
         </p>
 
-        <div class="payout-summary" *ngIf="payoutSummary; else payoutLoadingTpl">
-          <div class="payout-summary__row payout-summary__row--pay">
-            <span>Pending payout due</span>
-            <strong>₹ {{ (payoutSummary.pending_payout ?? payoutSummary.earned_remaining ?? 0) | number:'1.2-2' }}</strong>
+        <!-- Driver Payout Destination Box -->
+        <div *ngIf="payoutSummary && (payoutSummary.payout_upi || payoutSummary.payout_bank_last4)" class="destination-card">
+          <div class="dest-head">Driver Receiving Account:</div>
+          <div *ngIf="payoutSummary.payout_upi" class="dest-row">
+            <span class="dest-lbl">UPI VPA / GPay ID:</span>
+            <strong class="dest-val mono">{{ payoutSummary.payout_upi }}</strong>
           </div>
-          <div class="payout-summary__row">
-            <span>Total collected online</span>
+          <div *ngIf="payoutSummary.payout_bank_last4" class="dest-row">
+            <span class="dest-lbl">Bank Account:</span>
+            <strong class="dest-val mono">•••• {{ payoutSummary.payout_bank_last4 }} (IFSC: {{ payoutSummary.payout_ifsc }})</strong>
+          </div>
+          <div *ngIf="payoutSummary.payout_beneficiary_name" class="dest-row">
+            <span class="dest-lbl">Beneficiary Name:</span>
+            <strong class="dest-val">{{ payoutSummary.payout_beneficiary_name }}</strong>
+          </div>
+        </div>
+
+        <div class="payout-summary-box" *ngIf="payoutSummary; else payoutLoadingTpl">
+          <div class="payout-sum-row payout-sum-row--highlight">
+            <span>Pending Payout Due</span>
+            <strong class="text-emerald">₹ {{ (payoutSummary.pending_payout ?? payoutSummary.earned_remaining ?? 0) | number:'1.2-2' }}</strong>
+          </div>
+          <div class="payout-sum-row">
+            <span>Total Online Rides Collected</span>
             <strong>₹ {{ (payoutSummary.money_collected || 0) | number:'1.2-2' }}</strong>
           </div>
-          <div class="payout-summary__row payout-summary__row--muted">
-            <span>Already transferred</span>
+          <div class="payout-sum-row">
+            <span>Already Transferred</span>
             <strong>₹ {{ (payoutSummary.money_transferred ?? payoutSummary.total_paid_out ?? 0) | number:'1.2-2' }}</strong>
           </div>
-          <div class="payout-summary__row">
-            <span>Wallet balance</span>
+          <div class="payout-sum-row">
+            <span>Current Driver Wallet Balance</span>
             <strong>₹ {{ payoutSummary.balance | number:'1.2-2' }}</strong>
           </div>
         </div>
 
-        <div *ngIf="payoutSummary && (payoutSummary.payout_upi || payoutSummary.payout_bank_last4)" class="payout-account-box" style="margin-top: 10px; margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; font-size: 12px;">
-          <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">
-            Driver Payout Destination:
-          </div>
-          <div *ngIf="payoutSummary.payout_upi" style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-            <span style="color: #64748b;">UPI VPA:</span>
-            <strong class="mono">{{ payoutSummary.payout_upi }}</strong>
-          </div>
-          <div *ngIf="payoutSummary.payout_bank_last4" style="display: flex; justify-content: space-between;">
-            <span style="color: #64748b;">Bank Account:</span>
-            <strong class="mono">•••• {{ payoutSummary.payout_bank_last4 }} ({{ payoutSummary.payout_ifsc }})</strong>
-          </div>
-        </div>
-
         <ng-template #payoutLoadingTpl>
-          <p class="hint">Loading payout summary…</p>
+          <div class="modal-loading-hint">Loading payout calculations…</div>
         </ng-template>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-          <label class="lbl" style="margin-bottom: 0;"><span class="req">*</span> Amount paid (₹)</label>
-          <button
-            *ngIf="payoutSummary && ((payoutSummary.pending_payout || payoutSummary.earned_remaining || 0) > 0)"
-            type="button"
-            style="background: none; border: none; font-size: 11.5px; font-weight: 700; color: #059669; cursor: pointer; text-decoration: underline;"
-            (click)="payoutAmount = (payoutSummary.pending_payout || payoutSummary.earned_remaining || 0)"
-          >Fill ₹{{ (payoutSummary.pending_payout || payoutSummary.earned_remaining || 0) | number:'1.2-2' }}</button>
+        <div class="form-group">
+          <div class="form-label-row">
+            <label class="form-label"><span class="req">*</span> Transfer Amount (₹)</label>
+            <button
+              *ngIf="payoutSummary && ((payoutSummary.pending_payout || payoutSummary.earned_remaining || 0) > 0)"
+              type="button"
+              class="btn-fill-amount"
+              (click)="payoutAmount = (payoutSummary.pending_payout || payoutSummary.earned_remaining || 0)"
+            >Fill ₹{{ (payoutSummary.pending_payout || payoutSummary.earned_remaining || 0) | number:'1.2-2' }}</button>
+          </div>
+          <input
+            class="form-control"
+            type="number"
+            min="0.01"
+            step="0.01"
+            [(ngModel)]="payoutAmount"
+            placeholder="0.00"
+          />
         </div>
-        <input
-          class="form-input"
-          type="number"
-          min="1"
-          [(ngModel)]="payoutAmount"
-          placeholder="0.00"
-        />
 
-        <label class="lbl"><span class="req">*</span> Paid via</label>
-        <select class="form-input" [(ngModel)]="payoutMethod">
-          <option value="gpay">GPay / UPI</option>
-          <option value="bank">Bank transfer</option>
-          <option value="cash">Cash</option>
-          <option value="other">Other</option>
-        </select>
+        <div class="form-group">
+          <label class="form-label"><span class="req">*</span> Transfer Method</label>
+          <select class="form-control" [(ngModel)]="payoutMethod">
+            <option value="gpay">GPay / UPI Transfer</option>
+            <option value="bank">Bank Transfer (NEFT / IMPS / RTGS)</option>
+            <option value="cash">Cash Settlement</option>
+            <option value="other">Other Payment Channel</option>
+          </select>
+        </div>
 
-        <label class="lbl">Reference (UPI/UTR number)</label>
-        <input
-          class="form-input"
-          type="text"
-          maxlength="120"
-          [(ngModel)]="payoutReference"
-          placeholder="e.g. UPI ref 338245…"
-        />
+        <div class="form-group">
+          <label class="form-label">Transaction / UTR Reference Number</label>
+          <input
+            class="form-control"
+            type="text"
+            maxlength="120"
+            [(ngModel)]="payoutReference"
+            placeholder="e.g. UTR1234567890 or UPI Ref"
+          />
+        </div>
 
-        <label class="lbl">Note</label>
-        <input
-          class="form-input"
-          type="text"
-          maxlength="300"
-          [(ngModel)]="payoutNote"
-          placeholder="e.g. week 28 earnings"
-        />
+        <div class="form-group">
+          <label class="form-label">Notes & Remarks</label>
+          <input
+            class="form-control"
+            type="text"
+            maxlength="300"
+            [(ngModel)]="payoutNote"
+            placeholder="e.g. Weekly driver earnings settlement"
+          />
+        </div>
 
-        <div class="notice notice--danger" *ngIf="payoutError">
+        <div class="form-error-notice" *ngIf="payoutError">
           <tm-icon name="shield" [size]="14" />
           <span>{{ payoutError }}</span>
         </div>
       </div>
+
       <ng-container slot="footer">
         <tm-button variant="ghost" (clicked)="payoutOpen = false">Cancel</tm-button>
         <tm-button
@@ -789,1201 +735,869 @@ const BLOCK_REASONS = [
           [disabled]="!payoutAmount || payoutAmount <= 0"
           (clicked)="submitPayout()"
         >
-          Record payout
+          Confirm Transfer
         </tm-button>
       </ng-container>
     </tm-modal>
 
-    <!-- =================== Unsubscribe modal =================== -->
+    <!-- =================== Block / Delete Modal =================== -->
     <tm-modal
-      [open]="unsubOpen"
-      title="Subscription preferences"
-      (closed)="unsubOpen = false"
+      [open]="blockDeleteOpen"
+      [title]="profile?.is_suspended ? 'Manage Driver Access' : 'Restrict Driver Account'"
+      (closed)="blockDeleteOpen = false"
     >
-      <div slot="body">
-        <p class="hint">This per-user setting controls only app push notifications. Email and SMS are controlled from Operator Settings.</p>
-        <div class="check-list">
-          <label class="check" [class.is-on]="unsubPush">
-            <input type="checkbox" [(ngModel)]="unsubPush" />
-            <span class="check__box"><tm-icon name="check" [size]="11" /></span>
-            <span class="check__body">
-              <span class="check__title">Unsubscribe push</span>
-              <span class="check__sub">Firebase app push notifications</span>
-            </span>
-          </label>
+      <div slot="body" class="modal-form-body">
+        <div class="action-toggle-row">
+          <button
+            type="button"
+            class="toggle-card-btn"
+            [class.is-active]="blockMode === 'block'"
+            (click)="blockMode = 'block'"
+          >
+            <tm-icon [name]="profile?.is_suspended ? 'check' : 'shield'" [size]="16" />
+            <strong>{{ profile?.is_suspended ? 'Unblock Driver' : 'Temporary Block' }}</strong>
+            <small>Reversible account restriction</small>
+          </button>
+          
+          <button
+            type="button"
+            class="toggle-card-btn toggle-card-btn--danger"
+            [class.is-active]="blockMode === 'delete'"
+            (click)="blockMode = 'delete'"
+          >
+            <tm-icon name="trash" [size]="16" />
+            <strong>Delete Permanently</strong>
+            <small>Irreversible deletion</small>
+          </button>
+        </div>
+
+        <div *ngIf="blockMode === 'block' && !profile?.is_suspended" class="form-group mt-3">
+          <label class="form-label"><span class="req">*</span> Reason for Suspension</label>
+          <select class="form-control" [(ngModel)]="blockReason">
+            <option value="">Select a reason…</option>
+            <option *ngFor="let r of blockReasons" [value]="r">{{ r }}</option>
+          </select>
+        </div>
+
+        <div *ngIf="blockMode === 'block' && profile?.is_suspended" class="info-alert mt-3">
+          <tm-icon name="check" [size]="16" />
+          <span>Unblocking will restore driver access immediately, allowing them to accept ride requests again.</span>
+        </div>
+
+        <div *ngIf="blockMode === 'delete'" class="form-group mt-3">
+          <div class="danger-alert">
+            <tm-icon name="trash" [size]="16" />
+            <span>This action cannot be undone. Driver record and history will be permanently deleted.</span>
+          </div>
+          <label class="form-label mt-2"><span class="req">*</span> Deletion Rationale</label>
+          <textarea
+            class="form-control"
+            rows="3"
+            maxlength="100"
+            [(ngModel)]="deleteReason"
+            placeholder="Why is this driver being deleted?"
+          ></textarea>
         </div>
       </div>
+
       <ng-container slot="footer">
-        <tm-button variant="ghost" (clicked)="unsubOpen = false">Cancel</tm-button>
-        <tm-button variant="green" icon="check" [loading]="unsubSaving" (clicked)="submitUnsub()">
-          Save preferences
+        <tm-button variant="ghost" (clicked)="blockDeleteOpen = false">Cancel</tm-button>
+        <tm-button
+          *ngIf="blockMode === 'block'"
+          [variant]="profile?.is_suspended ? 'green' : 'ink'"
+          [icon]="profile?.is_suspended ? 'check' : 'shield'"
+          [loading]="blockSaving"
+          [disabled]="!profile?.is_suspended && !blockReason"
+          (clicked)="submitBlock()"
+        >
+          {{ profile?.is_suspended ? 'Unblock Driver' : 'Confirm Block' }}
+        </tm-button>
+        <tm-button
+          *ngIf="blockMode === 'delete'"
+          variant="danger"
+          icon="trash"
+          [loading]="deleteSaving"
+          [disabled]="!deleteReason.trim()"
+          (clicked)="submitDelete()"
+        >
+          Delete Driver Permanently
         </tm-button>
       </ng-container>
     </tm-modal>
 
-    <!-- ============= Edit profile drawer ============= -->
-    <tm-drawer [open]="editOpen" title="Edit driver profile" (closed)="editOpen = false">
-      <div slot="body" class="edit-form" *ngIf="editForm">
-        <label class="field">
-          <span class="field__lbl">Full name</span>
-          <input type="text" [(ngModel)]="editForm.name" maxlength="120" />
-        </label>
-        <label class="field">
-          <span class="field__lbl">Phone</span>
-          <input type="tel" [(ngModel)]="editForm.phone" maxlength="20" placeholder="e.g. 9000012345" />
-        </label>
-        <label class="field">
-          <span class="field__lbl">Email</span>
-          <input type="email" [(ngModel)]="editForm.email" maxlength="180" />
-        </label>
-        <label class="field">
-          <span class="field__lbl">Date of birth</span>
-          <input type="date" [(ngModel)]="editForm.dob" />
-        </label>
-        <label class="field">
-          <span class="field__lbl">Address</span>
-          <textarea rows="3" [(ngModel)]="editForm.address" maxlength="500"></textarea>
-        </label>
-        <hr class="edit-form__sep" />
-        <label class="field">
-          <span class="field__lbl">Vehicle registration no.</span>
-          <input type="text" [(ngModel)]="editForm.vehicle_reg_no" maxlength="50" />
-        </label>
-        <label class="field">
-          <span class="field__lbl">Vehicle model</span>
-          <input type="text" [(ngModel)]="editForm.vehicle_model" maxlength="100" />
-        </label>
-        <label class="field">
-          <span class="field__lbl">Vehicle colour</span>
-          <input type="text" [(ngModel)]="editForm.vehicle_color" maxlength="100" />
-        </label>
+    <!-- =================== Edit Profile Drawer =================== -->
+    <tm-drawer [open]="editOpen" title="Edit Driver Details" (closed)="editOpen = false">
+      <div slot="body" class="drawer-form-wrap" *ngIf="editForm">
+        
+        <div class="drawer-section-heading">Personal Details</div>
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input class="form-control" type="text" [(ngModel)]="editForm.name" maxlength="120" />
+        </div>
+
+        <div class="form-group-grid">
+          <div class="form-group">
+            <label class="form-label">Phone Number</label>
+            <input class="form-control" type="tel" [(ngModel)]="editForm.phone" maxlength="20" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input class="form-control" type="email" [(ngModel)]="editForm.email" maxlength="180" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Date of Birth</label>
+          <input class="form-control" type="date" [(ngModel)]="editForm.dob" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Residential Address</label>
+          <textarea class="form-control" rows="2" [(ngModel)]="editForm.address" maxlength="500"></textarea>
+        </div>
+
+        <div class="drawer-section-heading mt-4">Vehicle Information</div>
+
+        <div class="form-group">
+          <label class="form-label">Registration Number</label>
+          <input class="form-control mono" type="text" [(ngModel)]="editForm.vehicle_reg_no" maxlength="50" />
+        </div>
+
+        <div class="form-group-grid">
+          <div class="form-group">
+            <label class="form-label">Vehicle Model</label>
+            <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_model" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Vehicle Colour</label>
+            <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_color" maxlength="100" />
+          </div>
+        </div>
+
       </div>
+
       <ng-container slot="footer">
         <tm-button variant="ghost" (clicked)="editOpen = false">Cancel</tm-button>
         <tm-button variant="green" icon="check" [loading]="editSaving" (clicked)="submitEditProfile()">
-          Save profile
+          Save Changes
         </tm-button>
       </ng-container>
     </tm-drawer>
 
+    <!-- =================== Unsubscribe Modal =================== -->
+    <tm-modal
+      [open]="unsubOpen"
+      title="Driver Push Notification Preferences"
+      (closed)="unsubOpen = false"
+    >
+      <div slot="body" class="modal-form-body">
+        <p class="form-hint">Controls device push notifications sent directly to the driver's phone app.</p>
+        <label class="custom-checkbox-row">
+          <input type="checkbox" [(ngModel)]="unsubPush" />
+          <div class="checkbox-text">
+            <strong>Mute / Unsubscribe Push Notifications</strong>
+            <small>Prevents Firebase app push alerts from waking the device</small>
+          </div>
+        </label>
+      </div>
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="unsubOpen = false">Cancel</tm-button>
+        <tm-button variant="green" icon="check" [loading]="unsubSaving" (clicked)="submitUnsub()">
+          Save Settings
+        </tm-button>
+      </ng-container>
+    </tm-modal>
+
   `,
   styles: [`
-    :host { display: block; }
-    .edit-form { display: flex; flex-direction: column; gap: 12px; }
-    .edit-form .field { display: flex; flex-direction: column; gap: 5px; }
-    .edit-form .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
-    .edit-form input, .edit-form textarea { padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; font-family: inherit; outline: none; }
-    .edit-form input:focus, .edit-form textarea:focus { border-color: var(--tm-green); }
-    .edit-form textarea { resize: vertical; min-height: 70px; }
-    .edit-form__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .edit-form__sep { border: 0; border-top: 1px solid var(--tm-line); margin: 4px 0; }
-    .page {
-      display: flex;
-      flex-direction: column;
-      gap: var(--tm-space-5);
+    :host {
+      display: block;
+      width: 100%;
+      color: var(--tm-text);
+      font-family: var(--tm-font-body);
     }
 
-    /* -------------------- Back link -------------------- */
-    .back-link {
+    .stripe-console {
+      padding: var(--tm-space-3) var(--tm-space-5) var(--tm-space-8);
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Top Action Bar */
+    .top-action-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--tm-space-3);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .top-action-bar__left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .crumb-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--tm-text-muted);
+      text-decoration: none;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: var(--tm-radius-xs);
+      background: var(--tm-canvas-2);
+      transition: background var(--tm-duration-fast) var(--tm-ease);
+    }
+    .crumb-back:hover { background: var(--tm-line-2); color: var(--tm-text); }
+    .crumb-divider { color: var(--tm-text-soft); }
+    .crumb-id { font-size: 11.5px; font-weight: 700; color: var(--tm-text-muted); background: var(--tm-canvas-2); padding: 2px 6px; border-radius: 4px; font-family: var(--tm-font-mono); }
+    .crumb-title { font-weight: 700; color: var(--tm-text); font-size: 14px; }
+
+    .top-action-bar__right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: var(--tm-radius-xs);
+      font-size: 12.5px;
+      font-weight: 700;
+      font-family: var(--tm-font-body);
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line-2);
+      color: var(--tm-text);
+      cursor: pointer;
+      transition: all var(--tm-duration-fast) var(--tm-ease);
+    }
+    .btn-action:hover { background: var(--tm-canvas); border-color: var(--tm-text-soft); color: var(--tm-text); }
+    .btn-action--primary { background: var(--tm-green); border-color: var(--tm-green-deep); color: #ffffff; }
+    .btn-action--primary:hover { background: var(--tm-green-deep); border-color: var(--tm-green-deep); color: #ffffff; }
+    .btn-action--danger:hover { background: var(--tm-danger-bg); border-color: var(--tm-danger); color: var(--tm-danger-fg); }
+
+    /* Hero Console Header */
+    .console-hero {
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      overflow: hidden;
+      margin-bottom: var(--tm-space-3);
+      box-shadow: var(--tm-shadow-sm);
+      width: 100%;
+    }
+    .hero-identity {
+      padding: var(--tm-space-4) var(--tm-space-5);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .hero-avatar {
+      position: relative;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: var(--tm-info-fg);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 16px;
+      font-family: var(--tm-font-body);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .hero-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .hero-avatar.is-online::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--tm-green);
+      border: 2px solid var(--tm-surface);
+    }
+
+    .hero-headings { display: flex; flex-direction: column; gap: 3px; }
+    .hero-row-1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .hero-name { margin: 0; font-size: 19px; font-weight: 800; color: var(--tm-text); letter-spacing: -0.01em; }
+    .hero-badge { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); background: var(--tm-canvas-2); padding: 1px 6px; border-radius: 4px; font-family: var(--tm-font-mono); }
+    .plan-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #4338ca;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      padding: 1px 7px;
+      border-radius: var(--tm-radius-pill);
+    }
+    .hero-row-2 { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--tm-text-muted); flex-wrap: wrap; }
+    .meta-item { display: inline-flex; align-items: center; gap: 4px; }
+    .meta-dot { color: var(--tm-line-2); }
+
+    /* 5 Unified Metric Columns */
+    .hero-metrics-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      background: var(--tm-canvas);
+      border-top: 1px solid var(--tm-line);
+      width: 100%;
+    }
+    @media (max-width: 960px) {
+      .hero-metrics-strip { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    }
+    .metric-cell {
+      padding: 10px 16px;
+      border-right: 1px solid var(--tm-line);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-cell:last-child { border-right: none; }
+    .metric-cell--neg { background: var(--tm-danger-bg); }
+    .metric-cell--payout { background: var(--tm-green-tint); }
+    .m-label { font-size: 10px; font-weight: 800; color: var(--tm-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .m-value-wrap { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+    .m-value { font-size: 16px; font-weight: 800; color: var(--tm-text); font-variant-numeric: tabular-nums; }
+    .m-value--sm { font-size: 13px; }
+    .m-link {
+      background: none;
+      border: none;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--tm-green-deep);
+      cursor: pointer;
+      padding: 0;
+      text-decoration: none;
+      font-family: var(--tm-font-body);
+    }
+    .m-link:hover { text-decoration: underline; }
+    .m-tag { font-size: 10px; font-weight: 800; color: var(--tm-green-deep); background: var(--tm-green-soft); padding: 1px 5px; border-radius: 4px; }
+    .m-sub { font-size: 10.5px; color: var(--tm-text-muted); font-weight: 700; }
+
+    /* Overview Specs Bar */
+    .overview-specs-bar {
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      padding: 12px 18px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: var(--tm-space-3);
+      box-shadow: var(--tm-shadow-sm);
+      width: 100%;
+      box-sizing: border-box;
+    }
+    @media (max-width: 960px) {
+      .overview-specs-bar { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 600px) {
+      .overview-specs-bar { grid-template-columns: 1fr; }
+    }
+    .spec-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      border-right: 1px solid var(--tm-line);
+      padding-right: 14px;
+    }
+    .spec-col:last-child { border-right: none; padding-right: 0; }
+    .sc-head { font-size: 10.5px; font-weight: 800; color: var(--tm-text-muted); text-transform: uppercase; margin-bottom: 3px; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.04em; }
+    .sc-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .sc-lbl { color: var(--tm-text-muted); white-space: nowrap; }
+    .sc-val { color: var(--tm-text); font-weight: 600; text-align: right; word-break: break-word; }
+    .sc-btn {
+      background: none;
+      border: none;
+      color: var(--tm-green-deep);
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+      font-family: var(--tm-font-body);
+    }
+
+    /* Main Console Workspace */
+    .console-workspace {
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      box-shadow: var(--tm-shadow-sm);
+      overflow: hidden;
+      width: 100%;
+    }
+
+    .workspace-tabs-header {
+      padding: 10px 18px;
+      background: var(--tm-canvas);
+      border-bottom: 1px solid var(--tm-line-2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .console-tabs-nav { display: flex; gap: 4px; }
+    .c-tab-btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      align-self: flex-start;
-      padding: 6px 12px 6px 8px;
+      padding: 6px 12px;
+      border-radius: var(--tm-radius-xs);
+      background: transparent;
+      border: none;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--tm-font-body);
+      color: var(--tm-text-muted);
+      cursor: pointer;
+      transition: all var(--tm-duration-fast) var(--tm-ease);
+    }
+    .c-tab-btn:hover { background: var(--tm-line); color: var(--tm-text); }
+    .c-tab-btn.is-active {
+      background: var(--tm-surface);
+      color: var(--tm-text);
+      box-shadow: var(--tm-shadow-sm);
+    }
+    .c-tab-badge {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 1px 6px;
       border-radius: var(--tm-radius-pill);
       background: var(--tm-canvas-2);
       color: var(--tm-text-muted);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      text-decoration: none;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
     }
-    .back-link:hover { background: var(--tm-ink); color: #fff; }
+    .c-tab-btn.is-active .c-tab-badge { background: var(--tm-ink); color: #ffffff; }
 
-    /* -------------------- Profile cover -------------------- */
-    .cover {
-      position: relative;
+    .workspace-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .search-wrap { width: 220px; }
+    .search-wrap ::ng-deep .field {
+      height: 36px !important;
+      padding: 0 12px !important;
+      box-sizing: border-box !important;
+      border-radius: var(--tm-radius-xs) !important;
+      font-size: 12.5px !important;
+      border: 1px solid var(--tm-line-2) !important;
+      background: var(--tm-surface) !important;
+      font-family: var(--tm-font-body) !important;
+    }
+    .search-wrap ::ng-deep .field input {
+      font-size: 12.5px !important;
+      font-family: var(--tm-font-body) !important;
+    }
+
+    .rides-toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .rides-toolbar-group ::ng-deep .fs__trigger {
+      height: 36px !important;
+      box-sizing: border-box !important;
+      padding: 0 12px !important;
+      border-radius: var(--tm-radius-xs) !important;
+      font-size: 12.5px !important;
+      border: 1px solid var(--tm-line-2) !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      font-family: var(--tm-font-body) !important;
+      background: var(--tm-surface) !important;
+    }
+
+    .date-range-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 36px;
+      box-sizing: border-box;
       background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg);
-      overflow: hidden;
-    }
-    .cover__banner {
-      height: 120px;
-      background:
-        radial-gradient(circle at 30% 50%, rgba(34, 197, 94, 0.45), transparent 60%),
-        radial-gradient(circle at 80% 30%, rgba(255, 255, 255, 0.18), transparent 60%),
-        linear-gradient(135deg, var(--tm-ink), var(--tm-ink-3));
-    }
-    .cover__inner {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: var(--tm-space-4);
-      align-items: stretch;
-      padding: 0 var(--tm-space-5) var(--tm-space-5);
-      margin-top: -48px;
-    }
-    .cover__avatar {
-      width: 96px; height: 96px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--tm-green), var(--tm-green-deep));
-      color: #fff;
-      display: grid; place-items: center;
-      font-size: 30px;
-      font-weight: 800;
-      letter-spacing: 0.02em;
-      flex-shrink: 0;
-      border: 4px solid var(--tm-surface);
-      box-shadow: var(--tm-shadow-card);
-    }
-    .cover__avatar--photo {
-      background-color: var(--tm-canvas-2);
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
-    }
-    .cover__body {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 8px;
-      min-width: 0;
-      padding-top: 56px;
-    }
-    .cover__title-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
-      row-gap: 8px;
-    }
-    .cover__name {
-      margin: 0;
-      font-size: 26px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
+      border: 1px solid var(--tm-line-2);
+      padding: 0 12px;
+      border-radius: var(--tm-radius-xs);
+      font-size: 12.5px;
+      font-family: var(--tm-font-body);
       color: var(--tm-text);
-      line-height: 1.1;
+      cursor: pointer;
+      transition: border-color var(--tm-duration-fast) var(--tm-ease);
     }
-    .cover__handle {
-      display: inline-flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--tm-text-muted);
-    }
-    .cover__handle .mono {
-      font-family: var(--tm-font-mono);
-      color: var(--tm-text);
-      font-weight: 700;
-    }
-    .cover__handle-sep { color: var(--tm-text-soft); }
-
-    .cover__contacts {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 8px;
-      margin-top: 4px;
-    }
-    .contact {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 12px;
-      border-radius: var(--tm-radius-md);
-      background: var(--tm-canvas);
-      border: 1px solid var(--tm-line);
-      color: var(--tm-text);
-      font-size: 12px;
-      font-weight: 600;
-      text-decoration: none;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  border-color var(--tm-duration-fast) var(--tm-ease),
-                  box-shadow var(--tm-duration-fast) var(--tm-ease),
-                  transform var(--tm-duration-fast) var(--tm-ease);
-    }
-    .contact:not(.contact--static):hover {
-      background: var(--tm-ink);
-      color: #fff;
-      border-color: var(--tm-ink);
-      box-shadow: var(--tm-shadow-sm);
-      transform: translateY(-1px);
-    }
-    .contact--static { cursor: default; }
-    .contact--empty {
-      background: transparent;
-      color: var(--tm-text-soft);
-      border-style: dashed;
-    }
-    .contact--empty .contact__icon { color: var(--tm-text-soft); }
-    .contact--live {
+    .date-range-box:hover { border-color: var(--tm-text-soft); }
+    .date-range-box.has-value {
       background: var(--tm-green-tint);
       border-color: var(--tm-green-deep);
       color: var(--tm-green-deep);
     }
-    .contact--live .contact__icon { color: var(--tm-green-deep); }
-    .contact--live:hover {
-      background: var(--tm-green);
-      border-color: var(--tm-green-deep);
-      color: #fff;
-    }
-    .contact--live:hover .contact__icon { color: #fff; }
-    .contact__age {
-      display: inline-flex;
-      align-items: center;
-      padding: 1px 6px;
-      border-radius: var(--tm-radius-pill);
-      background: rgba(22, 163, 74, 0.12);
-      color: var(--tm-green-deep);
-      font-family: var(--tm-font-mono);
-      font-size: 10px;
-      font-weight: 800;
-      margin-left: 4px;
-    }
-    .contact__age.is-stale {
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-soft);
-    }
-    .contact--live:hover .contact__age {
-      background: rgba(255, 255, 255, 0.22);
-      color: #fff;
-    }
-    .contact__icon { display: inline-flex; color: var(--tm-text-muted); }
-    .contact:not(.contact--static):hover .contact__icon { color: #fff; }
-    .contact__k {
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-    .contact--empty .contact__k { color: var(--tm-text-soft); }
-    .contact--live .contact__k { color: var(--tm-green-deep); }
-    .contact:not(.contact--static):hover .contact__k,
-    .contact--live:hover .contact__k { color: rgba(255, 255, 255, 0.7); }
-    .contact__text.mono { font-family: var(--tm-font-mono); }
-
-    .cover__actions {
-      display: flex; align-items: center; gap: 8px;
-      padding-top: 56px;
-      position: relative;
-    }
-
-    /* -------------------- Stat row -------------------- */
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: var(--tm-space-3);
-    }
-    .stat-card {
-      padding: var(--tm-space-4);
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-md);
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .stat-card__icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 30px; height: 30px;
-      border-radius: var(--tm-radius-sm);
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-muted);
-      margin-bottom: 2px;
-    }
-    .stat-card__icon--green { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .stat-card__value {
-      font-family: var(--tm-font-display);
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      color: var(--tm-text);
-      line-height: 1.1;
-    }
-    .stat-card__label {
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-
-    /* -------------------- Overview section -------------------- */
-    .overview {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 340px;
-      gap: var(--tm-space-3);
-      align-items: start;
-    }
-    .overview__main,
-    .overview__side {
-      min-width: 0;
-    }
-    .section-head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: var(--tm-space-3);
-      flex-wrap: wrap;
-      margin-bottom: var(--tm-space-3);
-    }
-    .section-head__copy { min-width: 0; }
-    .section-head__title {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-    .section-head__sub {
-      margin: 4px 0 0;
-      font-size: 13px;
-      font-weight: 500;
-      line-height: 1.55;
-      color: var(--tm-text-muted);
-      max-width: 68ch;
-    }
-    .section-head__meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-    .meta-chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 32px;
-      padding: 0 12px;
-      border-radius: var(--tm-radius-md);
-      border: 1px solid var(--tm-line);
-      background: var(--tm-canvas);
-      color: var(--tm-text);
-      font-size: 12px;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    .meta-chip--strong {
-      background: var(--tm-ink);
-      border-color: var(--tm-ink);
-      color: #fff;
-    }
-    .detail-card {
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg);
-      padding: var(--tm-space-4);
-      box-shadow: var(--tm-shadow-sm);
-      min-width: 0;
-    }
-    .detail-card--wide { grid-column: 1 / -1; }
-    .detail-card__head {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: baseline;
-      margin-bottom: 12px;
-    }
-    .detail-card__title {
-      margin: 0;
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--tm-text);
-    }
-    .detail-card__hint {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--tm-text-muted);
-      white-space: nowrap;
-    }
-    .overview-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--tm-space-3);
-    }
-    .kv-list {
-      display: grid;
-      gap: 8px;
-    }
-    .kv-row {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 10px 12px;
-      border-radius: var(--tm-radius-md);
-      background: var(--tm-canvas);
-      border: 1px solid var(--tm-line);
-    }
-    .kv-row span {
-      flex: 0 0 auto;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-    .kv-row strong {
-      flex: 1 1 auto;
-      text-align: right;
-      min-width: 0;
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--tm-text);
-      overflow-wrap: anywhere;
-    }
-    .kv-row strong.mono { font-family: var(--tm-font-mono); }
-    .overview__side {
-      display: grid;
-      gap: var(--tm-space-3);
-    }
-    .is-stale { color: var(--tm-text-soft); }
-
-    /* -------------------- Activity feed -------------------- */
-
-    .feed {
-      background: var(--tm-surface);
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-lg);
-      padding: var(--tm-space-5);
-      display: flex;
-      flex-direction: column;
-      gap: var(--tm-space-4);
-      box-shadow: var(--tm-shadow-sm);
-    }
-    .feed__head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: var(--tm-space-3);
-      flex-wrap: wrap;
-    }
-    .feed__title { display: flex; flex-direction: column; gap: 4px; }
-    .feed__heading {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: -0.01em;
-      color: var(--tm-text);
-    }
-    .feed__sub {
-      margin: 0;
-      font-size: 12px;
-      color: var(--tm-text-muted);
-      font-weight: 500;
-    }
-    .feed__nav-wrap { display: flex; align-items: center; }
-    .feed__nav {
-      display: flex;
-      gap: 4px;
-      padding: 4px;
-      background: var(--tm-canvas);
-      border-radius: var(--tm-radius-md);
-      border: 1px solid var(--tm-line);
-      max-width: 100%;
-      overflow-x: auto;
-    }
-    .feed-tab {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 8px 12px;
-      border: 0;
-      cursor: pointer;
-      border-radius: var(--tm-radius-sm);
-      font-weight: 700;
-      font-size: 12px;
-      color: var(--tm-text-muted);
+    .date-input {
+      border: none;
       background: transparent;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease),
-                  box-shadow var(--tm-duration-fast) var(--tm-ease);
-      white-space: nowrap;
-    }
-    .feed-tab:hover { color: var(--tm-text); }
-    .feed-tab.is-active {
-      background: var(--tm-ink);
-      color: #fff;
-    }
-    .feed-tab__count {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 20px;
-      height: 18px;
-      padding: 0 6px;
-      border-radius: var(--tm-radius-pill);
-      font-family: var(--tm-font-mono);
-      font-size: 10px;
-      font-weight: 800;
-      background: rgba(15, 20, 25, 0.08);
-      color: var(--tm-text-muted);
-    }
-    .feed-tab.is-active .feed-tab__count {
-      background: rgba(255, 255, 255, 0.18);
-      color: #fff;
-    }
-    .feed__select {
-      display: none;
-      appearance: none;
-      -webkit-appearance: none;
-      padding: 10px 32px 10px 14px;
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      background: var(--tm-surface);
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--tm-text);
-      width: 100%;
-      background-image:
-        linear-gradient(45deg, transparent 50%, var(--tm-text-soft) 50%),
-        linear-gradient(135deg, var(--tm-text-soft) 50%, transparent 50%);
-      background-position:
-        calc(100% - 18px) center,
-        calc(100% - 12px) center;
-      background-size: 6px 6px, 6px 6px;
-      background-repeat: no-repeat;
-    }
-
-    .feed__toolbar { display: grid; gap: 12px; }
-    .feed__toolbar-main {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-end;
-      gap: 12px;
-    }
-    .feed__search {
-      flex: 1 1 320px;
-      max-width: none;
-    }
-    .feed__filters {
-      flex: 0 0 auto;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    .feed__filters-main {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-end;
-      gap: 10px;
-    }
-    .feed__pills { display: flex; flex-wrap: wrap; gap: 8px; }
-    /* ---------- Date range picker (daterangepicker) ---------- */
-    .date-range {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 6px 4px 10px;
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      background: var(--tm-surface);
-      cursor: pointer;
-      transition: border-color var(--tm-duration-fast) var(--tm-ease),
-                  background var(--tm-duration-fast) var(--tm-ease);
-    }
-    .date-range:focus-within { border-color: var(--tm-ink); }
-    .date-range.has-value { background: var(--tm-green-tint); border-color: var(--tm-green-deep); }
-    .date-range__icon { color: var(--tm-text-muted); display: inline-flex; }
-    .date-range.has-value .date-range__icon { color: var(--tm-green-deep); }
-    .date-range__input {
-      appearance: none;
-      -webkit-appearance: none;
-      background: transparent;
-      border: 0;
-      outline: 0;
-      font-family: var(--tm-font-mono);
+      outline: none;
       font-size: 12px;
+      font-family: var(--tm-font-mono);
       font-weight: 600;
       color: var(--tm-text);
-      padding: 4px 0;
-      min-width: 200px;
+      width: 130px;
       cursor: pointer;
+      height: 100%;
     }
-    .date-range__input::placeholder { color: var(--tm-text-soft); }
-    .date-range__clear {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-muted);
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .date-range__clear:hover { background: var(--tm-ink); color: #fff; }
-
-    /* Brand-tone the daterangepicker dropdown — it mounts on document.body. */
     :host ::ng-deep .daterangepicker {
       font-family: var(--tm-font-body) !important;
       border-radius: var(--tm-radius-md);
       border: 1px solid var(--tm-line-2);
       box-shadow: var(--tm-shadow-pop);
+      z-index: 99999 !important;
     }
     :host ::ng-deep .daterangepicker .btn-primary,
     :host ::ng-deep .daterangepicker .btn-success {
       background: var(--tm-ink); border-color: var(--tm-ink);
-      border-radius: var(--tm-radius-sm); font-weight: 700;
+      border-radius: var(--tm-radius-xs); font-weight: 700;
     }
     :host ::ng-deep .daterangepicker .ranges li.active,
     :host ::ng-deep .daterangepicker td.active,
     :host ::ng-deep .daterangepicker td.active:hover { background: var(--tm-ink); color: #fff; }
     :host ::ng-deep .daterangepicker td.in-range { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .btn-x { background: none; border: none; color: var(--tm-text-muted); cursor: pointer; display: flex; align-items: center; padding: 0; }
+    .btn-reset {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 36px;
+      box-sizing: border-box;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-xs);
+      padding: 0 12px;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--tm-font-body);
+      color: var(--tm-text-muted);
+      cursor: pointer;
+      transition: all var(--tm-duration-fast) var(--tm-ease);
+    }
+    .btn-reset:hover { background: var(--tm-danger-bg); color: var(--tm-danger-fg); border-color: var(--tm-danger); }
 
-    /* ---------- Money summary cards (rides tab) ---------- */
-    .ride-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
-    .ride-summary__card {
-      flex: 1 1 120px;
-      min-width: 120px;
+    /* Rides Financial Ribbon */
+    .rides-financial-ribbon {
+      background: var(--tm-canvas);
+      border-bottom: 1px solid var(--tm-line);
+      padding: 7px 18px;
+      display: flex;
+      gap: 20px;
+      font-size: 12px;
+    }
+    .rf-pill { display: flex; align-items: center; gap: 5px; }
+    .rf-lbl { color: var(--tm-text-muted); font-weight: 600; }
+
+    /* Console Data Table (Responsive full width) */
+    .console-table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+    .console-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    .console-table th {
+      background: var(--tm-canvas);
+      color: var(--tm-text-muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--tm-line-2);
+      white-space: nowrap;
+    }
+    .console-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--tm-line);
+      vertical-align: middle;
+      color: var(--tm-text);
+    }
+    .c-row:hover td { background: var(--tm-canvas); }
+
+    .cell-id strong { color: var(--tm-text); }
+    .cell-time .time-main { font-weight: 700; color: var(--tm-text); }
+    .cell-time .time-sub { font-size: 11px; color: var(--tm-text-muted); }
+
+    .cell-rider .rider-row { display: flex; align-items: center; gap: 4px; }
+    .extra-pill { font-size: 9.5px; font-weight: 800; background: var(--tm-canvas-2); color: var(--tm-text-muted); padding: 1px 4px; border-radius: 3px; }
+    .rider-phone { font-size: 11px; color: var(--tm-text-muted); }
+
+    .cell-route { min-width: 200px; max-width: 320px; }
+    .point-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .dot-from { background: var(--tm-info); }
+    .dot-to   { background: var(--tm-green); }
+    .addr-text { font-size: 12px; color: var(--tm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .route-sub { font-size: 11px; color: var(--tm-text-muted); margin-top: 1px; }
+
+    .cell-mode .mode-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--tm-canvas-2);
+      color: var(--tm-text-muted);
+    }
+    .mode-badge[data-mode="private"] { background: var(--tm-info-bg); color: var(--tm-info-fg); }
+    .mode-badge[data-mode="fixed"]   { background: #fdf4ff; color: #86198f; }
+    .mode-badge[data-mode="shuttle"] { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .route-title { font-size: 10.5px; margin-top: 1px; }
+
+    .cell-fare .fare-num { font-size: 14px; color: var(--tm-text); font-weight: 800; }
+    .cell-fare .fare-est { font-size: 10px; color: var(--tm-text-muted); }
+
+    .cell-pay .pay-chip {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--tm-canvas-2);
+      color: var(--tm-text-muted);
+    }
+    .pay-chip.is-paid { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .refund-chip { font-size: 10.5px; font-weight: 700; margin-top: 2px; }
+
+    .status-pill {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: var(--tm-radius-pill);
+    }
+    .status-pill[data-status="completed"] { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .status-pill[data-status="cancelled"], .status-pill.is-cancelled { background: var(--tm-danger-bg); color: var(--tm-danger-fg); }
+    .status-pill[data-status="pending"]   { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
+
+    .txn-bubble {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .txn-bubble.is-credit { background: var(--tm-green-tint); color: var(--tm-green-deep); }
+    .txn-bubble.is-debit  { background: var(--tm-danger-bg); color: var(--tm-danger-fg); }
+    .txn-title { font-size: 13px; color: var(--tm-text); font-weight: 700; }
+    .txn-reason { margin: 2px 0 0; font-size: 11.5px; color: var(--tm-text-muted); }
+    .amount-val { font-size: 14px; font-weight: 800; }
+    .amount-val.is-credit { color: var(--tm-green-deep); }
+    .amount-val.is-debit  { color: var(--tm-danger-fg); }
+
+    .empty-cell { padding: 48px 20px; text-align: center; color: var(--tm-text-muted); }
+    .empty-box { display: flex; flex-direction: column; align-items: center; color: var(--tm-text-soft); }
+    .empty-box h4 { margin: 8px 0 3px; font-size: 14px; color: var(--tm-text); font-weight: 700; }
+    .empty-box p  { margin: 0; font-size: 12px; }
+
+    .view-loading, .page-loading-wrap {
+      padding: 60px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      color: var(--tm-text-muted);
+      font-size: 13px;
+    }
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2.5px solid var(--tm-line-2);
+      border-top-color: var(--tm-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Routes Tab */
+    .routes-container { padding: var(--tm-space-4); }
+
+    /* Specs Tab */
+    .full-specs-container { padding: var(--tm-space-4); }
+    .specs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .spec-panel {
+      background: var(--tm-canvas);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-md);
+      padding: 14px;
+    }
+    .spec-panel-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-bottom: 1px solid var(--tm-line);
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .spec-panel-head h3 { margin: 0; font-size: 13px; font-weight: 800; color: var(--tm-text); flex: 1; }
+    .sp-edit-btn { background: none; border: none; color: var(--tm-green-deep); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: var(--tm-font-body); }
+    .sp-list { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+    .sp-row { display: flex; justify-content: space-between; align-items: center; }
+    .sp-row span { color: var(--tm-text-muted); }
+    .sp-row strong { color: var(--tm-text); text-align: right; font-weight: 600; }
+    .sp-link { color: var(--tm-green-deep); text-decoration: none; font-weight: 700; }
+    .sp-footer { margin-top: 12px; }
+
+    /* Modal Form Styles */
+    .modal-form-body { display: flex; flex-direction: column; gap: 12px; }
+    .form-hint { font-size: 12px; color: var(--tm-text-muted); margin: 0; }
+    .destination-card {
+      background: var(--tm-canvas);
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-xs);
+      padding: 10px 12px;
+      font-size: 12px;
       display: flex;
       flex-direction: column;
       gap: 3px;
-      padding: 10px 14px;
+    }
+    .dest-head { font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: var(--tm-text-muted); }
+    .dest-row { display: flex; justify-content: space-between; }
+    .dest-lbl { color: var(--tm-text-muted); }
+    .dest-val { color: var(--tm-text); font-weight: 600; }
+
+    .payout-summary-box {
+      background: var(--tm-surface);
       border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      background: var(--tm-surface);
-    }
-    .ride-summary__card.is-refund { border-color: var(--tm-warning-fg); background: var(--tm-warning-bg); }
-    .ride-summary__label {
-      font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--tm-text-muted);
-    }
-    .ride-summary__value { font-size: 18px; font-weight: 800; color: var(--tm-text); }
-
-    /* ---------- Rider extra + payment/refund chips ---------- */
-    .rider-extra {
-      margin-left: 6px; font-size: 11px; font-weight: 700;
-      color: var(--tm-text-muted); background: var(--tm-canvas-2);
-      border-radius: var(--tm-radius-pill); padding: 1px 7px;
-    }
-    .ride-pay { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-    .pay-chip {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-size: 11px; font-weight: 700;
-      padding: 3px 9px; border-radius: var(--tm-radius-pill);
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-    }
-    .pay-chip--paid { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .pay-chip--pending { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
-    .pay-chip--refund { background: var(--tm-info-bg); color: var(--tm-info-fg); }
-    .pay-chip--due { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
-
-    .feed__loading { display: flex; flex-direction: column; gap: 12px; }
-    .feed__skel {
-      height: 80px;
-      border-radius: var(--tm-radius-md);
-      background: linear-gradient(
-        90deg,
-        var(--tm-canvas) 0%,
-        var(--tm-canvas-2) 50%,
-        var(--tm-canvas) 100%
-      );
-      background-size: 200% 100%;
-      animation: feed-shimmer 1.2s linear infinite;
-    }
-    @keyframes feed-shimmer {
-      0%   { background-position: 100% 0; }
-      100% { background-position: -100% 0; }
-    }
-
-    .feed__empty {
-      display: flex; flex-direction: column; align-items: center;
-      text-align: center;
-      gap: 8px;
-      padding: var(--tm-space-10) var(--tm-space-4);
-    }
-    .feed__empty-icon {
-      width: 60px; height: 60px;
-      border-radius: var(--tm-radius-lg);
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-muted);
-      display: grid; place-items: center;
-      margin-bottom: var(--tm-space-2);
-    }
-    .feed__empty-title {
-      font-size: 16px;
-      font-weight: 800;
-      color: var(--tm-text);
-    }
-    .feed__empty-hint {
-      font-size: 13px;
-      color: var(--tm-text-muted);
-      font-weight: 500;
-      max-width: 32ch;
-    }
-
-    .feed__list { display: flex; flex-direction: column; gap: 10px; }
-    .post {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      align-items: flex-start;
-      gap: 14px;
-      padding: 16px;
-      border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-md);
-      background: var(--tm-surface);
-      transition: border-color var(--tm-duration-fast) var(--tm-ease),
-                  box-shadow var(--tm-duration-fast) var(--tm-ease);
-    }
-    .post:hover {
-      border-color: var(--tm-line-2);
-      box-shadow: var(--tm-shadow-sm);
-    }
-    .post__leading { display: flex; }
-    .post__icon {
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-muted);
-      display: grid; place-items: center;
-      flex-shrink: 0;
-    }
-    .post__icon--ride { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .post__icon--debit { background: var(--tm-danger-bg); color: var(--tm-danger-fg); }
-    .post__icon--warn { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
-    .post__avatar {
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--tm-ink), var(--tm-ink-3));
-      color: #fff;
-      display: grid; place-items: center;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.02em;
-      flex-shrink: 0;
-    }
-
-    .post__body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-    .post__head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 10px;
-    }
-    .post__title {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--tm-text);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .post__time {
-      font-family: var(--tm-font-mono);
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--tm-text-muted);
-      white-space: nowrap;
-    }
-    .post__text {
-      margin: 0;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--tm-text);
-      line-height: 1.5;
-    }
-    .post__foot {
-      display: flex; flex-wrap: wrap; gap: 8px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--tm-text-muted);
-    }
-    .post__meta {
-      display: inline-flex; align-items: center; gap: 4px;
-    }
-    .post__meta.mono { font-family: var(--tm-font-mono); }
-
-    .post__trailing { display: flex; align-items: flex-start; }
-    .post__amount {
-      display: inline-flex;
-      align-items: center;
-      padding: 4px 10px;
-      border-radius: var(--tm-radius-pill);
-      font-family: var(--tm-font-mono);
-      font-size: 13px;
-      font-weight: 800;
-    }
-    .post__amount--credit {
-      background: var(--tm-green-tint);
-      color: var(--tm-green-deep);
-    }
-    .post__amount--debit {
-      background: var(--tm-danger-bg);
-      color: var(--tm-danger-fg);
-    }
-
-    /* Rich ride card */
-    .post--ride .post__head { align-items: flex-start; }
-    .post__who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .post__role {
-      font-size: 9px; font-weight: 800; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--tm-text-soft);
-    }
-    .ride-status {
-      display: inline-flex; align-items: center;
-      padding: 3px 9px;
-      border-radius: var(--tm-radius-pill);
-      font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
-      text-transform: capitalize; white-space: nowrap;
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-    }
-    .ride-status[data-s="completed"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
-    .ride-status[data-s="cancelled"] { background: var(--tm-danger-bg);  color: var(--tm-danger-fg); }
-    .ride-status[data-s="ongoing"]   { background: var(--tm-warning-bg); color: var(--tm-warning-fg); }
-    .ride-status[data-s="pending"]   { background: var(--tm-info-bg);    color: var(--tm-info-fg); }
-    .ride-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-    .ride-meta__item {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-radius: var(--tm-radius-pill);
-      background: var(--tm-canvas-2); color: var(--tm-text-muted);
-      font-size: 11px; font-weight: 700;
-    }
-    .ride-meta__item--mode { background: var(--tm-ink); color: #fff; }
-    .ride-meta__item.mono { font-family: var(--tm-font-mono); }
-    .ride-fare { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-    .ride-fare__est {
-      font-size: 10px; font-weight: 700;
-      color: var(--tm-text-soft); font-family: var(--tm-font-mono);
-    }
-
-    .route-mini {
-      position: relative;
-      padding-left: 4px;
-    }
-    .route-mini::before {
-      content: '';
-      position: absolute;
-      left: 9px;
-      top: 16px;
-      bottom: 16px;
-      width: 2px;
-      background: repeating-linear-gradient(
-        to bottom,
-        var(--tm-line-2) 0 3px,
-        transparent 3px 6px
-      );
-    }
-    .route-mini__line {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 2px 0;
-      font-size: 12px;
-      color: var(--tm-text);
-    }
-    .route-mini__addr {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .pin {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      border: 2px solid #fff;
-      box-shadow: 0 0 0 1px var(--tm-line-2);
-      flex-shrink: 0;
-    }
-    .pin--from { background: var(--tm-ink); }
-    .pin--to   { background: var(--tm-green); }
-
-    /* -------------------- Page loading -------------------- */
-    .page-loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: var(--tm-space-10);
-      color: var(--tm-text-muted);
-      font-weight: 600;
-    }
-    .spinner {
-      width: 18px; height: 18px;
-      border-radius: 50%;
-      border: 2px solid var(--tm-line-2);
-      border-top-color: var(--tm-green);
-      animation: dd-spin 0.7s linear infinite;
-    }
-    @keyframes dd-spin { to { transform: rotate(360deg); } }
-
-    /* -------------------- Payout modal -------------------- */
-    .payout-summary {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      background: var(--tm-canvas-2);
-      border: 1px solid var(--tm-border);
-      border-radius: var(--tm-radius-md);
-      padding: 12px 14px;
-      margin-bottom: 14px;
-    }
-    .payout-summary__row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      font-size: 12.5px;
-      color: var(--tm-text-muted);
-    }
-    .payout-summary__row strong { font-variant-numeric: tabular-nums; color: var(--tm-text); }
-    .payout-summary__row--pay { font-weight: 700; }
-    .payout-summary__row--pay span { color: var(--tm-green); }
-    .payout-summary__row--pay strong { color: var(--tm-green); font-size: 14px; }
-    .payout-summary__row--muted { opacity: 0.75; }
-
-    /* -------------------- Modal form pieces -------------------- */
-    .lbl {
-      display: block;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-      margin: 14px 0 6px;
-    }
-    .form-input {
-      width: 100%;
-      padding: 10px 14px;
-      border: 1px solid var(--tm-line-2);
-      border-radius: var(--tm-radius-md);
-      font-family: inherit;
-      font-size: 14px;
-      outline: none;
-      background: var(--tm-surface);
-      color: var(--tm-text);
-      transition: border-color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .form-input:focus { border-color: var(--tm-ink); }
-    .form-textarea { resize: vertical; min-height: 64px; font-family: inherit; }
-    .hint { margin: 0 0 12px; color: var(--tm-text-muted); font-size: 13px; line-height: 1.5; }
-    .check-list { display: flex; flex-direction: column; gap: 10px; }
-    .check { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); cursor: pointer; background: var(--tm-surface); }
-    .check input { position: absolute; opacity: 0; pointer-events: none; }
-    .check__box { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--tm-line-2); display: inline-flex; align-items: center; justify-content: center; color: transparent; flex: none; margin-top: 1px; }
-    .check.is-on .check__box { background: var(--tm-green); border-color: var(--tm-green); color: #fff; }
-    .check__body { display: flex; flex-direction: column; gap: 2px; }
-    .check__title { font-size: 13px; font-weight: 800; color: var(--tm-text); }
-    .check__sub { font-size: 12px; color: var(--tm-text-muted); line-height: 1.35; }
-
-    .action-toggle {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin: 4px 0 6px;
-    }
-    .action-toggle__btn {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 4px;
-      padding: 12px 14px;
-      border-radius: var(--tm-radius-md);
-      border: 1px solid var(--tm-line-2);
-      background: var(--tm-surface);
-      text-align: left;
-      cursor: pointer;
-      transition: background var(--tm-duration-fast) var(--tm-ease),
-                  color var(--tm-duration-fast) var(--tm-ease),
-                  border-color var(--tm-duration-fast) var(--tm-ease);
-    }
-    .action-toggle__btn:hover { border-color: var(--tm-text-soft); }
-    .action-toggle__icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px; height: 28px;
-      border-radius: var(--tm-radius-sm);
-      background: var(--tm-canvas-2);
-      color: var(--tm-text-muted);
-      margin-bottom: 2px;
-    }
-    .action-toggle__title {
-      font-size: 14px;
-      font-weight: 800;
-      color: var(--tm-text);
-      letter-spacing: -0.01em;
-    }
-    .action-toggle__sub {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--tm-text-muted);
-    }
-    .action-toggle__btn.is-credit.is-active {
-      background: var(--tm-green-tint);
-      border-color: var(--tm-green-deep);
-    }
-    .action-toggle__btn.is-credit.is-active .action-toggle__icon {
-      background: var(--tm-green);
-      color: #fff;
-    }
-    .action-toggle__btn.is-debit.is-active {
-      background: var(--tm-danger-bg);
-      border-color: var(--tm-danger);
-    }
-    .action-toggle__btn.is-debit.is-active .action-toggle__icon {
-      background: var(--tm-danger);
-      color: #fff;
-    }
-    .action-toggle__btn.is-active {
-      background: var(--tm-canvas);
-      border-color: var(--tm-ink);
-    }
-    .action-toggle__btn.is-warn.is-active {
-      background: var(--tm-warning-bg);
-      border-color: var(--tm-warning);
-    }
-    .action-toggle__btn.is-warn.is-active .action-toggle__icon {
-      background: var(--tm-warning);
-      color: #fff;
-    }
-    .action-toggle__btn.is-danger.is-active {
-      background: var(--tm-danger-bg);
-      border-color: var(--tm-danger);
-    }
-    .action-toggle__btn.is-danger.is-active .action-toggle__icon {
-      background: var(--tm-danger);
-      color: #fff;
-    }
-
-    .req { color: var(--tm-danger); margin-right: 2px; }
-    .hint--top { margin: 0 0 14px; }
-
-    /* Notice banners inside modals */
-    .notice {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
+      border-radius: var(--tm-radius-xs);
       padding: 10px 12px;
-      border-radius: var(--tm-radius-md);
-      font-size: 12px;
-      font-weight: 500;
-      line-height: 1.5;
-      margin: 8px 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
     }
-    .notice--info {
-      background: var(--tm-green-tint);
-      color: var(--tm-green-deep);
-    }
-    .notice--danger {
-      background: var(--tm-danger-bg);
-      color: var(--tm-danger-fg);
-    }
+    .payout-sum-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--tm-text-muted); }
+    .payout-sum-row--highlight { font-weight: 800; font-size: 13px; color: var(--tm-text); }
 
-    .balance-row {
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-label-row { display: flex; justify-content: space-between; align-items: center; }
+    .form-label { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .req { color: var(--tm-danger); }
+    .btn-fill-amount {
+      background: none;
+      border: none;
+      color: var(--tm-green-deep);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: underline;
+      font-family: var(--tm-font-body);
+    }
+    .form-control {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-xs);
+      font-size: 13px;
+      font-family: var(--tm-font-body);
+      color: var(--tm-text);
+      background: var(--tm-surface);
+      outline: none;
+    }
+    .form-control:focus { border-color: var(--tm-green); }
+
+    .action-toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .toggle-card-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 10px;
+      border: 1px solid var(--tm-line-2);
+      border-radius: var(--tm-radius-xs);
+      background: var(--tm-surface);
+      cursor: pointer;
+      color: var(--tm-text);
+      font-family: var(--tm-font-body);
+    }
+    .toggle-card-btn.is-active { border-color: var(--tm-info); background: var(--tm-info-bg); color: var(--tm-info-fg); }
+    .toggle-card-btn--danger.is-active { border-color: var(--tm-danger); background: var(--tm-danger-bg); color: var(--tm-danger-fg); }
+
+    .form-error-notice {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 12px 14px;
-      background: var(--tm-canvas);
-      border-radius: var(--tm-radius-md);
-      margin-bottom: 4px;
+      gap: 6px;
+      background: var(--tm-danger-bg);
+      border: 1px solid var(--tm-danger);
+      border-radius: var(--tm-radius-xs);
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--tm-danger-fg);
     }
-    .balance-row__lbl {
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--tm-text-muted);
-    }
-    .balance-row__val {
-      font-family: var(--tm-font-mono);
-      font-size: 16px;
-      font-weight: 800;
-      color: var(--tm-text);
+    .danger-alert {
+      display: flex;
+      gap: 6px;
+      background: var(--tm-danger-bg);
+      border: 1px solid var(--tm-danger);
+      padding: 8px 10px;
+      border-radius: var(--tm-radius-xs);
+      color: var(--tm-danger-fg);
+      font-size: 12px;
     }
 
-    /* -------------------- Responsive -------------------- */
-    @media (max-width: 1100px) {
-      .overview { grid-template-columns: 1fr; }
-      .stats { grid-template-columns: repeat(2, 1fr); }
-      .cover__inner { grid-template-columns: 1fr; }
-      .cover__actions { padding-top: 0; }
-      .overview-grid { grid-template-columns: 1fr; }
+    .drawer-form-wrap { display: flex; flex-direction: column; gap: 12px; }
+    .drawer-section-heading {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--tm-text-muted);
+      padding-bottom: 3px;
+      border-bottom: 1px solid var(--tm-line-2);
+      letter-spacing: 0.05em;
     }
-    @media (max-width: 820px) {
-      .cover__inner {
-        grid-template-columns: 1fr;
-        margin-top: -56px;
-      }
-      .cover__avatar { width: 84px; height: 84px; font-size: 26px; }
-      .cover__body { padding-top: 0; }
-      .cover__actions {
-        padding-top: 0;
-        justify-content: flex-start;
-        flex-wrap: wrap;
-      }
-      .feed__head {
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .feed__nav-wrap { width: 100%; }
-    }
-    @media (max-width: 640px) {
-      .stats { grid-template-columns: 1fr 1fr; }
-      .cover__name { font-size: 22px; }
-      .action-toggle { grid-template-columns: 1fr; }
-      .section-head__meta { justify-content: flex-start; }
-      .feed__toolbar-main {
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .feed__search {
-        flex: 1 1 auto;
-        width: 100%;
-      }
-      .feed__filters {
-        width: 100%;
-        justify-content: space-between;
-      }
-      .feed__filters-main {
-        width: 100%;
-      }
-      .date-range { width: 100%; }
-      .date-range__input {
-        width: 100%;
-        min-width: 0;
-      }
-      .feed__nav { display: flex; }
-      .feed__select { display: block; }
-      .post {
-        grid-template-columns: auto 1fr;
-        row-gap: 4px;
-      }
-      .post__trailing {
-        grid-column: 1 / -1;
-        justify-content: flex-end;
-      }
-    }
+    .form-group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .mono { font-family: var(--tm-font-mono) !important; font-variant-numeric: tabular-nums; }
+    .text-emerald { color: var(--tm-green-deep) !important; }
+    .text-danger  { color: var(--tm-danger-fg) !important; }
+    .text-amber   { color: var(--tm-warning-fg) !important; }
+    .text-purple  { color: #7e22ce !important; }
+    .text-muted   { color: var(--tm-text-muted) !important; }
+    .mt-3 { margin-top: 10px; }
+    .mt-4 { margin-top: 12px; }
   `],
 })
 export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
-  // The #rideRange input only exists once `profile` has loaded AND the rides
-  // tab is active, so it enters/leaves the DOM well after ngAfterViewInit.
-  // Drive picker init from a setter so it attaches whenever the element appears.
-  private rideRangeEl?: ElementRef<HTMLInputElement>;
   @ViewChild('rideRange') set rideRange(el: ElementRef<HTMLInputElement> | undefined) {
-    if (el === this.rideRangeEl) return;
-    this.destroyRideRangePicker();
-    this.rideRangeEl = el;
-    if (el) setTimeout(() => this.initRideRangePicker());
+    if (el && el.nativeElement) {
+      this.rideRangeEl = el;
+      setTimeout(() => this.initRideRangePicker(), 50);
+    }
   }
+  private rideRangeEl?: ElementRef<HTMLInputElement>;
 
   driverId!: number;
   profile: DriverProfile | null = null;
 
-  // Tabs
+  // Workspace Tabs
   activeTab: TabKey = 'rides';
   loadingTab = false;
   rides: any[] = [];
@@ -1996,11 +1610,10 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   rideDateTo = '';
 
   readonly rideModeOptions = [
-    { label: 'Private', value: 'private' },
-    { label: 'Fixed', value: 'fixed' },
-    { label: 'Shuttle', value: 'shuttle' },
+    { label: 'Private Rides', value: 'private' },
+    { label: 'Fixed Routes', value: 'fixed' },
+    { label: 'Shuttle Service', value: 'shuttle' },
   ];
-
 
   // Send OTP
   otpSending = false;
@@ -2022,13 +1635,12 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   deleteSaving = false;
   readonly blockReasons = BLOCK_REASONS;
 
-  // Notification preferences modal
+  // Unsubscribe modal
   unsubOpen = false;
   unsubPush = false;
   unsubSaving = false;
 
-  // Record payout modal — logs an outside-the-app GPay/bank payment as a
-  // wallet debit so the ledger keeps matching reality.
+  // Record payout modal
   payoutOpen = false;
   payoutSummary: {
     balance: number;
@@ -2054,33 +1666,12 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   payoutSaving = false;
   payoutError: string | null = null;
 
-  verifyingPayout = false;
-  verifyPayoutSuccessMsg = '';
-
-  verifyPayoutAccount(): void {
-    if (!this.driverId) return;
-    this.verifyingPayout = true;
-    this.verifyPayoutSuccessMsg = '';
-    this.api.post<{ message: string; released_count: number; released_amount: number; payout_status: string }>(
-      `/admin/drivers/${this.driverId}/verify-payout-account`, {}
-    ).subscribe({
-      next: (res) => {
-        this.verifyingPayout = false;
-        this.verifyPayoutSuccessMsg = res.message || 'Payout account verified and held earnings released.';
-        this.loadProfile();
-      },
-      error: (err) => {
-        this.verifyingPayout = false;
-        alert(err?.error?.message || 'Could not verify payout account.');
-      }
-    });
-  }
-
-
-  readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' }[] = [
-    { key: 'rides',     label: 'Rides',     icon: 'car' },
-    { key: 'wallet',    label: 'Wallet',    icon: 'tag' },
-    { key: 'cancelled', label: 'Cancelled', icon: 'x' },
+  readonly historyTabs: { key: TabKey; label: string; icon: 'car' | 'tag' | 'x' | 'road' | 'user' }[] = [
+    { key: 'rides',     label: 'Rides History',         icon: 'car' },
+    { key: 'wallet',    label: 'Wallet & Ledger',       icon: 'tag' },
+    { key: 'cancelled', label: 'Cancellations',         icon: 'x' },
+    { key: 'routes',    label: 'Route Allocations',     icon: 'road' },
+    { key: 'specs',     label: 'Full Specifications',   icon: 'user' },
   ];
 
   constructor(
@@ -2100,8 +1691,9 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    // Picker init is driven by the #rideRange ViewChild setter (the element
-    // mounts asynchronously after profile load / tab switch).
+    if (this.rideRangeEl?.nativeElement) {
+      setTimeout(() => this.initRideRangePicker());
+    }
   }
 
   ngOnDestroy(): void {
@@ -2118,7 +1710,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     const el = this.rideRangeEl?.nativeElement;
     if (!el) return;
     const $el = $(el);
-    if ($el.data('daterangepicker')) return; // already attached
+    if ($el.data('daterangepicker')) return;
     $el.daterangepicker(
       {
         autoApply: true,
@@ -2162,6 +1754,20 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.rideDateTo = '';
   }
 
+  triggerDatePicker(): void {
+    const el = this.rideRangeEl?.nativeElement;
+    if (!el) return;
+    const picker = ($(el) as any).data('daterangepicker');
+    if (picker) {
+      picker.show();
+    } else {
+      this.initRideRangePicker();
+      setTimeout(() => {
+        ($(el) as any).data('daterangepicker')?.show();
+      }, 50);
+    }
+  }
+
   paymentStatusText(s: string | null | undefined): string {
     switch (s) {
       case 'PAID':    return 'Paid';
@@ -2181,55 +1787,21 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  get vehicleDescription(): string {
-    const parts = [this.profile?.vehicle_model]
-      .filter((x) => !!x)
-      .join(' ');
-    const colour = this.profile?.vehicle_color ? ` (${this.profile.vehicle_color})` : '';
-    return (parts || 'vehicle') + colour;
-  }
-
   tabCount(key: TabKey): number {
     switch (key) {
       case 'rides':     return this.rides.length;
       case 'wallet':    return this.walletTxns.length;
       case 'cancelled': return this.cancelledRides.length;
-    }
-  }
-
-  get currentTabIcon(): 'car' | 'tag' | 'x' {
-    return this.historyTabs.find((t) => t.key === this.activeTab)?.icon ?? 'car';
-  }
-
-  get currentActivity(): any[] {
-    switch (this.activeTab) {
-      case 'rides':     return this.filteredRides;
-      case 'wallet':    return this.filteredWallet;
-      case 'cancelled': return this.filteredCancelled;
+      default:          return 0;
     }
   }
 
   get searchPlaceholder(): string {
     switch (this.activeTab) {
-      case 'rides':     return 'Search by rider, engagement or fare…';
-      case 'wallet':    return 'Search by reason, engagement or amount…';
-      case 'cancelled': return 'Search cancelled rides…';
-    }
-  }
-
-  emptyTitleFor(tab: TabKey): string {
-    switch (tab) {
-      case 'rides':     return 'No rides yet';
-      case 'wallet':    return 'No wallet activity';
-      case 'cancelled': return 'No cancellations';
-    }
-  }
-
-  emptyHintFor(tab: TabKey): string {
-    switch (tab) {
-      case 'rides':     return "When this driver completes a trip, it'll appear here.";
-      case 'wallet':    return 'Credits and debits will show up here as soon as they happen.';
-      case 'cancelled': return 'Cancelled trips will show up in this feed.';
+      case 'rides':     return 'Search rider, route or trip ID…';
+      case 'wallet':    return 'Search reason, amount or ref…';
+      case 'cancelled': return 'Search cancelled trips…';
+      default:          return 'Search…';
     }
   }
 
@@ -2250,8 +1822,8 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   pretty(lat: number | null | undefined, lng: number | null | undefined): string {
-    if (lat == null || lng == null) return 'Unknown location';
-    return `${(+lat).toFixed(3)}, ${(+lng).toFixed(3)}`;
+    if (lat == null || lng == null) return 'Location coords';
+    return `${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
   }
 
   statusBucket(s: string | null | undefined): string {
@@ -2284,19 +1856,17 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   rideModeLabel(row: any): string {
-    return this.rideModeText(this.rideModeOf(row));
-  }
-
-  rideModeText(mode: string): string {
+    const mode = this.rideModeOf(row);
     switch (mode) {
       case 'private': return 'Private';
       case 'fixed': return 'Fixed';
       case 'shuttle': return 'Shuttle';
-      default: return 'All rides';
+      default: return 'Ride';
     }
   }
 
   clearRideFilters(): void {
+    this.tabSearch = '';
     this.rideMode = 'all';
     this.rideDateFrom = '';
     this.rideDateTo = '';
@@ -2315,7 +1885,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.otpSending = true;
     this.api.post(`/admin/drivers/${this.driverId}/send-otp`, {}).subscribe({
       next: () => {
-        this.toast.success('OTP sent successfully');
+        this.toast.success('OTP sent successfully to driver phone');
         this.otpSending = false;
       },
       error: (err) => {
@@ -2358,7 +1928,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       next: () => {
         this.editSaving = false;
         this.editOpen = false;
-        this.toast.success('Profile updated');
+        this.toast.success('Driver profile updated successfully');
         this.loadProfile();
       },
       error: (err) => {
@@ -2382,7 +1952,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     const body = this.profile.is_suspended ? {} : { reason: this.blockReason };
     this.api.post(`/admin/drivers/${this.driverId}/${action}`, body).subscribe({
       next: () => {
-        this.toast.success(this.profile?.is_suspended ? 'Driver unblocked' : 'Driver blocked');
+        this.toast.success(this.profile?.is_suspended ? 'Driver unblocked successfully' : 'Driver account blocked');
         this.blockSaving = false;
         this.blockDeleteOpen = false;
         this.loadProfile();
@@ -2400,7 +1970,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       .delete(`/admin/drivers/${this.driverId}?reason=${encodeURIComponent(this.deleteReason)}`)
       .subscribe({
         next: () => {
-          this.toast.success('Driver deleted');
+          this.toast.success('Driver deleted permanently');
           this.deleteSaving = false;
           this.blockDeleteOpen = false;
           this.router.navigate(['/drivers']);
@@ -2432,11 +2002,11 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
         this.unsubOpen = false;
         this.unsubSaving = false;
-        this.toast.success("Push preference updated");
+        this.toast.success('Push notification preference saved');
       },
       error: (err) => {
         this.unsubSaving = false;
-        this.toast.error(err?.error?.message || "Could not update push preference");
+        this.toast.error(err?.error?.message || 'Could not update push preference');
       },
     });
   }
@@ -2448,7 +2018,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       const mode = this.rideModeOf(r);
       const matchesMode = this.rideMode === 'all' || mode === this.rideMode;
       const matchesDate = this.inDateRange(r.created_at, this.rideDateFrom, this.rideDateTo);
-      const matchesSearch = !q || [r.rider_name, r.customer?.name, r.id, r.payment_method, r.final_fare, r.estimated_fare, mode, r.ride_type?.name, r.route?.name, r.route_departure?.route?.name]
+      const matchesSearch = !q || [r.rider_name, r.customer?.name, r.id, r.payment_method, r.final_fare, r.estimated_fare, mode, r.ride_type?.name, r.route?.name, r.route_departure?.route?.name, r.pickup_address, r.drop_address]
         .map((x) => String(x ?? '').toLowerCase())
         .some((s) => s.includes(q));
       return matchesMode && matchesDate && matchesSearch;
@@ -2456,7 +2026,6 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get filteredWallet() {
-
     const q = this.tabSearch.trim().toLowerCase();
     if (!q) return this.walletTxns;
     return this.walletTxns.filter((r) =>
@@ -2476,7 +2045,6 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     );
   }
 
-
   // -------------------- Helpers --------------------
   initials(name: string | null | undefined): string {
     if (!name) return '—';
@@ -2487,8 +2055,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     return (a + b).toUpperCase();
   }
 
-  // -------------------- Data loading --------------------
-  // -------------------- Record payout --------------------
+  // -------------------- Record Payout --------------------
   openPayout(): void {
     this.payoutOpen = true;
     this.payoutSummary = null;
@@ -2522,10 +2089,10 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       reference: this.payoutReference.trim() || null,
       note: this.payoutNote.trim() || null,
     }).subscribe({
-      next: (res) => {
+      next: () => {
         this.payoutSaving = false;
         this.payoutOpen = false;
-        this.toast.success(`Payout of ₹${Number(this.payoutAmount).toFixed(2)} recorded`);
+        this.toast.success(`Payout of ₹${Number(this.payoutAmount).toFixed(2)} recorded successfully`);
         this.loadProfile();
         this.loadTab('wallet');
         this.activeTab = 'wallet';
@@ -2560,8 +2127,9 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   loadTab(tab: TabKey): void {
     if (!this.driverId) return;
+    if (tab === 'routes' || tab === 'specs') return;
     this.loadingTab = true;
-    const pathMap: Record<TabKey, string> = {
+    const pathMap: Record<string, string> = {
       rides:     `/admin/drivers/${this.driverId}/rides`,
       wallet:    `/admin/drivers/${this.driverId}/wallet/transactions`,
       cancelled: `/admin/drivers/${this.driverId}/cancelled-rides`,
@@ -2579,5 +2147,4 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       },
     });
   }
-
 }
