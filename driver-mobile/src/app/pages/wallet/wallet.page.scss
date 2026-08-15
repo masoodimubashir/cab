@@ -1,10 +1,7 @@
-/* Earnings & Wallet page. The header/hero + body shell come from the shared
-   pg- system (theme/pages.scss); these are small page-specific touches only and
-   never redefine a global class or its keyframes. */
-
-.wallet-topup {
-  margin-top: 18px;
-}
+/* =============================================================================
+   Driver Wallet Page — header + body shell use shared pg- system (theme/pages.scss).
+   Consistent styling with the Earnings screen (3-tab layout, hero stats, reconciliation).
+   ========================================================================== */
 
 /* Error banner inside its card. */
 .wallet-error {
@@ -17,6 +14,144 @@
   ion-icon { font-size: 20px; flex-shrink: 0; }
 }
 
+/* ── Money Hero ── */
+.wl-hero {
+  padding-bottom: 22px;
+}
+
+.wl-hero--debt .pg-hero__amount {
+  color: #F87171 !important;
+}
+
+.wl-hero__subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #34D399;
+  font-weight: 600;
+  margin: 4px 0 0;
+
+  ion-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  &--danger {
+    color: #F87171;
+  }
+}
+
+/* ── Hero Stat Strip ── */
+.wl-hero__stats {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.wl-hstat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+
+  ion-icon {
+    flex-shrink: 0;
+    font-size: 22px;
+    color: #F87171; /* Coral Red for Deductions */
+  }
+
+  &:last-child ion-icon {
+    color: #34D399; /* Emerald for Recharges */
+  }
+
+  &__body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  &__label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.78);
+    white-space: nowrap;
+  }
+  &__value {
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.wl-topup {
+  margin-top: 16px;
+}
+
+/* ── Tab Navigation Segment ── */
+.wl-tab-nav {
+  margin: 12px 16px 0;
+}
+
+.wl-segment {
+  --background: #F1F5F9;
+  border-radius: 14px;
+  padding: 4px;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+
+  ion-segment-button {
+    --indicator-color: #ffffff;
+    --indicator-box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+    --color: #64748B;
+    --color-checked: var(--dreamcab-dark-blue, #0D1B2A);
+    min-height: 40px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    border-radius: 10px;
+    text-transform: none;
+    letter-spacing: 0;
+    transition: all 0.2s ease;
+
+    ion-icon {
+      font-size: 17px;
+      margin-bottom: 0;
+      margin-right: 4px;
+    }
+  }
+}
+
+/* ── Card Header Extensions ── */
+.wl-card-head-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  min-width: 0;
+}
+
+.wl-icon--danger {
+  background: rgba(239, 68, 68, 0.12) !important;
+  ion-icon { color: #DC2626 !important; }
+}
+
+.wl-icon--success {
+  background: rgba(16, 185, 129, 0.12) !important;
+  ion-icon { color: #059669 !important; }
+}
+
 /* ── Reconciliation summary rows ── */
 .sum { display: flex; flex-direction: column; }
 .sum__row {
@@ -24,10 +159,14 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 0;
+  padding: 10px 0;
+
+  & + .sum__row {
+    border-top: 1px solid #F1F5F9;
+  }
 }
 .sum__label {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: #475569;
 }
@@ -37,81 +176,72 @@
   font-weight: 700;
   color: #0f172a;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .sum__val--neg { color: #ef4444; }
-.sum__val--pos { color: #0e8f47; }
-.sum__row--total .sum__label { color: #0f172a; font-weight: 800; }
-.sum__row--total .sum__val { font-size: 1.05rem; font-weight: 800; }
-.sum__divider { height: 1px; background: var(--dc-line, #e5e9f0); margin: 6px 0; }
-
-/* ── Drill-down navigation rows ── */
-.pg-card--tight { padding-top: 6px; padding-bottom: 6px; }
-.nav-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 2px;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
+.sum__val--pos { color: #059669; }
+.sum__row--total {
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1.5px dashed #CBD5E1 !important;
 }
-.nav-row + .nav-row { border-top: 1px solid var(--dc-line, #eef1f6); }
-.nav-row .dc-row__text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
-.nav-row .dc-row__text strong { font-size: 0.95rem; font-weight: 700; color: #0f172a; }
-.nav-row .dc-row__text small { font-size: 0.8rem; color: #94a3b8; }
-.nav-row__chev { font-size: 18px; color: #cbd5e1; flex: none; }
+.sum__row--total .sum__label { color: #0f172a; font-weight: 800; font-size: 0.94rem; }
+.sum__row--total .sum__val { font-size: 1.08rem; font-weight: 800; }
+
+/* ── Limits & Buffer Box Grid ── */
+.wl-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.wl-limit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #F8FAFC;
+  border: 1px solid #F1F5F9;
+
+  &__label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #94A3B8;
+  }
+
+  &__val {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #0F172A;
+    font-variant-numeric: tabular-nums;
+
+    &--ok {
+      color: #059669;
+    }
+  }
+}
 
 /* ── Caps / subscription note ── */
 .wallet-note {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   margin-top: 4px;
-  padding: 10px 4px;
-  background: transparent;
-  border: 0;
+  padding: 10px 12px;
+  background: #F8FAFC;
+  border-radius: 12px;
+  border: 1px solid #F1F5F9;
   cursor: pointer;
   color: #64748b;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
   text-align: left;
-}
-.wallet-note ion-icon { font-size: 18px; color: #94a3b8; flex: none; }
-
-/* ── Segment tabs (the four money views) ── */
-.wallet-seg {
-  margin: 10px 12px 4px;
-  --background: transparent;
-}
-
-/* Owed hero turns to a debt tone when the driver owes the operator. */
-.wallet-hero--debt .pg-hero__amount { color: var(--ion-color-danger, #eb445a); }
-
-/* Ledger credit/debit filter pills. */
-.wallet-pills { margin: 0 0 14px; }
-
-/* ── Reconciliation verdict banner ── */
-.wallet-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 16px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 0.86rem;
-  font-weight: 600;
   line-height: 1.4;
-  ion-icon { font-size: 22px; flex: none; }
 }
-.wallet-check--ok {
-  background: rgba(16, 143, 71, 0.10);
-  color: #0e8f47;
-}
-.wallet-check--bad {
-  background: rgba(239, 68, 68, 0.10);
-  color: #ef4444;
-}
+.wallet-note ion-icon { font-size: 18px; color: #94a3b8; flex-shrink: 0; margin-top: 1px; }
+
