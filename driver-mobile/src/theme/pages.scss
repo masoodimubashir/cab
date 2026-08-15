@@ -344,6 +344,12 @@ ion-toolbar.pg-toolbar {
   --min-height: 52px;
   ion-back-button,
   ion-button { --color: #ffffff; --icon-font-size: 22px; }
+  ion-title {
+    color: #ffffff;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+  }
 }
 /* The DreamCabs wordmark is hidden in inner-page headings (the brand already
    shows on the splash/welcome entry; repeating it on every page is noise). */

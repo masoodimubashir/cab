@@ -3,7 +3,7 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
-    <ion-title class="pg-brandtitle"><span class="b-green">Driver Wallet</span></ion-title>
+    <ion-title>Driver Wallet</ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="load()" aria-label="Reload">
         <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
@@ -17,12 +17,63 @@
     <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <!-- Segment tabs -->
-  <ion-segment class="wallet-seg" [value]="segment" (ionChange)="setSegment($event.detail.value)" scrollable>
-    <ion-segment-button value="overview"><ion-label>Overview</ion-label></ion-segment-button>
-    <ion-segment-button value="deductions"><ion-label>Deductions</ion-label></ion-segment-button>
-    <ion-segment-button value="recharges"><ion-label>Recharges</ion-label></ion-segment-button>
-  </ion-segment>
+  <!-- ─── Money Hero: Permanent Wallet Balance & Quick Stats ─── -->
+  <div class="pg-hero wl-hero" [class.wl-hero--debt]="inDebt">
+    <p class="pg-hero__label">Wallet Balance</p>
+    <h1 class="pg-hero__amount">₹{{ balance | number: '1.0-2' }}</h1>
+
+    <p class="wl-hero__subtitle" *ngIf="!isBelowLimit">
+      <ion-icon name="checkmark-circle"></ion-icon>
+      <span>Status: Active &amp; Eligible for rides</span>
+    </p>
+    <p class="wl-hero__subtitle wl-hero__subtitle--danger" *ngIf="isBelowLimit">
+      <ion-icon name="alert-circle"></ion-icon>
+      <span>Balance below minimum limit (₹{{ minLimit }}). Top up to accept rides.</span>
+    </p>
+
+    <!-- Quick Stat Strip inside Hero matching App Design -->
+    <div class="wl-hero__stats">
+      <div class="wl-hstat">
+        <ion-icon name="trending-down-outline"></ion-icon>
+        <div class="wl-hstat__body">
+          <span class="wl-hstat__label">Deductions</span>
+          <strong class="wl-hstat__value">−₹{{ (breakdown?.total_deductions || breakdown?.commission_charges || 0) | number:'1.0-2' }}</strong>
+        </div>
+      </div>
+      <div class="wl-hstat">
+        <ion-icon name="card-outline"></ion-icon>
+        <div class="wl-hstat__body">
+          <span class="wl-hstat__label">Recharges</span>
+          <strong class="wl-hstat__value">+₹{{ (breakdown?.wallet_recharges || 0) | number:'1.0-2' }}</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recharge CTA Button -->
+    <button class="dc-cta wl-topup dc-press" [disabled]="toppingUp" (click)="promptTopUp()">
+      <ion-spinner *ngIf="toppingUp" name="crescent"></ion-spinner>
+      <ion-icon *ngIf="!toppingUp" name="add-circle-outline"></ion-icon>
+      {{ toppingUp ? 'Opening…' : 'Recharge Wallet' }}
+    </button>
+  </div>
+
+  <!-- ─── 3 Navigation Tabs (Overview, Deductions, Recharges) ─── -->
+  <div class="wl-tab-nav">
+    <ion-segment [value]="segment" (ionChange)="setSegment($event.detail.value)" class="wl-segment">
+      <ion-segment-button value="overview">
+        <ion-icon name="pie-chart-outline"></ion-icon>
+        <ion-label>Overview</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="deductions">
+        <ion-icon name="trending-down-outline"></ion-icon>
+        <ion-label>Deductions</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="recharges">
+        <ion-icon name="card-outline"></ion-icon>
+        <ion-label>Recharges</ion-label>
+      </ion-segment-button>
+    </ion-segment>
+  </div>
 
   <div class="pg-body pg-anim-body">
 
@@ -38,23 +89,12 @@
 
     <ng-container *ngIf="!loading && !error">
 
-      <!-- ══════════ OVERVIEW ══════════ -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- TAB 1: OVERVIEW (Breakdown & Threshold Rules)                    -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
       <ng-container *ngIf="segment === 'overview'">
-        <div class="pg-hero" [class.wallet-hero--debt]="inDebt">
-          <p class="pg-hero__label">Wallet Balance</p>
-          <h1 class="pg-hero__amount">₹{{ balance | number: '1.0-2' }}</h1>
-          <p class="pg-subtitle" *ngIf="!isBelowLimit">Status: Active &amp; Eligible for rides</p>
-          <p class="pg-subtitle" *ngIf="isBelowLimit" style="color: #ff5252">
-            Balance below minimum limit (₹{{ minLimit }}). Recharge to accept rides.
-          </p>
 
-          <button class="dc-cta wallet-topup dc-press" [disabled]="toppingUp" (click)="promptTopUp()">
-            <ion-spinner *ngIf="toppingUp" name="crescent"></ion-spinner>
-            <ion-icon *ngIf="!toppingUp" name="add-circle-outline"></ion-icon>
-            {{ toppingUp ? 'Opening…' : 'Recharge Wallet' }}
-          </button>
-        </div>
-
+        <!-- Platform Charges & Float Card -->
         <div class="pg-card" *ngIf="breakdown">
           <div class="pg-card__head">
             <div class="pg-card__icon"><ion-icon name="calculator-outline"></ion-icon></div>
@@ -63,7 +103,7 @@
           <div class="sum">
             <div class="sum__row">
               <span class="sum__label">Commission Charges</span>
-              <span class="sum__val sum__val--neg">−₹{{ breakdown.commission_charges | number: '1.0-2' }}</span>
+              <span class="sum__val sum__val--neg">−₹{{ (breakdown.commission_charges || 0) | number: '1.0-2' }}</span>
             </div>
             <div class="sum__row" *ngIf="breakdown.subscription_charges > 0">
               <span class="sum__label">Subscription Charges</span>
@@ -75,29 +115,52 @@
             </div>
             <div class="sum__row">
               <span class="sum__label">Wallet Recharges</span>
-              <span class="sum__val">+₹{{ breakdown.wallet_recharges | number: '1.0-2' }}</span>
+              <span class="sum__val sum__val--pos">+₹{{ (breakdown.wallet_recharges || 0) | number: '1.0-2' }}</span>
             </div>
             <div class="sum__row sum__row--total">
               <span class="sum__label">Current Balance</span>
-              <span class="sum__val">₹{{ balance | number: '1.0-2' }}</span>
+              <span class="sum__val" [class.sum__val--neg]="inDebt">₹{{ balance | number: '1.0-2' }}</span>
             </div>
           </div>
         </div>
 
-        <button class="wallet-note dc-press" (click)="explainLimits()">
-          <ion-icon name="information-circle-outline"></ion-icon>
-          <span>
-            Minimum Allowed Limit: ₹{{ minLimit }}
-          </span>
-        </button>
+        <!-- Wallet Limits & Buffer Card -->
+        <div class="pg-card wl-limits-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+            <h2 class="pg-card__title">Wallet Threshold &amp; Buffer</h2>
+          </div>
+
+          <div class="wl-limit-grid">
+            <div class="wl-limit-box">
+              <span class="wl-limit-box__label">Minimum Limit</span>
+              <strong class="wl-limit-box__val">₹{{ minLimit | number:'1.0-2' }}</strong>
+            </div>
+            <div class="wl-limit-box">
+              <span class="wl-limit-box__label">Usable Float Buffer</span>
+              <strong class="wl-limit-box__val" [class.wl-limit-box__val--ok]="availableFloat > 0">₹{{ availableFloat | number:'1.0-2' }}</strong>
+            </div>
+          </div>
+
+          <button class="wallet-note dc-press" (click)="explainLimits()">
+            <ion-icon name="information-circle-outline"></ion-icon>
+            <span>Tap to read more about minimum limits and platform charges deduction rules.</span>
+          </button>
+        </div>
+
       </ng-container>
 
-      <!-- ══════════ DEDUCTIONS ══════════ -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- TAB 2: DEDUCTIONS (Platform Charges History)                     -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
       <ng-container *ngIf="segment === 'deductions'">
         <div class="pg-card">
           <div class="pg-card__head">
-            <div class="pg-card__icon"><ion-icon name="trending-down-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Recent Platform Deductions</h2>
+            <div class="pg-card__icon wl-icon--danger"><ion-icon name="trending-down-outline"></ion-icon></div>
+            <div class="wl-card-head-text">
+              <h2 class="pg-card__title">Platform Deductions</h2>
+              <span class="ec-scope" *ngIf="deductions.length">−₹{{ (breakdown?.total_deductions || breakdown?.commission_charges || 0) | number:'1.0-2' }}</span>
+            </div>
           </div>
 
           <div *ngIf="!deductions.length" class="dc-empty">
@@ -112,26 +175,32 @@
                 <ion-icon name="arrow-up-outline"></ion-icon>
               </span>
               <span class="dc-row__text">
-                <strong>−₹{{ d.amount | number: '1.0-2' }}</strong>
-                <small>{{ d.reason || 'Commission Charge' }} · {{ fmtDate(d.created_at) }}</small>
+                <strong>−₹{{ d.amount | number: '1.0-2' }} <span class="dc-badge dc-badge--bad">Debit</span></strong>
+                <small>{{ d.reason || 'Commission Charge' }}</small>
+                <small>{{ fmtDate(d.created_at) }}</small>
               </span>
             </div>
           </div>
         </div>
       </ng-container>
 
-      <!-- ══════════ RECHARGES ══════════ -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- TAB 3: RECHARGES (Wallet Top-ups History)                        -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
       <ng-container *ngIf="segment === 'recharges'">
         <div class="pg-card">
           <div class="pg-card__head">
-            <div class="pg-card__icon"><ion-icon name="card-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Wallet Recharges</h2>
+            <div class="pg-card__icon wl-icon--success"><ion-icon name="card-outline"></ion-icon></div>
+            <div class="wl-card-head-text">
+              <h2 class="pg-card__title">Wallet Recharges</h2>
+              <span class="ec-scope" *ngIf="recharges.length">+₹{{ (breakdown?.wallet_recharges || 0) | number:'1.0-2' }}</span>
+            </div>
           </div>
 
           <div *ngIf="!recharges.length" class="dc-empty">
             <div class="dc-empty__icon"><ion-icon name="card-outline"></ion-icon></div>
             <strong>No recharges recorded</strong>
-            <span>Tap "Recharge Wallet" to add prepaid float.</span>
+            <span>Tap "Recharge Wallet" above to add prepaid float.</span>
           </div>
 
           <div *ngIf="recharges.length" class="dc-list">
@@ -140,8 +209,9 @@
                 <ion-icon name="arrow-down-outline"></ion-icon>
               </span>
               <span class="dc-row__text">
-                <strong>+₹{{ r.amount | number: '1.0-2' }}</strong>
-                <small>{{ r.reason || 'Wallet Recharge' }} · {{ fmtDate(r.created_at) }}</small>
+                <strong>+₹{{ r.amount | number: '1.0-2' }} <span class="dc-badge dc-badge--ok">Completed</span></strong>
+                <small>{{ r.reason || 'Wallet Recharge' }}</small>
+                <small>{{ fmtDate(r.created_at) }}</small>
               </span>
             </div>
           </div>
@@ -152,3 +222,4 @@
 
   </div>
 </ion-content>
+
