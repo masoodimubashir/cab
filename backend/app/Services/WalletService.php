@@ -39,9 +39,9 @@ class WalletService
         User $user,
         string $type,
         float $amount,
-        ?string $reason,
-        ?int $tripId,
-        ?User $by,
+        ?string $reason = null,
+        ?int $tripId = null,
+        ?User $by = null,
     ): WalletTransaction {
         if (!in_array($type, WalletTransaction::TYPES, true)) {
             throw new InvalidArgumentException("Unknown wallet transaction type: {$type}");

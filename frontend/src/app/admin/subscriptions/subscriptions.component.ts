@@ -401,17 +401,6 @@ const PRICING_MODEL_OPTIONS: {
           </label>
         </div>
 
-        <div class="grid2">
-          <label class="field">
-            <span class="field__lbl">Available from</span>
-            <input type="date" [(ngModel)]="form.available_from" />
-          </label>
-          <label class="field">
-            <span class="field__lbl">Available to</span>
-            <input type="date" [(ngModel)]="form.available_to" />
-          </label>
-        </div>
-
         <label class="field">
           <span class="field__lbl">Terms</span>
           <textarea rows="3" [(ngModel)]="form.terms" placeholder="Terms shown before the driver subscribes"></textarea>
@@ -419,7 +408,7 @@ const PRICING_MODEL_OPTIONS: {
 
         <label class="toggle">
           <input type="checkbox" [(ngModel)]="form.is_active" />
-          <span>Active (purchasable by drivers)</span>
+          <span>{{ form.is_active ? 'Active (Visible in Driver App for new purchases)' : 'Inactive (Hidden from Driver App — existing drivers continue auto-renewing)' }}</span>
         </label>
       </div>
       <div slot="footer">

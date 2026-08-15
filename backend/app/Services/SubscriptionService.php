@@ -72,6 +72,7 @@ class SubscriptionService
             if ($isWallet) {
                 $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
             }
+            $this->sendSubscriptionInvoiceEmail($driver, $sub, false);
 
             return ['subscription' => $sub, 'queued' => false, 'current' => null];
         });
@@ -481,22 +482,29 @@ class SubscriptionService
             return;
         }
 
-        // 2) Else same-plan auto-renew (charged from the wallet), if still sellable.
-        // By design the renewal re-reads the plan's CURRENT terms (price, days,
-        // commission) — so an admin's plan edit takes effect at the next renewal.
+        // 2) Else same-plan auto-renew (charged from the wallet).
+        // By design, existing active subscribers auto-renew even if the plan was
+        // deactivated for new buyers (Grandfathered Loyalty).
+        // It strictly checks the minimum wallet limit: if deducting the plan fee
+        // causes the projected wallet balance to fall below the minimum limit,
+        // renewal is rejected and the plan expires cleanly.
         if (! $claimed->auto_renew || ! $claimed->subscription_plan_id) {
             return; // cancelled — genuine expiry
         }
         $plan = SubscriptionPlan::query()->find($claimed->subscription_plan_id);
-        if (! $plan || ! $plan->is_active || ! $plan->isAvailableNow()) {
-            return; // plan no longer available — genuine expiry
+        if (! $plan) {
+            return; // plan deleted — genuine expiry
         }
 
         try {
             $new = $this->purchase($driver, $plan, true);
+            $this->notifyRenewed($driver, $new);
+            $this->sendSubscriptionInvoiceEmail($driver, $new, true);
         } catch (RuntimeException $e) {
-            // Wallet couldn't cover the renewal: stay expired and tell the driver.
+            // Wallet couldn't cover the renewal without breaching minimum limit:
+            // stays expired and notifies the driver.
             $this->notifyRenewalFailed($driver, $plan);
+            $this->sendSubscriptionRenewalFailedEmail($driver, $plan, $e->getMessage());
             return;
         }
 
@@ -643,9 +651,90 @@ class SubscriptionService
             $driver,
             'subscription_renewal_failed',
             'Subscription renewal failed',
-            "We couldn't renew {$plan->title} — your wallet balance was too low, so the plan has ended. "
+            "We couldn't renew {$plan->title} — your wallet balance was too low to cover the renewal without falling below your minimum limit. "
             . 'Top up your wallet and resubscribe to keep your commission rate.',
             ['plan_id' => $plan->id],
         );
+    }
+
+    public function sendSubscriptionInvoiceEmail(User $driver, DriverSubscription $sub, bool $isRenewal = false): void
+    {
+        $email = trim((string) $driver->email);
+        if ($email === "" || str_ends_with($email, "@otp.local")) {
+            return;
+        }
+
+        $plan = $sub->plan;
+        $title = $plan?->title ?? 'Subscription Plan';
+        $amount = (float) $sub->amount_paid;
+        $commission = (float) $sub->commission_percent;
+        $startsAt = optional($sub->starts_at)->format('d M Y, h:i A') ?? 'Immediately';
+        $expiresAt = optional($sub->expires_at)->format('d M Y, h:i A')
+            ?? ($sub->rides_allowed ? "{$sub->rides_allowed} Rides Allowance" : ($sub->earnings_cap ? "₹" . number_format((float)$sub->earnings_cap, 2) . " Earnings Limit" : "Unlimited"));
+        $invoiceNo = 'INV-SUB-' . str_pad((string) $sub->id, 6, '0', STR_PAD_LEFT);
+        $method = strtoupper((string) ($sub->payment_method ?: 'WALLET'));
+        $subject = ($isRenewal ? '[Renewal Invoice] ' : '[Subscription Invoice] ') . "{$title} - {$invoiceNo}";
+
+        $textBody = "DREAM CABS - SUBSCRIPTION INVOICE\n"
+            . "========================================\n"
+            . "Invoice No: {$invoiceNo}\n"
+            . "Date: " . now()->format('d M Y, h:i A') . "\n"
+            . "Driver: {$driver->name} (" . ($driver->phone ?: $email) . ")\n"
+            . "Plan: {$title}\n"
+            . "Type: " . ($isRenewal ? 'Auto-Renewal' : 'New Subscription') . "\n"
+            . "Amount Paid: ₹" . number_format($amount, 2) . "\n"
+            . "Payment Method: {$method}\n"
+            . "Per-Ride Commission: " . ($commission > 0 ? $this->fmtPercent($commission) . '%' : '0% (Commission Free)') . "\n"
+            . "Valid From: {$startsAt}\n"
+            . "Valid Until: {$expiresAt}\n"
+            . "Auto-Renewal: " . ($sub->auto_renew ? 'Active' : 'Disabled') . "\n"
+            . "========================================\n"
+            . "Thank you for driving with Dream Cabs!";
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw($textBody, function ($message) use ($driver, $email, $subject) {
+                $message->to($email, $driver->name ?: null)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Subscription invoice email failed', [
+                'user_id' => $driver->id,
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function sendSubscriptionRenewalFailedEmail(User $driver, SubscriptionPlan $plan, string $errorReason = ''): void
+    {
+        $email = trim((string) $driver->email);
+        if ($email === "" || str_ends_with($email, "@otp.local")) {
+            return;
+        }
+
+        $title = $plan->title ?? 'Subscription Plan';
+        $subject = "[Subscription Alert] Renewal Failed for {$title}";
+
+        $textBody = "DREAM CABS - SUBSCRIPTION RENEWAL FAILED\n"
+            . "========================================\n"
+            . "Driver: {$driver->name}\n"
+            . "Plan: {$title}\n"
+            . "Amount: ₹" . number_format((float) $plan->amount, 2) . "\n"
+            . "Reason: Your wallet balance was too low to cover the renewal without falling below the required minimum limit.\n"
+            . "Status: Expired\n"
+            . "========================================\n"
+            . "Please top up your wallet in the Driver App to purchase or reactivate your subscription.\n\n"
+            . "Thank you for driving with Dream Cabs!";
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw($textBody, function ($message) use ($driver, $email, $subject) {
+                $message->to($email, $driver->name ?: null)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Subscription renewal failed email failed', [
+                'user_id' => $driver->id,
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
