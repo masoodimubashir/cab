@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\HeldEarning;
 use App\Models\LedgerEntry;
 use App\Models\Payment;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Phase 4 — read-only monitors that replace the old manual payout/refund
@@ -331,42 +332,6 @@ class PayoutMonitorService
                         'balanced' => true,
                         'imbalance_paise' => 0,
                     ];
-                } else {
-                    // For trips already partially in ledger (e.g. online deposit), add the cash in hand and commission movement if not present
-                    if ($cashAmt > 0) {
-                        $rowsCollection->push([
-                            'id' => 'trip_' . $t->id . '_cash',
-                            'trip_id' => $t->id,
-                            'payment_id' => null,
-                            'type' => 'cash_retained',
-                            'party' => 'driver',
-                            'direction' => 'in',
-                            'amount' => $cashAmt,
-                            'razorpay_ref' => 'Cash in Hand (Driver)',
-                            'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
-                            'customer_name' => $t->customer?->name,
-                            'customer_phone' => $t->customer?->phone,
-                            'driver_name' => $t->driver?->name,
-                            'driver_phone' => $t->driver?->phone,
-                        ]);
-                    }
-                    if ($comm > 0) {
-                        $rowsCollection->push([
-                            'id' => 'trip_' . $t->id . '_ret',
-                            'trip_id' => $t->id,
-                            'payment_id' => null,
-                            'type' => 'retained',
-                            'party' => 'operator',
-                            'direction' => 'in',
-                            'amount' => $comm,
-                            'razorpay_ref' => 'Platform Commission',
-                            'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
-                            'customer_name' => $t->customer?->name,
-                            'customer_phone' => $t->customer?->phone,
-                            'driver_name' => $t->driver?->name,
-                            'driver_phone' => $t->driver?->phone,
-                        ]);
-                    }
                 }
             }
 
@@ -413,49 +378,95 @@ class PayoutMonitorService
                 ]);
             }
 
-            // Include driver wallet top-ups / recharges
-            $topupsQuery = \App\Models\WalletTopup::query()
-                ->where('status', 'SUCCESS')
-                ->with(['user.driver'])
-                ->orderByDesc('paid_at');
+            if ($tripId === null) {
+                // Include driver wallet top-ups / recharges
+                $topupsQuery = \App\Models\WalletTopup::query()
+                    ->where('status', 'SUCCESS')
+                    ->with(['user.driver'])
+                    ->orderByDesc('paid_at');
 
-            if (!empty($fromDate) && !empty($toDate)) {
-                $topupsQuery->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$fromDate, $toDate]);
-            } elseif (!empty($fromDate)) {
-                $topupsQuery->whereDate(DB::raw('COALESCE(paid_at, created_at)'), $fromDate);
-            }
-            if (!empty($search)) {
-                $term = trim($search);
-                $topupsQuery->where(function ($tq) use ($term) {
-                    $tq->where('razorpay_payment_id', 'LIKE', "%{$term}%")
-                       ->orWhere('razorpay_order_id', 'LIKE', "%{$term}%")
-                       ->orWhereHas('user', fn ($uq) => $uq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
-                });
-            }
-
-            $unrecordedTopups = $topupsQuery->limit(100)->get();
-            foreach ($unrecordedTopups as $topup) {
-                $ref = trim((string) ($topup->razorpay_payment_id ?? ''));
-                if ($ref !== '' && in_array($ref, $existingRefs, true)) {
-                    continue;
+                if (!empty($fromDate) && !empty($toDate)) {
+                    $topupsQuery->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$fromDate, $toDate]);
+                } elseif (!empty($fromDate)) {
+                    $topupsQuery->whereDate(DB::raw('COALESCE(paid_at, created_at)'), $fromDate);
+                }
+                if (!empty($search)) {
+                    $term = trim($search);
+                    $topupsQuery->where(function ($tq) use ($term) {
+                        $tq->where('razorpay_payment_id', 'LIKE', "%{$term}%")
+                           ->orWhere('razorpay_order_id', 'LIKE', "%{$term}%")
+                           ->orWhereHas('user', fn ($uq) => $uq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
+                    });
                 }
 
-                $user = $topup->user;
-                $rowsCollection->push([
-                    'id' => 'topup_' . $topup->id,
-                    'trip_id' => null,
-                    'payment_id' => null,
-                    'type' => 'topup',
-                    'party' => 'driver',
-                    'direction' => 'in',
-                    'amount' => (float) $topup->amount,
-                    'razorpay_ref' => $topup->razorpay_payment_id ?: 'Wallet Recharge',
-                    'created_at' => optional($topup->paid_at ?? $topup->created_at)->toIso8601String(),
-                    'customer_name' => null,
-                    'customer_phone' => null,
-                    'driver_name' => $user?->name,
-                    'driver_phone' => $user?->phone,
-                ]);
+                $unrecordedTopups = $topupsQuery->limit(100)->get();
+                foreach ($unrecordedTopups as $topup) {
+                    $ref = trim((string) ($topup->razorpay_payment_id ?? ''));
+                    if ($ref !== '' && in_array($ref, $existingRefs, true)) {
+                        continue;
+                    }
+
+                    $user = $topup->user;
+                    $rowsCollection->push([
+                        'id' => 'topup_' . $topup->id,
+                        'trip_id' => null,
+                        'payment_id' => null,
+                        'type' => 'topup',
+                        'party' => 'driver',
+                        'direction' => 'in',
+                        'amount' => (float) $topup->amount,
+                        'razorpay_ref' => $topup->razorpay_payment_id ?: 'Wallet Recharge',
+                        'created_at' => optional($topup->paid_at ?? $topup->created_at)->toIso8601String(),
+                        'customer_name' => null,
+                        'customer_phone' => null,
+                        'driver_name' => $user?->name,
+                        'driver_phone' => $user?->phone,
+                    ]);
+                }
+
+                // Include driver subscriptions (both wallet deductions and direct online purchases)
+                $subsQuery = \App\Models\DriverSubscription::query()
+                    ->where('status', \App\Models\DriverSubscription::STATUS_ACTIVE)
+                    ->where('is_queued', false)
+                    ->with(['driver', 'plan:id,title'])
+                    ->orderByDesc('created_at');
+
+                if (!empty($fromDate) && !empty($toDate)) {
+                    $subsQuery->whereBetween('created_at', [$fromDate, $toDate]);
+                } elseif (!empty($fromDate)) {
+                    $subsQuery->whereDate('created_at', $fromDate);
+                }
+                if (!empty($search)) {
+                    $term = trim($search);
+                    $subsQuery->where(function ($sq) use ($term) {
+                        $sq->where('payment_reference', 'LIKE', "%{$term}%")
+                           ->orWhereHas('plan', fn ($pq) => $pq->where('title', 'LIKE', "%{$term}%"))
+                           ->orWhereHas('driver', fn ($uq) => $uq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
+                    });
+                }
+
+                $unrecordedSubs = $subsQuery->limit(100)->get();
+                foreach ($unrecordedSubs as $sub) {
+                    $user = $sub->driver;
+                    $isWallet = ($sub->payment_method ?? 'wallet') === 'wallet';
+                    $planTitle = $sub->plan?->title ?? 'Driver Plan';
+
+                    $rowsCollection->push([
+                        'id' => 'sub_' . $sub->id,
+                        'trip_id' => null,
+                        'payment_id' => null,
+                        'type' => 'subscription',
+                        'party' => 'operator',
+                        'direction' => 'in',
+                        'amount' => (float) $sub->amount_paid,
+                        'razorpay_ref' => ($isWallet ? 'Wallet: ' : 'UPI: ') . ($sub->payment_reference ?: '#SUB-' . str_pad($sub->id, 4, '0', STR_PAD_LEFT)),
+                        'created_at' => optional($sub->created_at)->toIso8601String(),
+                        'customer_name' => null,
+                        'customer_phone' => null,
+                        'driver_name' => $user?->name,
+                        'driver_phone' => $user?->phone,
+                    ]);
+                }
             }
         }
 

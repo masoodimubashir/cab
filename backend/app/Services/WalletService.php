@@ -95,16 +95,19 @@ class WalletService
     /**
      * Universal Wallet Validation Rule:
      * Projected Balance = Current Wallet Balance - Deduction Amount
-     * If Projected Balance < Minimum Wallet Limit -> throws exception or returns error.
+     * If minimum limit is configured (non-zero) and Projected Balance < Minimum Wallet Limit -> throws exception.
+     * When minimum limit is 0, it means unlimited/unrestricted.
      */
     public function universalValidation(User $user, float $deductionAmount): void
     {
         $min = $this->minimumLimit();
-        $current = $this->balance($user);
-        $projected = round($current - $deductionAmount, 2);
+        if ($min != 0.0) {
+            $current = $this->balance($user);
+            $projected = round($current - $deductionAmount, 2);
 
-        if ($projected < $min) {
-            throw new RuntimeException("Projected wallet balance (₹{$projected}) falls below the minimum wallet limit (₹{$min}).");
+            if ($projected < $min) {
+                throw new RuntimeException("Projected wallet balance (₹{$projected}) falls below the minimum wallet limit (₹{$min}).");
+            }
         }
     }
 
@@ -114,6 +117,9 @@ class WalletService
     public function canAffordDeduction(User $user, float $deductionAmount): bool
     {
         $min = $this->minimumLimit();
+        if ($min == 0.0) {
+            return true;
+        }
         $current = $this->balance($user);
         $projected = round($current - $deductionAmount, 2);
 
@@ -132,12 +138,13 @@ class WalletService
 
     /**
      * Check a manual wallet move against operator min/max caps.
+     * 0 means unlimited for both min and max capping.
      */
     public function capViolation(User $user, string $type, float $amount): ?string
     {
         $settings = OperatorSetting::instance();
-        $max = (int) $settings->wallet_cash_max_capping;
-        $min = (int) $settings->wallet_cash_min_capping;
+        $max = (float) ($settings->wallet_cash_max_capping ?? 0);
+        $min = (float) ($settings->wallet_cash_min_capping ?? 0);
         $current = $this->balance($user);
 
         $isCredit = in_array($type, [
@@ -154,8 +161,8 @@ class WalletService
             return null;
         }
 
-        // Debit: must not drop below the configured minimum floor.
-        if (($current - $amount) < $min) {
+        // Debit: check floor only if min limit is set (non-zero)
+        if ($min != 0.0 && ($current - $amount) < $min) {
             $room = round($current - $min, 2);
             return "This would take the wallet below the minimum limit of ₹{$min} (current balance ₹{$current}). At most ₹{$room} can be deducted.";
         }

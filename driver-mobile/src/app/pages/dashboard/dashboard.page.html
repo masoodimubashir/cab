@@ -37,10 +37,13 @@
     <!-- Live status chip -->
     <ng-container *ngIf="driver; else pillSkeleton">
       <div class="drv-status drv-topbar__status"
+           [class.is-warning]="isWalletBelowLimit && isApproved"
            [class.is-offline]="!isOnline || !isApproved"
            [ngClass]="{ 'is-review': !isApproved }">
         <span class="drv-status__dot"></span>
-        <span>{{ !isApproved ? 'Under review' : (isOnline ? 'Online' : 'Offline') }}</span>
+        <span *ngIf="!isApproved">Under review</span>
+        <span *ngIf="isApproved && isWalletBelowLimit">Low Balance</span>
+        <span *ngIf="isApproved && !isWalletBelowLimit">{{ isOnline ? 'Online' : 'Offline' }}</span>
       </div>
     </ng-container>
     <ng-template #pillSkeleton>
@@ -84,7 +87,7 @@
   </button>
 
   <!-- ===== Bottom driver sheet ===== -->
-  <div class="sheet" [class.is-online]="isApproved && isOnline">
+  <div class="sheet" [class.is-online]="isApproved && isOnline" [class.is-warning]="isWalletBelowLimit && isApproved">
     <div class="sheet__handle"></div>
 
     <ng-container *ngIf="driver; else sheetSkeleton">
@@ -94,16 +97,57 @@
 
         <!-- OFFLINE -->
         <ng-container *ngIf="!isOnline">
-          <div class="sheet__lead">
-            <span class="sheet__title">Ready to drive?</span>
-            <p class="sheet__hint">Go online to start receiving trip requests near you.</p>
+          <!-- Transition Loader (flashes smoothly when state flips) -->
+          <div class="sheet-state-loader" *ngIf="isTransitioningState">
+            <ion-spinner name="crescent"></ion-spinner>
+            <span>Checking duty eligibility…</span>
           </div>
 
-          <button class="dc-cta sheet__go dc-press" (click)="goOnline()" [disabled]="toggling || !canGoOnline">
-            <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
-            <ion-icon name="power" *ngIf="!toggling"></ion-icon>
-            <span>{{ toggling ? 'Going online…' : 'Go Online' }}</span>
-          </button>
+          <div class="sheet-body-anim" *ngIf="!isTransitioningState">
+            <!-- Normal Ready to Drive -->
+            <div class="sheet__lead" *ngIf="!isWalletBelowLimit">
+              <span class="sheet__title">Ready to drive?</span>
+              <p class="sheet__hint">Go online to start receiving trip requests near you.</p>
+            </div>
+
+            <!-- Full Warning Card when Below Limit -->
+            <div class="sheet-warn-card" *ngIf="isWalletBelowLimit">
+              <div class="sheet-warn-card__head">
+                <div class="sheet-warn-card__icon"><ion-icon name="warning"></ion-icon></div>
+                <div class="sheet-warn-card__title-box">
+                  <strong class="sheet-warn-card__title">Duty Blocked · Low Balance</strong>
+                </div>
+              </div>
+              <p class="sheet-warn-card__msg">
+                Your wallet balance is <strong>₹{{ walletBalance | number:'1.0-2' }}</strong>, which is below the minimum required limit of <strong>₹{{ minWalletLimit | number:'1.0-2' }}</strong>.
+              </p>
+              <div class="sheet-warn-card__stat-row">
+                <div class="sheet-warn-card__stat">
+                  <small>Current</small>
+                  <span>₹{{ walletBalance | number:'1.0-2' }}</span>
+                </div>
+                <div class="sheet-warn-card__stat">
+                  <small>Required</small>
+                  <span>₹{{ minWalletLimit | number:'1.0-2' }}</span>
+                </div>
+                <div class="sheet-warn-card__stat sheet-warn-card__stat--short">
+                  <small>Need to Add</small>
+                  <strong>+₹{{ walletShortfall | number:'1.0-0' }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <button class="dc-cta sheet__go dc-press" *ngIf="!isWalletBelowLimit" (click)="goOnline()" [disabled]="toggling || !canGoOnline">
+              <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
+              <ion-icon name="power" *ngIf="!toggling"></ion-icon>
+              <span>{{ toggling ? 'Going online…' : 'Go Online' }}</span>
+            </button>
+
+            <button class="dc-cta sheet__go dc-press sheet__go--recharge" *ngIf="isWalletBelowLimit" (click)="openWalletTopup()">
+              <ion-icon name="card-outline"></ion-icon>
+              <span>Recharge ₹{{ walletShortfall | number:'1.0-0' }} to Go Online</span>
+            </button>
+          </div>
         </ng-container>
 
         <!-- ONLINE -->

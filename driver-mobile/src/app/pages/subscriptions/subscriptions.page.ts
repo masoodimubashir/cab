@@ -63,6 +63,7 @@ export class SubscriptionsPage implements OnInit {
   current: ActiveSubscription | null = null;
   plans: Plan[] = [];
   wallet = 0;
+  minWalletLimit = 0;
   currency = 'INR';
 
   /** Which tab is showing. */
@@ -106,6 +107,14 @@ export class SubscriptionsPage implements OnInit {
       error: () => {
         // subscription endpoint error isn't fatal — we can still browse plans
       },
+    });
+
+    this.api.get<{ balance?: number; minimum_wallet_limit?: number }>('/drivers/me/wallet').subscribe({
+      next: (res) => {
+        if (typeof res?.balance === 'number') this.wallet = res.balance;
+        if (typeof res?.minimum_wallet_limit === 'number') this.minWalletLimit = res.minimum_wallet_limit;
+      },
+      error: () => undefined,
     });
 
     this.api.get<{ data: Plan[] }>('/drivers/me/subscriptions/plans').subscribe({
@@ -182,6 +191,7 @@ export class SubscriptionsPage implements OnInit {
       componentProps: {
         plan: p,
         walletBalance: this.wallet,
+        minWalletLimit: this.minWalletLimit,
       },
       breakpoints: [0, 0.88, 1],
       initialBreakpoint: 0.88,

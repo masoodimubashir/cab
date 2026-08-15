@@ -507,8 +507,6 @@ class SubscriptionService
             $this->sendSubscriptionRenewalFailedEmail($driver, $plan, $e->getMessage());
             return;
         }
-
-        $this->notifyRenewed($driver, $new);
     }
 
     /**

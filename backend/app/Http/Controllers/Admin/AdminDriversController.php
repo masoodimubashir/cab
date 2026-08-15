@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Events\DriverVerificationUpdated;
 use App\Models\Driver;
 use App\Models\DriverDocument;
+use App\Models\DriverSubscription;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\WalletTransaction;
@@ -331,6 +332,14 @@ class AdminDriversController
             ->where('status', 'COMPLETED')
             ->count();
 
+        $activeSub = DriverSubscription::query()
+            ->where('driver_user_id', $driver->user_id)
+            ->where('status', DriverSubscription::STATUS_ACTIVE)
+            ->where('is_queued', false)
+            ->with(['plan'])
+            ->latest('id')
+            ->first();
+
         return response()->json([
             'driver' => [
                 'id' => $driver->id,
@@ -378,6 +387,17 @@ class AdminDriversController
                 'payout_bank_last4' => $user?->payout_bank_last4,
                 'payout_ifsc' => $user?->payout_ifsc,
                 'payout_upi' => $user?->payout_upi,
+                'active_subscription' => $activeSub ? [
+                    'id' => $activeSub->id,
+                    'plan_title' => $activeSub->plan?->title ?? 'Subscription Plan',
+                    'amount_paid' => (float) $activeSub->amount_paid,
+                    'commission_percent' => (float) $activeSub->commission_percent,
+                    'pricing_model' => $activeSub->pricing_model,
+                    'payment_method' => $activeSub->payment_method ?? 'wallet',
+                    'starts_at' => optional($activeSub->starts_at)->toIso8601String(),
+                    'expires_at' => optional($activeSub->expires_at)->toIso8601String(),
+                    'auto_renew' => (bool) $activeSub->auto_renew,
+                ] : null,
             ],
         ]);
     }
@@ -658,7 +678,27 @@ class AdminDriversController
             return response()->json(['message' => 'This driver has no linked user account.'], 422);
         }
 
-        return response()->json($this->payoutLedger->summary($user));
+        $summary = $this->payoutLedger->summary($user);
+        $walletBalance = $this->walletService->balance($user);
+
+        return response()->json([
+            'money_collected' => $summary['money_collected'],
+            'money_transferred' => $summary['money_transferred'],
+            'pending_payout' => $summary['pending_payout'],
+            'completed_payout' => $summary['completed_payout'],
+            // Aliases for Driver Detail modal
+            'balance' => $walletBalance,
+            'earned_remaining' => $summary['pending_payout'],
+            'deposits_remaining' => max(0.0, $walletBalance),
+            'total_paid_out' => $summary['completed_payout'],
+            'payout_method' => $user->payout_method,
+            'payout_beneficiary_name' => $user->payout_beneficiary_name,
+            'payout_bank_last4' => $user->payout_bank_last4,
+            'payout_ifsc' => $user->payout_ifsc,
+            'payout_upi' => $user->payout_upi,
+            'phone' => $user->phone,
+            'name' => $user->name,
+        ]);
     }
 
     /**
