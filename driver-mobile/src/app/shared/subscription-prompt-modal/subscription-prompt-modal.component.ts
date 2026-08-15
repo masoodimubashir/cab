@@ -2,6 +2,7 @@ import { Component, Input, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { SubscriptionPlan } from '../plan-card/plan-card.component';
+import { SubscriptionCheckoutModalComponent } from '../../pages/subscriptions/subscription-checkout.modal';
 
 /**
  * App-open subscription prompt, rendered as a FULL-PAGE modal that mirrors the
@@ -64,32 +65,29 @@ export class SubscriptionPromptModalComponent implements OnInit {
   }
 
   async confirmBuy(p: SubscriptionPlan): Promise<void> {
-    const paid = p.amount > 0;
-    const lead = paid
-      ? `${p.title} — ₹${p.amount} will be debited from your wallet.`
-      : `${p.title} — no upfront payment.`;
-    const rate = p.commission_percent > 0
-      ? `You'll pay ${p.commission_percent}% commission on each ride while active.`
-      : 'Keep 100% of your fares while active.';
-    const renew = paid
-      ? 'It auto-renews from your wallet when it ends — you can cancel anytime.'
-      : 'It renews automatically (no upfront charge) when it ends — you can cancel anytime.';
-
-    const alert = await this.alertCtrl.create({
-      header: 'Subscribe?',
-      message: `${lead} ${rate} ${renew}`,
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        { text: 'Subscribe', handler: () => this.buy(p) },
-      ],
+    const modal = await this.modalCtrl.create({
+      component: SubscriptionCheckoutModalComponent,
+      componentProps: {
+        plan: p,
+        walletBalance: this.wallet,
+      },
+      breakpoints: [0, 0.88, 1],
+      initialBreakpoint: 0.88,
     });
-    await alert.present();
+    await modal.present();
+    const { data } = await modal.onWillDismiss();
+    if (data?.confirmed) {
+      this.buy(p, data.paymentMethod || 'wallet');
+    }
   }
 
-  buy(p: SubscriptionPlan): void {
+  buy(p: SubscriptionPlan, paymentMethod: 'wallet' | 'upi' = 'wallet'): void {
     if (this.buyingId) return;
     this.buyingId = p.id;
-    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', { plan_id: p.id }).subscribe({
+    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', {
+      plan_id: p.id,
+      payment_method: paymentMethod,
+    }).subscribe({
       next: async (res) => {
         this.buyingId = null;
         await this.presentToast(res?.message || 'Subscription activated', 'success');
