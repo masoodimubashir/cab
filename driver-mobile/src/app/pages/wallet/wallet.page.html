@@ -94,11 +94,11 @@
       <!-- ═══════════════════════════════════════════════════════════════ -->
       <ng-container *ngIf="segment === 'overview'">
 
-        <!-- Platform Charges & Float Card -->
+        <!-- Balance Summary Card -->
         <div class="pg-card" *ngIf="breakdown">
           <div class="pg-card__head">
             <div class="pg-card__icon"><ion-icon name="calculator-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Platform Charges &amp; Float</h2>
+            <h2 class="pg-card__title">Balance Summary</h2>
           </div>
           <div class="sum">
             <div class="sum__row">
@@ -124,27 +124,27 @@
           </div>
         </div>
 
-        <!-- Wallet Limits & Buffer Card -->
+        <!-- Ride Eligibility & Limits Card -->
         <div class="pg-card wl-limits-card">
           <div class="pg-card__head">
             <div class="pg-card__icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
-            <h2 class="pg-card__title">Wallet Threshold &amp; Buffer</h2>
+            <h2 class="pg-card__title">Ride Eligibility &amp; Limits</h2>
           </div>
 
           <div class="wl-limit-grid">
             <div class="wl-limit-box">
-              <span class="wl-limit-box__label">Minimum Limit</span>
+              <span class="wl-limit-box__label">Minimum Required</span>
               <strong class="wl-limit-box__val">₹{{ minLimit | number:'1.0-2' }}</strong>
             </div>
             <div class="wl-limit-box">
-              <span class="wl-limit-box__label">Usable Float Buffer</span>
+              <span class="wl-limit-box__label">Available for Rides</span>
               <strong class="wl-limit-box__val" [class.wl-limit-box__val--ok]="availableFloat > 0">₹{{ availableFloat | number:'1.0-2' }}</strong>
             </div>
           </div>
 
           <button class="wallet-note dc-press" (click)="explainLimits()">
             <ion-icon name="information-circle-outline"></ion-icon>
-            <span>Tap to read more about minimum limits and platform charges deduction rules.</span>
+            <span>Maintain at least ₹{{ minLimit }} to keep receiving new ride requests. Tap for details.</span>
           </button>
         </div>
 
@@ -200,7 +200,7 @@
           <div *ngIf="!recharges.length" class="dc-empty">
             <div class="dc-empty__icon"><ion-icon name="card-outline"></ion-icon></div>
             <strong>No recharges recorded</strong>
-            <span>Tap "Recharge Wallet" above to add prepaid float.</span>
+            <span>Tap "Recharge Wallet" above to add money.</span>
           </div>
 
           <div *ngIf="recharges.length" class="dc-list">

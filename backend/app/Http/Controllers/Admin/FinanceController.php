@@ -259,22 +259,83 @@ class FinanceController extends Controller
 
         $trips = $query->limit(500)->get();
 
-        $rows = $trips->map(fn (Trip $t) => [
-            'trip_id' => $t->id,
-            'date' => optional($t->completed_at)->toIso8601String(),
-            'driver_id' => $t->driver_id,
-            'driver_name' => $t->driver?->name ?? '—',
-            'driver_phone' => $t->driver?->phone ?? '—',
-            'vehicle_type' => $t->vehicleType?->name ?? $t->cityVehicleType?->display_name ?? $t->rideType?->name ?? '—',
-            'fare' => (float) ($t->final_fare ?? 0),
-            'commission_percent' => (float) ($t->commission_percent ?? 0),
-            'commission_amount' => (float) ($t->commission_amount ?? 0),
-            'net_driver_earnings' => round((float) ($t->final_fare ?? 0) - (float) ($t->commission_amount ?? 0), 2),
-            'payment_method' => $t->payment_method ?: 'Cash',
-            'mode' => $t->route?->mode ?? ($t->route_departure_id ? 'fixed' : 'private'),
-            'route_name' => $t->route?->name,
-            'is_shared' => $t->route_departure_id !== null,
-        ]);
+        $tripIds = $trips->pluck('id')->all();
+        $payoutCollectionsByTrip = DriverPayoutLedger::query()
+            ->where('type', DriverPayoutLedger::TYPE_COLLECTED)
+            ->whereIn('trip_id', $tripIds)
+            ->get()
+            ->groupBy('trip_id');
+
+        $seatReservationsByTrip = SeatReservation::query()
+            ->whereIn('trip_id', $tripIds)
+            ->get()
+            ->groupBy('trip_id');
+
+        $rows = $trips->map(function (Trip $t) use ($payoutCollectionsByTrip, $seatReservationsByTrip) {
+            $fare = (float) ($t->final_fare ?? 0);
+            $commAmount = (float) ($t->commission_amount ?? 0);
+            $commPercent = (float) ($t->commission_percent ?? 0);
+
+            $tripCollections = $payoutCollectionsByTrip->get($t->id);
+            $tripSeats = $seatReservationsByTrip->get($t->id);
+
+            $onlineAmt = 0.0;
+            $cashAmt = 0.0;
+            $methodLabel = 'Cash';
+
+            if ($tripCollections && $tripCollections->isNotEmpty()) {
+                $onlineAmt = (float) $tripCollections->sum('amount');
+                $cashAmt = max(0.0, round($fare - $onlineAmt, 2));
+                if ($cashAmt > 0 && $onlineAmt > 0) {
+                    $methodLabel = 'Cash (₹' . number_format($onlineAmt, 0) . ' Dep + ₹' . number_format($cashAmt, 0) . ' Cash)';
+                } elseif ($onlineAmt > 0) {
+                    $methodLabel = 'Online';
+                } else {
+                    $methodLabel = 'Cash';
+                }
+            } elseif ($tripSeats && $tripSeats->isNotEmpty()) {
+                $seat = $tripSeats->first();
+                $sMethod = trim(strtolower((string) ($seat->payment_method ?? '')));
+                if ($sMethod === 'razorpay' || $sMethod === 'online') {
+                    $onlineAmt = $fare;
+                    $cashAmt = 0.0;
+                    $methodLabel = 'Online';
+                } else {
+                    $cashAmt = $fare;
+                    $onlineAmt = 0.0;
+                    $methodLabel = 'Cash';
+                }
+            } else {
+                $m = trim(strtolower((string) $t->payment_method));
+                if ($m === 'cash' || $m === '') {
+                    $cashAmt = $fare;
+                    $methodLabel = 'Cash';
+                } else {
+                    $onlineAmt = $fare;
+                    $methodLabel = 'Online';
+                }
+            }
+
+            return [
+                'trip_id' => $t->id,
+                'date' => optional($t->completed_at)->toIso8601String(),
+                'driver_id' => $t->driver_id,
+                'driver_name' => $t->driver?->name ?? '—',
+                'driver_phone' => $t->driver?->phone ?? '—',
+                'vehicle_type' => $t->vehicleType?->name ?? $t->cityVehicleType?->display_name ?? $t->rideType?->name ?? '—',
+                'fare' => $fare,
+                'commission_percent' => $commPercent,
+                'commission_amount' => $commAmount,
+                'is_fixed_commission' => $commPercent <= 0 && $commAmount > 0,
+                'net_driver_earnings' => round($fare - $commAmount, 2),
+                'cash_amount' => $cashAmt,
+                'online_amount' => $onlineAmt,
+                'payment_method' => $methodLabel,
+                'mode' => $t->route?->mode ?? ($t->route_departure_id ? 'fixed' : 'private'),
+                'route_name' => $t->route?->name,
+                'is_shared' => $t->route_departure_id !== null,
+            ];
+        });
 
         $totalCommission = round((float) $trips->sum('commission_amount'), 2);
         $totalFare = round((float) $trips->sum('final_fare'), 2);
