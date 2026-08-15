@@ -174,7 +174,7 @@ class FinanceController extends Controller
         $maxLimit = (float) (OperatorSetting::instance()->wallet_cash_max_capping ?? 0);
 
         $drivers = Driver::query()
-            ->with(['user:id,name,phone,email', 'vehicleType:id,name'])
+            ->with(['user:id,name,phone,email', 'vehicleType:id,name', 'vehicleTypeRef:id,name', 'cityVehicleType:id,display_name', 'rideType:id,name'])
             ->get();
 
         $rows = [];
@@ -197,7 +197,7 @@ class FinanceController extends Controller
                 'name' => $driver->user->name,
                 'phone' => $driver->user->phone,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
-                'vehicle_type' => $driver->vehicleType?->name ?? '—',
+                'vehicle_type' => $driver->vehicleType?->name ?? $driver->vehicleTypeRef?->name ?? $driver->cityVehicleType?->display_name ?? $driver->rideType?->name ?? $driver->vehicle_type ?? '—',
                 'balance' => $balance,
                 'minimum_wallet_limit' => $minLimit,
                 'maximum_wallet_limit' => $maxLimit,
@@ -241,14 +241,17 @@ class FinanceController extends Controller
      */
     public function commissions(Request $request)
     {
-        [$from, $to] = $this->range($request);
-
+        $hasRange = $request->filled('from') || $request->filled('to') || $request->filled('date');
         $query = Trip::query()
             ->where('status', 'COMPLETED')
             ->where('commission_amount', '>', 0)
-            ->whereBetween('completed_at', [$from, $to])
-            ->with(['driver:id,name,phone', 'customer:id,name', 'vehicleType:id,name'])
+            ->with(['driver:id,name,phone', 'customer:id,name', 'vehicleType:id,name', 'cityVehicleType:id,display_name', 'rideType:id,name', 'route:id,mode,name'])
             ->orderByDesc('completed_at');
+
+        if ($hasRange) {
+            [$from, $to] = $this->range($request);
+            $query->whereBetween('completed_at', [$from, $to]);
+        }
 
         if ($request->filled('driver_id')) {
             $query->where('driver_id', $request->query('driver_id'));
@@ -262,20 +265,30 @@ class FinanceController extends Controller
             'driver_id' => $t->driver_id,
             'driver_name' => $t->driver?->name ?? '—',
             'driver_phone' => $t->driver?->phone ?? '—',
-            'vehicle_type' => $t->vehicleType?->name ?? '—',
+            'vehicle_type' => $t->vehicleType?->name ?? $t->cityVehicleType?->display_name ?? $t->rideType?->name ?? '—',
             'fare' => (float) ($t->final_fare ?? 0),
             'commission_percent' => (float) ($t->commission_percent ?? 0),
             'commission_amount' => (float) ($t->commission_amount ?? 0),
             'net_driver_earnings' => round((float) ($t->final_fare ?? 0) - (float) ($t->commission_amount ?? 0), 2),
-            'payment_method' => $t->payment_method,
+            'payment_method' => $t->payment_method ?: 'Cash',
+            'mode' => $t->route?->mode ?? ($t->route_departure_id ? 'fixed' : 'private'),
+            'route_name' => $t->route?->name,
             'is_shared' => $t->route_departure_id !== null,
         ]);
 
         $totalCommission = round((float) $trips->sum('commission_amount'), 2);
         $totalFare = round((float) $trips->sum('final_fare'), 2);
 
+        $rangeData = $hasRange ? [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+        ] : [
+            'from' => 'all',
+            'to' => 'all',
+        ];
+
         return response()->json([
-            'range' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
+            'range' => $rangeData,
             'data' => $rows,
             'count' => $rows->count(),
             'total_commission' => $totalCommission,
@@ -289,13 +302,17 @@ class FinanceController extends Controller
      */
     public function driverEarnings(Request $request)
     {
-        [$from, $to] = $this->range($request);
-
-        $trips = Trip::query()
+        $hasRange = $request->filled('from') || $request->filled('to') || $request->filled('date');
+        $query = Trip::query()
             ->where('status', 'COMPLETED')
-            ->whereNotNull('driver_id')
-            ->whereBetween('completed_at', [$from, $to])
-            ->get(['id', 'driver_id', 'final_fare', 'commission_amount', 'payment_method']);
+            ->whereNotNull('driver_id');
+
+        if ($hasRange) {
+            [$from, $to] = $this->range($request);
+            $query->whereBetween('completed_at', [$from, $to]);
+        }
+
+        $trips = $query->get(['id', 'driver_id', 'final_fare', 'commission_amount', 'payment_method']);
 
         $grouped = $trips->groupBy('driver_id');
 
@@ -319,7 +336,8 @@ class FinanceController extends Controller
             foreach ($driverTrips as $t) {
                 $fare = (float) ($t->final_fare ?? 0);
                 $gross += $fare;
-                if (strtolower((string) $t->payment_method) === 'cash') {
+                $m = trim(strtolower((string) $t->payment_method));
+                if ($m === 'cash' || $m === '') {
                     $cash += $fare;
                 } else {
                     $online += $fare;
@@ -345,8 +363,16 @@ class FinanceController extends Controller
 
         usort($rows, fn ($a, $b) => $b['gross_earnings'] <=> $a['gross_earnings']);
 
+        $rangeData = $hasRange ? [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+        ] : [
+            'from' => 'all',
+            'to' => 'all',
+        ];
+
         return response()->json([
-            'range' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
+            'range' => $rangeData,
             'data' => $rows,
             'total_gross' => round($totalGross, 2),
             'total_cash' => round($totalCash, 2),

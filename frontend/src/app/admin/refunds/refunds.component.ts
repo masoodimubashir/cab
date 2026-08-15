@@ -777,7 +777,9 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get rangeLabel(): string {
-    if (this.dateFrom && this.dateTo) return `${this.dateFrom} → ${this.dateTo}`;
+    if (this.dateFrom && this.dateTo && this.dateFrom !== 'Invalid date' && this.dateTo !== 'Invalid date') {
+      return `${this.dateFrom} → ${this.dateTo}`;
+    }
     return '';
   }
 
@@ -872,8 +874,8 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
         opens: 'left',
         maxDate: moment(),
         alwaysShowCalendars: true,
-        startDate: moment(this.dateFrom),
-        endDate: moment(this.dateTo),
+        startDate: (this.dateFrom && this.dateFrom !== 'Invalid date') ? moment(this.dateFrom) : moment().startOf('month'),
+        endDate: (this.dateTo && this.dateTo !== 'Invalid date') ? moment(this.dateTo) : moment(),
         locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
         ranges: {
           Today: [moment(), moment()],
@@ -888,6 +890,7 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
         this.zone.run(() => {
           this.dateFrom = start.format('YYYY-MM-DD');
           this.dateTo = end.format('YYYY-MM-DD');
+          this.activePreset = null;
         });
       },
     );
@@ -903,8 +906,12 @@ export class AdminRefundsComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   clearDateRange(): void {
+    this.activePreset = null;
     this.dateFrom = '';
     this.dateTo = '';
+    if (this.rangeInput?.nativeElement) {
+      $(this.rangeInput.nativeElement).val('');
+    }
   }
 
   @HostListener('document:click')

@@ -48,6 +48,11 @@ class DriverPayoutLedger extends Model
         return $this->belongsTo(User::class, 'driver_user_id');
     }
 
+    public function driverUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_user_id');
+    }
+
     public function trip(): BelongsTo
     {
         return $this->belongsTo(Trip::class, 'trip_id');

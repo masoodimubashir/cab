@@ -47,7 +47,7 @@ class PayoutLedgerService
         }
 
         return DB::transaction(function () use ($driver, $amount, $source, $tripId, $meta) {
-            return DriverPayoutLedger::query()->create([
+            $ledger = DriverPayoutLedger::query()->create([
                 'driver_user_id' => $driver->id,
                 'type' => DriverPayoutLedger::TYPE_COLLECTED,
                 'amount' => round($amount, 2),
@@ -58,6 +58,29 @@ class PayoutLedgerService
                 'payment_id' => $meta['payment_id'] ?? null,
                 'notes' => $meta['notes'] ?? null,
             ]);
+
+            try {
+                app(LedgerService::class)->record(
+                    'capture',
+                    'customer',
+                    'in',
+                    (int) round($amount * 100),
+                    $tripId,
+                    $meta['payment_id'] ?? null,
+                    $meta['payment_reference'] ?? null,
+                    [
+                        'driver_id' => $driver->id,
+                        'driver_name' => $driver->name,
+                        'driver_phone' => $driver->phone,
+                        'source' => $source,
+                        'notes' => $meta['notes'] ?? null,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+
+            return $ledger;
         });
     }
 
@@ -85,7 +108,7 @@ class PayoutLedgerService
                 throw new RuntimeException("Transfer amount (₹{$amount}) exceeds pending payout (₹{$pending}).");
             }
 
-            return DriverPayoutLedger::query()->create([
+            $entry = DriverPayoutLedger::query()->create([
                 'driver_user_id' => $driver->id,
                 'type' => DriverPayoutLedger::TYPE_TRANSFER,
                 'amount' => $amount,
@@ -95,6 +118,30 @@ class PayoutLedgerService
                 'notes' => $notes,
                 'created_by_user_id' => $by?->id,
             ]);
+
+            try {
+                app(LedgerService::class)->record(
+                    'transfer',
+                    'driver',
+                    'out',
+                    (int) round($amount * 100),
+                    null,
+                    null,
+                    $reference,
+                    [
+                        'driver_id' => $driver->id,
+                        'driver_name' => $driver->name,
+                        'driver_phone' => $driver->phone,
+                        'method' => $method,
+                        'notes' => $notes,
+                        'recorded_by' => $by?->name,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+
+            return $entry;
         });
     }
 

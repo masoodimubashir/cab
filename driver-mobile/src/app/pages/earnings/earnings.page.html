@@ -14,7 +14,7 @@
 
 <ion-content class="pg-content">
 
-  <!-- ─── Money hero: Ride Earnings & Cash / Online split ─── -->
+  <!-- ─── Money Hero: Total Ride Earnings, Cash & Collections Split ─── -->
   <div class="pg-hero ec-hero">
     <p class="pg-hero__label">Total Ride Earnings <small class="ec-scope">· {{ periodLabelMap[period] }}</small></p>
     <h1 class="pg-hero__amount">₹{{ rideEarnings | number:'1.0-2' }}</h1>
@@ -28,13 +28,44 @@
         </div>
       </div>
       <div class="ec-hstat">
-        <ion-icon name="globe-outline"></ion-icon>
+        <ion-icon name="receipt-outline"></ion-icon>
         <div class="ec-hstat__body">
-          <span class="ec-hstat__label">Online Collected</span>
-          <strong class="ec-hstat__value">₹{{ onlineCollected | number:'1.0-2' }}</strong>
+          <span class="ec-hstat__label">Total Collected</span>
+          <strong class="ec-hstat__value">₹{{ totalCollected | number:'1.0-2' }}</strong>
         </div>
       </div>
     </div>
+
+    <!-- Quick Operator Transfer Banner in Hero -->
+    <div class="ec-hero__transfer-bar">
+      <div class="ec-hbar-item">
+        <ion-icon name="hourglass-outline" class="is-pending"></ion-icon>
+        <span>Pending: <strong>₹{{ pendingTransfers | number:'1.0-2' }}</strong></span>
+      </div>
+      <div class="ec-hbar-div"></div>
+      <div class="ec-hbar-item">
+        <ion-icon name="checkmark-circle-outline" class="is-paid"></ion-icon>
+        <span>Transferred: <strong>₹{{ completedTransfers | number:'1.0-2' }}</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 3 Navigation Tabs (Transfers, Received, Analytics) ─── -->
+  <div class="ec-tab-nav">
+    <ion-segment [value]="activeTab" (ionChange)="setTab($any($event.detail.value))" class="ec-segment">
+      <ion-segment-button value="transfers">
+        <ion-icon name="swap-horizontal-outline"></ion-icon>
+        <ion-label>Transfers</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="received">
+        <ion-icon name="arrow-down-circle-outline"></ion-icon>
+        <ion-label>Received</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="analytics">
+        <ion-icon name="bar-chart-outline"></ion-icon>
+        <ion-label>Analytics</ion-label>
+      </ion-segment-button>
+    </ion-segment>
   </div>
 
   <div class="pg-body pg-anim-body">
@@ -43,126 +74,327 @@
       <p class="dc-error">{{ error }}</p>
     </ion-text>
 
-    <!-- ─── Driver Payouts Card: Money Waiting & Pending Transfers ─── -->
-    <div class="pg-card ec-payout-card">
-      <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="swap-horizontal-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Operator Transfers</h2>
-      </div>
-
-      <div class="ec-payout">
-        <div class="ec-payout__row">
-          <span class="ec-payout__label">
-            <ion-icon name="hourglass-outline" class="is-pending"></ion-icon>
-            Pending Transfer
-          </span>
-          <strong class="ec-payout__val" style="color: #00e676">
-            ₹{{ pendingTransfers | number:'1.0-2' }}
-          </strong>
-        </div>
-        <div class="ec-payout__row">
-          <span class="ec-payout__label">
-            <ion-icon name="checkmark-done-circle-outline" class="is-paid"></ion-icon>
-            Completed Transfers
-          </span>
-          <strong class="ec-payout__val">₹{{ completedTransfers | number:'1.0-2' }}</strong>
-        </div>
-      </div>
-
-      <p class="ec-payout__hint">
-        Money Waiting To Be Transferred includes online fares, upfront cash deposits, and operator coupons.
-      </p>
+    <!-- Loading Skeleton -->
+    <div *ngIf="loading && !error" class="pg-card">
+      <div class="dc-skeleton" style="height: 22px; width: 60%; margin-bottom: 14px;"></div>
+      <div class="dc-skeleton" style="height: 120px;"></div>
     </div>
 
-    <!-- ─── Operator Payments Received History ─── -->
-    <div class="pg-card" *ngIf="operatorPayments.length">
-      <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="receipt-outline"></ion-icon></div>
-        <h2 class="pg-card__title">Operator Payments Received</h2>
-      </div>
+    <ng-container *ngIf="!loading && !error">
 
-      <div class="dc-list">
-        <div class="dc-row" *ngFor="let p of operatorPayments">
-          <span class="dc-row__icon"><ion-icon name="checkmark-circle-outline"></ion-icon></span>
-          <span class="dc-row__text">
-            <strong>₹{{ p.amount | number:'1.0-2' }} · {{ methodLabel(p.method) }}</strong>
-            <small>{{ fmtDate(p.created_at) }}<ng-container *ngIf="p.reference"> · Ref: {{ p.reference }}</ng-container></small>
-          </span>
+      <!-- ═════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 1: TRANSFERS (Pending & Completed Operator Transfers)         -->
+      <!-- ═════════════════════════════════════════════════════════════════ -->
+      <ng-container *ngIf="activeTab === 'transfers'">
+
+        <!-- Pending Transfers Card -->
+        <div class="pg-card ec-pending-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon ec-icon--pending"><ion-icon name="hourglass-outline"></ion-icon></div>
+            <div class="ec-card-header-text">
+              <h2 class="pg-card__title">Pending Transfers</h2>
+              <span class="dc-badge dc-badge--warn" *ngIf="pendingTransfers > 0">Awaiting Payout</span>
+              <span class="dc-badge dc-badge--ok" *ngIf="pendingTransfers <= 0">All Settled</span>
+            </div>
+          </div>
+
+          <div class="ec-hero-stat-box">
+            <span class="ec-hero-stat-box__label">Money Waiting to be Transferred</span>
+            <h3 class="ec-hero-stat-box__amount">₹{{ pendingTransfers | number:'1.0-2' }}</h3>
+            <p class="ec-hero-stat-box__sub">
+              Payout is settled directly by the operator into your bank account or UPI ID.
+            </p>
+          </div>
+
+          <div class="ec-info-rows">
+            <div class="ec-info-row">
+              <span class="ec-info-row__label">
+                <ion-icon name="globe-outline"></ion-icon> Online Fare Collections
+              </span>
+              <strong class="ec-info-row__val">₹{{ onlineCollected | number:'1.0-2' }}</strong>
+            </div>
+            <div class="ec-info-row">
+              <span class="ec-info-row__label">
+                <ion-icon name="shield-checkmark-outline"></ion-icon> Money Collected by Operator
+              </span>
+              <strong class="ec-info-row__val">₹{{ moneyCollectedByOperator | number:'1.0-2' }}</strong>
+            </div>
+            <div class="ec-info-row">
+              <span class="ec-info-row__label">
+                <ion-icon name="checkmark-done-circle-outline"></ion-icon> Already Transferred
+              </span>
+              <strong class="ec-info-row__val ec-info-row__val--done">−₹{{ completedTransfers | number:'1.0-2' }}</strong>
+            </div>
+            <div class="ec-info-row ec-info-row--net">
+              <span class="ec-info-row__label">
+                <ion-icon name="wallet-outline"></ion-icon> Net Pending Payout
+              </span>
+              <strong class="ec-info-row__val ec-info-row__val--pending">₹{{ pendingTransfers | number:'1.0-2' }}</strong>
+            </div>
+          </div>
+
+          <p class="ec-payout__hint">
+            <ion-icon name="information-circle-outline"></ion-icon>
+            Includes online trip payments, advance customer deposits, and operator coupon reimbursements.
+          </p>
         </div>
-      </div>
-    </div>
 
-    <!-- ─── Overview / bar chart ─── -->
-    <div class="pg-card ec-chart-card">
-      <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
-        <h2 class="pg-card__title">{{ periodChartTitleMap[period] }} <small class="ec-scope">· {{ periodLabelMap[period] }}</small></h2>
-      </div>
+        <!-- Completed Transfers History Card -->
+        <div class="pg-card ec-completed-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon ec-icon--completed"><ion-icon name="checkmark-done-circle-outline"></ion-icon></div>
+            <div class="ec-card-header-text">
+              <h2 class="pg-card__title">Completed Transfers</h2>
+              <span class="ec-scope" *ngIf="operatorTransfers.length">₹{{ completedTransfers | number:'1.0-2' }} total</span>
+            </div>
+          </div>
 
-      <div class="dc-pills ec-pills">
-        <button class="dc-pill dc-press" [class.is-active]="period === 'week'" (click)="setPeriod('week')">Week</button>
-        <button class="dc-pill dc-press" [class.is-active]="period === 'month'" (click)="setPeriod('month')">Month</button>
-        <button class="dc-pill dc-press" [class.is-active]="period === 'all'" (click)="setPeriod('all')">All time</button>
-      </div>
+          <div *ngIf="!operatorTransfers.length" class="dc-empty">
+            <div class="dc-empty__icon"><ion-icon name="swap-horizontal-outline"></ion-icon></div>
+            <strong>No completed transfers yet</strong>
+            <span>When the operator sends payout transfers to your bank or UPI, they will appear here.</span>
+          </div>
 
-      <div *ngIf="loading" class="ec-skeletons">
-        <div class="dc-skeleton" style="height:160px"></div>
-      </div>
-
-      <ng-container *ngIf="!loading">
-        <div *ngIf="buckets.length; else noData" class="ec-chart dc-anim">
-          <div class="ec-chart__bars">
-            <div *ngFor="let b of buckets; let i = index" class="ec-bar-wrap" [title]="b.date + ': ₹' + b.amount">
-              <div class="ec-bar" [class.ec-bar--zero]="b.amount <= 0" [style.height.%]="barHeight(b.amount)">
-                <span class="ec-bar__value" *ngIf="b.amount > 0">{{ b.amount | number:'1.0-0' }}</span>
-              </div>
-              <span class="ec-bar__label" *ngIf="showLabel(i)">{{ period === 'week' ? b.weekday : shortLabel(b) }}</span>
+          <div *ngIf="operatorTransfers.length" class="dc-list">
+            <div class="dc-row" *ngFor="let t of operatorTransfers">
+              <span class="dc-row__icon">
+                <ion-icon [name]="methodIcon(t.method)"></ion-icon>
+              </span>
+              <span class="dc-row__text">
+                <strong>+₹{{ t.amount | number:'1.0-2' }} <span class="dc-badge dc-badge--ok">Completed</span></strong>
+                <small>{{ methodLabel(t.method) }} · {{ fmtDate(t.created_at) }}</small>
+                <small *ngIf="t.reference" class="ec-ref-text">Ref: {{ t.reference }}</small>
+                <small *ngIf="t.notes" class="ec-note-text">{{ t.notes }}</small>
+              </span>
             </div>
           </div>
         </div>
 
-        <ng-template #noData>
-          <div class="dc-empty">
-            <div class="dc-empty__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
-            <strong>No earnings yet</strong>
-            <span>No completed trips in {{ periodLabelMap[period] }}. Your earnings will appear here once you finish a trip.</span>
-          </div>
-        </ng-template>
       </ng-container>
-    </div>
 
-    <!-- ─── Ride-by-ride: Completed Rides ─── -->
-    <div class="pg-card ec-rides-card">
-      <div class="pg-card__head">
-        <div class="pg-card__icon"><ion-icon name="car-outline"></ion-icon></div>
-        <h2 class="pg-card__title">{{ periodRideTitleMap[period] }}</h2>
-      </div>
+      <!-- ═════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 2: RECEIVED (Operator Collections on Driver's Behalf)         -->
+      <!-- ═════════════════════════════════════════════════════════════════ -->
+      <ng-container *ngIf="activeTab === 'received'">
 
-      <div *ngIf="loading" class="ec-skeletons">
-        <div class="dc-skeleton" style="height:44px;margin-bottom:8px"></div>
-        <div class="dc-skeleton" style="height:44px"></div>
-      </div>
+        <!-- Collections Overview Card -->
+        <div class="pg-card ec-received-hero-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="wallet-outline"></ion-icon></div>
+            <h2 class="pg-card__title">Operator Collections</h2>
+          </div>
 
-      <ng-container *ngIf="!loading">
-        <div *ngIf="!rides.length" class="dc-empty">
-          <div class="dc-empty__icon"><ion-icon name="car-outline"></ion-icon></div>
-          <strong>No rides recorded</strong>
-          <span>Complete rides to see your earnings breakdown.</span>
-        </div>
+          <div class="ec-hero-stat-box ec-hero-stat-box--received">
+            <span class="ec-hero-stat-box__label">Total Money Received by Operator</span>
+            <h3 class="ec-hero-stat-box__amount">₹{{ (moneyCollectedByOperator || onlineCollected) | number:'1.0-2' }}</h3>
+            <p class="ec-hero-stat-box__sub">
+              Online customer payments, deposits, and advance bookings collected on your behalf.
+            </p>
+          </div>
 
-        <div *ngIf="rides.length" class="dc-list">
-          <div class="dc-row" *ngFor="let r of rides">
-            <span class="dc-row__icon">
-              <ion-icon [name]="r.is_cash ? 'cash-outline' : 'globe-outline'"></ion-icon>
-            </span>
-            <span class="dc-row__text">
-              <strong>₹{{ r.fare | number:'1.0-2' }} <small>({{ r.is_cash ? 'Cash Handover' : 'Online Booking' }})</small></strong>
-              <small>{{ fmtDate(r.date) }} · Trip #{{ r.id }}</small>
-            </span>
+          <!-- Received Reconciliation Summary -->
+          <div class="ec-rec-grid">
+            <div class="ec-rec-card">
+              <span class="ec-rec-card__label">Online Fares</span>
+              <strong class="ec-rec-card__val">₹{{ onlineCollected | number:'1.0-2' }}</strong>
+            </div>
+            <div class="ec-rec-card">
+              <span class="ec-rec-card__label">Transferred</span>
+              <strong class="ec-rec-card__val ec-rec-card__val--green">₹{{ completedTransfers | number:'1.0-2' }}</strong>
+            </div>
+            <div class="ec-rec-card">
+              <span class="ec-rec-card__label">Remaining</span>
+              <strong class="ec-rec-card__val ec-rec-card__val--amber">₹{{ pendingTransfers | number:'1.0-2' }}</strong>
+            </div>
           </div>
         </div>
+
+        <!-- Received Transactions Card -->
+        <div class="pg-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="receipt-outline"></ion-icon></div>
+            <h2 class="pg-card__title">Received Transactions</h2>
+          </div>
+
+          <!-- If ledger collections exist -->
+          <div *ngIf="operatorCollections.length" class="dc-list">
+            <div class="dc-row" *ngFor="let c of operatorCollections">
+              <span class="dc-row__icon">
+                <ion-icon [name]="collectionSourceIcon(c.source)"></ion-icon>
+              </span>
+              <span class="dc-row__text">
+                <strong>+₹{{ c.amount | number:'1.0-2' }}</strong>
+                <small>{{ collectionSourceLabel(c.source) }}<ng-container *ngIf="c.trip_id"> · Trip #{{ c.trip_id }}</ng-container></small>
+                <small *ngIf="c.created_at">{{ fmtDate(c.created_at) }}</small>
+                <small *ngIf="c.notes" class="ec-note-text">{{ c.notes }}</small>
+              </span>
+            </div>
+          </div>
+
+          <!-- Fallback to online rides if collections ledger empty -->
+          <div *ngIf="!operatorCollections.length && rides.length" class="dc-list">
+            <ng-container *ngFor="let r of rides">
+              <div class="dc-row" *ngIf="!r.is_cash">
+                <span class="dc-row__icon">
+                  <ion-icon name="globe-outline"></ion-icon>
+                </span>
+                <span class="dc-row__text">
+                  <strong>+₹{{ r.fare | number:'1.0-2' }}</strong>
+                  <small>Online Booking Fare · Trip #{{ r.id }}</small>
+                  <small>{{ fmtDate(r.date) }}</small>
+                </span>
+              </div>
+            </ng-container>
+          </div>
+
+          <!-- Empty state when no online collections or online rides exist -->
+          <div *ngIf="!operatorCollections.length && !rides.length" class="dc-empty">
+            <div class="dc-empty__icon"><ion-icon name="receipt-outline"></ion-icon></div>
+            <strong>No collections received yet</strong>
+            <span>Online payments from completed customer rides and bookings will appear here.</span>
+          </div>
+        </div>
+
       </ng-container>
-    </div>
+
+      <!-- ═════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 3: ANALYTICS (Charts, KPIs & Ride Breakdown)                  -->
+      <!-- ═════════════════════════════════════════════════════════════════ -->
+      <ng-container *ngIf="activeTab === 'analytics'">
+
+        <!-- Period selector pills -->
+        <div class="dc-pills ec-pills">
+          <button class="dc-pill dc-press" [class.is-active]="period === 'week'" (click)="setPeriod('week')">Week</button>
+          <button class="dc-pill dc-press" [class.is-active]="period === 'month'" (click)="setPeriod('month')">Month</button>
+          <button class="dc-pill dc-press" [class.is-active]="period === 'all'" (click)="setPeriod('all')">All time</button>
+        </div>
+
+        <!-- Overview / Bar Chart Card -->
+        <div class="pg-card ec-chart-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
+            <h2 class="pg-card__title">{{ periodChartTitleMap[period] }}</h2>
+          </div>
+
+          <div *ngIf="buckets.length; else noChartData" class="ec-chart dc-anim">
+            <div class="ec-chart__bars">
+              <div *ngFor="let b of buckets; let i = index" class="ec-bar-wrap" [title]="b.date + ': ₹' + b.amount">
+                <div class="ec-bar" [class.ec-bar--zero]="b.amount <= 0" [style.height.%]="barHeight(b.amount)">
+                  <span class="ec-bar__value" *ngIf="b.amount > 0">₹{{ b.amount | number:'1.0-0' }}</span>
+                </div>
+                <span class="ec-bar__label" *ngIf="showLabel(i)">{{ period === 'week' ? b.weekday : shortLabel(b) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <ng-template #noChartData>
+            <div class="dc-empty">
+              <div class="dc-empty__icon"><ion-icon name="bar-chart-outline"></ion-icon></div>
+              <strong>No earnings yet</strong>
+              <span>No completed trips in {{ periodLabelMap[period] }}. Your earnings will appear here once you finish a trip.</span>
+            </div>
+          </ng-template>
+        </div>
+
+        <!-- KPI Metrics Grid -->
+        <div class="ec-kpi-grid">
+          <div class="ec-kpi-card">
+            <div class="ec-kpi-card__head">
+              <ion-icon name="car-outline"></ion-icon>
+              <span>Total Trips</span>
+            </div>
+            <strong class="ec-kpi-card__val">{{ rides.length }}</strong>
+            <small class="ec-kpi-card__sub">{{ periodLabelMap[period] }}</small>
+          </div>
+
+          <div class="ec-kpi-card">
+            <div class="ec-kpi-card__head">
+              <ion-icon name="trending-up-outline"></ion-icon>
+              <span>Gross Earnings</span>
+            </div>
+            <strong class="ec-kpi-card__val">₹{{ rideEarnings | number:'1.0-2' }}</strong>
+            <small class="ec-kpi-card__sub">{{ periodLabelMap[period] }}</small>
+          </div>
+
+          <div class="ec-kpi-card">
+            <div class="ec-kpi-card__head">
+              <ion-icon name="calculator-outline"></ion-icon>
+              <span>Avg / Ride</span>
+            </div>
+            <strong class="ec-kpi-card__val">₹{{ avgPerRide | number:'1.0-2' }}</strong>
+            <small class="ec-kpi-card__sub">Per trip average</small>
+          </div>
+
+          <div class="ec-kpi-card">
+            <div class="ec-kpi-card__head">
+              <ion-icon name="star-outline"></ion-icon>
+              <span>Best Day</span>
+            </div>
+            <strong class="ec-kpi-card__val">₹{{ (bestDay ? bestDay.amount : 0) | number:'1.0-2' }}</strong>
+            <small class="ec-kpi-card__sub">{{ bestDay ? bestDay.weekday + ' (' + shortLabel(bestDay) + ')' : '—' }}</small>
+          </div>
+        </div>
+
+        <!-- Payment Mode Split Progress Bar -->
+        <div class="pg-card ec-split-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="pie-chart-outline"></ion-icon></div>
+            <h2 class="pg-card__title">Payment Mode Distribution</h2>
+          </div>
+
+          <div class="ec-split-bar">
+            <div class="ec-split-segment ec-split-segment--cash" [style.width.%]="cashPercent"></div>
+            <div class="ec-split-segment ec-split-segment--online" [style.width.%]="onlinePercent"></div>
+          </div>
+
+          <div class="ec-split-legend">
+            <div class="ec-split-item">
+              <span class="ec-split-dot ec-split-dot--cash"></span>
+              <div class="ec-split-item__body">
+                <span class="ec-split-item__label">Cash Handover ({{ cashPercent }}%)</span>
+                <strong class="ec-split-item__val">₹{{ cashCollected | number:'1.0-2' }}</strong>
+              </div>
+            </div>
+            <div class="ec-split-item">
+              <span class="ec-split-dot ec-split-dot--online"></span>
+              <div class="ec-split-item__body">
+                <span class="ec-split-item__label">Online / App ({{ onlinePercent }}%)</span>
+                <strong class="ec-split-item__val">₹{{ onlineCollected | number:'1.0-2' }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ride-by-ride Completed Rides List -->
+        <div class="pg-card ec-rides-card">
+          <div class="pg-card__head">
+            <div class="pg-card__icon"><ion-icon name="car-outline"></ion-icon></div>
+            <h2 class="pg-card__title">{{ periodRideTitleMap[period] }}</h2>
+          </div>
+
+          <div *ngIf="!rides.length" class="dc-empty">
+            <div class="dc-empty__icon"><ion-icon name="car-outline"></ion-icon></div>
+            <strong>No rides recorded</strong>
+            <span>Complete rides in this period to see your earnings breakdown.</span>
+          </div>
+
+          <div *ngIf="rides.length" class="dc-list">
+            <div class="dc-row" *ngFor="let r of rides">
+              <span class="dc-row__icon">
+                <ion-icon [name]="r.is_cash ? 'cash-outline' : 'globe-outline'"></ion-icon>
+              </span>
+              <span class="dc-row__text">
+                <strong>₹{{ r.fare | number:'1.0-2' }} <span class="dc-badge" [class.dc-badge--warn]="r.is_cash" [class.dc-badge--ok]="!r.is_cash">{{ r.is_cash ? 'Cash Handover' : 'Online Booking' }}</span></strong>
+                <small>{{ fmtDate(r.date) }} · Trip #{{ r.id }}<ng-container *ngIf="r.is_shared"> · Shared</ng-container></small>
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </ng-container>
+
+    </ng-container>
 
   </div>
 </ion-content>
+
