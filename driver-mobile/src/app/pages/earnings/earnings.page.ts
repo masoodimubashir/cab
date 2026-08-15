@@ -13,6 +13,8 @@ export interface RideRow {
   fare: number;
   payment_method: string | null;
   is_cash: boolean;
+  cash_amount?: number;
+  online_amount?: number;
   is_shared: boolean;
 }
 

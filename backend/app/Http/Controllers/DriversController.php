@@ -400,18 +400,43 @@ class DriversController extends Controller
         }
 
         $rides = $ridesQuery
+            ->with(['seatReservations:id,trip_id,fare_amount,payment_method'])
             ->orderByDesc('completed_at')
             ->limit(500)
             ->get(['id', 'completed_at', 'final_fare', 'payment_method', 'route_departure_id'])
-            ->map(function (Trip $t) {
+            ->map(function (Trip $t) use ($user) {
                 $fare = (float) ($t->final_fare ?? 0);
-                $isCash = strtolower((string) ($t->payment_method ?? '')) === 'cash';
+
+                // Online collected on this trip by operator (upfront deposit or full online fare)
+                $onlineCollectedOnTrip = (float) \App\Models\DriverPayoutLedger::query()
+                    ->where('driver_user_id', $user->id)
+                    ->where('trip_id', $t->id)
+                    ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+                    ->sum('amount');
+
+                // Determine effective payment method
+                $method = $t->payment_method;
+                if (!$method && $t->seatReservations->isNotEmpty()) {
+                    $methods = $t->seatReservations->pluck('payment_method')->filter()->unique();
+                    $method = $methods->implode(', ');
+                }
+
+                $methodStr = strtolower((string) ($method ?? ''));
+                $hasCash = str_contains($methodStr, 'cash') || ($fare > $onlineCollectedOnTrip && $onlineCollectedOnTrip > 0);
+
+                $cashPortion = $hasCash ? max(0.0, round($fare - $onlineCollectedOnTrip, 2)) : 0.0;
+                if ($hasCash && $cashPortion == 0 && $onlineCollectedOnTrip == 0) {
+                    $cashPortion = $fare;
+                }
+
                 return [
                     'id' => $t->id,
                     'date' => optional($t->completed_at)->toIso8601String(),
                     'fare' => round($fare, 2),
-                    'payment_method' => $t->payment_method,
-                    'is_cash' => $isCash,
+                    'payment_method' => $method ?: ($cashPortion > 0 ? 'cash' : 'online'),
+                    'is_cash' => $cashPortion > 0,
+                    'cash_amount' => $cashPortion,
+                    'online_amount' => round(min($onlineCollectedOnTrip, $fare), 2),
                     'is_shared' => $t->route_departure_id !== null,
                 ];
             })
@@ -426,7 +451,10 @@ class DriversController extends Controller
             $totalsQuery->where('completed_at', '>=', $windowStart);
         }
 
-        $tripsList = $totalsQuery->get(['id', 'final_fare', 'payment_method']);
+        $tripsList = $totalsQuery
+            ->with(['seatReservations:id,trip_id,fare_amount,payment_method'])
+            ->get(['id', 'final_fare', 'payment_method']);
+
         $totalRideEarnings = 0.0;
         $cashCollected = 0.0;
         $onlineCollected = 0.0;
@@ -434,10 +462,29 @@ class DriversController extends Controller
         foreach ($tripsList as $trip) {
             $fare = (float) ($trip->final_fare ?? 0);
             $totalRideEarnings += $fare;
-            if (strtolower((string) $trip->payment_method) === 'cash') {
-                $cashCollected += $fare;
+
+            // Online collected by operator on this trip
+            $onlineOnTrip = (float) \App\Models\DriverPayoutLedger::query()
+                ->where('driver_user_id', $user->id)
+                ->where('trip_id', $trip->id)
+                ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+                ->sum('amount');
+
+            if ($onlineOnTrip > 0) {
+                $onlinePortion = min($onlineOnTrip, $fare);
+                $onlineCollected += $onlinePortion;
+                $cashCollected += max(0.0, round($fare - $onlinePortion, 2));
             } else {
-                $onlineCollected += $fare;
+                $m = strtolower((string) ($trip->payment_method ?? ''));
+                if (!$m && $trip->seatReservations->isNotEmpty()) {
+                    $m = strtolower((string) $trip->seatReservations->first()->payment_method);
+                }
+
+                if ($m === 'cash') {
+                    $cashCollected += $fare;
+                } else {
+                    $onlineCollected += $fare;
+                }
             }
         }
 

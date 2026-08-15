@@ -223,7 +223,9 @@ class PayoutLedgerService
             $tripsQuery->whereBetween('created_at', [$from, $to]);
         }
 
-        $trips = $tripsQuery->get(['id', 'final_fare', 'estimated_fare', 'payment_method', 'route_departure_id', 'created_at']);
+        $trips = $tripsQuery
+            ->with(['seatReservations:id,trip_id,fare_amount,payment_method'])
+            ->get(['id', 'final_fare', 'estimated_fare', 'payment_method', 'route_departure_id', 'created_at']);
 
         $rideEarnings = 0.0;
         $cashCollected = 0.0;
@@ -232,10 +234,28 @@ class PayoutLedgerService
         foreach ($trips as $trip) {
             $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
             $rideEarnings += $fare;
-            if (strtolower((string) $trip->payment_method) === 'cash') {
-                $cashCollected += $fare;
+
+            $onlineOnTrip = (float) DriverPayoutLedger::query()
+                ->where('driver_user_id', $driver->id)
+                ->where('trip_id', $trip->id)
+                ->where('type', DriverPayoutLedger::TYPE_COLLECTED)
+                ->sum('amount');
+
+            if ($onlineOnTrip > 0) {
+                $onlinePortion = min($onlineOnTrip, $fare);
+                $onlineCollected += $onlinePortion;
+                $cashCollected += max(0.0, round($fare - $onlinePortion, 2));
             } else {
-                $onlineCollected += $fare;
+                $m = strtolower((string) ($trip->payment_method ?? ''));
+                if (!$m && $trip->seatReservations->isNotEmpty()) {
+                    $m = strtolower((string) $trip->seatReservations->first()->payment_method);
+                }
+
+                if ($m === 'cash') {
+                    $cashCollected += $fare;
+                } else {
+                    $onlineCollected += $fare;
+                }
             }
         }
 
