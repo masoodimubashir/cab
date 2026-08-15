@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
-import { AlertController, ToastController } from '@ionic/angular';
+import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
+import { SubscriptionCheckoutModalComponent } from './subscription-checkout.modal';
 
 interface Plan {
   id: number;
@@ -37,7 +38,10 @@ interface ActiveSubscription {
   expires_at: string | null;
   auto_renew: boolean;
   cancelled_at: string | null;
-  next_plan: { id: number; title: string; amount: number; commission_percent: number; pricing_model?: string; prepaid?: boolean } | null;
+  next_plan?: {
+    title: string;
+    amount: number;
+  } | null;
 }
 
 /**
@@ -70,6 +74,7 @@ export class SubscriptionsPage implements OnInit {
     private api: ApiService,
     private toastCtrl: ToastController,
     private alertCtrl: AlertController,
+    private modalCtrl: ModalController,
   ) {}
 
   ngOnInit(): void { this.load(); }
@@ -85,19 +90,21 @@ export class SubscriptionsPage implements OnInit {
     this.loading = true;
     this.error = null;
 
-    this.api.get<{ subscription: ActiveSubscription | null; wallet_balance: number; currency: string }>(
-      '/drivers/me/subscription',
-    ).subscribe({
+    this.api.get<{
+      subscription: ActiveSubscription | null;
+      wallet_balance: number;
+      currency: string;
+    }>('/drivers/me/subscription').subscribe({
       next: (res) => {
-        this.current = res.subscription;
+        this.current = res.subscription ?? null;
         this.wallet = res.wallet_balance ?? 0;
-        this.currency = res.currency || 'INR';
-        // First load: land on the most useful tab — Current if they have a
-        // plan, otherwise All plans so they can pick one.
-        if (!this.userPickedTab) this.tab = this.current ? 'current' : 'all';
+        this.currency = res.currency ?? 'INR';
+        if (!this.userPickedTab) {
+          this.tab = this.current ? 'current' : 'all';
+        }
       },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load your subscription.';
+      error: () => {
+        // subscription endpoint error isn't fatal — we can still browse plans
       },
     });
 
@@ -107,33 +114,28 @@ export class SubscriptionsPage implements OnInit {
         this.loading = false;
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Could not load plans.';
+        this.error = err?.error?.message || 'Could not load plans. Pull to refresh.';
         this.loading = false;
       },
     });
   }
 
-  /** Pricing model of the active subscription (with a legacy fallback). */
-  modelKey(s: ActiveSubscription): 'subscription' | 'commission' | 'hybrid' {
-    const m = s.pricing_model;
-    if (m === 'commission' || m === 'hybrid' || m === 'subscription') return m;
-    if (s.amount_paid > 0 && s.commission_percent > 0) return 'hybrid';
-    if (s.amount_paid <= 0 && s.commission_percent > 0) return 'commission';
-    return 'subscription';
+  modelKey(s: ActiveSubscription | Plan): string {
+    return s.pricing_model || 'subscription';
   }
-  modelLabel(s: ActiveSubscription): string {
-    switch (this.modelKey(s)) {
-      case 'commission': return 'Pay-as-you-go';
-      case 'hybrid': return 'Hybrid';
-      default: return 'Subscription';
-    }
+
+  modelLabel(s: ActiveSubscription | Plan): string {
+    const k = this.modelKey(s);
+    if (k === 'commission') return 'Commission';
+    if (k === 'hybrid') return 'Hybrid';
+    return 'Subscription';
   }
-  modelIcon(s: ActiveSubscription): string {
-    switch (this.modelKey(s)) {
-      case 'commission': return 'trending-up-outline';
-      case 'hybrid': return 'layers-outline';
-      default: return 'ribbon-outline';
-    }
+
+  modelIcon(s: ActiveSubscription | Plan): string {
+    const k = this.modelKey(s);
+    if (k === 'commission') return 'percent-outline';
+    if (k === 'hybrid') return 'swap-horizontal-outline';
+    return 'card-outline';
   }
 
   meterSummary(p: Plan): string {
@@ -175,31 +177,24 @@ export class SubscriptionsPage implements OnInit {
   }
 
   async confirmBuy(p: Plan): Promise<void> {
-    const paid = p.amount > 0;
-    // What the driver pays per ride while the plan is active — shown in both
-    // the queue and the immediate-buy dialogs so the cost is never hidden.
-    const rate = p.commission_percent > 0
-      ? `You'll pay ${p.commission_percent}% commission on each ride while active.`
-      : 'Keep 100% of your fares while active.';
-
-    // Let the driver choose payment method: Wallet vs UPI / Online
-    const alert = await this.alertCtrl.create({
-      header: `Subscribe to ${p.title}`,
-      subHeader: `Cost: ₹${p.amount} · ${rate}`,
-      message: 'Choose how you want to pay for this subscription:',
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Pay via Wallet',
-          handler: () => this.buy(p, 'wallet'),
-        },
-        {
-          text: 'Pay via UPI / Online',
-          handler: () => this.buyViaUpi(p),
-        },
-      ],
+    const modal = await this.modalCtrl.create({
+      component: SubscriptionCheckoutModalComponent,
+      componentProps: {
+        plan: p,
+        walletBalance: this.wallet,
+      },
+      breakpoints: [0, 0.88, 1],
+      initialBreakpoint: 0.88,
     });
-    await alert.present();
+    await modal.present();
+    const { data } = await modal.onWillDismiss();
+    if (data?.confirmed) {
+      if (data.paymentMethod === 'wallet') {
+        this.buy(p, 'wallet');
+      } else {
+        this.buyViaUpi(p);
+      }
+    }
   }
 
   buy(p: Plan, paymentMethod: 'wallet' | 'upi' = 'wallet'): void {
