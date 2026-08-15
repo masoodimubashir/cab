@@ -449,7 +449,7 @@ class DriversController extends Controller
             ->where('driver_user_id', $user->id)
             ->where('type', \App\Models\DriverPayoutLedger::TYPE_TRANSFER)
             ->orderByDesc('created_at')
-            ->limit(20)
+            ->limit(50)
             ->get()
             ->map(fn (\App\Models\DriverPayoutLedger $t) => [
                 'id' => $t->id,
@@ -460,14 +460,33 @@ class DriversController extends Controller
                 'created_at' => optional($t->created_at)->toIso8601String(),
             ]);
 
+        // Recent operator collections (received on behalf of driver)
+        $recentCollections = \App\Models\DriverPayoutLedger::query()
+            ->where('driver_user_id', $user->id)
+            ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get()
+            ->map(fn (\App\Models\DriverPayoutLedger $c) => [
+                'id' => $c->id,
+                'amount' => (float) $c->amount,
+                'source' => $c->source,
+                'trip_id' => $c->trip_id,
+                'notes' => $c->notes,
+                'created_at' => optional($c->created_at)->toIso8601String(),
+            ]);
+
         return response()->json([
             'ride_earnings' => round($totalRideEarnings, 2),
             'cash_collected' => round($cashCollected, 2),
             'online_collected' => round($onlineCollected, 2),
+            'total_collected' => round($totalRideEarnings, 2),
             'money_collected_by_operator' => $payoutSummary['money_collected'],
             'pending_transfers' => $payoutSummary['pending_payout'],
             'completed_transfers' => $payoutSummary['completed_payout'],
             'operator_payments' => $recentTransfers,
+            'operator_transfers' => $recentTransfers,
+            'operator_collections' => $recentCollections,
             'currency' => 'INR',
             'period' => $period,
             'buckets' => $buckets,

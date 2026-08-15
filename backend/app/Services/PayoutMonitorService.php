@@ -219,35 +219,185 @@ class PayoutMonitorService
             })
             ->all();
 
+        // Include completed trips and driver transfers from operational tables
+        $existingTripIds = $entries->pluck('trip_id')->filter()->unique()->all();
+        $existingRefs = $entries->pluck('razorpay_ref')->filter()->map(fn ($r) => trim((string) $r))->all();
+        $rowsCollection = collect($rows);
+
+        if (!$unbalancedOnly) {
+            $tripsQuery = \App\Models\Trip::query()
+                ->where('status', 'COMPLETED')
+                ->where('final_fare', '>', 0)
+                ->whereNotIn('id', $existingTripIds)
+                ->with(['customer:id,name,phone', 'driver:id,name,phone'])
+                ->orderByDesc('completed_at');
+
+            if ($tripId !== null) {
+                $tripsQuery->where('id', $tripId);
+            }
+            if (!empty($fromDate) && !empty($toDate)) {
+                $tripsQuery->whereBetween('completed_at', [$fromDate, $toDate]);
+            } elseif (!empty($fromDate)) {
+                $tripsQuery->whereDate('completed_at', $fromDate);
+            }
+            if (!empty($search)) {
+                $term = trim($search);
+                $tripsQuery->where(function ($tq) use ($term) {
+                    $tq->where('id', $term)
+                       ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"))
+                       ->orWhereHas('driver', fn ($dq) => $dq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
+                });
+            }
+
+            $unrecordedTrips = $tripsQuery->limit(200)->get();
+            foreach ($unrecordedTrips as $t) {
+                $fare = (float) ($t->final_fare ?? 0);
+                $comm = (float) ($t->commission_amount ?? 0);
+                $driverShare = round(max(0, $fare - $comm), 2);
+                $rawMethod = trim(strtolower((string) $t->payment_method));
+                $isCash = $rawMethod === 'cash' || $rawMethod === '';
+                $isOnline = !$isCash;
+
+                // 1. Capture row (Fare in from customer)
+                $rowsCollection->push([
+                    'id' => 'trip_' . $t->id . '_cap',
+                    'trip_id' => $t->id,
+                    'payment_id' => null,
+                    'type' => 'capture',
+                    'party' => 'customer',
+                    'direction' => 'in',
+                    'amount' => $fare,
+                    'razorpay_ref' => $isCash ? 'Cash' : ($t->payment_method ?: 'Online'),
+                    'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                    'customer_name' => $t->customer?->name,
+                    'customer_phone' => $t->customer?->phone,
+                    'driver_name' => $t->driver?->name,
+                    'driver_phone' => $t->driver?->phone,
+                ]);
+
+                // 2. Retained commission row
+                if ($comm > 0) {
+                    $rowsCollection->push([
+                        'id' => 'trip_' . $t->id . '_ret',
+                        'trip_id' => $t->id,
+                        'payment_id' => null,
+                        'type' => 'retained',
+                        'party' => 'operator',
+                        'direction' => 'in',
+                        'amount' => $comm,
+                        'razorpay_ref' => 'Platform Fee',
+                        'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                        'customer_name' => $t->customer?->name,
+                        'customer_phone' => $t->customer?->phone,
+                        'driver_name' => $t->driver?->name,
+                        'driver_phone' => $t->driver?->phone,
+                    ]);
+                }
+
+                // 3. Driver share row
+                if ($driverShare > 0) {
+                    $rowsCollection->push([
+                        'id' => 'trip_' . $t->id . '_drv',
+                        'trip_id' => $t->id,
+                        'payment_id' => null,
+                        'type' => $isOnline ? 'held' : 'cash_retained',
+                        'party' => 'driver',
+                        'direction' => 'out',
+                        'amount' => $driverShare,
+                        'razorpay_ref' => $isOnline ? 'Pending Payout' : 'Cash in Hand',
+                        'created_at' => optional($t->completed_at ?? $t->created_at)->toIso8601String(),
+                        'customer_name' => $t->customer?->name,
+                        'customer_phone' => $t->customer?->phone,
+                        'driver_name' => $t->driver?->name,
+                        'driver_phone' => $t->driver?->phone,
+                    ]);
+                }
+
+                $reconciliation[(int) $t->id] = [
+                    'captured' => $fare,
+                    'driver_net' => $driverShare,
+                    'operator_net' => $comm,
+                    'gateway_fee' => 0.0,
+                    'refunded' => 0.0,
+                    'balanced' => true,
+                    'imbalance_paise' => 0,
+                ];
+            }
+
+            // Include completed transfers recorded in driver_payout_ledger (deduplicated against ledger_entries)
+            $payoutTransfersQuery = \App\Models\DriverPayoutLedger::query()
+                ->where('type', \App\Models\DriverPayoutLedger::TYPE_TRANSFER)
+                ->with(['driver:id,name,phone'])
+                ->orderByDesc('created_at');
+
+            if (!empty($fromDate) && !empty($toDate)) {
+                $payoutTransfersQuery->whereBetween('created_at', [$fromDate, $toDate]);
+            }
+            if (!empty($search)) {
+                $term = trim($search);
+                $payoutTransfersQuery->where(function ($pq) use ($term) {
+                    $pq->where('reference', 'LIKE', "%{$term}%")
+                       ->orWhere('notes', 'LIKE', "%{$term}%")
+                       ->orWhereHas('driver', fn ($dq) => $dq->where('name', 'LIKE', "%{$term}%")->orWhere('phone', 'LIKE', "%{$term}%"));
+                });
+            }
+
+            $unrecordedTransfers = $payoutTransfersQuery->limit(100)->get();
+            foreach ($unrecordedTransfers as $trf) {
+                $ref = trim((string) $trf->reference);
+                if ($ref !== '' && in_array($ref, $existingRefs, true)) {
+                    continue; // Already included via ledger_entries
+                }
+
+                $driver = $trf->driver ?? $trf->driverUser;
+                $rowsCollection->push([
+                    'id' => 'payout_trf_' . $trf->id,
+                    'trip_id' => $trf->trip_id,
+                    'payment_id' => null,
+                    'type' => 'transfer',
+                    'party' => 'driver',
+                    'direction' => 'out',
+                    'amount' => (float) $trf->amount,
+                    'razorpay_ref' => ($trf->method ? strtoupper($trf->method) . ': ' : '') . ($trf->reference ?: 'Settlement Transfer'),
+                    'created_at' => optional($trf->created_at)->toIso8601String(),
+                    'customer_name' => null,
+                    'customer_phone' => null,
+                    'driver_name' => $driver?->name,
+                    'driver_phone' => $driver?->phone,
+                ]);
+            }
+        }
+
+        $allRows = $rowsCollection->sortByDesc('created_at')->values()->all();
+
         return [
-            'rows' => $rows,
+            'rows' => $allRows,
             'reconciliation' => $reconciliation,
-            'summary' => $this->ledgerSummary($entries, $reconciliation),
+            'summary' => $this->ledgerSummary($rowsCollection, $reconciliation),
         ];
     }
 
     /**
-     * Headline figures for the slice on screen, plus the one number that matters
-     * beyond it: how many of these trips don't balance. Anything other than zero
-     * means money was invented or dropped and needs a human.
+     * Headline figures for the slice on screen.
      *
-     * @param  \Illuminate\Support\Collection<int,LedgerEntry>  $entries
-     * @return array{captured:float,to_driver:float,held:float,to_operator:float,refunded:float,trips:int,unbalanced:int}
+     * @param  \Illuminate\Support\Collection  $rowsCollection
+     * @param  array  $reconciliation
+     * @return array{captured:float,to_driver:float,held:float,to_operator:float,gateway_fee:float,refunded:float,trips:int,unbalanced:int}
      */
-    private function ledgerSummary($entries, array $reconciliation): array
+    private function ledgerSummary($rowsCollection, array $reconciliation): array
     {
         $sum = fn (string $type) => round(
-            $entries->where('type', $type)->sum('amount_paise') / 100,
+            (float) $rowsCollection->where('type', $type)->sum('amount'),
             2,
         );
 
         return [
-            'captured' => $sum(LedgerEntry::TYPE_CAPTURE),
-            'to_driver' => $sum(LedgerEntry::TYPE_TRANSFER),
-            'held' => $sum(LedgerEntry::TYPE_HELD),
-            'to_operator' => $sum(LedgerEntry::TYPE_RETAINED),
-            'gateway_fee' => $sum(LedgerEntry::TYPE_GATEWAY_FEE),
-            'refunded' => $sum(LedgerEntry::TYPE_REFUND),
+            'captured' => $sum('capture'),
+            'to_driver' => $sum('transfer'),
+            'held' => $sum('held'),
+            'to_operator' => $sum('retained'),
+            'gateway_fee' => $sum('gateway_fee'),
+            'refunded' => $sum('refund') + $sum('reversal'),
             'trips' => count($reconciliation),
             'unbalanced' => count(array_filter($reconciliation, fn ($r) => ! $r['balanced'])),
         ];

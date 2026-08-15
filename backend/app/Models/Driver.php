@@ -98,6 +98,11 @@ class Driver extends Model
         return $this->belongsTo(RideType::class, 'ride_type_id');
     }
 
+    public function vehicleType(): BelongsTo
+    {
+        return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
+    }
+
     public function vehicleTypeRef(): BelongsTo
     {
         return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
