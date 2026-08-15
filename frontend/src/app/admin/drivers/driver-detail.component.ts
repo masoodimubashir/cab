@@ -64,6 +64,17 @@ interface DriverProfile {
   payout_bank_last4?: string | null;
   payout_ifsc?: string | null;
   payout_upi?: string | null;
+  active_subscription?: {
+    id: number;
+    plan_title: string;
+    amount_paid: number;
+    commission_percent: number;
+    pricing_model: string;
+    payment_method: string;
+    starts_at: string;
+    expires_at: string;
+    auto_renew: boolean;
+  } | null;
 }
 
 type TabKey = 'rides' | 'wallet' | 'cancelled';
@@ -264,30 +275,40 @@ const BLOCK_REASONS = [
 
           <section class="detail-card">
             <div class="detail-card__head">
-              <h3 class="detail-card__title">Payout & Bank Account</h3>
-              <span class="detail-card__hint">Direct bank transfer verification</span>
+              <h3 class="detail-card__title">Subscription Plan</h3>
+              <span class="detail-card__hint">Active subscription & perks</span>
             </div>
-            <div class="kv-list">
+            <div class="kv-list" *ngIf="profile.active_subscription; else noSub">
               <div class="kv-row">
-                <span>Bank Status</span>
-                <tm-status-pill [tone]="profile.payout_account_status === 'verified' ? 'success' : (profile.payout_account_status === 'pending' ? 'warning' : 'neutral')">
-                  {{ profile.payout_account_status || 'none' | titlecase }}
-                </tm-status-pill>
+                <span>Active Plan</span>
+                <strong>{{ profile.active_subscription.plan_title }}</strong>
               </div>
-              <div class="kv-row" *ngIf="profile.payout_method"><span>Method</span><strong>{{ profile.payout_method | uppercase }}</strong></div>
-              <div class="kv-row" *ngIf="profile.payout_beneficiary_name"><span>Beneficiary</span><strong>{{ profile.payout_beneficiary_name }}</strong></div>
-              <div class="kv-row" *ngIf="profile.payout_bank_last4"><span>Account (Last 4)</span><strong class="mono">•••• {{ profile.payout_bank_last4 }}</strong></div>
-              <div class="kv-row" *ngIf="profile.payout_ifsc"><span>IFSC</span><strong class="mono">{{ profile.payout_ifsc }}</strong></div>
-              <div class="kv-row" *ngIf="profile.payout_upi"><span>UPI VPA</span><strong class="mono">{{ profile.payout_upi }}</strong></div>
+              <div class="kv-row">
+                <span>Fee Paid</span>
+                <strong class="mono">₹{{ profile.active_subscription.amount_paid | number:'1.0-2' }}</strong>
+              </div>
+              <div class="kv-row">
+                <span>Commission</span>
+                <strong style="color: var(--tm-green, #12B35B);">{{ profile.active_subscription.commission_percent }}% (Keep {{ 100 - profile.active_subscription.commission_percent }}%)</strong>
+              </div>
+              <div class="kv-row">
+                <span>Payment</span>
+                <strong>{{ profile.active_subscription.payment_method | uppercase }}</strong>
+              </div>
+              <div class="kv-row">
+                <span>Expires</span>
+                <strong>{{ profile.active_subscription.expires_at | date:'MMM d, y' }}</strong>
+              </div>
+              <div class="kv-row">
+                <span>Auto Renew</span>
+                <strong>{{ profile.active_subscription.auto_renew ? 'Active' : 'Disabled' }}</strong>
+              </div>
             </div>
-            <div style="margin-top: 12px;" *ngIf="profile.payout_account_status !== 'verified'">
-              <tm-button variant="green" size="sm" icon="check" [loading]="verifyingPayout" (clicked)="verifyPayoutAccount()">
-                Verify & Approve Bank Account
-              </tm-button>
-            </div>
-            <div *ngIf="verifyPayoutSuccessMsg" class="notice notice--success" style="margin-top: 8px;">
-              <span>{{ verifyPayoutSuccessMsg }}</span>
-            </div>
+            <ng-template #noSub>
+              <div style="padding: 6px 0; font-size: 12.5px; color: var(--tm-text-muted);">
+                No active subscription (standard commission applies).
+              </div>
+            </ng-template>
           </section>
 
           <section class="detail-card">
@@ -675,28 +696,51 @@ const BLOCK_REASONS = [
         </p>
 
         <div class="payout-summary" *ngIf="payoutSummary; else payoutLoadingTpl">
-          <div class="payout-summary__row">
-            <span>Total in wallet</span>
-            <strong>₹ {{ payoutSummary.balance | number:'1.2-2' }}</strong>
-          </div>
           <div class="payout-summary__row payout-summary__row--pay">
-            <span>He earned — pay this</span>
-            <strong>₹ {{ payoutSummary.earned_remaining | number:'1.2-2' }}</strong>
+            <span>Pending payout due</span>
+            <strong>₹ {{ (payoutSummary.pending_payout ?? payoutSummary.earned_remaining ?? 0) | number:'1.2-2' }}</strong>
           </div>
           <div class="payout-summary__row">
-            <span>He deposited — leave this</span>
-            <strong>₹ {{ payoutSummary.deposits_remaining | number:'1.2-2' }}</strong>
+            <span>Total collected online</span>
+            <strong>₹ {{ (payoutSummary.money_collected || 0) | number:'1.2-2' }}</strong>
           </div>
           <div class="payout-summary__row payout-summary__row--muted">
-            <span>Paid out so far</span>
-            <strong>₹ {{ payoutSummary.total_paid_out | number:'1.2-2' }}</strong>
+            <span>Already transferred</span>
+            <strong>₹ {{ (payoutSummary.money_transferred ?? payoutSummary.total_paid_out ?? 0) | number:'1.2-2' }}</strong>
+          </div>
+          <div class="payout-summary__row">
+            <span>Wallet balance</span>
+            <strong>₹ {{ payoutSummary.balance | number:'1.2-2' }}</strong>
           </div>
         </div>
+
+        <div *ngIf="payoutSummary && (payoutSummary.payout_upi || payoutSummary.payout_bank_last4)" class="payout-account-box" style="margin-top: 10px; margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; font-size: 12px;">
+          <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">
+            Driver Payout Destination:
+          </div>
+          <div *ngIf="payoutSummary.payout_upi" style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+            <span style="color: #64748b;">UPI VPA:</span>
+            <strong class="mono">{{ payoutSummary.payout_upi }}</strong>
+          </div>
+          <div *ngIf="payoutSummary.payout_bank_last4" style="display: flex; justify-content: space-between;">
+            <span style="color: #64748b;">Bank Account:</span>
+            <strong class="mono">•••• {{ payoutSummary.payout_bank_last4 }} ({{ payoutSummary.payout_ifsc }})</strong>
+          </div>
+        </div>
+
         <ng-template #payoutLoadingTpl>
-          <p class="hint">Loading wallet summary…</p>
+          <p class="hint">Loading payout summary…</p>
         </ng-template>
 
-        <label class="lbl"><span class="req">*</span> Amount paid (₹)</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+          <label class="lbl" style="margin-bottom: 0;"><span class="req">*</span> Amount paid (₹)</label>
+          <button
+            *ngIf="payoutSummary && ((payoutSummary.pending_payout || payoutSummary.earned_remaining || 0) > 0)"
+            type="button"
+            style="background: none; border: none; font-size: 11.5px; font-weight: 700; color: #059669; cursor: pointer; text-decoration: underline;"
+            (click)="payoutAmount = (payoutSummary.pending_payout || payoutSummary.earned_remaining || 0)"
+          >Fill ₹{{ (payoutSummary.pending_payout || payoutSummary.earned_remaining || 0) | number:'1.2-2' }}</button>
+        </div>
         <input
           class="form-input"
           type="number"
@@ -1986,7 +2030,23 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Record payout modal — logs an outside-the-app GPay/bank payment as a
   // wallet debit so the ledger keeps matching reality.
   payoutOpen = false;
-  payoutSummary: { balance: number; earned_remaining: number; deposits_remaining: number; total_paid_out: number } | null = null;
+  payoutSummary: {
+    balance: number;
+    money_collected?: number;
+    money_transferred?: number;
+    pending_payout?: number;
+    completed_payout?: number;
+    earned_remaining?: number;
+    deposits_remaining?: number;
+    total_paid_out?: number;
+    payout_method?: string | null;
+    payout_beneficiary_name?: string | null;
+    payout_bank_last4?: string | null;
+    payout_ifsc?: string | null;
+    payout_upi?: string | null;
+    phone?: string;
+    name?: string;
+  } | null = null;
   payoutAmount: number | null = null;
   payoutMethod: 'gpay' | 'bank' | 'cash' | 'other' = 'gpay';
   payoutReference = '';
@@ -2440,11 +2500,14 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.api.get<any>(`/admin/drivers/${this.driverId}/wallet/payout-summary`).subscribe({
       next: (res) => {
         this.payoutSummary = res;
-        // Pre-fill with the payable amount (earnings only, float untouched).
-        this.payoutAmount = res?.earned_remaining > 0 ? res.earned_remaining : null;
+        const due = res?.pending_payout ?? res?.earned_remaining ?? 0;
+        this.payoutAmount = due > 0 ? due : null;
+        if (res?.payout_method) {
+          this.payoutMethod = res.payout_method === 'bank' ? 'bank' : 'gpay';
+        }
       },
       error: (err) => {
-        this.payoutError = err?.error?.message || 'Could not load the wallet summary.';
+        this.payoutError = err?.error?.message || 'Could not load the payout summary.';
       },
     });
   }

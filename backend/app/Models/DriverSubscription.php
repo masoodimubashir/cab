@@ -78,6 +78,11 @@ class DriverSubscription extends Model
         return $this->belongsTo(User::class, 'driver_user_id');
     }
 
+    public function driverUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_user_id');
+    }
+
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class, 'city_id');

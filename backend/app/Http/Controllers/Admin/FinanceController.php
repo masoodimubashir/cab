@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\DriverPayoutLedger;
+use App\Models\DriverSubscription;
 use App\Models\OperatorSetting;
 use App\Models\SeatReservation;
 use App\Models\Trip;
@@ -149,10 +150,39 @@ class FinanceController extends Controller
             }
         }
 
+        if ($source === null || $source === 'subscription') {
+            $subs = DriverSubscription::query()
+                ->where('status', DriverSubscription::STATUS_ACTIVE)
+                ->where('is_queued', false)
+                ->whereBetween('created_at', [$from, $to])
+                ->with(['driver:id,name,phone', 'plan:id,title'])
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get();
+
+            foreach ($subs as $s) {
+                $rows->push([
+                    'id' => 'sub_' . $s->id,
+                    'source' => 'subscription',
+                    'kind' => 'subscription',
+                    'at' => optional($s->created_at)->toIso8601String(),
+                    'amount' => (float) $s->amount_paid,
+                    'method' => $s->payment_method ?? 'wallet',
+                    'user_id' => $s->driver_user_id,
+                    'user_name' => $s->driver?->name ?? 'Driver',
+                    'user_phone' => $s->driver?->phone ?? '—',
+                    'label' => 'Subscription: ' . ($s->plan?->title ?? 'Driver Plan'),
+                    'reference' => $s->payment_reference ?? ('#SUB-' . str_pad($s->id, 4, '0', STR_PAD_LEFT)),
+                    'status' => 'ACTIVE',
+                ]);
+            }
+        }
+
         $rows = $rows->sortByDesc('at')->values();
 
         $online = $rows->whereIn('source', ['fixed', 'shuttle'])->where('method', 'razorpay')->sum('amount')
-            + $rows->where('source', 'topup')->sum('amount');
+            + $rows->where('source', 'topup')->sum('amount')
+            + $rows->where('source', 'subscription')->where('method', '!=', 'wallet')->sum('amount');
         $cash = $rows->where('method', 'cash')->sum('amount');
 
         return response()->json([
@@ -191,18 +221,40 @@ class FinanceController extends Controller
                 $inDebtCount++;
             }
 
+            $activeSub = DriverSubscription::query()
+                ->where('driver_user_id', $driver->user_id)
+                ->where('status', DriverSubscription::STATUS_ACTIVE)
+                ->where('is_queued', false)
+                ->with(['plan:id,title'])
+                ->latest('id')
+                ->first();
+
+            $canAcceptRides = $minLimit == 0.0 ? true : ($balance >= $minLimit);
+
             $rows[] = [
                 'driver_id' => $driver->id,
                 'user_id' => $driver->user_id,
                 'name' => $driver->user->name,
                 'phone' => $driver->user->phone,
+                'payout_method' => $driver->user->payout_method,
+                'payout_beneficiary_name' => $driver->user->payout_beneficiary_name,
+                'payout_bank_last4' => $driver->user->payout_bank_last4,
+                'payout_ifsc' => $driver->user->payout_ifsc,
+                'payout_upi' => $driver->user->payout_upi,
+                'payout_account_status' => $driver->user->payout_account_status,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
                 'vehicle_type' => $driver->vehicleType?->name ?? $driver->vehicleTypeRef?->name ?? $driver->cityVehicleType?->display_name ?? $driver->rideType?->name ?? $driver->vehicle_type ?? '—',
                 'balance' => $balance,
                 'minimum_wallet_limit' => $minLimit,
                 'maximum_wallet_limit' => $maxLimit,
                 'is_in_debt' => $balance < 0,
-                'can_accept_rides' => $balance >= $minLimit,
+                'can_accept_rides' => $canAcceptRides,
+                'active_subscription' => $activeSub ? [
+                    'plan_title' => $activeSub->plan?->title ?? 'Plan',
+                    'amount_paid' => (float) $activeSub->amount_paid,
+                    'commission_percent' => (float) $activeSub->commission_percent,
+                    'expires_at' => optional($activeSub->expires_at)->toIso8601String(),
+                ] : null,
             ];
         }
 

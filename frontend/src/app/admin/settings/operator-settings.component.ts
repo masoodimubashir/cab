@@ -253,16 +253,28 @@ interface SectionMeta {
 
             <!-- ============= WALLET ============= -->
             <ng-container *ngIf="activeSection === 'wallet'">
+              <div class="wallet-policy-note">
+                <div class="wpn-header">
+                  <tm-icon name="shield" class="wpn-icon"></tm-icon>
+                  <strong>Wallet Policy &amp; Duty Rules</strong>
+                </div>
+                <ul class="wpn-list">
+                  <li><strong>0 = Unlimited / Unrestricted:</strong> Setting Min Capping or Max Capping to <code>0</code> removes that restriction completely (unlimited balance range).</li>
+                  <li><strong>Min Cap (Duty Floor):</strong> When set to a specific number (e.g. <code>₹50</code> or <code>-₹500</code>), drivers whose wallet falls below this limit are <strong>blocked from going online</strong> and will see a warning on their home screen to recharge.</li>
+                  <li><strong>Max Cap (Balance Ceiling):</strong> When set to a specific number (e.g. <code>₹5,000</code>), top-ups that exceed this ceiling are prevented.</li>
+                </ul>
+              </div>
+
               <div class="fields">
                 <div class="field">
                   <span class="field__label">Wallet min capping (₹)</span>
                   <tm-input type="number" [(ngModel)]="settings.wallet_cash_min_capping" />
-                  <span class="field__hint">Lowest balance a wallet may reach. Can be negative (e.g. -500 allows up to ₹500 of debt). 0 = can't go below zero.</span>
+                  <span class="field__hint">Minimum allowed balance. <strong>0 = Unlimited</strong> (no restriction). If set to a number (e.g. 50 or -500), drivers falling below this limit cannot go online until they recharge.</span>
                 </div>
                 <div class="field">
                   <span class="field__label">Wallet max capping (₹)</span>
                   <tm-input type="number" [(ngModel)]="settings.wallet_cash_max_capping" />
-                  <span class="field__hint">Highest balance a wallet may hold. 0 = no upper limit.</span>
+                  <span class="field__hint">Maximum allowed balance. <strong>0 = Unlimited</strong> (no upper limit). If set to a number (e.g. 5000), recharges beyond this ceiling are blocked.</span>
                 </div>
               </div>
             </ng-container>
@@ -511,6 +523,43 @@ interface SectionMeta {
       text-transform: uppercase; color: var(--tm-text-muted);
     }
     .field__hint { font-size: 11px; color: var(--tm-text-soft); font-weight: 500; }
+    .wallet-policy-note {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(18, 179, 91, 0.06);
+      border: 1px solid rgba(18, 179, 91, 0.22);
+      margin-bottom: 16px;
+    }
+    .wpn-header {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--tm-text, #0D1B2A);
+      margin-bottom: 8px;
+    }
+    .wpn-icon {
+      color: var(--tm-green, #12B35B);
+      font-size: 18px;
+    }
+    .wpn-list {
+      margin: 0;
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--tm-text-soft, #4B5563);
+      line-height: 1.45;
+      li code {
+        background: rgba(0, 0, 0, 0.06);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-weight: 700;
+        color: var(--tm-text, #0D1B2A);
+      }
+    }
     .chan-note { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; background: var(--tm-surface-2, #F6F8FA); border: 1px solid var(--tm-border, #E5E9EF); margin-bottom: 10px; }
     .chan-note__title { font-size: 12.5px; font-weight: 700; color: var(--tm-text); }
     .chan-note__sub { font-size: 11.5px; color: var(--tm-text-soft); line-height: 1.45; }

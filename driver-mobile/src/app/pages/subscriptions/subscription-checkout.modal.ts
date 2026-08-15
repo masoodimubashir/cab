@@ -131,7 +131,7 @@ export interface PlanData {
                 </div>
                 <span class="chk-pay-opt__sub" *ngIf="walletCovers">Instant deduction from your wallet</span>
                 <span class="chk-pay-opt__sub chk-pay-opt__sub--warn" *ngIf="!walletCovers">
-                  Low balance. Top up or select UPI below.
+                  {{ walletWarningMsg }}
                 </span>
               </div>
             </label>
@@ -546,6 +546,7 @@ export interface PlanData {
 export class SubscriptionCheckoutModalComponent implements OnInit {
   @Input() plan!: PlanData;
   @Input() walletBalance: number = 0;
+  @Input() minWalletLimit: number = 0;
 
   paymentMethod: 'wallet' | 'upi' = 'wallet';
   processing = false;
@@ -606,7 +607,22 @@ export class SubscriptionCheckoutModalComponent implements OnInit {
   }
 
   get walletCovers(): boolean {
-    return !this.hasUpfront || this.walletBalance >= (this.plan?.amount || 0);
+    if (!this.hasUpfront) return true;
+    const cost = this.plan?.amount || 0;
+    // 0 = Unlimited floor: driver can pay from wallet
+    if (this.minWalletLimit === 0) {
+      return true;
+    }
+    // When min limit is configured (e.g. 50 or -500), projected balance must stay >= min limit
+    return (this.walletBalance - cost) >= this.minWalletLimit;
+  }
+
+  get walletWarningMsg(): string {
+    const cost = this.plan?.amount || 0;
+    if (this.minWalletLimit !== 0) {
+      return `Paying ₹${cost} would drop your balance below the required limit of ₹${this.minWalletLimit}. Select UPI below.`;
+    }
+    return `Low balance. Top up or select UPI below.`;
   }
 
   selectMethod(m: 'wallet' | 'upi'): void {

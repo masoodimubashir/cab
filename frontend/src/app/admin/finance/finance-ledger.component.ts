@@ -96,6 +96,12 @@ export interface DriverWalletRecord {
   user_id: number;
   name: string;
   phone: string;
+  payout_method?: string | null;
+  payout_beneficiary_name?: string | null;
+  payout_bank_last4?: string | null;
+  payout_ifsc?: string | null;
+  payout_upi?: string | null;
+  payout_account_status?: string | null;
   vehicle_reg_no: string;
   vehicle_type?: string;
   balance: number;
@@ -108,6 +114,12 @@ export interface DriverWalletRecord {
   gross_earnings?: number;
   cash_collected?: number;
   online_collected?: number;
+  active_subscription?: {
+    plan_title: string;
+    amount_paid: number;
+    commission_percent: number;
+    expires_at?: string;
+  } | null;
 }
 
 /** Driver transfer payout record. */
@@ -585,8 +597,11 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
                   <span *ngIf="d.is_in_debt" class="status-pill status-pill--bad mt-1">In Debt</span>
                 </td>
                 <td>
-                  <span class="limit-text">₹ {{ d.minimum_wallet_limit }}</span>
-                  <div *ngIf="!d.can_accept_rides" class="text-danger-sm">Rides blocked</div>
+                  <span class="limit-text">{{ d.minimum_wallet_limit === 0 ? 'Unlimited (₹0)' : '₹ ' + d.minimum_wallet_limit }}</span>
+                  <div *ngIf="d.minimum_wallet_limit !== 0 && !d.can_accept_rides" class="text-danger-sm">Rides blocked</div>
+                  <div *ngIf="d.active_subscription" style="margin-top: 4px; font-size: 11px; font-weight: 700; color: #10B981;">
+                    {{ d.active_subscription.plan_title }} ({{ d.active_subscription.commission_percent }}%)
+                  </div>
                 </td>
                 <td>
                   <strong class="pending-badge" *ngIf="(d.pending_payout || 0) > 0">
@@ -764,18 +779,51 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
               </select>
             </div>
 
-            <div class="payout-notice-box" *ngIf="selectedDriverForPayout">
-              <div>
-                <span class="lbl">Driver:</span>
-                <strong>{{ selectedDriverForPayout.name }}</strong>
+            <div class="payout-notice-box" *ngIf="selectedDriverForPayout" style="display: flex; flex-direction: column; gap: 10px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">
+                <div>
+                  <span style="font-size: 11px; text-transform: uppercase; color: #64748B; font-weight: 700;">Driver</span>
+                  <div style="font-size: 15px; font-weight: 750; color: #0F172A;">{{ selectedDriverForPayout.name }}</div>
+                  <div style="font-size: 12.5px; color: #64748B;">{{ selectedDriverForPayout.phone }} · {{ selectedDriverForPayout.vehicle_reg_no }}</div>
+                </div>
+                <div style="text-align: right;">
+                  <span style="font-size: 11px; text-transform: uppercase; color: #059669; font-weight: 700;">Pending Payout Due</span>
+                  <div style="font-size: 18px; font-weight: 850; color: #059669;">₹ {{ (selectedDriverForPayout.pending_payout || 0) | number:'1.2-2' }}</div>
+                </div>
               </div>
-              <div>
-                <span class="lbl">Pending payout balance:</span>
-                <strong class="text-emerald">₹ {{ (selectedDriverForPayout.pending_payout || 0) | number:'1.2-2' }}</strong>
+
+              <!-- Driver Receiving Account Details -->
+              <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; padding: 10px 12px; font-size: 12.5px;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 6px; letter-spacing: 0.02em;">
+                  Driver Payout Account Details:
+                </div>
+                <div *ngIf="selectedDriverForPayout.payout_upi || selectedDriverForPayout.payout_bank_last4; else noBankDetails">
+                  <div *ngIf="selectedDriverForPayout.payout_upi" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="color: #64748B;">UPI VPA / GPay:</span>
+                    <strong class="mono" style="color: #0F172A;">{{ selectedDriverForPayout.payout_upi }}</strong>
+                  </div>
+                  <div *ngIf="selectedDriverForPayout.payout_beneficiary_name" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="color: #64748B;">Beneficiary:</span>
+                    <strong>{{ selectedDriverForPayout.payout_beneficiary_name }}</strong>
+                  </div>
+                  <div *ngIf="selectedDriverForPayout.payout_bank_last4" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="color: #64748B;">Bank Account:</span>
+                    <strong class="mono">•••• {{ selectedDriverForPayout.payout_bank_last4 }}</strong>
+                  </div>
+                  <div *ngIf="selectedDriverForPayout.payout_ifsc" style="display: flex; justify-content: space-between;">
+                    <span style="color: #64748B;">IFSC Code:</span>
+                    <strong class="mono">{{ selectedDriverForPayout.payout_ifsc }}</strong>
+                  </div>
+                </div>
+                <ng-template #noBankDetails>
+                  <div style="color: #64748B; line-height: 1.4;">
+                    No direct bank account saved. You can transfer directly to driver phone: <strong style="color: #0F172A;">{{ selectedDriverForPayout.phone }}</strong> (via GPay / PhonePe / Cash handover).
+                  </div>
+                </ng-template>
               </div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" style="margin-top: 14px;">
               <label>Transfer Method</label>
               <select class="form-control" [(ngModel)]="payoutForm.method">
                 <option value="gpay">GPay / UPI</option>
@@ -786,7 +834,15 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
             </div>
 
             <div class="form-group">
-              <label>Transfer Amount (₹)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="margin-bottom: 0;">Transfer Amount (₹)</label>
+                <button
+                  *ngIf="selectedDriverForPayout && (selectedDriverForPayout.pending_payout || 0) > 0"
+                  type="button"
+                  style="background: none; border: none; font-size: 11.5px; font-weight: 700; color: #059669; cursor: pointer; text-decoration: underline;"
+                  (click)="fillPendingAmount()"
+                >Fill ₹{{ selectedDriverForPayout.pending_payout | number:'1.2-2' }}</button>
+              </div>
               <input
                 type="number"
                 class="form-control"
@@ -794,6 +850,7 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
                 step="0.01"
                 placeholder="e.g. 500"
                 [(ngModel)]="payoutForm.amount"
+                style="margin-top: 6px;"
               />
             </div>
 
@@ -1103,6 +1160,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
     { key: 'capture', label: 'Payments' },
     { key: 'transfer', label: 'Payouts' },
     { key: 'topup', label: 'Wallet Recharges' },
+    { key: 'subscription', label: 'Subscriptions' },
     { key: 'retained', label: 'Commissions' },
     { key: 'gateway_fee', label: 'Gateway Fee' },
     { key: 'held', label: 'On Hold' },
@@ -1510,6 +1568,7 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
       case 'capture': return 'Payment';
       case 'transfer': return 'Driver Payout';
       case 'topup': return 'Wallet Recharge';
+      case 'subscription': return 'Subscription';
       case 'cash_retained': return 'Cash In Hand';
       case 'retained': return 'Platform Fee';
       case 'gateway_fee': return 'Gateway Fee';
@@ -1776,6 +1835,12 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     } else {
       this.selectedDriverForPayout = null;
+    }
+  }
+
+  fillPendingAmount(): void {
+    if (this.selectedDriverForPayout && this.selectedDriverForPayout.pending_payout && this.selectedDriverForPayout.pending_payout > 0) {
+      this.payoutForm.amount = this.selectedDriverForPayout.pending_payout;
     }
   }
 
