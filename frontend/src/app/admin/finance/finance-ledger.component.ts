@@ -29,7 +29,6 @@ import {
    DATA INTERFACES
    ========================================================================== */
 
-/** One immutable money movement row from the double-entry ledger. */
 export interface LedgerRow {
   id: number;
   trip_id: number | null;
@@ -46,7 +45,6 @@ export interface LedgerRow {
   driver_phone?: string | null;
 }
 
-/** Per-trip proof that nothing was invented or lost. */
 export interface TripBalance {
   captured: number;
   driver_net: number;
@@ -57,7 +55,6 @@ export interface TripBalance {
   imbalance_paise: number;
 }
 
-/** Display row for grouped rendering. */
 export interface DisplayRow extends LedgerRow {
   group?: {
     key: string;
@@ -90,7 +87,6 @@ export interface LedgerResponse {
   };
 }
 
-/** Driver wallet summary record. */
 export interface DriverWalletRecord {
   driver_id: number;
   user_id: number;
@@ -122,7 +118,6 @@ export interface DriverWalletRecord {
   } | null;
 }
 
-/** Driver transfer payout record. */
 export interface TransferRecord {
   id: number;
   driver_user_id: number;
@@ -136,7 +131,6 @@ export interface TransferRecord {
   created_at: string;
 }
 
-/** Ride commission record. */
 export interface CommissionRecord {
   trip_id: number;
   date: string;
@@ -175,917 +169,1980 @@ export type LedgerViewMode = 'movements' | 'drivers' | 'commissions' | 'transfer
     ColumnComponent,
   ],
   template: `
-    <div class="page">
-      <!-- Top Hero Header with Quick Financial Actions -->
-      <header class="page__hero">
-        <div>
-          <h1 class="page__title">Money Ledger</h1>
-          <p class="page__sub">
-            All-in-one financial headquarters — transactions audit, driver wallet balances, pending &amp; completed transfers, ride commissions, and driver earnings.
+    <div class="ledger-shell">
+      <!-- ====================================================================
+           1. EXECUTIVE HERO HEADER
+           ==================================================================== -->
+      <header class="ledger-hero">
+        <div class="ledger-hero__main">
+          <div class="ledger-hero__eyebrow">
+            <span class="pulse-dot" [class.pulse-dot--warning]="activeSummary.unbalanced > 0"></span>
+            <span>Finance &amp; Settlements</span>
+          </div>
+          <h1 class="ledger-hero__title">Financial Ledger</h1>
+          <p class="ledger-hero__desc">
+            Double-entry transactions, driver float balances, commissions, and payout settlements.
           </p>
         </div>
-        <div class="hero__side">
-          <tm-button variant="green" size="sm" icon="arrow-right" (clicked)="openPayoutModal()">
+
+        <div class="ledger-hero__actions">
+          <!-- Audit Health Pill -->
+          <div
+            class="audit-pill"
+            [class.audit-pill--bad]="activeSummary.unbalanced > 0"
+            [class.audit-pill--good]="activeSummary.unbalanced === 0"
+            *ngIf="!loading && !error"
+            (click)="toggleUnbalancedFilter()"
+            [title]="activeSummary.unbalanced > 0 ? 'Click to filter flagged trips' : 'All transactions balanced'"
+          >
+            <tm-icon [name]="activeSummary.unbalanced > 0 ? 'bell' : 'check'" [size]="14" />
+            <span *ngIf="activeSummary.unbalanced === 0">
+              <strong>100% Balanced</strong> · {{ activeSummary.trips }} Trips Audited
+            </span>
+            <span *ngIf="activeSummary.unbalanced > 0">
+              <strong>{{ activeSummary.unbalanced }} Flagged</strong> · Click to review
+            </span>
+          </div>
+
+          <tm-button variant="green" size="sm" icon="plus" (clicked)="openPayoutModal()">
             Record Payout
           </tm-button>
+
+          <tm-button variant="outline" size="sm" icon="download" (clicked)="exportCsv()">
+            Export CSV
+          </tm-button>
+
           <tm-button variant="outline" size="sm" icon="refresh" [loading]="loading" (clicked)="loadAll()">
             Refresh
           </tm-button>
         </div>
       </header>
 
-      <!-- Reconciliation Status Banner -->
-      <div class="verdict" [class.verdict--bad]="activeSummary.unbalanced > 0" *ngIf="!loading && !error">
-        <span class="verdict__icon">
-          <tm-icon [name]="activeSummary.unbalanced > 0 ? 'bell' : 'check'" [size]="18" />
-        </span>
-        <div class="verdict__body">
-          <strong *ngIf="activeSummary.unbalanced === 0">
-            All {{ activeSummary.trips }} trips in this period are fully balanced.
-          </strong>
-          <strong *ngIf="activeSummary.unbalanced > 0">
-            {{ activeSummary.unbalanced }} of {{ activeSummary.trips }} trips need review.
-          </strong>
-          <span>
-            {{ activeSummary.unbalanced > 0
-              ? 'Discrepancy detected between payments, driver share, and platform fees. Review flagged trips.'
-              : 'Total customer payments match driver payouts, pending holds, and platform fees.' }}
-          </span>
-        </div>
-        <tm-button
-          *ngIf="activeSummary.unbalanced > 0 && !unbalancedOnly"
-          variant="outline" size="sm"
-          (clicked)="setUnbalanced(true)"
-        >Show Flagged Trips</tm-button>
+      <!-- Error State Banner -->
+      <div class="alert-box alert-box--error" *ngIf="error">
+        <tm-icon name="bell" [size]="16" />
+        <span>{{ error }}</span>
+        <button type="button" class="alert-box__retry" (click)="loadAll()">Retry</button>
       </div>
 
-      <!-- Master Financial KPI Stat Cards Grid -->
-      <div class="cards" *ngIf="!loading && !error">
-        <div class="card" (click)="setViewMode('movements')">
-          <span class="card__label">Payments Received</span>
-          <span class="card__value" [class.card__value--pulse]="cardsUpdating">
+      <!-- ====================================================================
+           2. EXECUTIVE KPI CARDS (Clean, High-Impact Grid)
+           ==================================================================== -->
+      <section class="kpi-grid" *ngIf="!loading || displayRows.length > 0">
+        <!-- 1. Passenger Collections -->
+        <div class="kpi-card" [class.is-active]="viewMode === 'movements' && typeFilter === 'capture'" (click)="selectKpiMovements('capture')">
+          <div class="kpi-card__header">
+            <span class="kpi-card__label">Passenger Fares</span>
+            <div class="kpi-card__icon kpi-card__icon--emerald">
+              <tm-icon name="rupee" [size]="15" />
+            </div>
+          </div>
+          <div class="kpi-card__value">
             ₹ {{ activeSummary.captured | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">from passenger fares</span>
-        </div>
-
-        <div class="card card--driver" (click)="setViewMode('movements')">
-          <span class="card__label">Driver Payouts Settled</span>
-          <span class="card__value" [class.card__value--pulse]="cardsUpdating">
-            ₹ {{ activeSummary.to_driver | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">transferred to drivers</span>
-        </div>
-
-        <div class="card card--pending" (click)="setViewMode('drivers')">
-          <span class="card__label">Pending Transfers Due</span>
-          <span class="card__value card__value--emerald">
-            ₹ {{ totalPendingTransfers | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">{{ pendingDriversCount }} driver(s) awaiting payout</span>
-        </div>
-
-        <div class="card card--operator" (click)="setViewMode('commissions')">
-          <span class="card__label">Platform Commissions</span>
-          <span class="card__value" [class.card__value--pulse]="cardsUpdating">
-            ₹ {{ totalPlatformCommissions | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">
-            {{ totalDriverGross > 0 ? ((totalPlatformCommissions / totalDriverGross) * 100 | number:'1.1-1') : (activeSummary.captured > 0 ? ((totalPlatformCommissions / activeSummary.captured) * 100 | number:'1.1-1') : 0) }}% take-rate
-          </span>
-        </div>
-
-        <div class="card card--earnings" (click)="setViewMode('drivers')">
-          <span class="card__label">Driver Gross Earnings</span>
-          <span class="card__value">
-            ₹ {{ totalDriverGross | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">₹ {{ totalDriverCash | number:'1.2-2' }} cash / ₹ {{ totalDriverOnline | number:'1.2-2' }} online</span>
-        </div>
-
-        <div class="card card--wallet" (click)="setViewMode('drivers')">
-          <span class="card__label">Driver Float &amp; Wallets</span>
-          <span class="card__value" [class.card__value--rose]="totalWalletBalance < 0">
-            ₹ {{ totalWalletBalance | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">
-            {{ inDebtCount > 0 ? inDebtCount + ' in debt / ' : '' }}{{ totalDriversCount }} registered
-          </span>
-        </div>
-
-        <div class="card card--held" *ngIf="activeSummary.held > 0">
-          <span class="card__label">On Hold</span>
-          <span class="card__value">₹ {{ activeSummary.held | number:'1.2-2' }}</span>
-          <span class="card__meta">pending release</span>
-        </div>
-
-        <div class="card card--refund" *ngIf="activeSummary.refunded > 0 || activeSummary.gateway_fee > 0">
-          <span class="card__label">Refunds &amp; Gateway Fees</span>
-          <span class="card__value">
-            ₹ {{ (activeSummary.refunded + activeSummary.gateway_fee) | number:'1.2-2' }}
-          </span>
-          <span class="card__meta">₹ {{ activeSummary.refunded | number:'1.2-2' }} ref / ₹ {{ activeSummary.gateway_fee | number:'1.2-2' }} fee</span>
-        </div>
-      </div>
-
-      <!-- View Mode Selector & Unified Filter Toolbar -->
-      <div class="toolbar">
-        <div class="view-modes">
-          <button
-            type="button"
-            class="view-mode-btn"
-            [class.is-active]="viewMode === 'movements'"
-            (click)="setViewMode('movements')"
-          >
-            <tm-icon name="chart-line" [size]="15" />
-            <span>All Movements &amp; Balancing ({{ filteredRows.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="view-mode-btn"
-            [class.is-active]="viewMode === 'drivers'"
-            (click)="setViewMode('drivers')"
-          >
-            <tm-icon name="user" [size]="15" />
-            <span>Driver Financials &amp; Wallets ({{ filteredDrivers.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="view-mode-btn"
-            [class.is-active]="viewMode === 'commissions'"
-            (click)="setViewMode('commissions')"
-          >
-            <tm-icon name="tag" [size]="15" />
-            <span>Ride Commissions ({{ filteredCommissions.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="view-mode-btn"
-            [class.is-active]="viewMode === 'transfers'"
-            (click)="setViewMode('transfers')"
-          >
-            <tm-icon name="check" [size]="15" />
-            <span>Completed Transfers ({{ filteredTransfers.length }})</span>
-          </button>
-        </div>
-
-        <!-- Mode-Specific Filters Row -->
-        <div class="filters-row">
-          <!-- Movements Mode Filters -->
-          <ng-container *ngIf="viewMode === 'movements'">
-            <div class="tabs-group">
-              <div class="tabs">
-                <span class="tabs-label">Group:</span>
-                <button type="button" class="tab" [class.tab--on]="groupBy === 'trip'" (click)="setGroupBy('trip')">Trip</button>
-                <button type="button" class="tab" [class.tab--on]="groupBy === 'driver'" (click)="setGroupBy('driver')">Driver</button>
-                <button type="button" class="tab" [class.tab--on]="groupBy === 'customer'" (click)="setGroupBy('customer')">Customer</button>
-                <button type="button" class="tab" [class.tab--on]="groupBy === 'none'" (click)="setGroupBy('none')">None</button>
-              </div>
-
-              <div class="tabs">
-                <span class="tabs-label">Type:</span>
-                <button type="button" class="tab" [class.tab--on]="typeFilter === 'all'" (click)="setTypeFilter('all')">All</button>
-                <button type="button" class="tab" *ngFor="let t of movementTypes"
-                  [class.tab--on]="typeFilter === t.key" (click)="setTypeFilter(t.key)">{{ t.label }}</button>
-              </div>
-            </div>
-          </ng-container>
-
-          <!-- Driver Mode Filters -->
-          <ng-container *ngIf="viewMode === 'drivers'">
-            <div class="pills">
-              <button type="button" class="pill" [class.pill--on]="driverStatusFilter === 'all'" (click)="driverStatusFilter = 'all'">
-                All Drivers ({{ driversList.length }})
-              </button>
-              <button type="button" class="pill" [class.pill--on]="driverStatusFilter === 'pending'" (click)="driverStatusFilter = 'pending'">
-                Pending Payout ({{ pendingDriversCount }})
-              </button>
-              <button type="button" class="pill" [class.pill--on]="driverStatusFilter === 'debt'" (click)="driverStatusFilter = 'debt'">
-                In Debt ({{ inDebtCount }})
-              </button>
-              <button type="button" class="pill" [class.pill--on]="driverStatusFilter === 'blocked'" (click)="driverStatusFilter = 'blocked'">
-                Blocked ({{ blockedCount }})
-              </button>
-            </div>
-          </ng-container>
-
-          <!-- Common Date & Search Controls -->
-          <div class="toolbar__right">
-            <div class="date-pills" [style.display]="viewMode === 'drivers' ? 'none' : 'inline-flex'">
-              <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'today'" (click)="setPresetDate('today')">Today</button>
-              <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'yesterday'" (click)="setPresetDate('yesterday')">Yesterday</button>
-              <button type="button" class="date-pill" [class.date-pill--on]="activePreset === '7days'" (click)="setPresetDate('7days')">7 Days</button>
-              <button type="button" class="date-pill" [class.date-pill--on]="activePreset === 'thisMonth'" (click)="setPresetDate('thisMonth')">This Month</button>
-            </div>
-
-            <div class="date-range" [class.has-value]="dateFrom || dateTo" [style.display]="viewMode === 'drivers' ? 'none' : 'inline-flex'">
-              <span class="date-range__icon" aria-hidden="true"><tm-icon name="calendar" [size]="14" /></span>
-              <input
-                #rangeInput
-                type="text"
-                readonly
-                class="date-range__input"
-                placeholder="Filter date"
-                [value]="rangeLabel"
-                aria-label="Filter by date range"
-              />
-              <button *ngIf="dateFrom || dateTo" type="button" class="search__clear" (click)="clearDateRange(); $event.stopPropagation()" aria-label="Clear date range">
-                <tm-icon name="x" [size]="13" />
-              </button>
-            </div>
-
-            <label class="check" *ngIf="viewMode === 'movements'">
-              <input type="checkbox" [ngModel]="unbalancedOnly" (ngModelChange)="setUnbalanced($event)" />
-              <span>Unbalanced only</span>
-            </label>
-
-            <div class="search">
-              <span class="search__icon"><tm-icon name="search" [size]="15" /></span>
-              <input
-                type="text"
-                class="search__input"
-                [placeholder]="searchPlaceholder"
-                [(ngModel)]="searchFilter"
-                (ngModelChange)="onSearchChange()"
-              />
-              <button *ngIf="searchFilter" type="button" class="search__clear" (click)="clearSearch()" aria-label="Clear">
-                <tm-icon name="x" [size]="13" />
-              </button>
-            </div>
-
-            <button type="button" class="export-btn" (click)="exportCsv()" title="Export to CSV">
-              <tm-icon name="download" [size]="14" /> Export CSV
-            </button>
+          </div>
+          <div class="kpi-card__sub">
+            <span>₹ {{ totalDriverCash | number:'1.0-0' }} cash · ₹ {{ totalDriverOnline | number:'1.0-0' }} online</span>
           </div>
         </div>
+
+        <!-- 2. Driver Settlements & Pending Payouts -->
+        <div class="kpi-card" [class.is-active]="viewMode === 'drivers' && driverStatusFilter === 'pending'" (click)="selectKpiDrivers('pending')">
+          <div class="kpi-card__header">
+            <span class="kpi-card__label">Driver Settlements</span>
+            <div class="kpi-card__icon kpi-card__icon--blue">
+              <tm-icon name="arrow-right" [size]="15" />
+            </div>
+          </div>
+          <div class="kpi-card__value">
+            ₹ {{ activeSummary.to_driver | number:'1.2-2' }}
+          </div>
+          <div class="kpi-card__sub">
+            <span *ngIf="totalPendingTransfers > 0" class="tag-pending">
+              ₹ {{ totalPendingTransfers | number:'1.2-2' }} Pending ({{ pendingDriversCount }})
+            </span>
+            <span *ngIf="totalPendingTransfers === 0" class="tag-settled">
+              All driver payouts settled
+            </span>
+          </div>
+        </div>
+
+        <!-- 3. Platform Revenue (Commissions) -->
+        <div class="kpi-card" [class.is-active]="viewMode === 'commissions'" (click)="setViewMode('commissions')">
+          <div class="kpi-card__header">
+            <span class="kpi-card__label">Platform Commission</span>
+            <div class="kpi-card__icon kpi-card__icon--amber">
+              <tm-icon name="tag" [size]="15" />
+            </div>
+          </div>
+          <div class="kpi-card__value">
+            ₹ {{ totalPlatformCommissions | number:'1.2-2' }}
+          </div>
+          <div class="kpi-card__sub">
+            <span class="kpi-badge">
+              {{ totalDriverGross > 0 ? ((totalPlatformCommissions / totalDriverGross) * 100 | number:'1.1-1') : (activeSummary.captured > 0 ? ((totalPlatformCommissions / activeSummary.captured) * 100 | number:'1.1-1') : 0) }}% take-rate
+            </span>
+          </div>
+        </div>
+
+        <!-- 4. Driver Float & Wallet Health -->
+        <div class="kpi-card" [class.is-active]="viewMode === 'drivers' && driverStatusFilter === 'all'" (click)="selectKpiDrivers('all')">
+          <div class="kpi-card__header">
+            <span class="kpi-card__label">Driver Float &amp; Wallets</span>
+            <div class="kpi-card__icon kpi-card__icon--purple">
+              <tm-icon name="users" [size]="15" />
+            </div>
+          </div>
+          <div class="kpi-card__value" [class.kpi-card__value--danger]="totalWalletBalance < 0">
+            ₹ {{ totalWalletBalance | number:'1.2-2' }}
+          </div>
+          <div class="kpi-card__sub">
+            <span *ngIf="inDebtCount > 0" class="tag-debt">
+              {{ inDebtCount }} in debt · {{ totalDriversCount }} registered
+            </span>
+            <span *ngIf="inDebtCount === 0" class="tag-clean">
+              {{ totalDriversCount }} registered drivers
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Secondary Financial Metrics Pill Tray (Compact & Tidy) -->
+      <div class="secondary-stats" *ngIf="!loading && (activeSummary.held > 0 || activeSummary.refunded > 0 || activeSummary.gateway_fee > 0 || totalDriverGross > 0)">
+        <div class="secondary-stat" *ngIf="activeSummary.held > 0">
+          <span class="secondary-stat__lbl">Held in Escrow:</span>
+          <strong class="secondary-stat__val">₹ {{ activeSummary.held | number:'1.2-2' }}</strong>
+        </div>
+        <div class="secondary-stat" *ngIf="activeSummary.refunded > 0">
+          <span class="secondary-stat__lbl">Refunds Settled:</span>
+          <strong class="secondary-stat__val text-danger">₹ {{ activeSummary.refunded | number:'1.2-2' }}</strong>
+        </div>
+        <div class="secondary-stat" *ngIf="activeSummary.gateway_fee > 0">
+          <span class="secondary-stat__lbl">Gateway Processing Fees:</span>
+          <strong class="secondary-stat__val">₹ {{ activeSummary.gateway_fee | number:'1.2-2' }}</strong>
+        </div>
+        <div class="secondary-stat" *ngIf="totalDriverGross > 0">
+          <span class="secondary-stat__lbl">Gross Driver Earnings:</span>
+          <strong class="secondary-stat__val">₹ {{ totalDriverGross | number:'1.2-2' }}</strong>
+        </div>
       </div>
 
-      <!-- State: Error Box -->
-      <div class="state state--error" *ngIf="error">{{ error }}</div>
-
       <!-- ====================================================================
-           VIEW 1: ALL MOVEMENTS & TRANSACTIONS TABLE
+           3. MAIN SECTION CARD & SEGMENTED TABS
            ==================================================================== -->
-      <div *ngIf="viewMode === 'movements'">
-        <tm-data-table
-          [rows]="pagedMovements"
-          [total]="displayRows.length"
-          [page]="page"
-          [pageSize]="pageSize"
-          [loading]="loading || searchLoading"
-          [showToolbar]="false"
-          emptyTitle="No transactions found"
-          emptyHint="Transactions appear here as rides are completed, balances split, and payouts recorded."
-          (pageChange)="page = $event"
-          (pageSizeChange)="pageSize = $event; page = 1"
-        >
-          <tm-column key="created_at" label="Date &amp; ID" width="150">
-            <ng-template let-row>
-              <div class="stack" [class.stack--child]="row.child">
-                <span class="strong">{{ row.created_at | date:'d MMM y' }}</span>
-                <span class="muted">{{ row.created_at | date:'h:mm a' }}</span>
-                <span class="tx-badge" *ngIf="!row.group">Tx #{{ row.id }}</span>
-              </div>
-            </ng-template>
-          </tm-column>
+      <div class="section-card">
+        <div class="nav-and-filters">
+          <!-- Segmented View Tabs -->
+          <nav class="seg-tabs" role="tablist">
+            <button
+              type="button"
+              class="seg-tab"
+              [class.is-active]="viewMode === 'movements'"
+              (click)="setViewMode('movements')"
+            >
+              <tm-icon name="chart-line" [size]="14" />
+              <span>Transactions &amp; Audit</span>
+              <span class="seg-tab__count">{{ filteredRows.length }}</span>
+            </button>
 
-          <tm-column key="type" label="Type / Movement" width="160">
-            <ng-template let-row>
-              <button
-                *ngIf="row.group; else plainType"
-                type="button" class="grouptoggle"
-                (click)="toggleGroup(row.group.key)"
-                [attr.aria-expanded]="isExpanded(row.group.key)"
-              >
-                <tm-icon [name]="isExpanded(row.group.key) ? 'chevron-down' : 'chevron-right'" [size]="14" />
-                <span>{{ row.group.count }} transactions</span>
-              </button>
-              <ng-template #plainType>
-                <span class="mv" [ngClass]="'mv--' + row.type" [class.mv--child]="row.child">
-                  {{ typeLabel(row.type) }}
+            <button
+              type="button"
+              class="seg-tab"
+              [class.is-active]="viewMode === 'drivers'"
+              (click)="setViewMode('drivers')"
+            >
+              <tm-icon name="user" [size]="14" />
+              <span>Driver Float &amp; Wallets</span>
+              <span class="seg-tab__count" [class.seg-tab__count--alert]="pendingDriversCount > 0">{{ filteredDrivers.length }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="seg-tab"
+              [class.is-active]="viewMode === 'commissions'"
+              (click)="setViewMode('commissions')"
+            >
+              <tm-icon name="tag" [size]="14" />
+              <span>Ride Commissions</span>
+              <span class="seg-tab__count">{{ filteredCommissions.length }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="seg-tab"
+              [class.is-active]="viewMode === 'transfers'"
+              (click)="setViewMode('transfers')"
+            >
+              <tm-icon name="check" [size]="14" />
+              <span>Settlement History</span>
+              <span class="seg-tab__count">{{ filteredTransfers.length }}</span>
+            </button>
+          </nav>
+
+          <!-- Dynamic Filter Bar (Clean & Contextual) -->
+          <div class="filter-strip">
+            <!-- Left Side: Mode Specific Pills / Dropdowns -->
+            <div class="filter-strip__left">
+              <!-- Mode 1: Movements Specific Filters -->
+              <ng-container *ngIf="viewMode === 'movements'">
+                <!-- Grouping Pill Toggle -->
+                <div class="mini-segmented">
+                  <span class="mini-segmented__label">Group:</span>
+                  <button type="button" class="mini-btn" [class.is-active]="groupBy === 'trip'" (click)="setGroupBy('trip')">Trip</button>
+                  <button type="button" class="mini-btn" [class.is-active]="groupBy === 'driver'" (click)="setGroupBy('driver')">Driver</button>
+                  <button type="button" class="mini-btn" [class.is-active]="groupBy === 'customer'" (click)="setGroupBy('customer')">Customer</button>
+                  <button type="button" class="mini-btn" [class.is-active]="groupBy === 'none'" (click)="setGroupBy('none')">Flat</button>
+                </div>
+
+                <!-- Movement Type Selector -->
+                <div class="select-wrapper">
+                  <select class="clean-select" [(ngModel)]="typeFilter" (change)="page = 1">
+                    <option value="all">All Movement Types</option>
+                    <option *ngFor="let t of movementTypes" [value]="t.key">{{ t.label }}</option>
+                  </select>
+                </div>
+
+                <!-- Unbalanced Toggle (Highlighted only if issues exist) -->
+                <button
+                  type="button"
+                  class="pill-toggle"
+                  [class.pill-toggle--active]="unbalancedOnly"
+                  [class.pill-toggle--warning]="activeSummary.unbalanced > 0"
+                  (click)="toggleUnbalancedFilter()"
+                >
+                  <span class="pill-toggle__dot" *ngIf="activeSummary.unbalanced > 0"></span>
+                  <span>Flagged Only</span>
+                </button>
+              </ng-container>
+
+              <!-- Mode 2: Driver Wallets Specific Filters -->
+              <ng-container *ngIf="viewMode === 'drivers'">
+                <div class="filter-pills">
+                  <button type="button" class="filter-pill" [class.is-active]="driverStatusFilter === 'all'" (click)="driverStatusFilter = 'all'">
+                    All ({{ driversList.length }})
+                  </button>
+                  <button type="button" class="filter-pill" [class.is-active]="driverStatusFilter === 'pending'" (click)="driverStatusFilter = 'pending'">
+                    Pending Payout ({{ pendingDriversCount }})
+                  </button>
+                  <button type="button" class="filter-pill" [class.is-active]="driverStatusFilter === 'debt'" (click)="driverStatusFilter = 'debt'">
+                    In Debt ({{ inDebtCount }})
+                  </button>
+                  <button type="button" class="filter-pill" [class.is-active]="driverStatusFilter === 'blocked'" (click)="driverStatusFilter = 'blocked'">
+                    Blocked ({{ blockedCount }})
+                  </button>
+                </div>
+              </ng-container>
+            </div>
+
+            <!-- Right Side: Date Presets & Search Input -->
+            <div class="filter-strip__right">
+              <!-- Date Presets (Hidden in Driver Wallets which is a point-in-time float view) -->
+              <div class="date-presets" *ngIf="viewMode !== 'drivers'">
+                <button type="button" class="date-chip" [class.is-active]="activePreset === 'today'" (click)="setPresetDate('today')">Today</button>
+                <button type="button" class="date-chip" [class.is-active]="activePreset === 'yesterday'" (click)="setPresetDate('yesterday')">Yesterday</button>
+                <button type="button" class="date-chip" [class.is-active]="activePreset === '7days'" (click)="setPresetDate('7days')">7D</button>
+                <button type="button" class="date-chip" [class.is-active]="activePreset === 'thisMonth'" (click)="setPresetDate('thisMonth')">Month</button>
+              </div>
+
+              <!-- Custom Date Range Picker Input -->
+              <div class="range-box" [class.is-filtered]="dateFrom || dateTo" *ngIf="viewMode !== 'drivers'">
+                <tm-icon name="calendar" [size]="13" />
+                <input
+                  #rangeInput
+                  type="text"
+                  readonly
+                  class="range-box__input"
+                  placeholder="Date Range"
+                  [value]="rangeLabel"
+                  aria-label="Filter by date range"
+                />
+                <button *ngIf="dateFrom || dateTo" type="button" class="range-box__clear" (click)="clearDateRange(); $event.stopPropagation()" aria-label="Clear date">
+                  <tm-icon name="x" [size]="12" />
+                </button>
+              </div>
+
+              <!-- Live Search Box -->
+              <div class="search-box">
+                <tm-icon name="search" [size]="14" class="search-box__icon" />
+                <input
+                  type="text"
+                  class="search-box__input"
+                  [placeholder]="searchPlaceholder"
+                  [(ngModel)]="searchFilter"
+                  (ngModelChange)="onSearchChange()"
+                />
+                <button *ngIf="searchFilter" type="button" class="search-box__clear" (click)="clearSearch()" aria-label="Clear search">
+                  <tm-icon name="x" [size]="12" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ====================================================================
+             VIEW 1: TRANSACTIONS & DOUBLE-ENTRY AUDIT TABLE
+             ==================================================================== -->
+        <div class="table-container" *ngIf="viewMode === 'movements'">
+          <tm-data-table
+            [rows]="pagedMovements"
+            [total]="displayRows.length"
+            [page]="page"
+            [pageSize]="pageSize"
+            [loading]="loading || searchLoading"
+            [showToolbar]="false"
+            emptyTitle="No transactions found"
+            emptyHint="Completed rides, payments, driver transfers, and wallet adjustments will be listed here."
+            (pageChange)="page = $event"
+            (pageSizeChange)="pageSize = $event; page = 1"
+          >
+            <!-- Column 1: Date & Tx Reference -->
+            <tm-column key="created_at" label="Date &amp; Time" width="160">
+              <ng-template let-row>
+                <div class="cell-stack" [class.cell-stack--child]="row.child">
+                  <span class="cell-primary">{{ row.created_at | date:'d MMM y' }}</span>
+                  <span class="cell-muted mono">{{ row.created_at | date:'h:mm a' }}</span>
+                  <span class="ref-tag" *ngIf="!row.group">Tx #{{ row.id }}</span>
+                </div>
+              </ng-template>
+            </tm-column>
+
+            <!-- Column 2: Movement Type & Group Accordion -->
+            <tm-column key="type" label="Movement Type" width="170">
+              <ng-template let-row>
+                <!-- Group Row Accordion Header -->
+                <button
+                  *ngIf="row.group; else individualType"
+                  type="button"
+                  class="accordion-btn"
+                  (click)="toggleGroup(row.group.key)"
+                  [attr.aria-expanded]="isExpanded(row.group.key)"
+                >
+                  <tm-icon [name]="isExpanded(row.group.key) ? 'chevron-down' : 'chevron-right'" [size]="13" />
+                  <span>{{ row.group.count }} Movements</span>
+                </button>
+
+                <!-- Individual Movement Tag -->
+                <ng-template #individualType>
+                  <span class="type-pill" [ngClass]="'type-pill--' + row.type" [class.type-pill--child]="row.child">
+                    <span class="type-pill__dot"></span>
+                    {{ typeLabel(row.type) }}
+                  </span>
+                </ng-template>
+              </ng-template>
+            </tm-column>
+
+            <!-- Column 3: Parties Involved (Customer / Driver / Platform) -->
+            <tm-column key="party" label="Party / Details" width="280">
+              <ng-template let-row>
+                <!-- Individual Row Party Details -->
+                <ng-container *ngIf="!row.group">
+                  <div class="party-row" *ngIf="row.party === 'customer'">
+                    <span class="role-badge role-badge--customer">Customer</span>
+                    <strong class="party-title">{{ row.customer_name || 'Customer' }}</strong>
+                    <span class="party-phone mono" *ngIf="row.customer_phone">{{ row.customer_phone }}</span>
+                  </div>
+
+                  <div class="party-row" *ngIf="row.party === 'driver'">
+                    <span class="role-badge role-badge--driver">Driver</span>
+                    <strong class="party-title">{{ row.driver_name || 'Driver' }}</strong>
+                    <span class="party-phone mono" *ngIf="row.driver_phone">{{ row.driver_phone }}</span>
+                  </div>
+
+                  <div class="party-row" *ngIf="row.party === 'operator'">
+                    <span class="role-badge role-badge--platform">Platform</span>
+                    <strong class="party-title">Revenue &amp; Commission</strong>
+                    <div class="party-subinfo" *ngIf="row.driver_name || row.customer_name">
+                      <small *ngIf="row.driver_name">Drv: <strong>{{ row.driver_name }}</strong></small>
+                      <small *ngIf="row.customer_name">Cust: <strong>{{ row.customer_name }}</strong></small>
+                    </div>
+                  </div>
+
+                  <div class="party-row" *ngIf="row.party !== 'customer' && row.party !== 'driver' && row.party !== 'operator'">
+                    <span class="role-badge">{{ row.party }}</span>
+                    <div class="party-subinfo" *ngIf="row.driver_name || row.customer_name">
+                      <small *ngIf="row.driver_name">Drv: <strong>{{ row.driver_name }}</strong></small>
+                      <small *ngIf="row.customer_name">Cust: <strong>{{ row.customer_name }}</strong></small>
+                    </div>
+                  </div>
+                </ng-container>
+
+                <!-- Group Row Header Details -->
+                <div class="group-info" *ngIf="row.group">
+                  <strong class="group-info__title" *ngIf="row.group.label">{{ row.group.label }}</strong>
+                  <div class="group-info__parties">
+                    <span *ngIf="row.group.driver_name">Driver: <strong>{{ row.group.driver_name }}</strong></span>
+                    <span *ngIf="row.group.customer_name">Customer: <strong>{{ row.group.customer_name }}</strong></span>
+                  </div>
+                  <div class="group-info__split">
+                    <span>Driver: ₹ {{ row.group.toDriver | number:'1.2-2' }}</span>
+                    <span>·</span>
+                    <span>Fee: ₹ {{ row.group.commission | number:'1.2-2' }}</span>
+                    <span *ngIf="row.group.refunded > 0" class="text-danger">· Ref: ₹ {{ row.group.refunded | number:'1.2-2' }}</span>
+                  </div>
+                </div>
+              </ng-template>
+            </tm-column>
+
+            <!-- Column 4: Trip ID Reference -->
+            <tm-column key="trip_id" label="Trip" width="100">
+              <ng-template let-row>
+                <button type="button" class="trip-tag" *ngIf="row.trip_id" (click)="focusTrip(row.trip_id)">
+                  #{{ row.trip_id }}
+                </button>
+                <span class="cell-muted" *ngIf="!row.trip_id">—</span>
+              </ng-template>
+            </tm-column>
+
+            <!-- Column 5: Double-Entry Balance Proof -->
+            <tm-column key="balance" label="Balance Proof" width="130">
+              <ng-template let-row>
+                <ng-container *ngIf="balanceFor(row.trip_id) as b; else noBal">
+                  <span class="proof-tag" [class.proof-tag--balanced]="b.balanced" [class.proof-tag--imbalance]="!b.balanced">
+                    <span class="proof-tag__dot"></span>
+                    {{ b.balanced ? 'Balanced' : (b.imbalance_paise / 100 | number:'1.2-2') + ' off' }}
+                  </span>
+                </ng-container>
+                <ng-template #noBal><span class="cell-muted">—</span></ng-template>
+              </ng-template>
+            </tm-column>
+
+            <!-- Column 6: Gateway Reference / Payment ID -->
+            <tm-column key="razorpay_ref" label="Reference / Payment" width="190">
+              <ng-template let-row>
+                <div class="ref-stack" *ngIf="!row.group">
+                  <span class="mono-code" *ngIf="row.razorpay_ref" [title]="row.razorpay_ref">{{ row.razorpay_ref }}</span>
+                  <small class="cell-muted" *ngIf="row.payment_id">Pay #{{ row.payment_id }}</small>
+                  <span class="cell-muted" *ngIf="!row.razorpay_ref && !row.payment_id">—</span>
+                </div>
+                <span class="cell-muted" *ngIf="row.group">{{ row.group.count }} entries</span>
+              </ng-template>
+            </tm-column>
+
+            <!-- Column 7: Movement Amount -->
+            <tm-column key="amount" label="Amount" width="140" align="right">
+              <ng-template let-row>
+                <span class="amount-val amount-val--group" *ngIf="row.group">
+                  ₹ {{ row.group.captured | number:'1.2-2' }}
+                </span>
+                <span class="amount-val" *ngIf="!row.group" [class.amount-val--in]="row.direction === 'in'" [class.amount-val--out]="row.direction === 'out'">
+                  {{ row.direction === 'out' ? '−' : '+' }} ₹ {{ row.amount | number:'1.2-2' }}
                 </span>
               </ng-template>
-            </ng-template>
-          </tm-column>
+            </tm-column>
+          </tm-data-table>
+        </div>
 
-          <tm-column key="party" label="Customer / Driver / Platform" width="280">
-            <ng-template let-row>
-              <ng-container *ngIf="!row.group">
-                <div class="party-info" *ngIf="row.party === 'customer'">
-                  <span class="party-badge party-badge--customer">Customer</span>
-                  <strong class="party-name">{{ row.customer_name || 'Customer' }}</strong>
-                  <small class="party-phone" *ngIf="row.customer_phone">📞 {{ row.customer_phone }}</small>
-                </div>
+        <!-- ====================================================================
+             VIEW 2: DRIVER FLOAT & WALLET HEALTH TABLE
+             ==================================================================== -->
+        <div class="table-container" *ngIf="viewMode === 'drivers'">
+          <div class="custom-table-wrap">
+            <table class="luxury-table">
+              <thead>
+                <tr>
+                  <th>Driver Profile</th>
+                  <th>Vehicle Details</th>
+                  <th>Wallet Float Balance</th>
+                  <th>Limit &amp; Permissions</th>
+                  <th>Pending Payout Due</th>
+                  <th>Gross Earnings</th>
+                  <th>Cash vs Online</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let d of filteredDrivers" class="hoverable-row">
+                  <!-- Driver Profile -->
+                  <td>
+                    <div class="user-block">
+                      <div class="avatar-initials">{{ (d.name || 'D').charAt(0).toUpperCase() }}</div>
+                      <div class="user-block__text">
+                        <strong class="user-block__name">{{ d.name }}</strong>
+                        <span class="user-block__phone mono">{{ d.phone }}</span>
+                      </div>
+                    </div>
+                  </td>
 
-                <div class="party-info" *ngIf="row.party === 'driver'">
-                  <span class="party-badge party-badge--driver">Driver</span>
-                  <strong class="party-name">{{ row.driver_name || 'Driver' }}</strong>
-                  <small class="party-phone" *ngIf="row.driver_phone">📞 {{ row.driver_phone }}</small>
-                </div>
+                  <!-- Vehicle Details -->
+                  <td>
+                    <div class="cell-stack">
+                      <span class="cell-primary">{{ d.vehicle_type || 'Cab' }}</span>
+                      <span class="cell-muted mono">{{ d.vehicle_reg_no }}</span>
+                    </div>
+                  </td>
 
-                <div class="party-info" *ngIf="row.party === 'operator'">
-                  <span class="party-badge party-badge--operator">Company Platform</span>
-                  <strong class="party-name">Commission / Fee</strong>
-                  <div class="party-sub-details" *ngIf="row.customer_name || row.driver_name">
-                    <small *ngIf="row.customer_name">Cust: <strong>{{ row.customer_name }}</strong></small>
-                    <small *ngIf="row.driver_name">Drv: <strong>{{ row.driver_name }}</strong></small>
-                  </div>
-                </div>
+                  <!-- Wallet Balance -->
+                  <td>
+                    <div class="wallet-badge" [class.wallet-badge--positive]="d.balance >= 0" [class.wallet-badge--negative]="d.balance < 0">
+                      <span class="wallet-badge__dot"></span>
+                      ₹ {{ d.balance | number:'1.2-2' }}
+                    </div>
+                    <div *ngIf="d.is_in_debt" class="debt-warning-tag">In Debt</div>
+                  </td>
 
-                <div class="party-info" *ngIf="row.party !== 'customer' && row.party !== 'driver' && row.party !== 'operator'">
-                  <span class="party-badge">{{ row.party }}</span>
-                  <div class="party-sub-details" *ngIf="row.customer_name || row.driver_name">
-                    <small *ngIf="row.customer_name">Cust: <strong>{{ row.customer_name }}</strong></small>
-                    <small *ngIf="row.driver_name">Drv: <strong>{{ row.driver_name }}</strong></small>
-                  </div>
-                </div>
-              </ng-container>
+                  <!-- Limit & Permission -->
+                  <td>
+                    <div class="cell-stack">
+                      <span class="cell-primary">{{ d.minimum_wallet_limit === 0 ? '₹0 Limit' : 'Min ₹' + d.minimum_wallet_limit }}</span>
+                      <span *ngIf="!d.can_accept_rides" class="status-chip status-chip--blocked">Rides Blocked</span>
+                      <span *ngIf="d.can_accept_rides" class="status-chip status-chip--allowed">Active</span>
+                      <small *ngIf="d.active_subscription" class="text-emerald-bold">
+                        {{ d.active_subscription.plan_title }} ({{ d.active_subscription.commission_percent }}%)
+                      </small>
+                    </div>
+                  </td>
 
-              <div class="groupmeta" *ngIf="row.group">
-                <strong class="groupmeta__title" *ngIf="row.group.label">{{ row.group.label }}</strong>
-                <span *ngIf="row.group.customer_name">Customer: <strong>{{ row.group.customer_name }}</strong></span>
-                <span *ngIf="row.group.driver_name">Driver: <strong>{{ row.group.driver_name }}</strong></span>
-                <span>Driver Payout: ₹ {{ row.group.toDriver | number:'1.2-2' }} · Commission: ₹ {{ row.group.commission | number:'1.2-2' }}</span>
-                <span class="groupmeta--refund" *ngIf="row.group.refunded > 0">
-                  Refunded: ₹ {{ row.group.refunded | number:'1.2-2' }}
-                </span>
-              </div>
-            </ng-template>
-          </tm-column>
+                  <!-- Pending Payout -->
+                  <td>
+                    <strong class="payout-due-highlight" *ngIf="(d.pending_payout || 0) > 0">
+                      ₹ {{ d.pending_payout | number:'1.2-2' }}
+                    </strong>
+                    <span class="cell-muted" *ngIf="!d.pending_payout || d.pending_payout <= 0">₹ 0.00</span>
+                  </td>
 
-          <tm-column key="trip_id" label="Trip" width="100">
-            <ng-template let-row>
-              <button type="button" class="triplink" *ngIf="row.trip_id" (click)="focusTrip(row.trip_id)">
-                #{{ row.trip_id }}
-              </button>
-              <span class="muted" *ngIf="!row.trip_id">—</span>
-            </ng-template>
-          </tm-column>
+                  <!-- Gross Earnings -->
+                  <td>
+                    <div class="cell-stack">
+                      <strong class="cell-primary">₹ {{ (d.gross_earnings || 0) | number:'1.2-2' }}</strong>
+                      <span class="cell-muted">{{ d.rides_count || 0 }} completed rides</span>
+                    </div>
+                  </td>
 
-          <tm-column key="balance" label="Balance Proof" width="130">
-            <ng-template let-row>
-              <ng-container *ngIf="balanceFor(row.trip_id) as b; else noBal">
-                <span class="bal" [class.bal--bad]="!b.balanced">
-                  <span class="bal__dot"></span>
-                  {{ b.balanced ? 'Balanced' : (b.imbalance_paise / 100 | number:'1.2-2') + ' off' }}
-                </span>
-              </ng-container>
-              <ng-template #noBal><span class="muted">—</span></ng-template>
-            </ng-template>
-          </tm-column>
+                  <!-- Cash vs Online -->
+                  <td>
+                    <div class="split-pill-group">
+                      <span class="split-pill split-pill--cash">₹ {{ (d.cash_collected || 0) | number:'1.0-0' }} Cash</span>
+                      <span class="split-pill split-pill--online">₹ {{ (d.online_collected || 0) | number:'1.0-0' }} Online</span>
+                    </div>
+                  </td>
 
-          <tm-column key="razorpay_ref" label="Reference / Payment" width="200">
-            <ng-template let-row>
-              <div class="ref-stack" *ngIf="!row.group">
-                <span class="ref" *ngIf="row.razorpay_ref">{{ row.razorpay_ref }}</span>
-                <small class="pay-id" *ngIf="row.payment_id">Payment #{{ row.payment_id }}</small>
-                <span class="muted" *ngIf="!row.razorpay_ref && !row.payment_id">—</span>
-              </div>
-              <span class="muted" *ngIf="row.group">{{ row.group.count }} movements</span>
-            </ng-template>
-          </tm-column>
-
-          <tm-column key="amount" label="Amount" width="140" align="right">
-            <ng-template let-row>
-              <span class="amount amount--group" *ngIf="row.group">
-                ₹ {{ row.group.captured | number:'1.2-2' }}
-              </span>
-              <span class="amount" *ngIf="!row.group" [class.amount--out]="row.direction === 'out'">
-                {{ row.direction === 'out' ? '−' : '+' }} ₹ {{ row.amount | number:'1.2-2' }}
-              </span>
-            </ng-template>
-          </tm-column>
-        </tm-data-table>
-      </div>
-
-      <!-- ====================================================================
-           VIEW 2: DRIVER FINANCIALS & WALLETS TABLE
-           ==================================================================== -->
-      <div class="table-card" *ngIf="viewMode === 'drivers'">
-        <div class="table-wrap">
-          <table class="tm-table">
-            <thead>
-              <tr>
-                <th>Driver</th>
-                <th>Vehicle</th>
-                <th>Wallet Balance</th>
-                <th>Min Limit</th>
-                <th>Pending Payout</th>
-                <th>Gross Earnings</th>
-                <th>Cash vs Online</th>
-                <th style="text-align: right;">Financial Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let d of filteredDrivers">
-                <td>
-                  <div class="user-cell">
-                    <strong>{{ d.name }}</strong>
-                    <small>📞 {{ d.phone }}</small>
-                  </div>
-                </td>
-                <td>
-                  <div class="veh-cell">
-                    <span>{{ d.vehicle_type || '—' }}</span>
-                    <small class="muted">{{ d.vehicle_reg_no }}</small>
-                  </div>
-                </td>
-                <td>
-                  <span class="balance-badge" [class.balance-badge--pos]="d.balance >= 0" [class.balance-badge--neg]="d.balance < 0">
-                    ₹ {{ d.balance | number:'1.2-2' }}
-                  </span>
-                  <span *ngIf="d.is_in_debt" class="status-pill status-pill--bad mt-1">In Debt</span>
-                </td>
-                <td>
-                  <span class="limit-text">{{ d.minimum_wallet_limit === 0 ? 'Unlimited (₹0)' : '₹ ' + d.minimum_wallet_limit }}</span>
-                  <div *ngIf="d.minimum_wallet_limit !== 0 && !d.can_accept_rides" class="text-danger-sm">Rides blocked</div>
-                  <div *ngIf="d.active_subscription" style="margin-top: 4px; font-size: 11px; font-weight: 700; color: #10B981;">
-                    {{ d.active_subscription.plan_title }} ({{ d.active_subscription.commission_percent }}%)
-                  </div>
-                </td>
-                <td>
-                  <strong class="pending-badge" *ngIf="(d.pending_payout || 0) > 0">
-                    ₹ {{ d.pending_payout | number:'1.2-2' }}
-                  </strong>
-                  <span class="muted" *ngIf="!d.pending_payout || d.pending_payout <= 0">₹ 0.00</span>
-                </td>
-                <td>
-                  <strong class="earnings-val">₹ {{ (d.gross_earnings || 0) | number:'1.2-2' }}</strong>
-                  <small class="block text-muted">{{ d.rides_count || 0 }} rides</small>
-                </td>
-                <td>
-                  <div class="split-cell">
-                    <span class="cash-text">₹ {{ (d.cash_collected || 0) | number:'1.2-2' }} cash</span>
-                    <span class="online-text">₹ {{ (d.online_collected || 0) | number:'1.2-2' }} online</span>
-                  </div>
-                </td>
-                <td style="text-align: right;">
-                  <div class="action-buttons">
+                  <!-- Actions -->
+                  <td style="text-align: right;">
                     <tm-button
                       *ngIf="(d.pending_payout || 0) > 0"
                       variant="green"
                       size="sm"
                       (clicked)="openPayoutModal(d)"
-                    >Pay Out</tm-button>
-                    <span *ngIf="!d.pending_payout || d.pending_payout <= 0" class="muted">—</span>
-                  </div>
-                </td>
-              </tr>
-              <tr *ngIf="filteredDrivers.length === 0">
-                <td colspan="8" class="empty-cell">No drivers match the current filter.</td>
-              </tr>
-            </tbody>
-          </table>
+                    >
+                      Pay Out
+                    </tm-button>
+                    <span *ngIf="!d.pending_payout || d.pending_payout <= 0" class="cell-muted">—</span>
+                  </td>
+                </tr>
+
+                <tr *ngIf="filteredDrivers.length === 0">
+                  <td colspan="8" class="empty-state-cell">
+                    <div class="empty-state">
+                      <tm-icon name="user" [size]="28" />
+                      <p>No drivers matching the selected criteria.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ====================================================================
+             VIEW 3: RIDE COMMISSIONS REGISTER TABLE
+             ==================================================================== -->
+        <div class="table-container" *ngIf="viewMode === 'commissions'">
+          <div class="custom-table-wrap">
+            <table class="luxury-table">
+              <thead>
+                <tr>
+                  <th>Trip &amp; Timestamp</th>
+                  <th>Driver Details</th>
+                  <th>Vehicle</th>
+                  <th>Gross Fare</th>
+                  <th>Commission Rate</th>
+                  <th>Platform Fee</th>
+                  <th>Driver Take-Home</th>
+                  <th>Service Mode</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let c of filteredCommissions" class="hoverable-row">
+                  <!-- Trip & Timestamp -->
+                  <td>
+                    <div class="cell-stack">
+                      <span class="trip-tag">#{{ c.trip_id }}</span>
+                      <span class="cell-muted">{{ c.date | date:'d MMM, h:mm a' }}</span>
+                    </div>
+                  </td>
+
+                  <!-- Driver Details -->
+                  <td>
+                    <div class="cell-stack">
+                      <strong class="cell-primary">{{ c.driver_name }}</strong>
+                      <span class="cell-muted mono">{{ c.driver_phone }}</span>
+                    </div>
+                  </td>
+
+                  <!-- Vehicle -->
+                  <td>
+                    <span class="cell-primary">{{ c.vehicle_type || '—' }}</span>
+                  </td>
+
+                  <!-- Gross Fare -->
+                  <td>
+                    <strong class="cell-primary">₹ {{ c.fare | number:'1.2-2' }}</strong>
+                  </td>
+
+                  <!-- Commission Rate -->
+                  <td>
+                    <span class="rate-tag" [class.rate-tag--fixed]="c.is_fixed_commission || c.commission_percent <= 0">
+                      {{ (c.is_fixed_commission || c.commission_percent <= 0) ? 'Fixed Rate' : (c.commission_percent + '%') }}
+                    </span>
+                  </td>
+
+                  <!-- Platform Fee -->
+                  <td>
+                    <strong class="fee-highlight">₹ {{ c.commission_amount | number:'1.2-2' }}</strong>
+                  </td>
+
+                  <!-- Driver Take-Home -->
+                  <td>
+                    <strong class="driver-share-highlight">₹ {{ c.net_driver_earnings | number:'1.2-2' }}</strong>
+                  </td>
+
+                  <!-- Service Mode -->
+                  <td>
+                    <span class="service-pill" [ngClass]="'service-pill--' + (c.mode || (c.is_shared ? 'fixed' : 'private'))">
+                      {{ formatTripMode(c) }}
+                    </span>
+                    <small *ngIf="c.route_name" class="route-sub">{{ c.route_name }}</small>
+                  </td>
+                </tr>
+
+                <tr *ngIf="filteredCommissions.length === 0">
+                  <td colspan="8" class="empty-state-cell">
+                    <div class="empty-state">
+                      <tm-icon name="tag" [size]="28" />
+                      <p>No commissioned rides found for the selected period.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ====================================================================
+             VIEW 4: COMPLETED SETTLEMENTS REGISTER TABLE
+             ==================================================================== -->
+        <div class="table-container" *ngIf="viewMode === 'transfers'">
+          <div class="custom-table-wrap">
+            <table class="luxury-table">
+              <thead>
+                <tr>
+                  <th>Settlement Date</th>
+                  <th>Driver Recipient</th>
+                  <th>Amount Settled</th>
+                  <th>Payment Method</th>
+                  <th>UTR / Reference ID</th>
+                  <th>Recorded By</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let t of filteredTransfers" class="hoverable-row">
+                  <!-- Settlement Date -->
+                  <td>
+                    <div class="cell-stack">
+                      <span class="cell-primary">{{ t.created_at | date:'d MMM y' }}</span>
+                      <span class="cell-muted mono">{{ t.created_at | date:'h:mm a' }}</span>
+                    </div>
+                  </td>
+
+                  <!-- Driver Recipient -->
+                  <td>
+                    <div class="user-block">
+                      <div class="avatar-initials avatar-initials--blue">{{ (t.driver_name || 'D').charAt(0).toUpperCase() }}</div>
+                      <div class="user-block__text">
+                        <strong class="user-block__name">{{ t.driver_name }}</strong>
+                        <span class="user-block__phone mono">{{ t.driver_phone }}</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- Amount Settled -->
+                  <td>
+                    <strong class="transfer-amt-badge">₹ {{ t.amount | number:'1.2-2' }}</strong>
+                  </td>
+
+                  <!-- Payment Method -->
+                  <td>
+                    <span class="method-tag">{{ formatMethod(t.method) }}</span>
+                  </td>
+
+                  <!-- UTR / Reference ID -->
+                  <td>
+                    <div class="cell-stack">
+                      <span class="mono-code">{{ t.reference || '—' }}</span>
+                      <small *ngIf="t.notes" class="cell-muted">{{ t.notes }}</small>
+                    </div>
+                  </td>
+
+                  <!-- Recorded By -->
+                  <td>
+                    <span class="recorder-chip">{{ t.recorded_by || 'Admin' }}</span>
+                  </td>
+                </tr>
+
+                <tr *ngIf="filteredTransfers.length === 0">
+                  <td colspan="6" class="empty-state-cell">
+                    <div class="empty-state">
+                      <tm-icon name="check" [size]="28" />
+                      <p>No completed transfer records found.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <!-- ====================================================================
-           VIEW 3: RIDE COMMISSIONS TABLE
-           ==================================================================== -->
-      <div class="table-card" *ngIf="viewMode === 'commissions'">
-        <div class="table-wrap">
-          <table class="tm-table">
-            <thead>
-              <tr>
-                <th>Date &amp; Trip</th>
-                <th>Driver</th>
-                <th>Vehicle</th>
-                <th>Gross Fare</th>
-                <th>Commission %</th>
-                <th>Platform Fee Retained</th>
-                <th>Driver Net Share</th>
-                <th>Mode</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let c of filteredCommissions">
-                <td>
-                  <div class="trip-cell">
-                    <strong class="trip-id">#{{ c.trip_id }}</strong>
-                    <small class="trip-date">{{ c.date | date:'short' }}</small>
-                  </div>
-                </td>
-                <td>
-                  <div class="user-cell">
-                    <strong>{{ c.driver_name }}</strong>
-                    <small>📞 {{ c.driver_phone }}</small>
-                  </div>
-                </td>
-                <td>
-                  <span>{{ c.vehicle_type || '—' }}</span>
-                </td>
-                <td>
-                  <span class="amount-cell">₹ {{ c.fare | number:'1.2-2' }}</span>
-                </td>
-                <td>
-                  <span class="rate-badge" [class.rate-badge--fixed]="c.is_fixed_commission || c.commission_percent <= 0">
-                    {{ (c.is_fixed_commission || c.commission_percent <= 0) ? 'Fixed' : (c.commission_percent + '%') }}
-                  </span>
-                </td>
-                <td>
-                  <strong class="comm-amount">₹ {{ c.commission_amount | number:'1.2-2' }}</strong>
-                </td>
-                <td>
-                  <span class="driver-share">₹ {{ c.net_driver_earnings | number:'1.2-2' }}</span>
-                </td>
-                <td>
-                  <span class="mode-badge" [ngClass]="'mode-badge--' + (c.mode || (c.is_shared ? 'fixed' : 'private'))">
-                    {{ formatTripMode(c) }}
-                  </span>
-                  <small *ngIf="c.route_name" class="block text-muted">{{ c.route_name }}</small>
-                </td>
-              </tr>
-              <tr *ngIf="filteredCommissions.length === 0">
-                <td colspan="8" class="empty-cell">No commissioned rides found for selected period.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ====================================================================
-           VIEW 4: COMPLETED TRANSFERS REGISTER TABLE
-           ==================================================================== -->
-      <div class="table-card" *ngIf="viewMode === 'transfers'">
-        <div class="table-wrap">
-          <table class="tm-table">
-            <thead>
-              <tr>
-                <th>Date &amp; Time</th>
-                <th>Driver</th>
-                <th>Amount Settled</th>
-                <th>Method</th>
-                <th>Reference / UTR</th>
-                <th>Recorded By</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let t of filteredTransfers">
-                <td>
-                  <div class="date-cell">
-                    <span class="date-main">{{ t.created_at | date:'d MMM y' }}</span>
-                    <small class="date-sub">{{ t.created_at | date:'h:mm a' }}</small>
-                  </div>
-                </td>
-                <td>
-                  <div class="user-cell">
-                    <strong>{{ t.driver_name }}</strong>
-                    <small>📞 {{ t.driver_phone }}</small>
-                  </div>
-                </td>
-                <td>
-                  <strong class="amount-val">₹ {{ t.amount | number:'1.2-2' }}</strong>
-                </td>
-                <td>
-                  <span class="method-badge">{{ formatMethod(t.method) }}</span>
-                </td>
-                <td>
-                  <div class="ref-cell">
-                    <span class="ref-code">{{ t.reference || '—' }}</span>
-                    <small *ngIf="t.notes" class="ref-notes">{{ t.notes }}</small>
-                  </div>
-                </td>
-                <td>
-                  <span class="recorder-name">{{ t.recorded_by || 'Admin' }}</span>
-                </td>
-              </tr>
-              <tr *ngIf="filteredTransfers.length === 0">
-                <td colspan="6" class="empty-cell">No completed transfers recorded.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ====================================================================
-           RECORD DRIVER PAYOUT TRANSFER MODAL
+           4. RECORD DRIVER PAYOUT MODAL (Bank-Grade Executive Dialog)
            ==================================================================== -->
       <div class="modal-backdrop" *ngIf="showPayoutModal" (click)="closeModals()">
-        <div class="modal" (click)="$event.stopPropagation()">
-          <div class="modal__header">
-            <h3>Record Driver Payout Transfer</h3>
-            <button type="button" class="modal__close" (click)="closeModals()" aria-label="Close">
+        <div class="modal-card" (click)="$event.stopPropagation()">
+          <!-- Modal Header -->
+          <div class="modal-card__header">
+            <div class="modal-card__title-group">
+              <h3>Record Driver Payout</h3>
+              <p>Execute manual bank transfer or UPI payout to driver.</p>
+            </div>
+            <button type="button" class="modal-card__close" (click)="closeModals()" aria-label="Close modal">
               <tm-icon name="x" [size]="16" />
             </button>
           </div>
-          <div class="modal__body">
-            <div class="form-group" *ngIf="!selectedDriverForPayout">
-              <label>Select Driver to Payout</label>
-              <select class="form-control" [(ngModel)]="payoutDriverId" (change)="onPayoutDriverSelected()">
-                <option [ngValue]="null">-- Select a driver --</option>
+
+          <!-- Modal Body -->
+          <div class="modal-card__body">
+            <!-- Driver Picker if not preselected -->
+            <div class="form-row" *ngIf="!selectedDriverForPayout">
+              <label class="form-label">Select Driver for Settlement</label>
+              <select class="form-input form-select" [(ngModel)]="payoutDriverId" (change)="onPayoutDriverSelected()">
+                <option [ngValue]="null">-- Select a registered driver --</option>
                 <option *ngFor="let d of driversList" [ngValue]="d.driver_id">
-                  {{ d.name }} ({{ d.phone }}) — Pending: ₹{{ (d.pending_payout || 0) | number:'1.2-2' }}
+                  {{ d.name }} ({{ d.phone }}) — Pending Due: ₹{{ (d.pending_payout || 0) | number:'1.2-2' }}
                 </option>
               </select>
             </div>
 
-            <div class="payout-notice-box" *ngIf="selectedDriverForPayout" style="display: flex; flex-direction: column; gap: 10px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px;">
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">
-                <div>
-                  <span style="font-size: 11px; text-transform: uppercase; color: #64748B; font-weight: 700;">Driver</span>
-                  <div style="font-size: 15px; font-weight: 750; color: #0F172A;">{{ selectedDriverForPayout.name }}</div>
-                  <div style="font-size: 12.5px; color: #64748B;">{{ selectedDriverForPayout.phone }} · {{ selectedDriverForPayout.vehicle_reg_no }}</div>
+            <!-- Driver Account Details Card -->
+            <div class="payout-driver-card" *ngIf="selectedDriverForPayout">
+              <div class="payout-driver-card__top">
+                <div class="user-block">
+                  <div class="avatar-initials avatar-initials--green">
+                    {{ (selectedDriverForPayout.name || 'D').charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="user-block__text">
+                    <strong class="user-block__name">{{ selectedDriverForPayout.name }}</strong>
+                    <span class="user-block__phone mono">{{ selectedDriverForPayout.phone }} · {{ selectedDriverForPayout.vehicle_reg_no }}</span>
+                  </div>
                 </div>
-                <div style="text-align: right;">
-                  <span style="font-size: 11px; text-transform: uppercase; color: #059669; font-weight: 700;">Pending Payout Due</span>
-                  <div style="font-size: 18px; font-weight: 850; color: #059669;">₹ {{ (selectedDriverForPayout.pending_payout || 0) | number:'1.2-2' }}</div>
+
+                <div class="payout-driver-card__due">
+                  <span class="payout-due-lbl">Pending Due</span>
+                  <span class="payout-due-val">₹ {{ (selectedDriverForPayout.pending_payout || 0) | number:'1.2-2' }}</span>
                 </div>
               </div>
 
-              <!-- Driver Receiving Account Details -->
-              <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; padding: 10px 12px; font-size: 12.5px;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 6px; letter-spacing: 0.02em;">
-                  Driver Payout Account Details:
-                </div>
-                <div *ngIf="selectedDriverForPayout.payout_upi || selectedDriverForPayout.payout_bank_last4; else noBankDetails">
-                  <div *ngIf="selectedDriverForPayout.payout_upi" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                    <span style="color: #64748B;">UPI VPA / GPay:</span>
-                    <strong class="mono" style="color: #0F172A;">{{ selectedDriverForPayout.payout_upi }}</strong>
+              <!-- Bank Account & UPI Specs -->
+              <div class="banking-specs">
+                <div *ngIf="selectedDriverForPayout.payout_upi || selectedDriverForPayout.payout_bank_last4; else noSavedBank">
+                  <div class="spec-line" *ngIf="selectedDriverForPayout.payout_upi">
+                    <span class="spec-lbl">UPI VPA:</span>
+                    <strong class="spec-val mono">{{ selectedDriverForPayout.payout_upi }}</strong>
                   </div>
-                  <div *ngIf="selectedDriverForPayout.payout_beneficiary_name" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                    <span style="color: #64748B;">Beneficiary:</span>
-                    <strong>{{ selectedDriverForPayout.payout_beneficiary_name }}</strong>
+                  <div class="spec-line" *ngIf="selectedDriverForPayout.payout_beneficiary_name">
+                    <span class="spec-lbl">Account Holder:</span>
+                    <strong class="spec-val">{{ selectedDriverForPayout.payout_beneficiary_name }}</strong>
                   </div>
-                  <div *ngIf="selectedDriverForPayout.payout_bank_last4" style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                    <span style="color: #64748B;">Bank Account:</span>
-                    <strong class="mono">•••• {{ selectedDriverForPayout.payout_bank_last4 }}</strong>
+                  <div class="spec-line" *ngIf="selectedDriverForPayout.payout_bank_last4">
+                    <span class="spec-lbl">Bank Account:</span>
+                    <strong class="spec-val mono">•••• {{ selectedDriverForPayout.payout_bank_last4 }}</strong>
                   </div>
-                  <div *ngIf="selectedDriverForPayout.payout_ifsc" style="display: flex; justify-content: space-between;">
-                    <span style="color: #64748B;">IFSC Code:</span>
-                    <strong class="mono">{{ selectedDriverForPayout.payout_ifsc }}</strong>
+                  <div class="spec-line" *ngIf="selectedDriverForPayout.payout_ifsc">
+                    <span class="spec-lbl">IFSC Code:</span>
+                    <strong class="spec-val mono">{{ selectedDriverForPayout.payout_ifsc }}</strong>
                   </div>
                 </div>
-                <ng-template #noBankDetails>
-                  <div style="color: #64748B; line-height: 1.4;">
-                    No direct bank account saved. You can transfer directly to driver phone: <strong style="color: #0F172A;">{{ selectedDriverForPayout.phone }}</strong> (via GPay / PhonePe / Cash handover).
+
+                <ng-template #noSavedBank>
+                  <div class="no-bank-hint">
+                    No verified bank account saved. You can transfer directly via UPI / GPay to phone:
+                    <strong class="mono">{{ selectedDriverForPayout.phone }}</strong>
                   </div>
                 </ng-template>
               </div>
             </div>
 
-            <div class="form-group" style="margin-top: 14px;">
-              <label>Transfer Method</label>
-              <select class="form-control" [(ngModel)]="payoutForm.method">
-                <option value="gpay">GPay / UPI</option>
-                <option value="bank">Bank Transfer (NEFT / IMPS)</option>
+            <!-- Transfer Method -->
+            <div class="form-row">
+              <label class="form-label">Transfer Channel / Method</label>
+              <select class="form-input form-select" [(ngModel)]="payoutForm.method">
+                <option value="gpay">UPI / GPay / PhonePe</option>
+                <option value="bank">Bank Transfer (NEFT / IMPS / RTGS)</option>
                 <option value="cash">Cash Handover</option>
-                <option value="other">Other</option>
+                <option value="other">Other Settlement</option>
               </select>
             </div>
 
-            <div class="form-group">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label style="margin-bottom: 0;">Transfer Amount (₹)</label>
+            <!-- Transfer Amount -->
+            <div class="form-row">
+              <div class="form-label-bar">
+                <label class="form-label">Settlement Amount (₹)</label>
                 <button
                   *ngIf="selectedDriverForPayout && (selectedDriverForPayout.pending_payout || 0) > 0"
                   type="button"
-                  style="background: none; border: none; font-size: 11.5px; font-weight: 700; color: #059669; cursor: pointer; text-decoration: underline;"
+                  class="quick-fill-btn"
                   (click)="fillPendingAmount()"
-                >Fill ₹{{ selectedDriverForPayout.pending_payout | number:'1.2-2' }}</button>
+                >
+                  Fill Full Due: ₹{{ selectedDriverForPayout.pending_payout | number:'1.2-2' }}
+                </button>
               </div>
               <input
                 type="number"
-                class="form-control"
+                class="form-input mono"
                 min="0.01"
                 step="0.01"
-                placeholder="e.g. 500"
+                placeholder="0.00"
                 [(ngModel)]="payoutForm.amount"
-                style="margin-top: 6px;"
               />
             </div>
 
-            <div class="form-group">
-              <label>UTR / Transaction Reference</label>
-              <input type="text" class="form-control" placeholder="e.g. UTR123456789" [(ngModel)]="payoutForm.reference" />
+            <!-- UTR Reference -->
+            <div class="form-row">
+              <label class="form-label">UTR / Transaction Reference (Optional)</label>
+              <input
+                type="text"
+                class="form-input mono"
+                placeholder="e.g. UTR123456789 or UPI Ref"
+                [(ngModel)]="payoutForm.reference"
+              />
             </div>
 
-            <div class="form-group">
-              <label>Notes / Remarks</label>
-              <input type="text" class="form-control" placeholder="e.g. Weekly settlement payout" [(ngModel)]="payoutForm.note" />
+            <!-- Remarks -->
+            <div class="form-row">
+              <label class="form-label">Internal Notes / Settlement Remarks</label>
+              <input
+                type="text"
+                class="form-input"
+                placeholder="e.g. Weekly driver earnings settlement"
+                [(ngModel)]="payoutForm.note"
+              />
             </div>
 
-            <div *ngIf="payoutError" class="modal-error">{{ payoutError }}</div>
+            <!-- Modal Error Banner -->
+            <div class="modal-alert-error" *ngIf="payoutError">
+              <tm-icon name="bell" [size]="14" />
+              <span>{{ payoutError }}</span>
+            </div>
           </div>
-          <div class="modal__footer">
-            <tm-button variant="outline" size="sm" (clicked)="closeModals()" [disabled]="submittingPayout">Cancel</tm-button>
+
+          <!-- Modal Footer -->
+          <div class="modal-card__footer">
+            <tm-button variant="outline" size="sm" (clicked)="closeModals()" [disabled]="submittingPayout">
+              Cancel
+            </tm-button>
             <tm-button
               variant="green"
               size="sm"
               [loading]="submittingPayout"
               [disabled]="submittingPayout || !selectedDriverForPayout || !payoutForm.amount || payoutForm.amount <= 0"
               (clicked)="submitPayout()"
-            >Confirm Transfer</tm-button>
+            >
+              Confirm &amp; Record Transfer
+            </tm-button>
           </div>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    :host { display: block; }
-    .page { display: flex; flex-direction: column; gap: 16px; }
+    :host {
+      display: block;
+      width: 100%;
+    }
 
-    /* Page Hero Header */
-    .page__hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-    .page__title { margin: 0; font-size: 26px; line-height: 1.1; font-weight: 850; color: var(--tm-text); letter-spacing: -0.02em; }
-    .page__sub { margin: 6px 0 0; max-width: 780px; color: var(--tm-text-muted); font-size: 13.5px; line-height: 1.5; }
-    .hero__side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ledger-shell {
+      display: flex;
+      flex-direction: column;
+      gap: var(--tm-space-5, 20px);
+      max-width: var(--tm-content-max, 1400px);
+      margin: 0 auto;
+    }
 
-    /* Reconciliation Banner */
-    .verdict { display: flex; align-items: center; gap: 12px; padding: 14px 16px;
-      border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--tm-radius-lg); background: var(--tm-green-tint);
-      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.05); }
-    .verdict__icon { display: inline-flex; color: var(--tm-green-deep); flex: none; }
-    .verdict__body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-    .verdict__body strong { font-size: 14px; font-weight: 800; color: var(--tm-text); }
-    .verdict__body span { font-size: 12.5px; color: var(--tm-text-muted); }
-    .verdict--bad { background: var(--tm-danger-bg, #fef3f2); border-color: rgba(225, 29, 72, 0.3); }
-    .verdict--bad .verdict__icon { color: var(--tm-danger, #B42318); }
+    /* ==========================================================================
+       1. HERO HEADER
+       ========================================================================== */
+    .ledger-hero {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--tm-space-4, 16px);
+      flex-wrap: wrap;
+    }
 
-    /* KPI Cards Grid */
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-    .card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; background: var(--tm-surface);
-      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); transition: all 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04); position: relative; overflow: hidden; cursor: pointer; }
-    .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--tm-green-deep); }
-    .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--tm-text); }
-    .card__label { font-size: 11.5px; color: var(--tm-text-muted); font-weight: 700; }
-    .card__value { font-size: 20px; font-weight: 850; color: var(--tm-text); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-    .card__meta { font-size: 11px; color: var(--tm-text-soft); font-weight: 500; }
-    .card--driver::before { background: var(--tm-info-fg, #1d4ed8); }
-    .card--pending::before { background: var(--tm-green-deep); }
-    .card--operator::before { background: var(--tm-green-deep); }
-    .card--earnings::before { background: var(--tm-info-fg, #1d4ed8); }
-    .card--wallet::before { background: var(--tm-warning-fg, #d97706); }
-    .card--held::before { background: var(--tm-warning-fg, #d97706); }
-    .card--refund::before { background: var(--tm-danger, #e11d48); }
-    .card__value--emerald { color: var(--tm-green-deep); }
-    .card__value--rose { color: var(--tm-danger, #e11d48); }
+    .ledger-hero__main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
 
-    /* Toolbar & View Modes */
-    .toolbar { display: flex; flex-direction: column; gap: 12px; background: var(--tm-surface);
-      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); padding: 12px 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
-    .view-modes { display: flex; gap: 6px; padding: 3px; background: var(--tm-canvas-2, #ebecee);
-      border-radius: var(--tm-radius-md); overflow-x: auto; max-width: 100%; scrollbar-width: none; }
-    .view-modes::-webkit-scrollbar { display: none; }
-    .view-mode-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border: 0;
-      background: transparent; color: var(--tm-text-muted); font-family: var(--tm-font-body);
-      font-size: 12.5px; font-weight: 700; cursor: pointer; border-radius: calc(var(--tm-radius-md) - 3px);
-      white-space: nowrap; transition: all 0.15s ease; }
-    .view-mode-btn:hover:not(.is-active) { color: var(--tm-text); }
-    .view-mode-btn.is-active { background: var(--tm-surface); color: var(--tm-text); font-weight: 800; box-shadow: 0 1px 3px rgba(15,20,25,0.08); }
+    .ledger-hero__eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--tm-text-muted, #6B7785);
+    }
 
-    .filters-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    .toolbar__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--tm-green, #22C55E);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+    }
 
-    .tabs-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .tabs { display: flex; align-items: center; gap: 4px; }
-    .tabs-label { font-size: 11.5px; font-weight: 800; color: var(--tm-text-muted); margin-right: 2px; }
-    .tab { border: 1px solid var(--tm-line); background: var(--tm-surface); color: var(--tm-text-muted);
-      border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
-      transition: all 0.15s ease; }
-    .tab:hover { border-color: var(--tm-text); color: var(--tm-text); }
-    .tab--on { background: var(--tm-text); color: var(--tm-surface); border-color: var(--tm-text); font-weight: 800; }
+    .pulse-dot--warning {
+      background: var(--tm-warning, #F59E0B);
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+    }
 
-    .pills { display: inline-flex; align-items: center; gap: 4px; background: var(--tm-canvas-subtle, #f3f4f6); padding: 3px; border-radius: var(--tm-radius-md); }
-    .pill { border: 0; background: transparent; padding: 5px 12px; border-radius: var(--tm-radius-sm); font-size: 12px; font-weight: 700; color: var(--tm-text-muted); cursor: pointer; transition: all 0.15s ease; white-space: nowrap; }
-    .pill:hover { color: var(--tm-text); }
-    .pill--on { background: var(--tm-surface); color: var(--tm-text); font-weight: 850; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .ledger-hero__title {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 850;
+      letter-spacing: -0.03em;
+      color: var(--tm-text, #0F1419);
+      line-height: 1.15;
+    }
 
-    .date-pills { display: inline-flex; align-items: center; gap: 3px; background: var(--tm-canvas-subtle, #f3f4f6); padding: 3px; border-radius: var(--tm-radius-md); }
-    .date-pill { border: 0; background: transparent; padding: 4px 10px; border-radius: var(--tm-radius-sm); font-size: 11.5px; font-weight: 700; color: var(--tm-text-muted); cursor: pointer; transition: all 0.15s ease; white-space: nowrap; }
-    .date-pill:hover { color: var(--tm-text); }
-    .date-pill--on { background: var(--tm-surface); color: var(--tm-text); font-weight: 850; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .ledger-hero__desc {
+      margin: 0;
+      font-size: 13.5px;
+      color: var(--tm-text-muted, #6B7785);
+      line-height: 1.45;
+    }
 
-    .search { position: relative; display: flex; align-items: center; min-width: 220px; }
-    .search__icon { position: absolute; left: 10px; color: var(--tm-text-muted); display: inline-flex; pointer-events: none; }
-    .search__input { width: 100%; height: 34px; padding: 0 26px 0 32px; font: inherit; font-size: 12px;
-      color: var(--tm-text); background: var(--tm-surface); border: 1px solid var(--tm-line);
-      border-radius: var(--tm-radius-md); outline: none; transition: border-color 0.15s ease; }
-    .search__input:focus { border-color: var(--tm-text); }
-    .search__clear { position: absolute; right: 6px; border: 0; background: transparent; padding: 4px; color: var(--tm-text-muted); cursor: pointer; display: inline-flex; }
+    .ledger-hero__actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
 
-    .date-range { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
-      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-surface); line-height: 1; cursor: pointer; position: relative; }
-    .date-range.has-value { background: var(--tm-green-tint); border-color: var(--tm-green-deep); }
-    .date-range__icon { color: var(--tm-text-muted); display: inline-flex; }
-    .date-range.has-value .date-range__icon { color: var(--tm-green-deep); }
-    .date-range__input { appearance: none; background: transparent; border: 0; outline: 0; font-family: var(--tm-font-mono); font-size: 11.5px; font-weight: 600; color: var(--tm-text); padding: 0; width: 130px; cursor: pointer; }
+    .audit-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: var(--tm-radius-pill, 999px);
+      font-size: 12px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      border: 1px solid transparent;
+      user-select: none;
+    }
 
-    .export-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; background: #059669; color: #ffffff; border: 0; border-radius: var(--tm-radius-md); font-size: 12px; font-weight: 800; cursor: pointer; transition: background 0.15s ease; white-space: nowrap; }
-    .export-btn:hover { background: #047857; }
-    .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--tm-text-muted); cursor: pointer; user-select: none; }
+    .audit-pill:hover {
+      transform: translateY(-1px);
+    }
 
-    /* Table Card & General Tables */
-    .table-card { background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
-    .table-wrap { overflow-x: auto; }
-    .tm-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
-    .tm-table th { background: var(--tm-canvas-subtle, #f9fafb); color: var(--tm-text-muted); font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 12px 16px; letter-spacing: 0.05em; border-bottom: 1px solid var(--tm-line); }
-    .tm-table td { padding: 13px 16px; border-bottom: 1px solid var(--tm-line-subtle, #f0f0f0); vertical-align: middle; }
-    .tm-table tbody tr:hover { background: var(--tm-canvas-subtle, #fcfcfc); }
+    .audit-pill--good {
+      background: var(--tm-green-tint, #ECFDF3);
+      color: var(--tm-green-deep, #16A34A);
+      border-color: rgba(34, 197, 94, 0.25);
+    }
 
-    .user-cell { display: flex; flex-direction: column; gap: 2px; }
-    .user-cell strong { color: var(--tm-text); font-size: 13px; }
-    .user-cell small { color: var(--tm-text-muted); font-family: var(--tm-font-mono); font-size: 11px; }
+    .audit-pill--bad {
+      background: var(--tm-danger-bg, #FEE2E2);
+      color: var(--tm-danger-fg, #B91C1C);
+      border-color: rgba(239, 68, 68, 0.3);
+      animation: alertPulse 2s infinite ease-in-out;
+    }
 
-    .veh-cell { display: flex; flex-direction: column; gap: 2px; }
-    .balance-badge { display: inline-flex; padding: 2px 7px; border-radius: var(--tm-radius-sm); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .balance-badge--pos { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .balance-badge--neg { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
+    @keyframes alertPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
+    }
 
-    .limit-text { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--tm-text); }
-    .pending-badge { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--tm-green-deep); }
-    .earnings-val { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--tm-text); }
-    .split-cell { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
-    .cash-text { color: var(--tm-warning-fg, #d97706); font-weight: 600; }
-    .online-text { color: var(--tm-text-muted); }
-    .action-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    /* ==========================================================================
+       2. KPI CARDS GRID
+       ========================================================================== */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--tm-space-4, 16px);
+    }
 
-    .trip-cell { display: flex; flex-direction: column; gap: 2px; }
-    .trip-id { font-family: var(--tm-font-mono); font-weight: 800; color: var(--tm-info-fg, #1d4ed8); }
-    .trip-date { font-size: 11px; color: var(--tm-text-muted); }
-    .amount-cell { font-variant-numeric: tabular-nums; font-weight: 600; }
-    .rate-badge { display: inline-flex; padding: 2px 6px; border-radius: var(--tm-radius-sm); font-size: 11px; font-weight: 800; background: var(--tm-canvas-2); color: var(--tm-text); }
-    .comm-amount { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--tm-warning-fg, #d97706); }
-    .driver-share { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--tm-green-deep); }
-    .mode-badge { display: inline-flex; padding: 2px 7px; border-radius: var(--tm-radius-sm); font-size: 10.5px; font-weight: 700; background: var(--tm-canvas); color: var(--tm-text-muted); }
+    @media (max-width: 1024px) {
+      .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
 
-    .date-cell { display: flex; flex-direction: column; gap: 2px; }
-    .date-main { font-weight: 700; color: var(--tm-text); }
-    .date-sub { font-size: 11px; color: var(--tm-text-muted); }
-    .amount-val { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--tm-green-deep); }
-    .method-badge { display: inline-flex; padding: 2px 7px; border-radius: var(--tm-radius-sm); font-size: 11px; font-weight: 700; background: var(--tm-canvas); color: var(--tm-text); }
-    .ref-cell { display: flex; flex-direction: column; gap: 2px; }
-    .ref-code { font-family: var(--tm-font-mono); font-size: 11.5px; font-weight: 600; color: var(--tm-text); }
-    .ref-notes { font-size: 11px; color: var(--tm-text-muted); }
+    @media (max-width: 600px) {
+      .kpi-grid {
+        grid-template-columns: 1fr;
+      }
+    }
 
-    .status-pill { display: inline-flex; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 800; }
-    .status-pill--bad { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
-    .text-danger-sm { font-size: 10px; color: var(--tm-danger, #B42318); font-weight: 700; margin-top: 2px; }
+    .kpi-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 16px 18px;
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-lg, 22px);
+      box-shadow: var(--tm-shadow-sm, 0 1px 2px rgba(15,20,25,0.05));
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
 
-    .empty-cell { text-align: center; padding: 36px !important; color: var(--tm-text-muted); font-size: 13px; }
-    .state--error { color: var(--tm-danger, #e11d48); padding: 12px; background: var(--tm-danger-bg, #fef3f2); border-radius: var(--tm-radius-md); }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--tm-line-2, #E2E6EC);
+      box-shadow: var(--tm-shadow-card, 0 8px 24px -16px rgba(15,20,25,0.12));
+    }
 
-    /* Movements DataTable Specific Styles */
-    .stack { display: flex; flex-direction: column; gap: 2px; }
-    .stack--child { padding-left: 14px; border-left: 3px solid var(--tm-line-2, #e5e7eb); }
-    .tx-badge { display: inline-block; font-size: 10.5px; font-weight: 800; color: var(--tm-text-muted); font-family: var(--tm-font-mono); }
-    .mv { display: inline-flex; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; background: var(--tm-canvas); color: var(--tm-text); white-space: nowrap; }
-    .mv--capture { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .mv--transfer { background: var(--tm-info-bg, #eff6ff); color: var(--tm-info-fg, #1d4ed8); }
-    .mv--cash_retained { background: var(--tm-canvas-2, #f3f4f6); color: var(--tm-text, #1f2937); border: 1px solid rgba(0,0,0,0.06); }
-    .mv--retained { background: var(--tm-canvas); color: var(--tm-text); }
-    .mv--gateway_fee { background: var(--tm-canvas-2); color: var(--tm-text-muted); }
-    .mv--held { background: var(--tm-warning-bg, #fff4e5); color: var(--tm-warning-fg, #92400e); }
-    .mv--refund, .mv--reversal { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
-    .mv--child { opacity: 0.9; }
+    .kpi-card.is-active {
+      border-color: var(--tm-ink, #0F1419);
+      box-shadow: 0 0 0 2px rgba(15, 20, 25, 0.08);
+    }
 
-    .party-info { display: flex; flex-direction: column; gap: 2px; }
-    .party-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
-    .party-phone { font-size: 11px; color: var(--tm-text-muted); font-family: var(--tm-font-mono); }
-    .party-badge { display: inline-flex; width: fit-content; padding: 1px 5px; border-radius: 4px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; background: var(--tm-canvas); color: var(--tm-text-muted); }
-    .party-badge--customer { background: var(--tm-green-tint); color: var(--tm-green-deep); }
-    .party-badge--driver { background: var(--tm-info-bg, #eff6ff); color: var(--tm-info-fg, #1d4ed8); }
-    .party-badge--operator { background: var(--tm-canvas-2); color: var(--tm-text); }
-    .party-sub-details { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
-    .party-sub-details small { font-size: 10.5px; color: var(--tm-text-muted); }
+    .kpi-card__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
 
-    .groupmeta { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--tm-text-muted); font-variant-numeric: tabular-nums; }
-    .groupmeta__title { font-size: 13px; font-weight: 850; color: var(--tm-text); }
-    .groupmeta--refund { color: var(--tm-danger, #B42318); font-weight: 700; }
+    .kpi-card__label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--tm-text-muted, #6B7785);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
 
-    .triplink { border: 0; background: transparent; padding: 0; font: inherit; font-size: 12px; font-weight: 800; color: var(--tm-info-fg, #1d4ed8); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-    .bal { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; background: var(--tm-green-tint); color: var(--tm-green-deep); white-space: nowrap; }
-    .bal__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
-    .bal--bad { background: var(--tm-danger-bg, #fef3f2); color: var(--tm-danger, #B42318); }
+    .kpi-card__icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-    .grouptoggle { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--tm-line); background: var(--tm-surface); padding: 4px 10px; border-radius: var(--tm-radius-md); font: inherit; font-size: 11.5px; font-weight: 800; color: var(--tm-text); cursor: pointer; }
-    .amount { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 13px; color: var(--tm-green-deep); }
-    .amount--out { color: var(--tm-text); }
-    .amount--group { color: var(--tm-text); }
+    .kpi-card__icon--emerald { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .kpi-card__icon--blue { background: var(--tm-info-bg, #DBEAFE); color: var(--tm-info-fg, #1E40AF); }
+    .kpi-card__icon--amber { background: var(--tm-warning-bg, #FEF3C7); color: var(--tm-warning-fg, #92400E); }
+    .kpi-card__icon--purple { background: #F3E8FF; color: #7E22CE; }
 
-    /* Modals */
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 20, 25, 0.45); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 10000; }
-    .modal { background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-xl); width: 480px; max-width: 92vw; overflow: hidden; box-shadow: var(--tm-shadow-pop, 0 10px 40px rgba(0,0,0,0.15)); }
-    .modal__header { padding: 16px 20px; border-bottom: 1px solid var(--tm-line); display: flex; justify-content: space-between; align-items: center; }
-    .modal__header h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--tm-text); }
-    .modal__close { border: 0; background: transparent; padding: 4px; color: var(--tm-text-muted); cursor: pointer; display: inline-flex; }
-    .modal__close:hover { color: var(--tm-text); }
-    .modal__body { padding: 18px 20px; display: flex; flex-direction: column; gap: 13px; }
-    .driver-summary-box, .payout-notice-box { background: var(--tm-canvas-subtle, #f9fafb); padding: 10px 14px; border-radius: var(--tm-radius-md); border: 1px solid var(--tm-line); font-size: 12.5px; }
-    .payout-notice-box { background: var(--tm-green-tint); border-color: rgba(16,185,129,0.3); display: flex; justify-content: space-between; align-items: center; }
-    .lbl { color: var(--tm-text-muted); margin-right: 5px; }
-    .text-emerald { color: var(--tm-green-deep); font-weight: 800; }
-    .text-rose { color: var(--tm-danger, #B42318); font-weight: 800; }
-    .ml-3 { margin-left: 12px; }
-    .mt-1 { margin-top: 4px; }
-    .block { display: block; }
-    .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 11.5px; font-weight: 700; color: var(--tm-text-muted); }
-    .form-control { border: 1px solid var(--tm-line); background: var(--tm-surface); color: var(--tm-text); border-radius: var(--tm-radius-md); padding: 7px 11px; font: inherit; font-size: 12.5px; outline: none; transition: border-color 0.15s ease; }
-    .form-control:focus { border-color: var(--tm-text); }
-    .modal-error { color: var(--tm-danger, #B42318); font-size: 11.5px; font-weight: 600; padding: 7px 10px; background: var(--tm-danger-bg, #fef3f2); border-radius: var(--tm-radius-sm); }
-    .modal__footer { padding: 12px 20px; border-top: 1px solid var(--tm-line); display: flex; justify-content: flex-end; gap: 8px; background: var(--tm-canvas-subtle, #fafafa); }
+    .kpi-card__value {
+      font-size: 24px;
+      font-weight: 850;
+      color: var(--tm-text, #0F1419);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      margin-top: 2px;
+    }
+
+    .kpi-card__value--danger {
+      color: var(--tm-danger-fg, #B91C1C);
+    }
+
+    .kpi-card__sub {
+      font-size: 11.5px;
+      color: var(--tm-text-soft, #94A0AD);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tag-pending {
+      color: var(--tm-green-deep, #16A34A);
+      font-weight: 800;
+    }
+
+    .tag-settled {
+      color: var(--tm-text-muted, #6B7785);
+    }
+
+    .tag-debt {
+      color: var(--tm-danger-fg, #B91C1C);
+      font-weight: 800;
+    }
+
+    .tag-clean {
+      color: var(--tm-text-muted, #6B7785);
+    }
+
+    .kpi-badge {
+      display: inline-flex;
+      padding: 1px 6px;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text, #0F1419);
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 11px;
+    }
+
+    /* Secondary Stats Pill Bar */
+    .secondary-stats {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--tm-canvas-2, #EAEEF4);
+      border-radius: var(--tm-radius-md, 14px);
+      flex-wrap: wrap;
+    }
+
+    .secondary-stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .secondary-stat__lbl {
+      color: var(--tm-text-muted, #6B7785);
+      font-weight: 600;
+    }
+
+    .secondary-stat__val {
+      color: var(--tm-text, #0F1419);
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .text-danger { color: var(--tm-danger-fg, #B91C1C); }
+    .text-emerald-bold { color: var(--tm-green-deep, #16A34A); font-weight: 700; font-size: 11px; }
+
+    /* ==========================================================================
+       3. MAIN SECTION CARD & SEGMENTED TABS
+       ========================================================================== */
+    .section-card {
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-lg, 22px);
+      box-shadow: var(--tm-shadow-sm, 0 1px 2px rgba(15,20,25,0.05));
+      overflow: hidden;
+    }
+
+    .nav-and-filters {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--tm-line, #ECEFF3);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .seg-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 3px;
+      background: var(--tm-canvas, #F4F6FA);
+      border-radius: var(--tm-radius-md, 14px);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .seg-tabs::-webkit-scrollbar { display: none; }
+
+    .seg-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border: 0;
+      background: transparent;
+      color: var(--tm-text-muted, #6B7785);
+      font-family: var(--tm-font-body);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: calc(var(--tm-radius-md, 14px) - 3px);
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .seg-tab:hover:not(.is-active) {
+      color: var(--tm-text, #0F1419);
+    }
+
+    .seg-tab.is-active {
+      background: var(--tm-surface, #FFFFFF);
+      color: var(--tm-text, #0F1419);
+      font-weight: 800;
+      box-shadow: 0 1px 3px rgba(15,20,25,0.08);
+    }
+
+    .seg-tab__count {
+      display: inline-flex;
+      padding: 1px 6px;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text-muted, #6B7785);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .seg-tab.is-active .seg-tab__count {
+      background: var(--tm-canvas, #F4F6FA);
+      color: var(--tm-text, #0F1419);
+    }
+
+    .seg-tab__count--alert {
+      background: var(--tm-green-tint, #ECFDF3) !important;
+      color: var(--tm-green-deep, #16A34A) !important;
+    }
+
+    /* Filter Strip */
+    .filter-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .filter-strip__left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-strip__right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    /* Mini Segmented (Group By) */
+    .mini-segmented {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 4px;
+      background: var(--tm-canvas, #F4F6FA);
+      border-radius: var(--tm-radius-sm, 10px);
+    }
+
+    .mini-segmented__label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--tm-text-soft, #94A0AD);
+      margin: 0 4px;
+    }
+
+    .mini-btn {
+      border: 0;
+      background: transparent;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .mini-btn:hover { color: var(--tm-text, #0F1419); }
+    .mini-btn.is-active {
+      background: var(--tm-surface, #FFFFFF);
+      color: var(--tm-text, #0F1419);
+      font-weight: 800;
+      box-shadow: 0 1px 2px rgba(15,20,25,0.06);
+    }
+
+    /* Clean Select */
+    .select-wrapper { position: relative; }
+    .clean-select {
+      height: 32px;
+      padding: 0 10px;
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-sm, 10px);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--tm-text, #0F1419);
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.15s ease;
+    }
+    .clean-select:focus { border-color: var(--tm-ink, #0F1419); }
+
+    /* Pill Toggle */
+    .pill-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--tm-line, #ECEFF3);
+      background: var(--tm-surface, #FFFFFF);
+      border-radius: var(--tm-radius-sm, 10px);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .pill-toggle:hover { border-color: var(--tm-text, #0F1419); color: var(--tm-text, #0F1419); }
+    .pill-toggle--active {
+      background: var(--tm-ink, #0F1419);
+      color: var(--tm-surface, #FFFFFF) !important;
+      border-color: var(--tm-ink, #0F1419);
+    }
+    .pill-toggle--warning .pill-toggle__dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--tm-warning, #F59E0B);
+    }
+
+    /* Driver Status Filter Pills */
+    .filter-pills {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--tm-canvas, #F4F6FA);
+      padding: 2px 4px;
+      border-radius: var(--tm-radius-sm, 10px);
+    }
+
+    .filter-pill {
+      border: 0;
+      background: transparent;
+      padding: 5px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .filter-pill:hover { color: var(--tm-text, #0F1419); }
+    .filter-pill.is-active {
+      background: var(--tm-surface, #FFFFFF);
+      color: var(--tm-text, #0F1419);
+      font-weight: 800;
+      box-shadow: 0 1px 2px rgba(15,20,25,0.06);
+    }
+
+    /* Date Presets */
+    .date-presets {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--tm-canvas, #F4F6FA);
+      padding: 2px 4px;
+      border-radius: var(--tm-radius-sm, 10px);
+    }
+
+    .date-chip {
+      border: 0;
+      background: transparent;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .date-chip:hover { color: var(--tm-text, #0F1419); }
+    .date-chip.is-active {
+      background: var(--tm-surface, #FFFFFF);
+      color: var(--tm-text, #0F1419);
+      font-weight: 800;
+      box-shadow: 0 1px 2px rgba(15,20,25,0.06);
+    }
+
+    /* Date Range Box */
+    .range-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-sm, 10px);
+      background: var(--tm-surface, #FFFFFF);
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+    }
+    .range-box.is-filtered {
+      border-color: var(--tm-green, #22C55E);
+      background: var(--tm-green-tint, #ECFDF3);
+      color: var(--tm-green-deep, #16A34A);
+    }
+    .range-box__input {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      outline: 0;
+      font-family: var(--tm-font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: inherit;
+      width: 120px;
+      cursor: pointer;
+    }
+    .range-box__clear {
+      border: 0;
+      background: transparent;
+      padding: 2px;
+      color: inherit;
+      cursor: pointer;
+      display: inline-flex;
+    }
+
+    /* Search Box */
+    .search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+      min-width: 220px;
+    }
+    .search-box__icon {
+      position: absolute;
+      left: 10px;
+      color: var(--tm-text-soft, #94A0AD);
+      pointer-events: none;
+    }
+    .search-box__input {
+      width: 100%;
+      height: 32px;
+      padding: 0 24px 0 30px;
+      font: inherit;
+      font-size: 12px;
+      color: var(--tm-text, #0F1419);
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-sm, 10px);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .search-box__input:focus { border-color: var(--tm-ink, #0F1419); }
+    .search-box__clear {
+      position: absolute;
+      right: 6px;
+      border: 0;
+      background: transparent;
+      padding: 2px;
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+      display: inline-flex;
+    }
+
+    /* ==========================================================================
+       TABLES & CELLS
+       ========================================================================== */
+    .table-container { width: 100%; }
+    .custom-table-wrap { overflow-x: auto; }
+
+    .luxury-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .luxury-table th {
+      background: var(--tm-canvas, #F4F6FA);
+      color: var(--tm-text-muted, #6B7785);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--tm-line, #ECEFF3);
+    }
+
+    .luxury-table td {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--tm-line, #ECEFF3);
+      vertical-align: middle;
+    }
+
+    .hoverable-row { transition: background 0.15s ease; }
+    .hoverable-row:hover { background: var(--tm-canvas, #F4F6FA); }
+
+    /* Common Cell Components */
+    .mono { font-family: var(--tm-font-mono, monospace); }
+    .cell-stack { display: flex; flex-direction: column; gap: 2px; }
+    .cell-stack--child { padding-left: 12px; border-left: 2px solid var(--tm-line-2, #E2E6EC); }
+    .cell-primary { font-weight: 700; color: var(--tm-text, #0F1419); }
+    .cell-muted { font-size: 11.5px; color: var(--tm-text-muted, #6B7785); }
+
+    .user-block { display: flex; align-items: center; gap: 10px; }
+    .avatar-initials {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text, #0F1419);
+      font-weight: 800;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+    }
+    .avatar-initials--green { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .avatar-initials--blue { background: var(--tm-info-bg, #DBEAFE); color: var(--tm-info-fg, #1E40AF); }
+
+    .user-block__text { display: flex; flex-direction: column; gap: 1px; }
+    .user-block__name { font-size: 13px; font-weight: 800; color: var(--tm-text, #0F1419); }
+    .user-block__phone { font-size: 11px; color: var(--tm-text-muted, #6B7785); }
+
+    /* Tags & Pills */
+    .ref-tag {
+      font-family: var(--tm-font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--tm-text-soft, #94A0AD);
+    }
+
+    .trip-tag {
+      display: inline-flex;
+      align-items: center;
+      font-family: var(--tm-font-mono);
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--tm-info-fg, #1E40AF);
+      background: var(--tm-info-bg, #DBEAFE);
+      padding: 2px 7px;
+      border-radius: 6px;
+      border: 0;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    .trip-tag:hover { transform: scale(1.03); }
+
+    .accordion-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line-2, #E2E6EC);
+      border-radius: var(--tm-radius-sm, 10px);
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--tm-text, #0F1419);
+      cursor: pointer;
+      box-shadow: var(--tm-shadow-sm, 0 1px 2px rgba(15,20,25,0.05));
+    }
+
+    .type-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: var(--tm-radius-pill, 999px);
+      font-size: 11px;
+      font-weight: 800;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text, #0F1419);
+      white-space: nowrap;
+    }
+    .type-pill__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .type-pill--capture { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .type-pill--transfer { background: var(--tm-info-bg, #DBEAFE); color: var(--tm-info-fg, #1E40AF); }
+    .type-pill--retained { background: var(--tm-warning-bg, #FEF3C7); color: var(--tm-warning-fg, #92400E); }
+    .type-pill--held { background: #FEF3C7; color: #92400E; }
+    .type-pill--refund, .type-pill--reversal { background: var(--tm-danger-bg, #FEE2E2); color: var(--tm-danger-fg, #B91C1C); }
+
+    .role-badge {
+      display: inline-flex;
+      width: fit-content;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 9.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text-muted, #6B7785);
+    }
+    .role-badge--customer { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .role-badge--driver { background: var(--tm-info-bg, #DBEAFE); color: var(--tm-info-fg, #1E40AF); }
+    .role-badge--platform { background: var(--tm-ink, #0F1419); color: var(--tm-surface, #FFFFFF); }
+
+    .party-row { display: flex; flex-direction: column; gap: 2px; }
+    .party-title { font-size: 13px; font-weight: 800; color: var(--tm-text, #0F1419); }
+    .party-phone { font-size: 11px; color: var(--tm-text-muted, #6B7785); }
+    .party-subinfo { display: flex; gap: 6px; font-size: 11px; color: var(--tm-text-muted, #6B7785); }
+
+    .group-info { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; }
+    .group-info__title { font-size: 13px; font-weight: 850; color: var(--tm-text, #0F1419); }
+    .group-info__parties { display: flex; gap: 8px; color: var(--tm-text-muted, #6B7785); }
+    .group-info__split { display: flex; gap: 6px; color: var(--tm-text-soft, #94A0AD); font-weight: 600; }
+
+    .proof-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: var(--tm-radius-pill, 999px);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .proof-tag__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .proof-tag--balanced { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .proof-tag--imbalance { background: var(--tm-danger-bg, #FEE2E2); color: var(--tm-danger-fg, #B91C1C); }
+
+    .mono-code {
+      font-family: var(--tm-font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--tm-text, #0F1419);
+      max-width: 170px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .amount-val {
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      font-size: 13.5px;
+    }
+    .amount-val--in { color: var(--tm-green-deep, #16A34A); }
+    .amount-val--out { color: var(--tm-text, #0F1419); }
+    .amount-val--group { color: var(--tm-text, #0F1419); font-size: 14px; }
+
+    /* Driver Table Specific Styles */
+    .wallet-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: var(--tm-radius-pill, 999px);
+      font-size: 12.5px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+    .wallet-badge__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .wallet-badge--positive { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .wallet-badge--negative { background: var(--tm-danger-bg, #FEE2E2); color: var(--tm-danger-fg, #B91C1C); }
+    .debt-warning-tag {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--tm-danger-fg, #B91C1C);
+      margin-top: 2px;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      width: fit-content;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 700;
+    }
+    .status-chip--allowed { background: var(--tm-green-tint, #ECFDF3); color: var(--tm-green-deep, #16A34A); }
+    .status-chip--blocked { background: var(--tm-danger-bg, #FEE2E2); color: var(--tm-danger-fg, #B91C1C); }
+
+    .payout-due-highlight {
+      font-variant-numeric: tabular-nums;
+      font-weight: 850;
+      font-size: 14px;
+      color: var(--tm-green-deep, #16A34A);
+    }
+
+    .split-pill-group { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+    .split-pill { font-weight: 600; }
+    .split-pill--cash { color: var(--tm-warning-fg, #92400E); }
+    .split-pill--online { color: var(--tm-text-muted, #6B7785); }
+
+    .rate-tag {
+      display: inline-flex;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text, #0F1419);
+      font-size: 11.5px;
+      font-weight: 800;
+    }
+    .rate-tag--fixed { background: #FEF3C7; color: #92400E; }
+    .fee-highlight { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--tm-warning-fg, #92400E); }
+    .driver-share-highlight { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--tm-green-deep, #16A34A); }
+
+    .service-pill {
+      display: inline-flex;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--tm-canvas, #F4F6FA);
+      color: var(--tm-text-muted, #6B7785);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .route-sub { display: block; font-size: 10.5px; color: var(--tm-text-soft, #94A0AD); margin-top: 1px; }
+
+    .transfer-amt-badge {
+      font-variant-numeric: tabular-nums;
+      font-weight: 850;
+      font-size: 14px;
+      color: var(--tm-green-deep, #16A34A);
+    }
+    .method-tag {
+      display: inline-flex;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--tm-canvas-2, #EAEEF4);
+      color: var(--tm-text, #0F1419);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .recorder-chip { font-size: 12px; color: var(--tm-text-muted, #6B7785); font-weight: 600; }
+
+    .empty-state-cell {
+      text-align: center;
+      padding: 48px 18px !important;
+    }
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--tm-text-soft, #94A0AD);
+    }
+    .empty-state p { margin: 0; font-size: 13px; font-weight: 600; color: var(--tm-text-muted, #6B7785); }
+
+    .alert-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: var(--tm-radius-md, 14px);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .alert-box--error {
+      background: var(--tm-danger-bg, #FEE2E2);
+      color: var(--tm-danger-fg, #B91C1C);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .alert-box__retry {
+      margin-left: auto;
+      border: 0;
+      background: transparent;
+      text-decoration: underline;
+      color: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* ==========================================================================
+       4. BANK-GRADE RECORD PAYOUT MODAL
+       ========================================================================== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 20, 25, 0.5);
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      padding: 16px;
+    }
+
+    .modal-card {
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-xl, 28px);
+      width: 500px;
+      max-width: 100%;
+      overflow: hidden;
+      box-shadow: var(--tm-shadow-pop, 0 12px 40px -16px rgba(15,20,25,0.25));
+      animation: modalSlideUp 0.2s ease-out;
+    }
+
+    @keyframes modalSlideUp {
+      from { transform: translateY(12px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .modal-card__header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--tm-line, #ECEFF3);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .modal-card__title-group h3 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 850;
+      color: var(--tm-text, #0F1419);
+      letter-spacing: -0.02em;
+    }
+
+    .modal-card__title-group p {
+      margin: 3px 0 0;
+      font-size: 12px;
+      color: var(--tm-text-muted, #6B7785);
+    }
+
+    .modal-card__close {
+      border: 0;
+      background: transparent;
+      padding: 4px;
+      color: var(--tm-text-muted, #6B7785);
+      cursor: pointer;
+      display: inline-flex;
+      border-radius: 6px;
+      transition: background 0.15s ease;
+    }
+    .modal-card__close:hover { background: var(--tm-canvas-2, #EAEEF4); color: var(--tm-text, #0F1419); }
+
+    .modal-card__body {
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-height: 75vh;
+      overflow-y: auto;
+    }
+
+    .payout-driver-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--tm-canvas, #F4F6FA);
+      border: 1px solid var(--tm-line-2, #E2E6EC);
+      border-radius: var(--tm-radius-md, 14px);
+      padding: 14px;
+    }
+
+    .payout-driver-card__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--tm-line-2, #E2E6EC);
+      padding-bottom: 10px;
+    }
+
+    .payout-driver-card__due {
+      text-align: right;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .payout-due-lbl { font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: var(--tm-green-deep, #16A34A); }
+    .payout-due-val { font-size: 18px; font-weight: 850; color: var(--tm-green-deep, #16A34A); font-variant-numeric: tabular-nums; }
+
+    .banking-specs {
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+
+    .spec-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .spec-line:last-child { margin-bottom: 0; }
+    .spec-lbl { color: var(--tm-text-muted, #6B7785); font-weight: 600; }
+    .spec-val { color: var(--tm-text, #0F1419); }
+
+    .no-bank-hint {
+      color: var(--tm-text-muted, #6B7785);
+      line-height: 1.4;
+    }
+
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-label-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-label {
+      font-size: 11.5px;
+      font-weight: 750;
+      color: var(--tm-text, #0F1419);
+    }
+
+    .quick-fill-btn {
+      border: 0;
+      background: transparent;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--tm-green-deep, #16A34A);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .form-input {
+      width: 100%;
+      height: 36px;
+      padding: 0 12px;
+      background: var(--tm-surface, #FFFFFF);
+      border: 1px solid var(--tm-line, #ECEFF3);
+      border-radius: var(--tm-radius-sm, 10px);
+      font: inherit;
+      font-size: 13px;
+      color: var(--tm-text, #0F1419);
+      outline: none;
+      transition: border-color 0.15s ease;
+      box-sizing: border-box;
+    }
+
+    .form-input:focus { border-color: var(--tm-ink, #0F1419); }
+    .form-select { cursor: pointer; }
+
+    .modal-alert-error {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--tm-danger-bg, #FEE2E2);
+      color: var(--tm-danger-fg, #B91C1C);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .modal-card__footer {
+      padding: 14px 22px;
+      border-top: 1px solid var(--tm-line, #ECEFF3);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      background: var(--tm-canvas, #F4F6FA);
+    }
   `],
 })
 export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -1157,12 +2214,12 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
   private searchTimer: any = null;
 
   readonly movementTypes = [
-    { key: 'capture', label: 'Payments' },
-    { key: 'transfer', label: 'Payouts' },
+    { key: 'capture', label: 'Passenger Payments' },
+    { key: 'transfer', label: 'Driver Payouts' },
     { key: 'topup', label: 'Wallet Recharges' },
     { key: 'subscription', label: 'Subscriptions' },
     { key: 'retained', label: 'Commissions' },
-    { key: 'gateway_fee', label: 'Gateway Fee' },
+    { key: 'gateway_fee', label: 'Gateway Fees' },
     { key: 'held', label: 'On Hold' },
     { key: 'refund', label: 'Refunds' },
     { key: 'reversal', label: 'Reversals' },
@@ -1207,16 +2264,28 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
 
   get searchPlaceholder(): string {
     switch (this.viewMode) {
-      case 'drivers': return 'Search driver name, phone, vehicle reg...';
+      case 'drivers': return 'Search driver, phone, vehicle...';
       case 'commissions': return 'Search trip ID, driver, vehicle...';
-      case 'transfers': return 'Search driver, reference/UTR, notes...';
-      default: return 'Search Tx ID, Trip ID, Name, Phone, Ref...';
+      case 'transfers': return 'Search driver, UTR, reference...';
+      default: return 'Search Tx ID, Trip ID, Phone, Ref...';
     }
   }
 
   setViewMode(mode: LedgerViewMode): void {
     this.viewMode = mode;
     this.searchFilter = '';
+    this.page = 1;
+  }
+
+  selectKpiMovements(type: string): void {
+    this.viewMode = 'movements';
+    this.typeFilter = type;
+    this.page = 1;
+  }
+
+  selectKpiDrivers(status: 'all' | 'pending' | 'debt' | 'blocked'): void {
+    this.viewMode = 'drivers';
+    this.driverStatusFilter = status;
     this.page = 1;
   }
 
@@ -1565,14 +2634,14 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
 
   typeLabel(type: string): string {
     switch (type) {
-      case 'capture': return 'Payment';
-      case 'transfer': return 'Driver Payout';
+      case 'capture': return 'Passenger Payment';
+      case 'transfer': return 'Driver Share';
       case 'topup': return 'Wallet Recharge';
       case 'subscription': return 'Subscription';
-      case 'cash_retained': return 'Cash In Hand';
+      case 'cash_retained': return 'Cash Retained';
       case 'retained': return 'Platform Fee';
       case 'gateway_fee': return 'Gateway Fee';
-      case 'held': return 'On Hold';
+      case 'held': return 'Held In Escrow';
       case 'release': return 'Hold Released';
       case 'refund': return 'Refund';
       case 'reversal': return 'Reversal';
@@ -1586,25 +2655,20 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
       bank: 'Bank Transfer',
       cash: 'Cash Handover',
       upi: 'UPI',
-      other: 'Other',
+      other: 'Other Settlement',
     };
     return map[m?.toLowerCase()] || m;
   }
 
   formatTripMode(c: CommissionRecord): string {
     const mode = c.mode || (c.is_shared ? 'fixed' : 'private');
-    const modeLabel = mode === 'fixed' ? 'Fixed' : (mode === 'shuttle' ? 'Shuttle' : 'Private');
+    const modeLabel = mode === 'fixed' ? 'Fixed Route' : (mode === 'shuttle' ? 'Shuttle' : 'Private Cab');
     const method = c.payment_method || 'Cash';
     return `${modeLabel} · ${method}`;
   }
 
-  setTypeFilter(key: string): void {
-    this.typeFilter = key;
-    this.page = 1;
-  }
-
-  setUnbalanced(on: boolean): void {
-    this.unbalancedOnly = on;
+  toggleUnbalancedFilter(): void {
+    this.unbalancedOnly = !this.unbalancedOnly;
     this.loadAll();
   }
 
@@ -1628,7 +2692,6 @@ export class FinanceLedgerComponent implements OnInit, AfterViewInit, OnDestroy 
     this.page = 1;
     this.loadAll();
   }
-
 
   setPresetDate(preset: 'today' | 'yesterday' | '7days' | 'thisMonth'): void {
     this.activePreset = preset;
