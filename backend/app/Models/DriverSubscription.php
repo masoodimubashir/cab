@@ -16,6 +16,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'amount_paid',
     'commission_percent',
     'pricing_model',
+    'payment_method',
+    'payment_reference',
+    'razorpay_order_id',
+    'razorpay_payment_id',
     'rides_allowed',
     'rides_used',
     'earnings_cap',
@@ -70,6 +74,11 @@ class DriverSubscription extends Model
     }
 
     public function driver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_user_id');
+    }
+
+    public function driverUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'driver_user_id');
     }

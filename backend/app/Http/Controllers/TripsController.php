@@ -9,6 +9,7 @@ use App\Models\CitySetting;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\DriverLocation;
+use App\Models\DriverPayoutLedger;
 use App\Models\FareNegotiation;
 use App\Models\OperatorSetting;
 use App\Models\PricingRule;
@@ -18,6 +19,7 @@ use App\Models\WalletTransaction;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\NotificationService;
+use App\Services\PayoutLedgerService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use App\Services\ShuttleRefundService;
@@ -1338,14 +1340,16 @@ class TripsController extends Controller
             $trip->tip_amount = $amount;
             $trip->save();
 
-            WalletTransaction::query()->create([
-                'user_id' => $trip->driver_id,
-                'amount' => $amount,
-                'type' => WalletTransaction::TYPE_CREDIT,
-                'engagement_id' => $trip->id,
-                'reason' => 'Customer tip',
-                'created_by_user_id' => $user->id,
-            ]);
+            app(PayoutLedgerService::class)->recordCollection(
+                $trip->driver,
+                $amount,
+                DriverPayoutLedger::SOURCE_TIP,
+                $trip->id,
+                [
+                    'notes' => 'Customer tip from ride #' . $trip->id,
+                    'created_by_user_id' => $user->id,
+                ]
+            );
         });
 
         return response()->json([

@@ -10,8 +10,8 @@ use Illuminate\Http\Request;
 use RuntimeException;
 
 /**
- * Driver-facing subscription endpoints: browse the plans available to the
- * driver's city + vehicle type, see the current active plan, and buy one.
+ * Driver-facing subscription endpoints: browse plans, view current plan,
+ * buy via Wallet or pay directly via UPI / Razorpay.
  */
 class DriverSubscriptionsController
 {
@@ -66,11 +66,17 @@ class DriverSubscriptionsController
         ]);
     }
 
-    /** Buy a plan. Debits the wallet and creates the subscription. */
+    /**
+     * Buy a plan via Wallet or UPI.
+     * Method 1: Wallet -> checks projected balance >= minimum wallet limit, then debits wallet.
+     * Method 2: UPI -> driver pays directly, wallet is completely untouched.
+     */
     public function purchase(Request $request)
     {
         $data = $request->validate([
             'plan_id' => ['required', 'integer', 'exists:subscription_plans,id'],
+            'payment_method' => ['nullable', 'string', 'in:wallet,upi,razorpay'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
         ]);
 
         $user = $request->user();
@@ -81,8 +87,6 @@ class DriverSubscriptionsController
 
         $plan = SubscriptionPlan::query()->findOrFail($data['plan_id']);
 
-        // The plan must belong to the driver's city, match their vehicle type
-        // (or be vehicle-agnostic), and still be inside its sale window.
         if ($plan->city_id !== (int) $driver->city_id
             || ($plan->vehicle_type_id !== null && $plan->vehicle_type_id !== (int) $driver->vehicle_type_id)
             || ! $plan->isAvailableNow()) {
@@ -90,13 +94,11 @@ class DriverSubscriptionsController
         }
 
         $vehicleTypeId = $driver->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
+        $paymentMethod = $data['payment_method'] ?? 'wallet';
+        $paymentReference = $data['payment_reference'] ?? null;
 
-        // One atomic call decides active-vs-queued, checks the wallet, and
-        // charges — all under a per-driver lock — so concurrent buys can't
-        // double-charge or create two running subscriptions. If a plan is already
-        // running, the new plan is charged NOW and queued to start when it ends.
         try {
-            $result = $this->subscriptions->buy($user, $plan, $vehicleTypeId);
+            $result = $this->subscriptions->buy($user, $plan, $vehicleTypeId, $paymentMethod, $paymentReference);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -121,19 +123,82 @@ class DriverSubscriptionsController
         ], 201);
     }
 
-    /**
-     * Turn off auto-renew for the driver's active plan. The plan stays active
-     * until it expires; it just won't renew. A prepaid queued plan is left alone
-     * — it was already paid for and still starts when this plan ends.
-     */
+    /** Create a Razorpay order for direct UPI payment. */
+    public function createUpiOrder(Request $request)
+    {
+        $data = $request->validate([
+            'plan_id' => ['required', 'integer', 'exists:subscription_plans,id'],
+        ]);
+
+        $user = $request->user();
+        $driver = $user->driver;
+        if (! $driver || ! $driver->city_id) {
+            return response()->json(['message' => 'Complete your driver profile before subscribing.'], 422);
+        }
+
+        $plan = SubscriptionPlan::query()->findOrFail($data['plan_id']);
+
+        if ($plan->city_id !== (int) $driver->city_id
+            || ($plan->vehicle_type_id !== null && $plan->vehicle_type_id !== (int) $driver->vehicle_type_id)
+            || ! $plan->isAvailableNow()) {
+            return response()->json(['message' => 'This plan is not available for you.'], 422);
+        }
+
+        $order = $this->subscriptions->createUpiOrder($user, $plan);
+
+        return response()->json($order);
+    }
+
+    /** Verify direct UPI payment signature and activate subscription. */
+    public function verifyUpiPurchase(Request $request)
+    {
+        $data = $request->validate([
+            'plan_id' => ['required', 'integer', 'exists:subscription_plans,id'],
+            'razorpay_order_id' => ['required', 'string'],
+            'razorpay_payment_id' => ['required', 'string'],
+            'razorpay_signature' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        $driver = $user->driver;
+        if (! $driver || ! $driver->city_id) {
+            return response()->json(['message' => 'Complete your driver profile before subscribing.'], 422);
+        }
+
+        $plan = SubscriptionPlan::query()->findOrFail($data['plan_id']);
+        $vehicleTypeId = $driver->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
+
+        try {
+            $result = $this->subscriptions->verifyUpiPurchase(
+                $user,
+                $plan,
+                $vehicleTypeId,
+                $data['razorpay_order_id'],
+                $data['razorpay_payment_id'],
+                $data['razorpay_signature']
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'queued' => $result['queued'],
+            'subscription' => $this->shapeSubscription(
+                $result['queued'] ? $result['current']->load('plan', 'vehicleType') : $result['subscription']->load('plan', 'vehicleType'),
+                $result['queued'] ? $result['subscription']->load('plan') : null
+            ),
+            'wallet_balance' => $this->wallet->balance($user),
+            'message' => 'Subscription activated via UPI payment.',
+        ], 201);
+    }
+
+    /** Turn off auto-renew. */
     public function cancel(Request $request)
     {
         $user = $request->user();
         $driver = $user->driver;
         $vehicleTypeId = $driver?->vehicle_type_id ? (int) $driver->vehicle_type_id : null;
 
-        // Raw active row so an exhausted-but-unswept plan can still be cancelled
-        // (turning off the pending auto-renewal) without waiting for the sweep.
         $sub = $this->subscriptions->currentActiveRow($user->id, $vehicleTypeId);
         if (! $sub) {
             return response()->json(['message' => 'You have no active subscription to cancel.'], 422);
@@ -179,6 +244,7 @@ class DriverSubscriptionsController
             'meter_type' => $s->meter_type,
             'commission_percent' => (float) $s->commission_percent,
             'pricing_model' => $s->pricing_model,
+            'payment_method' => $s->payment_method ?? 'wallet',
             'amount_paid' => (float) $s->amount_paid,
             'rides_allowed' => $s->rides_allowed,
             'rides_used' => $s->rides_used,
@@ -191,13 +257,13 @@ class DriverSubscriptionsController
             'expires_at' => optional($s->expires_at)->toIso8601String(),
             'auto_renew' => (bool) $s->auto_renew,
             'cancelled_at' => optional($s->cancelled_at)->toIso8601String(),
-            // The driver's prepaid queued plan (already charged, waiting to start).
             'next_plan' => $queued ? [
                 'id' => $queued->subscription_plan_id,
                 'title' => $queued->plan?->title ?? 'Queued plan',
                 'amount' => (float) $queued->amount_paid,
                 'commission_percent' => (float) $queued->commission_percent,
                 'pricing_model' => $queued->pricing_model,
+                'payment_method' => $queued->payment_method ?? 'wallet',
                 'prepaid' => true,
             ] : null,
         ];

@@ -213,18 +213,15 @@ class Module5SharedWalletTest extends TestCase
         $this->carry($driver, $departure, $reservation);
         $this->completeDeparture($driver, $departure);
 
-        // No Payment mirror, no ledger — the wallet is the whole record.
-        $this->assertSame(0, Payment::query()->count());
-        $this->assertSame(0, LedgerEntry::query()->count());
-
-        // ₹120 fare − ₹24 commission = ₹96 owed to the driver by the operator.
-        $this->assertSame(96.0, app(WalletService::class)->balance($driver->fresh()));
+        // Wallet records commission deduction (-₹24)
+        $this->assertSame(-24.0, app(WalletService::class)->balance($driver->fresh()));
         $rows = WalletTransaction::query()->where('user_id', $driver->id)->get();
         $this->assertCount(1, $rows);
-        $this->assertSame(WalletTransaction::TYPE_CREDIT, $rows[0]->type);
-        $this->assertSame(96.0, (float) $rows[0]->amount);
-        $this->assertSame('Fixed ride earnings', $rows[0]->reason);
-        $this->assertSame($trip->id, (int) $rows[0]->engagement_id);
+        $this->assertSame(WalletTransaction::TYPE_DEBIT, $rows[0]->type);
+        $this->assertSame(24.0, (float) $rows[0]->amount);
+
+        // Payout Ledger records online seat fare collected by operator (₹120)
+        $this->assertSame(120.0, app(\App\Services\PayoutLedgerService::class)->pendingPayout($driver->fresh()));
     }
 
     public function test_fixed_cash_seat_credits_the_deposit_and_debits_the_commission(): void
@@ -240,21 +237,15 @@ class Module5SharedWalletTest extends TestCase
         $this->carry($driver, $departure, $reservation);
         $this->completeDeparture($driver, $departure);
 
-        $this->assertSame(0, Payment::query()->count());
-        $this->assertSame(0, LedgerEntry::query()->count());
+        // Wallet records commission deduction (-₹24)
+        $this->assertSame(-24.0, app(WalletService::class)->balance($driver->fresh()));
+        $rows = WalletTransaction::query()->where('user_id', $driver->id)->get();
+        $this->assertCount(1, $rows);
+        $this->assertSame(WalletTransaction::TYPE_DEBIT, $rows[0]->type);
+        $this->assertSame(24.0, (float) $rows[0]->amount);
 
-        // Operator holds the ₹30 deposit; driver holds ₹90 cash and owes ₹24
-        // commission → net owed to the driver = ₹6.
-        $this->assertSame(6.0, app(WalletService::class)->balance($driver->fresh()));
-
-        $rows = WalletTransaction::query()->where('user_id', $driver->id)->orderBy('id')->get();
-        $this->assertCount(2, $rows);
-        $this->assertSame(WalletTransaction::TYPE_CREDIT, $rows[0]->type);
-        $this->assertSame(30.0, (float) $rows[0]->amount);
-        $this->assertSame('Cash deposit collected', $rows[0]->reason);
-        $this->assertSame(WalletTransaction::TYPE_DEBIT, $rows[1]->type);
-        $this->assertSame(24.0, (float) $rows[1]->amount);
-        $this->assertSame('Cash ride commission', $rows[1]->reason);
+        // Payout Ledger records upfront cash deposit collected online (₹30)
+        $this->assertSame(30.0, app(\App\Services\PayoutLedgerService::class)->pendingPayout($driver->fresh()));
     }
 
     protected function tearDown(): void

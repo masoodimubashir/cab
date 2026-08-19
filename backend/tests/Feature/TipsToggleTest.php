@@ -96,10 +96,15 @@ class TipsToggleTest extends TestCase
         $this->postJson("/api/trips/{$trip->id}/tip", ['amount' => 40])->assertCreated();
 
         $this->assertEquals(40.0, (float) $trip->fresh()->tip_amount);
-        $this->assertDatabaseHas('wallet_transactions', [
-            'user_id' => $driver->id,
+        $this->assertDatabaseHas('driver_payout_ledger', [
+            'driver_user_id' => $driver->id,
+            'trip_id' => $trip->id,
+            'type' => 'COLLECTED',
+            'source' => 'tip',
+            'amount' => 40.00,
+        ]);
+        $this->assertDatabaseMissing('wallet_transactions', [
             'engagement_id' => $trip->id,
-            'reason' => 'Customer tip',
         ]);
     }
 

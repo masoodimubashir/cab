@@ -340,7 +340,7 @@ class DriversController extends Controller
      *  - weekly           [{ date, amount, weekday }, ...] always the last 7 days
      *                     so the dashboard's "weekly earnings" list stays stable
      */
-    public function earnings(Request $request, WalletService $wallet)
+    public function earnings(Request $request, \App\Services\PayoutLedgerService $payoutLedger)
     {
         $user = $request->user();
         $period = $request->query('period', 'week');
@@ -389,8 +389,7 @@ class DriversController extends Controller
         // Always also return last-7-days for the weekly breakdown list.
         $weekly = array_slice($buckets, -7);
 
-        // Per-ride breakdown for the selected window: fare − commission = net.
-        // This is what the driver sees as "how much was cut for each ride".
+        // Per-ride breakdown for the selected window: show fare and payment method.
         $ridesQuery = Trip::query()
             ->where('driver_id', $user->id)
             ->where('status', 'COMPLETED')
@@ -401,19 +400,43 @@ class DriversController extends Controller
         }
 
         $rides = $ridesQuery
+            ->with(['seatReservations:id,trip_id,fare_amount,payment_method'])
             ->orderByDesc('completed_at')
             ->limit(500)
-            ->get(['id', 'completed_at', 'final_fare', 'commission_amount', 'route_departure_id'])
-            ->map(function (Trip $t) {
+            ->get(['id', 'completed_at', 'final_fare', 'payment_method', 'route_departure_id'])
+            ->map(function (Trip $t) use ($user) {
                 $fare = (float) ($t->final_fare ?? 0);
-                $commission = (float) ($t->commission_amount ?? 0);
+
+                // Online collected on this trip by operator (upfront deposit or full online fare)
+                $onlineCollectedOnTrip = (float) \App\Models\DriverPayoutLedger::query()
+                    ->where('driver_user_id', $user->id)
+                    ->where('trip_id', $t->id)
+                    ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+                    ->sum('amount');
+
+                // Determine effective payment method
+                $method = $t->payment_method;
+                if (!$method && $t->seatReservations->isNotEmpty()) {
+                    $methods = $t->seatReservations->pluck('payment_method')->filter()->unique();
+                    $method = $methods->implode(', ');
+                }
+
+                $methodStr = strtolower((string) ($method ?? ''));
+                $hasCash = str_contains($methodStr, 'cash') || ($fare > $onlineCollectedOnTrip && $onlineCollectedOnTrip > 0);
+
+                $cashPortion = $hasCash ? max(0.0, round($fare - $onlineCollectedOnTrip, 2)) : 0.0;
+                if ($hasCash && $cashPortion == 0 && $onlineCollectedOnTrip == 0) {
+                    $cashPortion = $fare;
+                }
+
                 return [
                     'id' => $t->id,
                     'date' => optional($t->completed_at)->toIso8601String(),
                     'fare' => round($fare, 2),
-                    'commission' => round($commission, 2),
-                    'net' => round($fare - $commission, 2),
-                    'commission_free' => $commission <= 0 && $fare > 0,
+                    'payment_method' => $method ?: ($cashPortion > 0 ? 'cash' : 'online'),
+                    'is_cash' => $cashPortion > 0,
+                    'cash_amount' => $cashPortion,
+                    'online_amount' => round(min($onlineCollectedOnTrip, $fare), 2),
                     'is_shared' => $t->route_departure_id !== null,
                 ];
             })
@@ -428,81 +451,95 @@ class DriversController extends Controller
             $totalsQuery->where('completed_at', '>=', $windowStart);
         }
 
-        $totalEarnings = (float) (clone $totalsQuery)->sum('final_fare');
-        $totalCommission = (float) (clone $totalsQuery)->sum('commission_amount');
+        $tripsList = $totalsQuery
+            ->with(['seatReservations:id,trip_id,fare_amount,payment_method'])
+            ->get(['id', 'final_fare', 'payment_method']);
 
-        // What the driver has added to their own wallet (successful Razorpay
-        // top-ups only) — the piece that makes the wallet differ from earnings.
-        $topupTotal = (float) \App\Models\WalletTopup::query()
-            ->where('user_id', $user->id)
-            ->where('status', \App\Models\WalletTopup::STATUS_SUCCESS)
-            ->sum('amount');
+        $totalRideEarnings = 0.0;
+        $cashCollected = 0.0;
+        $onlineCollected = 0.0;
 
-        // Wallet balance uses the SAME formula as the wallet screen
-        // (credit + cashback + driver_added_cash − debit) so the two never
-        // disagree — this was the source of the 100-vs-140 confusion.
-        $walletBalance = $wallet->balance($user);
+        foreach ($tripsList as $trip) {
+            $fare = (float) ($trip->final_fare ?? 0);
+            $totalRideEarnings += $fare;
 
-        // Operator wallet caps — shown for transparency. Enforcement itself stays
-        // in WalletService (top-up / admin flows); this is display-only.
-        $settings = OperatorSetting::instance();
+            // Online collected by operator on this trip
+            $onlineOnTrip = (float) \App\Models\DriverPayoutLedger::query()
+                ->where('driver_user_id', $user->id)
+                ->where('trip_id', $trip->id)
+                ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+                ->sum('amount');
 
-        // Does the driver currently hold an active (non-queued, started) plan?
-        // Commission-free rides come from this — logic unchanged, just surfaced.
-        $subscriptionActive = \App\Models\DriverSubscription::query()
+            if ($onlineOnTrip > 0) {
+                $onlinePortion = min($onlineOnTrip, $fare);
+                $onlineCollected += $onlinePortion;
+                $cashCollected += max(0.0, round($fare - $onlinePortion, 2));
+            } else {
+                $m = strtolower((string) ($trip->payment_method ?? ''));
+                if (!$m && $trip->seatReservations->isNotEmpty()) {
+                    $m = strtolower((string) $trip->seatReservations->first()->payment_method);
+                }
+
+                if ($m === 'cash') {
+                    $cashCollected += $fare;
+                } else {
+                    $onlineCollected += $fare;
+                }
+            }
+        }
+
+        // Payout Ledger summary (money operator collected for driver & transfers)
+        $payoutSummary = $payoutLedger->summary($user);
+
+        // Recent operator transfers / payments to this driver
+        $recentTransfers = \App\Models\DriverPayoutLedger::query()
             ->where('driver_user_id', $user->id)
-            ->where('status', \App\Models\DriverSubscription::STATUS_ACTIVE)
-            ->where('is_queued', false)
-            ->where('starts_at', '<=', now())
-            ->exists();
+            ->where('type', \App\Models\DriverPayoutLedger::TYPE_TRANSFER)
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get()
+            ->map(fn (\App\Models\DriverPayoutLedger $t) => [
+                'id' => $t->id,
+                'amount' => (float) $t->amount,
+                'method' => $t->method,
+                'reference' => $t->reference,
+                'notes' => $t->notes,
+                'created_at' => optional($t->created_at)->toIso8601String(),
+            ]);
+
+        // Recent operator collections (received on behalf of driver)
+        $recentCollections = \App\Models\DriverPayoutLedger::query()
+            ->where('driver_user_id', $user->id)
+            ->where('type', \App\Models\DriverPayoutLedger::TYPE_COLLECTED)
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get()
+            ->map(fn (\App\Models\DriverPayoutLedger $c) => [
+                'id' => $c->id,
+                'amount' => (float) $c->amount,
+                'source' => $c->source,
+                'trip_id' => $c->trip_id,
+                'notes' => $c->notes,
+                'created_at' => optional($c->created_at)->toIso8601String(),
+            ]);
 
         return response()->json([
-            'total_earnings' => round($totalEarnings, 2),
-            'total_commission' => round($totalCommission, 2),
-            'net_earnings' => round($totalEarnings - $totalCommission, 2),
-            'topup_total' => round($topupTotal, 2),
-            'wallet_balance' => round($walletBalance, 2),
+            'ride_earnings' => round($totalRideEarnings, 2),
+            'cash_collected' => round($cashCollected, 2),
+            'online_collected' => round($onlineCollected, 2),
+            'total_collected' => round($totalRideEarnings, 2),
+            'money_collected_by_operator' => $payoutSummary['money_collected'],
+            'pending_transfers' => $payoutSummary['pending_payout'],
+            'completed_transfers' => $payoutSummary['completed_payout'],
+            'operator_payments' => $recentTransfers,
+            'operator_transfers' => $recentTransfers,
+            'operator_collections' => $recentCollections,
             'currency' => 'INR',
             'period' => $period,
             'buckets' => $buckets,
             'weekly' => $weekly,
             'rides' => $rides,
-            'caps' => [
-                'min' => (int) $settings->wallet_cash_min_capping,
-                'max' => (int) $settings->wallet_cash_max_capping,
-            ],
-            'subscription_active' => $subscriptionActive,
-            'payout' => $this->payoutSummary($user, $windowStart),
         ]);
-    }
-
-    /**
-     * Where the driver's money actually IS, under the auto-split engine: their
-     * share of each fare is transferred straight to their own bank account, so
-     * "earnings" and "money you have" are no longer the same question.
-     *
-     * Three numbers matter to them:
-     *   paid    — reached their account (or is on its way).
-     *   held    — earned, but stuck: usually payout KYC isn't verified yet,
-     *             sometimes a transfer bounced. Never lost, always retried.
-     *   pending — split, but Razorpay hasn't confirmed the transfer landed.
-     *
-     * `enabled` is false on the legacy model, where the wallet is still the
-     * source of truth and the app hides this whole section.
-     *
-     * @return array{enabled:bool,paid:float,pending:float,held:float,account_status:string,blocked_by_kyc:bool}
-     */
-    private function payoutSummary(\App\Models\User $user, ?\Carbon\Carbon $windowStart = null): array
-    {
-        // Route removed: there are no Route payouts/held-earnings to summarise. The
-        // wallet is the single source of truth for what the driver is owed, so this
-        // section is always disabled and the app shows the wallet instead.
-        return [
-            'enabled' => false,
-            'paid' => 0.0, 'pending' => 0.0, 'held' => 0.0,
-            'account_status' => (string) ($user->payout_account_status ?? \App\Models\User::PAYOUT_NONE),
-            'blocked_by_kyc' => false,
-        ];
     }
 
     /**
@@ -850,26 +887,21 @@ class DriversController extends Controller
             ], 422);
         }
 
-        // Block going online once the driver owes more than the operator's cash
-        // exposure limit, when the driver-debt check is on. The limit is the
-        // configured floor (wallet_cash_min_capping, a signed value: 0 = no debt
-        // allowed, −500 = up to ₹500 of debt tolerated). This is the Model B cash
-        // exposure control — it caps how much unremitted cash a driver can carry.
+        // Block going online once the driver's wallet falls below the configured minimum floor.
+        // If floor == 0, it means unlimited (no minimum limit blocking).
         $settings = OperatorSetting::instance();
-        if ($settings->check_driver_debt) {
-            $balance = $walletService->balance($user);
-            $floor = (float) $settings->wallet_cash_min_capping;
-            if ($balance < $floor) {
-                $clearBy = round($floor - $balance, 2);
-                return response()->json([
-                    'message' => 'You owe ₹' . number_format(abs($balance), 2)
-                        . ', over your allowed limit. Settle at least ₹' . number_format($clearBy, 2)
-                        . ' before going online.',
-                    'error_code' => 'driver_debt',
-                    'balance' => $balance,
-                    'limit' => $floor,
-                ], 422);
-            }
+        $floor = (float) ($settings->wallet_cash_min_capping ?? 0);
+        $balance = $walletService->balance($user);
+
+        if ($floor != 0.0 && $balance < $floor) {
+            $shortfall = round($floor - $balance, 2);
+            return response()->json([
+                'message' => 'Your wallet balance (₹' . number_format($balance, 2) . ') is below the required limit of ₹' . number_format($floor, 2) . '. Please add at least ₹' . number_format($shortfall, 2) . ' to go online.',
+                'error_code' => 'wallet_below_limit',
+                'balance' => $balance,
+                'limit' => $floor,
+                'shortfall' => $shortfall,
+            ], 422);
         }
 
         if (!$driver->service_scope || !$driver->service_mode) {

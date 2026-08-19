@@ -1,58 +1,70 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../../core/api.service';
 
-interface Bucket {
+export interface Bucket {
   date: string;       // YYYY-MM-DD
   amount: number;
   weekday: string;    // 'Mon', 'Tue', …
 }
 
-interface RideRow {
+export interface RideRow {
   id: number;
   date: string | null;
   fare: number;
-  commission: number;
-  net: number;
-  commission_free: boolean;
+  payment_method: string | null;
+  is_cash: boolean;
+  cash_amount?: number;
+  online_amount?: number;
   is_shared: boolean;
 }
 
-/**
- * Where the driver's money actually is. Under the auto-split model their share
- * of every fare goes straight to their own bank account, so "earned" and
- * "received" stop being the same number — this is the difference.
- */
-interface PayoutSummary {
-  enabled: boolean;
-  paid: number;
-  pending: number;
-  held: number;
-  account_status: string;
-  blocked_by_kyc: boolean;
+export interface OperatorTransfer {
+  id: number;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  created_at: string | null;
 }
 
-interface EarningsResponse {
-  total_earnings: number;
-  total_commission: number;
-  net_earnings: number;
-  wallet_balance: number;
+export interface OperatorCollection {
+  id: number;
+  amount: number;
+  source: string | null;
+  trip_id: number | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface EarningsResponse {
+  ride_earnings: number;
+  cash_collected: number;
+  online_collected: number;
+  total_collected?: number;
+  money_collected_by_operator: number;
+  pending_transfers: number;
+  completed_transfers: number;
+  operator_payments?: OperatorTransfer[];
+  operator_transfers?: OperatorTransfer[];
+  operator_collections?: OperatorCollection[];
   currency: string;
-  period: 'week' | 'month';
+  period: 'week' | 'month' | 'all';
   buckets: Bucket[];
   weekly: Bucket[];
   rides: RideRow[];
-  payout?: PayoutSummary;
 }
 
+export type EarningsTab = 'transfers' | 'received' | 'analytics';
+
 /**
- * Ride earnings — the detail behind the Earnings & Wallet page.
+ * Driver Earnings & Payouts Page.
  *
- *   1. Hero — lifetime gross / commission / net.
- *   2. Bar chart — per-day earnings for a selected window (week | month).
- *   3. Ride-by-ride — every ride in the window with fare − commission = net,
- *      so the driver sees exactly how much was cut on each trip.
- *
- * Chart is a hand-rolled CSS bar grid (no chart library needed).
+ * Dedicated strictly to driver income:
+ *  - Money Hero: Total Ride Earnings, Cash Collected, Total Collected & Operator Transfers
+ *  - 3 Tabs:
+ *      1. Transfers: Pending & Completed operator payout transfers
+ *      2. Received: Operator collections received on behalf of the driver
+ *      3. Analytics: Period filters, earnings chart, metrics & ride breakdown
  */
 @Component({
   selector: 'app-earnings',
@@ -64,100 +76,59 @@ export class EarningsPage implements OnInit {
   loading = false;
   error: string | null = null;
 
-  total = 0;
-  totalCommission = 0;
-  net = 0;
-  currency = 'INR';
+  // Active navigation tab
+  activeTab: EarningsTab = 'transfers';
 
+  // Money & stats
+  rideEarnings = 0;
+  cashCollected = 0;
+  onlineCollected = 0;
+  moneyCollectedByOperator = 0;
+  pendingTransfers = 0;
+  completedTransfers = 0;
+
+  // Ledger records
+  operatorTransfers: OperatorTransfer[] = [];
+  operatorCollections: OperatorCollection[] = [];
+
+  // Filter & period
+  currency = 'INR';
   period: 'week' | 'month' | 'all' = 'week';
+
   periodLabelMap: Record<'week' | 'month' | 'all', string> = {
     week: 'this week',
     month: 'this month',
     all: 'all time',
   };
+
   periodRideTitleMap: Record<'week' | 'month' | 'all', string> = {
-    week: 'Weekly rides',
-    month: 'Monthly rides',
-    all: 'All time rides',
+    week: 'Weekly Completed Rides',
+    month: 'Monthly Completed Rides',
+    all: 'All Time Completed Rides',
   };
+
   periodChartTitleMap: Record<'week' | 'month' | 'all', string> = {
-    week: 'Weekly Overview',
-    month: 'Monthly Overview',
-    all: 'All time Activity',
+    week: 'Weekly Earnings Overview',
+    month: 'Monthly Earnings Overview',
+    all: 'All Time Earnings Activity',
   };
+
   buckets: Bucket[] = [];
   rides: RideRow[] = [];
-  payout: PayoutSummary | null = null;
-
-  // Model B settlement position (replaces the old Route "paid to bank" card).
-  owedToYou = 0;
-  inDebt = false;
-  youOwe = 0;
-  lastPaidAmount: number | null = null;
-  lastPaidDate: string | null = null;
-  lastPaidMethod: string | null = null;
 
   constructor(private api: ApiService) {}
 
-  ngOnInit(): void { this.load(); this.loadSettlement(); }
-  ionViewWillEnter(): void { this.load(); this.loadSettlement(); }
-
-  /** Model B: what the operator owes the driver right now, and the last payout. */
-  loadSettlement(): void {
-    this.api.get<{
-      position: { owed_by_company: number; owed_by_driver: number; net: number };
-      history: Array<{ amount_paid: number; method: string | null; created_at: string | null }>;
-    }>('/drivers/me/settlement').subscribe({
-      next: (res) => {
-        this.owedToYou = res.position?.owed_by_company ?? 0;
-        this.youOwe = res.position?.owed_by_driver ?? 0;
-        this.inDebt = (res.position?.net ?? 0) < 0;
-        const last = res.history?.length ? res.history[0] : null;
-        this.lastPaidAmount = last ? last.amount_paid : null;
-        this.lastPaidDate = last ? last.created_at : null;
-        this.lastPaidMethod = last ? last.method : null;
-      },
-      error: () => { /* card simply stays hidden on older backends */ },
-    });
+  ngOnInit(): void {
+    this.load();
   }
 
-  methodLabel(m: string | null): string {
-    switch (m) {
-      case 'gpay': return 'GPay';
-      case 'bank': return 'Bank transfer';
-      case 'cash': return 'Cash';
-      case 'other': return 'Other';
-      default: return m || '';
-    }
+  ionViewWillEnter(): void {
+    this.load();
   }
 
-  lastPaidLabel(): string {
-    if (this.lastPaidAmount == null) return '';
-    const when = this.lastPaidDate ? this.rideDate({ id: 0, date: this.lastPaidDate, fare: 0, commission: 0, net: 0, commission_free: false, is_shared: false }) : '';
-    const method = this.methodLabel(this.lastPaidMethod);
-    return `₹${this.lastPaidAmount} · ${when}${method ? ' · ' + method : ''}`;
-  }
-
-  load(): void {
-    this.loading = true;
-    this.error = null;
-    this.api.get<EarningsResponse>(`/drivers/me/earnings?period=${this.period}`).subscribe({
-      next: (res) => {
-        this.total = res.total_earnings ?? 0;
-        this.totalCommission = res.total_commission ?? 0;
-        this.net = res.net_earnings ?? 0;
-        this.currency = res.currency || 'INR';
-        this.buckets = res.buckets ?? [];
-        this.rides = res.rides ?? [];
-        // Absent on older backends — the payout card simply stays hidden.
-        this.payout = res.payout?.enabled ? res.payout : null;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load earnings.';
-        this.loading = false;
-      },
-    });
+  setTab(tab: EarningsTab): void {
+    if (this.activeTab === tab) return;
+    this.activeTab = tab;
   }
 
   setPeriod(p: 'week' | 'month' | 'all'): void {
@@ -166,63 +137,163 @@ export class EarningsPage implements OnInit {
     this.load();
   }
 
-  get maxBucket(): number {
+  load(): void {
+    this.loading = true;
+    this.error = null;
+
+    this.api.get<EarningsResponse>(`/drivers/me/earnings?period=${this.period}`).subscribe({
+      next: (res) => {
+        this.loading = false;
+        this.rideEarnings = res.ride_earnings ?? 0;
+        this.cashCollected = res.cash_collected ?? 0;
+        this.onlineCollected = res.online_collected ?? 0;
+        this.moneyCollectedByOperator = res.money_collected_by_operator ?? 0;
+        this.pendingTransfers = res.pending_transfers ?? 0;
+        this.completedTransfers = res.completed_transfers ?? 0;
+        this.operatorTransfers = res.operator_transfers || res.operator_payments || [];
+        this.operatorCollections = res.operator_collections || [];
+        this.currency = res.currency || 'INR';
+        this.buckets = res.buckets || [];
+        this.rides = res.rides || [];
+      },
+      error: (err) => {
+        this.loading = false;
+        this.error = err?.error?.message || 'Could not load driver earnings.';
+      },
+    });
+  }
+
+  // ── Computed Properties ──────────────────────────────────────────────────
+
+  get totalCollected(): number {
+    return this.cashCollected + this.onlineCollected;
+  }
+
+  get avgPerRide(): number {
+    return this.rides.length > 0 ? this.rideEarnings / this.rides.length : 0;
+  }
+
+  get cashPercent(): number {
+    if (this.totalCollected <= 0) return 0;
+    return Math.round((this.cashCollected / this.totalCollected) * 100);
+  }
+
+  get onlinePercent(): number {
+    if (this.totalCollected <= 0) return 0;
+    return Math.round((this.onlineCollected / this.totalCollected) * 100);
+  }
+
+  get bestDay(): Bucket | null {
+    if (!this.buckets.length) return null;
+    let maxBucket: Bucket | null = null;
+    for (const b of this.buckets) {
+      if (!maxBucket || b.amount > maxBucket.amount) {
+        maxBucket = b;
+      }
+    }
+    return maxBucket && maxBucket.amount > 0 ? maxBucket : null;
+  }
+
+  // ── Chart Helpers ────────────────────────────────────────────────────────
+
+  maxBucketAmount(): number {
     return Math.max(1, ...this.buckets.map((b) => b.amount));
   }
 
-  /** Height percentage for a bar, 0–100. Minimum visible height of 2% so
-   *  zero-earning days still have a hairline visible on the chart. */
   barHeight(amount: number): number {
-    const max = this.maxBucket;
-    if (max <= 0) return 0;
-    return Math.max(2, Math.round((amount / max) * 100));
+    const max = this.maxBucketAmount();
+    if (max <= 0 || amount <= 0) return 4;
+    return Math.max(4, Math.round((amount / max) * 100));
   }
 
-  /** Show only every other label on the month view so the X-axis doesn't crowd. */
-  showLabel(index: number): boolean {
+  showLabel(idx: number): boolean {
     if (this.period === 'week') return true;
-    return index % 3 === 0;
+    return idx % 5 === 0;
   }
 
-  // Compact date label "12 May" for the chart's X-axis.
   shortLabel(b: Bucket): string {
+    if (!b.date) return '';
+    const parts = b.date.split('-');
+    return parts.length >= 3 ? `${parts[2]}/${parts[1]}` : b.date;
+  }
+
+  // ── Formatters & Icon Resolvers ──────────────────────────────────────────
+
+  fmtDate(dt: string | null): string {
+    if (!dt) return '—';
     try {
-      const d = new Date(b.date);
-      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}`;
-    } catch { return b.weekday; }
-  }
-
-  // ── Ride-by-ride period totals (sum of the rides shown) ──
-  get periodFare(): number { return this.rides.reduce((s, r) => s + (r.fare || 0), 0); }
-  get periodCommission(): number { return this.rides.reduce((s, r) => s + (r.commission || 0), 0); }
-  get periodNet(): number { return this.rides.reduce((s, r) => s + (r.net || 0), 0); }
-
-  // ── Payouts ──
-  /** Money earned that hasn't reached the bank yet — held plus in-flight. */
-  get payoutOnTheWay(): number {
-    return (this.payout?.held ?? 0) + (this.payout?.pending ?? 0);
-  }
-
-  /**
-   * Why money is stuck, in words the driver can act on. Null when nothing is
-   * stuck — the card then just shows what's been paid.
-   */
-  get payoutBlockedReason(): string | null {
-    if (!this.payout) return null;
-    if (this.payout.blocked_by_kyc) {
-      return 'Add your payout account to release this money. It is yours — it just has nowhere to go yet.';
+      const d = new Date(dt);
+      return d.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return dt;
     }
-    if (this.payout.held > 0) {
-      return 'A transfer to your bank did not go through. We retry automatically — nothing is lost.';
-    }
-    return null;
   }
 
-  rideDate(r: RideRow): string {
-    if (!r.date) return '';
+  fmtDayOnly(dt: string | null): string {
+    if (!dt) return '—';
     try {
-      const d = new Date(r.date);
-      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}, ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } catch { return ''; }
+      const d = new Date(dt);
+      return d.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return dt;
+    }
+  }
+
+  methodLabel(m: string | null): string {
+    if (!m) return 'Direct Bank/UPI Transfer';
+    const map: Record<string, string> = {
+      gpay: 'Google Pay',
+      bank: 'Bank Transfer (NEFT/IMPS)',
+      cash: 'Cash Handover',
+      upi: 'UPI Payout',
+      razorpay: 'Razorpay Payout',
+    };
+    return map[m.toLowerCase()] || m;
+  }
+
+  methodIcon(m: string | null): string {
+    if (!m) return 'swap-horizontal-outline';
+    const lower = m.toLowerCase();
+    if (lower.includes('bank')) return 'business-outline';
+    if (lower.includes('upi') || lower.includes('gpay')) return 'phone-portrait-outline';
+    if (lower.includes('cash')) return 'cash-outline';
+    return 'card-outline';
+  }
+
+  collectionSourceLabel(source: string | null): string {
+    if (!source) return 'Online Fare Collection';
+    const map: Record<string, string> = {
+      online_fare: 'Online Trip Fare',
+      online_deposit: 'Advance Booking Deposit',
+      fixed_booking: 'Fixed Route Booking',
+      shuttle_booking: 'Shuttle Seat Booking',
+      coupon_reimbursement: 'Operator Coupon Reimbursement',
+      tip: 'Rider Online Tip',
+      adjustment: 'Operator Credit Adjustment',
+    };
+    return map[source] || source.replace(/_/g, ' ');
+  }
+
+  collectionSourceIcon(source: string | null): string {
+    if (!source) return 'wallet-outline';
+    const map: Record<string, string> = {
+      online_fare: 'car-outline',
+      online_deposit: 'shield-checkmark-outline',
+      fixed_booking: 'navigate-circle-outline',
+      shuttle_booking: 'bus-outline',
+      coupon_reimbursement: 'ticket-outline',
+      tip: 'heart-circle-outline',
+      adjustment: 'sparkles-outline',
+    };
+    return map[source] || 'wallet-outline';
   }
 }
