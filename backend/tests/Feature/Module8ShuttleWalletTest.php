@@ -129,12 +129,16 @@ class Module8ShuttleWalletTest extends TestCase
         $driver = $this->driver();
         $this->complete($booking, $driver, $fare);
 
-        $this->assertSame(round($fare - $commission, 2), app(WalletService::class)->balance($driver->fresh()));
+        // Wallet records commission deduction
+        $this->assertSame(-$commission, app(WalletService::class)->balance($driver->fresh()));
 
         $txn = WalletTransaction::query()->where('user_id', $driver->id)->latest('id')->first();
         $this->assertNotNull($txn);
-        $this->assertSame(WalletTransaction::TYPE_CREDIT, $txn->type);
-        $this->assertSame('Shuttle ride earnings', $txn->reason);
+        $this->assertSame(WalletTransaction::TYPE_DEBIT, $txn->type);
+        $this->assertSame('Shuttle ride commission', $txn->reason);
+
+        // Payout ledger records online fare collected by operator
+        $this->assertSame($fare, app(\App\Services\PayoutLedgerService::class)->pendingPayout($driver->fresh()));
     }
 
     public function test_cash_shuttle_credits_the_deposit_and_debits_the_commission(): void
@@ -150,13 +154,16 @@ class Module8ShuttleWalletTest extends TestCase
         $driver = $this->driver();
         $this->complete($booking, $driver, $fare);
 
-        // Operator holds the deposit; driver holds the cash balance and owes
-        // commission → net = deposit − commission.
-        $this->assertSame(round($deposit - $commission, 2), app(WalletService::class)->balance($driver->fresh()));
+        // Wallet records commission deduction
+        $this->assertSame(-$commission, app(WalletService::class)->balance($driver->fresh()));
 
-        $rows = WalletTransaction::query()->where('user_id', $driver->id)->orderBy('id')->get();
-        $this->assertTrue($rows->contains(fn ($t) => $t->type === WalletTransaction::TYPE_CREDIT && (float) $t->amount === $deposit && $t->reason === 'Cash deposit collected'));
-        $this->assertTrue($rows->contains(fn ($t) => $t->type === WalletTransaction::TYPE_DEBIT && (float) $t->amount === $commission && $t->reason === 'Cash ride commission'));
+        $txn = WalletTransaction::query()->where('user_id', $driver->id)->latest('id')->first();
+        $this->assertNotNull($txn);
+        $this->assertSame(WalletTransaction::TYPE_DEBIT, $txn->type);
+        $this->assertSame('Shuttle ride commission', $txn->reason);
+
+        // Payout ledger records online upfront deposit
+        $this->assertSame($deposit, app(\App\Services\PayoutLedgerService::class)->pendingPayout($driver->fresh()));
     }
 
     protected function tearDown(): void

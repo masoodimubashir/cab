@@ -199,6 +199,11 @@ class Trip extends Model
         return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');
     }
 
+    public function vehicleType(): BelongsTo
+    {
+        return $this->belongsTo(VehicleType::class, 'vehicle_type_id');
+    }
+
     /** Shared-ride corridor/line this trip runs (null for private trips). */
     public function route(): BelongsTo
     {

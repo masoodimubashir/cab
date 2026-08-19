@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
-import { AlertController, ToastController } from '@ionic/angular';
+import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
+import { SubscriptionCheckoutModalComponent } from './subscription-checkout.modal';
 
 interface Plan {
   id: number;
@@ -37,7 +38,10 @@ interface ActiveSubscription {
   expires_at: string | null;
   auto_renew: boolean;
   cancelled_at: string | null;
-  next_plan: { id: number; title: string; amount: number; commission_percent: number; pricing_model?: string; prepaid?: boolean } | null;
+  next_plan?: {
+    title: string;
+    amount: number;
+  } | null;
 }
 
 /**
@@ -59,6 +63,7 @@ export class SubscriptionsPage implements OnInit {
   current: ActiveSubscription | null = null;
   plans: Plan[] = [];
   wallet = 0;
+  minWalletLimit = 0;
   currency = 'INR';
 
   /** Which tab is showing. */
@@ -70,6 +75,7 @@ export class SubscriptionsPage implements OnInit {
     private api: ApiService,
     private toastCtrl: ToastController,
     private alertCtrl: AlertController,
+    private modalCtrl: ModalController,
   ) {}
 
   ngOnInit(): void { this.load(); }
@@ -85,20 +91,30 @@ export class SubscriptionsPage implements OnInit {
     this.loading = true;
     this.error = null;
 
-    this.api.get<{ subscription: ActiveSubscription | null; wallet_balance: number; currency: string }>(
-      '/drivers/me/subscription',
-    ).subscribe({
+    this.api.get<{
+      subscription: ActiveSubscription | null;
+      wallet_balance: number;
+      currency: string;
+    }>('/drivers/me/subscription').subscribe({
       next: (res) => {
-        this.current = res.subscription;
+        this.current = res.subscription ?? null;
         this.wallet = res.wallet_balance ?? 0;
-        this.currency = res.currency || 'INR';
-        // First load: land on the most useful tab — Current if they have a
-        // plan, otherwise All plans so they can pick one.
-        if (!this.userPickedTab) this.tab = this.current ? 'current' : 'all';
+        this.currency = res.currency ?? 'INR';
+        if (!this.userPickedTab) {
+          this.tab = this.current ? 'current' : 'all';
+        }
       },
-      error: (err) => {
-        this.error = err?.error?.message || 'Could not load your subscription.';
+      error: () => {
+        // subscription endpoint error isn't fatal — we can still browse plans
       },
+    });
+
+    this.api.get<{ balance?: number; minimum_wallet_limit?: number }>('/drivers/me/wallet').subscribe({
+      next: (res) => {
+        if (typeof res?.balance === 'number') this.wallet = res.balance;
+        if (typeof res?.minimum_wallet_limit === 'number') this.minWalletLimit = res.minimum_wallet_limit;
+      },
+      error: () => undefined,
     });
 
     this.api.get<{ data: Plan[] }>('/drivers/me/subscriptions/plans').subscribe({
@@ -107,33 +123,28 @@ export class SubscriptionsPage implements OnInit {
         this.loading = false;
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Could not load plans.';
+        this.error = err?.error?.message || 'Could not load plans. Pull to refresh.';
         this.loading = false;
       },
     });
   }
 
-  /** Pricing model of the active subscription (with a legacy fallback). */
-  modelKey(s: ActiveSubscription): 'subscription' | 'commission' | 'hybrid' {
-    const m = s.pricing_model;
-    if (m === 'commission' || m === 'hybrid' || m === 'subscription') return m;
-    if (s.amount_paid > 0 && s.commission_percent > 0) return 'hybrid';
-    if (s.amount_paid <= 0 && s.commission_percent > 0) return 'commission';
-    return 'subscription';
+  modelKey(s: ActiveSubscription | Plan): string {
+    return s.pricing_model || 'subscription';
   }
-  modelLabel(s: ActiveSubscription): string {
-    switch (this.modelKey(s)) {
-      case 'commission': return 'Pay-as-you-go';
-      case 'hybrid': return 'Hybrid';
-      default: return 'Subscription';
-    }
+
+  modelLabel(s: ActiveSubscription | Plan): string {
+    const k = this.modelKey(s);
+    if (k === 'commission') return 'Commission';
+    if (k === 'hybrid') return 'Hybrid';
+    return 'Subscription';
   }
-  modelIcon(s: ActiveSubscription): string {
-    switch (this.modelKey(s)) {
-      case 'commission': return 'trending-up-outline';
-      case 'hybrid': return 'layers-outline';
-      default: return 'ribbon-outline';
-    }
+
+  modelIcon(s: ActiveSubscription | Plan): string {
+    const k = this.modelKey(s);
+    if (k === 'commission') return 'percent-outline';
+    if (k === 'hybrid') return 'swap-horizontal-outline';
+    return 'card-outline';
   }
 
   meterSummary(p: Plan): string {
@@ -175,55 +186,34 @@ export class SubscriptionsPage implements OnInit {
   }
 
   async confirmBuy(p: Plan): Promise<void> {
-    const paid = p.amount > 0;
-    // What the driver pays per ride while the plan is active — shown in both
-    // the queue and the immediate-buy dialogs so the cost is never hidden.
-    const rate = p.commission_percent > 0
-      ? `You'll pay ${p.commission_percent}% commission on each ride while active.`
-      : 'Keep 100% of your fares while active.';
-
-    // Buying while a plan is active charges the wallet NOW and queues the new
-    // plan to start (with no further charge) when the current plan ends.
-    if (this.current) {
-      const when = this.current.expires_at ? ` on ${this.fmtDate(this.current.expires_at)}` : '';
-      const lead = paid
-        ? `₹${p.amount} will be debited from your wallet now and “${p.title}” will start when your current plan ends${when}.`
-        : `“${p.title}” will start when your current plan ends${when}.`;
-      const alert = await this.alertCtrl.create({
-        header: 'Buy this plan?',
-        message: `You already have an active plan. ${lead} ${rate}`,
-        buttons: [
-          { text: 'Cancel', role: 'cancel' },
-          { text: paid ? 'Buy & queue' : 'Queue plan', handler: () => this.buy(p) },
-        ],
-      });
-      await alert.present();
-      return;
-    }
-
-    // Lead line depends on whether there's an up-front charge.
-    const lead = paid
-      ? `${p.title} — ₹${p.amount} will be debited from your wallet.`
-      : `${p.title} — no upfront payment.`;
-    const renew = paid
-      ? 'It auto-renews from your wallet when it ends — you can cancel anytime.'
-      : 'It renews automatically (no upfront charge) when it ends — you can cancel anytime.';
-
-    const alert = await this.alertCtrl.create({
-      header: 'Subscribe?',
-      message: `${lead} ${rate} ${renew}`,
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        { text: 'Subscribe', handler: () => this.buy(p) },
-      ],
+    const modal = await this.modalCtrl.create({
+      component: SubscriptionCheckoutModalComponent,
+      componentProps: {
+        plan: p,
+        walletBalance: this.wallet,
+        minWalletLimit: this.minWalletLimit,
+      },
+      breakpoints: [0, 0.88, 1],
+      initialBreakpoint: 0.88,
     });
-    await alert.present();
+    await modal.present();
+    const { data } = await modal.onWillDismiss();
+    if (data?.confirmed) {
+      if (data.paymentMethod === 'wallet') {
+        this.buy(p, 'wallet');
+      } else {
+        this.buyViaUpi(p);
+      }
+    }
   }
 
-  buy(p: Plan): void {
+  buy(p: Plan, paymentMethod: 'wallet' | 'upi' = 'wallet'): void {
     if (this.buyingId) return;
     this.buyingId = p.id;
-    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', { plan_id: p.id }).subscribe({
+    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions', {
+      plan_id: p.id,
+      payment_method: paymentMethod,
+    }).subscribe({
       next: async (res) => {
         this.buyingId = null;
         await this.presentToast(res?.message || (res?.queued ? 'Plan queued' : 'Subscription activated'), 'success');
@@ -232,6 +222,69 @@ export class SubscriptionsPage implements OnInit {
       error: async (err) => {
         this.buyingId = null;
         await this.presentToast(err?.error?.message || 'Could not subscribe', 'danger');
+      },
+    });
+  }
+
+  buyViaUpi(p: Plan): void {
+    if (this.buyingId) return;
+    this.buyingId = p.id;
+
+    this.api.post<any>('/drivers/me/subscriptions/upi/create-order', { plan_id: p.id }).subscribe({
+      next: (order) => {
+        this.openRazorpayUpi(order, p);
+      },
+      error: async (err) => {
+        this.buyingId = null;
+        await this.presentToast(err?.error?.message || 'Failed to initiate UPI payment', 'danger');
+      },
+    });
+  }
+
+  private openRazorpayUpi(order: any, p: Plan): void {
+    const Razorpay = (window as any).Razorpay;
+    if (!Razorpay) {
+      this.buyingId = null;
+      this.presentToast('Payment system unavailable. Please try again.', 'danger');
+      return;
+    }
+
+    const rzp = new Razorpay({
+      key: order.key_id,
+      amount: order.amount_paise,
+      currency: order.currency || 'INR',
+      name: 'Dream Cabs',
+      description: `Subscription: ${p.title}`,
+      order_id: order.order_id,
+      handler: (response: any) => {
+        this.verifyUpiSubscription(response, p);
+      },
+      modal: {
+        ondismiss: () => {
+          this.buyingId = null;
+        },
+      },
+      theme: { color: '#00C06A' },
+    });
+
+    rzp.open();
+  }
+
+  private verifyUpiSubscription(response: any, p: Plan): void {
+    this.api.post<{ message?: string; queued?: boolean }>('/drivers/me/subscriptions/upi/verify', {
+      plan_id: p.id,
+      razorpay_order_id: response.razorpay_order_id,
+      razorpay_payment_id: response.razorpay_payment_id,
+      razorpay_signature: response.razorpay_signature,
+    }).subscribe({
+      next: async (res) => {
+        this.buyingId = null;
+        await this.presentToast(res?.message || 'Subscription activated via UPI!', 'success');
+        this.load();
+      },
+      error: async (err) => {
+        this.buyingId = null;
+        await this.presentToast(err?.error?.message || 'UPI verification failed', 'danger');
       },
     });
   }

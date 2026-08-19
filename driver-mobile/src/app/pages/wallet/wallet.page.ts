@@ -1,50 +1,19 @@
 import { Component, OnInit } from '@angular/core';
 import { AlertController, ToastController } from '@ionic/angular';
-import { forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { AuthService } from '../../core/auth.service';
 
 declare const Razorpay: any;
 
-interface Position {
-  earnings: number;
-  commission: number;
-  deposits: number;
-  paid_out: number;
+interface WalletBreakdown {
   balance: number;
-  net: number;
-  owed_by_company: number;
-  owed_by_driver: number;
-}
-
-interface Reconciliation {
-  earnings: number;
-  commission: number;
-  deposits: number;
-  paid_out: number;
-  balance: number;
-  settlements_recorded: number;
-  settlements_count: number;
-  drift: number;
-  balanced: boolean;
-}
-
-interface SettlementRow {
-  id: number;
-  owed_by_company: number;
-  owed_by_driver: number;
-  net: number;
-  amount_paid: number;
-  method: string | null;
-  reference: string | null;
-  created_at: string | null;
-}
-
-interface SettlementResponse {
-  position: Position;
-  reconciliation: Reconciliation;
-  history: SettlementRow[];
-  currency: string;
+  minimum_wallet_limit: number;
+  maximum_wallet_limit: number;
+  commission_charges: number;
+  subscription_charges: number;
+  other_platform_charges: number;
+  wallet_recharges: number;
+  cashbacks: number;
+  total_deductions: number;
 }
 
 interface Txn {
@@ -52,40 +21,34 @@ interface Txn {
   type: string;
   amount: number;
   reason: string | null;
+  is_debit: boolean;
   created_at: string | null;
 }
 
 interface WalletResponse {
   balance: number;
+  minimum_wallet_limit: number;
+  maximum_wallet_limit: number;
   currency: string;
+  breakdown: WalletBreakdown;
+  recent_deductions: Txn[];
+  recent_recharges: Txn[];
   transactions: Txn[];
 }
 
-interface EarningsSummary {
-  caps: { min: number; max: number };
-  subscription_active: boolean;
-}
-
-interface TopupOrder {
-  topup_id: number;
-  razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
-}
-
-type Segment = 'owed' | 'settlements' | 'ledger' | 'check';
-type LedgerFilter = 'all' | 'credit' | 'debit';
+type Segment = 'overview' | 'deductions' | 'recharges';
 
 /**
- * Wallet — the driver's Model B settlement hub. Four segments answer four
- * questions:
- *   • Owed        — how much the operator owes me right now (or I owe), + top-up.
- *   • Settlements — every payout I've been paid, newest first.
- *   • Ledger      — every wallet movement (earnings, commission, deposits, payouts).
- *   • Check       — proof the numbers reconcile (no drift between the wallet and
- *                   the settlement records).
+ * Driver Wallet Page (System 1: Driver Wallet).
  *
- * Reads /drivers/me/settlement (position + reconciliation + history) and
- * /drivers/me/wallet (the transaction ledger). Earnings performance/charts live
- * on the separate Earnings screen — this one is about the money itself.
+ * Dedicated strictly to platform charges (liabilities):
+ *   - Commission charges
+ *   - Subscription charges
+ *   - Other platform deductions
+ *   - Wallet recharges / top-ups
+ *   - Minimum wallet limit
+ *
+ * Earnings and operator payouts live independently in the Earnings tab.
  */
 @Component({
   selector: 'app-wallet',
@@ -98,141 +61,96 @@ export class WalletPage implements OnInit {
   error: string | null = null;
   toppingUp = false;
 
-  segment: Segment = 'owed';
-  ledgerFilter: LedgerFilter = 'all';
-
+  segment: Segment = 'overview';
   currency = 'INR';
-  position: Position | null = null;
-  reconciliation: Reconciliation | null = null;
-  settlements: SettlementRow[] = [];
-  transactions: Txn[] = [];
-  caps: { min: number; max: number } = { min: 0, max: 0 };
-  subscriptionActive = false;
+
+  balance = 0;
+  minLimit = 0;
+  maxLimit = 0;
+  breakdown: WalletBreakdown | null = null;
+  deductions: Txn[] = [];
+  recharges: Txn[] = [];
+  allTransactions: Txn[] = [];
 
   constructor(
     private api: ApiService,
-    private auth: AuthService,
     private toastCtrl: ToastController,
     private alertCtrl: AlertController,
   ) {}
 
-  ngOnInit(): void { this.load(); }
-  ionViewWillEnter(): void { this.load(); }
+  ngOnInit(): void {
+    this.load();
+  }
+
+  ionViewWillEnter(): void {
+    this.load();
+  }
+
+  get inDebt(): boolean {
+    return this.balance < 0;
+  }
+
+  get isBelowLimit(): boolean {
+    return this.balance < this.minLimit;
+  }
+
+  get availableFloat(): number {
+    return Math.max(0, this.balance - this.minLimit);
+  }
 
   load(): void {
     this.loading = true;
     this.error = null;
-    forkJoin({
-      settlement: this.api.get<SettlementResponse>('/drivers/me/settlement'),
-      wallet: this.api.get<WalletResponse>('/drivers/me/wallet'),
-      earnings: this.api.get<EarningsSummary>('/drivers/me/earnings'),
-    }).subscribe({
-      next: ({ settlement, wallet, earnings }) => {
-        this.position = settlement.position;
-        this.reconciliation = settlement.reconciliation;
-        this.settlements = settlement.history ?? [];
-        this.transactions = wallet.transactions ?? [];
-        this.caps = earnings.caps ?? { min: 0, max: 0 };
-        this.subscriptionActive = !!earnings.subscription_active;
-        this.currency = settlement.currency || 'INR';
+
+    this.api.get<WalletResponse>('/drivers/me/wallet').subscribe({
+      next: (res) => {
         this.loading = false;
+        this.balance = res.balance ?? 0;
+        this.minLimit = res.minimum_wallet_limit ?? 0;
+        this.maxLimit = res.maximum_wallet_limit ?? 0;
+        this.currency = res.currency || 'INR';
+        this.breakdown = res.breakdown || null;
+        this.deductions = res.recent_deductions || [];
+        this.recharges = res.recent_recharges || [];
+        this.allTransactions = res.transactions || [];
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Could not load your wallet.';
         this.loading = false;
+        this.error = err?.error?.message || 'Could not load wallet details.';
       },
     });
   }
 
-  setSegment(value: unknown): void {
-    this.segment = (value as Segment) || 'owed';
-  }
-
-  // ── Owed ──
-  get owed(): number { return this.position?.owed_by_company ?? 0; }
-  get owes(): number { return this.position?.owed_by_driver ?? 0; }
-  get inDebt(): boolean { return (this.position?.net ?? 0) < 0; }
-
-  get lastSettlement(): SettlementRow | null {
-    return this.settlements.length ? this.settlements[0] : null;
-  }
-
-  // ── Ledger ──
-  get ledger(): Txn[] {
-    if (this.ledgerFilter === 'all') return this.transactions;
-    if (this.ledgerFilter === 'debit') return this.transactions.filter((t) => t.type === 'debit');
-    return this.transactions.filter((t) => t.type !== 'debit');
-  }
-
-  isCredit(t: Txn): boolean { return t.type !== 'debit'; }
-
-  txnLabel(t: Txn): string {
-    if (t.reason) return t.reason;
-    switch (t.type) {
-      case 'credit': return 'Credit';
-      case 'debit': return 'Debit';
-      case 'cashback': return 'Cashback';
-      case 'driver_added_cash': return 'Cash added';
-      default: return t.type;
+  setSegment(value: any): void {
+    if (value) {
+      this.segment = value as Segment;
     }
   }
 
-  methodLabel(m: string | null): string {
-    switch (m) {
-      case 'gpay': return 'GPay';
-      case 'bank': return 'Bank transfer';
-      case 'cash': return 'Cash';
-      case 'other': return 'Other';
-      default: return m || '—';
-    }
-  }
-
-  fmtDate(iso: string | null): string {
-    if (!iso) return '';
-    try {
-      const d = new Date(iso);
-      return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}, ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } catch { return ''; }
-  }
-
-  async explainLimits(): Promise<void> {
-    const max = this.caps.max > 0 ? `₹${this.caps.max}` : 'no upper limit';
-    const min = `₹${this.caps.min}`;
-    const sub = this.subscriptionActive
-      ? '\n\nYou have an active subscription, so eligible rides are commission-free.'
-      : '';
-    const alert = await this.alertCtrl.create({
-      header: 'How your wallet works',
-      message:
-        `Your online ride earnings are credited here and your cash-ride commission is debited here. ` +
-        `The operator pays out what you're owed.\n\n` +
-        `• Maximum balance: ${max}\n` +
-        `• Debt allowed before you're blocked from going online: ${min}` +
-        sub,
-      buttons: ['Got it'],
-    });
-    await alert.present();
-  }
-
-  // ── Top-up (unchanged) ──
   async promptTopUp(): Promise<void> {
     const alert = await this.alertCtrl.create({
-      header: 'Top up wallet',
-      message: 'Add your own money to clear commission owed and keep driving.',
+      header: 'Recharge Wallet',
+      subHeader: `Add money to keep your wallet active and accept new rides. Minimum balance required: ₹${this.minLimit}.`,
       inputs: [
-        { name: 'amount', type: 'number', placeholder: 'Amount (₹)', min: 1 },
+        {
+          name: 'amount',
+          type: 'number',
+          placeholder: 'Enter amount (e.g. 500)',
+          min: 1,
+          max: 100000,
+        },
       ],
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
-          text: 'Continue',
-          handler: (val) => {
-            const amount = Math.round(Number(val?.amount) * 100) / 100;
-            if (!amount || amount < 1) {
-              void this.presentToast('Enter a valid amount.', 'danger');
+          text: 'Recharge',
+          handler: (data) => {
+            const amt = parseFloat(data.amount);
+            if (!amt || amt <= 0) {
+              this.showToast('Please enter a valid amount.');
               return false;
             }
-            void this.startTopUp(amount);
+            this.startTopup(amt);
             return true;
           },
         },
@@ -241,80 +159,86 @@ export class WalletPage implements OnInit {
     await alert.present();
   }
 
-  private async startTopUp(amount: number): Promise<void> {
-    if (typeof Razorpay === 'undefined') {
-      await this.presentToast('Payment library not loaded. Check your connection.', 'danger');
-      return;
-    }
-    if (this.toppingUp) return;
+  private startTopup(amount: number): void {
     this.toppingUp = true;
-
-    let order: TopupOrder;
-    try {
-      order = (await this.api
-        .post<TopupOrder>('/drivers/me/wallet/topup/razorpay', { amount })
-        .toPromise()) as TopupOrder;
-    } catch (e: any) {
-      this.toppingUp = false;
-      await this.presentToast(e?.error?.message || 'Could not start top-up.', 'danger');
-      return;
-    }
-
-    const user = this.auth.getUser();
-    const rzp = new Razorpay({
-      key: order.razorpay.key_id,
-      order_id: order.razorpay.order_id,
-      amount: order.razorpay.amount_paise,
-      currency: order.razorpay.currency,
-      name: 'DreamCabs',
-      description: 'Wallet top-up',
-      prefill: {
-        name: user?.name || '',
-        email: user?.email || '',
-        contact: user?.phone || '',
+    this.api.post<any>('/drivers/me/wallet/topup/razorpay', { amount }).subscribe({
+      next: (res) => {
+        this.openRazorpay(res.razorpay);
       },
-      theme: { color: '#3880ff' },
-      handler: (resp: {
-        razorpay_payment_id: string;
-        razorpay_order_id: string;
-        razorpay_signature: string;
-      }) => {
-        this.verifyTopUp(resp);
-      },
-      modal: {
-        ondismiss: async () => {
-          this.toppingUp = false;
-          await this.presentToast('Top-up cancelled.', 'warning');
-        },
+      error: (err) => {
+        this.toppingUp = false;
+        this.showToast(err?.error?.message || 'Failed to start wallet recharge.');
       },
     });
+  }
 
-    rzp.on('payment.failed', async (resp: any) => {
+  private openRazorpay(options: any): void {
+    if (typeof Razorpay === 'undefined') {
       this.toppingUp = false;
-      await this.presentToast(resp?.error?.description || 'Payment failed.', 'danger');
+      this.showToast('Payment system not loaded. Please try again.');
+      return;
+    }
+
+    const rzp = new Razorpay({
+      key: options.key_id,
+      amount: options.amount_paise,
+      currency: options.currency || 'INR',
+      name: 'Dream Cabs',
+      description: 'Wallet Recharge',
+      order_id: options.order_id,
+      handler: (response: any) => {
+        this.verifyTopup(response);
+      },
+      modal: {
+        ondismiss: () => {
+          this.toppingUp = false;
+        },
+      },
+      theme: { color: '#00C06A' },
     });
 
     rzp.open();
   }
 
-  private async verifyTopUp(resp: {
-    razorpay_payment_id: string;
-    razorpay_order_id: string;
-    razorpay_signature: string;
-  }): Promise<void> {
+  private verifyTopup(response: any): void {
+    this.api.post('/drivers/me/wallet/topup/razorpay/verify', {
+      razorpay_order_id: response.razorpay_order_id,
+      razorpay_payment_id: response.razorpay_payment_id,
+      razorpay_signature: response.razorpay_signature,
+    }).subscribe({
+      next: () => {
+        this.toppingUp = false;
+        this.showToast('Wallet recharge successful!');
+        this.load();
+      },
+      error: (err) => {
+        this.toppingUp = false;
+        this.showToast(err?.error?.message || 'Verification failed.');
+      },
+    });
+  }
+
+  async explainLimits(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Ride Acceptance Rules',
+      message: `You need a minimum balance of ₹${this.minLimit} in your wallet to receive and accept ride bookings.\n\nWhen you complete rides, platform commissions are automatically deducted from this wallet. Keep your balance topped up to continue accepting rides without interruption.`,
+      buttons: ['Got it'],
+    });
+    await alert.present();
+  }
+
+  fmtDate(dt: string | null): string {
+    if (!dt) return '—';
     try {
-      await this.api.post('/drivers/me/wallet/topup/razorpay/verify', resp).toPromise();
-      this.toppingUp = false;
-      await this.presentToast('Wallet topped up.', 'success');
-      this.load();
-    } catch (e: any) {
-      this.toppingUp = false;
-      await this.presentToast(e?.error?.message || 'Top-up verification failed.', 'danger');
+      const d = new Date(dt);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return dt;
     }
   }
 
-  private async presentToast(message: string, color: 'success' | 'danger' | 'warning'): Promise<void> {
-    const toast = await this.toastCtrl.create({ message, duration: 2500, color, position: 'bottom' });
-    await toast.present();
+  private async showToast(msg: string): Promise<void> {
+    const t = await this.toastCtrl.create({ message: msg, duration: 3000, position: 'bottom' });
+    await t.present();
   }
 }

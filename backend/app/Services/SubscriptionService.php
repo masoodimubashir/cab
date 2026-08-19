@@ -31,59 +31,105 @@ class SubscriptionService
     /**
      * The atomic entry point for a driver buying a plan. Everything that must be
      * consistent — the one-running-subscription rule, the one-queued-plan rule,
-     * the wallet-balance check, and the debit — happens inside ONE transaction
+     * the wallet-balance check (for wallet payments), and the debit — happens inside ONE transaction
      * behind a per-driver lock, so two concurrent buys can't double-charge,
      * overspend the wallet, or create two running subscriptions.
      *
-     * If the driver already has a running plan, the new plan is charged NOW and
-     * parked as a prepaid "queued" row that activates (with no further charge)
-     * when the current plan ends. Otherwise it activates immediately.
+     * Payment Methods:
+     *   1. 'wallet': Simulates wallet deduction, checks projected balance against minimum wallet limit,
+     *      and debits wallet.
+     *   2. 'upi' (or direct gateway): Activates plan without wallet deduction or minimum wallet validation.
      *
      * @return array{subscription: DriverSubscription, queued: bool, current: ?DriverSubscription}
      */
-    public function buy(User $driver, SubscriptionPlan $plan, ?int $vehicleTypeId): array
+    public function buy(User $driver, SubscriptionPlan $plan, ?int $vehicleTypeId, string $paymentMethod = 'wallet', ?string $paymentReference = null): array
     {
-        return DB::transaction(function () use ($driver, $plan, $vehicleTypeId) {
+        return DB::transaction(function () use ($driver, $plan, $vehicleTypeId, $paymentMethod, $paymentReference) {
             $this->lockDriver($driver);
             $amount = (float) $plan->amount;
+            $isWallet = strtolower($paymentMethod) === 'wallet';
 
             $current = $this->currentActiveRow($driver->id, $vehicleTypeId);
             if ($current) {
                 if ($this->queuedFor($driver->id, $vehicleTypeId)) {
                     throw new RuntimeException('You already have a plan queued to start next. Cancel it before queuing another.');
                 }
-                $this->assertCanAfford($driver, $amount);
-                $sub = $this->createQueuedRow($driver, $plan, $amount, true);
-                $this->debit($driver, $amount, 'Subscription (queued): ' . $plan->title);
+                if ($isWallet) {
+                    $this->assertCanAfford($driver, $amount);
+                }
+                $sub = $this->createQueuedRow($driver, $plan, $amount, true, $paymentMethod, $paymentReference);
+                if ($isWallet) {
+                    $this->debit($driver, $amount, 'Subscription (queued): ' . $plan->title);
+                }
 
                 return ['subscription' => $sub, 'queued' => true, 'current' => $current->fresh()];
             }
 
-            $this->assertCanAfford($driver, $amount);
-            $sub = $this->createActiveRow($driver, $plan, $amount, true);
-            $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
+            if ($isWallet) {
+                $this->assertCanAfford($driver, $amount);
+            }
+            $sub = $this->createActiveRow($driver, $plan, $amount, true, $paymentMethod, $paymentReference);
+            if ($isWallet) {
+                $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
+            }
+            $this->sendSubscriptionInvoiceEmail($driver, $sub, false);
 
             return ['subscription' => $sub, 'queued' => false, 'current' => null];
         });
     }
 
     /**
-     * Purchase a plan and activate it immediately. Used by the auto-renewal sweep
-     * (where the predecessor was already expired under a row lock). Locks the
-     * driver and re-checks the balance inside the transaction so a renewal can't
-     * race a manual buy into an overspend.
+     * Purchase a plan and activate it immediately. Used by the auto-renewal sweep.
      */
-    public function purchase(User $driver, SubscriptionPlan $plan, bool $autoRenew = true): DriverSubscription
+    public function purchase(User $driver, SubscriptionPlan $plan, bool $autoRenew = true, string $paymentMethod = 'wallet', ?string $paymentReference = null): DriverSubscription
     {
-        return DB::transaction(function () use ($driver, $plan, $autoRenew) {
+        return DB::transaction(function () use ($driver, $plan, $autoRenew, $paymentMethod, $paymentReference) {
             $this->lockDriver($driver);
             $amount = (float) $plan->amount;
-            $this->assertCanAfford($driver, $amount);
-            $sub = $this->createActiveRow($driver, $plan, $amount, $autoRenew);
-            $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
+            $isWallet = strtolower($paymentMethod) === 'wallet';
+
+            if ($isWallet) {
+                $this->assertCanAfford($driver, $amount);
+            }
+            $sub = $this->createActiveRow($driver, $plan, $amount, $autoRenew, $paymentMethod, $paymentReference);
+            if ($isWallet) {
+                $this->debit($driver, $amount, 'Subscription: ' . $plan->title);
+            }
 
             return $sub;
         });
+    }
+
+    /** Create a Razorpay order for direct UPI subscription payment. */
+    public function createUpiOrder(User $driver, SubscriptionPlan $plan): array
+    {
+        $amount = (float) $plan->amount;
+        $amountPaise = (int) round($amount * 100);
+        $receipt = 'sub_' . $driver->id . '_' . $plan->id . '_' . now()->format('YmdHis');
+        $razorpay = app(RazorpayService::class);
+        $order = $razorpay->createOrder($amountPaise, $receipt);
+
+        return [
+            'order_id' => $order['order_id'],
+            'amount_paise' => $order['amount'],
+            'amount' => $amount,
+            'currency' => $order['currency'],
+            'key_id' => env('RAZORPAY_KEY_ID'),
+            'plan_id' => $plan->id,
+            'plan_title' => $plan->title,
+        ];
+    }
+
+    /** Verify direct UPI payment and activate subscription without touching wallet. */
+    public function verifyUpiPurchase(User $driver, SubscriptionPlan $plan, ?int $vehicleTypeId, string $orderId, string $paymentId, string $signature): array
+    {
+        $razorpay = app(RazorpayService::class);
+        $valid = $razorpay->verifyPaymentSignature($orderId, $paymentId, $signature);
+        if (!$valid) {
+            throw new RuntimeException('Invalid payment signature for UPI subscription.');
+        }
+
+        return $this->buy($driver, $plan, $vehicleTypeId, 'upi', $paymentId);
     }
 
     /** Serialise everything a driver does to their own wallet / subscriptions. */
@@ -92,20 +138,24 @@ class SubscriptionService
         User::query()->whereKey($driver->id)->lockForUpdate()->first();
     }
 
-    /** Throw when a positive amount can't be covered (call INSIDE the locked tx). */
+    /**
+     * Universal Wallet Validation Rule:
+     * Projected Balance = Current Wallet Balance - Deduction Amount
+     * If Projected Balance < Minimum Wallet Limit -> Reject purchase.
+     */
     private function assertCanAfford(User $driver, float $amount): void
     {
-        if ($amount > 0 && $this->walletService->balance($driver) < $amount) {
-            throw new RuntimeException('Insufficient wallet balance to buy this plan.');
+        if ($amount > 0) {
+            $this->walletService->universalValidation($driver, $amount);
         }
     }
 
-    /** Create a live (running) subscription row. Does NOT charge. */
-    private function createActiveRow(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew): DriverSubscription
+    /** Create a live (running) subscription row. */
+    private function createActiveRow(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew, string $paymentMethod = 'wallet', ?string $paymentReference = null): DriverSubscription
     {
         $now = now();
 
-        return DriverSubscription::query()->create($this->snapshotAttributes($driver, $plan, $amount, $autoRenew) + [
+        return DriverSubscription::query()->create($this->snapshotAttributes($driver, $plan, $amount, $autoRenew, $paymentMethod, $paymentReference) + [
             'starts_at' => $now,
             'expires_at' => $this->expiryFor($plan->meter_type, (int) ($plan->days_count ?: 1), $now),
             'status' => DriverSubscription::STATUS_ACTIVE,
@@ -113,14 +163,10 @@ class SubscriptionService
         ]);
     }
 
-    /**
-     * Create a prepaid "queued" row (status=active + is_queued=true) that every
-     * running-subscription query ignores until it is activated. Does NOT charge —
-     * the caller debits. starts_at/expires_at are placeholders until activation.
-     */
-    private function createQueuedRow(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew): DriverSubscription
+    /** Create a prepaid "queued" row. */
+    private function createQueuedRow(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew, string $paymentMethod = 'wallet', ?string $paymentReference = null): DriverSubscription
     {
-        return DriverSubscription::query()->create($this->snapshotAttributes($driver, $plan, $amount, $autoRenew) + [
+        return DriverSubscription::query()->create($this->snapshotAttributes($driver, $plan, $amount, $autoRenew, $paymentMethod, $paymentReference) + [
             'starts_at' => now(),
             'expires_at' => null,
             'status' => DriverSubscription::STATUS_ACTIVE,
@@ -157,7 +203,7 @@ class SubscriptionService
     }
 
     /** Shared snapshot of a plan's terms onto a (driver) subscription row. */
-    private function snapshotAttributes(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew): array
+    private function snapshotAttributes(User $driver, SubscriptionPlan $plan, float $amount, bool $autoRenew, string $paymentMethod = 'wallet', ?string $paymentReference = null): array
     {
         return [
             'subscription_plan_id' => $plan->id,
@@ -168,6 +214,8 @@ class SubscriptionService
             'amount_paid' => $amount,
             'commission_percent' => $plan->commission_percent,
             'pricing_model' => $plan->pricing_model ?? SubscriptionPlan::MODEL_SUBSCRIPTION,
+            'payment_method' => $paymentMethod,
+            'payment_reference' => $paymentReference,
             'rides_allowed' => $plan->meter_type === SubscriptionPlan::METER_RIDES ? $plan->rides_count : null,
             'rides_used' => 0,
             'earnings_cap' => $plan->meter_type === SubscriptionPlan::METER_EARNINGS ? $plan->earnings_threshold : null,
@@ -434,26 +482,31 @@ class SubscriptionService
             return;
         }
 
-        // 2) Else same-plan auto-renew (charged from the wallet), if still sellable.
-        // By design the renewal re-reads the plan's CURRENT terms (price, days,
-        // commission) — so an admin's plan edit takes effect at the next renewal.
+        // 2) Else same-plan auto-renew (charged from the wallet).
+        // By design, existing active subscribers auto-renew even if the plan was
+        // deactivated for new buyers (Grandfathered Loyalty).
+        // It strictly checks the minimum wallet limit: if deducting the plan fee
+        // causes the projected wallet balance to fall below the minimum limit,
+        // renewal is rejected and the plan expires cleanly.
         if (! $claimed->auto_renew || ! $claimed->subscription_plan_id) {
             return; // cancelled — genuine expiry
         }
         $plan = SubscriptionPlan::query()->find($claimed->subscription_plan_id);
-        if (! $plan || ! $plan->is_active || ! $plan->isAvailableNow()) {
-            return; // plan no longer available — genuine expiry
+        if (! $plan) {
+            return; // plan deleted — genuine expiry
         }
 
         try {
             $new = $this->purchase($driver, $plan, true);
+            $this->notifyRenewed($driver, $new);
+            $this->sendSubscriptionInvoiceEmail($driver, $new, true);
         } catch (RuntimeException $e) {
-            // Wallet couldn't cover the renewal: stay expired and tell the driver.
+            // Wallet couldn't cover the renewal without breaching minimum limit:
+            // stays expired and notifies the driver.
             $this->notifyRenewalFailed($driver, $plan);
+            $this->sendSubscriptionRenewalFailedEmail($driver, $plan, $e->getMessage());
             return;
         }
-
-        $this->notifyRenewed($driver, $new);
     }
 
     /**
@@ -596,9 +649,90 @@ class SubscriptionService
             $driver,
             'subscription_renewal_failed',
             'Subscription renewal failed',
-            "We couldn't renew {$plan->title} — your wallet balance was too low, so the plan has ended. "
+            "We couldn't renew {$plan->title} — your wallet balance was too low to cover the renewal without falling below your minimum limit. "
             . 'Top up your wallet and resubscribe to keep your commission rate.',
             ['plan_id' => $plan->id],
         );
+    }
+
+    public function sendSubscriptionInvoiceEmail(User $driver, DriverSubscription $sub, bool $isRenewal = false): void
+    {
+        $email = trim((string) $driver->email);
+        if ($email === "" || str_ends_with($email, "@otp.local")) {
+            return;
+        }
+
+        $plan = $sub->plan;
+        $title = $plan?->title ?? 'Subscription Plan';
+        $amount = (float) $sub->amount_paid;
+        $commission = (float) $sub->commission_percent;
+        $startsAt = optional($sub->starts_at)->format('d M Y, h:i A') ?? 'Immediately';
+        $expiresAt = optional($sub->expires_at)->format('d M Y, h:i A')
+            ?? ($sub->rides_allowed ? "{$sub->rides_allowed} Rides Allowance" : ($sub->earnings_cap ? "₹" . number_format((float)$sub->earnings_cap, 2) . " Earnings Limit" : "Unlimited"));
+        $invoiceNo = 'INV-SUB-' . str_pad((string) $sub->id, 6, '0', STR_PAD_LEFT);
+        $method = strtoupper((string) ($sub->payment_method ?: 'WALLET'));
+        $subject = ($isRenewal ? '[Renewal Invoice] ' : '[Subscription Invoice] ') . "{$title} - {$invoiceNo}";
+
+        $textBody = "DREAM CABS - SUBSCRIPTION INVOICE\n"
+            . "========================================\n"
+            . "Invoice No: {$invoiceNo}\n"
+            . "Date: " . now()->format('d M Y, h:i A') . "\n"
+            . "Driver: {$driver->name} (" . ($driver->phone ?: $email) . ")\n"
+            . "Plan: {$title}\n"
+            . "Type: " . ($isRenewal ? 'Auto-Renewal' : 'New Subscription') . "\n"
+            . "Amount Paid: ₹" . number_format($amount, 2) . "\n"
+            . "Payment Method: {$method}\n"
+            . "Per-Ride Commission: " . ($commission > 0 ? $this->fmtPercent($commission) . '%' : '0% (Commission Free)') . "\n"
+            . "Valid From: {$startsAt}\n"
+            . "Valid Until: {$expiresAt}\n"
+            . "Auto-Renewal: " . ($sub->auto_renew ? 'Active' : 'Disabled') . "\n"
+            . "========================================\n"
+            . "Thank you for driving with Dream Cabs!";
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw($textBody, function ($message) use ($driver, $email, $subject) {
+                $message->to($email, $driver->name ?: null)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Subscription invoice email failed', [
+                'user_id' => $driver->id,
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function sendSubscriptionRenewalFailedEmail(User $driver, SubscriptionPlan $plan, string $errorReason = ''): void
+    {
+        $email = trim((string) $driver->email);
+        if ($email === "" || str_ends_with($email, "@otp.local")) {
+            return;
+        }
+
+        $title = $plan->title ?? 'Subscription Plan';
+        $subject = "[Subscription Alert] Renewal Failed for {$title}";
+
+        $textBody = "DREAM CABS - SUBSCRIPTION RENEWAL FAILED\n"
+            . "========================================\n"
+            . "Driver: {$driver->name}\n"
+            . "Plan: {$title}\n"
+            . "Amount: ₹" . number_format((float) $plan->amount, 2) . "\n"
+            . "Reason: Your wallet balance was too low to cover the renewal without falling below the required minimum limit.\n"
+            . "Status: Expired\n"
+            . "========================================\n"
+            . "Please top up your wallet in the Driver App to purchase or reactivate your subscription.\n\n"
+            . "Thank you for driving with Dream Cabs!";
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw($textBody, function ($message) use ($driver, $email, $subject) {
+                $message->to($email, $driver->name ?: null)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Subscription renewal failed email failed', [
+                'user_id' => $driver->id,
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

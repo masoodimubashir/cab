@@ -57,6 +57,17 @@
       .drv-status__dot { background: #E8A317; box-shadow: 0 0 0 3px rgba(232, 163, 23, 0.25); animation: none; }
     }
 
+    /* "Low Balance" duty warning accent. */
+    &.is-warning {
+      background: rgba(220, 38, 38, 0.12) !important;
+      color: #DC2626 !important;
+      border: 1px solid rgba(220, 38, 38, 0.35) !important;
+      .drv-status__dot {
+        background: #DC2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25) !important;
+      }
+    }
+
     &--skeleton {
       width: 108px;
       padding: 0;
@@ -979,5 +990,118 @@
     width: 40px;
     height: 40px;
   }
+}
+
+/* ------------------------------------------------- Bottom Sheet Warning Theme
+   When driver's wallet balance falls below the minimum required limit. */
+.sheet.is-warning {
+  border-top: 3px solid #DC2626;
+  box-shadow: 0 -8px 32px rgba(220, 38, 38, 0.18), 0 8px 24px rgba(13, 27, 42, 0.2);
+}
+
+.sheet-warn-card {
+  background: #FFF5F5;
+  border: 1.5px solid rgba(220, 38, 38, 0.25);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  &__icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(220, 38, 38, 0.12);
+    color: #DC2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+  &__title-box {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  &__title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #991B1B;
+  }
+  &__badge {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(220, 38, 38, 0.15);
+    color: #DC2626;
+  }
+  &__msg {
+    font-size: 0.8rem;
+    color: #7F1D1D;
+    line-height: 1.4;
+    margin: 4px 0 10px;
+    strong { color: #111827; }
+  }
+  &__stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(220, 38, 38, 0.2);
+  }
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    small {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #9CA3AF;
+      text-transform: uppercase;
+    }
+    span {
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: #1F2937;
+    }
+    strong {
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: #DC2626;
+    }
+  }
+}
+
+.sheet__go--recharge {
+  background: #10B981 !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4) !important;
+}
+
+.sheet-state-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  color: var(--text-muted, #6C757D);
+  font-size: 0.88rem;
+  font-weight: 700;
+  animation: dashFade 0.2s ease-in-out;
+  ion-spinner {
+    color: var(--ion-color-primary, #12B35B);
+  }
+}
+
+.sheet-body-anim {
+  animation: dashFade 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 

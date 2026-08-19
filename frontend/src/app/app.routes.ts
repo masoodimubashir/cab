@@ -138,22 +138,21 @@ export const routes: Routes = [
     data: { permission: 'finance' },
   },
 
-  // B6 — Finance: money-in ledger (overview screen removed per operator request).
-  { path: 'finance', redirectTo: 'finance/money-in', pathMatch: 'full' },
-  { path: 'finance/overview', redirectTo: 'finance/money-in', pathMatch: 'full' },
-  {
-    path: 'finance/money-in',
-    loadComponent: () => import('./admin/finance/finance-money-in.component').then((m) => m.FinanceMoneyInComponent),
-    canActivate: [adminAuthGuard],
-    data: { permission: 'finance' },
-  },
-  // Every rupee movement + the per-trip proof that it balances.
+  // Finance — Unified Money Ledger headquarters (transactions, driver wallets, payouts, commissions & earnings)
+  { path: 'finance', redirectTo: 'finance/ledger', pathMatch: 'full' },
+  { path: 'finance/overview', redirectTo: 'finance/ledger', pathMatch: 'full' },
   {
     path: 'finance/ledger',
     loadComponent: () => import('./admin/finance/finance-ledger.component').then((m) => m.FinanceLedgerComponent),
     canActivate: [adminAuthGuard],
     data: { permission: 'finance' },
   },
+  { path: 'finance/money-in', redirectTo: 'finance/ledger', pathMatch: 'full' },
+  { path: 'finance/wallets', redirectTo: 'finance/ledger', pathMatch: 'full' },
+  { path: 'finance/transfers/pending', redirectTo: 'finance/ledger', pathMatch: 'full' },
+  { path: 'finance/transfers/completed', redirectTo: 'finance/ledger', pathMatch: 'full' },
+  { path: 'finance/commissions', redirectTo: 'finance/ledger', pathMatch: 'full' },
+  { path: 'finance/driver-earnings', redirectTo: 'finance/ledger', pathMatch: 'full' },
 
   { path: 'roles-permissions', component: RolesPermissionsComponent, canActivate: [adminAuthGuard], data: { permission: 'roles_permissions' } },
   { path: 'managers', component: ManagersComponent, canActivate: [adminAuthGuard], data: { permission: 'managers' } },

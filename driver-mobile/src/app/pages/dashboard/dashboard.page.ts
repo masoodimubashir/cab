@@ -91,6 +91,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   cityVehicleTypeConfig: CityVehicleTypeConfig | null = null;
   /** Current wallet balance, used by the go-online gate (₹). */
   walletBalance = 0;
+  /** Minimum wallet balance limit from operator settings (0 = unlimited). */
+  minWalletLimit = 0;
 
   /**
    * Full-screen cold-start skeleton — covers the whole dashboard (map + top
@@ -185,9 +187,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       // Every GPS fix from the online presence watcher lands here — drive the
       // same marker so the driver sees themselves move in real time.
       this.applyFix(fix.lat, fix.lng, fix.accuracy, fix.bearing);
-      if (this.error && this.error.toLowerCase().includes('gps')) {
-        this.error = null;
-      }
     });
 
     // Safety: never trap the driver behind the skeleton if the map or profile
@@ -195,8 +194,25 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     setTimeout(() => this.finishHomeLoading(), 6000);
   }
 
+  private syncTimer: ReturnType<typeof setInterval> | null = null;
+
   ionViewWillEnter(): void {
     this.refresh();
+    this.startSyncTimer();
+  }
+
+  private startSyncTimer(): void {
+    this.stopSyncTimer();
+    this.syncTimer = setInterval(() => {
+      this.refreshWalletBalance();
+    }, 4000);
+  }
+
+  private stopSyncTimer(): void {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
   }
 
   ionViewDidEnter(): void {
@@ -310,12 +326,14 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ionViewWillLeave(): void {
+    this.stopSyncTimer();
     // Drop the visual-only watch when navigating away. If the driver is online,
     // DriverPresenceService keeps its own watch alive so dispatch still sees us.
     void this.stopVisualWatch();
   }
 
   ngOnDestroy(): void {
+    this.stopSyncTimer();
     void this.stopVisualWatch();
     this.stopOnlineTimer();
     this.driverVerifyUnsub?.();
@@ -364,12 +382,24 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return !!this.driver?.['is_online'];
   }
 
+  /** True if a minimum wallet limit is configured and the driver's balance is below that floor. */
+  get isWalletBelowLimit(): boolean {
+    return this.minWalletLimit !== 0 && this.walletBalance < this.minWalletLimit;
+  }
+
+  /** Amount needed to recharge to reach or exceed minimum wallet limit. */
+  get walletShortfall(): number {
+    if (!this.isWalletBelowLimit) return 0;
+    return Math.max(0, Math.ceil(this.minWalletLimit - this.walletBalance));
+  }
+
   /**
-   * A driver may go ONLINE once their documents are admin-approved. (No bank/UPI
-   * requirement — the operator pays drivers from their wallet balance, not via
-   * a per-driver payout account.)
+   * A driver may go ONLINE once documents are approved AND their wallet balance
+   * is above the configured minimum limit.
    */
-  get canGoOnline(): boolean { return this.isApproved; }
+  get canGoOnline(): boolean {
+    return this.isApproved && !this.isWalletBelowLimit;
+  }
 
   /** The "documents under review" banner text, or null when approved. */
   get reviewBannerText(): string | null {
@@ -649,15 +679,28 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     });
   }
 
+  private previousWarningState: boolean | null = null;
+  isTransitioningState = false;
+
   /**
-   * Keep walletBalance current from the wallet service so the go-online gate
-   * always has a fresh figure (the profile endpoint may not carry a balance).
-   * Best-effort: a failure leaves the existing value untouched.
+   * Keep walletBalance and minWalletLimit current so the home screen
+   * updates live the instant settings or balance change.
    */
   private refreshWalletBalance(): void {
-    this.api.get<{ balance?: number }>('/drivers/me/wallet').subscribe({
+    this.api.get<{ balance?: number; minimum_wallet_limit?: number }>('/drivers/me/wallet').subscribe({
       next: (res) => {
+        const prevBelow = this.isWalletBelowLimit;
         if (typeof res?.balance === 'number') this.walletBalance = res.balance;
+        if (typeof res?.minimum_wallet_limit === 'number') this.minWalletLimit = res.minimum_wallet_limit;
+        const nextBelow = this.isWalletBelowLimit;
+
+        if (this.previousWarningState !== null && prevBelow !== nextBelow) {
+          this.isTransitioningState = true;
+          setTimeout(() => {
+            this.isTransitioningState = false;
+          }, 500);
+        }
+        this.previousWarningState = nextBelow;
       },
       error: () => undefined,
     });
@@ -900,6 +943,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   async goOnline(): Promise<void> {
     if (this.toggling) return;
+    if (this.isWalletBelowLimit) {
+      void this.showWalletLowAlert();
+      return;
+    }
     if (!this.canGoOnline) {
       this.error = this.reviewBannerText || 'You cannot go online until your documents are approved.';
       return;
@@ -938,6 +985,23 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     } finally {
       this.toggling = false;
     }
+  }
+
+  async showWalletLowAlert(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Wallet Balance Low',
+      subHeader: `Current: ₹${this.walletBalance.toFixed(2)} · Required Limit: ₹${this.minWalletLimit.toFixed(2)}`,
+      message: 'Your wallet balance is below the minimum required limit. Please recharge your wallet to go online and receive rides.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Recharge Wallet', handler: () => this.openWalletTopup() },
+      ],
+    });
+    await alert.present();
+  }
+
+  openWalletTopup(): void {
+    this.navTo('/tabs/wallet');
   }
 
   async goOffline(): Promise<void> {
