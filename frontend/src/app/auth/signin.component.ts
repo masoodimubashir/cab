@@ -93,7 +93,15 @@ import {
   `,
 })
 export class SigninComponent {
-  private readonly apiBase = 'http://localhost:8000/api';
+  private get apiBase(): string {
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      if (window.location.port === '4200') {
+        return 'http://localhost:8000/api';
+      }
+      return `${window.location.origin}/api`;
+    }
+    return 'http://localhost:8000/api';
+  }
   email = '';
   password = '';
   remember = true;
