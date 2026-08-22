@@ -31,8 +31,12 @@ if command -v npm >/dev/null 2>&1; then
   npm install --prefer-offline --no-audit
   npm run build -- --configuration production
 else
-  # Use temporary Node container so host doesn't even need Node/NPM installed!
-  docker run --rm -v "$ROOT_DIR/frontend":/app -w /app node:20-alpine sh -c "npm install && npm run build -- --configuration production"
+  # Use cached temporary Node container
+  docker run --rm \
+    -v "$ROOT_DIR/frontend":/app \
+    -v dreamcabs_npm_cache:/root/.npm \
+    -w /app \
+    node:20-alpine sh -c "npm install --prefer-offline --no-audit && npm run build -- --configuration production"
 fi
 
 echo "==> Building + starting Docker stack (Backend + Database + WebSockets + Nginx)..."
