@@ -75,6 +75,15 @@ use App\Http\Controllers\DriverSubscriptionsController;
 use App\Http\Controllers\DriverWalletController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/', function () {
+    return response()->json([
+        'status' => 'ok',
+        'app' => config('app.name', 'DreamCabs'),
+        'version' => '1.0.0',
+        'time' => now()->toIso8601String(),
+    ]);
+});
+
 Route::get('/health', HealthController::class);
 
 // Admin auth (email + password)
