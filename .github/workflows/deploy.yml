@@ -30,7 +30,7 @@ jobs:
             cd /var/www/dreamcabs
             
             echo "📥 Fetching latest changes from Git..."
-            git pull origin master || git pull origin main || git pull origin opeartor-payments
+            git pull origin master
             
             echo "🔨 Running unified build & deploy..."
             bash backend/deploy/deploy.sh
