@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { AlertController, ToastController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 
 declare const Razorpay: any;
 
@@ -74,6 +75,7 @@ export class WalletPage implements OnInit {
 
   constructor(
     private api: ApiService,
+    private auth: AuthService,
     private toastCtrl: ToastController,
     private alertCtrl: AlertController,
   ) {}
@@ -101,22 +103,21 @@ export class WalletPage implements OnInit {
   load(): void {
     this.loading = true;
     this.error = null;
-
     this.api.get<WalletResponse>('/drivers/me/wallet').subscribe({
       next: (res) => {
         this.loading = false;
-        this.balance = res.balance ?? 0;
-        this.minLimit = res.minimum_wallet_limit ?? 0;
-        this.maxLimit = res.maximum_wallet_limit ?? 0;
+        this.balance = res.balance;
+        this.minLimit = res.minimum_wallet_limit;
+        this.maxLimit = res.maximum_wallet_limit;
         this.currency = res.currency || 'INR';
-        this.breakdown = res.breakdown || null;
+        this.breakdown = res.breakdown;
         this.deductions = res.recent_deductions || [];
         this.recharges = res.recent_recharges || [];
         this.allTransactions = res.transactions || [];
       },
       error: (err) => {
         this.loading = false;
-        this.error = err?.error?.message || 'Could not load wallet details.';
+        this.error = err?.error?.message || 'Failed to load wallet data.';
       },
     });
   }
@@ -130,27 +131,31 @@ export class WalletPage implements OnInit {
   async promptTopUp(): Promise<void> {
     const alert = await this.alertCtrl.create({
       header: 'Recharge Wallet',
-      subHeader: `Add money to keep your wallet active and accept new rides. Minimum balance required: ₹${this.minLimit}.`,
+      message: 'Enter the amount in ₹ to add to your driver wallet.',
       inputs: [
         {
           name: 'amount',
           type: 'number',
-          placeholder: 'Enter amount (e.g. 500)',
-          min: 1,
-          max: 100000,
+          placeholder: 'e.g. 500',
+          min: 50,
+          max: 10000,
         },
       ],
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
-          text: 'Recharge',
+          text: 'Proceed to Pay',
           handler: (data) => {
-            const amt = parseFloat(data.amount);
-            if (!amt || amt <= 0) {
+            const amount = parseFloat(data.amount);
+            if (isNaN(amount) || amount <= 0) {
               this.showToast('Please enter a valid amount.');
               return false;
             }
-            this.startTopup(amt);
+            if (amount < 50) {
+              this.showToast('Minimum recharge is ₹50.');
+              return false;
+            }
+            this.startTopup(amount);
             return true;
           },
         },
@@ -179,6 +184,8 @@ export class WalletPage implements OnInit {
       return;
     }
 
+    const user = this.auth.getUser();
+
     const rzp = new Razorpay({
       key: options.key_id,
       amount: options.amount_paise,
@@ -186,6 +193,11 @@ export class WalletPage implements OnInit {
       name: 'Dream Cabs',
       description: 'Wallet Recharge',
       order_id: options.order_id,
+      prefill: {
+        name: user?.name || 'Driver',
+        email: user?.email || '',
+        contact: user?.phone || '',
+      },
       handler: (response: any) => {
         this.verifyTopup(response);
       },

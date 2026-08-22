@@ -159,6 +159,9 @@ export class AdminRealtimeService {
   }
 
   private apiBase(): string {
+    if (typeof window !== 'undefined' && window.location && window.location.port !== '4200') {
+      return `${window.location.origin}/api`;
+    }
     return 'http://localhost:8000/api';
   }
 

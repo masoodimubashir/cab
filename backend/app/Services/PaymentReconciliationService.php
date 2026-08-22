@@ -181,6 +181,12 @@ class PaymentReconciliationService
                     null,
                     null,
                 );
+
+                try {
+                    app(\App\Services\RazorpayService::class)->createInvoiceForWalletTopup($user, $locked);
+                } catch (\Throwable) {
+                    // Best effort
+                }
             }
 
             return 'credited';
