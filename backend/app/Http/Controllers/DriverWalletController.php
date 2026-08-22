@@ -159,6 +159,15 @@ class DriverWalletController
                 null,
             );
 
+            try {
+                app(\App\Services\RazorpayService::class)->createInvoiceForWalletTopup($user, $topup);
+            } catch (\Throwable $e) {
+                Log::warning('Driver wallet top-up auto-receipt failed: ' . $e->getMessage(), [
+                    'topup_id' => $topup->id,
+                    'user_id' => $user->id,
+                ]);
+            }
+
             return response()->json([
                 'balance' => $this->wallet->balance($user),
                 'currency' => 'INR',

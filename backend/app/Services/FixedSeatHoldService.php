@@ -818,6 +818,20 @@ class FixedSeatHoldService
             $data,
             "calendar",
         );
+
+        if ($reservation->payment_status === 'PAID') {
+            try {
+                app(\App\Services\RazorpayService::class)->createInvoiceForFixedBooking(
+                    $reservation,
+                    (float) $reservation->fare_amount,
+                    (string) $reservation->payment_reference
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Fixed booking auto-invoice failed: ' . $e->getMessage(), [
+                    'reservation_id' => $reservation->id,
+                ]);
+            }
+        }
     }
 
     private function notificationData(SeatReservation $reservation): array

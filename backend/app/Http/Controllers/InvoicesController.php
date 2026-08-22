@@ -49,6 +49,11 @@ class InvoicesController extends Controller
             return response()->json(['message' => 'Invoice not available.'], 404);
         }
 
+        // If it's a live Razorpay hosted invoice link, redirect straight to it
+        if (filter_var($invoice->pdf_path, FILTER_VALIDATE_URL) || str_starts_with($invoice->pdf_path, 'http')) {
+            return redirect()->away($invoice->pdf_path);
+        }
+
         if (!Storage::disk('local')->exists($invoice->pdf_path)) {
             return response()->json(['message' => 'Invoice PDF missing from storage.'], 404);
         }

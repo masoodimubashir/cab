@@ -382,13 +382,255 @@ class RazorpayService
     }
 
     /**
+     * Creates an itemized tax invoice in Razorpay and instructs Razorpay to
+     * automatically email the branded bill & PDF download link to the payer.
+     *
+     * @param array{name?:string,email:string,contact?:string} $customer
+     * @param array<int, array{name:string,description?:string,amount:int,currency?:string,quantity?:int}> $lineItems
+     * @return array{id:string,invoice_number:string,short_url:string,status:string}|null
+     */
+    public function createAndSendInvoice(
+        array $customer,
+        array $lineItems,
+        string $description,
+        string $receipt,
+        array $options = []
+    ): ?array {
+        $email = trim((string) ($customer['email'] ?? ''));
+        if ($email === '' || str_ends_with($email, '@otp.local')) {
+            \Illuminate\Support\Facades\Log::info('Skipping Razorpay invoice email: invalid or local OTP email address', [
+                'email' => $email,
+                'receipt' => $receipt,
+            ]);
+            return null;
+        }
+
+        try {
+            $currency = (string) config('services.razorpay.currency', 'INR');
+
+            $payload = [
+                'type' => 'invoice',
+                'description' => $description,
+                'receipt' => substr($receipt, 0, 40),
+                'customer' => [
+                    'name' => $customer['name'] ?? 'Customer',
+                    'email' => $email,
+                    'contact' => $customer['contact'] ?? '',
+                ],
+                'line_items' => $lineItems,
+                'email_notify' => 1,
+                'sms_notify' => !empty($customer['contact']) ? 1 : 0,
+                'currency' => $currency,
+            ];
+
+            if (!empty($options['notes'])) {
+                $payload['notes'] = $options['notes'];
+            }
+
+            $invoice = $this->api->invoice->create($payload);
+
+            if (isset($invoice->status) && $invoice->status === 'draft') {
+                $invoice = $invoice->issue();
+            }
+
+            return [
+                'id' => (string) $invoice->id,
+                'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->id),
+                'short_url' => (string) ($invoice->short_url ?? ''),
+                'status' => (string) ($invoice->status ?? 'issued'),
+            ];
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Razorpay auto-invoice creation failed', [
+                'receipt' => $receipt,
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Dispatches an automated Razorpay bill for a completed/prepaid Solo Ride.
+     */
+    public function createInvoiceForTrip(\App\Models\Trip $trip, \App\Models\Payment $payment): ?array
+    {
+        $trip->loadMissing(['customer', 'rideType']);
+        $customer = $trip->customer;
+        if (!$customer || empty($customer->email)) {
+            return null;
+        }
+
+        $amountPaise = (int) round(((float) $payment->amount) * 100);
+        $rideTypeName = $trip->rideType->name ?? 'Standard Cab';
+        $pickup = $trip->pickup_address ?: 'Pickup Location';
+        $drop = $trip->drop_address ?: 'Drop Location';
+
+        $lineItems = [
+            [
+                'name' => "Ride Fare ({$rideTypeName})",
+                'description' => "Route: {$pickup} to {$drop}",
+                'amount' => $amountPaise,
+                'currency' => $payment->currency ?: 'INR',
+                'quantity' => 1,
+            ]
+        ];
+
+        return $this->createAndSendInvoice(
+            customer: [
+                'name' => $customer->name ?? 'Customer',
+                'email' => $customer->email,
+                'contact' => $customer->phone ?? '',
+            ],
+            lineItems: $lineItems,
+            description: "DreamCabs Ride #{$trip->id} Invoice",
+            receipt: "INV-TR-{$trip->id}-" . time(),
+            options: [
+                'notes' => [
+                    'trip_id' => (string) $trip->id,
+                    'payment_id' => (string) ($payment->razorpay_payment_id ?? $payment->id),
+                ]
+            ]
+        );
+    }
+
+    /**
+     * Dispatches an automated Razorpay bill for a Fixed Intercity Seat Reservation.
+     */
+    public function createInvoiceForFixedBooking(\App\Models\SeatReservation $reservation, float $amount, ?string $paymentId = null): ?array
+    {
+        $reservation->loadMissing(['customer', 'routeDeparture.route']);
+        $customer = $reservation->customer;
+        if (!$customer || empty($customer->email)) {
+            return null;
+        }
+
+        $amountPaise = (int) round($amount * 100);
+        $routeName = $reservation->route_name ?: ($reservation->routeDeparture->route->name ?? 'Fixed Intercity Route');
+        $board = $reservation->board_address ?: 'Boarding Point';
+        $drop = $reservation->drop_address ?: 'Drop Point';
+        $seats = (int) $reservation->seats;
+
+        $lineItems = [
+            [
+                'name' => "Intercity Seat Booking ({$seats} Seat" . ($seats > 1 ? 's' : '') . ")",
+                'description' => "Route: {$routeName} ({$board} to {$drop})",
+                'amount' => $amountPaise,
+                'currency' => 'INR',
+                'quantity' => 1,
+            ]
+        ];
+
+        return $this->createAndSendInvoice(
+            customer: [
+                'name' => $customer->name ?? 'Passenger',
+                'email' => $customer->email,
+                'contact' => $customer->phone ?? '',
+            ],
+            lineItems: $lineItems,
+            description: "DreamCabs Fixed Booking #{$reservation->id}",
+            receipt: "INV-FX-{$reservation->id}-" . time(),
+            options: [
+                'notes' => [
+                    'reservation_id' => (string) $reservation->id,
+                    'payment_reference' => (string) ($paymentId ?: $reservation->payment_reference),
+                ]
+            ]
+        );
+    }
+
+    /**
+     * Dispatches an automated Razorpay bill for a Shuttle Passenger Booking.
+     */
+    public function createInvoiceForShuttleBooking(\App\Models\ShuttlePassengerBooking $booking, float $amount, ?string $paymentId = null): ?array
+    {
+        $booking->loadMissing(['customer']);
+        $customer = $booking->customer;
+        if (!$customer || empty($customer->email)) {
+            return null;
+        }
+
+        $amountPaise = (int) round($amount * 100);
+        $pickup = $booking->pickup_address ?: 'Pickup Stop';
+        $drop = $booking->drop_address ?: 'Drop Stop';
+        $seats = (int) ($booking->seats ?: 1);
+
+        $lineItems = [
+            [
+                'name' => "Shuttle Ticket ({$seats} Seat" . ($seats > 1 ? 's' : '') . ")",
+                'description' => "Route: {$pickup} to {$drop}",
+                'amount' => $amountPaise,
+                'currency' => 'INR',
+                'quantity' => 1,
+            ]
+        ];
+
+        return $this->createAndSendInvoice(
+            customer: [
+                'name' => $customer->name ?? 'Passenger',
+                'email' => $customer->email,
+                'contact' => $customer->phone ?? '',
+            ],
+            lineItems: $lineItems,
+            description: "DreamCabs Shuttle Booking #{$booking->id}",
+            receipt: "INV-SH-{$booking->id}-" . time(),
+            options: [
+                'notes' => [
+                    'shuttle_booking_id' => (string) $booking->id,
+                    'payment_id' => (string) ($paymentId ?: $booking->razorpay_payment_id),
+                ]
+            ]
+        );
+    }
+
+    /**
+     * Dispatches an automated Razorpay receipt for a Driver Wallet Top-Up.
+     */
+    public function createInvoiceForWalletTopup(\App\Models\User $driver, \App\Models\WalletTopup $topup): ?array
+    {
+        $email = trim((string) $driver->email);
+        if ($email === '' || str_ends_with($email, '@otp.local')) {
+            return null;
+        }
+
+        $amountPaise = (int) round(((float) $topup->amount) * 100);
+
+        $lineItems = [
+            [
+                'name' => 'Driver Wallet Top-Up / Recharge',
+                'description' => 'Account balance top-up for DreamCabs driver account',
+                'amount' => $amountPaise,
+                'currency' => 'INR',
+                'quantity' => 1,
+            ]
+        ];
+
+        return $this->createAndSendInvoice(
+            customer: [
+                'name' => $driver->name ?? 'Driver',
+                'email' => $email,
+                'contact' => $driver->phone ?? '',
+            ],
+            lineItems: $lineItems,
+            description: "Driver Wallet Top-Up #{$topup->id}",
+            receipt: "INV-TP-{$topup->id}-" . time(),
+            options: [
+                'notes' => [
+                    'driver_id' => (string) $driver->id,
+                    'topup_id' => (string) $topup->id,
+                    'razorpay_payment_id' => (string) ($topup->razorpay_payment_id ?? ''),
+                ]
+            ]
+        );
+    }
+
+    /**
      * Low-level caller for the v2 onboarding API (basic-auth, JSON). Returns the
      * decoded body on 2xx, or null on any error so callers can degrade cleanly.
      */
     private function v2(string $method, string $path, array $body = []): ?array
     {
         try {
-            $req = Http::withBasicAuth($this->keyId, $this->keySecret)
+            $req = \Illuminate\Support\Facades\Http::withBasicAuth($this->keyId, $this->keySecret)
                 ->acceptJson()
                 ->asJson();
 
@@ -409,4 +651,5 @@ class RazorpayService
         }
     }
 }
+
 

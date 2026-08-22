@@ -1,0 +1,33 @@
+﻿name: DreamCabs Production Deploy
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to GoDaddy VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "🚀 Starting automated deployment on GoDaddy VPS..."
+            cd /var/www/dreamcabs
+            
+            echo "📥 Fetching latest changes from Git..."
+            git pull origin master || git pull origin main
+            
+            echo "🔨 Running unified build & deploy..."
+            bash backend/deploy/deploy.sh
+            
+            echo "✅ Deployment completed successfully!"
