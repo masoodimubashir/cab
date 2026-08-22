@@ -9,6 +9,12 @@ export class ApiService {
   constructor(private http: HttpClient) {}
 
   private getBaseUrl(): string {
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      if (window.location.port === '4200') {
+        return 'http://localhost:8000/api';
+      }
+      return `${window.location.origin}/api`;
+    }
     return this.fallbackBaseUrl;
   }
 

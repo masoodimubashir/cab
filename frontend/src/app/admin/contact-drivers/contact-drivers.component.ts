@@ -616,7 +616,9 @@ export class ContactDriversComponent implements OnInit {
 
   // ── Derived ─────────────────────────────────────────────────────
   get sampleCsvUrl(): string {
-    const apiBase = 'http://localhost:8000/api';
+    const apiBase = typeof window !== 'undefined' && window.location && window.location.port !== '4200'
+      ? `${window.location.origin}/api`
+      : 'http://localhost:8000/api';
     return apiBase.replace(/\/api\/?$/, '') + '/samples/contact_drivers_sample.csv';
   }
   get filteredRows(): AudienceRow[] {
@@ -731,7 +733,9 @@ export class ContactDriversComponent implements OnInit {
     const form = new FormData();
     form.append('file', file);
 
-    const apiBase = 'http://localhost:8000/api';
+    const apiBase = typeof window !== 'undefined' && window.location && window.location.port !== '4200'
+      ? `${window.location.origin}/api`
+      : 'http://localhost:8000/api';
     const token = localStorage.getItem('dreamcabs_token');
     const headers = new HttpHeaders(token ? { Authorization: `Bearer ${token}` } : {});
 

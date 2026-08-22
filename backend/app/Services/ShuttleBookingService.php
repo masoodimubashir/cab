@@ -316,6 +316,8 @@ class ShuttleBookingService
             DispatchHopJob::startChain($dispatch[0], $dispatch[1]);
         }
 
+        $this->dispatchInvoiceForShuttle($confirmed, (string) ($confirmed->razorpay_payment_id ?? ''));
+
         return $confirmed;
     }
 
@@ -374,7 +376,27 @@ class ShuttleBookingService
             DispatchHopJob::startChain($dispatch[0], $dispatch[1]);
         }
 
+        $this->dispatchInvoiceForShuttle($confirmed, $razorpayPaymentId);
+
         return $confirmed;
+    }
+
+    /**
+     * Triggers Razorpay to automatically generate and email the bill/ticket to the passenger.
+     */
+    private function dispatchInvoiceForShuttle(ShuttlePassengerBooking $booking, string $paymentId): void
+    {
+        try {
+            app(\App\Services\RazorpayService::class)->createInvoiceForShuttleBooking(
+                $booking,
+                (float) ($booking->fare_amount ?? 0),
+                $paymentId
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Shuttle booking auto-invoice failed: ' . $e->getMessage(), [
+                'shuttle_booking_id' => $booking->id,
+            ]);
+        }
     }
 
     /**
