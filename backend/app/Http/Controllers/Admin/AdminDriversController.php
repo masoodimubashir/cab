@@ -170,13 +170,17 @@ class AdminDriversController
         $driver->save();
 
         if ($driver->user_id) {
-            broadcast(new DriverVerificationUpdated(
-                (int) $driver->user_id,
-                (int) $driver->id,
-                'approval_status',
-                null,
-                $driver->approval_status,
-            ));
+            try {
+                broadcast(new DriverVerificationUpdated(
+                    (int) $driver->user_id,
+                    (int) $driver->id,
+                    'approval_status',
+                    null,
+                    $driver->approval_status,
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('DriverVerificationUpdated broadcast failed', ['error' => $e->getMessage()]);
+            }
         }
 
         return response()->json(['driver' => $driver->fresh()]);
@@ -215,7 +219,11 @@ class AdminDriversController
 
         if ($document->document_id !== null) {
             $query->where('document_id', $document->document_id);
-            $query->where('vehicle_type_id', $document->vehicle_type_id);
+            if ($document->vehicle_type_id !== null) {
+                $query->where('vehicle_type_id', $document->vehicle_type_id);
+            } else {
+                $query->whereNull('vehicle_type_id');
+            }
         } else {
             $query->whereKey($document->id);
         }
@@ -229,13 +237,17 @@ class AdminDriversController
 
         $freshDocument = $document->fresh('driver');
         if ($freshDocument?->driver?->user_id) {
-            broadcast(new DriverVerificationUpdated(
-                (int) $freshDocument->driver->user_id,
-                (int) $freshDocument->driver_id,
-                'document_status',
-                (int) $freshDocument->id,
-                $freshDocument->status,
-            ));
+            try {
+                broadcast(new DriverVerificationUpdated(
+                    (int) $freshDocument->driver->user_id,
+                    (int) $freshDocument->driver_id,
+                    'document_status',
+                    (int) $freshDocument->id,
+                    $freshDocument->status,
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('DriverVerificationUpdated broadcast failed', ['error' => $e->getMessage()]);
+            }
         }
 
         return response()->json(['document' => $freshDocument]);
