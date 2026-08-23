@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, MenuController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
-import { AuthService } from '../../core/auth.service';
+import { AuthService, AuthUser } from '../../core/auth.service';
 import { PushService } from '../../core/push.service';
 
 @Component({
