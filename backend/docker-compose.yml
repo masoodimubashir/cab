@@ -18,6 +18,9 @@ services:
     env_file: [.env]
     environment:
       RUN_RELEASE_TASKS: "true"          # only this role migrates + caches
+      REVERB_INTERNAL_HOST: "reverb"
+      REVERB_INTERNAL_PORT: "8080"
+      REVERB_INTERNAL_SCHEME: "http"
     volumes:
       - ./.env:/var/www/html/.env
       - storage_data:/var/www/html/storage
@@ -83,6 +86,10 @@ services:
     restart: unless-stopped
     command: php artisan queue:work --tries=3 --timeout=90 --sleep=2
     env_file: [.env]
+    environment:
+      REVERB_INTERNAL_HOST: "reverb"
+      REVERB_INTERNAL_PORT: "8080"
+      REVERB_INTERNAL_SCHEME: "http"
     volumes:
       - ./.env:/var/www/html/.env
       - storage_data:/var/www/html/storage
@@ -96,6 +103,10 @@ services:
     restart: unless-stopped
     command: php artisan schedule:work
     env_file: [.env]
+    environment:
+      REVERB_INTERNAL_HOST: "reverb"
+      REVERB_INTERNAL_PORT: "8080"
+      REVERB_INTERNAL_SCHEME: "http"
     volumes:
       - ./.env:/var/www/html/.env
       - storage_data:/var/www/html/storage
