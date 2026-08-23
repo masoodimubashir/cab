@@ -15,50 +15,15 @@ ion-content {
   gap: 12px;
   margin-top: env(safe-area-inset-top, 20px);
 
-  .logo-mark {
-    width: 40px;
-    height: 40px;
-    background-color: var(--ion-color-secondary);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    position: relative;
-
-    // Quick CSS shape for the logo mark in the image
-    &::before {
-      content: '';
-      width: 4px;
-      height: 4px;
-      background: #fff;
-      margin-left: -4px;
-    }
-    .logo-dots {
-      width: 4px;
-      height: 4px;
-      background: #fff;
-    }
-    .logo-arrow {
-      width: 0;
-      height: 0;
-      border-top: 4px solid transparent;
-      border-bottom: 4px solid transparent;
-      border-left: 6px solid var(--ion-color-primary);
-    }
-  }
-
-  .logo-text {
-    font-size: 24px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-
-    .text-dark {
-      color: var(--text-main);
-    }
-    .text-primary {
-      color: var(--ion-color-primary);
-    }
+  .welcome-brand-logo {
+    max-width: 170px;
+    max-height: 56px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(13, 27, 42, 0.12);
   }
 }
 

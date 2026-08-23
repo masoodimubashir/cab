@@ -86,51 +86,15 @@ ion-content {
   align-items: center;
   gap: 12px;
 
-  .logo-mark {
-    width: 44px;
-    height: 44px;
-    background-color: var(--dc-ink);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    position: relative;
-    box-shadow: 0 6px 16px rgba(13, 27, 42, 0.18);
-    animation: logoFloat 6s ease-in-out infinite;
-
-    &::before {
-      content: '';
-      width: 4px;
-      height: 4px;
-      background: #fff;
-      border-radius: 50%;
-      margin-left: -4px;
-    }
-
-    .logo-dots {
-      width: 4px;
-      height: 4px;
-      background: #fff;
-      border-radius: 50%;
-    }
-
-    .logo-arrow {
-      width: 0;
-      height: 0;
-      border-top: 4px solid transparent;
-      border-bottom: 4px solid transparent;
-      border-left: 6px solid var(--dc-green);
-    }
-  }
-
-  .logo-text {
-    font-size: 24px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-
-    .text-dark { color: var(--dc-ink); }
-    .text-primary { color: var(--dc-green); }
+  .welcome-brand-logo {
+    max-width: 170px;
+    max-height: 56px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(13, 27, 42, 0.12);
   }
 }
 

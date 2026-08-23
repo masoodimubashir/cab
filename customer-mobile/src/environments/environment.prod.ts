@@ -21,7 +21,7 @@ const wsScheme: 'http' | 'https' = USE_HTTPS ? 'https' : 'http';
 
 export const environment = {
   production: true,
-  apiUrl: 'https://dreamcabs.in/api/api',
+  apiUrl: 'https://dreamcabs.in/api',
   /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
   useServerOtp: true,
   googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
