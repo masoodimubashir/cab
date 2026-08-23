@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<!-- class="full" switches on the full-height section treatment. Only this
+     page carries it; the sub-pages stay plain documents. -->
+<html lang="en" class="full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DreamCabs | India's First AI-Powered Fixed-Route Shared Mobility Platform</title>
+<meta name="description" content="DreamCabs is India's first AI-powered fixed-route shared mobility platform — AI ride matching, multilingual voice booking, real-time tracking and shared fares.">
+<link rel="icon" href="images/dreamcabs-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+</head>
+<body class="loading">
+
+<!-- ============================================================
+     ICON SPRITE — every glyph on the page comes from here.
+     ============================================================ -->
+<svg id="sprite" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="i-ai" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.6"/><circle cx="12" cy="12" r="2.1"/><path d="M9.5 2.8v3.2M14.5 2.8v3.2M9.5 18v3.2M14.5 18v3.2M2.8 9.5h3.2M2.8 14.5h3.2M18 9.5h3.2M18 14.5h3.2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2.6 4.5 6v6c0 4.6 3.2 8 7.5 9.4 4.3-1.4 7.5-4.8 7.5-9.4V6L12 2.6Z"/><path d="m9 12 2.2 2.2L15.2 10"/></symbol>
+  <symbol id="i-nav" viewBox="0 0 24 24"><path d="M21 3 3.5 10.4a.6.6 0 0 0 .05 1.12L11 14l2.5 7.45a.6.6 0 0 0 1.12.05L21 3Z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.3S3.5 15.2 3.5 9.4A4.9 4.9 0 0 1 12 6a4.9 4.9 0 0 1 8.5 3.4c0 5.8-8.5 10.9-8.5 10.9Z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16.5 5.2a3.4 3.4 0 0 1 0 6.6M18 14.4a6.5 6.5 0 0 1 3.5 5.6"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/><path d="M8 5.5h5A3.5 3.5 0 0 1 16.5 9v0A3.5 3.5 0 0 1 13 12.5H8A3.5 3.5 0 0 0 4.5 16v0A3.5 3.5 0 0 0 8 19.5h8"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2 4.8 13.1a.5.5 0 0 0 .4.8h5.3l-.9 8.1 8.7-11.1a.5.5 0 0 0-.4-.8h-5.3l.9-8.1Z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3.5 20.5h17M7 17V10M12 17V4.5M17 17v-4.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></symbol>
+  <symbol id="i-rupee" viewBox="0 0 24 24"><path d="M7 4h10M7 8.5h10M16.5 4c0 3.3-2.4 4.5-5 4.5H7l8 11.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.3l3.4 2"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.6"/><path d="M2.5 10h19M6 15h3"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.4 1.4M9 2.5h6M18.6 7.4l1.6-1.6"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M13.5 2.5H7A2.5 2.5 0 0 0 4.5 5v14A2.5 2.5 0 0 0 7 21.5h10a2.5 2.5 0 0 0 2.5-2.5V8.5l-6-6Z"/><path d="M13.5 2.5v6h6M8.5 13h7M8.5 17h5"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C9 4 4 9 4 15.5A4.5 4.5 0 0 0 8.5 20C15 20 20 15 20 4Z"/><path d="M4.5 19.5 13 11"/></symbol>
+  <symbol id="i-cone" viewBox="0 0 24 24"><path d="M11 3h2l5.5 15.5h-13L11 3Z"/><path d="M8.6 11h6.8M7.2 15h9.6M3 21h18"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 1 0-5.7-5.7L11.4 6.4"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 1 0 5.7 5.7l1.4-1.4"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h9.5a3 3 0 1 0-3-3M3 12.5h13a3 3 0 1 1-3 3M3 17h7"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2.8 9 4.7-9 4.7-9-4.7 9-4.7Z"/><path d="m3 12.5 9 4.7 9-4.7M3 17l9 4.7 9-4.7"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4 9a5 5 0 0 1 5-5h11l-3-3m3 12a5 5 0 0 1-5 5H4l3 3"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2.5" y="7" width="16" height="10" rx="2.5"/><path d="M21.5 10.5v3M11.5 9.5 9 12.5h3l-2.5 3"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M20.5 8 12 3.5 3.5 8v8L12 20.5 20.5 16V8Z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" class="solid" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.3 3.5h3l1.5 4-2 1.4a12 12 0 0 0 6.3 6.3l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.3 5.7a2 2 0 0 1 2-2.2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.2 2.7 2.7L16 9.5"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M3 15.5v-2.2c0-.5.1-.9.4-1.3l2.2-3.6A2.5 2.5 0 0 1 7.7 7h8.6a2.5 2.5 0 0 1 2.1 1.2l2.2 3.6c.3.4.4.8.4 1.3v2.2"/><path d="M3 15.5h18v2.2a1 1 0 0 1-1 1h-1.4a1 1 0 0 1-1-1v-.7H6.4v.7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2.2ZM4 12.2h16"/><circle cx="7.2" cy="15.4" r=".2" fill="currentColor"/><circle cx="16.8" cy="15.4" r=".2" fill="currentColor"/></symbol>
+  <symbol id="i-van" viewBox="0 0 24 24"><path d="M2.5 16V8.5A2 2 0 0 1 4.5 6.5h9L18 10h1.6a2 2 0 0 1 2 2v4"/><path d="M2.5 16h19M13.5 6.5V10h4.5"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8.5V6.5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a2.8 2.8 0 0 0 0 5.6v3.4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3.4a2.8 2.8 0 0 0 0-5.6Z"/><path d="M14 6.5v2M14 11v2M14 15.5v2"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20.5 8V6.5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h13.5a2 2 0 0 0 2-2v-1.5"/><path d="M21.5 8H16a3 3 0 0 0 0 6h5.5V8Z"/></symbol>
+  <symbol id="i-id" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><circle cx="8.5" cy="10.5" r="2"/><path d="M5 16.2a3.8 3.8 0 0 1 7 0M14.5 9.5h4M14.5 13h3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.2 6.3a8 8 0 1 0 9.6 0"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 4.5-6 2.2v13l6-2.2 6 2.2 6-2.2v-13L15 6.7 9 4.5Z"/><path d="M9 4.5v13M15 6.7v13"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-ur" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 4.5v15M6 13.5l6 6 6-6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4a.6.6 0 0 0 .92.5l11.3-7.2a.6.6 0 0 0 0-1L7.92 4.3a.6.6 0 0 0-.92.5Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11M7.5 10.5 12 15l4.5-4.5M4 19.5h16"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></symbol>
+  <symbol id="i-driver" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3v5.8M3.3 13.4l5.6-1.1M20.7 13.4l-5.6-1.1"/></symbol>
+  <symbol id="i-login" viewBox="0 0 24 24"><path d="M14 3.5h4.5a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H14"/><path d="M10 8.5 13.5 12 10 15.5M13.5 12h-10"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 3.5V9h-5.5"/></symbol>
+  <symbol id="i-refund" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 3.5V9h5.5"/></symbol>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M9 4.5H7A2 2 0 0 0 5 6.5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2"/><rect x="9" y="2.5" width="6" height="4" rx="1.2"/><path d="m9.5 13 2 2 3.5-4"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.2 2.7 5.5 6.1.9-4.4 4.3 1 6-5.4-2.8-5.4 2.8 1-6L3.2 9.6l6.1-.9L12 3.2Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-headset" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13.5" width="4" height="6" rx="1.8"/><rect x="17.5" y="13.5" width="4" height="6" rx="1.8"/><path d="M20 19.5a3 3 0 0 1-3 3h-2"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.9-1.4-.1-2.8.9-3.5.9-.7 0-1.9-.8-3.1-.8-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.1 1.2 9.5.8 1.1 1.7 2.4 3 2.4 1.2 0 1.6-.8 3.1-.8 1.4 0 1.8.8 3.1.7 1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.5-1-2.7-3.9Z" fill="currentColor" stroke="none"/><path d="M14.2 5.4c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.8-1.3Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-gplay" viewBox="0 0 24 24"><path d="M3.6 2.4a1 1 0 0 0-.6.9v17.4a1 1 0 0 0 .6.9l9.6-9.6L3.6 2.4Z" fill="currentColor" stroke="none"/><path d="m16.2 8.9-2.9 3.1 2.9 3.1 3.9-2.2a1 1 0 0 0 0-1.8l-3.9-2.2Z" fill="currentColor" stroke="none"/><path d="m3.6 2.4 9.6 9.6 3-3.1L5 1.9a1 1 0 0 0-1.4.5Z" fill="currentColor" stroke="none" opacity=".75"/><path d="m3.6 21.6 9.6-9.6 3 3.1L5 22.1a1 1 0 0 1-1.4-.5Z" fill="currentColor" stroke="none" opacity=".5"/></symbol>
+  <symbol id="i-fb" viewBox="0 0 24 24"><path d="M14.5 8.5h2.5V5.2h-2.6c-2.4 0-4 1.6-4 4.1v2H8v3.3h2.4V22h3.4v-7.4h2.5l.5-3.3h-3v-1.6c0-.8.3-1.2 1.2-1.2Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-ig" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r=".9" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-li" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 10.5V17M8 7.4v.1M12 17v-3.6a2.2 2.2 0 0 1 4.4 0V17"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m4 4 16 16M20 4 4 20"/></symbol>
+  <symbol id="i-yt" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="m10.2 9.6 4.8 2.9-4.8 2.9V9.6Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 3 10.2l7.3 3.5L13.8 21 21 3Z"/></symbol>
+</defs></svg>
+
+<div id="prog"></div>
+
+<!-- PRELOADER -->
+<div id="pre">
+  <img src="images/dreamcabs-logo.png" alt="DreamCabs">
+  <div class="barw"><i id="plBar"></i></div>
+  <div class="pc" id="plPc">0%</div>
+</div>
+
+<!-- ============================ NAV ============================ -->
+<header id="hdr">
+  <div class="topbar">
+    <div class="tb-in">
+      <div class="tb-left">
+        <a class="tb-link" href="mailto:dreamcabs2025@gmail.com"><svg class="i xs i-tb"><use href="#i-mail"/></svg>dreamcabs2025@gmail.com</a>
+        <span><svg class="i xs i-tb"><use href="#i-clock"/></svg>8.00am - 10.00pm</span>
+        <a class="tb-link" href="https://www.google.com/maps/search/?api=1&query=Kupwara%2C+Jammu+%26+Kashmir%2C+India" target="_blank" rel="noopener"><svg class="i xs i-tb"><use href="#i-pin"/></svg>Kupwara, Jammu &amp; Kashmir</a>
+      </div>
+      <div class="tb-social">
+        <a href="#" aria-label="Facebook"><svg class="i sm"><use href="#i-fb"/></svg></a>
+        <a href="#" aria-label="Instagram"><svg class="i sm"><use href="#i-ig"/></svg></a>
+        <a href="#" aria-label="LinkedIn"><svg class="i sm"><use href="#i-li"/></svg></a>
+        <a href="#" aria-label="X"><svg class="i sm"><use href="#i-x"/></svg></a>
+        <a href="#" aria-label="YouTube"><svg class="i sm"><use href="#i-yt"/></svg></a>
+      </div>
+    </div>
+  </div>
+  <div class="navwrap">
+    <div class="bar">
+      <a href="#hero" class="logo"><img src="images/dreamcabs-mark.png" alt=""><span class="wm">Dream<b>Cabs</b></span></a>
+      <nav class="menu">
+        <a href="#about">About</a><a href="#features">Features</a><a href="#steps">How it works</a>
+        <a href="#apps">Apps</a><a href="#drivers">Drivers</a><a href="#investors">Investors</a><a href="#contact">Contact</a>
+      </nav>
+      <div class="nav-right">
+        <div class="nav-cta" onclick="goTo('#contact')">Book a Ride <i><svg class="i xs"><use href="#i-arrow"/></svg></i></div>
+        <div class="burger" id="burger"><span></span><span></span><span></span></div>
+      </div>
+    </div>
+  </div>
+</header>
+<div class="mobile-menu" id="mmenu">
+  <a href="#about">About</a><a href="#features">Features</a><a href="#steps">How it works</a>
+  <a href="#apps">Apps</a><a href="#passengers">Passengers</a><a href="#drivers">Drivers</a>
+  <a href="#investors">Investors</a><a href="#faq">FAQ</a><a href="#contact">Contact</a>
+</div>
+
+<!-- ============================ HERO ============================ -->
+<section id="hero" class="panel">
+  <div class="hero-noise"></div>
+  <div class="hero-grid-bg"></div>
+  <div class="hero-hatch"></div>
+
+  <!-- hard-edged accent shapes -->
+  <span class="hero-dot d1"></span>
+  <span class="hero-dot d2"></span>
+  <span class="hero-dot d3"></span>
+
+  <div class="wrap hero-in">
+    <div class="hero-copy">
+      <span class="eyebrow on-dark" data-reveal>Welcome to DreamCabs</span>
+      <h1 class="hero-h">
+        <span class="ln"><span>India's First <em>AI-Powered</em></span></span>
+        <span class="ln"><span>Fixed-Route Shared</span></span>
+        <span class="ln"><span>Mobility Platform</span></span>
+      </h1>
+      <p class="hero-sub" data-reveal>Smart transportation built for India. DreamCabs connects passengers and drivers using Artificial Intelligence, multilingual voice booking, route optimization, and shared mobility.</p>
+      <div class="hero-cta" data-reveal>
+        <button class="btn btn-lime" onclick="goTo('#apps')">Get Started <span class="arw"><svg class="i xs"><use href="#i-arrow-ur"/></svg></span></button>
+        <button class="btn btn-outline-d" onclick="goTo('#drivers')">Become a Driver</button>
+      </div>
+      <div class="hero-proof" data-reveal>
+        <div class="hp-rate">
+          <b>4.8</b>
+          <div>
+            <div class="stars">
+              <svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg>
+            </div>
+            <small>Positive reviews from<br>our riders &amp; drivers</small>
+          </div>
+        </div>
+        <div class="hp-sep"></div>
+        <div style="display:flex;align-items:center">
+          <div class="hp-avs"><span class="av">A</span><span class="av">F</span><span class="av">R</span><span class="av"><svg class="i xs"><use href="#i-plus"/></svg></span></div>
+          <div class="hp-avs-tx"><b>240+ drivers</b>already on board</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-stage">
+      <div class="stage-3d">
+        <!-- solid organic underlay — sits directly behind the device -->
+        <svg class="hero-blob" viewBox="0 0 560 560" aria-hidden="true">
+          <path d="M535 189C559 246 566 354 535 402C503 450 401 473 346 476C291 478 250 440 206 416C163 393 94 371 84 336C74 300 122 243 145 203C168 163 181 117 222 93C262 70 335 46 387 62C439 78 510 132 535 189Z"/>
+        </svg>
+        <span class="stage-floor"></span>
+        <!-- customer home, rendered in 3D perspective -->
+        <div class="phone phone3d">
+          <span class="p-edge"></span><span class="p-btns"></span>
+          <div class="pscreen">
+            <img class="pshot" src="images/app/customer-book.webp" alt="DreamCabs customer app — choosing a fixed route from the Sopore pickup point" width="780" height="1688" loading="lazy" decoding="async">
+          </div>
+        </div>
+
+        <div class="float-chip c1"><span class="ci"><svg class="i xs"><use href="#i-check"/></svg></span>AI matched your ride in 4s</div>
+        <div class="float-chip c2"><span class="ci"><svg class="i xs"><use href="#i-rupee"/></svg></span>Fare split — you pay ₹50/seat</div>
+        <div class="exp-badge"><b>117</b><span>Taxi stands</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll-cue" aria-hidden="true">
+    <svg><use href="#i-arrow-down"/></svg>
+  </div>
+  <div class="hero-rule"></div>
+</section>
+
+<!-- ================= NETWORK (strip + stats) ================= -->
+<section id="network" class="panel panel-dark">
+  <div class="panel-in">
+<div class="wrap strip">
+  <div class="strip-in">
+    <div class="strip-visual" data-reveal>
+      <span class="car"><svg class="i" style="width:42px;height:42px;color:var(--lime)"><use href="#i-car"/></svg></span>
+      <h4>How Does It Work?</h4>
+      <a href="#steps" onclick="event.preventDefault();goTo('#steps')">Learn More <svg class="i xs"><use href="#i-arrow-ur"/></svg></a>
+    </div>
+    <div class="strip-cards">
+      <div class="strip-c" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i lg"><use href="#i-ai"/></svg></div><h4>AI Ride<br>Matching</h4><p>Intelligent pairing of passengers and drivers on shared fixed routes in real time.</p></div>
+      <div class="strip-c" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i lg"><use href="#i-route"/></svg></div><h4>Fixed Route<br>Network</h4><p>Reliable, predictable stops across 15+ optimized routes and 117 taxi stands.</p></div>
+      <div class="strip-c" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i lg"><use href="#i-mic"/></svg></div><h4>Multilingual<br>Voice Booking</h4><p>Book a ride hands-free with voice commands in the language you speak.</p></div>
+    </div>
+  </div>
+</div>
+<div class="stats-strip">
+  <div class="wrap">
+    <div class="hero-stats">
+      <div class="s" data-reveal><b><span data-count="240">0</span><em>+</em></b><span>Registered Drivers</span></div>
+      <div class="s" data-reveal><b><span data-count="117">0</span></b><span>Taxi Stands</span></div>
+      <div class="s" data-reveal><b><span data-count="15">0</span><em>+</em></b><span>Active Routes</span></div>
+      <div class="s" data-reveal><b>1000<em>s</em></b><span>Future Riders</span></div>
+    </div>
+  </div>
+</div>
+  </div>
+</section>
+
+<!-- ============================ ABOUT ============================ -->
+<section class="sec panel" id="about">
+  <div class="wrap about-grid">
+    <div class="about-visual" data-reveal>
+      <div class="about-badge"><b data-count="117">0</b><span>Connected taxi stands</span></div>
+      <div class="rings"></div><div class="rd"></div>
+      <img class="logo-lg" src="images/dreamcabs-logo.png" alt="DreamCabs">
+    </div>
+    <div>
+      <span class="eyebrow" data-reveal>About DreamCabs</span>
+      <h2 class="sec-h mask"><span>Revolutionizing mobility</span></h2>
+      <h2 class="sec-h mask"><span>across India</span></h2>
+      <p class="sec-p" data-reveal>DreamCabs KMR Pvt. Ltd. combines Artificial Intelligence, shared transportation, multilingual voice booking, and real-time ride matching into one seamless platform.</p>
+      <div class="about-mission" data-reveal>
+        <div class="ic"><svg class="i"><use href="#i-target"/></svg></div>
+        <div><h4>Company Mission</h4><p>Reduce travel costs, increase driver earnings, connect rural communities, and build a cleaner future through smarter transportation.</p></div>
+      </div>
+      <div class="about-mission" data-reveal>
+        <div class="ic"><svg class="i"><use href="#i-eye"/></svg></div>
+        <div><h4>Company Vision</h4><p>One AI platform powering affordable, safe, shared mobility for every town and village in India — starting from Kashmir.</p></div>
+      </div>
+      <div class="about-note" data-reveal>
+        <p>Join us in building affordable, shared, sustainable transport.</p>
+        <a class="btn btn-lime" href="our-vision.html">Our Vision <span class="arw"><svg class="i xs"><use href="#i-arrow-ur"/></svg></span></a>
+      </div>
+      <div class="about-stats">
+        <div class="as" data-reveal><b><span data-count="240">0</span>+</b><span>Registered Drivers</span></div>
+        <div class="as" data-reveal><b><span data-count="15">0</span>+</b><span>Active Routes</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== FEATURES ===========================
+     Pinned left column + cascading right-hand cards. -->
+<section id="features" class="panel-flow">
+  <div class="fx-stage">
+    <div class="wrap fx-grid">
+
+      <div class="fx-left">
+        <span class="eyebrow">Platform Features</span>
+        <h2 class="sec-h">Everything a modern ride needs</h2>
+        <p class="sec-p">One platform carrying the whole journey — matching, language, safety and payment — built for how India actually travels.</p>
+
+        <div class="fx-stats">
+          <div class="fxs"><b><span data-count="240">0</span><em>+</em></b><span>Drivers</span></div>
+          <div class="fxs"><b><span data-count="117">0</span></b><span>Taxi stands</span></div>
+          <div class="fxs"><b><span data-count="15">0</span><em>+</em></b><span>Active routes</span></div>
+        </div>
+
+        <div class="fx-prog" aria-hidden="true"><i id="fxProg"></i></div>
+        <span class="fx-hint">Keep scrolling <svg class="i xs"><use href="#i-arrow-down"/></svg></span>
+      </div>
+
+      <div class="fx-right" id="fxRight">
+        <article class="fxc">
+          <span class="no">01</span>
+          <div class="ic"><svg class="i lg"><use href="#i-ai"/></svg></div>
+          <div class="fxc-t"><h3>AI Ride Matching</h3><p>Intelligent pairing of passengers and drivers on shared fixed routes, in real time.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">02</span>
+          <div class="ic"><svg class="i lg"><use href="#i-mic"/></svg></div>
+          <div class="fxc-t"><h3>Voice Booking</h3><p>Book hands-free with multilingual voice commands in the language you speak.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">03</span>
+          <div class="ic"><svg class="i lg"><use href="#i-globe"/></svg></div>
+          <div class="fxc-t"><h3>Real-Time Translation</h3><p>Break language barriers between drivers and riders instantly.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">04</span>
+          <div class="ic"><svg class="i lg"><use href="#i-pin"/></svg></div>
+          <div class="fxc-t"><h3>GPS Tracking</h3><p>Precise live location for every trip, start to finish.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">05</span>
+          <div class="ic"><svg class="i lg"><use href="#i-heart"/></svg></div>
+          <div class="fxc-t"><h3>Women Safety</h3><p>SOS, verified drivers and trusted-contact trip sharing.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">06</span>
+          <div class="ic"><svg class="i lg"><use href="#i-users"/></svg></div>
+          <div class="fxc-t"><h3>Shared Taxi</h3><p>Split fares on popular routes and travel for less.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">07</span>
+          <div class="ic"><svg class="i lg"><use href="#i-shield"/></svg></div>
+          <div class="fxc-t"><h3>Secure Payments</h3><p>UPI, cards and wallets with bank-grade encryption.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">08</span>
+          <div class="ic"><svg class="i lg"><use href="#i-nav"/></svg></div>
+          <div class="fxc-t"><h3>Live Driver Location</h3><p>Watch your driver approach in real time on the map.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">09</span>
+          <div class="ic"><svg class="i lg"><use href="#i-route"/></svg></div>
+          <div class="fxc-t"><h3>Fixed Routes</h3><p>Reliable, predictable stops across 15+ optimized routes.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">10</span>
+          <div class="ic"><svg class="i lg"><use href="#i-bolt"/></svg></div>
+          <div class="fxc-t"><h3>Instant Booking</h3><p>Confirm a seat in seconds with zero waiting.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">11</span>
+          <div class="ic"><svg class="i lg"><use href="#i-chart"/></svg></div>
+          <div class="fxc-t"><h3>Driver Dashboard</h3><p>Earnings, trips and performance in one clear view.</p></div>
+        </article>
+        <article class="fxc">
+          <span class="no">12</span>
+          <div class="ic"><svg class="i lg"><use href="#i-settings"/></svg></div>
+          <div class="fxc-t"><h3>Admin Dashboard</h3><p>Fleet, routes and analytics fully under control.</p></div>
+        </article>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================ STEPS ============================
+     Vertical scroll is converted to horizontal translation with scrub:true.
+     The track owns the scroll for its duration. -->
+<section id="steps" class="panel-flow">
+  <div class="hz-stage">
+    <div class="wrap hz-head">
+      <span class="eyebrow">How DreamCabs works</span>
+      <h2 class="sec-h">From tap to destination</h2>
+      <p class="sec-p">A shared ride, matched by AI and tracked end to end — booked in seconds from the stand nearest you.</p>
+      <div class="hz-rail" aria-hidden="true"><i id="hzProg"></i></div>
+    </div>
+    <div class="hz-view">
+      <div class="hz-track" id="hzTrack">
+      <article class="hzc">
+        <span class="hzc-n">1</span>
+        <div class="hzc-ic"><svg class="i lg"><use href="#i-route"/></svg></div>
+        <h3>Choose Route</h3>
+        <p>Pick from 15+ AI-optimized fixed routes running near you.</p>
+      </article>
+      <article class="hzc">
+        <span class="hzc-n">2</span>
+        <div class="hzc-ic"><svg class="i lg"><use href="#i-locate"/></svg></div>
+        <h3>Select Pickup Point</h3>
+        <p>Choose the taxi stand closest to where you are standing right now.</p>
+      </article>
+      <article class="hzc">
+        <span class="hzc-n">3</span>
+        <div class="hzc-ic"><svg class="i lg"><use href="#i-ai"/></svg></div>
+        <h3>AI Matches Ride</h3>
+        <p>Our engine pairs you with the best shared ride on that route, instantly.</p>
+      </article>
+      <article class="hzc">
+        <span class="hzc-n">4</span>
+        <div class="hzc-ic"><svg class="i lg"><use href="#i-car"/></svg></div>
+        <h3>Driver Arrives</h3>
+        <p>Track your verified driver live, all the way to the pickup point.</p>
+      </article>
+      <article class="hzc">
+        <span class="hzc-n">5</span>
+        <div class="hzc-ic"><svg class="i lg"><use href="#i-check-circle"/></svg></div>
+        <h3>Reach Destination</h3>
+        <p>Arrive safely and pay seamlessly — UPI, cards or wallet, all in-app.</p>
+      </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== APPS (tabbed) ====================== -->
+<!-- Scroll-driven, like #features and #steps: the stage pins and the scroll
+     advances Customer -> Driver -> Admin, then releases into #passengers. -->
+<section id="apps" class="panel-flow">
+  <div class="apps-stage">
+  <div class="wrap">
+    <div class="sec-head center">
+      <span class="eyebrow on-dark center" data-reveal>Inside the product</span>
+      <h2 class="sec-h mask on-dark-txt"><span>How does this app work</span></h2>
+      <p class="sec-p on-dark-p" data-reveal>One AI platform, three experiences — a customer app to book, a driver app to earn, and an admin dashboard that runs the whole fleet.</p>
+    </div>
+
+    <div class="tabs-wrap" data-reveal>
+      <div class="tabs">
+        <button class="tab on" data-tab="customer"><svg class="i sm"><use href="#i-user"/></svg>Customer App</button>
+        <button class="tab" data-tab="driver"><svg class="i sm"><use href="#i-driver"/></svg>Driver App</button>
+        <button class="tab" data-tab="admin"><svg class="i sm"><use href="#i-grid"/></svg>Admin Dashboard</button>
+      </div>
+      <div class="apps-rail" aria-hidden="true"><i id="appsProg"></i></div>
+    </div>
+
+    <div class="panes">
+      <!-- ===== CUSTOMER ===== -->
+      <div class="pane on" id="pane-customer">
+        <div class="pane-in">
+          <div class="pane-phones">
+            <div class="ph3">
+            <div class="phone phone3d">
+              <span class="p-edge"></span><span class="p-btns"></span>
+              <div class="pscreen">
+                <img class="pshot" src="images/app/customer-welcome.webp" alt="DreamCabs customer app — welcome screen" width="780" height="1688" loading="lazy" decoding="async">
+              </div>
+            </div></div>
+            <div class="ph3">
+            <div class="phone phone3d">
+              <span class="p-edge"></span><span class="p-btns"></span>
+              <div class="pscreen">
+                <img class="pshot" src="images/app/customer-book.webp" alt="DreamCabs customer app — live map with the booking sheet" width="780" height="1688" loading="lazy" decoding="async">
+              </div>
+            </div></div>
+          </div>
+
+          <div class="pane-copy">
+            <h3>Book a seat, not a whole cab</h3>
+            <p>From welcome screen to drop-off, the customer app is built for shared fixed-route travel — pick a route, pick a stand, pay per seat.</p>
+            <div class="pane-list">
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-login"/></svg></div><div><h4>Welcome &amp; one-tap login</h4><p>Continue with your mobile number — OTP verified, no passwords.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-map"/></svg></div><div><h4>Live map home screen</h4><p>Your pickup is detected automatically; choose Fixed, Shuttle or Private.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-ticket"/></svg></div><div><h4>Per-seat fixed fares</h4><p>See ₹/seat before you book. No surge, no bargaining, no surprises.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-nav"/></svg></div><div><h4>Track &amp; ride</h4><p>Follow your driver live, share the trip and reach safely.</p></div></div>
+            </div>
+            <div class="pane-tags">
+              <span>Lower Fares</span><span>Shared Rides</span><span>Safe Travel</span><span>Real-Time Tracking</span><span>Digital Payments</span><span>Voice Booking</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== DRIVER ===== -->
+      <div class="pane" id="pane-driver">
+        <div class="pane-in">
+          <div class="pane-phones">
+            <div class="ph3">
+            <div class="phone phone3d">
+              <span class="p-edge"></span><span class="p-btns"></span>
+              <div class="pscreen">
+                <img class="pshot" src="images/app/driver-welcome.webp" alt="DreamCabs driver app — welcome screen" width="780" height="1688" loading="lazy" decoding="async">
+              </div>
+            </div></div>
+            <div class="ph3">
+            <div class="phone phone3d">
+              <span class="p-edge"></span><span class="p-btns"></span>
+              <div class="pscreen">
+                <img class="pshot" src="images/app/driver-fixed.webp" alt="DreamCabs driver app — fixed-route boarding console" width="780" height="1688" loading="lazy" decoding="async">
+              </div>
+            </div></div>
+          </div>
+
+          <div class="pane-copy">
+            <h3>Go online. Fill seats. Get paid.</h3>
+            <p>The driver app turns an empty run into a full vehicle — pick your fixed route, board passengers seat by seat, and watch earnings build in real time.</p>
+            <div class="pane-list">
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-id"/></svg></div><div><h4>Register &amp; get verified</h4><p>Upload documents once; go live as soon as admin approves you.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-power"/></svg></div><div><h4>Go Online from the map</h4><p>One tap puts you on the network with a live status chip and online timer.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-ticket"/></svg></div><div><h4>Fixed boarding console</h4><p>Seat fill, waiting list, no-show and drop-off — all managed from one screen.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-wallet"/></svg></div><div><h4>Earnings &amp; wallet</h4><p>Trip history, daily totals and wallet activity in a single clear view.</p></div></div>
+            </div>
+            <div class="pane-tags">
+              <span>Higher Earnings</span><span>Daily Bookings</span><span>Reduced Idle Time</span><span>Route Optimization</span><span>Easy Registration</span><span>Trip History</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== ADMIN ===== -->
+      <div class="pane" id="pane-admin">
+        <div class="pane-in wide-left">
+          <div class="dw3">
+          <div class="dashwin" id="dashwin">
+            <div class="dw-bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="url">dreamcabs.in/admin/dashboard</span></div>
+            <div class="dw-body">
+              <aside class="dw-side">
+                <div class="lg"><img src="images/dreamcabs-mark.png" alt="">DreamCabs</div>
+                <a class="on"><svg class="i xs"><use href="#i-grid"/></svg>Dashboard</a>
+                <a><svg class="i xs"><use href="#i-route"/></svg>Fixed Routes</a>
+                <a><svg class="i xs"><use href="#i-van"/></svg>Vehicles</a>
+                <a><svg class="i xs"><use href="#i-driver"/></svg>Drivers</a>
+                <a><svg class="i xs"><use href="#i-user"/></svg>Customers</a>
+                <a><svg class="i xs"><use href="#i-card"/></svg>Payments</a>
+                <a><svg class="i xs"><use href="#i-refund"/></svg>Refunds</a>
+                <a><svg class="i xs"><use href="#i-settings"/></svg>Settings</a>
+              </aside>
+              <main class="dw-main">
+                <div class="dw-head">
+                  <div><h4>Dashboard</h4><small>Key performance indicators · Kupwara city</small></div>
+                  <span class="pill">Live</span>
+                </div>
+                <div class="kpis">
+                  <div class="kpi"><div class="top"><span class="lab">Active Trips</span><span class="ic"><svg class="i xs"><use href="#i-car"/></svg></span></div><div class="val" data-count="38">0</div><div class="hint">Live now</div></div>
+                  <div class="kpi"><div class="top"><span class="lab">Completed Trips</span><span class="ic"><svg class="i xs"><use href="#i-check-circle"/></svg></span></div><div class="val" data-count="4820">0</div><div class="hint">All time</div></div>
+                  <div class="kpi"><div class="top"><span class="lab">Drivers (Total)</span><span class="ic"><svg class="i xs"><use href="#i-driver"/></svg></span></div><div class="val" data-count="240">0</div><div class="hint">On platform</div></div>
+                  <div class="kpi"><div class="top"><span class="lab">Drivers (Approved)</span><span class="ic"><svg class="i xs"><use href="#i-shield"/></svg></span></div><div class="val" data-count="196">0</div><div class="hint">Verified</div></div>
+                  <div class="kpi"><div class="top"><span class="lab">Earnings Total</span><span class="ic"><svg class="i xs"><use href="#i-rupee"/></svg></span></div><div class="val"><span data-count="1284000" data-prefix="₹">₹0</span></div><div class="hint">INR · gross</div></div>
+                  <div class="kpi"><div class="top"><span class="lab">Fixed Bookings</span><span class="ic"><svg class="i xs"><use href="#i-ticket"/></svg></span></div><div class="val" data-count="1740">0</div><div class="hint">Total seats sold</div></div>
+                </div>
+                <div class="charts2">
+                  <div class="chartc">
+                    <div class="ch"><h5>Rides — last 7 days</h5><small>Completed vs cancelled</small></div>
+                    <div class="bars" id="adminBars">
+                      <div class="bg"><i class="a" style="height:74%"></i><i class="b" style="height:18%"></i></div>
+                      <div class="bg"><i class="a" style="height:58%"></i><i class="b" style="height:12%"></i></div>
+                      <div class="bg"><i class="a" style="height:88%"></i><i class="b" style="height:22%"></i></div>
+                      <div class="bg"><i class="a" style="height:66%"></i><i class="b" style="height:9%"></i></div>
+                      <div class="bg"><i class="a" style="height:95%"></i><i class="b" style="height:16%"></i></div>
+                      <div class="bg"><i class="a" style="height:79%"></i><i class="b" style="height:14%"></i></div>
+                      <div class="bg"><i class="a" style="height:100%"></i><i class="b" style="height:20%"></i></div>
+                    </div>
+                    <div class="blabels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+                    <div class="legend"><span><i style="background:#22c55e"></i>Completed</span><span><i style="background:#ef4444"></i>Cancelled</span></div>
+                  </div>
+                  <div class="chartc">
+                    <div class="ch"><h5>Trips by status</h5><small>All time</small></div>
+                    <div class="donut"><b>82%</b></div>
+                    <div class="dlist">
+                      <div><i style="background:#22c55e"></i>Completed <b>62%</b></div>
+                      <div><i style="background:#c8f169"></i>Ongoing <b>22%</b></div>
+                      <div><i style="background:#e1e6e3"></i>Cancelled <b>16%</b></div>
+                    </div>
+                  </div>
+                </div>
+              </main>
+            </div>
+          </div>
+          </div>
+
+          <div class="pane-copy">
+            <h3>The control room</h3>
+            <p>Admins create the routes, price the seats, approve the drivers and watch every rupee — the dashboard is where the whole network is run.</p>
+            <div class="pane-list">
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-route"/></svg></div><div><h4>Create fixed routes</h4><p>Stops, vehicles, seat counts and per-seat fares, city by city.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-clipboard"/></svg></div><div><h4>Approve drivers</h4><p>Document checks and onboarding status in one queue.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-chart"/></svg></div><div><h4>Live analytics</h4><p>Trips, revenue and driver KPIs updated in real time.</p></div></div>
+              <div class="pl"><div class="ic"><svg class="i sm"><use href="#i-refund"/></svg></div><div><h4>Payments &amp; refunds</h4><p>Reconcile collections and issue refunds from the register.</p></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<!-- ========================== PASSENGERS ========================== -->
+<section class="sec panel" id="passengers">
+  <div class="wrap split">
+    <div>
+      <span class="eyebrow" data-reveal>For Passengers</span>
+      <h2 class="sec-h mask"><span>Ride smarter, pay</span></h2>
+      <h2 class="sec-h mask"><span>less, arrive safe</span></h2>
+      <p class="sec-p" data-reveal>Everything you need for stress-free travel on India's roads — powered by AI and built around your safety.</p>
+      <div class="hero-cta" style="margin-top:28px" data-reveal>
+        <button class="btn btn-primary" onclick="goTo('#contact')">Book a Ride <span class="arw"><svg class="i xs"><use href="#i-arrow-ur"/></svg></span></button>
+      </div>
+    </div>
+    <div class="mini-grid">
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-rupee"/></svg></div><h4>Lower Fares</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-users"/></svg></div><h4>Shared Rides</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-shield"/></svg></div><h4>Safe Travel</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-ai"/></svg></div><h4>AI Route Optimization</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-clock"/></svg></div><h4>No Waiting at Stands</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-pin"/></svg></div><h4>Real-Time Tracking</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-card"/></svg></div><h4>Digital Payments</h4></div>
+      <div class="mini" data-reveal><div class="ic"><svg class="i"><use href="#i-mic"/></svg></div><h4>Voice Booking</h4></div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== DRIVERS =========================== -->
+<section class="sec panel" id="drivers" style="background:var(--bg-2)">
+  <div class="wrap split">
+    <div class="mini-grid">
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-chart"/></svg></div><h4>Higher Earnings</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-calendar"/></svg></div><h4>Daily Bookings</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-timer"/></svg></div><h4>Reduced Idle Time</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-route"/></svg></div><h4>Route Optimization</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-doc"/></svg></div><h4>Easy Registration</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-card"/></svg></div><h4>Digital Payments</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-clock"/></svg></div><h4>Trip History</h4></div>
+      <div class="mini o" data-reveal><div class="ic" style="color:var(--deep)"><svg class="i"><use href="#i-grid"/></svg></div><h4>Performance Dashboard</h4></div>
+    </div>
+    <div>
+      <span class="eyebrow" data-reveal>For Drivers</span>
+      <h2 class="sec-h mask"><span>Earn more, drive</span></h2>
+      <h2 class="sec-h mask"><span>less empty</span></h2>
+      <p class="sec-p" data-reveal>DreamCabs fills your day with optimized shared trips and gives you a clear view of your performance and payouts.</p>
+      <div class="dash" data-reveal>
+        <span class="tag">EARNINGS · LAST 7 DAYS</span>
+        <span class="amt">₹ 12,480</span>
+        <span class="up">+18%</span>
+        <div class="bars" id="dashBars"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== AI ============================== -->
+<section class="sec panel" id="ai">
+  <div class="wrap split">
+    <div>
+      <span class="eyebrow" data-reveal>AI Technology</span>
+      <h2 class="sec-h mask"><span>Intelligence behind</span></h2>
+      <h2 class="sec-h mask"><span>every journey</span></h2>
+      <p class="sec-p" data-reveal>DreamCabs uses Artificial Intelligence to optimize routes, reduce waiting time, improve passenger matching, support multilingual voice booking, and create a seamless transportation experience.</p>
+    </div>
+    <div class="ai-cards">
+      <div class="ai-c" data-reveal><div class="ic"><svg class="i"><use href="#i-route"/></svg></div><h4>Route Optimization</h4><p>Shortest, smartest paths in real time.</p></div>
+      <div class="ai-c" data-reveal><div class="ic"><svg class="i"><use href="#i-ai"/></svg></div><h4>Passenger Matching</h4><p>The right riders on the right ride.</p></div>
+      <div class="ai-c" data-reveal><div class="ic"><svg class="i"><use href="#i-mic"/></svg></div><h4>Voice Booking</h4><p>Hands-free, multilingual booking.</p></div>
+      <div class="ai-c" data-reveal><div class="ic"><svg class="i"><use href="#i-timer"/></svg></div><h4>Reduced Wait Time</h4><p>Less idle, more moving.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SUSTAINABILITY ======================= -->
+<section class="sec panel" id="sus">
+  <div class="globe"></div>
+  <div class="wrap">
+    <span class="eyebrow on-dark" data-reveal>Sustainability</span>
+    <h2 class="sec-h mask on-dark-txt"><span>A cleaner future, one</span></h2>
+    <h2 class="sec-h mask on-dark-txt"><span>shared ride at a time</span></h2>
+    <p class="sec-p on-dark-p" data-reveal>By putting more passengers in fewer vehicles, DreamCabs cuts emissions, eases congestion and aligns with the UN Sustainable Development Goals.</p>
+    <div class="sus-grid">
+      <div class="sus" data-reveal><div class="ic" style="color:var(--lime)"><svg class="i lg"><use href="#i-leaf"/></svg></div><h4>Reduced Carbon Emissions</h4></div>
+      <div class="sus" data-reveal><div class="ic" style="color:var(--lime)"><svg class="i lg"><use href="#i-cone"/></svg></div><h4>Less Congestion</h4></div>
+      <div class="sus" data-reveal><div class="ic" style="color:var(--lime)"><svg class="i lg"><use href="#i-users"/></svg></div><h4>Higher Vehicle Occupancy</h4></div>
+      <div class="sus" data-reveal><div class="ic" style="color:var(--lime)"><svg class="i lg"><use href="#i-link"/></svg></div><h4>Shared Mobility</h4></div>
+      <div class="sus" data-reveal><div class="ic" style="color:var(--lime)"><svg class="i lg"><use href="#i-wind"/></svg></div><h4>Cleaner Environment</h4></div>
+    </div>
+    <div class="sdgs">
+      <span class="sdg" data-reveal>SDG 11</span><span class="sdg" data-reveal>SDG 13</span><span class="sdg" data-reveal>SDG 9</span><span class="sdg" data-reveal>SDG 8</span>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== INVESTORS =========================== -->
+<section class="sec panel" id="investors">
+  <div class="wrap">
+    <div class="sec-head center">
+      <span class="eyebrow center" data-reveal>For Investors</span>
+      <h2 class="sec-h mask"><span>Invest in the future of mobility</span></h2>
+      <p class="sec-p" data-reveal>A defensible AI platform, a vast underserved market and multiple revenue engines — DreamCabs is built to scale nationally.</p>
+    </div>
+    <div class="inv-grid">
+      <div class="inv big" data-reveal><div><div class="ic" style="color:var(--deep)"><svg class="i lg"><use href="#i-ai"/></svg></div><h4>AI Platform</h4><p>Proprietary matching and routing engine built for scale.</p></div><p style="margin-top:22px;font-size:13px;opacity:.7">Core defensible technology</p></div>
+      <div class="inv" data-reveal><div class="ic"><svg class="i"><use href="#i-globe"/></svg></div><h4>Large Untapped Market</h4><p>Millions of daily intercity and rural trips across India.</p></div>
+      <div class="inv" data-reveal><div class="ic"><svg class="i"><use href="#i-layers"/></svg></div><h4>Scalable Technology</h4><p>Cloud-native architecture ready for national rollout.</p></div>
+      <div class="inv" data-reveal><div class="ic"><svg class="i"><use href="#i-repeat"/></svg></div><h4>Recurring Revenue</h4><p>Per-trip commissions and subscription driver plans.</p></div>
+      <div class="inv" data-reveal><div class="ic"><svg class="i"><use href="#i-battery"/></svg></div><h4>Future EV Integration</h4><p>A clear path to an electric, sustainable fleet.</p></div>
+      <div class="inv" data-reveal><div class="ic"><svg class="i"><use href="#i-pin"/></svg></div><h4>Rural Connectivity</h4><p>Reaching communities traditional players ignore.</p></div>
+      <div class="inv" data-reveal><div class="ic"><svg class="i"><use href="#i-box"/></svg></div><h4>White-Label SaaS</h4><p>License the platform to operators nationwide.</p></div>
+    </div>
+    <div class="inv-cta" data-reveal>
+      <button class="btn btn-primary" data-lead="deck"><svg class="i sm"><use href="#i-download"/></svg>Download Pitch Deck</button>
+      <button class="btn btn-ghost" data-lead="founder"><svg class="i sm"><use href="#i-phone"/></svg>Contact Founder</button>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== CTA BAND =========================== -->
+<section id="download" class="panel">
+<div class="wrap" style="padding-bottom:clamp(70px,9vh,110px)">
+  <div class="cta-band" data-reveal>
+    <div class="cta-l">
+      <h3>Download the DreamCabs App</h3>
+      <p>DreamCabs is India's first AI-powered fixed-route shared mobility platform. Whether you need to get where you're going for less, or want to earn more on your own schedule — DreamCabs is the best in class solution.</p>
+      <div class="cta-btns">
+        <a class="store" href="#"><span class="g"><svg class="i lg"><use href="#i-gplay"/></svg></span><span><small>GET IT ON</small><b>Google Play</b></span></a>
+        <a class="store" href="#"><span class="g"><svg class="i lg"><use href="#i-apple"/></svg></span><span><small>Download on the</small><b>App Store</b></span></a>
+      </div>
+    </div>
+    <div class="cta-r">
+      <div class="phone sm phone3d">
+        <span class="p-edge"></span><span class="p-btns"></span>
+        <div class="pscreen">
+          <img class="pshot" src="images/app/driver-earnings.webp" alt="DreamCabs driver app — earnings breakdown" width="780" height="1688" loading="lazy" decoding="async">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ========================= TESTIMONIALS ========================= -->
+<section class="sec panel" id="tst">
+  <div class="wrap">
+    <div class="sec-head center">
+      <span class="eyebrow center" data-reveal>Testimonials</span>
+      <h2 class="sec-h mask"><span>Loved by riders and drivers</span></h2>
+    </div>
+    <div class="t-grid">
+      <div class="tc" data-reveal><div class="stars"><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg></div><p>I save nearly half my fare on shared rides and never wait at the stand anymore. DreamCabs just works.</p><div class="tp"><div class="av">AS</div><div><b>Aarav Sharma</b><small>Daily Commuter, Srinagar</small></div></div></div>
+      <div class="tc" data-reveal><div class="stars"><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg></div><p>The women-safety features and verified drivers make me feel secure travelling late. Booking by voice is brilliant.</p><div class="tp"><div class="av">FK</div><div><b>Fatima Khan</b><small>Student, Kupwara</small></div></div></div>
+      <div class="tc" data-reveal><div class="stars"><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg><svg class="i xs"><use href="#i-star"/></svg></div><p>My idle time dropped and daily bookings went up. The dashboard tells me exactly where I earn the most.</p><div class="tp"><div class="av">RV</div><div><b>Rakesh Verma</b><small>Partner Driver</small></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FAQ ============================== -->
+<section class="sec panel" id="faq">
+  <div class="wrap">
+    <div class="sec-head center">
+      <span class="eyebrow center" data-reveal>FAQ</span>
+      <h2 class="sec-h mask"><span>Questions, answered</span></h2>
+    </div>
+    <div class="faq" id="faqList">
+      <div class="fitem open" data-reveal><div class="fq"><span class="fn">01</span><span class="ft">What is DreamCabs?</span><span class="fx">+</span></div><div class="fa"><p>DreamCabs is India's first AI-powered fixed-route shared mobility platform, connecting passengers and drivers with intelligent ride matching, voice booking and real-time tracking.</p></div></div>
+      <div class="fitem open" data-reveal><div class="fq"><span class="fn">02</span><span class="ft">How do I book?</span><span class="fx">+</span></div><div class="fa"><p>Choose your route, select the nearest pickup stand, and our AI instantly matches you to the best shared ride — book in seconds by tap or voice.</p></div></div>
+      <div class="fitem open" data-reveal><div class="fq"><span class="fn">03</span><span class="ft">Can drivers register?</span><span class="fx">+</span></div><div class="fa"><p>Yes. Registration is quick and easy. Drivers get optimized shared trips, reduced idle time, higher earnings and a clear performance dashboard.</p></div></div>
+      <div class="fitem open" data-reveal><div class="fq"><span class="fn">04</span><span class="ft">Is it safe?</span><span class="fx">+</span></div><div class="fa"><p>Every driver is verified. We provide SOS, trusted-contact sharing, live GPS tracking and dedicated women-safety features on every trip.</p></div></div>
+      <div class="fitem open" data-reveal><div class="fq"><span class="fn">05</span><span class="ft">How are fares calculated?</span><span class="fx">+</span></div><div class="fa"><p>Fares are based on AI-optimized fixed routes and shared occupancy, keeping costs low and transparent — you often save nearly half compared to solo rides.</p></div></div>
+      <div class="fitem open" data-reveal><div class="fq"><span class="fn">06</span><span class="ft">Can women travel safely?</span><span class="fx">+</span></div><div class="fa"><p>Absolutely. Verified drivers, SOS, trusted-contact sharing and real-time tracking are built in to keep every journey secure, day or night.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CONTACT ============================ -->
+<section class="sec panel" id="contact">
+  <div class="wrap contact-grid">
+    <div>
+      <span class="eyebrow" data-reveal>Contact</span>
+      <h2 class="sec-h mask"><span>Let's build the</span></h2>
+      <h2 class="sec-h mask"><span>future of mobility</span></h2>
+      <p class="sec-p" data-reveal>Book a ride, register as a driver, or reach out for partnerships and investment. We'd love to hear from you.</p>
+      <div class="cinfo">
+        <div class="ci" data-reveal><div class="ic"><svg class="i"><use href="#i-mail"/></svg></div><div><small>Email</small><a class="ci-link" href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a></div></div>
+        <div class="ci" data-reveal><div class="ic"><svg class="i"><use href="#i-pin"/></svg></div><div><small>Location</small><a class="ci-link" href="https://www.google.com/maps/search/?api=1&query=Kupwara%2C+Jammu+%26+Kashmir%2C+India" target="_blank" rel="noopener">Kupwara, Jammu &amp; Kashmir, India</a></div></div>
+        <div class="ci" data-reveal><div class="ic"><svg class="i"><use href="#i-clock"/></svg></div><div><small>Working hours</small><b>8.00am – 10.00pm</b></div></div>
+      </div>
+      <div class="cmap" data-reveal>
+        <span class="rdx a"></span><span class="rdx b"></span>
+        <div class="pin"><svg class="i xs"><use href="#i-pin"/></svg></div><div class="lbl">Kupwara, J&amp;K</div>
+      </div>
+    </div>
+    <form class="form" id="contactForm" data-reveal novalidate>
+      <div class="fld"><label for="cf-name">Name</label><input id="cf-name" name="name" type="text" placeholder="Your full name" required autocomplete="name"></div>
+      <div class="form-row">
+        <div class="fld"><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" placeholder="you@email.com" required autocomplete="email"></div>
+        <div class="fld"><label for="cf-phone">Phone</label><input id="cf-phone" name="phone" type="tel" placeholder="+91 ..." autocomplete="tel"></div>
+      </div>
+      <div class="fld"><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" placeholder="How can we help?" required></textarea></div>
+      <button class="btn btn-primary" type="submit"><svg class="i sm"><use href="#i-send"/></svg>Send Message</button>
+      <p class="form-msg" id="contactMsg" role="status" aria-live="polite"></p>
+    </form>
+  </div>
+</section>
+
+<!-- ============================= FOOTER =============================
+     Its own panel. Sharing the closing panel with #contact made that
+     section 1296px tall in a 900px viewport, so the page came to rest
+     mid-form: the contact fields bled up under the fixed nav and a strip
+     of light background showed under the footer. -->
+<footer class="panel">
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <a href="#hero" class="logo"><img src="images/dreamcabs-mark.png" alt=""><span class="wm">Dream<b>Cabs</b></span></a>
+        <p>India's first AI-powered fixed-route shared mobility platform. Making transportation smarter, safer, more affordable and sustainable.</p>
+        <div class="socials">
+          <a href="#" aria-label="Facebook"><svg class="i sm"><use href="#i-fb"/></svg></a>
+          <a href="#" aria-label="Instagram"><svg class="i sm"><use href="#i-ig"/></svg></a>
+          <a href="#" aria-label="LinkedIn"><svg class="i sm"><use href="#i-li"/></svg></a>
+          <a href="#" aria-label="X"><svg class="i sm"><use href="#i-x"/></svg></a>
+          <a href="#" aria-label="YouTube"><svg class="i sm"><use href="#i-yt"/></svg></a>
+        </div>
+      </div>
+      <div class="fcol">
+        <h5>Quick Links</h5>
+        <a href="#about">About</a><a href="#features">Features</a><a href="#steps">How it works</a><a href="#apps">Apps</a><a href="#drivers">Drivers</a><a href="#investors">Investors</a><a href="#contact">Contact</a>
+      </div>
+      <div class="fcol">
+        <h5>Company</h5>
+        <a href="our-vision.html">Our Vision</a>
+        <a href="privacy-policy.html">Privacy Policy</a>
+        <a href="terms-conditions.html">Terms &amp; Conditions</a>
+        <a href="#">Refund Policy</a>
+        <a href="#">Careers</a>
+      </div>
+      <div class="fcol news">
+        <h5>Newsletter</h5>
+        <p>Get route launches, offers and updates from DreamCabs.</p>
+        <div class="nf"><input type="email" placeholder="Your email" aria-label="Your email"><button type="button" aria-label="Subscribe"><svg class="i sm"><use href="#i-arrow"/></svg></button></div>
+      </div>
+    </div>
+    <div class="foot-bot">
+      <span>© 2026 DreamCabs KMR Pvt. Ltd. All Rights Reserved.</span>
+      <span>Kupwara, Jammu &amp; Kashmir, India · <a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a></span>
+    </div>
+  </div>
+</footer>
+
+<!-- ================== LEAD SHEET (floating, bottom) ==================
+     Opened by "Download Pitch Deck" / "Contact Founder". Collects just a
+     name and an email and mails them straight through. -->
+<div class="lead-wrap" id="leadWrap" hidden>
+  <form class="lead-card" id="leadForm" novalidate>
+    <button type="button" class="lead-x" id="leadClose" aria-label="Close">
+      <svg class="i xs"><use href="#i-x"/></svg>
+    </button>
+    <h4 id="leadTitle">Download the pitch deck</h4>
+    <p class="lead-sub" id="leadSub">Leave your name and email and we'll send it straight over.</p>
+    <div class="lead-row">
+      <input id="leadName"  name="name"  type="text"  placeholder="Your name"   required autocomplete="name">
+      <input id="leadEmail" name="email" type="email" placeholder="you@email.com" required autocomplete="email">
+      <button class="btn btn-lime" type="submit" id="leadSend">Send</button>
+    </div>
+    <p class="form-msg" id="leadMsg" role="status" aria-live="polite"></p>
+  </form>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
