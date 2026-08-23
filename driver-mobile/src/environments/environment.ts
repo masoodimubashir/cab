@@ -7,7 +7,7 @@ export const environment = {
   /** Laravel API base (include /api). On-device dev (`npm run dev:device`) runs
    *  on the PHONE, so this must be the laptop's LAN IP — NOT localhost, which on
    *  the phone means the phone itself. Update if the laptop's Wi-Fi IP changes. */
-  apiUrl: 'http://192.168.29.191:8000/api',
+  apiUrl: 'https://dreamcabs.in/api',
   /**
    * Login OTP provider:
    *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). Mock mode
@@ -31,9 +31,9 @@ export const environment = {
   },
   /** Reverb (WebSocket) — match backend/.env REVERB_* values. */
   reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: '192.168.29.191',
-  reverbPort: 8080,
-  reverbScheme: 'http' as 'http' | 'https',
+  reverbHost: 'dreamcabs.in',
+  reverbPort: 443,
+  reverbScheme: 'https' as 'http' | 'https',
   /** FCM Web Push VAPID key — Firebase Console → Cloud Messaging → Web Push certificates. */
   fcmVapidKey: '',
   /** Google Maps JavaScript API key — used for the in-app live map (pickup + customer marker). */

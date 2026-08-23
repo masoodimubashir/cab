@@ -7,7 +7,7 @@ export const environment = {
   /** Laravel API base (include /api). On-device dev (`npm run dev:device`) runs
    *  on the PHONE, so this must be the laptop's LAN IP — NOT localhost, which on
    *  the phone means the phone itself. Update if the laptop's Wi-Fi IP changes. */
-  apiUrl: 'http://192.168.29.191:8000/api',
+  apiUrl: 'https://dreamcabs.in/api',
   /**
    * Login OTP provider:
    *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). In mock mode
@@ -29,9 +29,9 @@ export const environment = {
    * Leave reverbAppKey blank to fall back to polling-only.
    */
   reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: '192.168.29.191',
-  reverbPort: 8080,
-  reverbScheme: 'http' as 'http' | 'https',
+  reverbHost: 'dreamcabs.in',
+  reverbPort: 443,
+  reverbScheme: 'https' as 'http' | 'https',
   /**
    * Firebase: must be the **Web** app object (Console → Project settings → Your apps → </> Web).
    * If `appId` contains `:android:` or `:ios:` instead of `:web:`, Phone Auth in the browser throws
