@@ -14,6 +14,7 @@ import { PushService } from '../../core/push.service';
 export class SideMenuComponent {
   /** Set when the avatar image URL fails to load → we show initials instead. */
   avatarBroken = false;
+  private lastAvatarUrl: string | null = null;
   ridesMenuOpen = true;
 
   constructor(
@@ -24,6 +25,24 @@ export class SideMenuComponent {
     private menuCtrl: MenuController,
     private push: PushService
   ) {}
+
+  get user(): AuthUser | null {
+    const u = this.auth.getUser();
+    const url = this.auth.resolveAvatarUrl(u);
+    if (url !== this.lastAvatarUrl) {
+      this.lastAvatarUrl = url;
+      this.avatarBroken = false;
+    }
+    return u;
+  }
+
+  getInitial(u: AuthUser | null | undefined): string {
+    const name = (u?.name || '').trim();
+    if (name) {
+      return name.charAt(0).toUpperCase();
+    }
+    return 'U';
+  }
 
   async signOut(): Promise<void> {
     await this.menuCtrl.close('customer-menu');

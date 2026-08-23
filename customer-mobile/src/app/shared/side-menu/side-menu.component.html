@@ -1,6 +1,6 @@
 <ion-menu side="start" menuId="customer-menu" contentId="main-content">
   <ion-content class="menu-content">
-    <div class="drawer__header drv-hero dc-anim-in dc-press" *ngIf="auth.getUser() as u" (click)="go('/customer-tabs/profile')">
+    <div class="drawer__header drv-hero dc-anim-in dc-press" *ngIf="user as u" (click)="go('/customer-tabs/profile')">
       <span class="drv-badge drawer__badge">CUSTOMER</span>
       <div class="drawer__id">
         <div class="drawer__avatar">
@@ -10,7 +10,7 @@
             alt=""
             (error)="avatarBroken = true"
           />
-          <span *ngIf="avatarBroken || !auth.resolveAvatarUrl(u)" class="avatar-initials">{{ (u.name || 'U') | slice:0:1 | uppercase }}</span>
+          <span *ngIf="avatarBroken || !auth.resolveAvatarUrl(u)" class="avatar-initials">{{ getInitial(u) }}</span>
         </div>
         <div class="drawer__who">
           <strong>{{ u.name || 'Guest' }}</strong>
