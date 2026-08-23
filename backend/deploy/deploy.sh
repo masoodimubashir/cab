@@ -25,18 +25,18 @@ if [ ! -f deploy/secrets/firebase.json ]; then
   echo "    Push + phone-auth verification will fail until you add it. Continuing anyway…"
 fi
 
-echo "==> Building Angular Admin Frontend..."
+echo "==> Building Angular Admin Frontend (base-href: /admin/)..."
 cd "$ROOT_DIR/frontend"
 if command -v npm >/dev/null 2>&1; then
   npm install --prefer-offline --no-audit
-  npm run build -- --configuration production
+  npm run build -- --configuration production --base-href /admin/
 else
   # Use cached temporary Node container
   docker run --rm \
     -v "$ROOT_DIR/frontend":/app \
     -v dreamcabs_npm_cache:/root/.npm \
     -w /app \
-    node:20-alpine sh -c "npm install --prefer-offline --no-audit && npm run build -- --configuration production"
+    node:20-alpine sh -c "npm install --prefer-offline --no-audit && npm run build -- --configuration production --base-href /admin/"
 fi
 
 echo "==> Building + starting Docker stack (Backend + Database + WebSockets + Nginx)..."
@@ -50,8 +50,9 @@ docker compose ps
 echo ""
 echo "========================================================================="
 echo "✅ DreamCabs is LIVE!"
-echo "👉 Admin Dashboard:    http://$(hostname -I | awk '{print $1}')/"
-echo "👉 Backend API:        http://$(hostname -I | awk '{print $1}')/api"
+echo "👉 Landing Website:    https://$(hostname -I | awk '{print $1}')/ (or https://dreamcabs.in/)"
+echo "👉 Admin Dashboard:    https://$(hostname -I | awk '{print $1}')/admin/ (or https://dreamcabs.in/admin/signin)"
+echo "👉 Backend API:        https://$(hostname -I | awk '{print $1}')/api"
 echo "👉 Reverb WebSockets:  ws://$(hostname -I | awk '{print $1}'):8080"
 echo "========================================================================="
 

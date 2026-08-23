@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Our Vision | DreamCabs</title>
+<meta name="description" content="DreamCabs' vision — affordable, safe, shared mobility for every town and village in India, starting from Kashmir.">
+<link rel="icon" href="images/dreamcabs-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+</head>
+<body>
+<svg id="sprite" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="i-ai" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.6"/><circle cx="12" cy="12" r="2.1"/><path d="M9.5 2.8v3.2M14.5 2.8v3.2M9.5 18v3.2M14.5 18v3.2M2.8 9.5h3.2M2.8 14.5h3.2M18 9.5h3.2M18 14.5h3.2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2.6 4.5 6v6c0 4.6 3.2 8 7.5 9.4 4.3-1.4 7.5-4.8 7.5-9.4V6L12 2.6Z"/><path d="m9 12 2.2 2.2L15.2 10"/></symbol>
+  <symbol id="i-nav" viewBox="0 0 24 24"><path d="M21 3 3.5 10.4a.6.6 0 0 0 .05 1.12L11 14l2.5 7.45a.6.6 0 0 0 1.12.05L21 3Z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.3S3.5 15.2 3.5 9.4A4.9 4.9 0 0 1 12 6a4.9 4.9 0 0 1 8.5 3.4c0 5.8-8.5 10.9-8.5 10.9Z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16.5 5.2a3.4 3.4 0 0 1 0 6.6M18 14.4a6.5 6.5 0 0 1 3.5 5.6"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/><path d="M8 5.5h5A3.5 3.5 0 0 1 16.5 9v0A3.5 3.5 0 0 1 13 12.5H8A3.5 3.5 0 0 0 4.5 16v0A3.5 3.5 0 0 0 8 19.5h8"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2 4.8 13.1a.5.5 0 0 0 .4.8h5.3l-.9 8.1 8.7-11.1a.5.5 0 0 0-.4-.8h-5.3l.9-8.1Z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3.5 20.5h17M7 17V10M12 17V4.5M17 17v-4.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></symbol>
+  <symbol id="i-rupee" viewBox="0 0 24 24"><path d="M7 4h10M7 8.5h10M16.5 4c0 3.3-2.4 4.5-5 4.5H7l8 11.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.3l3.4 2"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.6"/><path d="M2.5 10h19M6 15h3"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.4 1.4M9 2.5h6M18.6 7.4l1.6-1.6"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M13.5 2.5H7A2.5 2.5 0 0 0 4.5 5v14A2.5 2.5 0 0 0 7 21.5h10a2.5 2.5 0 0 0 2.5-2.5V8.5l-6-6Z"/><path d="M13.5 2.5v6h6M8.5 13h7M8.5 17h5"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C9 4 4 9 4 15.5A4.5 4.5 0 0 0 8.5 20C15 20 20 15 20 4Z"/><path d="M4.5 19.5 13 11"/></symbol>
+  <symbol id="i-cone" viewBox="0 0 24 24"><path d="M11 3h2l5.5 15.5h-13L11 3Z"/><path d="M8.6 11h6.8M7.2 15h9.6M3 21h18"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 1 0-5.7-5.7L11.4 6.4"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 1 0 5.7 5.7l1.4-1.4"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h9.5a3 3 0 1 0-3-3M3 12.5h13a3 3 0 1 1-3 3M3 17h7"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2.8 9 4.7-9 4.7-9-4.7 9-4.7Z"/><path d="m3 12.5 9 4.7 9-4.7M3 17l9 4.7 9-4.7"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4 9a5 5 0 0 1 5-5h11l-3-3m3 12a5 5 0 0 1-5 5H4l3 3"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2.5" y="7" width="16" height="10" rx="2.5"/><path d="M21.5 10.5v3M11.5 9.5 9 12.5h3l-2.5 3"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M20.5 8 12 3.5 3.5 8v8L12 20.5 20.5 16V8Z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" class="solid" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.3 3.5h3l1.5 4-2 1.4a12 12 0 0 0 6.3 6.3l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.3 5.7a2 2 0 0 1 2-2.2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.2 2.7 2.7L16 9.5"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M3 15.5v-2.2c0-.5.1-.9.4-1.3l2.2-3.6A2.5 2.5 0 0 1 7.7 7h8.6a2.5 2.5 0 0 1 2.1 1.2l2.2 3.6c.3.4.4.8.4 1.3v2.2"/><path d="M3 15.5h18v2.2a1 1 0 0 1-1 1h-1.4a1 1 0 0 1-1-1v-.7H6.4v.7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2.2ZM4 12.2h16"/><circle cx="7.2" cy="15.4" r=".2" fill="currentColor"/><circle cx="16.8" cy="15.4" r=".2" fill="currentColor"/></symbol>
+  <symbol id="i-van" viewBox="0 0 24 24"><path d="M2.5 16V8.5A2 2 0 0 1 4.5 6.5h9L18 10h1.6a2 2 0 0 1 2 2v4"/><path d="M2.5 16h19M13.5 6.5V10h4.5"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8.5V6.5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a2.8 2.8 0 0 0 0 5.6v3.4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3.4a2.8 2.8 0 0 0 0-5.6Z"/><path d="M14 6.5v2M14 11v2M14 15.5v2"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20.5 8V6.5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h13.5a2 2 0 0 0 2-2v-1.5"/><path d="M21.5 8H16a3 3 0 0 0 0 6h5.5V8Z"/></symbol>
+  <symbol id="i-id" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><circle cx="8.5" cy="10.5" r="2"/><path d="M5 16.2a3.8 3.8 0 0 1 7 0M14.5 9.5h4M14.5 13h3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M7.2 6.3a8 8 0 1 0 9.6 0"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 4.5-6 2.2v13l6-2.2 6 2.2 6-2.2v-13L15 6.7 9 4.5Z"/><path d="M9 4.5v13M15 6.7v13"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-ur" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 4.5v15M6 13.5l6 6 6-6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4a.6.6 0 0 0 .92.5l11.3-7.2a.6.6 0 0 0 0-1L7.92 4.3a.6.6 0 0 0-.92.5Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11M7.5 10.5 12 15l4.5-4.5M4 19.5h16"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></symbol>
+  <symbol id="i-driver" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3v5.8M3.3 13.4l5.6-1.1M20.7 13.4l-5.6-1.1"/></symbol>
+  <symbol id="i-login" viewBox="0 0 24 24"><path d="M14 3.5h4.5a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H14"/><path d="M10 8.5 13.5 12 10 15.5M13.5 12h-10"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 3.5V9h-5.5"/></symbol>
+  <symbol id="i-refund" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 3.5V9h5.5"/></symbol>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M9 4.5H7A2 2 0 0 0 5 6.5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2"/><rect x="9" y="2.5" width="6" height="4" rx="1.2"/><path d="m9.5 13 2 2 3.5-4"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.2 2.7 5.5 6.1.9-4.4 4.3 1 6-5.4-2.8-5.4 2.8 1-6L3.2 9.6l6.1-.9L12 3.2Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-headset" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13.5" width="4" height="6" rx="1.8"/><rect x="17.5" y="13.5" width="4" height="6" rx="1.8"/><path d="M20 19.5a3 3 0 0 1-3 3h-2"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.9-1.4-.1-2.8.9-3.5.9-.7 0-1.9-.8-3.1-.8-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.1 1.2 9.5.8 1.1 1.7 2.4 3 2.4 1.2 0 1.6-.8 3.1-.8 1.4 0 1.8.8 3.1.7 1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.5-1-2.7-3.9Z" fill="currentColor" stroke="none"/><path d="M14.2 5.4c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.8-1.3Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-gplay" viewBox="0 0 24 24"><path d="M3.6 2.4a1 1 0 0 0-.6.9v17.4a1 1 0 0 0 .6.9l9.6-9.6L3.6 2.4Z" fill="currentColor" stroke="none"/><path d="m16.2 8.9-2.9 3.1 2.9 3.1 3.9-2.2a1 1 0 0 0 0-1.8l-3.9-2.2Z" fill="currentColor" stroke="none"/><path d="m3.6 2.4 9.6 9.6 3-3.1L5 1.9a1 1 0 0 0-1.4.5Z" fill="currentColor" stroke="none" opacity=".75"/><path d="m3.6 21.6 9.6-9.6 3 3.1L5 22.1a1 1 0 0 1-1.4-.5Z" fill="currentColor" stroke="none" opacity=".5"/></symbol>
+  <symbol id="i-fb" viewBox="0 0 24 24"><path d="M14.5 8.5h2.5V5.2h-2.6c-2.4 0-4 1.6-4 4.1v2H8v3.3h2.4V22h3.4v-7.4h2.5l.5-3.3h-3v-1.6c0-.8.3-1.2 1.2-1.2Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-ig" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r=".9" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-li" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 10.5V17M8 7.4v.1M12 17v-3.6a2.2 2.2 0 0 1 4.4 0V17"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m4 4 16 16M20 4 4 20"/></symbol>
+  <symbol id="i-yt" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="m10.2 9.6 4.8 2.9-4.8 2.9V9.6Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 3 10.2l7.3 3.5L13.8 21 21 3Z"/></symbol>
+</defs></svg>
+<header id="hdr" class="scrolled">
+  <div class="navwrap">
+    <div class="bar">
+      <a href="index.html" class="logo"><img src="images/dreamcabs-mark.png" alt=""><span class="wm">Dream<b>Cabs</b></span></a>
+      <nav class="menu">
+        <a href="index.html#about">About</a><a href="index.html#features">Features</a><a href="index.html#apps">Apps</a>
+        <a href="our-vision.html">Our Vision</a><a href="index.html#investors">Investors</a><a href="index.html#contact">Contact</a>
+      </nav>
+      <div class="nav-right">
+        <a class="nav-cta" href="index.html#contact">Book a Ride <i><svg class="i xs"><use href="#i-arrow"/></svg></i></a>
+        <div class="burger" id="burger"><span></span><span></span><span></span></div>
+      </div>
+    </div>
+  </div>
+</header>
+<div class="mobile-menu" id="mmenu">
+  <a href="index.html#about">About</a><a href="index.html#features">Features</a><a href="index.html#apps">Apps</a>
+  <a href="our-vision.html">Our Vision</a><a href="terms-conditions.html">Terms</a><a href="privacy-policy.html">Privacy</a>
+  <a href="index.html#contact">Contact</a>
+</div>
+<section class="page-hero">
+  <div class="wrap">
+    <div class="crumb"><a href="index.html">Home</a><svg class="i xs"><use href="#i-chev"/></svg><span>Our Vision</span></div>
+    <span class="eyebrow on-dark">Our Vision</span>
+    <h1>A Message from<br>the Founder</h1>
+    <p>Value people's time. That single idea is the heart of everything we build at DreamCabs.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="founder-note">
+      <div class="founder-id">
+        <span class="fav">UZ</span>
+        <div>
+          <b>Uzair Hameed Zargar</b>
+          <small>Founder &amp; Chairman</small>
+          <small>DreamCabs KMR Pvt. Ltd.</small>
+        </div>
+      </div>
+      <div class="founder-body">
+        <p>At DreamCabs, we believe that transportation should adapt to people&mdash;not the other way around.</p>
+        <p>For years, I have watched students, office-goers, patients, senior citizens, and working professionals spend valuable time traveling to taxi stands, waiting for vehicles to fill up, or missing opportunities because transportation wasn't convenient. This daily struggle inspired the creation of DreamCabs.</p>
+        <p class="lead">Our vision is simple: value people's time.</p>
+        <p>With DreamCabs, passengers no longer need to leave their homes or workplaces just to secure a seat in a shared taxi. Instead, they can book their ride through the DreamCabs platform, choose a pickup point along a predefined route, and be picked up when the cab reaches that location.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The difference in practice</span>
+      <h2 class="sec-h">How DreamCabs changes travel</h2>
+      <p class="sec-p">Consider the Kupwara&ndash;Srinagar route.</p>
+    </div>
+
+    <div class="vs-grid">
+      <div class="vs vs-before">
+        <span class="vs-tag">Today</span>
+        <p>A passenger from Drugmulla, Bremri, or any other village along this corridor often has to travel first to the Kupwara Sumo Stand simply to find a shared cab to Srinagar. This means extra travel, additional expense, and unnecessary waiting.</p>
+      </div>
+      <div class="vs vs-after">
+        <span class="vs-tag">With DreamCabs</span>
+        <p>The passenger opens the DreamCabs app, selects the Kupwara&ndash;Srinagar route, chooses the nearest available pickup point&mdash;such as Drugmulla, Bremri, or another designated stop&mdash;and books a seat. The driver follows the fixed route and picks up the passenger at the selected location, eliminating the need to travel to the taxi stand first.</p>
+      </div>
+    </div>
+
+    <p class="sec-p" style="margin-top:30px">This makes travel:</p>
+    <div class="vs-pills">
+      <span>More convenient</span><span>More affordable</span><span>More predictable</span>
+      <span>Safer</span><span>More efficient</span>
+    </div>
+
+    <div class="about-note" style="margin-top:30px">
+      <p>Most importantly, it gives people back something that cannot be replaced &mdash; their time.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The mission</span>
+      <h2 class="sec-h">More than a ride-booking platform</h2>
+      <p class="sec-p">DreamCabs is a mission to make transportation smarter, more accessible, and more inclusive for every community, from rural villages to growing cities. By leveraging technology and fixed-route shared mobility, we aim to reduce unnecessary travel, increase vehicle occupancy, support local drivers with more consistent demand, and contribute to a cleaner, more sustainable future.</p>
+      <p class="sec-p">This is only the beginning. Our goal is to build a transportation network that connects people seamlessly while creating opportunities for drivers, strengthening local economies, and improving everyday life across India.</p>
+      <p class="sec-p">Thank you for believing in our vision and joining us on this journey.</p>
+    </div>
+    <p class="vision-sign">Dream. Ride. Go.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head" style="margin-bottom:34px">
+      <span class="eyebrow">Leadership</span>
+      <h2 class="sec-h">The people driving the mission</h2>
+    </div>
+    <div class="lead-grid">
+      <div class="leader">
+        <span class="fav">UZ</span>
+        <h4>Uzair Hameed Zargar</h4>
+        <span class="role">Founder &amp; Chairman</span>
+        <p>Visionary behind DreamCabs KMR Pvt. Ltd., focused on transforming shared mobility through technology, AI-powered innovation, and rural connectivity while building a transportation ecosystem that values every passenger's time.</p>
+      </div>
+      <div class="leader">
+        <span class="fav">MB</span>
+        <h4>Ms. Murchana Baishya</h4>
+        <span class="role">Co-Founder &amp; Chief Executive Officer (CEO)</span>
+        <p>Co-founder of DreamCabs KMR Pvt. Ltd., responsible for driving operational excellence, strategic partnerships, organizational growth, and the execution of the company's mission to build a reliable, technology-driven shared mobility platform.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="about-note" style="margin-top:0">
+      <p>Join our journey &mdash; as a rider, a driver-partner, or an investor.</p>
+      <a class="btn btn-lime" href="index.html#contact">Get in touch <span class="arw"><svg class="i xs"><use href="#i-arrow-ur"/></svg></span></a>
+    </div>
+  </div>
+</section>
+<footer>
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <a href="index.html" class="logo"><img src="images/dreamcabs-mark.png" alt=""><span class="wm">Dream<b>Cabs</b></span></a>
+        <p>India's first AI-powered fixed-route shared mobility platform. Making transportation smarter, safer, more affordable and sustainable.</p>
+        <div class="socials">
+          <a href="#" aria-label="Facebook"><svg class="i sm"><use href="#i-fb"/></svg></a>
+          <a href="#" aria-label="Instagram"><svg class="i sm"><use href="#i-ig"/></svg></a>
+          <a href="#" aria-label="LinkedIn"><svg class="i sm"><use href="#i-li"/></svg></a>
+          <a href="#" aria-label="X"><svg class="i sm"><use href="#i-x"/></svg></a>
+          <a href="#" aria-label="YouTube"><svg class="i sm"><use href="#i-yt"/></svg></a>
+        </div>
+      </div>
+      <div class="fcol">
+        <h5>Quick Links</h5>
+        <a href="index.html#about">About</a><a href="index.html#features">Features</a><a href="index.html#apps">Apps</a>
+        <a href="index.html#passengers">Passengers</a><a href="index.html#drivers">Drivers</a><a href="index.html#investors">Investors</a>
+      </div>
+      <div class="fcol">
+        <h5>Company</h5>
+        <a href="our-vision.html">Our Vision</a>
+        <a href="privacy-policy.html">Privacy Policy</a>
+        <a href="terms-conditions.html">Terms &amp; Conditions</a>
+        <a href="#">Refund Policy</a>
+        <a href="#">Careers</a>
+      </div>
+      <div class="fcol news">
+        <h5>Newsletter</h5>
+        <p>Get route launches, offers and updates from DreamCabs.</p>
+        <div class="nf"><input type="email" placeholder="Your email"><button onclick="alert('Subscribed! (Demo)')"><svg class="i sm"><use href="#i-arrow"/></svg></button></div>
+      </div>
+    </div>
+    <div class="foot-bot">
+      <span>&copy; 2026 DreamCabs KMR Pvt. Ltd. All Rights Reserved.</span>
+      <span>Kupwara, Jammu &amp; Kashmir, India &middot; <a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a></span>
+    </div>
+  </div>
+</footer>
+<script src="script.js"></script>
+</body>
+</html>
