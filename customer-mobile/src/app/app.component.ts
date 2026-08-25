@@ -1,6 +1,18 @@
-import { Component, OnInit, Optional, ViewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { IonRouterOutlet, NavController, Platform, ToastController } from '@ionic/angular';
+import { Component, OnInit, ViewChild } from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
+import {
+  ActionSheetController,
+  AlertController,
+  IonRouterOutlet,
+  MenuController,
+  ModalController,
+  NavController,
+  Platform,
+  PopoverController,
+  ToastController,
+} from '@ionic/angular';
+import { Location } from '@angular/common';
+import { filter } from 'rxjs/operators';
 import { App as CapacitorApp } from '@capacitor/app';
 import { AuthService } from './core/auth.service';
 import { PushService } from './core/push.service';
@@ -16,6 +28,7 @@ export class AppComponent implements OnInit {
 
   private lastBackPress = 0;
   private backToast: HTMLIonToastElement | null = null;
+  private routeHistory: string[] = [];
 
   constructor(
     private auth: AuthService,
@@ -23,65 +36,124 @@ export class AppComponent implements OnInit {
     private platform: Platform,
     private router: Router,
     private navCtrl: NavController,
+    private location: Location,
     private toastCtrl: ToastController,
+    private modalCtrl: ModalController,
+    private alertCtrl: AlertController,
+    private actionSheetCtrl: ActionSheetController,
+    private popoverCtrl: PopoverController,
+    private menuCtrl: MenuController,
   ) {}
 
   ngOnInit(): void {
-    // Re-register the FCM device token on every app open (not just at login),
-    // so an already-signed-in phone keeps a valid delivery address in the
-    // backend — and self-heals if the token was never saved or later rotated.
-    // registerForUser() guards its own permission/token/errors, so this is a
-    // safe no-op when notifications are denied or Firebase isn't available.
     if (this.auth.isLoggedIn()) {
       void this.push.registerForUser();
     }
 
+    this.trackNavigationHistory();
     this.setupBackButton();
+  }
+
+  private trackNavigationHistory(): void {
+    this.router.events
+      .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+      .subscribe((event) => {
+        const url = event.urlAfterRedirects || event.url;
+        if (!url || url.includes('/splash')) return;
+
+        const cleanUrl = url.split('?')[0].split('#')[0];
+
+        // If navigating to Home root, reset stack with home as root
+        if (cleanUrl === '/customer-tabs/go' || cleanUrl === '/customer-tabs/book' || cleanUrl === '/customer-tabs') {
+          this.routeHistory = ['/customer-tabs/go'];
+          return;
+        }
+
+        const last = this.routeHistory[this.routeHistory.length - 1];
+        if (last === cleanUrl) return;
+
+        // Truncate or append
+        const existingIdx = this.routeHistory.indexOf(cleanUrl);
+        if (existingIdx !== -1) {
+          this.routeHistory = this.routeHistory.slice(0, existingIdx + 1);
+        } else {
+          this.routeHistory.push(cleanUrl);
+        }
+      });
   }
 
   private setupBackButton(): void {
     this.platform.backButton.subscribeWithPriority(10, async () => {
-      const url = this.router.url;
+      // 1. Close any open overlays first (Modal, Alert, ActionSheet, Popover, SideMenu)
+      const modal = await this.modalCtrl.getTop();
+      if (modal) {
+        await modal.dismiss();
+        return;
+      }
+      const alert = await this.alertCtrl.getTop();
+      if (alert) {
+        await alert.dismiss();
+        return;
+      }
+      const actionSheet = await this.actionSheetCtrl.getTop();
+      if (actionSheet) {
+        await actionSheet.dismiss();
+        return;
+      }
+      const popover = await this.popoverCtrl.getTop();
+      if (popover) {
+        await popover.dismiss();
+        return;
+      }
+      if (await this.menuCtrl.isOpen()) {
+        await this.menuCtrl.close();
+        return;
+      }
 
-      // Identify root landing routes where back should exit/minimize instead of popping
+      const currentUrl = (this.router.url || '').split('?')[0].split('#')[0];
+
+      // 2. Identify root landing routes where back should exit/minimize instead of popping
       const isHomeRoot =
-        url === '/customer-tabs/go' ||
-        url === '/customer-tabs/book' ||
-        url === '/customer-tabs' ||
-        url.startsWith('/customer-tabs/go?');
+        currentUrl === '/customer-tabs/go' ||
+        currentUrl === '/customer-tabs/book' ||
+        currentUrl === '/customer-tabs';
 
       const isGuestRoot =
-        url === '/welcome' ||
-        url === '/auth/login' ||
-        url === '/intro' ||
-        url === '/splash' ||
-        url === '/';
+        currentUrl === '/welcome' ||
+        currentUrl === '/auth/login' ||
+        currentUrl === '/intro' ||
+        currentUrl === '/splash' ||
+        currentUrl === '/' ||
+        currentUrl === '';
 
       if (isHomeRoot || isGuestRoot) {
         await this.handleExit();
         return;
       }
 
-      // If user is inside another top-level tab (like my-trips, profile), return to home tab
-      if (
-        url.startsWith('/customer-tabs/my-trips') ||
-        url.startsWith('/customer-tabs/profile') ||
-        url.startsWith('/customer-tabs/coupons') ||
-        url.startsWith('/customer-tabs/support') ||
-        url.startsWith('/customer-tabs/notifications')
-      ) {
-        void this.navCtrl.navigateRoot('/customer-tabs/go', { animationDirection: 'back' });
-        return;
+      // 3. Step back sequentially through navigation stack (D -> C -> B -> A)
+      if (this.routeHistory.length > 1) {
+        this.routeHistory.pop(); // Remove current
+        const prevUrl = this.routeHistory[this.routeHistory.length - 1];
+        if (prevUrl) {
+          void this.navCtrl.navigateBack(prevUrl, { animated: true });
+          return;
+        }
       }
 
-      // If outlet can navigate back to previous screen within a sub-flow
+      // 4. Fallback outlet or router history
       if (this.routerOutlet?.canGoBack()) {
         this.routerOutlet.pop();
         return;
       }
 
-      // Default fallback for any remaining screens
-      await this.handleExit();
+      // 5. Final fallback to Home root
+      if (this.auth.isLoggedIn()) {
+        this.routeHistory = ['/customer-tabs/go'];
+        void this.navCtrl.navigateRoot('/customer-tabs/go', { animationDirection: 'back' });
+      } else {
+        await this.handleExit();
+      }
     });
   }
 

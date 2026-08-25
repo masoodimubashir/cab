@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
+import { NavController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 
@@ -27,7 +28,8 @@ export class DriverRegistrationPage {
   constructor(
     private api: ApiService,
     private auth: AuthService,
-    private router: Router
+    private router: Router,
+    private navCtrl: NavController,
   ) {}
 
   get isCustomer(): boolean {
@@ -104,6 +106,6 @@ export class DriverRegistrationPage {
   }
 
   back(): void {
-    this.router.navigateByUrl('/tabs/more');
+    this.navCtrl.back();
   }
 }
