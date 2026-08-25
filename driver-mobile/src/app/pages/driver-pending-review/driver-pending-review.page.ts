@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
+import { NavController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
@@ -32,6 +33,7 @@ export class DriverPendingReviewPage implements OnInit, OnDestroy {
     private api: ApiService,
     private auth: AuthService,
     private router: Router,
+    private navCtrl: NavController,
   ) {}
 
   ngOnInit(): void {
@@ -47,25 +49,17 @@ export class DriverPendingReviewPage implements OnInit, OnDestroy {
 
   refresh(silent = false): void {
     if (!silent) this.loading = true;
-    this.api.get<{ driver: { approval_status: string } | null; documents: { status: string }[] }>(
-      '/drivers/me',
-    ).subscribe({
+    this.api.get<{
+      driver: { approval_status?: string } | null;
+      documents: { status: string }[];
+    }>('/drivers/me').subscribe({
       next: (res) => {
-        const approval = res.driver?.approval_status ?? null;
+        const approval = res.driver?.approval_status ?? 'pending';
         const docs = res.documents ?? [];
         this.hasRejected = docs.some((d) => d.status === 'rejected');
-
         if (approval === 'approved') {
-          // Approved → release the lock and go to dashboard.
           ApprovedDriverGuard.setStateApproved();
-          this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
-          return;
-        }
-        if (docs.length === 0) {
-          // Edge case: somehow they reached this page without uploading anything.
-          // Send them back to the documents step.
-          ApprovedDriverGuard.setStateRegistering();
-          this.router.navigateByUrl('/profile', { replaceUrl: true });
+          void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'forward' });
           return;
         }
         ApprovedDriverGuard.setStatePending();
@@ -79,7 +73,7 @@ export class DriverPendingReviewPage implements OnInit, OnDestroy {
   logout(): void {
     this.auth.logout();
     ApprovedDriverGuard.clearCache();
-    this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+    void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'back' });
   }
 
   // Driver fixes a rejected doc → bounces them back to profile.

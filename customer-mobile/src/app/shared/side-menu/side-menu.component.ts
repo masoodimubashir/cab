@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
-import { AlertController, MenuController } from '@ionic/angular';
+import { AlertController, MenuController, NavController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { PushService } from '../../core/push.service';
@@ -23,6 +23,7 @@ export class SideMenuComponent {
     private router: Router,
     private alertCtrl: AlertController,
     private menuCtrl: MenuController,
+    private navCtrl: NavController,
     private push: PushService
   ) {}
 
@@ -71,7 +72,7 @@ export class SideMenuComponent {
 
   private finishSignOut(): void {
     this.auth.logout();
-    this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+    void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'back' });
   }
 
   async confirmDeleteAccount(): Promise<void> {
