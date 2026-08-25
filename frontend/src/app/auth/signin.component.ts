@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../core/auth.service';
 import { ToastService } from '../core/toast.service';
+import { environment } from '../../environments/environment';
 import {
   ButtonComponent,
   InputComponent,
@@ -94,13 +95,13 @@ import {
 })
 export class SigninComponent {
   private get apiBase(): string {
+    if (environment.apiUrl) {
+      return environment.apiUrl.replace(/\/+$/, '');
+    }
     if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      if (window.location.port === '4200') {
-        return 'http://localhost:8000/api';
-      }
       return `${window.location.origin}/api`;
     }
-    return 'http://localhost:8000/api';
+    return 'https://dreamcabs.in/api';
   }
   email = '';
   password = '';
