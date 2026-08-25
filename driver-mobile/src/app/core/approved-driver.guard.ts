@@ -56,7 +56,13 @@ export class ApprovedDriverGuard implements CanActivate {
           this.writeCache(state);
           return this.toDecision(state);
         }),
-        catchError(() => of(this.router.parseUrl('/auth/login'))),
+        catchError((err) => {
+          if (err?.status === 401 || err?.status === 403) {
+            this.auth.logout();
+            return of(this.router.parseUrl('/welcome'));
+          }
+          return of(true);
+        }),
       );
   }
 

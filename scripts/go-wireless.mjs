@@ -17,7 +17,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const IP_FILE = path.join(os.homedir(), 'android-dev', 'wireless-ip');
+const isDriver = process.cwd().toLowerCase().includes('driver');
+const PORT = isDriver ? '8200' : '8100';
+const PORT_IP_FILE = path.join(os.homedir(), 'android-dev', `wireless-ip-${PORT}`);
+const GLOBAL_IP_FILE = path.join(os.homedir(), 'android-dev', 'wireless-ip');
 
 // Synchronous sleep so the script reads top-to-bottom like the bash original.
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -112,8 +115,9 @@ adb(['-s', usb.serial, 'tcpip', '5555'], { allowFail: true });
 sleep(1000);
 
 console.log('   Connecting over Wi-Fi ...');
-fs.mkdirSync(path.dirname(IP_FILE), { recursive: true });
-fs.writeFileSync(IP_FILE, ip); // remember it regardless — dev:device auto-retries too
+fs.mkdirSync(path.dirname(GLOBAL_IP_FILE), { recursive: true });
+fs.writeFileSync(GLOBAL_IP_FILE, ip);
+fs.writeFileSync(PORT_IP_FILE, ip);
 
 // Some phones are slow to bring the Wi-Fi adb link up — poll for a few seconds
 // instead of giving up after one check.
