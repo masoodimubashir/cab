@@ -440,35 +440,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return `${this.scopeLabel()} - ${this.serviceLabel().replace(' rides', '').replace(' vehicle', '')}`;
   }
 
-  async chooseFixedRouteForBoarding(): Promise<void> {
-    if (this.toggling) return;
-    this.toggling = true;
-    this.error = null;
-
-    try {
-      const active = await this.loadActiveFixedVehicleState();
-      if (active) {
-        this.navTo('/tabs/fixed');
-        return;
-      }
-
-      const scope = this.driveScope === 'outstation' ? 'outstation' : 'local';
-      const res = await firstValueFrom(this.api.get<{ data: FixedRouteOption[] }>('/fixed/driver/routes'));
-      const routes = res.data || [];
-      if (!routes.length) {
-        this.error = 'You are not assigned to any routes yet.';
-        return;
-      }
-
-      this.routePickerRoutes = routes;
-      this.routePickerError = null;
-      this.routePickerOpen = true;
-    } catch (e) {
-      const body = (e as { error?: Record<string, unknown> })?.error;
-      this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not load fixed routes.';
-    } finally {
-      this.toggling = false;
-    }
+  chooseFixedRouteForBoarding(): void {
+    this.router.navigateByUrl('/tabs/fixed');
   }
 
   closeRoutePicker(): void {
