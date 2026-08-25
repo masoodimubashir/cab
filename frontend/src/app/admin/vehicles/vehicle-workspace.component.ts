@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription, forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
-import { CityContextService } from '../../core/city-context.service';
+import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
 import { ButtonComponent, DrawerComponent, IconComponent, StatusPillComponent } from '../../ui';
 import { ModalComponent } from '../../ui/modal/modal.component';
@@ -124,6 +124,7 @@ interface TabDef { key: string; label: string; count?: number; }
 
       <header class="ws__head">
         <span class="ws__grow"></span>
+        <tm-button variant="outline" size="sm" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
         <tm-button variant="outline" size="sm" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
         <tm-button variant="green" size="sm" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
       </header>
@@ -188,6 +189,7 @@ interface TabDef { key: string; label: string; count?: number; }
         <div class="bulk" *ngIf="selectedIds.size">
           <b>{{ selectedIds.size }} selected</b>
           <span class="bulk__sep"></span>
+          <button type="button" class="bbtn" (click)="openCopyModalForSelected()"><tm-icon name="copy" [size]="13" /> Copy to location</button>
           <button type="button" class="bbtn" (click)="bulkSetActive(true)">Enable</button>
           <button type="button" class="bbtn" (click)="bulkSetActive(false)">Disable</button>
           <button type="button" class="bbtn" (click)="bulkExport()">Export CSV</button>
@@ -653,6 +655,7 @@ interface TabDef { key: string; label: string; count?: number; }
       <button type="button" (click)="closeRowMenu(); openCommonDrawer(v)"><tm-icon name="edit" [size]="15" /> Edit vehicle</button>
       <button type="button" (click)="closeRowMenu(); openLayoutsList(v)"><tm-icon name="grid" [size]="15" /> Seat layouts</button>
       <button type="button" (click)="closeRowMenu(); toggleExpand(v)"><tm-icon name="road" [size]="15" /> Route groups</button>
+      <button type="button" (click)="closeRowMenu(); openCopyModal(v)"><tm-icon name="copy" [size]="15" /> Copy to location</button>
       <div class="rowmenu__div"></div>
       <button type="button" (click)="closeRowMenu(); toggleActiveFor(v)"><tm-icon name="refresh" [size]="15" /> {{ v.is_active ? 'Disable' : 'Enable' }}</button>
     </div>
@@ -718,6 +721,125 @@ interface TabDef { key: string; label: string; count?: number; }
         </div>
       </ng-container>
     </tm-modal>
+
+    <!-- Copy vehicle settings to another location (City) -->
+    <tm-drawer
+      [open]="copyModalOpen"
+      [title]="copyModalTitle"
+      subtitle="Duplicate vehicle name, vehicle type, seat designs & fare rate cards to other cities"
+      [width]="560"
+      (closed)="copyModalOpen = false"
+    >
+      <div slot="body" class="form">
+        <!-- Source city info -->
+        <div class="note" style="display: flex; align-items: center; justify-content: space-between;">
+          <span>Source Location: <b>{{ cityName || 'Current city' }}</b></span>
+          <span class="badge badge--mute">{{ copyForm.vehicle_ids.length }} {{ copyForm.vehicle_ids.length === 1 ? 'vehicle' : 'vehicles' }} selected</span>
+        </div>
+
+        <!-- 1. Vehicles being copied -->
+        <div class="f" style="margin-top: 10px;">
+          <div class="f__head-row">
+            <span>Vehicles to Copy</span>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="mini-btn" (click)="selectAllVehiclesForCopy()">Select all</button>
+              <button type="button" class="mini-btn" (click)="copyForm.vehicle_ids = []">Clear</button>
+            </div>
+          </div>
+          <div class="chip-grid" *ngIf="vehicles.length; else noVehiclesToCopy">
+            <button
+              *ngFor="let v of vehicles"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="copyForm.vehicle_ids.includes(v.id)"
+              (click)="toggleCopyVehicle(v.id)"
+            >
+              <tm-icon [name]="copyForm.vehicle_ids.includes(v.id) ? 'check' : 'plus'" [size]="12" />
+              <span><b>{{ v.display_name }}</b> ({{ v.vehicle_type_name || 'Vehicle' }})</span>
+              <span class="muted" style="margin-left: 4px;">· {{ v.max_people }} seats</span>
+            </button>
+          </div>
+          <ng-template #noVehiclesToCopy>
+            <p class="meta">No vehicles available in current location.</p>
+          </ng-template>
+        </div>
+
+        <!-- 2. Target Cities Selection -->
+        <div class="f" style="margin-top: 12px;">
+          <div class="f__head-row">
+            <span>Target Location(s) / Destination Cities <i>*</i></span>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="mini-btn mini-btn--go" (click)="selectAllTargetCities()">Select all</button>
+              <button type="button" class="mini-btn" (click)="clearTargetCities()">Clear</button>
+            </div>
+          </div>
+          <p class="meta" *ngIf="!availableTargetCities.length">No other cities configured yet. Create more cities under Settings &gt; Cities first.</p>
+          <div class="chip-grid" *ngIf="availableTargetCities.length">
+            <button
+              *ngFor="let c of availableTargetCities"
+              type="button"
+              class="multi-chip"
+              [class.is-selected]="copyForm.target_city_ids.includes(c.id)"
+              (click)="toggleTargetCity(c.id)"
+            >
+              <tm-icon [name]="copyForm.target_city_ids.includes(c.id) ? 'check' : 'plus'" [size]="12" />
+              <span>{{ c.name }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. Copy Modules & Options -->
+        <div class="f" style="margin-top: 14px;">
+          <span>Copy Modules &amp; Settings</span>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding: 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas);">
+            <label class="check" style="align-items: flex-start;">
+              <input type="checkbox" [checked]="true" disabled style="margin-top: 3px;" />
+              <span style="display: flex; flex-direction: column; gap: 2px;">
+                <b>Vehicle Name, Vehicle Type &amp; Capacities</b>
+                <span class="muted">Name, Type, Seats count, Bags, Dispatch hops</span>
+              </span>
+            </label>
+            <label class="check" style="align-items: flex-start;">
+              <input type="checkbox" [(ngModel)]="copyForm.copy_seat_layouts" style="margin-top: 3px;" />
+              <span style="display: flex; flex-direction: column; gap: 2px;">
+                <b>Design Seats &amp; Seat Layouts</b>
+                <span class="muted">Copies reusable seat map designs for this vehicle type</span>
+              </span>
+            </label>
+            <label class="check" style="align-items: flex-start;">
+              <input type="checkbox" [(ngModel)]="copyForm.copy_pricing" style="margin-top: 3px;" />
+              <span style="display: flex; flex-direction: column; gap: 2px;">
+                <b>Fares &amp; Pricing Rate Cards</b>
+                <span class="muted">Base price, km rates, commissions, and outstation packages</span>
+              </span>
+            </label>
+            <label class="check" style="align-items: flex-start; border-top: 1px solid var(--tm-line); padding-top: 10px; margin-top: 2px;">
+              <input type="checkbox" [(ngModel)]="copyForm.overwrite_existing" style="margin-top: 3px;" />
+              <span style="display: flex; flex-direction: column; gap: 2px;">
+                <b>Overwrite existing</b>
+                <span class="muted">Update vehicle and layout if already present in target city</span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div slot="footer">
+        <span class="drawer-count" *ngIf="copyForm.target_city_ids.length">
+          {{ copyForm.target_city_ids.length }} {{ copyForm.target_city_ids.length === 1 ? 'city' : 'cities' }} selected
+        </span>
+        <span class="ws__grow"></span>
+        <tm-button variant="ghost" (clicked)="copyModalOpen = false">Cancel</tm-button>
+        <tm-button
+          variant="green"
+          icon="copy"
+          [disabled]="!copyForm.target_city_ids.length || !copyForm.vehicle_ids.length || copyingToLocation"
+          (clicked)="submitCopyToLocation()"
+        >
+          {{ copyingToLocation ? 'Copying...' : 'Copy Vehicle Settings' }}
+        </tm-button>
+      </div>
+    </tm-drawer>
 
     <!-- Hidden picker for "Bulk" import — creates Needs-pricing routes. Multiple files allowed. -->
     <input #bulkKmlInput type="file" accept=".kml,.kmz" multiple hidden (change)="onBulkKmlFileSelected($event)" />
@@ -1250,6 +1372,31 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
   get menuVehicle(): CityVehicleRow | null { return this.vehicles.find((v) => v.id === this.menuId) ?? null; }
 
+  // ── copy vehicles to another location ──────────────────────
+  copyModalOpen = false;
+  copyingToLocation = false;
+  allCities: CityOption[] = [];
+  copyForm = {
+    target_city_ids: [] as number[],
+    vehicle_ids: [] as number[],
+    copy_pricing: true,
+    copy_seat_layouts: true,
+    overwrite_existing: true,
+  };
+  copyScope: 'single' | 'selected' | 'all' = 'all';
+  copySingleVehicle: CityVehicleRow | null = null;
+
+  get copyModalTitle(): string {
+    if (this.copySingleVehicle) {
+      return `Copy "${this.copySingleVehicle.display_name}" to another location`;
+    }
+    return 'Copy vehicle settings to another location';
+  }
+
+  get availableTargetCities(): CityOption[] {
+    return this.allCities.filter((c) => c.id !== this.cityId);
+  }
+
   groupOpen = false;
   groupSaving = false;
   groupName = '';
@@ -1526,6 +1673,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
         if (this.deepLinkId != null && this.vehicles.length) { this.applyDeepLink(); this.applyView(); }
       }),
       this.cityCtx.cities$.subscribe((list) => {
+        this.allCities = list ?? [];
         this.cityName = list.find((c) => c.id === this.cityId)?.name ?? '';
       }),
       this.cityCtx.cityId$.subscribe((id) => {
@@ -2561,6 +2709,95 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.menuY = Math.min(ev.clientY, window.innerHeight - 250);
   }
   closeRowMenu(): void { this.menuId = null; }
+
+  // ── copy vehicles to another location ──────────────────────
+  openCopyModal(v?: CityVehicleRow): void {
+    if (this.cityId == null) return;
+    this.cityCtx.ensureCitiesLoaded().subscribe();
+
+    if (v) {
+      this.copyScope = 'single';
+      this.copySingleVehicle = v;
+      this.copyForm.vehicle_ids = [v.id];
+    } else if (this.selectedIds.size > 0) {
+      this.copyScope = 'selected';
+      this.copySingleVehicle = null;
+      this.copyForm.vehicle_ids = Array.from(this.selectedIds);
+    } else {
+      this.copyScope = 'all';
+      this.copySingleVehicle = null;
+      this.copyForm.vehicle_ids = this.vehicles.map((x) => x.id);
+    }
+
+    this.copyForm.target_city_ids = [];
+    this.copyForm.copy_pricing = true;
+    this.copyForm.copy_seat_layouts = true;
+    this.copyForm.overwrite_existing = true;
+    this.copyModalOpen = true;
+  }
+
+  openCopyModalForSelected(): void {
+    if (!this.selectedIds.size) return;
+    this.openCopyModal();
+  }
+
+  toggleTargetCity(cityId: number): void {
+    if (this.copyForm.target_city_ids.includes(cityId)) {
+      this.copyForm.target_city_ids = this.copyForm.target_city_ids.filter((id) => id !== cityId);
+    } else {
+      this.copyForm.target_city_ids = [...this.copyForm.target_city_ids, cityId];
+    }
+  }
+
+  selectAllTargetCities(): void {
+    this.copyForm.target_city_ids = this.availableTargetCities.map((c) => c.id);
+  }
+
+  clearTargetCities(): void {
+    this.copyForm.target_city_ids = [];
+  }
+
+  toggleCopyVehicle(vehicleId: number): void {
+    if (this.copyForm.vehicle_ids.includes(vehicleId)) {
+      this.copyForm.vehicle_ids = this.copyForm.vehicle_ids.filter((id) => id !== vehicleId);
+    } else {
+      this.copyForm.vehicle_ids = [...this.copyForm.vehicle_ids, vehicleId];
+    }
+  }
+
+  selectAllVehiclesForCopy(): void {
+    this.copyForm.vehicle_ids = this.vehicles.map((v) => v.id);
+  }
+
+  submitCopyToLocation(): void {
+    if (this.cityId == null) return;
+    if (!this.copyForm.target_city_ids.length) {
+      this.toast.error('Select at least one destination city/location.');
+      return;
+    }
+    if (!this.copyForm.vehicle_ids.length) {
+      this.toast.error('Select at least one vehicle to copy.');
+      return;
+    }
+
+    this.copyingToLocation = true;
+    this.api
+      .post<{ message: string; copied_count: number; copied_layouts_count: number }>(
+        `/admin/cities/${this.cityId}/vehicle-types/copy-to-city`,
+        this.copyForm,
+      )
+      .subscribe({
+        next: (res) => {
+          this.copyingToLocation = false;
+          this.copyModalOpen = false;
+          this.toast.success(res?.message || 'Vehicle settings copied successfully.');
+        },
+        error: (err) => {
+          this.copyingToLocation = false;
+          this.toast.error(err?.error?.message || 'Failed to copy vehicle settings.');
+        },
+      });
+  }
 
   // ── helpers ────────────────────────────────────────────────
   private blankCreate() {

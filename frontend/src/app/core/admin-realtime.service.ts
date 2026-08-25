@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import Pusher from 'pusher-js';
+import { environment } from '../../environments/environment';
 
 export type DispatchDriverLocationPayload = {
   type: 'driver_location_updated';
@@ -62,7 +63,7 @@ export class AdminRealtimeService {
     const pusher = this.ensure();
     if (!pusher) return () => {};
 
-    const channelName = `private-App.Models.User.`;
+    const channelName = `private-App.Models.User.${userId}`;
     const channel = pusher.subscribe(channelName);
     const handler = (data: AppNotificationPayload) => onCreated(data);
 
@@ -145,24 +146,66 @@ export class AdminRealtimeService {
 
   private config(): ReverbConfig {
     const apiBase = this.apiBase();
-    const url = new URL(apiBase);
-    const scheme = (localStorage.getItem('dreamcabs_reverb_scheme') as 'http' | 'https' | null)
-      || (url.protocol === 'https:' ? 'https' : 'http');
-    const defaultPort = scheme === 'https' ? 443 : 8080;
+    let defaultHost = environment.reverbHost || 'dreamcabs.in';
+    let defaultScheme: 'http' | 'https' = environment.reverbScheme || 'https';
+    let defaultPort = environment.reverbPort || (defaultScheme === 'https' ? 443 : 8080);
+    let defaultKey = environment.reverbAppKey || '4jsb8ggrbvcriyaskojh';
+
+    try {
+      const url = new URL(apiBase);
+      if (!environment.reverbHost) {
+        defaultHost = url.hostname;
+      }
+      if (!environment.reverbScheme) {
+        defaultScheme = url.protocol === 'https:' ? 'https' : 'http';
+      }
+      if (!environment.reverbPort) {
+        defaultPort = defaultScheme === 'https' ? 443 : 8080;
+      }
+    } catch {
+      // fallback
+    }
+
+    let host = defaultHost;
+    let scheme = defaultScheme;
+    let port = defaultPort;
+
+    if (typeof localStorage !== 'undefined') {
+      const storedKey = localStorage.getItem('dreamcabs_reverb_app_key')?.trim();
+      if (storedKey) defaultKey = storedKey;
+
+      const storedHost = localStorage.getItem('dreamcabs_reverb_host')?.trim();
+      if (storedHost) host = storedHost;
+
+      const storedScheme = localStorage.getItem('dreamcabs_reverb_scheme') as 'http' | 'https' | null;
+      if (storedScheme === 'http' || storedScheme === 'https') scheme = storedScheme;
+
+      const storedPort = Number(localStorage.getItem('dreamcabs_reverb_port'));
+      if (storedPort && !Number.isNaN(storedPort)) port = storedPort;
+    }
+
+    // Safety fallback: if connecting to dreamcabs.in or any domain over HTTPS, port 8080 without SSL will fail
+    if (host === 'dreamcabs.in' && (port === 8080 || scheme === 'http')) {
+      scheme = 'https';
+      port = 443;
+    }
 
     return {
-      appKey: localStorage.getItem('dreamcabs_reverb_app_key')?.trim() || '4jsb8ggrbvcriyaskojh',
-      host: localStorage.getItem('dreamcabs_reverb_host')?.trim() || url.hostname,
-      port: Number(localStorage.getItem('dreamcabs_reverb_port') || defaultPort),
+      appKey: defaultKey,
+      host,
+      port,
       scheme,
     };
   }
 
   private apiBase(): string {
-    if (typeof window !== 'undefined' && window.location && window.location.port !== '4200') {
+    if (environment.apiUrl) {
+      return environment.apiUrl.replace(/\/+$/, '');
+    }
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
       return `${window.location.origin}/api`;
     }
-    return 'http://localhost:8000/api';
+    return 'https://dreamcabs.in/api';
   }
 
   private authEndpoint(): string {

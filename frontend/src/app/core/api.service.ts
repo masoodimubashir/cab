@@ -2,20 +2,24 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpEventType, HttpHeaders, HttpRequest } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+import { environment } from '../../environments/environment';
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private readonly fallbackBaseUrl = 'http://localhost:8000/api';
-
   constructor(private http: HttpClient) {}
 
-  private getBaseUrl(): string {
+  getBaseUrl(): string {
+    if (environment.apiUrl) {
+      return environment.apiUrl.replace(/\/+$/, '');
+    }
     if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      if (window.location.port === '4200') {
-        return 'http://localhost:8000/api';
-      }
       return `${window.location.origin}/api`;
     }
-    return this.fallbackBaseUrl;
+    return 'https://dreamcabs.in/api';
+  }
+
+  get baseUrl(): string {
+    return this.getBaseUrl();
   }
 
   private authHeaders(): HttpHeaders {

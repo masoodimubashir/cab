@@ -146,7 +146,7 @@ export class RealtimeService {
     const pusher = this.ensure();
     if (!pusher) return () => {};
 
-    const channelName = `private-App.Models.User.`;
+    const channelName = `private-App.Models.User.${userId}`;
     const channel = pusher.subscribe(channelName);
     const handler = (data: AppNotificationPayload) => onCreated(data);
 
