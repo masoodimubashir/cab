@@ -22,7 +22,9 @@ import path from 'node:path';
 
 const PORT = process.argv[2] || '8100';
 const IP_ARG = process.argv[3] || '';
-const IP_FILE = path.join(os.homedir(), 'android-dev', 'wireless-ip'); // remembers the last wireless phone
+const PORT_IP_FILE = path.join(os.homedir(), 'android-dev', `wireless-ip-${PORT}`);
+const GLOBAL_IP_FILE = path.join(os.homedir(), 'android-dev', 'wireless-ip');
+const IP_FILE = fs.existsSync(PORT_IP_FILE) ? PORT_IP_FILE : GLOBAL_IP_FILE;
 
 const IS_WIN = process.platform === 'win32';
 const NPX = IS_WIN ? 'npx.cmd' : 'npx';
@@ -107,9 +109,8 @@ function listDevices() {
 // Is any adb device in state "device" (authorized & online)?
 const haveDevice = () => listDevices().some((d) => d.state === 'device');
 
-// Print the id of the first device Capacitor sees (the list Ionic validates
-// against). Empty if none / not ready yet.
-function capTarget() {
+// Print the target id Capacitor will deploy to.
+function capTarget(preferred, port) {
   let out = '';
   try {
     out = execFileSync(NPX, ['cap', 'run', 'android', '--list', '--json'], {
@@ -121,17 +122,29 @@ function capTarget() {
   } catch {
     return '';
   }
-  return firstTargetId(out);
+  return resolveTargetId(out, preferred, port);
 }
 
-// Pull the first target id out of `cap ... --json` output. Tolerates stray log
-// lines some tools print before/after the JSON array on Windows.
-function firstTargetId(out) {
+// Pull target id out of `cap ... --json` output.
+function resolveTargetId(out, preferred, port) {
   const parse = (s) => {
     try {
       const arr = JSON.parse(s);
-      const first = Array.isArray(arr) ? arr[0] : null;
-      return first && first.id ? first.id : '';
+      if (!Array.isArray(arr) || !arr.length) return '';
+
+      // If user passed a specific preferred IP or serial
+      if (preferred) {
+        const hit = arr.find((d) => d?.id && d.id.includes(preferred));
+        if (hit?.id) return hit.id;
+      }
+
+      // If port is 8200 (driver) and we have multiple devices connected, pick the 2nd device
+      if (port === '8200' && arr.length > 1) {
+        return arr[1]?.id || arr[0]?.id || '';
+      }
+
+      // Default to 1st device
+      return arr[0]?.id || '';
     } catch {
       return '';
     }
@@ -185,7 +198,7 @@ if (wireless) {
 // cap's list can lag adb by a moment after a reconnect — retry briefly.
 let target = '';
 for (let i = 0; i < 10; i++) {
-  target = capTarget();
+  target = capTarget(IP_ARG, PORT);
   if (target) break;
   sleep(500);
 }
@@ -203,6 +216,11 @@ if (!target) {
 }
 
 // --- 3. go -----------------------------------------------------------------
+const devices = listDevices();
+if (devices.length > 1) {
+  console.log(`📱 Multiple devices detected (${devices.length}):`);
+  for (const d of devices) console.log(`   ${d.serial === target ? '👉' : '  '} ${d.serial} (${d.state})`);
+}
 console.log(`✅ Deploying live-reload to: ${target}   (port ${PORT})`);
 console.log('   Leave this terminal open — every save hot-reloads on the phone.');
 console.log('   Press Ctrl+C to stop.');
