@@ -1,25 +1,39 @@
-<ion-header class="fixed-header">
-  <ion-toolbar>
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
-      <ion-back-button defaultHref="/tabs/dashboard" text=""></ion-back-button>
+      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
     </ion-buttons>
     <ion-buttons slot="end">
-      <ion-button class="refresh-btn" fill="clear" (click)="refresh()" [disabled]="loading || busy">
-        <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
+      <ion-button class="dc-press" (click)="refresh()" [disabled]="loading || busy" aria-label="Reload">
+        <ion-icon name="refresh-outline" slot="icon-only"></ion-icon>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="fixed-content">
-  <main class="fixed-shell">
-    <section class="drv-hero fixed-hero">
-      <h1>Fixed boarding</h1>
-      <p>Keep this screen open. List refreshes automatically.</p>
-    </section>
+<ion-content class="pg-content">
+  <!-- Hero Section -->
+  <div class="pg-hero">
+    <h1 class="pg-title">
+      {{ activeVehicle 
+          ? (activeVehicle.route_name || 'Active Ride') 
+          : (selectedRoute ? selectedRoute.name : 'Choose Route') }}
+    </h1>
+    <p class="pg-subtitle">
+      {{ activeVehicle 
+          ? 'Manage passenger boarding, verify codes and track route progress.' 
+          : (selectedRoute ? 'Review route details and start taking rides.' : 'Select an available route to open your vehicle.') }}
+    </p>
+  </div>
 
-    <ion-spinner *ngIf="loading" name="crescent" class="fixed-spinner"></ion-spinner>
+  <div class="pg-body pg-anim-body">
+    <!-- Global Loading Spinner -->
+    <div class="fixed-loading" *ngIf="loading">
+      <ion-spinner name="crescent"></ion-spinner>
+      <span>Loading available routes…</span>
+    </div>
 
+    <!-- Alert Messages -->
     <div class="fixed-alert fixed-alert--error" *ngIf="error">
       <ion-icon name="alert-circle-outline"></ion-icon>
       <span>{{ error }}</span>
@@ -29,317 +43,488 @@
       <span>{{ message }}</span>
     </div>
 
-    <section class="fixed-panel open-panel" *ngIf="!activeVehicle && routes.length">
-      <div class="panel-head">
-        <div>
-          <p>Step 1</p>
-          <h2>Boarding setup</h2>
-        </div>
-        <ion-icon name="car-outline"></ion-icon>
+    <!-- ==================== STEP 1: ROUTE LIST (NONE SELECTED) ==================== -->
+    <section class="route-list-section" *ngIf="!activeVehicle && routes.length && !selectedRouteId && !loading">
+      <div class="section-heading">
+        <h2>Available Routes</h2>
+        <span>{{ routes.length }} route{{ routes.length > 1 ? 's' : '' }} assigned</span>
       </div>
 
-      <label class="fixed-field fixed-field--stack">
-        <span>Route</span>
-        <ion-select [(ngModel)]="selectedRouteId" (ionChange)="syncCapacity()" interface="action-sheet" placeholder="Select route">
-          <ion-select-option *ngFor="let route of routes" [value]="route.id">{{ route.name }}</ion-select-option>
-        </ion-select>
-      </label>
-
-      <div class="route-summary" *ngIf="selectedRoute as route">
-        <div class="route-endpoints">
-          <div>
-            <span>From</span>
-            <strong>{{ route.origin_name }}</strong>
-          </div>
-          <div>
-            <span>To</span>
-            <strong>{{ route.dest_name }}</strong>
-          </div>
-        </div>
-        <div class="route-meta">
-          <span>{{ route.scope }}</span>
-          <span>{{ route.flat_fare != null ? ('INR ' + route.flat_fare) : 'Fare set' }}</span>
-          <span>{{ route.max_seats_per_booking }} seats</span>
-          <span>{{ route.max_luggage_per_vehicle }} luggage</span>
-        </div>
-      </div>
-
-      <!-- One layout for this driver's vehicle → just confirm it, no picker. -->
-      <div class="fixed-field fixed-field--stack" *ngIf="selectedRouteId && layouts.length === 1">
-        <span>Your vehicle</span>
-        <strong>{{ layouts[0].name }} · {{ layouts[0].seat_count }} seats</strong>
-      </div>
-
-      <!-- More than one match → let the driver choose. -->
-      <label class="fixed-field fixed-field--stack" *ngIf="selectedRouteId && layouts.length > 1">
-        <span>Seat layout</span>
-        <ion-select
-          [(ngModel)]="selectedLayoutId"
-          (ionChange)="onLayoutChange()"
-          interface="action-sheet"
-          placeholder="Pick layout"
+      <div class="route-cards-list">
+        <article 
+          class="pg-card route-pick-card dc-press" 
+          *ngFor="let route of routes" 
+          (click)="selectRoute(route)"
         >
-          <ion-select-option *ngFor="let l of layouts" [value]="l.id">
-            {{ l.name }} · {{ l.seat_count }} seats
-          </ion-select-option>
-        </ion-select>
-      </label>
+          <div class="route-pick-card__header">
+            <div class="route-pick-card__name">
+              <div class="route-icon"><ion-icon name="git-branch-outline"></ion-icon></div>
+              <strong>{{ route.name }}</strong>
+            </div>
+            <span class="scope-pill" [class.scope-pill--outstation]="route.scope === 'outstation'">
+              {{ route.scope === 'outstation' ? 'Outstation' : 'Local' }}
+            </span>
+          </div>
 
-      <p class="fixed-hint" *ngIf="selectedRouteId && layoutsLoading">Loading your vehicle…</p>
+          <div class="route-pick-card__path">
+            <div class="path-stop">
+              <span class="dot dot--origin"></span>
+              <span>{{ route.origin_name }}</span>
+            </div>
+            <div class="path-divider">
+              <ion-icon name="arrow-forward-outline"></ion-icon>
+            </div>
+            <div class="path-stop">
+              <span class="dot dot--dest"></span>
+              <span>{{ route.dest_name }}</span>
+            </div>
+          </div>
 
-      <p class="fixed-hint" *ngIf="selectedRouteId && !layouts.length && !layoutsLoading">
-        Your operator hasn't designed a seat layout for your vehicle in this city yet. Ask them to add one before you open a vehicle.
-      </p>
-
-      <button class="dc-cta fixed-primary dc-press" (click)="openVehicle()"
-              [disabled]="busy || !routes.length || !selectedLayoutId">
-        <ion-icon name="add-circle-outline"></ion-icon>
-        <span>Open vehicle</span>
-      </button>
+          <div class="route-pick-card__footer">
+            <div class="route-quick-meta">
+              <span class="meta-fare" *ngIf="route.flat_fare != null">₹{{ route.flat_fare }}</span>
+              <span class="meta-luggage">{{ route.max_luggage_per_vehicle }} luggage</span>
+            </div>
+            <div class="pick-action">
+              <span>Select</span>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+            </div>
+          </div>
+        </article>
+      </div>
     </section>
 
-    <section class="fixed-panel unassigned-panel" *ngIf="!loading && !activeVehicle && !routes.length">
+    <!-- ==================== STEP 2: SELECTED ROUTE DETAILS & CONFIRMATION ==================== -->
+    <section class="selected-route-details-section" *ngIf="!activeVehicle && !loading && selectedRoute as route">
+      
+      <!-- Change Route Back Button -->
+      <button type="button" class="btn-change-route dc-press" (click)="clearSelectedRoute()">
+        <ion-icon name="arrow-back-outline"></ion-icon>
+        <span>Back to Routes</span>
+      </button>
+
+      <!-- Little Loader while fetching vehicle layout -->
+      <div class="fixed-loading" *ngIf="layoutsLoading">
+        <ion-spinner name="crescent"></ion-spinner>
+        <span>Loading vehicle details…</span>
+      </div>
+
+      <!-- Route Details View (clean flow without outer box/padding) -->
+      <div class="route-detail-flow" *ngIf="!layoutsLoading">
+        
+        <!-- Big Standout Pricing Hero -->
+        <div class="route-fare-hero">
+          <div class="fare-hero-main">
+            <span class="fare-hero-label">Fixed Fare Per Seat</span>
+            <div class="fare-hero-price">
+              <span class="currency">₹</span>
+              <span class="amount">{{ route.flat_fare != null ? (route.flat_fare | number:'1.0-0') : '0' }}</span>
+              <span class="unit">/ seat</span>
+            </div>
+          </div>
+          <div class="fare-hero-tag">
+            <span class="scope-badge" [class.scope-badge--outstation]="route.scope === 'outstation'">
+              <ion-icon [name]="route.scope === 'outstation' ? 'navigate-circle-outline' : 'map-outline'"></ion-icon>
+              {{ route.scope === 'outstation' ? 'Outstation' : 'Local City' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Origin to Destination Flow -->
+        <div class="detail-path-flow">
+          <div class="detail-node detail-node--origin">
+            <span class="node-bullet node-bullet--origin"></span>
+            <div class="node-text">
+              <small>Origin / Start</small>
+              <strong>{{ route.origin_name }}</strong>
+            </div>
+          </div>
+          <div class="detail-line"></div>
+          <div class="detail-node detail-node--dest">
+            <span class="node-bullet node-bullet--dest"></span>
+            <div class="node-text">
+              <small>Destination</small>
+              <strong>{{ route.dest_name }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Specifications Breakdown -->
+        <div class="specs-grid specs-grid--3">
+          <!-- Seats -->
+          <div class="spec-card spec-card--highlight">
+            <div class="spec-card__icon"><ion-icon name="people"></ion-icon></div>
+            <div class="spec-card__content">
+              <small>Seats</small>
+              <strong>{{ layouts.length ? layouts[0].seat_count : capacity }}</strong>
+            </div>
+          </div>
+
+          <!-- Model -->
+          <div class="spec-card">
+            <div class="spec-card__icon"><ion-icon name="car-sport-outline"></ion-icon></div>
+            <div class="spec-card__content">
+              <small>Model</small>
+              <strong>{{ layouts.length ? layouts[0].name : 'Cab' }}</strong>
+            </div>
+          </div>
+
+          <!-- Luggage Capacity -->
+          <div class="spec-card">
+            <div class="spec-card__icon"><ion-icon name="briefcase-outline"></ion-icon></div>
+            <div class="spec-card__content">
+              <small>Capacity</small>
+              <strong>{{ route.max_luggage_per_vehicle }} Luggage</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Multi-layout dropdown (if more than 1 layout configured) -->
+        <label class="fd-field" *ngIf="layouts.length > 1">
+          <span class="fd-field__label">Switch Vehicle Layout</span>
+          <div class="fd-select-wrap">
+            <ion-icon name="grid-outline" class="fd-field__icon"></ion-icon>
+            <ion-select [(ngModel)]="selectedLayoutId" (ionChange)="onLayoutChange()" interface="action-sheet" placeholder="Pick layout" class="fd-select">
+              <ion-select-option *ngFor="let l of layouts" [value]="l.id">
+                {{ l.name }} · {{ l.seat_count }} seats
+              </ion-select-option>
+            </ion-select>
+          </div>
+        </label>
+
+        <!-- Warning if no layout configured -->
+        <div class="layout-warn-box" *ngIf="!layouts.length">
+          <ion-icon name="alert-circle-outline"></ion-icon>
+          <span>No vehicle seat layout configured for this route. Please contact your fleet operator.</span>
+        </div>
+
+        <!-- Primary CTA: Start ride -->
+        <button 
+          class="dc-cta dc-cta--primary dc-press take-rides-btn" 
+          (click)="openVehicle()"
+          [disabled]="busy || !selectedLayoutId"
+        >
+          <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
+          <ion-icon *ngIf="!busy" name="play-outline"></ion-icon>
+          <span>{{ busy ? 'Starting ride…' : 'Start ride' }}</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== STATE 2: NO ROUTES ASSIGNED ==================== -->
+    <section class="pg-card unassigned-card" *ngIf="!loading && !activeVehicle && !routes.length">
       <div class="unassigned-icon">
         <ion-icon name="map-outline"></ion-icon>
       </div>
-      <h2>No routes assigned yet</h2>
-      <p>Your operator hasn't added you to a route group. Contact them to get routes assigned so you can open a vehicle.</p>
+      <h2>You are not assigned to any routes yet</h2>
+      <p>Your operator hasn't assigned you to any routes yet. Please contact your fleet manager or support to get access.</p>
       <button class="dc-cta dc-cta--ghost dc-press" (click)="refresh()" [disabled]="loading">
         <ion-icon name="refresh-outline"></ion-icon>
         <span>Check again</span>
       </button>
     </section>
 
-    <section class="empty-panel" *ngIf="!loading && !activeVehicle && routes.length && !selectedRouteId">
-      <ion-icon name="information-circle-outline"></ion-icon>
-      <p>{{ setupHelp }}</p>
-    </section>
+    <!-- ==================== STATE 3: ACTIVE VEHICLE IN SERVICE ==================== -->
+    <ng-container *ngIf="activeVehicle as vehicle">
 
-    <section class="fixed-panel active-panel" *ngIf="activeVehicle as vehicle">
-      <div class="vehicle-top">
-        <div class="vehicle-badges">
-          <span class="gps-pill" *ngIf="fixedLocationStreaming"><span></span> GPS live</span>
-          <span class="status-pill" [class.status-pill--started]="vehicle.status !== 'FORMING'">{{ statusLabel(vehicle) }}</span>
-        </div>
-      </div>
-
-      <div class="capacity-row">
-        <div>
-          <strong>{{ vehicle.seats_taken }}</strong>
-          <span>filled</span>
-        </div>
-        <div>
-          <strong>{{ vehicle.seats_remaining }}</strong>
-          <span>left</span>
-        </div>
-        <div>
-          <strong>{{ vehicle.capacity }}</strong>
-          <span>total</span>
-        </div>
-      </div>
-
-      <div class="meter-wrap">
-        <div class="meter-copy">
-          <span>Seat fill</span>
-          <strong>{{ vehicle.seats_taken }} / {{ vehicle.capacity }}</strong>
-        </div>
-        <ion-progress-bar [value]="vehicle.capacity ? vehicle.seats_taken / vehicle.capacity : 0"></ion-progress-bar>
-      </div>
-
-      <div class="action-grid">
-        <button class="dc-cta dc-cta--ghost dc-press" *ngIf="canCloseVehicle(vehicle)" (click)="closeBookings()" [disabled]="busy">
-          <ion-icon name="close-circle-outline"></ion-icon>
-          <span>Close vehicle</span>
-        </button>
-        <button class="dc-cta dc-press" *ngIf="canStart(vehicle)" (click)="startRide()" [disabled]="busy">
-          <ion-icon name="play-outline"></ion-icon>
-          <span>Start ride</span>
-        </button>
-        <button class="dc-cta dc-cta--ghost dc-press" *ngIf="canComplete(vehicle)" (click)="completeRide()" [disabled]="busy">
-          <ion-icon name="checkmark-done-outline"></ion-icon>
-          <span>Complete ride</span>
-        </button>
-      </div>
-
-      <div class="completion-checklist" *ngIf="passengers.length">
-        <div class="completion-checklist__head">
-          <span>Completion checklist</span>
-          <strong>{{ canComplete(vehicle) ? 'Ready to complete' : 'Action needed' }}</strong>
-        </div>
-        <div class="completion-checklist__grid">
-          <span *ngFor="let item of completionChecklist" [class.is-blocking]="item.tone === 'block'">{{ item.count }} {{ item.label }}</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="fixed-panel driver-map-link-panel" *ngIf="activeVehicle && stops.length">
-      <button type="button" class="map-link dc-press" (click)="openRouteMap()">
-        <span class="map-link__icon"><ion-icon name="map-outline"></ion-icon></span>
-        <span class="map-link__copy">
-          <strong>Open route map</strong>
-          <small>{{ nextStopGuide ? ('Next: ' + nextStopGuide.name) : vehicleRouteLine(activeVehicle) }}</small>
-        </span>
-        <ion-icon class="map-link__chev" name="chevron-forward-outline"></ion-icon>
-      </button>
-    </section>
-
-    <section class="route-progress-simple" *ngIf="activeVehicle && stopGuide.length">
-      <div class="route-progress-simple__head">
-        <div>
-          <span>Route progress</span>
-          <strong>{{ nextStopGuide ? ('Next: ' + nextStopGuide.name) : 'All stops reached' }}</strong>
-          <p *ngIf="lastReachedStop as reachedStop">Last reached: {{ reachedStop.name }}</p>
-        </div>
-      </div>
-      <div class="route-progress-simple__list">
-        <div class="route-progress-simple__row" *ngFor="let stop of stopGuide" [class.is-next]="stop.status === 'next'" [class.is-done]="stop.status === 'done'">
-          <span>{{ stop.seq }}. {{ stop.name }}</span>
-          <small>{{ stopStatusLabel(stop) }}</small>
-        </div>
-      </div>
-    </section>
-
-    <section class="empty-panel" *ngIf="activeVehicle && !activeManifestPassengers.length && !loading">
-      <ion-icon name="people-outline"></ion-icon>
-      <p>No active passengers now. Dropped and completed passengers are kept in the checklist.</p>
-    </section>
-
-    <section class="passenger-section" *ngIf="activeManifestPassengers.length">
-      <div class="manifest-head">
-        <div>
-          <span>Passenger manifest</span>
-          <strong>{{ activeManifestPassengers.length }} active passenger{{ activeManifestPassengers.length > 1 ? 's' : '' }}</strong>
-        </div>
-        <ion-icon name="people-outline"></ion-icon>
-      </div>
-      <ng-container *ngFor="let group of groupedPassengers">
-        <div class="stop-title">
-          <strong>{{ group.stop }}</strong>
-          <span class="stop-title__stats">
-            <small>{{ group.waiting }} waiting</small>
-            <small>{{ group.boarded }} in vehicle</small>
+      <!-- Active Service Status & Capacity Card -->
+      <section class="pg-card active-service-card">
+        <div class="service-header">
+          <div class="status-chip" [class.status-chip--started]="vehicle.status !== 'FORMING'">
+            <span class="live-dot"></span>
+            <strong>{{ statusLabel(vehicle) }}</strong>
+          </div>
+          <span class="gps-chip" *ngIf="fixedLocationStreaming">
+            <ion-icon name="radio-outline"></ion-icon> GPS Live
           </span>
         </div>
-        <article class="passenger-card" *ngFor="let passenger of group.passengers">
-          <div class="passenger-head">
-            <div>
-              <strong>{{ passenger.customer_name || 'Passenger' }}</strong>
-              <p>{{ passenger.customer_phone || 'No phone' }}</p>
+
+        <!-- 3-Col Capacity Metrics -->
+        <div class="capacity-stats">
+          <div class="cap-col cap-col--filled">
+            <span class="cap-val">{{ vehicle.seats_taken }}</span>
+            <span class="cap-lbl">Boarded</span>
+          </div>
+          <div class="cap-col cap-col--left">
+            <span class="cap-val">{{ vehicle.seats_remaining }}</span>
+            <span class="cap-lbl">Seats Left</span>
+          </div>
+          <div class="cap-col cap-col--total">
+            <span class="cap-val">{{ vehicle.capacity }}</span>
+            <span class="cap-lbl">Capacity</span>
+          </div>
+        </div>
+
+        <!-- Seat Fill Progress Meter -->
+        <div class="seat-meter">
+          <div class="seat-meter__header">
+            <span>Seat Occupancy</span>
+            <strong>{{ vehicle.seats_taken }} of {{ vehicle.capacity }} seats</strong>
+          </div>
+          <div class="meter-bar-track">
+            <div class="meter-bar-fill" [style.width.%]="vehicle.capacity ? (vehicle.seats_taken / vehicle.capacity) * 100 : 0"></div>
+          </div>
+        </div>
+
+        <!-- Primary State Action Controls -->
+        <div class="service-actions">
+          <button class="dc-cta dc-cta--ghost dc-press btn-close" *ngIf="canCloseVehicle(vehicle)" (click)="closeBookings()" [disabled]="busy">
+            <ion-icon name="close-circle-outline"></ion-icon>
+            <span>Close Vehicle</span>
+          </button>
+          <button class="dc-cta dc-cta--primary dc-press btn-start" *ngIf="canStart(vehicle)" (click)="startRide()" [disabled]="busy">
+            <ion-icon name="play-outline"></ion-icon>
+            <span>Start Ride</span>
+          </button>
+          <button class="dc-cta dc-cta--success dc-press btn-complete" *ngIf="canComplete(vehicle)" (click)="completeRide()" [disabled]="busy">
+            <ion-icon name="checkmark-done-circle-outline"></ion-icon>
+            <span>Complete Ride</span>
+          </button>
+        </div>
+
+        <!-- Completion Checklist -->
+        <div class="completion-box" *ngIf="passengers.length">
+          <div class="completion-box__head">
+            <span class="completion-title">Trip Checklist</span>
+            <span class="completion-badge" [class.is-ready]="canComplete(vehicle)">
+              {{ canComplete(vehicle) ? 'Ready to complete' : 'Action needed' }}
+            </span>
+          </div>
+          <div class="completion-box__items">
+            <span class="checklist-pill" *ngFor="let item of completionChecklist" [class.is-block]="item.tone === 'block'">
+              <ion-icon [name]="item.tone === 'block' ? 'alert-circle-outline' : 'checkmark-circle-outline'"></ion-icon>
+              {{ item.count }} {{ item.label }}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Route Navigation Map Banner -->
+      <section class="pg-card map-banner-card" *ngIf="stops.length">
+        <button type="button" class="map-banner-btn dc-press" (click)="openRouteMap()">
+          <div class="map-banner-btn__icon"><ion-icon name="navigate-circle-outline"></ion-icon></div>
+          <div class="map-banner-btn__text">
+            <strong>Open Live Route Map</strong>
+            <small>{{ nextStopGuide ? ('Next Stop: ' + nextStopGuide.name) : vehicleRouteLine(vehicle) }}</small>
+          </div>
+          <ion-icon name="chevron-forward-outline" class="map-banner-btn__chev"></ion-icon>
+        </button>
+      </section>
+
+      <!-- Stop-By-Stop Progress Timeline -->
+      <section class="pg-card stops-card" *ngIf="stopGuide.length">
+        <div class="pg-card__head">
+          <div class="pg-card__icon"><ion-icon name="git-commit-outline"></ion-icon></div>
+          <div>
+            <h3 class="pg-card__title">Route Timeline</h3>
+            <p class="pg-card__subtitle">{{ nextStopGuide ? ('Heading to: ' + nextStopGuide.name) : 'All stops completed' }}</p>
+          </div>
+        </div>
+
+        <div class="timeline-list">
+          <div 
+            class="timeline-item" 
+            *ngFor="let stop of stopGuide" 
+            [class.is-next]="stop.status === 'next'" 
+            [class.is-done]="stop.status === 'done'"
+          >
+            <div class="timeline-node">
+              <span class="node-circle">
+                <ion-icon *ngIf="stop.status === 'done'" name="checkmark-outline"></ion-icon>
+                <span *ngIf="stop.status !== 'done'">{{ stop.seq }}</span>
+              </span>
+              <span class="node-bar"></span>
             </div>
-            <ion-badge [color]="passengerStatusColor(passenger)">{{ passengerStatusLabel(passenger) }}</ion-badge>
+            <div class="timeline-content">
+              <strong class="stop-title-text">{{ stop.name }}</strong>
+              <small class="stop-status-chip">{{ stopStatusLabel(stop) }}</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Passenger Manifest Section -->
+      <section class="manifest-container">
+        <div class="manifest-header">
+          <div class="manifest-header__title">
+            <ion-icon name="people-outline"></ion-icon>
+            <h2>Passenger Manifest</h2>
+          </div>
+          <span class="manifest-count-pill">{{ activeManifestPassengers.length }} Active</span>
+        </div>
+
+        <!-- Empty Manifest -->
+        <div class="pg-card empty-manifest" *ngIf="!activeManifestPassengers.length && !loading">
+          <ion-icon name="person-outline"></ion-icon>
+          <h3>No Active Passengers</h3>
+          <p>Booked passengers will appear here automatically when they reserve seats.</p>
+        </div>
+
+        <!-- Grouped Passenger Cards -->
+        <ng-container *ngFor="let group of groupedPassengers">
+          <div class="group-stop-header">
+            <span class="group-stop-name">{{ group.stop }}</span>
+            <div class="group-stop-badges">
+              <span class="sub-pill waiting-pill" *ngIf="group.waiting > 0">{{ group.waiting }} Waiting</span>
+              <span class="sub-pill boarded-pill" *ngIf="group.boarded > 0">{{ group.boarded }} Onboard</span>
+            </div>
           </div>
 
-          <div class="trip-line">
-            <span>{{ passenger.board }}</span>
-            <ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon>
-            <span>{{ passenger.drop }}</span>
-          </div>
+          <article class="passenger-card" *ngFor="let passenger of group.passengers">
+            <div class="passenger-card__top">
+              <div class="passenger-avatar"><ion-icon name="person"></ion-icon></div>
+              <div class="passenger-meta">
+                <strong class="passenger-name">{{ passenger.customer_name || 'Passenger' }}</strong>
+                <a class="passenger-phone" [href]="'tel:' + passenger.customer_phone" *ngIf="passenger.customer_phone">
+                  <ion-icon name="call-outline"></ion-icon> {{ passenger.customer_phone }}
+                </a>
+              </div>
+              <span class="passenger-status-badge" [class.is-boarded]="passenger.status === 'BOARDED'" [class.is-booked]="passenger.status === 'BOOKED'">
+                {{ passengerStatusLabel(passenger) }}
+              </span>
+            </div>
 
-          <div class="meta-line">
-            <span *ngIf="passenger.seat_labels?.length">
-              Seat{{ (passenger.seat_labels?.length || 0) > 1 ? 's' : '' }} {{ passenger.seat_labels?.join(', ') }}
-            </span>
-            <span *ngIf="!passenger.seat_labels?.length">
-              {{ passenger.seats }} seat{{ passenger.seats > 1 ? 's' : '' }}
-            </span>
-            <span>{{ passenger.payment_status || 'payment' }}</span>
-            <span *ngIf="passenger.fare_amount != null">INR {{ passenger.fare_amount }}</span>
-          </div>
+            <div class="trip-route-row">
+              <div class="route-stop-point">
+                <span class="dot-green"></span>
+                <span>{{ passenger.board }}</span>
+              </div>
+              <ion-icon name="arrow-forward-outline" class="route-arrow"></ion-icon>
+              <div class="route-stop-point">
+                <span class="dot-red"></span>
+                <span>{{ passenger.drop }}</span>
+              </div>
+            </div>
 
-          <div class="passenger-actions passenger-actions--triple">
-            <button
-              *ngIf="canBoardPassenger(passenger) || boardCooldown(passenger) > 0"
-              class="dc-cta passenger-action passenger-action--board dc-press"
-              [class.passenger-action--cooldown]="boardCooldown(passenger) > 0"
-              (click)="board(passenger)"
-              [disabled]="busy || otpSending || !boardReady(passenger) || boardCooldown(passenger) > 0"
-            >
-              <ion-icon [name]="boardCooldown(passenger) > 0 ? 'time-outline' : 'log-in-outline'"></ion-icon>
-              <span *ngIf="boardCooldown(passenger) <= 0">Board</span>
-              <span *ngIf="boardCooldown(passenger) > 0">Board in {{ boardCooldown(passenger) }}s</span>
-            </button>
-            <button class="dc-cta dc-cta--ghost passenger-action passenger-action--drop dc-press" *ngIf="canDropPassenger(passenger)" (click)="drop(passenger)" [disabled]="busy">
-              <ion-icon name="log-out-outline"></ion-icon>
-              <span>Drop off</span>
-            </button>
-            <button
-              *ngIf="noShowVisible(passenger)"
-              class="dc-cta dc-cta--danger passenger-action passenger-action--noshow dc-press"
-              [class.passenger-action--cooldown]="noShowCountdown(passenger) > 0"
-              (click)="noShow(passenger)"
-              [disabled]="busy || noShowCountdown(passenger) > 0"
-            >
-              <ion-icon [name]="noShowCountdown(passenger) > 0 ? 'time-outline' : 'person-remove-outline'"></ion-icon>
-              <span *ngIf="noShowCountdown(passenger) <= 0">No-show</span>
-              <span *ngIf="noShowCountdown(passenger) > 0">No-show in {{ noShowCountdownLabel(passenger) }}</span>
-            </button>
-          </div>
-          <p class="action-hint">{{ passengerActionHint(passenger) }}</p>
-        </article>
-      </ng-container>
-    </section>
-  </main>
+            <div class="passenger-tags">
+              <span class="tag-chip seat-tag" *ngIf="passenger.seat_labels?.length">
+                <ion-icon name="car-outline"></ion-icon> Seat{{ (passenger.seat_labels?.length || 0) > 1 ? 's' : '' }}: {{ passenger.seat_labels?.join(', ') }}
+              </span>
+              <span class="tag-chip seat-tag" *ngIf="!passenger.seat_labels?.length">
+                <ion-icon name="person-outline"></ion-icon> {{ passenger.seats }} Seat{{ passenger.seats > 1 ? 's' : '' }}
+              </span>
+              <span class="tag-chip fare-tag" *ngIf="passenger.fare_amount != null">
+                ₹{{ passenger.fare_amount }} · {{ passenger.payment_status || 'Paid' }}
+              </span>
+            </div>
 
-  <!-- ============ Boarding code sheet (half screen, slides up) ============ -->
+            <!-- Action Buttons: Board / Drop / No-show -->
+            <div class="passenger-action-btns">
+              <button
+                *ngIf="canBoardPassenger(passenger) || boardCooldown(passenger) > 0"
+                class="dc-cta dc-cta--primary btn-board dc-press"
+                [class.btn-cooldown]="boardCooldown(passenger) > 0"
+                (click)="board(passenger)"
+                [disabled]="busy || otpSending || !boardReady(passenger) || boardCooldown(passenger) > 0"
+              >
+                <ion-icon [name]="boardCooldown(passenger) > 0 ? 'time-outline' : 'keypad-outline'"></ion-icon>
+                <span *ngIf="boardCooldown(passenger) <= 0">Verify &amp; Board</span>
+                <span *ngIf="boardCooldown(passenger) > 0">Board in {{ boardCooldown(passenger) }}s</span>
+              </button>
+
+              <button 
+                class="dc-cta dc-cta--ghost btn-drop dc-press" 
+                *ngIf="canDropPassenger(passenger)" 
+                (click)="drop(passenger)" 
+                [disabled]="busy"
+              >
+                <ion-icon name="log-out-outline"></ion-icon>
+                <span>Drop Off</span>
+              </button>
+
+              <button
+                *ngIf="noShowVisible(passenger)"
+                class="dc-cta dc-cta--danger btn-noshow dc-press"
+                [class.btn-cooldown]="noShowCountdown(passenger) > 0"
+                (click)="noShow(passenger)"
+                [disabled]="busy || noShowCountdown(passenger) > 0"
+              >
+                <ion-icon [name]="noShowCountdown(passenger) > 0 ? 'time-outline' : 'person-remove-outline'"></ion-icon>
+                <span *ngIf="noShowCountdown(passenger) <= 0">No-Show</span>
+                <span *ngIf="noShowCountdown(passenger) > 0">No-show in {{ noShowCountdownLabel(passenger) }}</span>
+              </button>
+            </div>
+
+            <p class="passenger-hint-text" *ngIf="passengerActionHint(passenger)">
+              <ion-icon name="information-circle-outline"></ion-icon> {{ passengerActionHint(passenger) }}
+            </p>
+          </article>
+        </ng-container>
+      </section>
+
+    </ng-container>
+  </div>
+
+  <!-- ==================== BOARDING OTP BOTTOM SHEET MODAL ==================== -->
   <div class="otp-overlay" *ngIf="otpPassenger">
     <div class="otp-sheet">
-      <button type="button" class="otp-close" (click)="closeBoardingOtp()" aria-label="Cancel">
+      <button type="button" class="otp-close dc-press" (click)="closeBoardingOtp()" aria-label="Cancel">
         <ion-icon name="close-outline"></ion-icon>
       </button>
 
-      <div class="otp-head">
-        <span class="otp-head__icon"><ion-icon name="keypad-outline"></ion-icon></span>
-        <h2>Board {{ otpPassenger.customer_name || 'passenger' }}</h2>
-        <p>{{ otpPassenger.seats }} seat{{ otpPassenger.seats > 1 ? 's' : '' }} · {{ otpPassenger.board || 'Boarding point' }}</p>
+      <div class="otp-sheet__hero">
+        <div class="otp-sheet__icon"><ion-icon name="keypad-outline"></ion-icon></div>
+        <h2 class="otp-sheet__title">Verify Boarding OTP</h2>
+        <p class="otp-sheet__passenger">{{ otpPassenger.customer_name || 'Passenger' }} · {{ otpPassenger.seats }} Seat{{ otpPassenger.seats > 1 ? 's' : '' }}</p>
       </div>
 
-      <p class="otp-hint">
-        The passenger just received a boarding code.
-        Ask them for it and type it below.
+      <p class="otp-instruction">
+        Ask the passenger for the 4-digit code sent to their mobile phone.
       </p>
 
-      <label class="otp-input-wrap" [class.otp-input-wrap--error]="!!otpError" [class.otp-input-wrap--locked]="otpLockedFor > 0">
-        <span class="otp-box" *ngFor="let i of [0, 1, 2, 3]" [class.otp-box--filled]="!!otpDigit(i)">{{ otpDigit(i) }}</span>
+      <!-- 4-Box Pin Display -->
+      <label class="otp-boxes-wrap" [class.has-error]="!!otpError" [class.is-locked]="otpLockedFor > 0">
+        <span class="digit-box" *ngFor="let i of [0, 1, 2, 3]" [class.is-filled]="!!otpDigit(i)">
+          {{ otpDigit(i) }}
+        </span>
         <input
-          class="otp-real-input"
+          class="otp-hidden-input"
           type="tel"
           inputmode="numeric"
           autocomplete="one-time-code"
           maxlength="4"
+          autofocus
           [disabled]="otpVerifying || otpLockedFor > 0"
           [ngModel]="otpCode"
           (ngModelChange)="onOtpInput($event)"
         />
       </label>
 
-      <p class="otp-error" *ngIf="otpError">
+      <!-- Errors & Lock -->
+      <div class="otp-msg-box otp-msg-box--error" *ngIf="otpError">
         <ion-icon name="alert-circle-outline"></ion-icon>
         <span>{{ otpError }}</span>
-      </p>
-      <p class="otp-locked" *ngIf="otpLockedFor > 0">
-        Locked for {{ otpLockedFor }}s — or mark the passenger no-show.
-      </p>
-      <p class="otp-dev" *ngIf="otpDevCode">DEV code (SMS mock mode): {{ otpDevCode }}</p>
+      </div>
 
+      <div class="otp-msg-box otp-msg-box--locked" *ngIf="otpLockedFor > 0">
+        <ion-icon name="lock-closed-outline"></ion-icon>
+        <span>Locked for {{ otpLockedFor }}s — or mark passenger as no-show.</span>
+      </div>
+
+      <div class="otp-dev-hint" *ngIf="otpDevCode">
+        <span>DEV SMS Mock: <strong>{{ otpDevCode }}</strong></span>
+      </div>
+
+      <!-- Modal Action Buttons -->
       <button
         type="button"
-        class="dc-cta otp-confirm dc-press"
+        class="dc-cta dc-cta--primary dc-press otp-submit-btn"
         (click)="confirmBoardingOtp()"
         [disabled]="otpCode.length !== 4 || otpVerifying || otpLockedFor > 0"
       >
         <ion-spinner *ngIf="otpVerifying" name="crescent"></ion-spinner>
-        <span *ngIf="!otpVerifying">Confirm boarding</span>
+        <span *ngIf="!otpVerifying">Confirm &amp; Board Passenger</span>
       </button>
 
       <button
         type="button"
-        class="otp-resend"
+        class="otp-resend-btn dc-press"
         (click)="resendBoardingOtp()"
         [disabled]="otpResendIn > 0 || otpLockedFor > 0 || otpSending"
       >
         <ion-icon name="refresh-outline"></ion-icon>
-        <span *ngIf="otpResendIn > 0">Resend in {{ otpResendIn }}s</span>
-        <span *ngIf="otpResendIn <= 0">Resend code</span>
+        <span *ngIf="otpResendIn > 0">Resend code in {{ otpResendIn }}s</span>
+        <span *ngIf="otpResendIn <= 0">Resend Boarding Code</span>
       </button>
     </div>
   </div>

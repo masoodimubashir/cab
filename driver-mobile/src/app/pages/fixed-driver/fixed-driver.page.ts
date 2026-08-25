@@ -209,8 +209,12 @@ export class FixedDriverPage {
     this.api.get<{ data: FixedRoute[] }>('/fixed/driver/routes').subscribe({
       next: (res) => {
         this.routes = res.data ?? [];
-        if (!this.selectedRouteId && this.routes.length) this.selectedRouteId = this.routes[0].id;
-        this.syncCapacity();
+        if (this.selectedRouteId && !this.routes.some(r => r.id === this.selectedRouteId)) {
+          this.selectedRouteId = null;
+        }
+        if (this.selectedRouteId) {
+          this.syncCapacity();
+        }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed routes.',
       complete: done,
@@ -232,6 +236,17 @@ export class FixedDriverPage {
       error: (err) => this.error = err?.error?.message || 'Could not load fixed vehicles.',
       complete: done,
     });
+  }
+
+  selectRoute(route: FixedRoute): void {
+    this.selectedRouteId = route.id;
+    this.syncCapacity();
+  }
+
+  clearSelectedRoute(): void {
+    this.selectedRouteId = null;
+    this.layouts = [];
+    this.selectedLayoutId = null;
   }
 
   /**
