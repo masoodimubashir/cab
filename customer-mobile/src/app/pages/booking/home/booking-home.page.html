@@ -19,24 +19,61 @@
     </div>
   </div>
 
+  <!-- ── Fullscreen Enable Location Required Modal ── -->
+  <div class="loc-perm-overlay" *ngIf="locationPermissionNeeded && !locationFetching" aria-live="polite">
+    <div class="loc-perm-card dc-anim-pop">
+      <div class="loc-perm-icon-wrap">
+        <div class="loc-perm-icon-glow"></div>
+        <ion-icon name="location-outline" class="loc-perm-icon"></ion-icon>
+        <div class="loc-perm-badge">!</div>
+      </div>
+
+      <h2 class="loc-perm-title">Please Enable Your Location</h2>
+      <p class="loc-perm-desc">
+        DreamCabs needs your precise location to show cabs, fares, and active routes in your area.
+      </p>
+
+      <div class="loc-perm-action-wrap">
+        <button class="loc-perm-btn dc-press" type="button" (click)="requestLocation()">
+          <ion-icon name="navigate-outline"></ion-icon>
+          <span>Enable Location / Try Again</span>
+        </button>
+      </div>
+
+      <div class="loc-perm-hint">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        <span>Make sure GPS / Device Location is turned ON in settings.</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Live Google Map fills the whole screen ── -->
   <div #mapEl class="bh-map" aria-label="Map"></div>
 
   <!-- Drawer button, top-left -->
-  <div class="bh-menu">
+  <div class="bh-menu" *ngIf="!locationPermissionNeeded">
     <ion-menu-button menu="customer-menu" aria-label="Open menu"></ion-menu-button>
   </div>
 
   <!-- ── Bottom sheet ── -->
-  <section class="bh-sheet" [class.bh-sheet--loading]="loading">
+  <section class="bh-sheet" *ngIf="!locationPermissionNeeded && city" [class.bh-sheet--loading]="loading">
+    <!-- Recenter / My Location Floating Button -->
+    <button
+      type="button"
+      class="bh-recenter-btn dc-press"
+      (click)="recenterMap()"
+      aria-label="Recenter to my location">
+      <ion-icon name="locate"></ion-icon>
+    </button>
+
     <span class="bh-grip" aria-hidden="true"></span>
 
     <h1 class="bk-title">Where are you going?</h1>
 
     <!-- City indicator -->
     <p class="bh-city" *ngIf="city">
-      <span class="bh-city__dot" [class.bh-city__dot--guess]="!located" aria-hidden="true"></span>
-      <span>{{ located ? 'Services in ' + city.name : 'Showing ' + city.name + ' — turn on location for your area' }}</span>
+      <span class="bh-city__dot" aria-hidden="true"></span>
+      <span>Services in {{ city.name }}</span>
     </p>
 
     <!-- Local / Outstation switch -->
@@ -83,3 +120,4 @@
   </section>
 
 </ion-content>
+
