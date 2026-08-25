@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { NavController, ViewWillEnter } from '@ionic/angular';
+import { AuthService } from '../../core/auth.service';
 
 @Component({
   selector: 'app-welcome',
@@ -7,11 +8,20 @@ import { Router } from '@angular/router';
   styleUrls: ['./welcome.page.scss'],
   standalone: false
 })
-export class WelcomePage implements OnInit {
+export class WelcomePage implements OnInit, ViewWillEnter {
 
-  constructor(private router: Router) { }
+  constructor(
+    private auth: AuthService,
+    private navCtrl: NavController,
+  ) { }
 
   ngOnInit() {
+  }
+
+  ionViewWillEnter(): void {
+    if (this.auth.isLoggedIn()) {
+      void this.navCtrl.navigateRoot('/customer-tabs/go', { animationDirection: 'forward' });
+    }
   }
 
   useFallbackImage(event: any) {
@@ -27,7 +37,7 @@ export class WelcomePage implements OnInit {
   }
 
   goToLogin() {
-    this.router.navigate(['/auth/login']);
+    void this.navCtrl.navigateForward('/auth/login');
   }
 
   goToTerms() {
@@ -38,3 +48,4 @@ export class WelcomePage implements OnInit {
     console.log('Navigate to Privacy');
   }
 }
+

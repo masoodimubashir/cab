@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
-import { AlertController } from '@ionic/angular';
+import { AlertController, NavController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { PushService } from '../../core/push.service';
@@ -17,6 +17,7 @@ export class MorePage {
     private api: ApiService,
     private router: Router,
     private alertCtrl: AlertController,
+    private navCtrl: NavController,
     private push: PushService,
   ) {}
 
@@ -70,7 +71,7 @@ export class MorePage {
 
   private finishSignOut(): void {
     this.auth.logout();
-    this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+    void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'back' });
   }
 
   async confirmDeleteAccount(): Promise<void> {

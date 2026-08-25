@@ -1,6 +1,6 @@
 import { Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
-import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
+import { ViewWillEnter, ViewDidEnter, ViewWillLeave, NavController } from '@ionic/angular';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
@@ -173,6 +173,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private api: ApiService,
     private auth: AuthService,
     private router: Router,
+    private navCtrl: NavController,
     private phoneAuth: PhoneAuthService,
     private push: PushService,
     private places: PlacesService,
@@ -181,7 +182,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
 
   ionViewWillEnter(): void {
     if (this.auth.isLoggedIn()) {
-      this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
+      void this.navCtrl.navigateRoot(this.homeRouteForCurrentUser(), { animationDirection: 'forward' });
     }
   }
 
@@ -486,7 +487,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     } else if (this.step === 'info') {
       void this.submitInfo();
     } else if (this.step === 'success') {
-      void this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
+      void this.navCtrl.navigateRoot(this.homeRouteForCurrentUser(), { animationDirection: 'forward' });
     }
   }
 
@@ -654,7 +655,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         // taps the address field, the SDK is usually already in memory.
         void this.places.ensureLoaded().catch(() => {});
       } else {
-        this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
+        void this.navCtrl.navigateRoot(this.homeRouteForCurrentUser(), { animationDirection: 'forward' });
       }
     } catch (e) {
       this.error = mapFirebaseAuthError(e) || 'Invalid code. Try again or request a new OTP.';

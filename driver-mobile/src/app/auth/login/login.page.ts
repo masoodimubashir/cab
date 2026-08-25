@@ -1,6 +1,6 @@
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
-import { ViewWillEnter, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
+import { ViewWillEnter, ViewDidEnter, ViewWillLeave, NavController } from '@ionic/angular';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { Geolocation } from '@capacitor/geolocation';
 import { Contacts } from '@capacitor-community/contacts';
@@ -133,13 +133,14 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private auth: AuthService,
     private draft: DriverOnboardingDraftService,
     private router: Router,
+    private navCtrl: NavController,
     private phoneAuth: PhoneAuthService,
     private push: PushService,
   ) {}
 
   ionViewWillEnter(): void {
     if (this.auth.isLoggedIn()) {
-      this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
+      void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'forward' });
     }
   }
 
@@ -437,7 +438,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     const needsProfile = this.isSyntheticEmail(user.email) || !user.name || user.name === 'User';
     if (needsProfile) {
       ApprovedDriverGuard.setStateRegistering();
-      this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
+      void this.navCtrl.navigateRoot('/profile?next=registration', { animationDirection: 'forward' });
       return;
     }
 
@@ -450,18 +451,18 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         const hasDocs = (res.documents ?? []).length > 0;
         if (status === 'approved') {
           ApprovedDriverGuard.setStateApproved();
-          this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
+          void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'forward' });
         } else if (hasDocs) {
           ApprovedDriverGuard.setStatePending();
-          this.router.navigateByUrl('/driver-pending-review', { replaceUrl: true });
+          void this.navCtrl.navigateRoot('/driver-pending-review', { animationDirection: 'forward' });
         } else {
           ApprovedDriverGuard.setStateRegistering();
-          this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
+          void this.navCtrl.navigateRoot('/profile?next=registration', { animationDirection: 'forward' });
         }
       },
       error: () => {
         ApprovedDriverGuard.setStateRegistering();
-        this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
+        void this.navCtrl.navigateRoot('/profile?next=registration', { animationDirection: 'forward' });
       },
     });
   }

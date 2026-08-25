@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { NavController } from '@ionic/angular';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
@@ -21,7 +21,7 @@ export class SplashPage implements OnInit {
   constructor(
     private auth: AuthService,
     private api: ApiService,
-    private router: Router,
+    private navCtrl: NavController,
     private bgLocation: BackgroundLocationService,
     private draft: DriverOnboardingDraftService,
   ) {}
@@ -42,13 +42,13 @@ export class SplashPage implements OnInit {
    */
   private route(): void {
     if (!this.auth.isLoggedIn()) {
-      void this.router.navigateByUrl('/welcome', { replaceUrl: true });
+      void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'forward' });
       return;
     }
 
     const roles = this.auth.getUser()?.roles ?? [];
     if (!roles.includes('driver')) {
-      void this.router.navigateByUrl('/profile?next=registration', { replaceUrl: true });
+      void this.navCtrl.navigateRoot('/profile?next=registration', { animationDirection: 'forward' });
       return;
     }
 
@@ -57,18 +57,18 @@ export class SplashPage implements OnInit {
         const trip = res?.trip;
         if (trip) {
           if (trip.route_departure_id != null) {
-            void this.router.navigateByUrl('/tabs/fixed', { replaceUrl: true });
+            void this.navCtrl.navigateRoot('/tabs/fixed', { animationDirection: 'forward' });
           } else {
             void this.bgLocation.start(trip.id);
-            void this.router.navigateByUrl('/tabs/rides', { replaceUrl: true });
+            void this.navCtrl.navigateRoot('/tabs/rides', { animationDirection: 'forward' });
           }
         } else {
-          void this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
+          void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'forward' });
         }
       },
       error: () => {
         // Endpoint may be unreachable on cold start; fall back to the dashboard.
-        void this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
+        void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'forward' });
       },
     });
   }

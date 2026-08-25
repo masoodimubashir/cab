@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { NavController } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
 
 @Component({
@@ -11,7 +11,7 @@ import { AuthService } from '../../core/auth.service';
 export class SplashPage implements OnInit {
   constructor(
     private auth: AuthService,
-    private router: Router
+    private navCtrl: NavController
   ) {}
 
   private homeRouteForCurrentUser(): string {
@@ -23,10 +23,11 @@ export class SplashPage implements OnInit {
     // and then route the session securely.
     setTimeout(() => {
       if (this.auth.isLoggedIn()) {
-        void this.router.navigateByUrl(this.homeRouteForCurrentUser(), { replaceUrl: true });
+        void this.navCtrl.navigateRoot(this.homeRouteForCurrentUser(), { animationDirection: 'forward' });
       } else {
-        void this.router.navigateByUrl('/welcome', { replaceUrl: true });
+        void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'forward' });
       }
     }, 2500);
   }
 }
+
