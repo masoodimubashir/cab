@@ -45,14 +45,19 @@ export class ApprovedDriverGuard implements CanActivate {
     }
 
     return this.api
-      .get<{ driver: { approval_status?: string } | null; documents: { status: string }[] }>('/drivers/me')
+      .get<{ driver: { approval_status?: string; city_id?: number; vehicle_type_id?: number } | null; documents: { status: string }[] }>('/drivers/me')
       .pipe(
         map((res) => {
-          const status = res.driver?.approval_status ?? null;
+          const driver = res.driver;
+          const status = driver?.approval_status ?? null;
+          const hasRegistered = !!driver && (!!driver.city_id || !!driver.vehicle_type_id);
           const hasDocs = (res.documents ?? []).length > 0;
           let state: DriverState = 'registering';
-          if (status === 'approved') state = 'approved';
-          else if (hasDocs) state = 'pending';
+          if (status === 'approved') {
+            state = 'approved';
+          } else if (hasRegistered || hasDocs) {
+            state = 'pending';
+          }
           this.writeCache(state);
           return this.toDecision(state);
         }),

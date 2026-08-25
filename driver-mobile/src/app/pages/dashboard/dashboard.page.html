@@ -138,9 +138,9 @@
             </div>
 
             <button class="dc-cta sheet__go dc-press" *ngIf="!isWalletBelowLimit" (click)="goOnline()" [disabled]="toggling || !canGoOnline">
-              <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
-              <ion-icon name="power" *ngIf="!toggling"></ion-icon>
-              <span>{{ toggling ? 'Going online…' : 'Go Online' }}</span>
+              <ion-spinner name="crescent" *ngIf="isGoingOnline"></ion-spinner>
+              <ion-icon name="power" *ngIf="!isGoingOnline"></ion-icon>
+              <span>{{ isGoingOnline ? 'Going online…' : 'Go Online' }}</span>
             </button>
 
             <button class="dc-cta sheet__go dc-press sheet__go--recharge" *ngIf="isWalletBelowLimit" (click)="openWalletTopup()">
@@ -170,12 +170,12 @@
 
           <div class="drive-mode drive-mode--selected drive-mode--fixed" *ngIf="driveMode === 'fixed'">
             <div class="drive-mode__copy">
-              <strong>Fixed boarding</strong>
+              <strong>Fixed Route Rides</strong>
               <span>{{ activeFixedVehicleOpen ? 'Continue managing your open vehicle.' : 'Choose the route you will provide service on.' }}</span>
             </div>
             <button type="button" class="fixed-open-btn dc-press" (click)="chooseFixedRouteForBoarding()" [disabled]="toggling">
               <ion-icon [name]="activeFixedVehicleOpen ? 'arrow-forward-circle-outline' : 'add-circle-outline'"></ion-icon>
-              <span>{{ activeFixedVehicleOpen ? 'Go to boarding' : 'Start boarding' }}</span>
+              <span>{{ activeFixedVehicleOpen ? 'Go to active ride' : 'Start taking rides' }}</span>
             </button>
           </div>
 
@@ -194,9 +194,9 @@
           </div>
 
           <button class="dc-cta dc-cta--ghost sheet__stop dc-press" (click)="confirmGoOffline()" [disabled]="toggling">
-            <ion-spinner name="crescent" *ngIf="toggling"></ion-spinner>
-            <ion-icon name="stop-circle-outline" *ngIf="!toggling"></ion-icon>
-            <span>{{ toggling ? 'Going offline…' : 'Go Offline' }}</span>
+            <ion-spinner name="crescent" *ngIf="isGoingOffline"></ion-spinner>
+            <ion-icon name="stop-circle-outline" *ngIf="!isGoingOffline"></ion-icon>
+            <span>{{ isGoingOffline ? 'Going offline…' : 'Go Offline' }}</span>
           </button>
         </ng-container>
       </ng-container>
@@ -323,8 +323,8 @@
         <ng-template #noRoutePickerRoutes>
           <div class="route-empty">
             <ion-icon name="git-branch-outline"></ion-icon>
-            <strong>No routes</strong>
-            <span>No {{ scopeLabel().toLowerCase() }} fixed routes are available right now.</span>
+            <strong>No Routes Assigned</strong>
+            <span>You are not assigned to any routes yet.</span>
           </div>
         </ng-template>
       </ion-content>

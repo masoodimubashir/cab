@@ -1,6 +1,18 @@
 import { Component, OnInit, ViewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { IonRouterOutlet, NavController, Platform, ToastController } from '@ionic/angular';
+import { NavigationEnd, Router } from '@angular/router';
+import {
+  ActionSheetController,
+  AlertController,
+  IonRouterOutlet,
+  MenuController,
+  ModalController,
+  NavController,
+  Platform,
+  PopoverController,
+  ToastController,
+} from '@ionic/angular';
+import { Location } from '@angular/common';
+import { filter } from 'rxjs/operators';
 import { App as CapacitorApp } from '@capacitor/app';
 import { AuthService } from './core/auth.service';
 import { PushService } from './core/push.service';
@@ -16,76 +28,132 @@ export class AppComponent implements OnInit {
 
   private lastBackPress = 0;
   private backToast: HTMLIonToastElement | null = null;
+  private routeHistory: string[] = [];
 
-  // Startup routing (session check + active-trip resume) lives in the splash
-  // page, which is the app's root route — see pages/splash/splash.page.ts.
   constructor(
     private auth: AuthService,
     private push: PushService,
     private platform: Platform,
     private router: Router,
     private navCtrl: NavController,
+    private location: Location,
     private toastCtrl: ToastController,
+    private modalCtrl: ModalController,
+    private alertCtrl: AlertController,
+    private actionSheetCtrl: ActionSheetController,
+    private popoverCtrl: PopoverController,
+    private menuCtrl: MenuController,
   ) {}
 
   ngOnInit(): void {
-    // Re-register the FCM device token on every app open (not just at login),
-    // so an already-signed-in phone keeps a valid delivery address in the
-    // backend — and self-heals if the token was never saved or later rotated.
-    // registerForUser() guards its own permission/token/errors, so this is a
-    // safe no-op when notifications are denied or Firebase isn't available.
     if (this.auth.isLoggedIn()) {
       void this.push.registerForUser();
     }
 
+    this.trackNavigationHistory();
     this.setupBackButton();
+  }
+
+  private trackNavigationHistory(): void {
+    this.router.events
+      .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+      .subscribe((event) => {
+        const url = event.urlAfterRedirects || event.url;
+        if (!url || url.includes('/splash')) return;
+
+        const cleanUrl = url.split('?')[0].split('#')[0];
+
+        // If navigating to Dashboard root, reset stack with dashboard as root
+        if (cleanUrl === '/tabs/dashboard' || cleanUrl === '/tabs') {
+          this.routeHistory = ['/tabs/dashboard'];
+          return;
+        }
+
+        const last = this.routeHistory[this.routeHistory.length - 1];
+        if (last === cleanUrl) return;
+
+        // Truncate or append
+        const existingIdx = this.routeHistory.indexOf(cleanUrl);
+        if (existingIdx !== -1) {
+          this.routeHistory = this.routeHistory.slice(0, existingIdx + 1);
+        } else {
+          this.routeHistory.push(cleanUrl);
+        }
+      });
   }
 
   private setupBackButton(): void {
     this.platform.backButton.subscribeWithPriority(10, async () => {
-      const url = this.router.url;
+      // 1. Close any open overlays first (Modal, Alert, ActionSheet, Popover, SideMenu)
+      const modal = await this.modalCtrl.getTop();
+      if (modal) {
+        await modal.dismiss();
+        return;
+      }
+      const alert = await this.alertCtrl.getTop();
+      if (alert) {
+        await alert.dismiss();
+        return;
+      }
+      const actionSheet = await this.actionSheetCtrl.getTop();
+      if (actionSheet) {
+        await actionSheet.dismiss();
+        return;
+      }
+      const popover = await this.popoverCtrl.getTop();
+      if (popover) {
+        await popover.dismiss();
+        return;
+      }
+      if (await this.menuCtrl.isOpen()) {
+        await this.menuCtrl.close();
+        return;
+      }
 
-      // Identify root landing routes where back should exit/minimize instead of popping
+      const currentUrl = (this.router.url || '').split('?')[0].split('#')[0];
+
+      // 2. Identify root landing routes where back should exit/minimize instead of popping
       const isDashboardRoot =
-        url === '/tabs/dashboard' ||
-        url === '/tabs' ||
-        url.startsWith('/tabs/dashboard?');
+        currentUrl === '/tabs/dashboard' ||
+        currentUrl === '/tabs';
 
       const isLockedOrGuestRoot =
-        url === '/driver-pending-review' ||
-        url === '/welcome' ||
-        url === '/auth/login' ||
-        url === '/intro' ||
-        url === '/splash' ||
-        url === '/';
+        currentUrl === '/driver-pending-review' ||
+        currentUrl === '/welcome' ||
+        currentUrl === '/auth/login' ||
+        currentUrl === '/intro' ||
+        currentUrl === '/splash' ||
+        currentUrl === '/' ||
+        currentUrl === '';
 
       if (isDashboardRoot || isLockedOrGuestRoot) {
         await this.handleExit();
         return;
       }
 
-      // If user is inside another top-level tab (like rides, earnings, wallet, history, more), return to dashboard
-      if (
-        url.startsWith('/tabs/rides') ||
-        url.startsWith('/tabs/earnings') ||
-        url.startsWith('/tabs/wallet') ||
-        url.startsWith('/tabs/history') ||
-        url.startsWith('/tabs/scheduled') ||
-        url.startsWith('/tabs/fixed') ||
-        url.startsWith('/tabs/more')
-      ) {
-        void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'back' });
-        return;
+      // 3. Step back sequentially through navigation stack (D -> C -> B -> A)
+      if (this.routeHistory.length > 1) {
+        this.routeHistory.pop(); // Remove current
+        const prevUrl = this.routeHistory[this.routeHistory.length - 1];
+        if (prevUrl) {
+          void this.navCtrl.navigateBack(prevUrl, { animated: true });
+          return;
+        }
       }
 
-      // If outlet can navigate back to previous screen within a sub-flow
+      // 4. Fallback outlet or router history
       if (this.routerOutlet?.canGoBack()) {
         this.routerOutlet.pop();
         return;
       }
 
-      // Default fallback for any remaining screens
-      await this.handleExit();
+      // 5. Final fallback to Dashboard root
+      if (this.auth.isLoggedIn()) {
+        this.routeHistory = ['/tabs/dashboard'];
+        void this.navCtrl.navigateRoot('/tabs/dashboard', { animationDirection: 'back' });
+      } else {
+        await this.handleExit();
+      }
     });
   }
 

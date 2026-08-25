@@ -1,5 +1,6 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { Platform, ViewDidEnter, ViewWillLeave } from '@ionic/angular';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { forkJoin, of, Subscription } from 'rxjs';
@@ -137,6 +138,9 @@ export class ProfilePage implements OnInit, OnDestroy {
   error: string | null = null;
   message: string | null = null;
   onboarding = false;
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private backSub?: Subscription;
 
   constructor(
     private api: ApiService,
@@ -146,7 +150,73 @@ export class ProfilePage implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private geo: GeolocationService,
     private places: PlacesService,
+    private platform: Platform,
   ) {}
+
+  get onboardingTitle(): string {
+    if (this.onboardingStep === 'profile') return 'Personal Profile';
+    if (this.onboardingStep === 'vehicle') return 'Vehicle & Service';
+    return 'Verification Documents';
+  }
+
+  get onboardingSubtitle(): string {
+    if (this.onboardingStep === 'profile') return 'Step 1 of 3: Enter your personal details and address.';
+    if (this.onboardingStep === 'vehicle') return 'Step 2 of 3: Choose your operating city, service mode, and vehicle.';
+    return 'Step 3 of 3: Upload your required verification documents.';
+  }
+
+  goToOnboardingStep(step: 'profile' | 'vehicle' | 'documents'): void {
+    if (step === 'profile') {
+      this.backToProfileStep();
+    } else if (step === 'vehicle') {
+      if (this.onboardingStep === 'documents') {
+        this.backToVehicleStep();
+      } else {
+        this.submitProfile();
+      }
+    } else if (step === 'documents') {
+      if (this.onboardingStep === 'vehicle') {
+        this.submitRegistration();
+      }
+    }
+  }
+
+  onTouchStart(ev: TouchEvent): void {
+    if (!this.onboarding) return;
+    this.touchStartX = ev.touches[0].clientX;
+    this.touchStartY = ev.touches[0].clientY;
+  }
+
+  onTouchEnd(ev: TouchEvent): void {
+    if (!this.onboarding) return;
+    const diffX = ev.changedTouches[0].clientX - this.touchStartX;
+    const diffY = Math.abs(ev.changedTouches[0].clientY - this.touchStartY);
+
+    // Swipe right (from left to right) > 70px
+    if (diffX > 70 && diffY < 60) {
+      this.handleOnboardingBack();
+    }
+  }
+
+  handleOnboardingBack(): void {
+    if (this.onboardingStep === 'documents') {
+      this.backToVehicleStep();
+    } else if (this.onboardingStep === 'vehicle') {
+      this.backToProfileStep();
+    }
+  }
+
+  ionViewDidEnter(): void {
+    this.backSub = this.platform.backButton.subscribeWithPriority(99, () => {
+      if (this.onboarding && this.onboardingStep !== 'profile') {
+        this.handleOnboardingBack();
+      }
+    });
+  }
+
+  ionViewWillLeave(): void {
+    this.backSub?.unsubscribe();
+  }
 
   ngOnInit(): void {
     this.onboarding = window.location.search.includes('next=registration');
@@ -736,21 +806,24 @@ export class ProfilePage implements OnInit, OnDestroy {
       this.error = 'Please upload your required documents before continuing.';
       return;
     }
-    // No bank/UPI step — the operator pays drivers from their wallet balance, not
-    // a per-driver payout account. Straight to the dashboard once documents are in.
+    ApprovedDriverGuard.setStatePending();
     this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
   }
 
   /**
-   * True once every mandatory document (or, when none are flagged mandatory,
-   * every shown document) has all of its image slots uploaded. Gates the move
-   * to the bank step so a driver can't skip documents.
+   * True when:
+   * 1. No documents are configured in the system (docs.length === 0), OR
+   * 2. All configured documents are optional (no mandatory documents), OR
+   * 3. All mandatory documents have their required image slots uploaded and not rejected.
    */
   get requiredDocsSubmitted(): boolean {
     if (!this.docs.length) return true; // nothing to upload
-    const mandatory = this.docs.filter((s) => (s.doc.required || '').startsWith('mandatory'));
-    const gate = mandatory.length ? mandatory : this.docs;
-    return gate.every((s) => s.uploads.every((u) => !!u.existing && u.existing.status !== 'rejected'));
+    const mandatory = this.docs.filter((s) => {
+      const req = (s.doc.required || '').toString().toLowerCase();
+      return req.startsWith('mandatory') || req === 'required' || req === '1' || req === 'true';
+    });
+    if (!mandatory.length) return true; // All documents are optional
+    return mandatory.every((s) => s.uploads.every((u) => !!u.existing && u.existing.status !== 'rejected'));
   }
 
   /** A driver picked a file for one document image slot. */

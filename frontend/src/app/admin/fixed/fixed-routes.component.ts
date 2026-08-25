@@ -738,6 +738,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private snapSeqDest = 0;
   private geocodeSeq = 0;
   private autocomplete: google.maps.places.Autocomplete | null = null;
+  private originAutocomplete: google.maps.places.Autocomplete | null = null;
+  private destAutocomplete: google.maps.places.Autocomplete | null = null;
+  private searchMarker: google.maps.Marker | null = null;
+  private searchInfoWindow: google.maps.InfoWindow | null = null;
   private mapInitTries = 0;
   private pathLocked = false;
   roadPath: LatLng[] = [];
@@ -1428,18 +1432,149 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   private setupSearch(): void {
-    const input = document.querySelector('.rt-search input') as HTMLInputElement | null;
-    if (!input || !this.map) return;
-    const ac = new google.maps.places.Autocomplete(input, { fields: ['geometry'] });
-    this.autocomplete = ac;
-    ac.bindTo('bounds', this.map);
-    this.mapListeners.push(ac.addListener('place_changed', () => {
-      const place = ac.getPlace();
-      if (place.geometry?.location && this.map) {
+    if (!this.map || typeof google === 'undefined' || !google.maps?.places) return;
+
+    // 1. Top Map Search Box
+    const mapSearchInput = document.querySelector('.rt-search input') as HTMLInputElement | null;
+    if (mapSearchInput) {
+      const ac = new google.maps.places.Autocomplete(mapSearchInput, { fields: ['geometry', 'name', 'formatted_address'] });
+      this.autocomplete = ac;
+      ac.bindTo('bounds', this.map);
+      this.mapListeners.push(ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        if (!place.geometry?.location || !this.map) return;
+
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const placeName = place.name || place.formatted_address || 'Selected location';
+
         this.map.panTo(place.geometry.location);
-        this.map.setZoom(15);
-      }
-    }));
+        this.map.setZoom(16);
+
+        if (this.tool === 'origin') {
+          this.form.origin_name = placeName;
+          void this.setOrigin(lat, lng, false);
+          this.toast.success(`Start point set to "${placeName}"`);
+          this.clearSearchMarker();
+          return;
+        }
+
+        if (this.tool === 'dest') {
+          this.form.dest_name = placeName;
+          void this.setDest(lat, lng, false);
+          this.toast.success(`Destination set to "${placeName}"`);
+          this.clearSearchMarker();
+          return;
+        }
+
+        this.dropSearchMarker(lat, lng, placeName);
+      }));
+    }
+
+    // 2. Start Name Input in Drawer Form
+    const originEl = document.querySelector('.endpoint input[placeholder*="Start"]') as HTMLInputElement | null;
+    if (originEl) {
+      this.originAutocomplete = new google.maps.places.Autocomplete(originEl, { fields: ['geometry', 'name', 'formatted_address'] });
+      this.originAutocomplete.bindTo('bounds', this.map);
+      this.mapListeners.push(this.originAutocomplete.addListener('place_changed', () => {
+        const place = this.originAutocomplete?.getPlace();
+        if (place?.geometry?.location && this.map) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          const name = place.name || place.formatted_address || '';
+          this.form.origin_name = name;
+          this.map.panTo(place.geometry.location);
+          this.map.setZoom(16);
+          void this.setOrigin(lat, lng, false);
+          this.clearSearchMarker();
+          this.toast.success(`Start point placed at "${name}"`);
+        }
+      }));
+    }
+
+    // 3. Destination Name Input in Drawer Form
+    const destEl = document.querySelector('.endpoint input[placeholder*="Destination"]') as HTMLInputElement | null;
+    if (destEl) {
+      this.destAutocomplete = new google.maps.places.Autocomplete(destEl, { fields: ['geometry', 'name', 'formatted_address'] });
+      this.destAutocomplete.bindTo('bounds', this.map);
+      this.mapListeners.push(this.destAutocomplete.addListener('place_changed', () => {
+        const place = this.destAutocomplete?.getPlace();
+        if (place?.geometry?.location && this.map) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          const name = place.name || place.formatted_address || '';
+          this.form.dest_name = name;
+          this.map.panTo(place.geometry.location);
+          this.map.setZoom(16);
+          void this.setDest(lat, lng, false);
+          this.clearSearchMarker();
+          this.toast.success(`Destination placed at "${name}"`);
+        }
+      }));
+    }
+  }
+
+  private dropSearchMarker(lat: number, lng: number, title: string): void {
+    this.clearSearchMarker();
+    if (!this.map) return;
+
+    this.searchMarker = new google.maps.Marker({
+      position: { lat, lng },
+      map: this.map,
+      title,
+      animation: google.maps.Animation.DROP,
+      icon: {
+        path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+        scale: 6,
+        fillColor: '#2563eb',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+      },
+    });
+
+    const infoContent = document.createElement('div');
+    infoContent.style.padding = '6px 4px';
+    infoContent.style.fontFamily = 'inherit';
+    infoContent.innerHTML = `
+      <div style="font-weight:700;font-size:13px;color:#0f172a;margin-bottom:6px;max-width:200px;">${title}</div>
+      <div style="display:flex;gap:6px;">
+        <button id="search-set-origin-btn" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">Set as Start (A)</button>
+        <button id="search-set-dest-btn" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">Set as Dest (B)</button>
+      </div>
+    `;
+
+    infoContent.querySelector('#search-set-origin-btn')?.addEventListener('click', () => {
+      this.form.origin_name = title;
+      void this.setOrigin(lat, lng, false);
+      this.clearSearchMarker();
+      this.toast.success(`Start point set to "${title}"`);
+    });
+
+    infoContent.querySelector('#search-set-dest-btn')?.addEventListener('click', () => {
+      this.form.dest_name = title;
+      void this.setDest(lat, lng, false);
+      this.clearSearchMarker();
+      this.toast.success(`Destination set to "${title}"`);
+    });
+
+    this.searchInfoWindow = new google.maps.InfoWindow({ content: infoContent });
+    this.searchInfoWindow.open(this.map, this.searchMarker);
+
+    this.searchMarker.addListener('click', () => {
+      this.searchInfoWindow?.open(this.map, this.searchMarker);
+    });
+  }
+
+  private clearSearchMarker(): void {
+    if (this.searchMarker) {
+      this.searchMarker.setMap(null);
+      this.searchMarker = null;
+    }
+    if (this.searchInfoWindow) {
+      this.searchInfoWindow.close();
+      this.searchInfoWindow = null;
+    }
   }
 
   private drawBoundary(): void {
@@ -1944,6 +2079,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private teardownMap(): void {
     this.mapListeners.forEach((l) => l.remove()); this.mapListeners = [];
     (this.autocomplete as any)?.unbindAll?.(); this.autocomplete = null;
+    (this.originAutocomplete as any)?.unbindAll?.(); this.originAutocomplete = null;
+    (this.destAutocomplete as any)?.unbindAll?.(); this.destAutocomplete = null;
+    this.clearSearchMarker();
     this.originMarker?.setMap(null); this.originMarker = null;
     this.destMarker?.setMap(null); this.destMarker = null;
     this.pathLine?.setMap(null); this.pathLine = null;

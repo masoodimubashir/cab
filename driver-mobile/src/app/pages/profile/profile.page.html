@@ -1,7 +1,10 @@
 <ion-header class="ion-no-border">
   <ion-toolbar class="pg-toolbar">
-    <ion-buttons slot="start" *ngIf="!onboarding">
-      <ion-back-button defaultHref="/tabs/dashboard"></ion-back-button>
+    <ion-buttons slot="start">
+      <ion-back-button *ngIf="!onboarding" defaultHref="/tabs/dashboard"></ion-back-button>
+      <ion-button *ngIf="onboarding && onboardingStep !== 'profile'" (click)="handleOnboardingBack()" aria-label="Back">
+        <ion-icon name="arrow-back-outline" slot="icon-only"></ion-icon>
+      </ion-button>
     </ion-buttons>
     <ion-title class="pg-brandtitle">
       <span class="b-white">Dream</span><span class="b-green">Cabs</span>
@@ -14,15 +17,63 @@
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="pg-content">
+<ion-content class="pg-content" (touchstart)="onTouchStart($event)" (touchend)="onTouchEnd($event)">
   <!-- Hero Section -->
   <div class="pg-hero">
-    <h1 class="pg-title">{{ onboarding ? 'Set up your profile' : 'Driver Profile' }}</h1>
-    <p class="pg-subtitle">
-      {{ onboarding
-          ? 'Tell us who you are and save your personal details.'
-          : 'Manage your profile details, view vehicle configuration &amp; verification documents.' }}
-    </p>
+    <h1 class="pg-title">{{ onboarding ? onboardingTitle : 'Driver Profile' }}</h1>
+    <p class="pg-subtitle">{{ onboarding ? onboardingSubtitle : 'Manage your profile details, view vehicle configuration &amp; verification documents.' }}</p>
+  </div>
+
+  <!-- Onboarding 3-Step Stepper Progress Bar -->
+  <div class="stepper-container" *ngIf="onboarding">
+    <div class="stepper-bar">
+      <!-- Step 1: Profile -->
+      <button
+        type="button"
+        class="step-btn"
+        [class.is-active]="onboardingStep === 'profile'"
+        [class.is-done]="onboardingStep === 'vehicle' || onboardingStep === 'documents'"
+        (click)="goToOnboardingStep('profile')"
+      >
+        <div class="step-badge">
+          <ion-icon *ngIf="onboardingStep === 'vehicle' || onboardingStep === 'documents'" name="checkmark-outline"></ion-icon>
+          <span *ngIf="onboardingStep === 'profile'">1</span>
+        </div>
+        <span class="step-text">Profile</span>
+      </button>
+
+      <div class="step-connector" [class.is-done]="onboardingStep === 'vehicle' || onboardingStep === 'documents'"></div>
+
+      <!-- Step 2: Vehicle -->
+      <button
+        type="button"
+        class="step-btn"
+        [class.is-active]="onboardingStep === 'vehicle'"
+        [class.is-done]="onboardingStep === 'documents'"
+        (click)="goToOnboardingStep('vehicle')"
+      >
+        <div class="step-badge">
+          <ion-icon *ngIf="onboardingStep === 'documents'" name="checkmark-outline"></ion-icon>
+          <span *ngIf="onboardingStep !== 'documents'">2</span>
+        </div>
+        <span class="step-text">Vehicle</span>
+      </button>
+
+      <div class="step-connector" [class.is-done]="onboardingStep === 'documents'"></div>
+
+      <!-- Step 3: Documents -->
+      <button
+        type="button"
+        class="step-btn"
+        [class.is-active]="onboardingStep === 'documents'"
+        (click)="goToOnboardingStep('documents')"
+      >
+        <div class="step-badge">
+          <span>3</span>
+        </div>
+        <span class="step-text">Documents</span>
+      </button>
+    </div>
   </div>
 
   <!-- 3-Tab Segment Switcher -->
@@ -361,6 +412,18 @@
     <!-- ==================== TAB 3: VERIFICATION DOCUMENTS ==================== -->
     <ng-container *ngIf="(activeSegment === 'documents' && !onboarding) || (onboarding && onboardingStep === 'documents')">
       <div class="doc-list pg-anim-body">
+
+        <!-- Zero Documents State -->
+        <div class="pg-card pf-form" *ngIf="docs.length === 0" style="text-align: center; padding: 24px 16px;">
+          <div style="font-size: 40px; color: var(--ion-color-success); margin-bottom: 8px;">
+            <ion-icon name="checkmark-done-circle-outline"></ion-icon>
+          </div>
+          <h3 style="font-size: 18px; font-weight: 700; margin: 0 0 8px 0; color: #fff;">No Documents Required</h3>
+          <p style="color: var(--ion-color-medium); font-size: 14px; margin: 0 auto; line-height: 1.5; max-width: 320px;">
+            No verification documents are configured at this time. You can continue directly to your driver dashboard.
+          </p>
+        </div>
+
         <div class="pg-card doc-card" *ngFor="let slot of docs">
 
           <div class="doc-card__head">

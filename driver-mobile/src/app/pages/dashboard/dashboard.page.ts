@@ -81,6 +81,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   loading = false;
   toggling = false;
+  isGoingOnline = false;
+  isGoingOffline = false;
   error: string | null = null;
   driver: Record<string, unknown> | null = null;
 
@@ -454,7 +456,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       const res = await firstValueFrom(this.api.get<{ data: FixedRouteOption[] }>('/fixed/driver/routes'));
       const routes = res.data || [];
       if (!routes.length) {
-        this.error = 'No active ' + this.scopeLabel(scope).toLowerCase() + ' fixed routes are available right now.';
+        this.error = 'You are not assigned to any routes yet.';
         return;
       }
 
@@ -952,6 +954,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       return;
     }
     this.toggling = true;
+    this.isGoingOnline = true;
     this.error = null;
 
     try {
@@ -984,6 +987,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not go online';
     } finally {
       this.toggling = false;
+      this.isGoingOnline = false;
     }
   }
 
@@ -1007,6 +1011,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   async goOffline(): Promise<void> {
     if (this.toggling) return;
     this.toggling = true;
+    this.isGoingOffline = true;
     this.error = null;
 
     try {
@@ -1027,6 +1032,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       this.error = (e as Error).message;
     } finally {
       this.toggling = false;
+      this.isGoingOffline = false;
     }
   }
 
