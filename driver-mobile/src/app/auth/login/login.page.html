@@ -136,13 +136,18 @@
 
       <!-- STEP 3: OTP VERIFICATION -->
       <div class="step-slide" *ngIf="step === 'otp'">
-        <div class="otp-input-wrapper">
+        <div class="otp-input-wrapper" (click)="focusOtpInput()">
           <input
             type="tel"
             inputmode="numeric"
             pattern="[0-9]*"
+            name="one-time-code"
+            id="driver-otp-input"
             [attr.maxlength]="otpLength"
             [(ngModel)]="otp"
+            (input)="onOtpInput($event)"
+            (ngModelChange)="onOtpChange($event)"
+            (paste)="onOtpPaste($event)"
             [disabled]="loading"
             class="hidden-otp-input"
             autocomplete="one-time-code"

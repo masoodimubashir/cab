@@ -1,6 +1,7 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave, NavController } from '@ionic/angular';
+import { registerPlugin, Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { Geolocation } from '@capacitor/geolocation';
 import { Contacts } from '@capacitor-community/contacts';
@@ -17,6 +18,18 @@ import {
 } from '../../core/phone-auth.service';
 import { normalizePhoneToE164 } from '../../core/phone-normalize';
 import { environment } from '../../../environments/environment';
+
+export interface SmsConsentPlugin {
+  startListening(): Promise<{ started: boolean; code?: string }>;
+  stopListening(): Promise<void>;
+  addListener(
+    eventName: 'onSmsReceived',
+    listenerFunc: (data: { code: string; message: string }) => void,
+  ): Promise<any>;
+  removeAllListeners(): Promise<void>;
+}
+
+const SmsConsent = registerPlugin<SmsConsentPlugin>('SmsConsent');
 
 type AuthExchangeResponse = {
   token: string;
@@ -46,12 +59,14 @@ const RESEND_SECONDS = 60;
   standalone: false,
 })
 export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, OnDestroy {
+  @ViewChild('otpInput') otpInputEl?: ElementRef<HTMLInputElement>;
   step: Step = 'phone';
   phone = '';
   otp = '';
   otpLength = 6; // Dynamic OTP length matching backend/Firebase configuration
   otpInputFocused = false;
   phoneInputFocused = false;
+  private otpAbortController?: AbortController;
 
   countries: Array<{ name: string; code: string; flag: string; iso: string }> = [
     { name: 'Algeria',        code: '213', flag: '🇩🇿', iso: 'DZ' },
@@ -136,6 +151,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     private navCtrl: NavController,
     private phoneAuth: PhoneAuthService,
     private push: PushService,
+    private zone: NgZone,
   ) {}
 
   ionViewWillEnter(): void {
@@ -322,6 +338,9 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       await this.phoneAuth.sendOtp(normalized);
       this.step = 'otp';
       this.startResendTimer();
+      this.focusOtpInput();
+      this.listenForWebOtp();
+      this.listenForSmsConsent();
     } catch (e) {
       this.error = mapFirebaseAuthError(e);
       this.step = 'phone';
@@ -339,13 +358,124 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
         .toPromise();
       this.step = 'otp';
       this.startResendTimer();
+      this.focusOtpInput();
+      this.listenForWebOtp();
+      this.listenForSmsConsent();
       if (res?.dev_code) {
-        // Mock mode only — no real SMS was sent, so prefill the code for testing.
-        this.otp = res.dev_code;
+        // Mock mode only — prefill and auto-submit
+        this.onOtpChange(res.dev_code);
       }
     } catch (e: unknown) {
       this.error = (e as { error?: { message?: string } })?.error?.message || 'Could not send the code. Try again.';
       this.step = 'phone';
+    }
+  }
+
+  @HostListener('document:visibilitychange')
+  onVisibilityChange(): void {
+    if (document.visibilityState === 'visible' && this.step === 'otp') {
+      void this.checkClipboardForOtp();
+      this.focusOtpInput();
+    }
+  }
+
+  onOtpInput(event: any): void {
+    const val = event?.target?.value || '';
+    this.onOtpChange(val);
+  }
+
+  onOtpPaste(event: ClipboardEvent): void {
+    const pasted = event.clipboardData?.getData('text') || '';
+    if (pasted) {
+      event.preventDefault();
+      this.onOtpChange(pasted);
+    }
+  }
+
+  onOtpChange(val?: string): void {
+    const clean = (val || '').replace(/\D/g, '').slice(0, this.otpLength);
+    this.otp = clean;
+    if (this.otp.length === this.otpLength && !this.loading) {
+      setTimeout(() => {
+        if (this.otp.length === this.otpLength && !this.loading) {
+          void this.verifyOtp();
+        }
+      }, 150);
+    }
+  }
+
+  focusOtpInput(): void {
+    if (this.otpInputEl?.nativeElement) {
+      this.otpInputEl.nativeElement.focus();
+    }
+    setTimeout(() => {
+      this.otpInputEl?.nativeElement?.focus();
+    }, 150);
+  }
+
+  async checkClipboardForOtp(): Promise<void> {
+    if (this.step !== 'otp' || this.otp.length === this.otpLength || this.loading) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        const match = text.match(/\b\d{6}\b/);
+        if (match && match[0]) {
+          this.onOtpChange(match[0]);
+        }
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
+  private listenForWebOtp(): void {
+    if (typeof window !== 'undefined' && 'credentials' in navigator && (navigator.credentials as any)?.get) {
+      try {
+        this.otpAbortController?.abort();
+        const ac = new AbortController();
+        this.otpAbortController = ac;
+        (navigator.credentials as any)
+          .get({
+            otp: { transport: ['sms'] },
+            signal: ac.signal,
+          })
+          .then((otpCredential: any) => {
+            if (otpCredential?.code) {
+              this.onOtpChange(otpCredential.code);
+            }
+          })
+          .catch(() => {
+            // Ignored: aborted or unsupported
+          });
+      } catch {
+        // Ignored
+      }
+    }
+  }
+
+  private listenForSmsConsent(): void {
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      try {
+        void SmsConsent.removeAllListeners();
+        void SmsConsent.addListener('onSmsReceived', (data: { code?: string; message?: string }) => {
+          const code = data?.code;
+          if (code) {
+            this.zone.run(() => {
+              this.onOtpChange(code);
+            });
+          }
+        });
+        void SmsConsent.startListening().then((res: { started?: boolean; code?: string }) => {
+          const code = res?.code;
+          if (code) {
+            this.zone.run(() => {
+              this.onOtpChange(code);
+            });
+          }
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('[SmsConsent] error', err);
+      }
     }
   }
 
