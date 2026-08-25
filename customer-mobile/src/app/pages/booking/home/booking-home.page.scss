@@ -139,6 +139,139 @@
   100% { left: 70%; width: 30%; }
 }
 
+/* ── Fullscreen Enable Location Required Modal ── */
+.loc-perm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: linear-gradient(145deg, #0d1b2a 0%, #15283c 60%, #0d1b2a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.loc-perm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 330px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  padding: 32px 24px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.loc-perm-icon-wrap {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+
+.loc-perm-icon-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(18, 179, 91, 0.35) 0%, transparent 70%);
+  animation: locRadarRipple 2.4s ease-out infinite;
+}
+
+.loc-perm-icon {
+  font-size: 52px;
+  color: #12B35B;
+  position: relative;
+  z-index: 2;
+}
+
+.loc-perm-badge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #000;
+  font-size: 13px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  z-index: 3;
+}
+
+.loc-perm-title {
+  color: #ffffff;
+  font-size: 1.28rem;
+  font-weight: 750;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.01em;
+}
+
+.loc-perm-desc {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  margin: 0 0 26px 0;
+}
+
+.loc-perm-action-wrap {
+  width: 100%;
+}
+
+.loc-perm-btn {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #12B35B 0%, #0E954B 100%);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 750;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 6px 20px rgba(18, 179, 91, 0.35);
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+
+  &:active {
+    transform: scale(0.98);
+    opacity: 0.9;
+  }
+
+  ion-icon {
+    font-size: 19px;
+  }
+}
+
+.loc-perm-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.75rem;
+  text-align: left;
+  line-height: 1.35;
+
+  ion-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    color: #f59e0b;
+  }
+}
+
 /* ── The map FILLS the entire screen height ── */
 .bh-map {
   position: fixed;      /* fixed so it ignores ion-content scroll offset */
@@ -156,28 +289,75 @@
 /* Google Maps sometimes resets pointer-events on its container — restore. */
 .bh-map .gm-style { height: 100%; }
 
-/* ── Pulsing user-location dot (injected as AdvancedMarkerElement HTML) ── */
-:global(.bh-map-dot) {
+/* ── Iconic Teardrop Pickup Pin (Classic Map Pin) ── */
+:global(.dc-pickup-pin) {
   position: relative;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #12B35B;
-  border: 3px solid #fff;
-  box-shadow: 0 2px 8px rgba(18, 179, 91, 0.55);
+  width: 32px;
+  height: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Bottom point anchors right on the exact GPS coordinate */
+  transform: translate(0, -100%);
+  pointer-events: none;
 }
 
-:global(.bh-map-dot__pulse) {
+:global(.dc-pickup-pin__head) {
+  position: relative;
+  width: 32px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+  animation: dcPinBounce 0.4s ease-out;
+}
+
+:global(.dc-pickup-pin__shadow) {
   position: absolute;
-  inset: -8px;
+  bottom: -4px;
+  left: 50%;
+  width: 14px;
+  height: 6px;
+  margin-left: -7px;
   border-radius: 50%;
-  background: rgba(18, 179, 91, 0.22);
-  animation: bh-pulse 1.8s ease-out infinite;
+  background: rgba(0, 0, 0, 0.3);
+  filter: blur(1.5px);
 }
 
-@keyframes bh-pulse {
-  0%   { transform: scale(0.5); opacity: 1; }
-  100% { transform: scale(1.8); opacity: 0; }
+@keyframes dcPinBounce {
+  0% { transform: translateY(-8px); }
+  100% { transform: translateY(0); }
+}
+
+/* ── Floating Recenter / Locate Me Button (Anchored above Bottom Sheet) ── */
+.bh-recenter-btn {
+  position: absolute;
+  right: 16px;
+  top: -58px;
+  z-index: 12;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid rgba(13, 27, 42, 0.08);
+  box-shadow: 0 6px 20px rgba(13, 27, 42, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+
+  ion-icon {
+    font-size: 22px;
+    color: #12B35B;
+  }
+
+  &:active {
+    transform: scale(0.92);
+    background: #f4f6fa;
+  }
 }
 
 /* ── Drawer (hamburger) button — top-left, over the map ── */

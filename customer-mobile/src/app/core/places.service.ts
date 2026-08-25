@@ -162,4 +162,57 @@ export class PlacesService {
       });
     });
   }
+
+  /**
+   * Reverse geocodes coordinates to extract the human-readable locality / town / city name.
+   * e.g., "Sopore", "Kupwara", "Baramulla", "Srinagar".
+   */
+  async reverseGeocodeCity(lat: number, lng: number): Promise<string | null> {
+    await this.ensureLoaded();
+    const geocoder = new google.maps.Geocoder();
+    return new Promise<string | null>((resolve) => {
+      geocoder.geocode({ location: { lat, lng } }, (results: any[], status: string) => {
+        if (status !== 'OK' || !results?.length) return resolve(null);
+
+        // 1. Look for 'locality' or 'postal_town' (e.g. "Sopore")
+        for (const res of results) {
+          if (Array.isArray(res.address_components)) {
+            const hit = res.address_components.find((c: any) =>
+              Array.isArray(c.types) && (c.types.includes('locality') || c.types.includes('postal_town'))
+            );
+            if (hit?.long_name) return resolve(hit.long_name);
+          }
+        }
+
+        // 2. Look for 'sublocality_level_1' or 'sublocality' (e.g. "Model Town")
+        for (const res of results) {
+          if (Array.isArray(res.address_components)) {
+            const hit = res.address_components.find((c: any) =>
+              Array.isArray(c.types) && (c.types.includes('sublocality_level_1') || c.types.includes('sublocality'))
+            );
+            if (hit?.long_name) return resolve(hit.long_name);
+          }
+        }
+
+        // 3. Look for 'administrative_area_level_2' (e.g. District "Baramulla")
+        for (const res of results) {
+          if (Array.isArray(res.address_components)) {
+            const hit = res.address_components.find((c: any) =>
+              Array.isArray(c.types) && c.types.includes('administrative_area_level_2')
+            );
+            if (hit?.long_name) return resolve(hit.long_name);
+          }
+        }
+
+        // 4. Fallback: Parse first segment of formatted address
+        const firstFormatted = results[0]?.formatted_address;
+        if (firstFormatted) {
+          const parts = firstFormatted.split(',').map((p: string) => p.trim()).filter(Boolean);
+          if (parts.length > 0) return resolve(parts[0]);
+        }
+
+        resolve(null);
+      });
+    });
+  }
 }

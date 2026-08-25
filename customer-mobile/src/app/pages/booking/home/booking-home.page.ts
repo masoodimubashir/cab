@@ -9,10 +9,20 @@ import {
   ViewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
+import { ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
 
 import { GeolocationService } from '../../../core/geolocation.service';
 import { PlacesService } from '../../../core/places.service';
-import { BookingService, resolveCity, scopesOffered, tilesFor, RawScope } from '../booking.service';
+import {
+  BookingService,
+  resolveCity,
+  nearestCity,
+  distanceKm,
+  pointInPolygon,
+  scopesOffered,
+  tilesFor,
+  RawScope
+} from '../booking.service';
 import { City, RideMode, ServiceTile, TripScope } from '../booking.models';
 
 declare const google: any;
@@ -31,11 +41,12 @@ declare const google: any;
   standalone: false,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class BookingHomePage implements OnInit, OnDestroy {
+export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, ViewDidLeave, OnDestroy {
   @ViewChild('mapEl', { static: true }) mapElRef!: ElementRef<HTMLDivElement>;
 
   loading = true;
   locationFetching = true;
+  locationPermissionNeeded = false;
   mapReady = false;
 
   scope: TripScope = 'local';
@@ -64,24 +75,61 @@ export class BookingHomePage implements OnInit, OnDestroy {
   ) {}
 
   async ngOnInit(): Promise<void> {
-    // Safety timeout: hide location loader after 6s max so UI never hangs if GPS denied/slow
-    setTimeout(() => {
-      if (this.locationFetching) {
-        this.locationFetching = false;
-        this.cdr.markForCheck();
-      }
-    }, 6000);
+    // Initial load: fetch user GPS location and setup map
+    await this.initHome();
+  }
 
-    // Load data and map concurrently — neither blocks the other.
-    await Promise.all([this.load(), this.initMap()]);
+  ionViewWillEnter(): void {
+    if (!this.located || !this.city) {
+      void this.initHome();
+    }
+  }
+
+  ionViewDidEnter(): void {
+    if (this.map && !this.watchId) {
+      void this.startWatch();
+    }
+  }
+
+  ionViewDidLeave(): void {
+    if (this.watchId) {
+      void this.geo.clearWatch(this.watchId);
+      this.watchId = null;
+    }
   }
 
   ngOnDestroy(): void {
     if (this.watchId) {
       void this.geo.clearWatch(this.watchId);
+      this.watchId = null;
     }
     this.userMarker = null;
     this.map = null;
+  }
+
+  private async initHome(): Promise<void> {
+    this.locationFetching = true;
+    this.locationPermissionNeeded = false;
+    this.cdr.markForCheck();
+
+    await Promise.all([this.loadLocationAndCatalog(), this.initMap()]);
+  }
+
+  async requestLocation(): Promise<void> {
+    this.locationPermissionNeeded = false;
+    this.locationFetching = true;
+    this.cdr.markForCheck();
+
+    try {
+      await this.geo.requestPermissions();
+    } catch {
+      /* ignore */
+    }
+
+    await this.loadLocationAndCatalog();
+    if (this.located && this.map) {
+      await this.startWatch();
+    }
   }
 
   // ── Map setup ────────────────────────────────────────────────────────────
@@ -92,9 +140,8 @@ export class BookingHomePage implements OnInit, OnDestroy {
 
       const el = this.mapElRef.nativeElement;
 
-      // Default centre: Kashmir — overridden immediately by GPS.
       this.map = new google.maps.Map(el, {
-        center: { lat: 34.0, lng: 74.8 },
+        center: { lat: 34.2985, lng: 74.4712 }, // Centered on Jammu & Kashmir region
         zoom: 14,
         disableDefaultUI: true,
         mapId: 'DEMO_MAP_ID',         // needed for AdvancedMarkerElement
@@ -107,12 +154,24 @@ export class BookingHomePage implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       });
 
-      // Start watching GPS after map is ready.
+      // Start watching GPS once map is ready
       await this.startWatch();
     } catch {
-      // Maps unavailable (offline / key missing) — page still works.
+      // Maps unavailable (offline / key missing)
       this.locationFetching = false;
       this.cdr.markForCheck();
+    }
+  }
+
+  currentCoords: { lat: number; lng: number } | null = null;
+
+  recenterMap(): void {
+    if (!this.map) return;
+    if (this.currentCoords) {
+      this.map.panTo(this.currentCoords);
+      this.map.setZoom(16);
+    } else {
+      void this.requestLocation();
     }
   }
 
@@ -121,117 +180,175 @@ export class BookingHomePage implements OnInit, OnDestroy {
     try {
       const fix = await this.geo.getCurrentFix();
       if (fix) {
-        this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, true);
+        this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, true, fix.bearing);
       }
     } catch {
       /* ignore */
-    } finally {
-      this.locationFetching = false;
-      this.cdr.markForCheck();
     }
 
     // Continuous watch — moves marker as user walks.
     try {
+      if (this.watchId) {
+        await this.geo.clearWatch(this.watchId);
+      }
       this.watchId = await this.geo.watchPosition(
         { enableHighAccuracy: true, maximumAge: 2000 },
         (pos, err) => {
           if (err || !pos) return;
-          this.updateMapPosition(pos.lat, pos.lng, pos.accuracy ?? 40, false);
+          this.updateMapPosition(pos.lat, pos.lng, pos.accuracy ?? 40, false, pos.bearing);
         },
       );
     } catch {
-      // Location unavailable — stays at first fix / default.
-      this.locationFetching = false;
-      this.cdr.markForCheck();
+      /* ignore */
     }
   }
 
   private async updateMapPosition(
-    lat: number, lng: number, accuracy: number, pan: boolean,
+    lat: number, lng: number, accuracy: number, pan: boolean, bearing?: number | null,
   ): Promise<void> {
     if (!this.map) return;
     const latlng = { lat, lng };
+    this.currentCoords = latlng;
 
     if (!this.userMarker) {
-      // Build the pulsing dot using AdvancedMarkerElement + custom HTML.
+      // Build classic, premium teardrop pickup pin
       const { AdvancedMarkerElement } = await (google.maps as any).importLibrary('marker');
 
-      const dotEl = document.createElement('div');
-      dotEl.className = 'bh-map-dot';
-      dotEl.innerHTML = '<span class="bh-map-dot__pulse"></span>';
+      const pinEl = document.createElement('div');
+      pinEl.className = 'dc-pickup-pin';
+      pinEl.innerHTML = `
+        <div class="dc-pickup-pin__shadow"></div>
+        <div class="dc-pickup-pin__head">
+          <svg viewBox="0 0 32 42" width="32" height="42" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#12B35B"/>
+            <circle cx="16" cy="15" r="6" fill="#FFFFFF"/>
+            <circle cx="16" cy="15" r="3" fill="#0D1B2A"/>
+          </svg>
+        </div>
+      `;
 
       this.userMarker = new AdvancedMarkerElement({
         map: this.map,
         position: latlng,
-        content: dotEl,
+        content: pinEl,
         zIndex: 1000,
-        title: 'Your location',
-      });
-
-      this.accuracyCircle = new google.maps.Circle({
-        map: this.map,
-        center: latlng,
-        radius: accuracy,
-        strokeColor: '#12B35B',
-        strokeOpacity: 0.35,
-        strokeWeight: 1,
-        fillColor: '#12B35B',
-        fillOpacity: 0.08,
-        clickable: false,
+        title: 'Your pickup location',
       });
     } else {
       this.userMarker.position = latlng;
-      this.accuracyCircle.setCenter(latlng);
-      this.accuracyCircle.setRadius(accuracy);
     }
 
     if (pan) {
       this.map.setCenter(latlng);
-      this.map.setZoom(15);
+      this.map.setZoom(16);
     } else {
       this.map.panTo(latlng);
-    }
-
-    if (this.locationFetching) {
-      this.locationFetching = false;
-      this.cdr.markForCheck();
     }
   }
 
   // ── City / catalogue loading ─────────────────────────────────────────────
 
-  private async load(): Promise<void> {
-    this.loading = true;
-    this.cdr.markForCheck();
+  private async loadLocationAndCatalog(): Promise<void> {
+    this.zone.run(() => {
+      this.loading = true;
+      this.cdr.markForCheck();
+    });
 
     try {
       const cities = await this.booking.cities().catch(() => [] as City[]);
 
-      let city: City | null = null;
-      try {
-        const fix = await this.geo.getCurrentPosition();
-        if (fix) city = resolveCity(cities, fix.lat, fix.lng);
-      } catch {
-        // Location denied — fall through.
+      // Attempt to retrieve real coordinates from device GPS
+      let fix = await this.geo.getCurrentPosition();
+      if (!fix) {
+        const longFix = await this.geo.getCurrentFix();
+        if (longFix) fix = { lat: longFix.lat, lng: longFix.lng };
       }
 
-      this.located = !!city;
-      city = city ?? cities[0] ?? null;
-
-      this.city = city;
-      this.booking.setCity(city?.id ?? null);
-
-      if (city) {
-        this.catalog = await this.booking.catalog(city.id).catch(() => []);
+      if (!fix) {
+        // Location is unavailable / GPS off / permission not granted
+        this.zone.run(() => {
+          this.located = false;
+          this.city = null;
+          this.locationPermissionNeeded = true;
+          this.locationFetching = false;
+          this.loading = false;
+          this.cdr.markForCheck();
+        });
+        return;
       }
 
-      const offered = scopesOffered(this.catalog);
-      this.scopes = offered.length ? offered : ['local'];
-      this.scope = this.scopes[0];
-      this.rebuildTiles();
-    } finally {
-      this.loading = false;
-      this.cdr.markForCheck();
+      // 1. Check if user coordinates match an active Admin City's boundary polygon
+      let adminCity = cities.find((c) =>
+        Array.isArray(c.boundary_polygon) &&
+        c.boundary_polygon.length >= 3 &&
+        pointInPolygon(fix.lat, fix.lng, c.boundary_polygon)
+      );
+
+      // If no polygon match, check if user is within close proximity (<= 8km) of an Admin City center
+      if (!adminCity && cities.length > 0) {
+        for (const c of cities) {
+          if (c.center_lat != null && c.center_lng != null) {
+            const km = distanceKm(fix.lat, fix.lng, Number(c.center_lat), Number(c.center_lng));
+            if (km <= 8) {
+              adminCity = c;
+              break;
+            }
+          }
+        }
+      }
+
+      let activeCity: City;
+
+      if (adminCity) {
+        // Admin city exists for this location -> Use the Admin city entity
+        activeCity = adminCity;
+      } else {
+        // City does not exist in Admin -> Detect real city / town name from device coordinates
+        const detectedName = await this.places.reverseGeocodeCity(fix.lat, fix.lng).catch(() => null);
+        const nearest = nearestCity(cities, fix.lat, fix.lng);
+        const fallbackId = nearest?.id ?? cities[0]?.id ?? 1;
+
+        activeCity = {
+          id: fallbackId,
+          name: detectedName || 'Your Location',
+          center_lat: fix.lat,
+          center_lng: fix.lng,
+        };
+      }
+
+      const catalogData = activeCity.id
+        ? await this.booking.catalog(activeCity.id).catch(() => [])
+        : [];
+
+      this.zone.run(() => {
+        this.located = true;
+        this.city = activeCity;
+        this.locationPermissionNeeded = false;
+        this.booking.setCity(activeCity.id);
+        this.catalog = catalogData;
+
+        const offered = scopesOffered(this.catalog);
+        this.scopes = offered.length ? offered : ['local'];
+        this.scope = this.scopes[0];
+        this.rebuildTiles();
+        this.locationFetching = false;
+        this.loading = false;
+        this.cdr.markForCheck();
+      });
+
+      // Pan map to user fix
+      if (this.map) {
+        this.updateMapPosition(fix.lat, fix.lng, 40, true);
+      }
+    } catch {
+      this.zone.run(() => {
+        this.located = false;
+        this.city = null;
+        this.locationPermissionNeeded = true;
+        this.locationFetching = false;
+        this.loading = false;
+        this.cdr.markForCheck();
+      });
     }
   }
 
@@ -283,3 +400,4 @@ export class BookingHomePage implements OnInit, OnDestroy {
     }
   }
 }
+
