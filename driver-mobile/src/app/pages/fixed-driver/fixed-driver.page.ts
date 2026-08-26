@@ -165,7 +165,7 @@ export class FixedDriverPage implements OnDestroy {
   passengerFilter: 'all' | 'waiting' | 'onboard' | 'done' = 'all';
   sheetTab: 'passengers' | 'stops' = 'passengers';
   showStopsTimeline = false;
-  passengerSheetExpanded = false;
+  passengerSheetExpanded = true;
   fixedLocationStreaming = false;
 
   private map: any = null;
@@ -757,6 +757,54 @@ export class FixedDriverPage implements OnDestroy {
     const result = await alert.onDidDismiss();
     if (result.role !== 'confirm') return;
     this.updatePassenger(passenger, 'no-show');
+  }
+
+  canCancelPassenger(passenger: FixedPassenger): boolean {
+    if (this.rideStarted) return false;
+    const status = (passenger.status || '').toUpperCase();
+    return ['BOOKED', 'CONFIRMED'].includes(status);
+  }
+
+  async cancelPassenger(passenger: FixedPassenger): Promise<void> {
+    if (!this.canCancelPassenger(passenger)) return;
+    const fareText = passenger.fare_amount ? ` Full fare of ₹${passenger.fare_amount} will be automatically refunded.` : '';
+    const alert = await this.alerts.create({
+      header: 'Cancel Passenger Booking?',
+      message: `Are you sure you want to cancel the booking for ${passenger.customer_name || 'this passenger'}?${fareText}`,
+      inputs: [
+        {
+          name: 'reason',
+          type: 'text',
+          placeholder: 'Reason for cancellation (optional)',
+        },
+      ],
+      buttons: [
+        { text: 'Keep Booking', role: 'cancel' },
+        {
+          text: 'Cancel & Refund',
+          role: 'confirm',
+          cssClass: 'alert-btn-danger',
+          handler: (data) => {
+            this.executeCancelPassenger(passenger, data?.reason);
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private executeCancelPassenger(passenger: FixedPassenger, reason?: string): void {
+    this.busy = true;
+    this.error = null;
+    this.api.post<{ message: string }>(`/fixed/bookings/${passenger.id}/cancel`, { reason: reason || 'Driver cancelled' })
+      .pipe(finalize(() => this.busy = false))
+      .subscribe({
+        next: async (res) => {
+          await this.showToast(res.message || 'Passenger booking cancelled.');
+          if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
+        },
+        error: (err) => this.error = err?.error?.message || 'Could not cancel passenger booking.',
+      });
   }
 
   get filteredGroupedPassengers(): Array<{ stop: string; waiting: number; boarded: number; passengers: FixedPassenger[] }> {

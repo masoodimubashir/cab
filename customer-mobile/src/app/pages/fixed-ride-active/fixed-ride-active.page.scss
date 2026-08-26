@@ -574,7 +574,20 @@
     border: 1px solid #FECACA;
   }
 
+  &--danger-outline {
+    background: #FFF5F5;
+    color: #DC2626;
+    border: 1.5px solid #FCA5A5;
+    padding: 10px;
+    font-size: 13px;
+  }
+
   ion-icon { font-size: 18px; }
+}
+
+.dc-quick-cancel {
+  margin-top: 4px;
+  width: 100%;
 }
 
 .dc-press:active {

@@ -84,6 +84,15 @@
             <span>Call</span>
           </button>
         </div>
+
+        <!-- Quick Cancel Button -->
+        <div class="dc-quick-cancel" *ngIf="canCancel(ride)">
+          <button type="button" class="dc-btn dc-btn--danger-outline dc-press" (click)="cancelRide()" [disabled]="cancelling">
+            <ion-spinner *ngIf="cancelling" name="crescent"></ion-spinner>
+            <ion-icon *ngIf="!cancelling" name="close-circle-outline"></ion-icon>
+            <span>{{ cancelling ? 'Cancelling...' : 'Cancel Fixed Ride' }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Section 2: Expanded Content Drawer -->

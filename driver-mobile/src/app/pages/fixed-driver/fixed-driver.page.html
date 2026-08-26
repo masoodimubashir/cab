@@ -474,6 +474,18 @@
                       <span *ngIf="noShowCountdown(passenger) <= 0">No-Show</span>
                       <span *ngIf="noShowCountdown(passenger) > 0">{{ noShowCountdownLabel(passenger) }}</span>
                     </button>
+
+                    <button
+                      *ngIf="canCancelPassenger(passenger)"
+                      type="button"
+                      class="dc-cancel-btn dc-press"
+                      [disabled]="busy"
+                      (click)="cancelPassenger(passenger)"
+                      title="Cancel passenger booking"
+                    >
+                      <ion-icon name="close-circle-outline"></ion-icon>
+                      <span>Cancel</span>
+                    </button>
                   </div>
 
                   <div class="dc-hint-row" *ngIf="passengerActionHint(passenger)">

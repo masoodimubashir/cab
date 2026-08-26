@@ -1639,6 +1639,40 @@
         cursor: not-allowed;
       }
     }
+
+    .dc-cancel-btn {
+      min-height: 36px;
+      height: 36px;
+      background: #F8FAFC;
+      border: 1.5px solid #CBD5E1;
+      color: #64748B;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 0 9px;
+      border-radius: 10px;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+
+      ion-icon {
+        font-size: 13.5px;
+        color: #EF4444;
+      }
+
+      &:active {
+        background: #FEE2E2;
+        border-color: #FCA5A5;
+        color: #DC2626;
+      }
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    }
   }
 
   .dc-hint-row,

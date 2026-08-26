@@ -738,6 +738,38 @@ class FixedDriverController extends Controller
         ]);
     }
 
+    public function cancelPassenger(Request $request, SeatReservation $reservation)
+    {
+        $this->guardDriverReservation($request, $reservation);
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if (!in_array($reservation->status, ['BOOKED', 'CONFIRMED'], true)) {
+            abort(422, 'This passenger booking cannot be cancelled from the current status.');
+        }
+
+        $departure = $reservation->routeDeparture;
+        if ($departure && in_array($departure->status, ['DEPARTED', 'COMPLETED', 'CANCELLED'], true)) {
+            abort(422, 'Cannot cancel passenger once the ride has already started.');
+        }
+
+        $reason = !empty($data['reason']) ? trim($data['reason']) : 'Driver cancelled passenger';
+        $detail = 'Driver cancelled this passenger booking. Reason: ' . $reason;
+
+        $updated = $this->refunds->cancelBySystem($reservation, 'driver_passenger_cancelled', $request->user(), $detail);
+        $this->broadcastAvailability(RouteDeparture::query()->findOrFail($reservation->route_departure_id), 'passenger_cancelled');
+
+        return response()->json([
+            'reservation' => [
+                'id' => $updated->id,
+                'status' => $updated->status,
+                'refund_status' => $updated->refund_status,
+            ],
+            'message' => 'Passenger booking has been cancelled.',
+        ]);
+    }
+
     /**
      * Board/drop/no-show taps may carry the driver's live GPS fix (lat/lng in
      * the request body) so the stop-reached guard never depends on the
