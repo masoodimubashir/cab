@@ -65,14 +65,14 @@
           <div class="route-pick-card__path">
             <div class="path-stop">
               <span class="dot dot--origin"></span>
-              <span>{{ route.origin_name }}</span>
+              <span>{{ getRouteOriginName(route) }}</span>
             </div>
             <div class="path-divider">
               <ion-icon name="arrow-forward-outline"></ion-icon>
             </div>
             <div class="path-stop">
               <span class="dot dot--dest"></span>
-              <span>{{ route.dest_name }}</span>
+              <span>{{ getRouteDestName(route) }}</span>
             </div>
           </div>
 
@@ -132,7 +132,7 @@
             <span class="node-bullet node-bullet--origin"></span>
             <div class="node-text">
               <small>Origin / Start</small>
-              <strong>{{ route.origin_name }}</strong>
+              <strong>{{ getRouteOriginName(route) }}</strong>
             </div>
           </div>
           <div class="detail-line"></div>
@@ -140,7 +140,7 @@
             <span class="node-bullet node-bullet--dest"></span>
             <div class="node-text">
               <small>Destination</small>
-              <strong>{{ route.dest_name }}</strong>
+              <strong>{{ getRouteDestName(route) }}</strong>
             </div>
           </div>
         </div>

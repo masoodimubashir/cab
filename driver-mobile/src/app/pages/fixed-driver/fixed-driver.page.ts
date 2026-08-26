@@ -858,42 +858,62 @@ export class FixedDriverPage implements OnDestroy {
     return 'Select a route.';
   }
 
-  get routeOriginName(): string {
-    const raw = this.activeVehicle?.origin_name;
+  getRouteOriginName(route: FixedRoute | null): string {
+    if (!route) return 'Origin';
+    if (route.stops && route.stops.length > 0 && route.stops[0]?.name) {
+      return route.stops[0].name.trim();
+    }
+    const raw = route.origin_name;
     if (raw && raw.trim().toLowerCase() !== 'origin') return raw.trim();
 
-    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id);
-    if (route?.origin_name && route.origin_name.trim().toLowerCase() !== 'origin') return route.origin_name.trim();
-
-    if (this.stops.length > 0 && this.stops[0]?.name) return this.stops[0].name;
-
-    const rName = this.activeVehicle?.route_name || route?.name;
+    const rName = route.name;
     if (rName) {
       if (rName.includes('->')) return rName.split('->')[0].trim();
       if (rName.includes('→')) return rName.split('→')[0].trim();
       if (rName.toLowerCase().includes(' to ')) return rName.split(/ to /i)[0].trim();
     }
-    return this.stops[0]?.name || 'Origin';
+
+    return raw?.trim() || 'Origin';
   }
 
-  get routeDestName(): string {
-    const raw = this.activeVehicle?.dest_name;
+  getRouteDestName(route: FixedRoute | null): string {
+    if (!route) return 'Destination';
+    if (route.stops && route.stops.length > 1 && route.stops[route.stops.length - 1]?.name) {
+      return route.stops[route.stops.length - 1].name.trim();
+    }
+    const raw = route.dest_name;
     if (raw && raw.trim().toLowerCase() !== 'destination') return raw.trim();
 
-    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id);
-    if (route?.dest_name && route.dest_name.trim().toLowerCase() !== 'destination') return route.dest_name.trim();
-
-    if (this.stops.length > 1 && this.stops[this.stops.length - 1]?.name) {
-      return this.stops[this.stops.length - 1].name;
-    }
-
-    const rName = this.activeVehicle?.route_name || route?.name;
+    const rName = route.name;
     if (rName) {
       if (rName.includes('->')) return rName.split('->')[1].trim();
       if (rName.includes('→')) return rName.split('→')[1].trim();
       if (rName.toLowerCase().includes(' to ')) return rName.split(/ to /i)[1].trim();
     }
-    return this.stops[this.stops.length - 1]?.name || 'Destination';
+
+    return raw?.trim() || 'Destination';
+  }
+
+  get routeOriginName(): string {
+    if (this.stops.length > 0 && this.stops[0]?.name) return this.stops[0].name;
+
+    const raw = this.activeVehicle?.origin_name;
+    if (raw && raw.trim().toLowerCase() !== 'origin') return raw.trim();
+
+    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id);
+    return this.getRouteOriginName(route || null);
+  }
+
+  get routeDestName(): string {
+    if (this.stops.length > 1 && this.stops[this.stops.length - 1]?.name) {
+      return this.stops[this.stops.length - 1].name;
+    }
+
+    const raw = this.activeVehicle?.dest_name;
+    if (raw && raw.trim().toLowerCase() !== 'destination') return raw.trim();
+
+    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id);
+    return this.getRouteDestName(route || null);
   }
 
   vehicleRouteLine(vehicle: FixedVehicle | null): string {
