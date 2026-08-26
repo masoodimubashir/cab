@@ -27,6 +27,7 @@ interface FixedRoute {
   dest_name: string;
   flat_fare: number | null;
   max_luggage_per_vehicle: number;
+  stops?: FixedStop[];
 }
 
 interface FixedVehicle {

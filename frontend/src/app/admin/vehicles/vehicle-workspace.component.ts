@@ -323,13 +323,38 @@ interface TabDef { key: string; label: string; count?: number; }
                                 <b>{{ r.name }}</b>
                                 <span class="npbadge" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
                               </button>
+                              <button type="button" class="rx" title="Set route inactive" (click)="toggleRouteActive(r, false, $event)">
+                                <tm-icon name="x" [size]="11" />
+                              </button>
                               <button type="button" class="rx add" [title]="r.flat_fare == null ? 'Add a price before grouping this route' : 'Add to a group'" (click)="openAssignDrawer(r)">+</button>
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length && !ungroupedForVehicle(v).length">No route groups yet. Click Manage Routes & Groups to create a group and assign routes and drivers all at once.</div>
+                      <div class="gline gline--inactive" *ngIf="inactiveRoutesForVehicle(v).length">
+                        <div class="gline__head">
+                          <span class="gname">Inactive routes</span>
+                          <span class="gmeta">{{ inactiveRoutesForVehicle(v).length }} inactive · not visible to drivers</span>
+                        </div>
+                        <div class="gcol">
+                          <span class="gcol__lbl">Routes</span>
+                          <div class="gcol__body">
+                            <span class="rchip2 rchip2--inactive" *ngFor="let r of inactiveRoutesForVehicle(v)">
+                              <button type="button" class="rchip2__edit" title="Click to edit or reactivate this route" (click)="editRouteFor(v, r.id)">
+                                <tm-icon name="edit" [size]="11" />
+                                <b>{{ r.name }}</b>
+                                <span class="npbadge npbadge--off">Inactive</span>
+                              </button>
+                              <button type="button" class="rx act" title="Enable route" (click)="toggleRouteActive(r, true, $event)">
+                                <tm-icon name="check" [size]="11" />
+                              </button>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length && !ungroupedForVehicle(v).length && !inactiveRoutesForVehicle(v).length">No route groups yet. Click Manage Routes & Groups to create a group and assign routes and drivers all at once.</div>
                     </div>
                   </td>
                 </tr>
@@ -1203,6 +1228,8 @@ interface TabDef { key: string; label: string; count?: number; }
     .ovl { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--tm-text-soft, #94a0ad); }
     .gline { display: grid; grid-template-columns: 210px 1fr; gap: 8px 18px; align-items: start; padding: 14px 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: 12px; }
     .gline--orphan { border-color: #fce4a6; }
+    .gline--inactive { border-color: #e2e8f0; background: #fafbfd; }
+    .gline--inactive .gname { color: #64748b; }
     .gline__head { grid-column: 1; grid-row: 1 / span 2; display: flex; flex-direction: column; gap: 4px; padding-right: 16px; border-right: 1px solid var(--tm-line); }
     .gline__acts { display: flex; gap: 6px; margin-top: 4px; }
     .gname { font-size: 14px; font-weight: 800; color: var(--tm-text); }
@@ -1217,10 +1244,16 @@ interface TabDef { key: string; label: string; count?: number; }
     .rchip2 .rx { width: 16px; height: 16px; border: 0; border-radius: 5px; display: grid; place-items: center; background: transparent; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; opacity: .55; }
     .rchip2 .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
     .rchip2 .rx.add { font-size: 15px; }
+    .rchip2 .rx.act { font-size: 11px; opacity: .7; }
+    .rchip2 .rx.act:hover { opacity: 1; color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5); }
     .rchip2--edit { padding-left: 4px; background: var(--tm-canvas-2, #eef1f5); color: var(--tm-text); }
+    .rchip2--inactive { padding-left: 4px; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+    .rchip2--inactive .rchip2__edit { color: #64748b; }
+    .rchip2--inactive .rchip2__edit:hover { color: var(--tm-text); background: rgba(0,0,0,.04); }
     .rchip2__edit { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: 700; padding: 2px 5px; border-radius: 6px; cursor: pointer; }
     .rchip2__edit b { font-weight: 700; }
     .rchip2__edit:hover { background: rgba(0,0,0,.06); color: var(--tm-green, #16a34a); }
+    .npbadge--off { margin-left: 6px; font-size: 10px; font-weight: 700; color: #64748b; background: #e2e8f0; padding: 1px 5px; border-radius: 4px; }
     .dpill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 3px; border-radius: 999px; background: var(--tm-canvas-2, #eaeef4); font-size: 12px; font-weight: 700; color: var(--tm-text); }
     .dpill .rx { width: 15px; height: 15px; border: 0; border-radius: 5px; background: transparent; color: var(--tm-text-muted); font-size: 13px; line-height: 1; cursor: pointer; opacity: .6; }
     .dpill .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
@@ -2204,8 +2237,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     });
   }
 
-  // ── route groups ───────────────────────────────────────────
-  routesIn(g: GroupRow): RouteLite[] { return this.routes.filter((r) => g.route_ids.includes(r.id)); }
+  routesIn(g: GroupRow): RouteLite[] { return this.routes.filter((r) => g.route_ids.includes(r.id) && (r.is_active === true || (r.is_active as any) === 1 || (r.is_active as any) === '1')); }
   driversIn(g: GroupRow): DriverOpt[] { return this.cityDrivers.filter((d) => g.driver_user_ids.includes(d.user_id)); }
   driverOptions(g: GroupRow): DriverOpt[] { return this.cityDrivers.filter((d) => !g.driver_user_ids.includes(d.user_id)); }
   groupsForDriver(userId: number): GroupRow[] { return this.groups.filter((g) => g.driver_user_ids.includes(userId)); }
@@ -2432,12 +2464,23 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   // per-vehicle slices for the spreadsheet (independent of `selected`, so several
   // detail rows can be open at once and still read correctly)
-  routesForVehicle(v: CityVehicleRow): RouteLite[] { return this.routes.filter((r) => r.city_vehicle_type_id === v.id); }
+  routesForVehicle(v: CityVehicleRow): RouteLite[] {
+    const vId = Number(v.id);
+    const groupRouteIds = new Set(this.groupsForVehicle(v).flatMap((g) => g.route_ids));
+    return this.routes.filter((r) => {
+      if (r.city_vehicle_type_id != null && Number(r.city_vehicle_type_id) === vId) return true;
+      if (groupRouteIds.has(r.id)) return true;
+      if (r.city_vehicle_type_id == null && this.vehicles.length === 1) return true;
+      if (r.city_vehicle_type_id == null && this.vehicles[0]?.id === v.id) return true;
+      return false;
+    });
+  }
   groupsForVehicle(v: CityVehicleRow): GroupRow[] {
-    const mine = new Set(this.routesForVehicle(v).map((r) => r.id));
+    const vId = Number(v.id);
+    const mine = new Set(this.routes.filter((r) => r.city_vehicle_type_id != null && Number(r.city_vehicle_type_id) === vId).map((r) => r.id));
     return this.groups.filter((g) => {
       // Bound groups belong to exactly one vehicle — shown there even when empty.
-      if (g.city_vehicle_type_id != null) return g.city_vehicle_type_id === v.id;
+      if (g.city_vehicle_type_id != null) return Number(g.city_vehicle_type_id) === vId;
       // Legacy unbound groups fall back to route ownership only; a route-less
       // unbound group belongs to no vehicle (it no longer leaks onto every row).
       return g.route_ids.some((id) => mine.has(id));
@@ -2445,7 +2488,25 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
   ungroupedForVehicle(v: CityVehicleRow): RouteLite[] {
     const covered = new Set(this.groups.flatMap((g) => g.route_ids));
-    return this.routesForVehicle(v).filter((r) => !covered.has(r.id));
+    const isAct = (r: RouteLite) => r.is_active === true || (r.is_active as any) === 1 || (r.is_active as any) === '1';
+    return this.routesForVehicle(v).filter((r) => isAct(r) && !covered.has(r.id));
+  }
+  inactiveRoutesForVehicle(v: CityVehicleRow): RouteLite[] {
+    return this.routesForVehicle(v).filter((r) => !r.is_active || (r.is_active as any) === 0 || (r.is_active as any) === '0' || (r.is_active as any) === false);
+  }
+  toggleRouteActive(r: RouteLite, active: boolean, ev?: Event): void {
+    ev?.stopPropagation();
+    if (this.cityId == null) return;
+    this.api.patch(`/admin/cities/${this.cityId}/fixed-routes/${r.id}`, { is_active: active }).subscribe({
+      next: () => {
+        r.is_active = active;
+        this.loadRoutes();
+        this.toast.success(active ? `Route "${r.name}" enabled` : `Route "${r.name}" disabled`);
+      },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'Could not update route status');
+      },
+    });
   }
   driversFor(v: CityVehicleRow): DriverOpt[] { return this.cityDrivers.filter((d) => d.city_vehicle_type_id === v.id); }
   layoutCountFor(v: CityVehicleRow): number { return v.vehicle_type_id == null ? 0 : this.layouts.filter((l) => l.vehicle_type_id === v.vehicle_type_id).length; }
@@ -2487,12 +2548,12 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   editChoiceName = '';
   @ViewChild('editKmlInput') private editKmlInput?: ElementRef<HTMLInputElement>;
 
-  /** The edit pen on an ungrouped route opens a choice: edit by hand, or replace
+  /** The edit pen on an ungrouped or inactive route opens a choice: edit by hand, or replace
    *  its line & stops from a Google My Maps upload (keeping fare & settings). */
   editRouteFor(v: CityVehicleRow, routeId: number): void {
     this.editChoiceVehicle = v;
     this.editChoiceRouteId = routeId;
-    this.editChoiceName = this.ungroupedForVehicle(v).find((r) => r.id === routeId)?.name ?? 'this route';
+    this.editChoiceName = this.routesForVehicle(v).find((r) => r.id === routeId)?.name ?? 'this route';
     this.editChoiceOpen = true;
   }
 
