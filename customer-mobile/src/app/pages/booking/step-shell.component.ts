@@ -50,7 +50,10 @@ import { CommonModule } from '@angular/common';
 
       <!-- The step's own content. Scrolls if it must; the button never does. -->
       <div class="sf__body">
-        <h1 class="bk-title" *ngIf="title">{{ title }}</h1>
+        <div class="sf__title-row" *ngIf="title">
+          <h1 class="bk-title">{{ title }}</h1>
+          <ng-content select="[title-action]"></ng-content>
+        </div>
         <p class="bk-sub" *ngIf="subtitle">{{ subtitle }}</p>
         <ng-content></ng-content>
       </div>
@@ -138,6 +141,13 @@ import { CommonModule } from '@angular/common';
     .sf__prg span.on { background: var(--dc-green); }
 
     /* --- body ----------------------------------------------------------- */
+    .sf__title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .sf__title-row .bk-title { margin: 0; }
     .sf__body {
       flex: 1 1 auto;
       min-height: 0;

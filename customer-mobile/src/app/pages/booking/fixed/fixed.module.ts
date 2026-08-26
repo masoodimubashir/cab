@@ -8,11 +8,21 @@ import { FixedBookPage } from './fixed.page';
 import { StepShellComponent } from '../step-shell.component';
 import { SeatGridComponent } from './seat-grid.component';
 import { PaymentMethodModalComponent } from '../../../shared/payment-method-modal.component';
+import { CityFilterModalComponent } from '../../../shared/city-filter-modal.component';
 
 const routes: Routes = [{ path: '', component: FixedBookPage }];
 
 @NgModule({
-  imports: [CommonModule, FormsModule, IonicModule, RouterModule.forChild(routes), StepShellComponent, SeatGridComponent, PaymentMethodModalComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    IonicModule,
+    RouterModule.forChild(routes),
+    StepShellComponent,
+    SeatGridComponent,
+    PaymentMethodModalComponent,
+    CityFilterModalComponent,
+  ],
   declarations: [FixedBookPage],
 })
 export class FixedBookPageModule {}

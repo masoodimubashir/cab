@@ -1,6 +1,6 @@
 import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ToastController } from '@ionic/angular';
+import { AlertController, ToastController } from '@ionic/angular';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
@@ -15,6 +15,8 @@ import {
 } from '../../core/car-marker.helper';
 import { PlacesService } from '../../core/places.service';
 import { PaymentChoice } from '../../shared/payment-method-modal.component';
+import { City } from '../booking/booking.models';
+import { resolveCity } from '../booking/booking.service';
 
 interface FixedStop {
   id: number;
@@ -166,6 +168,9 @@ type FixedScopeFilter = 'all' | 'local' | 'outstation';
 })
 export class FixedBookPage implements OnInit, OnDestroy {
   cityId: number | null = null;
+  cities: City[] = [];
+  selectedCity: City | null = null;
+  citiesLoading = false;
   scope: 'local' | 'outstation' | '' = '';
   routeFilter: FixedScopeFilter = 'all';
   routeSearch = '';
@@ -199,6 +204,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   hold: SeatHold | null = null;
   /** Shared payment-method sheet (Online / GPay / Cash) shown before booking. */
   paymentModalOpen = false;
+  cityModalOpen = false;
   confirmation: FixedReservation | null = null;
   activeBookings: FixedReservation[] = [];
   liveTrackingActive = false;
@@ -227,6 +233,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private api: ApiService,
     private auth: AuthService,
     private toast: ToastController,
+    private alertCtrl: AlertController,
     private fixedLocation: FixedCustomerLocationService,
     private geo: GeolocationService,
     private realtime: RealtimeService,
@@ -267,6 +274,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
   ionViewWillEnter(): void {
     if (this.entered) this.enter();
     this.entered = true;
+  }
+
+  get selectedCityName(): string {
+    return this.selectedCity?.name || (this.cityId ? `City #${this.cityId}` : 'All Cities');
   }
 
   get title(): string {
@@ -742,7 +753,6 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const rawScope = q.get('scope') || '';
     this.scope = rawScope === 'outstation' ? 'outstation' : rawScope === 'local' ? 'local' : '';
     this.routeFilter = this.scope || 'all';
-    this.subscribeFixedCatalog();
     this.step = 'routes';
     this.selectedRoute = null;
     this.clearRouteFromMap();
@@ -751,8 +761,77 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.hold = null;
     this.confirmation = null;
     this.resetDetails();
-    this.loadRoutes();
+    void this.loadCitiesAndResolve();
     this.loadMyBookings();
+  }
+
+  private async loadCitiesAndResolve(): Promise<void> {
+    this.citiesLoading = true;
+    try {
+      const res = await this.api.get<{ data?: City[] }>('/pricing/cities').toPromise();
+      this.cities = res?.data || [];
+
+      if (this.cityId != null && this.cityId > 0) {
+        this.selectedCity = this.cities.find((c) => c.id === this.cityId) || null;
+      } else {
+        const pos = await this.geo.getCurrentPosition().catch(() => null);
+        if (pos?.lat != null && pos?.lng != null && this.cities.length) {
+          const matched = resolveCity(this.cities, pos.lat, pos.lng);
+          if (matched) {
+            this.cityId = matched.id;
+            this.selectedCity = matched;
+          }
+        }
+        if (!this.selectedCity && this.cities.length) {
+          this.selectedCity = this.cities[0];
+          this.cityId = this.selectedCity.id;
+        }
+      }
+
+      this.subscribeFixedCatalog();
+    } catch {
+      this.cities = [];
+    } finally {
+      this.citiesLoading = false;
+      this.loadRoutes(true);
+    }
+  }
+
+  openCityFilter(): void {
+    if (!this.cities.length) {
+      void this.loadCitiesAndResolve();
+    }
+    this.cityModalOpen = true;
+  }
+
+  onCityModalSelect(cityId: number | null): void {
+    this.cityModalOpen = false;
+    this.selectCity(cityId);
+  }
+
+  onCityModalDismiss(): void {
+    this.cityModalOpen = false;
+  }
+
+  selectCity(cityId: number | null): void {
+    if (this.cityId === cityId && this.routes.length) return;
+    this.cityId = cityId;
+    this.selectedCity = this.cities.find((c) => c.id === cityId) || null;
+    this.selectedRoute = null;
+    this.clearRouteFromMap();
+    this.selectedDeparture = null;
+    this.departures = [];
+    this.resetDetails();
+    this.subscribeFixedCatalog();
+    this.loadRoutes(true);
+
+    if (this.selectedCity?.center_lat && this.selectedCity?.center_lng && this.fixedMap) {
+      this.fixedMap.panTo({
+        lat: Number(this.selectedCity.center_lat),
+        lng: Number(this.selectedCity.center_lng),
+      });
+      this.fixedMap.setZoom(13);
+    }
   }
 
   private subscribeFixedCatalog(): void {
@@ -831,6 +910,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (showSpinner) this.loading = true;
     this.error = null;
     const params = new URLSearchParams({ limit: '100' });
+    if (this.cityId != null && this.cityId > 0) {
+      params.set('city_id', String(this.cityId));
+    }
     const search = this.routeSearch.trim();
     if (search.length >= 2) params.set('q', search);
     this.api.get<{ data: FixedRoute[] }>("/fixed/routes?" + params.toString()).subscribe({
