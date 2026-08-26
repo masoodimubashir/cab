@@ -129,7 +129,7 @@ export class FixedDriverMapPage implements OnDestroy {
 
   private startPolling(): void {
     this.stopPolling();
-    this.manifestPoll = interval(8000).subscribe(() => {
+    this.manifestPoll = interval(4000).subscribe(() => {
       this.load(false);
     });
   }
@@ -168,10 +168,11 @@ export class FixedDriverMapPage implements OnDestroy {
     if (showSpinner) this.loading = true;
     this.error = null;
 
+    const oldRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
     const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
     const oldPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
     const oldCitySettingsJson = JSON.stringify(this.citySettings || {});
-    const hadMap = !this.map;
+    const hadMap = !!this.map;
 
     this.api.get<ManifestResponse>(`/fixed/departures/${departureId}/manifest`).subscribe({
       next: (res) => {
@@ -185,6 +186,7 @@ export class FixedDriverMapPage implements OnDestroy {
           this.openStopDetail(this.selectedStopDetail.stop);
         }
 
+        const newRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
         const newStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
         const newPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
         const newCitySettingsJson = JSON.stringify(this.citySettings || {});
@@ -194,7 +196,8 @@ export class FixedDriverMapPage implements OnDestroy {
         } else if (
           oldStopsJson !== newStopsJson ||
           oldPassengersJson !== newPassengersJson ||
-          oldCitySettingsJson !== newCitySettingsJson
+          oldCitySettingsJson !== newCitySettingsJson ||
+          oldRadius !== newRadius
         ) {
           this.refreshMap();
         }

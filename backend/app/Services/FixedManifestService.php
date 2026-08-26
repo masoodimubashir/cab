@@ -22,7 +22,11 @@ class FixedManifestService
 
         $route = $departure->route;
         $legacySettings = is_array($route?->fixed_settings_json) ? $route->fixed_settings_json : [];
-        $citySettings = $route?->city_id ? CitySetting::query()->where('city_id', $route->city_id)->first() : null;
+        $cityId = $route?->city_id ?: ($route?->origin_city_id ?: ($departure->driver?->city_id ?: null));
+        $citySettings = $cityId ? CitySetting::query()->where('city_id', $cityId)->first() : null;
+        if (!$citySettings) {
+            $citySettings = CitySetting::query()->first();
+        }
 
         $driverRadius = (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacySettings['stop_arrival_radius_m'] ?? 150));
         $approachingRadius = max($driverRadius, (int) ($citySettings?->fixed_vehicle_approaching_alert_radius_m ?? ($legacySettings['vehicle_approaching_alert_radius_m'] ?? 500)));
