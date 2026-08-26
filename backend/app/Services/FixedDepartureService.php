@@ -302,13 +302,30 @@ class FixedDepartureService
     public function shapeAdminDeparture(RouteDeparture $departure): array
     {
         $this->availability->assertFixedDeparture($departure);
+        $departure->loadMissing('route.stops', 'driver:id,name');
 
         $firstStop = $departure->route?->stops?->sortBy('seq')->first();
         $lastStop = $departure->route?->stops?->sortBy('seq')->last();
         $originRaw = trim((string) ($departure->route?->origin_name ?? ''));
         $destRaw = trim((string) ($departure->route?->dest_name ?? ''));
-        $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($firstStop?->name ?: 'Origin');
-        $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($lastStop?->name ?: 'Destination');
+        $routeName = trim((string) ($departure->route?->name ?? ''));
+
+        $originFallback = $firstStop?->name;
+        if (!$originFallback && $routeName) {
+            if (str_contains($routeName, '->')) $originFallback = trim(explode('->', $routeName)[0]);
+            elseif (str_contains($routeName, '→')) $originFallback = trim(explode('→', $routeName)[0]);
+            elseif (stripos($routeName, ' to ') !== false) $originFallback = trim(preg_split('/ to /i', $routeName)[0]);
+        }
+
+        $destFallback = $lastStop?->name;
+        if (!$destFallback && $routeName) {
+            if (str_contains($routeName, '->')) $destFallback = trim(explode('->', $routeName)[1]);
+            elseif (str_contains($routeName, '→')) $destFallback = trim(explode('→', $routeName)[1]);
+            elseif (stripos($routeName, ' to ') !== false) $destFallback = trim(preg_split('/ to /i', $routeName)[1]);
+        }
+
+        $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($originFallback ?: 'Origin');
+        $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($destFallback ?: 'Destination');
 
         return [
             'id' => $departure->id,

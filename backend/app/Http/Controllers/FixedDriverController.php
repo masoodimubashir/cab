@@ -253,12 +253,12 @@ class FixedDriverController extends Controller
     public function start(Request $request, RouteDeparture $departure)
     {
         $this->guardDriverDeparture($request, $departure);
-        $departure->loadMissing('route');
+        $departure->loadMissing('route.stops');
         $this->serviceModes->assertFixedMode($this->driverProfile($request), $departure->route?->scope ?: Driver::SERVICE_SCOPE_LOCAL);
 
         $departure = DB::transaction(function () use ($request, $departure) {
             /** @var RouteDeparture $dep */
-            $dep = RouteDeparture::query()->with('route')->lockForUpdate()->findOrFail($departure->id);
+            $dep = RouteDeparture::query()->with('route.stops')->lockForUpdate()->findOrFail($departure->id);
             $this->guardDriverDeparture($request, $dep);
 
             if (in_array($dep->status, ['COMPLETED', 'CANCELLED'], true)) {
@@ -269,6 +269,33 @@ class FixedDriverController extends Controller
             if (!$route) {
                 abort(422, 'This fixed route is not available.');
             }
+
+            $firstStop = $route->stops?->sortBy('seq')->first();
+            $lastStop = $route->stops?->sortBy('seq')->last();
+            $originRaw = trim((string) ($route->origin_name ?? ''));
+            $destRaw = trim((string) ($route->dest_name ?? ''));
+            $routeName = trim((string) ($route->name ?? ''));
+
+            $originFallback = $firstStop?->name;
+            if (!$originFallback && $routeName) {
+                if (str_contains($routeName, '->')) $originFallback = trim(explode('->', $routeName)[0]);
+                elseif (str_contains($routeName, '→')) $originFallback = trim(explode('→', $routeName)[0]);
+                elseif (stripos($routeName, ' to ') !== false) $originFallback = trim(preg_split('/ to /i', $routeName)[0]);
+            }
+
+            $destFallback = $lastStop?->name;
+            if (!$destFallback && $routeName) {
+                if (str_contains($routeName, '->')) $destFallback = trim(explode('->', $routeName)[1]);
+                elseif (str_contains($routeName, '→')) $destFallback = trim(explode('→', $routeName)[1]);
+                elseif (stripos($routeName, ' to ') !== false) $destFallback = trim(preg_split('/ to /i', $routeName)[1]);
+            }
+
+            $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($originFallback ?: 'Origin');
+            $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($destFallback ?: 'Destination');
+            $originLat = (float) ($route->origin_lat ?: ($firstStop?->lat ?: 0));
+            $originLng = (float) ($route->origin_lng ?: ($firstStop?->lng ?: 0));
+            $destLat = (float) ($route->dest_lat ?: ($lastStop?->lat ?: 0));
+            $destLng = (float) ($route->dest_lng ?: ($lastStop?->lng ?: 0));
 
             $trip = $dep->trip_id ? Trip::query()->find($dep->trip_id) : null;
             if (!$trip) {
@@ -290,12 +317,12 @@ class FixedDriverController extends Controller
                     'estimated_fare' => $fareTotal,
                     'final_fare' => $fareTotal,
                     'currency' => 'INR',
-                    'pickup_address' => $route->origin_name,
-                    'pickup_lat' => (float) $route->origin_lat,
-                    'pickup_lng' => (float) $route->origin_lng,
-                    'drop_address' => $route->dest_name,
-                    'drop_lat' => (float) $route->dest_lat,
-                    'drop_lng' => (float) $route->dest_lng,
+                    'pickup_address' => $originName,
+                    'pickup_lat' => $originLat,
+                    'pickup_lng' => $originLng,
+                    'drop_address' => $destName,
+                    'drop_lat' => $destLat,
+                    'drop_lng' => $destLng,
                     'confirmed_at' => now(),
                     'assigned_at' => now(),
                     'en_route_pickup_at' => now(),
@@ -314,10 +341,11 @@ class FixedDriverController extends Controller
                 ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
                 ->update(['trip_id' => $trip->id]);
 
-            // Phase 5 — these riders prepaid into a forming departure, so their
-            // mirrored payments have no trip yet. Attach them now that the vehicle
-            // journey exists. No-op while the split engine is disabled.
-            app(\App\Services\BookingPaymentService::class)->linkDepartureBookings($trip, $dep->id);
+            try {
+                app(\App\Services\BookingPaymentService::class)->linkDepartureBookings($trip, $dep->id);
+            } catch (\Throwable $e) {
+                Log::warning('linkDepartureBookings failed', ['error' => $e->getMessage()]);
+            }
 
             $dep->update([
                 'trip_id' => $trip->id,
@@ -328,7 +356,7 @@ class FixedDriverController extends Controller
                 'status' => 'DEPARTED',
             ]);
 
-            return $dep->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name', 'driver:id,name']);
+            return $dep->fresh(['route.stops', 'driver:id,name']);
         });
 
         $this->notifyFixedStarted($departure);
@@ -764,34 +792,42 @@ class FixedDriverController extends Controller
 
     private function notifyFixedStarted(RouteDeparture $departure): void
     {
-        $departure->loadMissing("route:id,name");
-        $routeName = $departure->route?->name ?: "Fixed route";
-        $data = [
-            "route_departure_id" => $departure->id,
-            "route_id" => $departure->route_id,
-            "trip_id" => $departure->trip_id,
-        ];
+        try {
+            $departure->loadMissing("route:id,name");
+            $routeName = $departure->route?->name ?: "Fixed route";
+            $data = [
+                "route_departure_id" => $departure->id,
+                "route_id" => $departure->route_id,
+                "trip_id" => $departure->trip_id,
+            ];
 
-        SeatReservation::query()
-            ->where("route_departure_id", $departure->id)
-            ->whereIn("status", SeatReservation::ACTIVE_STATUSES)
-            ->pluck("customer_id")
-            ->unique()
-            ->each(fn ($customerId) => $this->notifier->notifyUserId((int) $customerId, "fixed_vehicle_started", "Fixed vehicle started", $routeName . " has started.", $data, "play-circle"));
+            SeatReservation::query()
+                ->where("route_departure_id", $departure->id)
+                ->whereIn("status", SeatReservation::ACTIVE_STATUSES)
+                ->pluck("customer_id")
+                ->unique()
+                ->each(fn ($customerId) => $this->notifier->notifyUserId((int) $customerId, "fixed_vehicle_started", "Fixed vehicle started", $routeName . " has started.", $data, "play-circle"));
 
-        $this->notifier->notifyAdmins("fixed_vehicle_started", "Fixed vehicle started", "Driver started " . $routeName . ".", $data + ["driver_id" => $departure->driver_id], "play-circle");
+            $this->notifier->notifyAdmins("fixed_vehicle_started", "Fixed vehicle started", "Driver started " . $routeName . ".", $data + ["driver_id" => $departure->driver_id], "play-circle");
+        } catch (\Throwable $e) {
+            Log::warning('notifyFixedStarted failed', ['error' => $e->getMessage()]);
+        }
     }
 
     private function notifyFixedCompleted(RouteDeparture $departure): void
     {
-        $departure->loadMissing("route:id,name");
-        $routeName = $departure->route?->name ?: "Fixed route";
-        $this->notifier->notifyAdmins("fixed_vehicle_completed", "Fixed vehicle completed", "Driver completed " . $routeName . ".", [
-            "route_departure_id" => $departure->id,
-            "route_id" => $departure->route_id,
-            "trip_id" => $departure->trip_id,
-            "driver_id" => $departure->driver_id,
-        ], "check-circle");
+        try {
+            $departure->loadMissing("route:id,name");
+            $routeName = $departure->route?->name ?: "Fixed route";
+            $this->notifier->notifyAdmins("fixed_vehicle_completed", "Fixed vehicle completed", "Driver completed " . $routeName . ".", [
+                "route_departure_id" => $departure->id,
+                "route_id" => $departure->route_id,
+                "trip_id" => $departure->trip_id,
+                "driver_id" => $departure->driver_id,
+            ], "check-circle");
+        } catch (\Throwable $e) {
+            Log::warning('notifyFixedCompleted failed', ['error' => $e->getMessage()]);
+        }
     }
 
     private function broadcastAvailability(RouteDeparture $departure, string $reason): void
