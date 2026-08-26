@@ -23,8 +23,13 @@
     </div>
 
     <div class="sheet-pane" *ngIf="step === 'routes' && !loading">
-      <div class="sheet-head">
+      <div class="sheet-head fb-routes-head">
         <h3 class="sheet-title">Choose a fixed route</h3>
+        <button type="button" class="fb-city-pill dc-press" (click)="openCityFilter()" aria-label="Filter by city">
+          <ion-icon name="location-sharp" class="fb-city-pill__loc"></ion-icon>
+          <span class="fb-city-pill__name">{{ selectedCityName }}</span>
+          <ion-icon name="chevron-down-outline" class="fb-city-pill__arrow"></ion-icon>
+        </button>
       </div>
       <div class="sheet-body">
         <div class="fb-scope-filter" *ngIf="routes.length">
@@ -312,4 +317,12 @@
     (select)="onFixedPayMethod($event)"
     (dismiss)="paymentModalOpen = false">
   </app-payment-method-modal>
+
+  <app-city-filter-modal
+    [open]="cityModalOpen"
+    [cities]="cities"
+    [selectedCityId]="cityId"
+    (select)="onCityModalSelect($event)"
+    (dismiss)="onCityModalDismiss()">
+  </app-city-filter-modal>
 </ion-content>

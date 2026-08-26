@@ -6,7 +6,8 @@ import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
 import { PaymentOptionsService } from '../../../core/payment-options.service';
 import { PaymentChoice } from '../../../shared/payment-method-modal.component';
-import { BookingService } from '../booking.service';
+import { BookingService, resolveCity } from '../booking.service';
+import { City } from '../booking.models';
 
 import { SeatCell } from './seat-grid.component';
 
@@ -60,7 +61,13 @@ export class FixedBookPage implements OnInit {
   readonly total = 5;
 
   cityId: number | null = null;
+  cities: City[] = [];
+  selectedCity: City | null = null;
   search = '';
+
+  get selectedCityName(): string {
+    return this.selectedCity?.name || (this.cityId ? `City #${this.cityId}` : 'All Cities');
+  }
 
   routes: FixedRoute[] = [];
   route: FixedRoute | null = null;
@@ -105,14 +112,59 @@ export class FixedBookPage implements OnInit {
     private paymentOptions: PaymentOptionsService,
   ) {}
 
-  ngOnInit(): void {
+  async ngOnInit(): Promise<void> {
     this.cityId = this.booking.trip.cityId;
+    await this.loadCities();
     this.loadRoutes();
     // Know the operator's cash deposit split so the ticket can show it.
     void this.paymentOptions.load().then((m) => {
       this.cashDepositPercent = m.cash_deposit_percent || 0;
       this.cdr.markForCheck();
     });
+  }
+
+  async loadCities(): Promise<void> {
+    try {
+      this.cities = await this.booking.cities().catch(() => [] as City[]);
+      if (this.cityId != null && this.cityId > 0) {
+        this.selectedCity = this.cities.find((c) => c.id === this.cityId) || null;
+      }
+      this.cdr.markForCheck();
+    } catch {
+      this.cities = [];
+    }
+  }
+
+  cityModalOpen = false;
+
+  openCityFilter(): void {
+    if (!this.cities.length) {
+      void this.loadCities();
+    }
+    this.cityModalOpen = true;
+    this.cdr.markForCheck();
+  }
+
+  onCityModalSelect(cityId: number | null): void {
+    this.cityModalOpen = false;
+    this.selectCity(cityId);
+  }
+
+  onCityModalDismiss(): void {
+    this.cityModalOpen = false;
+    this.cdr.markForCheck();
+  }
+
+  selectCity(cityId: number | null): void {
+    this.cityId = cityId;
+    this.booking.setCity(cityId);
+    this.selectedCity = this.cities.find((c) => c.id === cityId) || null;
+    this.route = null;
+    this.departure = null;
+    this.boardStopId = null;
+    this.dropStopId = null;
+    this.loadRoutes();
+    this.cdr.markForCheck();
   }
 
   // ---- shell inputs -----------------------------------------------------
@@ -125,7 +177,12 @@ export class FixedBookPage implements OnInit {
 
   private loadRoutes(): void {
     this.loading = true;
-    this.api.get<{ data: FixedRoute[] }>('/fixed/routes').subscribe({
+    const params = new URLSearchParams();
+    if (this.cityId != null && this.cityId > 0) {
+      params.set('city_id', String(this.cityId));
+    }
+    const qStr = params.toString() ? '?' + params.toString() : '';
+    this.api.get<{ data: FixedRoute[] }>('/fixed/routes' + qStr).subscribe({
       next: (res) => { this.routes = res?.data ?? []; this.loading = false; this.cdr.markForCheck(); },
       error: () => { this.routes = []; this.loading = false; this.cdr.markForCheck(); },
     });

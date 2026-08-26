@@ -8,6 +8,11 @@
     barLabel="Share a seat"
     [step]="1" [total]="total"
     (back)="back()">
+    <button title-action type="button" class="fb-city-pill dc-press" (click)="openCityFilter()" aria-label="Filter by city">
+      <ion-icon name="location-sharp" class="fb-city-pill__loc"></ion-icon>
+      <span class="fb-city-pill__name">{{ selectedCityName }}</span>
+      <ion-icon name="chevron-down-outline" class="fb-city-pill__arrow"></ion-icon>
+    </button>
     <label class="bk-field">
       <input class="bk-field__input" type="search" placeholder="Search route or stop"
              autocomplete="off" [(ngModel)]="search" />
@@ -214,5 +219,13 @@
     (select)="onPayMethod($event)"
     (dismiss)="paymentModalOpen = false">
   </app-payment-method-modal>
+
+  <app-city-filter-modal
+    [open]="cityModalOpen"
+    [cities]="cities"
+    [selectedCityId]="cityId"
+    (select)="onCityModalSelect($event)"
+    (dismiss)="onCityModalDismiss()">
+  </app-city-filter-modal>
 
 </ion-content>
