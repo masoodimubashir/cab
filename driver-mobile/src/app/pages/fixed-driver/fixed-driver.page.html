@@ -449,6 +449,11 @@
                       <span *ngIf="boardCooldown(passenger) > 0">Wait {{ boardCooldown(passenger) }}s</span>
                     </button>
 
+                    <div class="dc-board-block-hint" *ngIf="canBoardPassenger(passenger) && !boardReady(passenger) && boardBlockReason(passenger)">
+                      <ion-icon name="information-circle-outline"></ion-icon>
+                      <span>{{ boardBlockReason(passenger) }}</span>
+                    </div>
+
                     <button 
                       class="dc-cta dc-cta--drop dc-press btn-action-drop" 
                       *ngIf="canDropPassenger(passenger)" 

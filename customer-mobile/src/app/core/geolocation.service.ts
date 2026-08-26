@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Geolocation, PermissionStatus } from '@capacitor/geolocation';
+import { ApiService } from './api.service';
+import { AuthService } from './auth.service';
 
 export type LatLng = { lat: number; lng: number };
 
@@ -24,6 +26,24 @@ interface WatchOptions {
  */
 @Injectable({ providedIn: 'root' })
 export class GeolocationService {
+  private lastLocationPingAt = 0;
+
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+  ) {}
+
+  private syncUserLocation(lat: number, lng: number): void {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const now = Date.now();
+    if (now - this.lastLocationPingAt < 3000) return;
+    if (!this.auth.getToken()) return;
+    this.lastLocationPingAt = now;
+    this.api.post('/me/location', { lat, lng }).subscribe({
+      error: () => {},
+    });
+  }
+
   async requestPermissions(): Promise<PermissionStatus | null> {
     try {
       return await Geolocation.requestPermissions();
@@ -44,7 +64,9 @@ export class GeolocationService {
         enableHighAccuracy: true,
         timeout: 8000,
       });
-      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      this.syncUserLocation(coords.lat, coords.lng);
+      return coords;
     } catch {
       return this.browserFallback();
     }
@@ -57,7 +79,7 @@ export class GeolocationService {
         enableHighAccuracy: true,
         timeout: 8000,
       });
-      return {
+      const fix: GeoFix = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         accuracy: pos.coords.accuracy ?? null,
@@ -65,6 +87,8 @@ export class GeolocationService {
         bearing: pos.coords.heading ?? null,
         timestamp: pos.timestamp,
       };
+      this.syncUserLocation(fix.lat, fix.lng);
+      return fix;
     } catch {
       return null;
     }
@@ -83,17 +107,16 @@ export class GeolocationService {
           return;
         }
         if (pos) {
-          callback(
-            {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              accuracy: pos.coords.accuracy ?? null,
-              speed: pos.coords.speed ?? null,
-              bearing: pos.coords.heading ?? null,
-              timestamp: pos.timestamp,
-            },
-            null,
-          );
+          const fix: GeoFix = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? null,
+            speed: pos.coords.speed ?? null,
+            bearing: pos.coords.heading ?? null,
+            timestamp: pos.timestamp,
+          };
+          this.syncUserLocation(fix.lat, fix.lng);
+          callback(fix, null);
         }
       },
     );

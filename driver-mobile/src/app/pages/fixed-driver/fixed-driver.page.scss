@@ -1641,7 +1641,8 @@
     }
   }
 
-  .dc-hint-row {
+  .dc-hint-row,
+  .dc-board-block-hint {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1653,6 +1654,11 @@
     ion-icon {
       font-size: 13px;
       color: #3B82F6;
+      flex-shrink: 0;
+    }
+
+    span {
+      line-height: 1.2;
     }
   }
 }

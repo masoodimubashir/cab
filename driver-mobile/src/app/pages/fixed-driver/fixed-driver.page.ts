@@ -431,7 +431,7 @@ export class FixedDriverPage implements OnDestroy {
     if (showSpinner) this.busy = true;
     const oldRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
     const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
-    const oldPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
+    const oldPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status, lat: p.customer_lat, lng: p.customer_lng })));
     const oldCitySettingsJson = JSON.stringify(this.citySettings || {});
     const hadMap = !!this.map;
 
@@ -449,7 +449,7 @@ export class FixedDriverPage implements OnDestroy {
 
           const newRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
           const newStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
-          const newPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
+          const newPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status, lat: p.customer_lat, lng: p.customer_lng })));
           const newCitySettingsJson = JSON.stringify(this.citySettings || {});
 
           // Live update stop detail popup if open

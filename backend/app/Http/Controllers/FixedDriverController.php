@@ -376,6 +376,8 @@ class FixedDriverController extends Controller
                 'boarding_closed_at' => $dep->boarding_closed_at ?? now(),
                 'visible_to_customers' => true,
                 'status' => 'DEPARTED',
+                'fixed_last_reached_stop_seq' => $dep->fixed_last_reached_stop_seq ?: 1,
+                'fixed_last_reached_stop_at' => $dep->fixed_last_reached_stop_at ?? now(),
             ]);
 
             return $dep->fresh(['route.stops', 'driver:id,name']);

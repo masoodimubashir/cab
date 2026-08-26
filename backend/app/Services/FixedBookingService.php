@@ -54,6 +54,7 @@ class FixedBookingService
 
         $reservation->loadMissing([
             'route:id,name,scope,mode',
+            'route.stops' => fn ($q) => $q->orderBy('seq'),
             'routeDeparture:id,route_id,trip_id,driver_id,city_vehicle_type_id,service_date,depart_at,announced_depart_at,status,capacity,seats_taken,luggage_capacity,luggage_taken,fixed_last_reached_stop_seq,fixed_last_reached_stop_at',
             'routeDeparture.driver:id,name,phone',
             'routeDeparture.cityVehicleType:id,display_name,vehicle_type_id',
@@ -181,6 +182,15 @@ class FixedBookingService
                 'lng' => (float) $latestDriverLocation->lng,
                 'recorded_at' => optional($latestDriverLocation->recorded_at)->toIso8601String(),
             ] : null,
+            'stops' => $reservation->route?->stops?->sortBy('seq')->map(fn ($s) => [
+                'id' => $s->id,
+                'seq' => $s->seq,
+                'name' => $s->name,
+                'lat' => $s->lat !== null ? (float) $s->lat : null,
+                'lng' => $s->lng !== null ? (float) $s->lng : null,
+                'is_pickup' => (bool) $s->is_pickup,
+                'is_drop' => (bool) $s->is_drop,
+            ])->values()->all() ?? [],
             'rating_score' => $reservation->rating_score !== null ? (int) $reservation->rating_score : null,
             'rating_comment' => $reservation->rating_comment,
             'created_at' => optional($reservation->created_at)->toIso8601String(),

@@ -4,6 +4,8 @@ import { AlertController, ToastController } from '@ionic/angular';
 
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
+import { GeolocationService } from '../../../core/geolocation.service';
+import { FixedCustomerLocationService } from '../../../core/fixed-customer-location.service';
 import { PaymentOptionsService } from '../../../core/payment-options.service';
 import { PaymentChoice } from '../../../shared/payment-method-modal.component';
 import { BookingService, resolveCity } from '../booking.service';
@@ -110,10 +112,14 @@ export class FixedBookPage implements OnInit {
     private toastCtrl: ToastController,
     private cdr: ChangeDetectorRef,
     private paymentOptions: PaymentOptionsService,
+    private geo: GeolocationService,
+    private fixedLocation: FixedCustomerLocationService,
   ) {}
 
   async ngOnInit(): Promise<void> {
     this.cityId = this.booking.trip.cityId;
+    void this.fixedLocation.start();
+    void this.geo.getCurrentPosition();
     await this.loadCities();
     this.loadRoutes();
     // Know the operator's cash deposit split so the ticket can show it.

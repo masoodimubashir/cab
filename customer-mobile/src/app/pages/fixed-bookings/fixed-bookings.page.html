@@ -1,18 +1,26 @@
 <ion-content class="fixed-rides-page" [class.fixed-rides-page--active]="activeOnly" [fullscreen]="true">
-  <div class="fixed-top-panel">
-    <div class="page-header">
-      <button class="header-back" (click)="back()" aria-label="Back">
-        <ion-icon name="arrow-back-outline"></ion-icon>
-      </button>
-      <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
-        <ion-icon name="refresh-outline"></ion-icon>
-      </button>
-      <h1>{{ headerTitle() }}</h1>
-      <p>{{ headerSubtitle() }}</p>
-    </div>
+  <div class="page-header dc-anim-up">
+    <button class="header-back" (click)="back()" aria-label="Back">
+      <ion-icon name="arrow-back-outline"></ion-icon>
+    </button>
+    <button class="header-refresh" (click)="refresh()" [disabled]="loading" aria-label="Refresh">
+      <ion-icon name="refresh-outline"></ion-icon>
+    </button>
+    <h1>{{ headerTitle() }}</h1>
+    <p>{{ headerSubtitle() }}</p>
   </div>
 
   <div class="page-body">
+    <!-- Filters bar -->
+    <div class="filter-bar dc-anim-in" *ngIf="!activeOnly && allBookings.length">
+      <button class="filters-btn dc-press" (click)="openFilters()">
+        <ion-icon name="options-outline"></ion-icon>
+        <span>Filters</span>
+        <span class="filter-count" *ngIf="activeFilterCount">{{ activeFilterCount }}</span>
+      </button>
+      <button class="filter-clear" *ngIf="activeFilterCount" (click)="clearFilters()">Clear</button>
+    </div>
+
     <div class="state" *ngIf="loading">
       <ion-spinner name="crescent"></ion-spinner>
     </div>
@@ -35,14 +43,15 @@
 
     <section class="booking-list" *ngIf="!loading && bookings.length">
       <article
-        class="booking-card"
+        class="booking-card dc-press"
         [class.booking-card--active]="activeOnly"
         *ngFor="let booking of bookings"
-        (click)="toggle(booking)"
+        (click)="openDetails(booking)"
       >
         <div class="booking-head">
-          <div>
-            <span>{{ activeOnly ? 'Current route' : ('#' + booking.id + ' · ' + dateLine(booking)) }}</span>
+          <div class="booking-head-left">
+            <span class="booking-route-name">{{ booking.route_name || 'Fixed Route' }}</span>
+            <small class="booking-sub-meta">#{{ booking.id }} · {{ dateLine(booking) }}</small>
           </div>
           <span class="status-pill" [ngClass]="statusClass(booking)">{{ bookingStatusLabel(booking) }}</span>
         </div>
@@ -65,123 +74,22 @@
           </div>
         </div>
 
-        <div class="ride-summary-grid" [class.ride-summary-grid--two]="isDroppedBooking(booking)">
-          <div>
-            <span>Fare</span>
-            <strong>{{ fareLine(booking) }}</strong>
-          </div>
-          <div>
-            <span>Seats</span>
-            <strong>{{ booking.seats }}</strong>
-          </div>
-          <div *ngIf="!isDroppedBooking(booking)">
-            <span>Status</span>
-            <strong>{{ bookingStatusLabel(booking) }}</strong>
-          </div>
-        </div>
-
-        <div class="driver-panel" *ngIf="vehicleLine(booking) || booking.driver_name || booking.vehicle_reg_no">
-          <div class="driver-avatar">
-            <ion-icon name="car-sport-outline" aria-hidden="true"></ion-icon>
-          </div>
-          <div>
-            <strong>{{ booking.driver_name || 'Driver assigned soon' }}</strong>
-            <span>{{ vehicleLine(booking) || 'Vehicle assigned soon' }}</span>
-            <small *ngIf="booking.vehicle_reg_no">{{ booking.vehicle_reg_no }}</small>
-          </div>
-        </div>
-
-<!-- Boarding code (permanent on-screen channel — passenger reads it out to the driver, no SMS) -->
-        <div class="boarding-code-banner" *ngIf="booking.boarding_code">
-          <span>
-            <ion-icon name="keypad-outline"></ion-icon>
-            Boarding code — share only when you board
-          </span>
-          <strong>{{ booking.boarding_code }}</strong>
-        </div>
-
-        <div class="status-note" [ngClass]="statusClass(booking)" *ngIf="bookingStatusDetail(booking)">
-          <ion-icon [name]="bookingStatusTone(booking) === 'success' ? 'checkmark-circle-outline' : (bookingStatusTone(booking) === 'danger' ? 'alert-circle-outline' : 'information-circle-outline')"></ion-icon>
-          <span>{{ bookingStatusDetail(booking) }}</span>
-        </div>
-
-        <div class="details" *ngIf="expandedId === booking.id">
-          <div class="detail-grid">
-            <div class="detail-row">
-              <span>Ride date</span>
-              <strong>{{ dateLine(booking) }}</strong>
-            </div>
-            <div class="detail-row" *ngIf="booking.driver_phone">
-              <span>Driver phone</span>
-              <strong>{{ booking.driver_phone }}</strong>
-            </div>
-            <div class="detail-row" *ngIf="carLine(booking)">
-              <span>Car details</span>
-              <strong>{{ carLine(booking) }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Departure</span>
-              <strong>{{ departureStatusLine(booking) }}</strong>
-            </div>
-            <div class="detail-row detail-row--pair">
-              <div>
-                <span>Seats</span>
-                <strong>{{ seatCapacityLine(booking) }}</strong>
-              </div>
-              <div>
-                <span>Luggage</span>
-                <strong>{{ luggageLine(booking) }}</strong>
-              </div>
-            </div>
-            <div class="detail-row">
-              <span>Booking ID</span>
-              <strong>#{{ booking.id }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Payment</span>
-              <strong>{{ paymentLine(booking) }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Transaction ID</span>
-              <strong>{{ booking.payment_reference || 'Not available' }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Booking type</span>
-              <strong>{{ booking.booking_channel || 'Not available' }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Refund</span>
-              <strong>{{ refundLine(booking) }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Refund reference</span>
-              <strong>{{ booking.refund_reference || 'Not issued' }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Refund amount</span>
-              <strong>{{ booking.refund_amount != null ? ('INR ' + (booking.refund_amount | number: '1.2-2')) : '-' }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Booking status</span>
-              <strong>{{ rawStatusLine(booking) }}</strong>
-            </div>
+        <div class="booking-foot-row">
+          <div class="booking-foot-meta">
+            <strong class="booking-fare">{{ fareLine(booking) }}</strong>
+            <span class="booking-seats">{{ booking.seats }} seat{{ booking.seats > 1 ? 's' : '' }}</span>
+            <span class="booking-pay-status" [class.is-paid]="booking.payment_status === 'PAID'">{{ booking.payment_status || 'PAID' }}</span>
           </div>
 
-          <div class="booking-actions" *ngIf="isActiveBooking(booking) || canCancel(booking)">
-            <button class="track-btn" type="button" *ngIf="isActiveBooking(booking)" (click)="openRide($event, booking)">
-              <ion-icon name="navigate-outline"></ion-icon>
-              <span>Open ride</span>
-            </button>
-            <button class="cancel-btn" type="button" *ngIf="canCancel(booking)" (click)="cancelBooking($event, booking)" [disabled]="cancellingId === booking.id">
-              <ion-spinner *ngIf="cancellingId === booking.id" name="crescent"></ion-spinner>
-              <ion-icon *ngIf="cancellingId !== booking.id" name="close-circle-outline"></ion-icon>
-              <span>{{ cancellingId === booking.id ? 'Cancelling...' : 'Cancel ride' }}</span>
-            </button>
-          </div>
+          <button type="button" class="btn-open-details dc-press" (click)="openDetails(booking); $event.stopPropagation()">
+            <span>Open</span>
+            <ion-icon name="chevron-forward-outline"></ion-icon>
+          </button>
         </div>
       </article>
+
       <div class="load-more-wrap" *ngIf="hasMore">
-        <button class="load-more-btn" type="button" (click)="loadMore()" [disabled]="loadingMore">
+        <button class="load-more-btn dc-press" type="button" (click)="loadMore()" [disabled]="loadingMore">
           <ion-spinner *ngIf="loadingMore" name="crescent"></ion-spinner>
           <ion-icon *ngIf="!loadingMore" name="chevron-down-outline"></ion-icon>
           <span>{{ loadingMore ? 'Loading...' : 'Load more' }}</span>
@@ -190,44 +98,191 @@
     </section>
   </div>
 
-  <section slot="fixed" class="filter-panel filter-panel--bottom" *ngIf="!loading && !error && !activeOnly && allBookings.length">
-    <div class="filter-row">
-      <label>
-        <span>Status</span>
-        <ion-select interface="popover" [(ngModel)]="statusFilter" (ionChange)="applyFilters()">
-          <ion-select-option value="all">All</ion-select-option>
-          <ion-select-option value="active">Active</ion-select-option>
-          <ion-select-option value="completed">Completed</ion-select-option>
-          <ion-select-option value="cancelled">Cancelled</ion-select-option>
-          <ion-select-option value="no_show">No-show</ion-select-option>
-          <ion-select-option value="dropped">Dropped</ion-select-option>
-        </ion-select>
-      </label>
+  <!-- ============ Booking Details Bottom Sheet Modal ============ -->
+  <div class="details-overlay" [class.open]="detailsModalOpen && selectedBooking">
+    <div class="sheet-backdrop" (click)="closeDetails()"></div>
 
-      <label>
-        <span>Route taken</span>
-        <ion-select interface="popover" [(ngModel)]="routeFilter" (ionChange)="applyFilters()">
-          <ion-select-option value="all">All routes</ion-select-option>
-          <ion-select-option *ngFor="let route of routeOptions" [value]="route">{{ route }}</ion-select-option>
-        </ion-select>
-      </label>
+    <div class="details-sheet" *ngIf="selectedBooking as b">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-head">
+        <div>
+          <h3>Ride Details</h3>
+          <span class="sheet-sub">#{{ b.id }} · {{ b.route_name || 'Fixed Ride' }}</span>
+        </div>
+        <button class="sheet-close" (click)="closeDetails()" aria-label="Close">
+          <ion-icon name="close"></ion-icon>
+        </button>
+      </div>
+
+      <div class="sheet-scroll">
+        <!-- Live status message banner -->
+        <div class="details-status-banner" [ngClass]="statusClass(b)">
+          <div class="status-icon-dot"></div>
+          <div>
+            <strong>{{ bookingStatusLabel(b) }}</strong>
+            <p *ngIf="bookingStatusDetail(b)">{{ bookingStatusDetail(b) }}</p>
+          </div>
+        </div>
+
+        <!-- Boarding Code (Prominent OTP block) -->
+        <div class="details-code-card" *ngIf="b.boarding_code">
+          <div class="code-head">
+            <ion-icon name="keypad-outline"></ion-icon>
+            <span>BOARDING CODE</span>
+          </div>
+          <strong class="code-val">{{ b.boarding_code }}</strong>
+          <small>Share this code with your driver only when boarding.</small>
+        </div>
+
+        <!-- Route Stops Card -->
+        <div class="details-card details-route-card">
+          <div class="d-stop">
+            <span class="d-stop-dot d-stop-dot--pickup"></span>
+            <div>
+              <small>PICKUP STOP</small>
+              <strong>{{ b.board || 'Pickup stop' }}</strong>
+            </div>
+          </div>
+          <div class="d-stop-line"></div>
+          <div class="d-stop">
+            <span class="d-stop-dot d-stop-dot--drop"></span>
+            <div>
+              <small>DROP-OFF STOP</small>
+              <strong>{{ b.drop || 'Drop stop' }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Driver & Vehicle Card (if assigned) -->
+        <div class="details-card details-driver-card" *ngIf="b.driver_name || vehicleLine(b) || b.vehicle_reg_no">
+          <div class="driver-avatar-box">
+            <ion-icon name="car-sport"></ion-icon>
+          </div>
+          <div class="driver-info">
+            <strong>{{ b.driver_name || 'Driver assigned soon' }}</strong>
+            <span>{{ vehicleLine(b) }}</span>
+            <small *ngIf="carLine(b) || b.vehicle_reg_no">{{ carLine(b) }} {{ b.vehicle_reg_no ? '· ' + b.vehicle_reg_no : '' }}</small>
+          </div>
+          <button class="call-driver-btn dc-press" *ngIf="b.driver_phone" (click)="callDriver(b.driver_phone)" aria-label="Call driver">
+            <ion-icon name="call"></ion-icon>
+            <span>Call</span>
+          </button>
+        </div>
+
+        <!-- Specs Grid -->
+        <div class="details-specs-grid">
+          <div class="spec-cell">
+            <small>RIDE DATE</small>
+            <strong>{{ dateLine(b) }}</strong>
+          </div>
+          <div class="spec-cell">
+            <small>DEPARTURE</small>
+            <strong>{{ departureStatusLine(b) }}</strong>
+          </div>
+          <div class="spec-cell">
+            <small>SEATS</small>
+            <strong>{{ seatCapacityLine(b) }}</strong>
+          </div>
+          <div class="spec-cell">
+            <small>LUGGAGE</small>
+            <strong>{{ luggageLine(b) }}</strong>
+          </div>
+          <div class="spec-cell">
+            <small>FARE</small>
+            <strong class="spec-fare">{{ fareLine(b) }}</strong>
+          </div>
+          <div class="spec-cell">
+            <small>PAYMENT</small>
+            <strong>{{ paymentLine(b) }}</strong>
+          </div>
+          <div class="spec-cell" *ngIf="b.payment_reference">
+            <small>TRANSACTION</small>
+            <strong class="spec-truncate">{{ b.payment_reference }}</strong>
+          </div>
+          <div class="spec-cell" *ngIf="b.refund_status">
+            <small>REFUND</small>
+            <strong>{{ refundLine(b) }} {{ b.refund_amount != null ? ('(₹' + b.refund_amount + ')') : '' }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons Footer in Modal -->
+      <div class="details-actions">
+        <button class="action-btn action-btn--track dc-press" type="button" *ngIf="isActiveBooking(b)" (click)="openRide($event, b)">
+          <ion-icon name="navigate-outline"></ion-icon>
+          <span>Open Live Ride Map</span>
+        </button>
+        <button class="action-btn action-btn--cancel dc-press" type="button" *ngIf="canCancel(b)" (click)="cancelBooking($event, b)" [disabled]="cancellingId === b.id">
+          <ion-spinner *ngIf="cancellingId === b.id" name="crescent"></ion-spinner>
+          <ion-icon *ngIf="cancellingId !== b.id" name="close-circle-outline"></ion-icon>
+          <span>{{ cancellingId === b.id ? 'Cancelling...' : 'Cancel Fixed Ride' }}</span>
+        </button>
+      </div>
     </div>
+  </div>
 
-    <div class="filter-row">
-      <label>
-        <span>From</span>
-        <ion-input type="date" [(ngModel)]="fromDate" (ionChange)="applyFilters()"></ion-input>
-      </label>
+  <!-- ============ Filter bottom sheet ============ -->
+  <div class="filter-overlay" [class.open]="filtersOpen">
+    <div class="sheet-backdrop" (click)="closeFilters()"></div>
 
-      <label>
-        <span>To</span>
-        <ion-input type="date" [(ngModel)]="toDate" (ionChange)="applyFilters()"></ion-input>
-      </label>
+    <div class="filter-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h3>Filters</h3>
+        <button class="sheet-close" (click)="closeFilters()" aria-label="Close">
+          <ion-icon name="close"></ion-icon>
+        </button>
+      </div>
+
+      <div class="sheet-scroll">
+        <!-- Route -->
+        <span class="sheet-group-label" *ngIf="routeOptions.length > 1">Route</span>
+        <div class="sheet-chips" *ngIf="routeOptions.length > 1">
+          <button class="sheet-chip" [class.active]="routeFilter === 'all'" (click)="setRoute('all')">All routes</button>
+          <button
+            class="sheet-chip"
+            *ngFor="let r of routeOptions"
+            [class.active]="routeFilter === r"
+            (click)="setRoute(r)"
+          >
+            {{ r }}
+          </button>
+        </div>
+
+        <!-- Status -->
+        <span class="sheet-group-label">Status</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="statusFilter === 'all'" (click)="setStatus('all')">All</button>
+          <button class="sheet-chip" [class.active]="statusFilter === 'active'" (click)="setStatus('active')">Active</button>
+          <button class="sheet-chip" [class.active]="statusFilter === 'completed'" (click)="setStatus('completed')">Completed</button>
+          <button class="sheet-chip" [class.active]="statusFilter === 'dropped'" (click)="setStatus('dropped')">Dropped</button>
+          <button class="sheet-chip" [class.active]="statusFilter === 'cancelled'" (click)="setStatus('cancelled')">Cancelled</button>
+          <button class="sheet-chip" [class.active]="statusFilter === 'no_show'" (click)="setStatus('no_show')">No-show</button>
+        </div>
+
+        <!-- Payment status -->
+        <span class="sheet-group-label">Payment status</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="paymentFilter === 'all'" (click)="setPayment('all')">Any</button>
+          <button class="sheet-chip" [class.active]="paymentFilter === 'paid'" (click)="setPayment('paid')">Paid</button>
+          <button class="sheet-chip" [class.active]="paymentFilter === 'unpaid'" (click)="setPayment('unpaid')">Unpaid</button>
+        </div>
+
+        <!-- Date range -->
+        <span class="sheet-group-label">Date</span>
+        <div class="sheet-chips">
+          <button class="sheet-chip" [class.active]="dateRange === 'all'" (click)="setDateRange('all')">All time</button>
+          <button class="sheet-chip" [class.active]="dateRange === '7d'" (click)="setDateRange('7d')">Last 7 days</button>
+          <button class="sheet-chip" [class.active]="dateRange === '30d'" (click)="setDateRange('30d')">Last 30 days</button>
+          <button class="sheet-chip" [class.active]="dateRange === '90d'" (click)="setDateRange('90d')">Last 90 days</button>
+        </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="sheet-clear dc-press" (click)="clearFilters()" [disabled]="!activeFilterCount">Clear all</button>
+        <button class="sheet-apply dc-press" (click)="closeFilters()">Show results</button>
+      </div>
     </div>
-
-    <div class="filter-foot">
-      <span>{{ bookings.length }} of {{ totalBookings || allBookings.length }} shown</span>
-      <button type="button" *ngIf="hasActiveFilters" (click)="clearFilters()">Clear</button>
-    </div>
-  </section>
+  </div>
 </ion-content>
