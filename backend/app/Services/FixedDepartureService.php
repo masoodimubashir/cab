@@ -310,22 +310,26 @@ class FixedDepartureService
         $destRaw = trim((string) ($departure->route?->dest_name ?? ''));
         $routeName = trim((string) ($departure->route?->name ?? ''));
 
-        $originFallback = $firstStop?->name;
-        if (!$originFallback && $routeName) {
-            if (str_contains($routeName, '->')) $originFallback = trim(explode('->', $routeName)[0]);
-            elseif (str_contains($routeName, '→')) $originFallback = trim(explode('→', $routeName)[0]);
-            elseif (stripos($routeName, ' to ') !== false) $originFallback = trim(preg_split('/ to /i', $routeName)[0]);
+        $originFromRoute = null;
+        $destFromRoute = null;
+        if ($routeName !== '') {
+            if (str_contains($routeName, '->')) {
+                $parts = explode('->', $routeName);
+                $originFromRoute = trim($parts[0]);
+                $destFromRoute = trim($parts[1] ?? '');
+            } elseif (str_contains($routeName, '→')) {
+                $parts = explode('→', $routeName);
+                $originFromRoute = trim($parts[0]);
+                $destFromRoute = trim($parts[1] ?? '');
+            } elseif (stripos($routeName, ' to ') !== false) {
+                $parts = preg_split('/ to /i', $routeName);
+                $originFromRoute = trim($parts[0]);
+                $destFromRoute = trim($parts[1] ?? '');
+            }
         }
 
-        $destFallback = $lastStop?->name;
-        if (!$destFallback && $routeName) {
-            if (str_contains($routeName, '->')) $destFallback = trim(explode('->', $routeName)[1]);
-            elseif (str_contains($routeName, '→')) $destFallback = trim(explode('→', $routeName)[1]);
-            elseif (stripos($routeName, ' to ') !== false) $destFallback = trim(preg_split('/ to /i', $routeName)[1]);
-        }
-
-        $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($originFallback ?: 'Origin');
-        $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($destFallback ?: 'Destination');
+        $originName = $originFromRoute ?: ($firstStop?->name ?: ($originRaw !== '' && strtolower($originRaw) !== 'origin' ? $originRaw : 'Origin'));
+        $destName = $destFromRoute ?: ($lastStop?->name ?: ($destRaw !== '' && strtolower($destRaw) !== 'destination' ? $destRaw : 'Destination'));
 
         return [
             'id' => $departure->id,

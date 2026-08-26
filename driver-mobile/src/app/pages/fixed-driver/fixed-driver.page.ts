@@ -879,60 +879,58 @@ export class FixedDriverPage implements OnDestroy {
 
   getRouteOriginName(route: FixedRoute | null): string {
     if (!route) return 'Origin';
-    if (route.stops && route.stops.length > 0 && route.stops[0]?.name) {
-      return route.stops[0].name.trim();
-    }
-    const raw = route.origin_name;
-    if (raw && raw.trim().toLowerCase() !== 'origin') return raw.trim();
-
-    const rName = route.name;
+    const rName = route.name?.trim() || '';
     if (rName) {
       if (rName.includes('->')) return rName.split('->')[0].trim();
       if (rName.includes('→')) return rName.split('→')[0].trim();
       if (rName.toLowerCase().includes(' to ')) return rName.split(/ to /i)[0].trim();
     }
-
-    return raw?.trim() || 'Origin';
+    if (route.stops && route.stops.length > 0 && route.stops[0]?.name) {
+      return route.stops[0].name.trim();
+    }
+    const raw = route.origin_name?.trim();
+    if (raw && raw.toLowerCase() !== 'origin') return raw;
+    return 'Origin';
   }
 
   getRouteDestName(route: FixedRoute | null): string {
     if (!route) return 'Destination';
-    if (route.stops && route.stops.length > 1 && route.stops[route.stops.length - 1]?.name) {
-      return route.stops[route.stops.length - 1].name.trim();
-    }
-    const raw = route.dest_name;
-    if (raw && raw.trim().toLowerCase() !== 'destination') return raw.trim();
-
-    const rName = route.name;
+    const rName = route.name?.trim() || '';
     if (rName) {
       if (rName.includes('->')) return rName.split('->')[1].trim();
       if (rName.includes('→')) return rName.split('→')[1].trim();
       if (rName.toLowerCase().includes(' to ')) return rName.split(/ to /i)[1].trim();
     }
-
-    return raw?.trim() || 'Destination';
+    if (route.stops && route.stops.length > 1 && route.stops[route.stops.length - 1]?.name) {
+      return route.stops[route.stops.length - 1].name.trim();
+    }
+    const raw = route.dest_name?.trim();
+    if (raw && raw.toLowerCase() !== 'destination') return raw;
+    return 'Destination';
   }
 
   get routeOriginName(): string {
+    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id) || null;
+    const fromRoute = this.getRouteOriginName(route);
+    if (fromRoute && fromRoute !== 'Origin') return fromRoute;
+
     if (this.stops.length > 0 && this.stops[0]?.name) return this.stops[0].name;
-
-    const raw = this.activeVehicle?.origin_name;
-    if (raw && raw.trim().toLowerCase() !== 'origin') return raw.trim();
-
-    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id);
-    return this.getRouteOriginName(route || null);
+    const raw = this.activeVehicle?.origin_name?.trim();
+    if (raw && raw.toLowerCase() !== 'origin') return raw;
+    return 'Origin';
   }
 
   get routeDestName(): string {
+    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id) || null;
+    const fromRoute = this.getRouteDestName(route);
+    if (fromRoute && fromRoute !== 'Destination') return fromRoute;
+
     if (this.stops.length > 1 && this.stops[this.stops.length - 1]?.name) {
       return this.stops[this.stops.length - 1].name;
     }
-
-    const raw = this.activeVehicle?.dest_name;
-    if (raw && raw.trim().toLowerCase() !== 'destination') return raw.trim();
-
-    const route = this.routes.find((r) => r.id === this.activeVehicle?.route_id);
-    return this.getRouteDestName(route || null);
+    const raw = this.activeVehicle?.dest_name?.trim();
+    if (raw && raw.toLowerCase() !== 'destination') return raw;
+    return 'Destination';
   }
 
   vehicleRouteLine(vehicle: FixedVehicle | null): string {
