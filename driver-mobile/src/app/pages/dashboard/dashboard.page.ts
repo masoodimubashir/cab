@@ -1,7 +1,7 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, interval, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
 import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.service';
@@ -12,6 +12,7 @@ import { RealtimeService } from '../../core/realtime.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
+import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
 
 declare const google: any;
 
@@ -52,6 +53,44 @@ interface FixedRouteOption {
 interface FixedVehicleSummary {
   id: number;
   status: string;
+  route_id?: number;
+  route_name?: string;
+  origin_name?: string;
+  dest_name?: string;
+}
+
+interface FixedStop {
+  id: number;
+  seq: number;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  is_active?: boolean;
+  is_temporarily_unavailable?: boolean;
+}
+
+interface FixedPassenger {
+  id: number;
+  customer_name?: string;
+  seats?: number;
+  status?: string;
+  board_stop_id?: number;
+  drop_stop_id?: number;
+  board?: string;
+  board_lat?: number | null;
+  board_lng?: number | null;
+  drop?: string;
+  drop_lat?: number | null;
+  drop_lng?: number | null;
+  customer_lat?: number | null;
+  customer_lng?: number | null;
+}
+
+interface FixedManifestResponse {
+  departure: any;
+  stops?: FixedStop[];
+  passengers?: FixedPassenger[];
+  city_settings?: any;
 }
 
 /**
@@ -125,7 +164,14 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   routePickerRoutes: FixedRouteOption[] = [];
   openingRouteId: number | null = null;
   routePickerError: string | null = null;
-  activeFixedVehicleOpen = false;
+  activeFixedVehicle: FixedVehicleSummary | null = null;
+  activeDepartureManifest: any | null = null;
+  fixedStops: FixedStop[] = [];
+  fixedPassengers: FixedPassenger[] = [];
+
+  get activeFixedVehicleOpen(): boolean {
+    return !!this.activeFixedVehicle && !['COMPLETED', 'CANCELLED'].includes(this.activeFixedVehicle.status);
+  }
 
   /** Destinations the drawer exposes — everything the tab bar used to reach. */
   readonly navGroups: NavGroup[] = [
@@ -165,6 +211,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private markerHeading: HTMLElement | null = null;
   private visualWatchId: string | null = null;
   private lastPos: { lat: number; lng: number } | null = null;
+  private fixedRouteLine: any = null;
+  private fixedStopMarkers: any[] = [];
+  private fixedPassengerMarkers: any[] = [];
+  private fixedManifestPoll?: Subscription;
   /** Live "your verification changed" listener (admin approval/rejection). */
   private driverVerifyUnsub: (() => void) | null = null;
   // Default map centre (Mumbai) until we have a real fix.
@@ -329,6 +379,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   ionViewWillLeave(): void {
     this.stopSyncTimer();
+    this.stopFixedManifestPolling();
     // Drop the visual-only watch when navigating away. If the driver is online,
     // DriverPresenceService keeps its own watch alive so dispatch still sees us.
     void this.stopVisualWatch();
@@ -336,6 +387,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopSyncTimer();
+    this.stopFixedManifestPolling();
+    this.clearFixedMapObjects();
     void this.stopVisualWatch();
     this.stopOnlineTimer();
     this.driverVerifyUnsub?.();
@@ -458,8 +511,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.routePickerError = null;
 
     try {
-      await firstValueFrom(this.api.post('/fixed/driver/vehicles', { route_id: route.id }));
-      this.activeFixedVehicleOpen = true;
+      const created = await firstValueFrom(this.api.post<{ departure?: FixedVehicleSummary; vehicle?: FixedVehicleSummary }>('/fixed/driver/vehicles', { route_id: route.id }));
+      this.activeFixedVehicle = created?.departure || created?.vehicle || { id: 0, status: 'FORMING' };
       this.routePickerOpen = false;
       setTimeout(() => this.router.navigateByUrl('/tabs/fixed'), 120);
     } catch (e) {
@@ -476,16 +529,328 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return route.name || ((route.origin_name && route.dest_name) ? route.origin_name + ' to ' + route.dest_name : 'Fixed route #' + route.id);
   }
 
+  get fixedRouteLineTitle(): string {
+    const dep = this.activeDepartureManifest || this.activeFixedVehicle;
+    if (!dep) return 'Fixed Route Ride';
+    if (dep.origin_name && dep.dest_name && dep.origin_name !== 'Origin' && dep.dest_name !== 'Destination') {
+      return `${dep.origin_name} to ${dep.dest_name}`;
+    }
+    if (this.fixedStops.length > 1) {
+      return `${this.fixedStops[0]?.name || 'Origin'} to ${this.fixedStops[this.fixedStops.length - 1]?.name || 'Destination'}`;
+    }
+    return dep.route_name || 'Fixed Route Ride';
+  }
+
+  get fixedRideStatusLabel(): string {
+    const status = this.activeDepartureManifest?.status || this.activeFixedVehicle?.status || '';
+    switch (status.toUpperCase()) {
+      case 'FORMING': return 'Boarding Active';
+      case 'DISPATCHED': return 'Assigned';
+      case 'DEPARTED': return 'Ride In Progress';
+      default: return 'Active Ride';
+    }
+  }
+
+  get fixedPassengerCountSummary(): string {
+    if (!this.fixedPassengers.length) return '';
+    const waiting = this.fixedPassengers.filter((p) => ['BOOKED', 'CONFIRMED'].includes((p.status || '').toUpperCase())).length;
+    const boarded = this.fixedPassengers.filter((p) => (p.status || '').toUpperCase() === 'BOARDED').length;
+    return `${waiting} waiting · ${boarded} on-board`;
+  }
+
+  get fixedNextStopName(): string | null {
+    if (!this.fixedStops.length) return null;
+    const reachedSeq = Number(this.activeDepartureManifest?.fixed_last_reached_stop_seq || 0);
+    const nextStop = this.fixedStops.find((s) => Number(s.seq) > reachedSeq);
+    return nextStop?.name || null;
+  }
+
   private async loadActiveFixedVehicleState(): Promise<boolean> {
     try {
       const existing = await firstValueFrom(this.api.get<{ data: FixedVehicleSummary[] }>('/fixed/driver/vehicles'));
-      const active = (existing.data || []).some((vehicle) => !['COMPLETED', 'CANCELLED'].includes(vehicle.status));
-      this.activeFixedVehicleOpen = active;
-      return active;
+      const active = (existing.data || []).find((vehicle) => !['COMPLETED', 'CANCELLED'].includes(vehicle.status));
+      if (active) {
+        this.activeFixedVehicle = active;
+        this.startFixedManifestPolling(active.id);
+        return true;
+      } else {
+        this.clearActiveFixedRide();
+        return false;
+      }
     } catch {
-      this.activeFixedVehicleOpen = false;
+      this.clearActiveFixedRide();
       return false;
     }
+  }
+
+  private startFixedManifestPolling(vehicleId: number): void {
+    this.stopFixedManifestPolling();
+    this.loadFixedManifest(vehicleId);
+    this.fixedManifestPoll = interval(4000).subscribe(() => {
+      this.loadFixedManifest(vehicleId);
+    });
+  }
+
+  private stopFixedManifestPolling(): void {
+    this.fixedManifestPoll?.unsubscribe();
+    this.fixedManifestPoll = undefined;
+  }
+
+  private loadFixedManifest(vehicleId: number): void {
+    const oldStopsJson = JSON.stringify(this.fixedStops.map((s) => ({ id: s.id, seq: s.seq })));
+    const oldPassengersJson = JSON.stringify(this.fixedPassengers.map((p) => ({
+      id: p.id,
+      status: p.status,
+      lat: p.customer_lat,
+      lng: p.customer_lng,
+    })));
+
+    this.api.get<FixedManifestResponse>(`/fixed/departures/${vehicleId}/manifest`).subscribe({
+      next: (res) => {
+        if (!res?.departure || ['COMPLETED', 'CANCELLED'].includes(res.departure.status)) {
+          this.clearActiveFixedRide();
+          return;
+        }
+        this.activeDepartureManifest = res.departure;
+        this.fixedPassengers = res.passengers || [];
+        this.fixedStops = (res.stops || []).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+
+        const newStopsJson = JSON.stringify(this.fixedStops.map((s) => ({ id: s.id, seq: s.seq })));
+        const newPassengersJson = JSON.stringify(this.fixedPassengers.map((p) => ({
+          id: p.id,
+          status: p.status,
+          lat: p.customer_lat,
+          lng: p.customer_lng,
+        })));
+
+        if (!this.fixedRouteLine || oldStopsJson !== newStopsJson || oldPassengersJson !== newPassengersJson) {
+          this.renderFixedRouteOnDashboard();
+        }
+      },
+      error: () => {
+        // Keep current state on transient failure
+      },
+    });
+  }
+
+  private clearActiveFixedRide(): void {
+    this.stopFixedManifestPolling();
+    this.hasInitialOverviewFramed = false;
+    this.activeFixedVehicle = null;
+    this.activeDepartureManifest = null;
+    this.fixedStops = [];
+    this.fixedPassengers = [];
+    this.clearFixedMapObjects();
+
+    if (this.lastPos) {
+      this.applyFix(this.lastPos.lat, this.lastPos.lng, null, null, false);
+    }
+  }
+
+  private clearFixedMapObjects(): void {
+    if (this.fixedRouteLine) {
+      this.fixedRouteLine.setMap(null);
+      this.fixedRouteLine = null;
+    }
+    for (const marker of this.fixedStopMarkers) marker.map = null;
+    for (const marker of this.fixedPassengerMarkers) marker.map = null;
+    this.fixedStopMarkers = [];
+    this.fixedPassengerMarkers = [];
+  }
+
+  private hasInitialOverviewFramed = false;
+
+  private renderFixedRouteOnDashboard(): void {
+    if (!this.map) return;
+    this.clearFixedMapObjects();
+
+    const routeStops = this.fixedStops.filter((stop) =>
+      stop.lat != null && stop.lng != null && Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng))
+    );
+
+    if (routeStops.length > 0) {
+      // 1. Fixed Route Line
+      this.fixedRouteLine = new google.maps.Polyline({
+        path: routeStops.map((s) => ({ lat: Number(s.lat), lng: Number(s.lng) })),
+        map: this.map,
+        strokeColor: '#12B35B',
+        strokeOpacity: 0.9,
+        strokeWeight: 5,
+      });
+
+      // 2. Stop Markers
+      this.fixedStopMarkers = routeStops.map((stop) => {
+        return new google.maps.marker.AdvancedMarkerElement({
+          position: { lat: Number(stop.lat), lng: Number(stop.lng) },
+          map: this.map,
+          title: stop.name,
+          content: this.buildFixedStopMarker(stop),
+          zIndex: Number(stop.seq || 0),
+        });
+      });
+    }
+
+    // 3. Passenger Markers
+    this.fixedPassengerMarkers = this.fixedPassengerPointGroups().map((point) => {
+      return new google.maps.marker.AdvancedMarkerElement({
+        position: point.position,
+        map: this.map,
+        title: point.title,
+        content: this.buildFixedPassengerMarker(point.kind, point.count, point.name, point.isLive),
+        zIndex: point.kind === 'pickup' ? (point.isLive ? 960 : 920) : 850,
+      });
+    });
+
+    // 4. Force driver car marker update
+    if (this.lastPos) {
+      this.applyFix(this.lastPos.lat, this.lastPos.lng, null, null, false);
+    }
+
+    // 5. Fit active corridor overview
+    if (!this.hasInitialOverviewFramed) {
+      this.fitFixedRideOverview();
+      this.hasInitialOverviewFramed = true;
+    }
+  }
+
+  private fitFixedRideOverview(): void {
+    if (!this.map || typeof google === 'undefined' || !google.maps) return;
+    const bounds = new google.maps.LatLngBounds();
+    let count = 0;
+
+    for (const stop of this.fixedStops) {
+      if (stop.lat != null && stop.lng != null && Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng))) {
+        bounds.extend({ lat: Number(stop.lat), lng: Number(stop.lng) });
+        count++;
+      }
+    }
+
+    for (const marker of this.fixedPassengerMarkers) {
+      if (marker?.position) {
+        bounds.extend(marker.position as any);
+        count++;
+      }
+    }
+
+    if (this.lastPos) {
+      bounds.extend(this.lastPos);
+      count++;
+    }
+
+    if (count > 0) {
+      this.map.fitBounds(bounds, { top: 90, right: 36, bottom: 250, left: 36 } as any);
+    }
+  }
+
+  private buildFixedStopMarker(stop: FixedStop): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'fixed-driver-stop-marker';
+    const reachedSeq = Number(this.activeDepartureManifest?.fixed_last_reached_stop_seq || 0);
+    const tone = Number(stop.seq || 0) <= reachedSeq ? '#64748B' : '#12B35B';
+    el.style.setProperty('--stop-color', tone);
+    el.innerHTML = `<span>${stop.seq}</span>`;
+    return el;
+  }
+
+  private fixedPassengerPointGroups(): Array<{
+    kind: 'pickup' | 'drop';
+    count: number;
+    title: string;
+    name: string;
+    isLive: boolean;
+    position: { lat: number; lng: number };
+  }> {
+    const points: Array<{
+      kind: 'pickup' | 'drop';
+      count: number;
+      title: string;
+      name: string;
+      isLive: boolean;
+      position: { lat: number; lng: number };
+    }> = [];
+
+    for (const passenger of this.fixedPassengers) {
+      const status = (passenger.status || '').toUpperCase();
+      if (['CANCELLED', 'NO_SHOW', 'DROPPED', 'COMPLETED'].includes(status)) continue;
+
+      if (['BOOKED', 'CONFIRMED'].includes(status)) {
+        const pickup = this.getFixedPassengerPosition(passenger, 'pickup');
+        if (pickup) {
+          const isLive = passenger.customer_lat != null && passenger.customer_lng != null &&
+            Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng));
+          const name = passenger.customer_name || 'Passenger';
+          points.push({
+            kind: 'pickup',
+            count: passenger.seats || 1,
+            name,
+            isLive,
+            title: `${name} (${passenger.seats || 1} seat${(passenger.seats || 1) > 1 ? 's' : ''}) - ${isLive ? 'Live Walking' : 'Pickup at ' + (passenger.board || 'stop')}`,
+            position: pickup,
+          });
+        }
+      } else if (status === 'BOARDED') {
+        const drop = this.getFixedPassengerPosition(passenger, 'drop');
+        if (drop) {
+          const name = passenger.customer_name || 'Passenger';
+          points.push({
+            kind: 'drop',
+            count: passenger.seats || 1,
+            name,
+            isLive: false,
+            title: `${name} - Drop off at ${passenger.drop || 'destination'}`,
+            position: drop,
+          });
+        }
+      }
+    }
+    return points;
+  }
+
+  private getFixedPassengerPosition(passenger: FixedPassenger, kind: 'pickup' | 'drop'): { lat: number; lng: number } | null {
+    if (kind === 'pickup') {
+      if (passenger.customer_lat != null && passenger.customer_lng != null &&
+          Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng))) {
+        return { lat: Number(passenger.customer_lat), lng: Number(passenger.customer_lng) };
+      }
+      if (passenger.board_lat != null && passenger.board_lng != null &&
+          Number.isFinite(Number(passenger.board_lat)) && Number.isFinite(Number(passenger.board_lng))) {
+        return { lat: Number(passenger.board_lat), lng: Number(passenger.board_lng) };
+      }
+      const stop = this.fixedStops.find((s) => Number(s.id) === Number(passenger.board_stop_id));
+      return (stop?.lat != null && stop?.lng != null) ? { lat: Number(stop.lat), lng: Number(stop.lng) } : null;
+    }
+
+    if (passenger.drop_lat != null && passenger.drop_lng != null &&
+        Number.isFinite(Number(passenger.drop_lat)) && Number.isFinite(Number(passenger.drop_lng))) {
+      return { lat: Number(passenger.drop_lat), lng: Number(passenger.drop_lng) };
+    }
+    const dropStop = this.fixedStops.find((s) => Number(s.id) === Number(passenger.drop_stop_id));
+    return (dropStop?.lat != null && dropStop?.lng != null) ? { lat: Number(dropStop.lat), lng: Number(dropStop.lng) } : null;
+  }
+
+  private buildFixedPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
+    const el = document.createElement('div');
+    el.className = `fixed-driver-person-marker fixed-driver-person-marker--${kind} ${isLive ? 'is-live-walking' : ''}`;
+
+    const iconHtml = kind === 'pickup'
+      ? `<div class="person-avatar-wrap">
+           <span class="person-cap-icon">🧢</span>
+           ${isLive ? '<span class="person-walking-pulse"></span>' : ''}
+         </div>`
+      : `<div class="person-avatar-wrap person-avatar-wrap--drop">
+           <span class="person-cap-icon">📍</span>
+         </div>`;
+
+    const labelHtml = `
+      <div class="person-tag-pill">
+        <span class="person-tag-name">${(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
+        <span class="person-tag-seats">${count}s</span>
+        ${isLive ? '<span class="person-live-dot" title="Live Walking">●</span>' : ''}
+      </div>
+    `;
+
+    el.innerHTML = `${iconHtml}${labelHtml}`;
+    return el;
   }
 
   async choosePrivateRides(): Promise<void> {
@@ -632,11 +997,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           }
           this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
           this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
-          if (this.driveMode === 'fixed') void this.loadActiveFixedVehicleState();
-          else this.activeFixedVehicleOpen = false;
+          void this.loadActiveFixedVehicleState();
           this.startOnlineTimer();
         } else {
-          this.activeFixedVehicleOpen = false;
+          this.clearActiveFixedRide();
           this.stopOnlineTimer();
         }
       },
@@ -737,6 +1101,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       if (this.map) {
         google.maps.event.trigger(this.map, 'resize');
         this.map.setCenter(this.lastPos || this.defaultCentre);
+        if (this.activeFixedVehicleOpen) {
+          this.renderFixedRouteOnDashboard();
+        }
       }
     }, 300);
   }
@@ -807,6 +1174,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   /** Recenter FAB — re-arm follow mode and snap back to the driver. */
   async recenter(): Promise<void> {
     this.followMe = true;
+    if (this.activeFixedVehicleOpen) {
+      this.fitFixedRideOverview();
+      return;
+    }
     if (this.lastPos && this.map) {
       this.map.panTo(this.lastPos);
       if (this.map.getZoom() < 15) this.map.setZoom(16);
@@ -840,47 +1211,80 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.lastPos = { lat, lng };
     const pos = { lat, lng };
 
-    if (!this.selfMarker) {
-      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
-        map: this.map,
-        position: pos,
-        title: 'You',
-        content: this.buildSelfMarkerContent(),
-      });
-    } else {
-      this.selfMarker.position = pos;
-      if (this.selfMarker.map !== this.map) {
-        this.selfMarker.map = this.map;
-      }
-    }
+    const isFixedRide = this.activeFixedVehicleOpen;
 
-    // Rotate the heading wedge if we have a bearing.
-    if (this.markerHeading) {
-      if (bearing != null && Number.isFinite(bearing)) {
-        this.markerHeading.style.opacity = '1';
-        this.markerHeading.style.transform = `rotate(${bearing}deg)`;
-      } else {
-        this.markerHeading.style.opacity = '0';
+    if (isFixedRide) {
+      if (this.accuracyCircle) {
+        this.accuracyCircle.setMap(null);
+        this.accuracyCircle = null;
       }
-    }
+      this.markerHeading = null;
 
-    // GPS accuracy halo.
-    if (accuracy != null && Number.isFinite(accuracy)) {
-      if (!this.accuracyCircle) {
-        this.accuracyCircle = new google.maps.Circle({
+      const hasCarContent = this.selfMarker?.content?.classList?.contains('fixed-driver-car-marker');
+      if (!this.selfMarker || !hasCarContent) {
+        if (this.selfMarker) this.selfMarker.map = null;
+        this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
           map: this.map,
-          center: pos,
-          radius: accuracy,
-          strokeColor: '#12B35B',
-          strokeOpacity: 0.35,
-          strokeWeight: 1,
-          fillColor: '#12B35B',
-          fillOpacity: 0.1,
-          clickable: false,
+          position: pos,
+          title: 'You (Car)',
+          content: buildReusableCarMarkerElement({ bearing: bearing ?? 0, label: 'You (Car)' }),
+          zIndex: 1000,
         });
       } else {
-        this.accuracyCircle.setCenter(pos);
-        this.accuracyCircle.setRadius(accuracy);
+        this.selfMarker.position = pos;
+        if (this.selfMarker.map !== this.map) {
+          this.selfMarker.map = this.map;
+        }
+        if (bearing != null) {
+          updateCarMarkerBearing(this.selfMarker, bearing);
+        }
+      }
+    } else {
+      const hasCarContent = this.selfMarker?.content?.classList?.contains('fixed-driver-car-marker');
+      if (!this.selfMarker || hasCarContent) {
+        if (this.selfMarker) this.selfMarker.map = null;
+        this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+          map: this.map,
+          position: pos,
+          title: 'You',
+          content: this.buildSelfMarkerContent(),
+          zIndex: 1000,
+        });
+      } else {
+        this.selfMarker.position = pos;
+        if (this.selfMarker.map !== this.map) {
+          this.selfMarker.map = this.map;
+        }
+      }
+
+      // Rotate heading wedge
+      if (this.markerHeading) {
+        if (bearing != null && Number.isFinite(bearing)) {
+          this.markerHeading.style.opacity = '1';
+          this.markerHeading.style.transform = `rotate(${bearing}deg)`;
+        } else {
+          this.markerHeading.style.opacity = '0';
+        }
+      }
+
+      // GPS accuracy halo when offline or normal duty
+      if (accuracy != null && Number.isFinite(accuracy)) {
+        if (!this.accuracyCircle) {
+          this.accuracyCircle = new google.maps.Circle({
+            map: this.map,
+            center: pos,
+            radius: accuracy,
+            strokeColor: '#12B35B',
+            strokeOpacity: 0.35,
+            strokeWeight: 1,
+            fillColor: '#12B35B',
+            fillOpacity: 0.1,
+            clickable: false,
+          });
+        } else {
+          this.accuracyCircle.setCenter(pos);
+          this.accuracyCircle.setRadius(accuracy);
+        }
       }
     }
 
@@ -997,7 +1401,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       await this.presence.stop();
       this.driveMode = null;
       this.driveScope = null;
-      this.activeFixedVehicleOpen = false;
+      this.clearActiveFixedRide();
       this.stopOnlineTimer();
       // Keep showing the driver where they are — take the watch back ourselves.
       await this.startVisualWatch();

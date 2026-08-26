@@ -152,48 +152,58 @@
 
         <!-- ONLINE -->
         <ng-container *ngIf="isOnline">
-          <div class="sheet__header">
-            <span class="sheet__status"><span class="live-dot"></span> You're online</span>
-            <span class="sheet__timer">Online {{ onlineElapsed }}</span>
-          </div>
+          <!-- Active Fixed Ride Card (When Boarding or Ride is active) -->
+          <div class="dash-active-fixed-card dc-press" *ngIf="activeFixedVehicleOpen" (click)="chooseFixedRouteForBoarding()">
+            <div class="dash-active-fixed-header">
+              <div class="dash-active-fixed-title-row">
+                <span class="dash-active-fixed-badge">
+                  <span class="dash-active-fixed-pulse"></span>
+                  {{ fixedRideStatusLabel }}
+                </span>
+                <span class="dash-active-fixed-pax" *ngIf="fixedPassengerCountSummary">
+                  {{ fixedPassengerCountSummary }}
+                </span>
+              </div>
+              <strong class="dash-active-fixed-route">{{ fixedRouteLineTitle }}</strong>
+              <div class="dash-active-fixed-next" *ngIf="fixedNextStopName">
+                <ion-icon name="navigate-circle"></ion-icon>
+                <span>Next Stop: <strong>{{ fixedNextStopName }}</strong></span>
+              </div>
+            </div>
 
-          <div class="stat-strip">
-            <div class="stat">
-              <span class="stat__value">0</span>
-              <span class="stat__label">Trips</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ onlineElapsed }}</span>
-              <span class="stat__label">Online</span>
-            </div>
-          </div>
-
-          <div class="drive-mode drive-mode--selected drive-mode--fixed" *ngIf="driveMode === 'fixed'">
-            <div class="drive-mode__copy">
-              <strong>Fixed Route Rides</strong>
-              <span>{{ activeFixedVehicleOpen ? 'Continue managing your open vehicle.' : 'Choose the route you will provide service on.' }}</span>
-            </div>
-            <button type="button" class="fixed-open-btn dc-press" (click)="chooseFixedRouteForBoarding()" [disabled]="toggling">
-              <ion-icon [name]="activeFixedVehicleOpen ? 'arrow-forward-circle-outline' : 'add-circle-outline'"></ion-icon>
-              <span>{{ activeFixedVehicleOpen ? 'Go to active ride' : 'Start taking rides' }}</span>
+            <button type="button" class="dash-active-fixed-cta dc-press" (click)="chooseFixedRouteForBoarding()">
+              <span>Manage Ride</span>
+              <ion-icon name="arrow-forward"></ion-icon>
             </button>
           </div>
 
-          <div class="drive-mode drive-mode--selected" *ngIf="driveMode && driveMode !== 'fixed'">
+          <div class="drive-mode drive-mode--selected drive-mode--fixed" *ngIf="driveMode === 'fixed' && !activeFixedVehicleOpen">
+            <div class="drive-mode__copy">
+              <strong>Fixed Route Rides</strong>
+              <span>Choose the route you will provide service on.</span>
+            </div>
+            <button type="button" class="fixed-open-btn dc-press" (click)="chooseFixedRouteForBoarding()" [disabled]="toggling">
+              <ion-icon name="add-circle-outline"></ion-icon>
+              <span>Start taking rides</span>
+            </button>
+          </div>
+
+          <div class="drive-mode drive-mode--selected" *ngIf="driveMode && driveMode !== 'fixed' && !activeFixedVehicleOpen">
             <div>
               <strong>Ready to receive rides</strong>
               <span>{{ activeServiceLabel() }}</span>
             </div>
           </div>
 
-          <div class="drive-mode" *ngIf="!driveMode">
+          <div class="drive-mode" *ngIf="!driveMode && !activeFixedVehicleOpen">
             <div class="drive-mode__head">
               <strong>Registered service not active</strong>
               <span>Go offline and online again to activate your locked service.</span>
             </div>
           </div>
 
-          <button class="dc-cta dc-cta--ghost sheet__stop dc-press" (click)="confirmGoOffline()" [disabled]="toggling">
+          <!-- Go Offline Button (Hidden during Active Fixed Ride / Boarding) -->
+          <button class="dc-cta dc-cta--ghost sheet__stop dc-press" *ngIf="!activeFixedVehicleOpen" (click)="confirmGoOffline()" [disabled]="toggling">
             <ion-spinner name="crescent" *ngIf="isGoingOffline"></ion-spinner>
             <ion-icon name="stop-circle-outline" *ngIf="!isGoingOffline"></ion-icon>
             <span>{{ isGoingOffline ? 'Going offline…' : 'Go Offline' }}</span>

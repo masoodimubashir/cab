@@ -96,7 +96,6 @@ export class FixedDriverMapPage implements OnDestroy {
   private map: any = null;
   private routeLine: any = null;
   private stopMarkers: any[] = [];
-  private stopRadiusCircles: any[] = [];
   private passengerMarkers: any[] = [];
   private selfMarker: any = null;
   private selfWatchId: string | null = null;
@@ -295,34 +294,6 @@ export class FixedDriverMapPage implements OnDestroy {
       strokeWeight: 5,
     });
 
-    const reachedSeq = Number(this.vehicle?.fixed_last_reached_stop_seq || 0);
-    const radiusM = this.citySettings?.fixed_stop_arrival_radius_m || 150;
-
-    // Render light-colored Stop Arrival Radius Circles on the map
-    this.stopRadiusCircles = routeStops.map((stop) => {
-      const isReached = stop.seq <= reachedSeq;
-      const isNext = !isReached && (reachedSeq === 0 ? stop.seq === 1 : stop.seq === reachedSeq + 1);
-
-      const circle = new google.maps.Circle({
-        map: this.map,
-        center: this.stopPosition(stop),
-        radius: radiusM,
-        fillColor: isNext ? '#10B981' : (isReached ? '#94A3B8' : '#0EA5E9'),
-        fillOpacity: isNext ? 0.18 : 0.08,
-        strokeColor: isNext ? '#059669' : (isReached ? '#64748B' : '#0284C7'),
-        strokeOpacity: isNext ? 0.7 : 0.35,
-        strokeWeight: isNext ? 2 : 1,
-        clickable: true,
-        zIndex: 5,
-      });
-
-      circle.addListener('click', () => {
-        this.openStopDetail(stop);
-      });
-
-      return circle;
-    });
-
     this.stopMarkers = routeStops.map((stop) => {
       const marker = new google.maps.marker.AdvancedMarkerElement({
         position: this.stopPosition(stop),
@@ -464,10 +435,8 @@ export class FixedDriverMapPage implements OnDestroy {
       this.routeLine.setMap(null);
       this.routeLine = null;
     }
-    for (const circle of this.stopRadiusCircles) circle.setMap(null);
     for (const marker of this.stopMarkers) marker.map = null;
     for (const marker of this.passengerMarkers) marker.map = null;
-    this.stopRadiusCircles = [];
     this.stopMarkers = [];
     this.passengerMarkers = [];
   }
