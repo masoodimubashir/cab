@@ -11,6 +11,11 @@ import {
   TripLocationPayload,
   TripStatusPayload,
 } from '../../core/realtime.service';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+} from '../../core/car-marker.helper';
 import { PaymentChoice } from '../../shared/payment-method-modal.component';
 
 declare const google: any;
@@ -576,7 +581,7 @@ export class TripActivePage implements OnInit, OnDestroy {
           position: pos,
           map: this.map,
           title: 'Pickup',
-          content: this.buildPin('A', '#1f8b4c'),
+          content: buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }),
         });
       } else {
         this.pickupMarker.position = pos;
@@ -589,7 +594,7 @@ export class TripActivePage implements OnInit, OnDestroy {
           position: pos,
           map: this.map,
           title: 'Drop',
-          content: this.buildPin('B', '#c0392b'),
+          content: buildPassengerMarkerElement({ kind: 'drop', name: 'Drop' }),
         });
       } else {
         this.dropMarker.position = pos;
@@ -755,6 +760,9 @@ export class TripActivePage implements OnInit, OnDestroy {
     });
     this.scheduleEtaUpdate();
     this.ensureDriverMarker();
+    if (loc.bearing_deg != null && this.driverMarker) {
+      updateCarMarkerBearing(this.driverMarker, loc.bearing_deg);
+    }
   }
 
   /**
@@ -799,40 +807,15 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   /**
-   * Driver map marker: the driver's name on a pill above a circular car icon.
-   * Returns a plain DOM node for AdvancedMarkerElement's `content`.
+   * Driver map marker: top-down vector vehicle with driver name pill.
    */
   private buildDriverMarker(name: string): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:pointer;';
-
-    const label = document.createElement('div');
-    label.textContent = name;
-    label.style.cssText = [
-      'max-width:150px', 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
-      'background:#0D1B2A', 'color:#fff', 'font-size:11px', 'font-weight:700',
-      'padding:4px 10px', 'border-radius:999px', 'margin-bottom:5px',
-      'box-shadow:0 2px 8px rgba(0,0,0,0.3)',
-    ].join(';');
-
-    const pin = document.createElement('div');
-    pin.style.cssText = [
-      'width:36px', 'height:36px', 'border-radius:50%', 'background:#12B35B',
-      'border:3px solid #fff', 'box-shadow:0 3px 10px rgba(0,0,0,0.35)',
-      'display:flex', 'align-items:center', 'justify-content:center',
-    ].join(';');
-    pin.innerHTML =
-      '<svg width="19" height="19" viewBox="0 0 24 24" fill="#fff">' +
-      '<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01' +
-      'L3 12v8a1 1 0 001 1h1a1 1 0 001-1v-1h12v1a1 1 0 001 1h1a1 1 0 001-1v-8l-2.08-5.99zM6.5 16' +
-      'a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm11 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM5 11l1.5-4.5h11L19 11H5z"/>' +
-      '</svg>';
-
-    wrap.appendChild(label);
-    wrap.appendChild(pin);
-    // Fallback for environments where gmpClickable doesn't forward the tap.
-    wrap.addEventListener('click', () => this.openDriverDetails());
-    return wrap;
+    const el = buildReusableCarMarkerElement({
+      bearing: 0,
+      label: name,
+    });
+    el.addEventListener('click', () => this.openDriverDetails());
+    return el;
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -1132,7 +1115,11 @@ export class TripActivePage implements OnInit, OnDestroy {
           position: p,
           map: this.map,
           title: 'You',
-          content: this.buildDot('#1e6cf0'),
+          content: buildPassengerMarkerElement({
+            kind: 'pickup',
+            name: 'You',
+            isLive: true,
+          }),
           zIndex: 4,
         });
         this.fitMap();

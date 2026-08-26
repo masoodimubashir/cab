@@ -7,6 +7,12 @@ import { AuthService } from '../../core/auth.service';
 import { FixedCustomerLocationService } from '../../core/fixed-customer-location.service';
 import { GeolocationService } from '../../core/geolocation.service';
 import { RealtimeService, TripLocationPayload } from '../../core/realtime.service';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+  buildStopMarkerElement,
+} from '../../core/car-marker.helper';
 import { PlacesService } from '../../core/places.service';
 import { PaymentChoice } from '../../shared/payment-method-modal.component';
 
@@ -725,9 +731,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   private buildVehicleMarker(): HTMLElement {
-    const marker = document.createElement('div');
-    marker.className = 'fb-vehicle-marker';
-    return marker;
+    return buildReusableCarMarkerElement({
+      label: this.departureDriverName(this.selectedDeparture) || 'Fixed Cab',
+    });
   }
 
   private enter(): void {

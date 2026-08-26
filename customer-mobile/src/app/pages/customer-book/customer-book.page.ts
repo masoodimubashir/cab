@@ -6,6 +6,11 @@ import { ApiService } from '../../core/api.service';
 import { ModeSelectModalComponent, AssistantMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { PaymentChoice } from '../../shared/payment-method-modal.component';
 import { AuthService, AuthUser } from '../../core/auth.service';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+} from '../../core/car-marker.helper';
 import { GeolocationService, LatLng, GeoFix } from '../../core/geolocation.service';
 import { PlacesService, PlaceSuggestion } from '../../core/places.service';
 import { RealtimeService, DispatchRingExpandedPayload } from '../../core/realtime.service';
@@ -772,7 +777,11 @@ export class CustomerBookPage implements OnDestroy {
         position: this.selfPosition ?? start,
         map: this.map,
         title: 'You',
-        content: this.buildDot('#1e6cf0'),
+        content: buildPassengerMarkerElement({
+          kind: 'pickup',
+          name: 'You',
+          isLive: true,
+        }),
         zIndex: 2,
       });
       void this.startSelfLocationStream();
@@ -833,16 +842,15 @@ export class CustomerBookPage implements OnDestroy {
       const existing = this.nearbyDriverMarkers.get(d.id);
       if (existing) {
         existing.position = pos;
-        // Update the rotation by re-spinning the inner arrow element. Stable
-        // marker DOM lets us keep the marker between polls.
-        const arrow = (existing.content as HTMLElement | null)?.firstElementChild as HTMLElement | null;
-        if (arrow) arrow.style.transform = `rotate(${d.bearing_deg ?? 0}deg)`;
+        if (d.bearing_deg != null) {
+          updateCarMarkerBearing(existing, d.bearing_deg);
+        }
       } else {
         const marker = new google.maps.marker.AdvancedMarkerElement({
           position: pos,
           map: this.map,
           title: 'Driver nearby',
-          content: this.buildArrow(d.bearing_deg ?? 0, '#000'),
+          content: buildReusableCarMarkerElement({ bearing: d.bearing_deg ?? 0 }),
           zIndex: 1,
         });
         this.nearbyDriverMarkers.set(d.id, marker);
@@ -866,21 +874,6 @@ export class CustomerBookPage implements OnDestroy {
   // ─────────────────────────────────────────────────────────────────
   // Live self-location ("you" dot follows the device on the home map)
   // ─────────────────────────────────────────────────────────────────
-
-  /** Blue location dot with a soft halo, mirroring the trip-active "you" dot. */
-  private buildDot(color: string): HTMLElement {
-    const el = document.createElement('div');
-    el.style.cssText = [
-      'width:22px',
-      'height:22px',
-      'border-radius:50%',
-      `background:${color}`,
-      'border:3px solid #fff',
-      'box-shadow:0 0 0 6px rgba(30,108,240,0.25), 0 2px 6px rgba(0,0,0,0.45)',
-      'box-sizing:border-box',
-    ].join(';');
-    return el;
-  }
 
   /** Start streaming our GPS and move the "you" dot on every fix. Idempotent. */
   private async startSelfLocationStream(): Promise<void> {
@@ -914,7 +907,11 @@ export class CustomerBookPage implements OnDestroy {
         position: p,
         map: this.map,
         title: 'You',
-        content: this.buildDot('#1e6cf0'),
+        content: buildPassengerMarkerElement({
+          kind: 'pickup',
+          name: 'You',
+          isLive: true,
+        }),
         zIndex: 2,
       });
     } else {

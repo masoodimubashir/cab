@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { buildPassengerMarkerElement } from '../../core/car-marker.helper';
 import { PlacesService } from '../../core/places.service';
 import {
   coordsFromTrip,
@@ -303,10 +304,16 @@ export class TripDetailsPage {
       });
 
       this.pickupMarker = new google.maps.marker.AdvancedMarkerElement({
-        position: pickup, map: this.map, title: 'Pickup', content: this.buildPin('A', '#1f8b4c'),
+        position: pickup,
+        map: this.map,
+        title: 'Pickup',
+        content: buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }),
       });
       this.dropMarker = new google.maps.marker.AdvancedMarkerElement({
-        position: drop, map: this.map, title: 'Drop', content: this.buildPin('B', '#c0392b'),
+        position: drop,
+        map: this.map,
+        title: 'Drop',
+        content: buildPassengerMarkerElement({ kind: 'drop', name: 'Drop' }),
       });
 
       await this.drawRoute(pickup, drop);

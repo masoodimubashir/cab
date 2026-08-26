@@ -190,43 +190,32 @@
     left: 0;
     top: 0;
     transform: translate(-50%, -50%);
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
-    border: 2.5px solid #FFFFFF;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 3px 10px rgba(29, 78, 216, 0.35);
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
     z-index: 2;
 
-    .person-cap-icon {
-      font-size: 18px;
-      line-height: 1;
-      transform: translateY(-1px);
-    }
-
-    &--drop {
-      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
-      box-shadow: 0 3px 10px rgba(217, 119, 6, 0.35);
-
-      .person-cap-icon {
-        font-size: 16px;
-      }
+    .person-avatar-svg {
+      display: block;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
     }
   }
 
   .person-walking-pulse {
     position: absolute;
-    top: -4px;
-    left: -4px;
-    right: -4px;
-    bottom: -4px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
     border: 2px solid #2563EB;
     animation: person-pulse-ring 1.8s infinite;
     pointer-events: none;
+    z-index: 1;
   }
 
   .person-tag-pill {
