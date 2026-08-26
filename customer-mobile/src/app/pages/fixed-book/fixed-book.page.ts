@@ -1190,6 +1190,39 @@ export class FixedBookPage implements OnInit, OnDestroy {
         // GPay → open Razorpay straight on UPI (still lets the user switch).
         ...(method === 'gpay' ? { method: 'upi' } : {}),
       },
+      ...(method === 'gpay'
+        ? {
+            method: {
+              upi: true,
+              card: false,
+              netbanking: false,
+              wallet: false,
+              emi: false,
+              paylater: false,
+            },
+            upi: {
+              flow: 'intent',
+            },
+            config: {
+              display: {
+                blocks: {
+                  upi: {
+                    name: 'Pay via Google Pay / UPI',
+                    instruments: [
+                      {
+                        method: 'upi',
+                        flows: ['intent'],
+                        apps: ['google_pay', 'phonepe', 'paytm', 'bhim'],
+                      },
+                    ],
+                  },
+                },
+                sequence: ['block.upi'],
+                preferences: { show_default_blocks: false },
+              },
+            },
+          }
+        : {}),
       theme: { color: '#000000' },
       handler: (resp: {
         razorpay_payment_id: string;

@@ -413,7 +413,45 @@ export class ShuttleBookPage implements OnInit {
       currency: order.razorpay.currency,
       name: 'DreamCabs',
       description: `Shuttle booking ${booking.id}`,
-      prefill: { name: user?.name || '', email: user?.email || '', contact: user?.phone || '' },
+      prefill: {
+        name: user?.name || '',
+        email: user?.email || '',
+        contact: user?.phone || '',
+        ...(this.payMethod === 'gpay' ? { method: 'upi' } : {}),
+      },
+      ...(this.payMethod === 'gpay'
+        ? {
+            method: {
+              upi: true,
+              card: false,
+              netbanking: false,
+              wallet: false,
+              emi: false,
+              paylater: false,
+            },
+            upi: {
+              flow: 'intent',
+            },
+            config: {
+              display: {
+                blocks: {
+                  upi: {
+                    name: 'Pay via Google Pay / UPI',
+                    instruments: [
+                      {
+                        method: 'upi',
+                        flows: ['intent'],
+                        apps: ['google_pay', 'phonepe', 'paytm', 'bhim'],
+                      },
+                    ],
+                  },
+                },
+                sequence: ['block.upi'],
+                preferences: { show_default_blocks: false },
+              },
+            },
+          }
+        : {}),
       theme: { color: '#12B35B' },
       handler: (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) =>
         this.confirmPayment(booking, resp),

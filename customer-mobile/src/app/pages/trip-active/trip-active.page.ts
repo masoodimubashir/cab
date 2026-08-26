@@ -1545,11 +1545,42 @@ export class TripActivePage implements OnInit, OnDestroy {
         name: user?.name || '',
         email: user?.email || '',
         contact: user?.phone || '',
+        ...(method === 'upi' ? { method: 'upi' } : {}),
       },
       theme: { color: '#000000' },
-      // Lock checkout to the method the fee was priced for — switching at
-      // Razorpay's screen would charge a fee we didn't collect.
-      ...(order.razorpay.method ? { method: this.checkoutMethodFlags(order.razorpay.method) } : {}),
+      ...(method === 'upi'
+        ? {
+            method: {
+              upi: true,
+              card: false,
+              netbanking: false,
+              wallet: false,
+              emi: false,
+              paylater: false,
+            },
+            upi: {
+              flow: 'intent',
+            },
+            config: {
+              display: {
+                blocks: {
+                  upi: {
+                    name: 'Pay via Google Pay / UPI',
+                    instruments: [
+                      {
+                        method: 'upi',
+                        flows: ['intent'],
+                        apps: ['google_pay', 'phonepe', 'paytm', 'bhim'],
+                      },
+                    ],
+                  },
+                },
+                sequence: ['block.upi'],
+                preferences: { show_default_blocks: false },
+              },
+            },
+          }
+        : (order.razorpay.method ? { method: this.checkoutMethodFlags(order.razorpay.method) } : {})),
       handler: (resp: {
         razorpay_payment_id: string;
         razorpay_order_id: string;
