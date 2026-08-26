@@ -405,6 +405,7 @@ export class FixedDriverPage implements OnDestroy {
 
   loadManifest(vehicleId: number, showSpinner = true): void {
     if (showSpinner) this.busy = true;
+    const oldRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
     const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
     const oldPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
     const oldCitySettingsJson = JSON.stringify(this.citySettings || {});
@@ -422,6 +423,7 @@ export class FixedDriverPage implements OnDestroy {
           }
           void this.syncFixedTripLocationStreaming();
 
+          const newRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
           const newStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
           const newPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
           const newCitySettingsJson = JSON.stringify(this.citySettings || {});
@@ -436,7 +438,8 @@ export class FixedDriverPage implements OnDestroy {
           } else if (
             oldStopsJson !== newStopsJson ||
             oldPassengersJson !== newPassengersJson ||
-            oldCitySettingsJson !== newCitySettingsJson
+            oldCitySettingsJson !== newCitySettingsJson ||
+            oldRadius !== newRadius
           ) {
             this.refreshEmbeddedMap(false);
           }
@@ -1130,8 +1133,8 @@ export class FixedDriverPage implements OnDestroy {
     this.stopManifestPolling();
     if (!this.activeVehicle || ["COMPLETED", "CANCELLED"].includes(this.activeVehicle.status)) return;
 
-    this.manifestPoll = interval(8000).subscribe(() => {
-      if (!this.activeVehicle || this.busy || this.loading) return;
+    this.manifestPoll = interval(4000).subscribe(() => {
+      if (!this.activeVehicle) return;
       this.loadManifest(this.activeVehicle.id, false);
     });
   }
