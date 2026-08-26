@@ -629,7 +629,9 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   canCancel(booking: FixedBooking): boolean {
-    return ['BOOKED', 'CONFIRMED'].includes((booking.status || '').toUpperCase());
+    const status = (booking.status || '').toUpperCase();
+    const depStatus = (booking.departure_status || '').toUpperCase();
+    return ['BOOKED', 'CONFIRMED'].includes(status) && !['DEPARTED', 'COMPLETED', 'CANCELLED'].includes(depStatus);
   }
 
   bookingStatusLabel(booking: FixedBooking): string {

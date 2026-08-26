@@ -518,7 +518,9 @@ export class FixedBookingsPage {
   }
 
   canCancel(booking: FixedBooking): boolean {
-    return ['BOOKED', 'CONFIRMED'].includes(booking.status);
+    const status = (booking.status || '').toUpperCase();
+    const depStatus = (booking.departure_status || '').toUpperCase();
+    return ['BOOKED', 'CONFIRMED'].includes(status) && !['DEPARTED', 'COMPLETED', 'CANCELLED'].includes(depStatus);
   }
 
   async cancelBooking(event: Event, booking: FixedBooking): Promise<void> {
