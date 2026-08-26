@@ -53,6 +53,7 @@ interface FixedRouteOption {
   origin_name: string;
   dest_name: string;
   scope: string;
+  stops?: Array<{ id: number; seq: number; name: string }>;
 }
 
 interface FixedVehicleSummary {

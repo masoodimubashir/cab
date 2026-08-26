@@ -149,6 +149,20 @@ class AdminFixedRoutesController
     public function update(Request $request, City $city, Route $route)
     {
         $this->availability->assertCityOwnsRoute($city, $route);
+
+        // Partial update: when only is_active or lightweight fields are passed (no stops/scope payload)
+        if ($request->has('is_active') && (!$request->has('stops') || !$request->has('scope'))) {
+            $data = $request->validate([
+                'is_active' => ['required', 'boolean'],
+            ]);
+            $route->update(['is_active' => (bool) $data['is_active']]);
+            broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_updated'))->toOthers();
+            return response()->json([
+                'route' => $this->routes->shapeAdminRoute($route->loadMissing('stops')),
+                'message' => 'Fixed route updated.',
+            ]);
+        }
+
         $route = $this->routes->updateAdminRoute($city, $route, $this->validatePayload($request, $city));
         broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_updated'))->toOthers();
 

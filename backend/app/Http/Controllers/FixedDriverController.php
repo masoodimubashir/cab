@@ -235,11 +235,15 @@ class FixedDriverController extends Controller
             'last_online_at' => now(),
         ]);
 
-        $this->seatMap->snapshotForDeparture($departure);
+        try {
+            $this->seatMap->snapshotForDeparture($departure);
+        } catch (\Throwable $e) {
+            Log::warning('Seat map snapshot failed on open', ['error' => $e->getMessage()]);
+        }
         $this->broadcastAvailability($departure, 'vehicle_opened');
 
         return response()->json([
-            'vehicle' => $this->departures->shapeAdminDeparture($departure->fresh(['route:id,city_id,name,scope,mode,origin_name,dest_name', 'driver:id,name'])),
+            'vehicle' => $this->departures->shapeAdminDeparture($departure->fresh(['route.stops', 'driver:id,name'])),
             'message' => 'Fixed vehicle opened for boarding.',
         ], 201);
     }
