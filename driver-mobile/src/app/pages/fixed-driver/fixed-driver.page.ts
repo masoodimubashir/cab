@@ -369,7 +369,23 @@ export class FixedDriverPage implements OnDestroy {
         this.activeVehicle = res.vehicle;
         this.refresh();
       },
-      error: (err) => this.error = err?.error?.message || 'Could not open ride.',
+      error: (err) => {
+        // Check if the vehicle was opened despite the network/response error
+        this.api.get<{ vehicle: FixedVehicle | null }>('/fixed/driver/vehicles').subscribe({
+          next: (check) => {
+            if (check?.vehicle) {
+              this.activeVehicle = check.vehicle;
+              this.message = 'Ride active.';
+              this.refresh();
+            } else {
+              this.error = err?.error?.message || 'Could not open ride.';
+            }
+          },
+          error: () => {
+            this.error = err?.error?.message || 'Could not open ride.';
+          },
+        });
+      },
     });
   }
 
