@@ -538,3 +538,271 @@
   background: #12B35B;
 }
 .bh-city__dot--guess { background: #F59E0B; }
+
+/* ── Active Fixed Ride Bottom Sheet (Replaces "Where to" sheet) ── */
+.bh-active-sheet {
+  background: #FFFFFF;
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  padding: 16px 18px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .bh-active-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+
+    .bh-active-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-size: 11.5px;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      background: #ECFDF5;
+      color: #059669;
+      border: 1px solid #A7F3D0;
+
+      .bh-live-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #10B981;
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+        animation: bhLivePulse 1.5s infinite;
+      }
+
+      &.is-onboard {
+        background: #F1F5F9;
+        color: #0F172A;
+        border-color: #CBD5E1;
+
+        .bh-live-dot {
+          background: #0F172A;
+          box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.2);
+        }
+      }
+    }
+
+    .bh-active-otp-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 8px;
+      background: #ECFDF5;
+      border: 1.5px solid #10B981;
+
+      .bh-otp-tag {
+        font-size: 10px;
+        font-weight: 850;
+        color: #059669;
+      }
+
+      .bh-otp-code {
+        font-size: 13px;
+        font-weight: 900;
+        color: #064E3B;
+        letter-spacing: 1px;
+      }
+    }
+  }
+
+  .bh-active-title-row {
+    .bh-active-route-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      .bh-active-route-text {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 900;
+        color: #0F172A;
+        letter-spacing: -0.2px;
+      }
+
+      .bh-active-seat-tag {
+        font-size: 12px;
+        font-weight: 750;
+        color: #64748B;
+      }
+    }
+  }
+
+  .bh-active-driver-box {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+
+    .bh-active-driver-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+
+      .bh-driver-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: #ECFDF5;
+        border: 1.5px solid #A7F3D0;
+        color: #059669;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+      }
+
+      .bh-driver-meta {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+
+        .bh-driver-name {
+          font-size: 14px;
+          font-weight: 850;
+          color: #0F172A;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .bh-driver-vehicle {
+          font-size: 11.5px;
+          font-weight: 650;
+          color: #64748B;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+    }
+
+    .bh-driver-call-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #10B981;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      flex-shrink: 0;
+
+      &:active {
+        background: #059669;
+        transform: scale(0.92);
+      }
+    }
+  }
+
+  .bh-active-itinerary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #FFFFFF;
+    border: 1px dashed #CBD5E1;
+    border-radius: 12px;
+    padding: 8px 12px;
+
+    .bh-itinerary-point {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      .bh-itinerary-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+
+        &--pickup { background: #10B981; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2); }
+        &--drop { background: #0F172A; box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.15); }
+      }
+
+      .bh-itinerary-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+
+        .bh-itinerary-label {
+          font-size: 8.5px;
+          font-weight: 850;
+          color: #94A3B8;
+          letter-spacing: 0.4px;
+        }
+
+        .bh-itinerary-stop {
+          font-size: 11.5px;
+          font-weight: 800;
+          color: #0F172A;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+    }
+  }
+
+  .bh-active-cta {
+    width: 100%;
+    height: 48px;
+    min-height: 48px;
+    border-radius: 14px;
+    background: #10B981;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 850;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+
+    ion-icon {
+      font-size: 17px;
+    }
+
+    &:active {
+      transform: scale(0.98);
+      background: #059669;
+    }
+  }
+}
+
+@keyframes bhLivePulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  }
+  70% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}

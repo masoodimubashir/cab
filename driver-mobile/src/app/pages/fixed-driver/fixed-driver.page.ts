@@ -1483,23 +1483,50 @@ export class FixedDriverPage implements OnDestroy {
     }
   }
 
+  private lastDriverLocationSentAt = 0;
+
   private onDriverPosition(fix: GeoFix): void {
-    if (!this.map) return;
     const position = { lat: fix.lat, lng: fix.lng };
-    if (!this.selfMarker) {
-      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
-        position,
-        map: this.map,
-        title: 'You (Driver)',
-        content: this.buildDriverMarker(fix.bearing ?? 0),
-        zIndex: 1000,
-      });
-      this.fitEmbeddedMap();
-      return;
+    if (this.map) {
+      if (!this.selfMarker) {
+        this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+          position,
+          map: this.map,
+          title: 'You (Driver)',
+          content: this.buildDriverMarker(fix.bearing ?? 0),
+          zIndex: 1000,
+        });
+        this.fitEmbeddedMap();
+      } else {
+        this.selfMarker.position = position;
+        if (fix.bearing != null) {
+          updateCarMarkerBearing(this.selfMarker, fix.bearing);
+        }
+      }
     }
-    this.selfMarker.position = position;
-    if (fix.bearing != null) {
-      updateCarMarkerBearing(this.selfMarker, fix.bearing);
+
+    // Proactively post GPS location to server (throttled to 4s)
+    const now = Date.now();
+    if (now - this.lastDriverLocationSentAt >= 4000) {
+      this.lastDriverLocationSentAt = now;
+      const tripId = this.fixedTripId(this.activeVehicle);
+      if (tripId) {
+        this.api.post(`/trips/${tripId}/location`, {
+          lat: fix.lat,
+          lng: fix.lng,
+          accuracy_m: fix.accuracy ?? null,
+          bearing_deg: fix.bearing ?? null,
+          speed_kmh: fix.speed != null ? Math.max(0, fix.speed) * 3.6 : null,
+        }).subscribe({ error: () => {} });
+      } else {
+        this.api.post('/drivers/me/location', {
+          lat: fix.lat,
+          lng: fix.lng,
+          accuracy: fix.accuracy ?? null,
+          bearing: fix.bearing ?? null,
+          speed: fix.speed != null ? Math.max(0, fix.speed) * 3.6 : null,
+        }).subscribe({ error: () => {} });
+      }
     }
   }
 

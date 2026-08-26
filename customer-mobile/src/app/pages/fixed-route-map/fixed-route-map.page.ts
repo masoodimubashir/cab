@@ -65,7 +65,7 @@ export class FixedRouteMapPage {
   }
 
   back(): void {
-    this.router.navigateByUrl('/customer-tabs/fixed-rides');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   bookingStatusLabel(): string {

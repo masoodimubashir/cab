@@ -10,10 +10,17 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
+import { Subscription, interval } from 'rxjs';
 
-import { buildPassengerMarkerElement } from '../../../core/car-marker.helper';
+import { ApiService } from '../../../core/api.service';
+import {
+  buildPassengerMarkerElement,
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+} from '../../../core/car-marker.helper';
 import { GeolocationService } from '../../../core/geolocation.service';
 import { PlacesService } from '../../../core/places.service';
+import { RealtimeService, TripLocationPayload } from '../../../core/realtime.service';
 import {
   BookingService,
   resolveCity,
@@ -28,12 +35,34 @@ import { City, RideMode, ServiceTile, TripScope } from '../booking.models';
 
 declare const google: any;
 
+export interface ActiveFixedRide {
+  id: number;
+  route_name?: string | null;
+  trip_id?: number | null;
+  departure_status?: string | null;
+  status: string;
+  driver_name?: string | null;
+  driver_phone?: string | null;
+  vehicle_name?: string | null;
+  vehicle_brand?: string | null;
+  vehicle_model?: string | null;
+  vehicle_color?: string | null;
+  vehicle_reg_no?: string | null;
+  board?: string | null;
+  drop?: string | null;
+  board_lat?: number | null;
+  board_lng?: number | null;
+  drop_lat?: number | null;
+  drop_lng?: number | null;
+  fare_amount?: number | null;
+  boarding_code?: string | null;
+  seats?: number;
+  stops?: Array<{ id: number; seq: number; name: string; lat: number | null; lng: number | null }>;
+  latest_driver_location?: { lat: number; lng: number; recorded_at?: string } | null;
+}
+
 /**
- * Home — Google Maps behind the bottom sheet, live GPS tracking.
- *
- * The map initialises full-screen via the native Google Maps JS SDK
- * (same loader PlacesService uses — single shared script tag).
- * `watchPosition` pans an AdvancedMarkerElement smoothly as the user walks.
+ * Home — Google Maps behind the bottom sheet, live GPS tracking & Active Ride overlay.
  */
 @Component({
   selector: 'app-booking-home',
@@ -58,6 +87,18 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   city: City | null = null;
   located = false;
 
+  // Active Live Fixed Ride
+  activeFixedRide: ActiveFixedRide | null = null;
+  private activeRidePollSub?: Subscription;
+  private activeRideTrackingUnsub: (() => void) | null = null;
+  private activeRideTrackingTripId: number | null = null;
+  private fixedPickupMarker: any = null;
+  private fixedDropMarker: any = null;
+  private fixedDriverMarker: any = null;
+  private fixedRoutePolylines: any[] = [];
+  private driverPosition: { lat: number; lng: number } | null = null;
+  private driverBearing = 0;
+
   private catalog: RawScope[] = [];
 
   // ── Google Maps internals ────────────────────────────────────────────────
@@ -67,16 +108,17 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   private watchId: string | null = null;
 
   constructor(
+    private api: ApiService,
     private booking: BookingService,
     private geo: GeolocationService,
     private places: PlacesService,
+    private realtime: RealtimeService,
     private router: Router,
     private zone: NgZone,
     private cdr: ChangeDetectorRef,
   ) {}
 
   async ngOnInit(): Promise<void> {
-    // Initial load: fetch user GPS location and setup map
     await this.initHome();
   }
 
@@ -84,11 +126,16 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!this.located || !this.city) {
       void this.initHome();
     }
+    this.checkActiveFixedRide();
+    this.activeRidePollSub ??= interval(6000).subscribe(() => this.checkActiveFixedRide());
   }
 
   ionViewDidEnter(): void {
     if (this.map && !this.watchId) {
       void this.startWatch();
+    }
+    if (this.map && this.activeFixedRide) {
+      this.syncActiveRideMap();
     }
   }
 
@@ -97,6 +144,9 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       void this.geo.clearWatch(this.watchId);
       this.watchId = null;
     }
+    this.activeRidePollSub?.unsubscribe();
+    this.activeRidePollSub = undefined;
+    this.stopActiveRideTracking();
   }
 
   ngOnDestroy(): void {
@@ -104,6 +154,10 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       void this.geo.clearWatch(this.watchId);
       this.watchId = null;
     }
+    this.activeRidePollSub?.unsubscribe();
+    this.activeRidePollSub = undefined;
+    this.stopActiveRideTracking();
+    this.clearActiveRideMap();
     this.userMarker = null;
     this.map = null;
   }
@@ -165,10 +219,13 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   currentCoords: { lat: number; lng: number } | null = null;
+  private hasFittedActiveBounds = false;
 
   recenterMap(): void {
     if (!this.map) return;
-    if (this.currentCoords) {
+    if (this.activeFixedRide) {
+      this.fitActiveRideBounds(true);
+    } else if (this.currentCoords) {
       this.map.panTo(this.currentCoords);
       this.map.setZoom(16);
     } else {
@@ -177,17 +234,17 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   }
 
   private async startWatch(): Promise<void> {
-    // Quick first fix — centre the map immediately.
+    // Quick first fix — centre the map immediately if no active ride.
     try {
       const fix = await this.geo.getCurrentFix();
       if (fix) {
-        this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, true, fix.bearing);
+        this.updateMapPosition(fix.lat, fix.lng, fix.accuracy ?? 40, !this.activeFixedRide, fix.bearing);
       }
     } catch {
       /* ignore */
     }
 
-    // Continuous watch — moves marker as user walks.
+    // Continuous watch — moves user avatar marker smoothly as user walks without jarring map pans.
     try {
       if (this.watchId) {
         await this.geo.clearWatch(this.watchId);
@@ -222,18 +279,17 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
           name: 'You',
           isLive: true,
         }),
-        zIndex: 1000,
-        title: 'Your location',
+        zIndex: 1100,
+        title: 'Your exact location',
       });
     } else {
       this.userMarker.position = latlng;
+      if (!this.userMarker.map) this.userMarker.map = this.map;
     }
 
     if (pan) {
       this.map.setCenter(latlng);
       this.map.setZoom(16);
-    } else {
-      this.map.panTo(latlng);
     }
   }
 
@@ -389,6 +445,297 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       this.mode = first.mode;
       this.booking.setMode(first.mode, first.rideTypeId);
     }
+  }
+
+  // ── Active Live Fixed Ride Tracking & Map ────────────────────────────────
+  checkActiveFixedRide(): void {
+    this.api.get<{ data: ActiveFixedRide[] }>('/fixed/bookings?per_page=5').subscribe({
+      next: (res) => {
+        const list = res?.data || [];
+        const active = list.find((b) =>
+          ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((b.status || '').toUpperCase()) &&
+          !['DROPPED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].includes((b.status || '').toUpperCase())
+        );
+
+        if (active) {
+          this.api.get<{ booking: ActiveFixedRide }>('/fixed/bookings/' + active.id).subscribe({
+            next: (bRes) => {
+              const full = bRes?.booking || active;
+              this.activeFixedRide = full;
+              if (full.latest_driver_location?.lat != null && full.latest_driver_location?.lng != null) {
+                this.driverPosition = {
+                  lat: Number(full.latest_driver_location.lat),
+                  lng: Number(full.latest_driver_location.lng),
+                };
+              }
+              if (this.map) {
+                this.syncActiveRideMap();
+              }
+              this.syncActiveRideTracking();
+              this.cdr.markForCheck();
+            },
+            error: () => {
+              this.activeFixedRide = active;
+              if (this.map) {
+                this.syncActiveRideMap();
+              }
+              this.syncActiveRideTracking();
+              this.cdr.markForCheck();
+            },
+          });
+        } else {
+          if (this.activeFixedRide) {
+            this.activeFixedRide = null;
+            this.driverPosition = null;
+            this.hasFittedActiveBounds = false;
+            this.clearActiveRideMap();
+            this.stopActiveRideTracking();
+            this.cdr.markForCheck();
+          }
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  private syncActiveRideMap(): void {
+    if (!this.map || typeof google === 'undefined' || !this.activeFixedRide) return;
+    const b = this.activeFixedRide;
+
+    // 1. Pickup Pin Marker
+    if (b.board_lat != null && b.board_lng != null) {
+      const pos = { lat: Number(b.board_lat), lng: Number(b.board_lng) };
+      const label = 'Pickup: ' + (b.board || 'Stop');
+      if (!this.fixedPickupMarker) {
+        this.fixedPickupMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: pos,
+          map: this.map,
+          title: label,
+          content: this.buildDashboardPin('pickup', label),
+          zIndex: 900,
+        });
+      } else {
+        this.fixedPickupMarker.position = pos;
+        if (!this.fixedPickupMarker.map) this.fixedPickupMarker.map = this.map;
+      }
+    }
+
+    // 2. Drop Pin Marker
+    if (b.drop_lat != null && b.drop_lng != null) {
+      const pos = { lat: Number(b.drop_lat), lng: Number(b.drop_lng) };
+      const label = 'Drop: ' + (b.drop || 'Stop');
+      if (!this.fixedDropMarker) {
+        this.fixedDropMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: pos,
+          map: this.map,
+          title: label,
+          content: this.buildDashboardPin('drop', label),
+          zIndex: 900,
+        });
+      } else {
+        this.fixedDropMarker.position = pos;
+        if (!this.fixedDropMarker.map) this.fixedDropMarker.map = this.map;
+      }
+    }
+
+    // 3. Driver Vehicle Live Marker (Only when real driver GPS position exists)
+    if (this.driverPosition) {
+      const driverLabel = b.driver_name || b.vehicle_name || 'Driver';
+      if (!this.fixedDriverMarker) {
+        this.fixedDriverMarker = new google.maps.marker.AdvancedMarkerElement({
+          position: this.driverPosition,
+          map: this.map,
+          title: driverLabel,
+          content: buildReusableCarMarkerElement({
+            bearing: this.driverBearing,
+            label: driverLabel,
+          }),
+          zIndex: 1000,
+        });
+      } else {
+        this.fixedDriverMarker.position = this.driverPosition;
+        if (!this.fixedDriverMarker.map) this.fixedDriverMarker.map = this.map;
+        updateCarMarkerBearing(this.fixedDriverMarker, this.driverBearing);
+      }
+    } else if (this.fixedDriverMarker) {
+      this.fixedDriverMarker.map = null;
+      this.fixedDriverMarker = null;
+    }
+
+    // 4. Draw Route Polyline
+    this.renderActiveRidePolyline();
+
+    // 5. Fit Map Bounds (Only once on initial load, prevents screen jumping)
+    this.fitActiveRideBounds(false);
+  }
+
+  private renderActiveRidePolyline(): void {
+    if (!this.map || typeof google === 'undefined') return;
+
+    for (const poly of this.fixedRoutePolylines) {
+      poly.setMap(null);
+    }
+    this.fixedRoutePolylines = [];
+
+    const pathCoords: Array<{ lat: number; lng: number }> = [];
+
+    if (this.activeFixedRide?.stops && this.activeFixedRide.stops.length >= 2) {
+      for (const s of this.activeFixedRide.stops) {
+        if (s.lat != null && s.lng != null) {
+          pathCoords.push({ lat: Number(s.lat), lng: Number(s.lng) });
+        }
+      }
+    } else {
+      if (this.activeFixedRide?.board_lat != null && this.activeFixedRide?.board_lng != null) {
+        pathCoords.push({ lat: Number(this.activeFixedRide.board_lat), lng: Number(this.activeFixedRide.board_lng) });
+      }
+      if (this.activeFixedRide?.drop_lat != null && this.activeFixedRide?.drop_lng != null) {
+        pathCoords.push({ lat: Number(this.activeFixedRide.drop_lat), lng: Number(this.activeFixedRide.drop_lng) });
+      }
+    }
+
+    if (pathCoords.length >= 2) {
+      const glowPoly = new google.maps.Polyline({
+        path: pathCoords,
+        geodesic: true,
+        strokeColor: '#A7F3D0',
+        strokeOpacity: 0.65,
+        strokeWeight: 7,
+        map: this.map,
+      });
+      const mainPoly = new google.maps.Polyline({
+        path: pathCoords,
+        geodesic: true,
+        strokeColor: '#10B981',
+        strokeOpacity: 0.95,
+        strokeWeight: 4,
+        map: this.map,
+      });
+      this.fixedRoutePolylines.push(glowPoly, mainPoly);
+    }
+  }
+
+  private fitActiveRideBounds(force = false): void {
+    if (!this.map || typeof google === 'undefined' || !this.activeFixedRide) return;
+    if (this.hasFittedActiveBounds && !force) return;
+
+    try {
+      const bounds = new google.maps.LatLngBounds();
+      let count = 0;
+      if (this.currentCoords) {
+        bounds.extend(this.currentCoords);
+        count++;
+      }
+      if (this.driverPosition) {
+        bounds.extend(this.driverPosition);
+        count++;
+      }
+      if (this.activeFixedRide.board_lat != null && this.activeFixedRide.board_lng != null) {
+        bounds.extend({ lat: Number(this.activeFixedRide.board_lat), lng: Number(this.activeFixedRide.board_lng) });
+        count++;
+      }
+      if (this.activeFixedRide.drop_lat != null && this.activeFixedRide.drop_lng != null) {
+        bounds.extend({ lat: Number(this.activeFixedRide.drop_lat), lng: Number(this.activeFixedRide.drop_lng) });
+        count++;
+      }
+
+      if (count >= 2) {
+        this.map.fitBounds(bounds, { top: 80, bottom: 280, left: 40, right: 40 });
+        this.hasFittedActiveBounds = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private syncActiveRideTracking(): void {
+    const tripId = this.activeFixedRide?.trip_id;
+    if (!tripId) {
+      this.stopActiveRideTracking();
+      return;
+    }
+    if (this.activeRideTrackingTripId === tripId && this.activeRideTrackingUnsub) return;
+
+    this.stopActiveRideTracking();
+    this.activeRideTrackingTripId = tripId;
+    this.activeRideTrackingUnsub = this.realtime.subscribeTracking(
+      tripId,
+      (payload: TripLocationPayload) => {
+        if (payload?.location) {
+          const loc = payload.location;
+          this.zone.run(() => {
+            this.driverPosition = { lat: loc.lat, lng: loc.lng };
+            if (loc.bearing_deg != null) this.driverBearing = loc.bearing_deg;
+            this.syncActiveRideMap();
+            this.cdr.markForCheck();
+          });
+        }
+      },
+      () => {
+        this.zone.run(() => this.checkActiveFixedRide());
+      },
+    );
+  }
+
+  private stopActiveRideTracking(): void {
+    if (this.activeRideTrackingUnsub) {
+      this.activeRideTrackingUnsub();
+      this.activeRideTrackingUnsub = null;
+    }
+    this.activeRideTrackingTripId = null;
+  }
+
+  private clearActiveRideMap(): void {
+    if (this.fixedPickupMarker) {
+      this.fixedPickupMarker.map = null;
+      this.fixedPickupMarker = null;
+    }
+    if (this.fixedDropMarker) {
+      this.fixedDropMarker.map = null;
+      this.fixedDropMarker = null;
+    }
+    if (this.fixedDriverMarker) {
+      this.fixedDriverMarker.map = null;
+      this.fixedDriverMarker = null;
+    }
+    for (const poly of this.fixedRoutePolylines) {
+      poly.setMap(null);
+    }
+    this.fixedRoutePolylines = [];
+  }
+
+  private buildDashboardPin(kind: 'pickup' | 'drop', label: string): HTMLElement {
+    const el = document.createElement('div');
+    el.className = `dc-dash-pin dc-dash-pin--${kind}`;
+    const bg = kind === 'pickup' ? '#10B981' : '#0F172A';
+    el.innerHTML = `
+      <div style="background: ${bg}; color: #ffffff; font-size: 10.5px; font-weight: 850; padding: 2.5px 8px; border-radius: 99px; box-shadow: 0 3px 8px rgba(15, 23, 42, 0.3); border: 1.5px solid #ffffff; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
+        <span>${label}</span>
+      </div>
+    `;
+    return el;
+  }
+
+  openActiveFixedRide(): void {
+    if (this.activeFixedRide?.id) {
+      void this.router.navigate(['/customer-tabs/fixed-rides', this.activeFixedRide.id]);
+    }
+  }
+
+  callDriver(phone?: string | null, event?: Event): void {
+    event?.stopPropagation();
+    if (phone) {
+      window.open('tel:' + phone, '_system');
+    }
+  }
+
+  activeRideStatusLabel(r: ActiveFixedRide): string {
+    const status = (r.status || '').toUpperCase();
+    const depStatus = (r.departure_status || '').toUpperCase();
+    if (status === 'BOARDED') return 'Onboard · En Route';
+    if (depStatus === 'IN_PROGRESS' || depStatus === 'STARTED') return 'Driver on route';
+    if (depStatus === 'CLOSED') return 'Departure ready';
+    return 'Booking confirmed';
   }
 }
 

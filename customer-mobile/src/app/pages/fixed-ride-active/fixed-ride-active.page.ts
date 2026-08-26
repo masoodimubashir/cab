@@ -1,6 +1,6 @@
 import { Component, ElementRef, NgZone, OnDestroy, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { AlertController, ToastController } from '@ionic/angular';
+import { AlertController, Platform, ToastController } from '@ionic/angular';
 import { Subscription, interval } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
@@ -108,6 +108,7 @@ export class FixedRideActivePage implements OnDestroy {
   private userPosition: { lat: number; lng: number } | null = null;
 
   private pollSub?: Subscription;
+  private backButtonSub?: Subscription;
   private watchId: string | null = null;
   private trackingTripId: number | null = null;
   private unsubscribeTracking: (() => void) | null = null;
@@ -119,6 +120,7 @@ export class FixedRideActivePage implements OnDestroy {
     private router: Router,
     private alerts: AlertController,
     private toasts: ToastController,
+    private platform: Platform,
     private fixedLocation: FixedCustomerLocationService,
     private geo: GeolocationService,
     private places: PlacesService,
@@ -129,12 +131,17 @@ export class FixedRideActivePage implements OnDestroy {
   ionViewWillEnter(): void {
     this.load();
     this.pollSub ??= interval(5000).subscribe(() => this.silentReload());
+    this.backButtonSub = this.platform.backButton.subscribeWithPriority(10, () => {
+      this.back();
+    });
     void this.startUserLocationWatch();
   }
 
   ionViewWillLeave(): void {
     this.pollSub?.unsubscribe();
     this.pollSub = undefined;
+    this.backButtonSub?.unsubscribe();
+    this.backButtonSub = undefined;
     this.stopRealtimeTracking();
     void this.stopUserLocationWatch();
     if (!this.booking || !this.isActiveBooking(this.booking)) void this.fixedLocation.stop();
@@ -185,6 +192,12 @@ export class FixedRideActivePage implements OnDestroy {
       next: (res) => {
         if (res?.booking) {
           this.booking = res.booking;
+          if (res.booking.latest_driver_location?.lat != null && res.booking.latest_driver_location?.lng != null) {
+            this.driverPosition = {
+              lat: Number(res.booking.latest_driver_location.lat),
+              lng: Number(res.booking.latest_driver_location.lng),
+            };
+          }
           this.initOrUpdateMap();
           this.syncRealtimeTracking();
           this.syncFixedLocationStream();
@@ -199,7 +212,7 @@ export class FixedRideActivePage implements OnDestroy {
   }
 
   back(): void {
-    this.router.navigateByUrl('/customer-tabs/fixed-rides');
+    this.router.navigateByUrl('/customer-tabs/go');
   }
 
   callDriver(): void {
@@ -376,8 +389,12 @@ export class FixedRideActivePage implements OnDestroy {
         });
       } else {
         this.driverMarker.position = this.driverPosition;
+        if (!this.driverMarker.map) this.driverMarker.map = this.map;
         updateCarMarkerBearing(this.driverMarker, this.driverBearing);
       }
+    } else if (this.driverMarker) {
+      this.driverMarker.map = null;
+      this.driverMarker = null;
     }
 
     // 6. Draw Route Polyline Corridor
