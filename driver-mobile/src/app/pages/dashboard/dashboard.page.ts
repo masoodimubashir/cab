@@ -447,7 +447,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return this.driver?.['approval_status'] === 'approved';
   }
   get isOnline(): boolean {
-    return !!this.driver?.['is_online'];
+    return !!this.driver?.['is_online'] || this.activeFixedVehicleOpen;
   }
 
   /** True if a minimum wallet limit is configured and the driver's balance is below that floor. */
@@ -584,6 +584,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       const active = (existing.data || []).find((vehicle) => !['COMPLETED', 'CANCELLED'].includes(vehicle.status));
       if (active) {
         this.activeFixedVehicle = active;
+        this.driveMode = 'fixed';
+        try { localStorage.setItem('dc_driver_intended_online', '1'); } catch { /* ignore */ }
         this.startFixedManifestPolling(active.id);
         return true;
       } else {
@@ -591,7 +593,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         return false;
       }
     } catch {
-      this.clearActiveFixedRide();
       return false;
     }
   }
@@ -677,9 +678,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     if (!this.map) return;
     this.clearFixedMapObjects();
 
-    const routeStops = this.fixedStops.filter((stop) =>
-      stop.lat != null && stop.lng != null && Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng))
-    );
+    const routeStops = this.fixedStops.filter((stop) => {
+      const lat = Number(stop.lat);
+      const lng = Number(stop.lng);
+      return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+    });
 
     if (routeStops.length > 0) {
       // 1. Fixed Route Line
@@ -687,8 +690,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         path: routeStops.map((s) => ({ lat: Number(s.lat), lng: Number(s.lng) })),
         map: this.map,
         strokeColor: '#12B35B',
-        strokeOpacity: 0.9,
+        strokeOpacity: 0.95,
         strokeWeight: 5,
+        zIndex: 50,
       });
 
       // 2. Stop Markers
@@ -698,7 +702,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           map: this.map,
           title: stop.name,
           content: this.buildFixedStopMarker(stop),
-          zIndex: Number(stop.seq || 0),
+          zIndex: Number(stop.seq || 0) + 100,
         });
       });
     }
@@ -732,8 +736,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     let count = 0;
 
     for (const stop of this.fixedStops) {
-      if (stop.lat != null && stop.lng != null && Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng))) {
-        bounds.extend({ lat: Number(stop.lat), lng: Number(stop.lng) });
+      const lat = Number(stop.lat);
+      const lng = Number(stop.lng);
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        bounds.extend({ lat, lng });
         count++;
       }
     }
@@ -979,7 +985,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         const wasIntendedOnline = localStorage.getItem('dc_driver_intended_online') === '1';
         const isServerOnline = !!this.driver?.['is_online'];
 
-        if (isServerOnline || wasIntendedOnline) {
+        if (isServerOnline || wasIntendedOnline || this.activeFixedVehicleOpen) {
           if (!isServerOnline && wasIntendedOnline && this.canGoOnline) {
             void this.goOnline(true);
           } else {
@@ -989,13 +995,13 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
             } else {
               void this.stopVisualWatch();
             }
-            this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
+            this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? (this.activeFixedVehicleOpen ? 'fixed' : null);
             this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
             void this.loadActiveFixedVehicleState();
             this.startOnlineTimer();
           }
         } else {
-          this.clearActiveFixedRide();
+          void this.loadActiveFixedVehicleState();
           this.stopOnlineTimer();
         }
       },
