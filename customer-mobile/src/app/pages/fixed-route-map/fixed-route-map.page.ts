@@ -1,7 +1,11 @@
 import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
-import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+} from '../../core/car-marker.helper';
 import { PlacesService } from '../../core/places.service';
 import { RealtimeService, TripLocationPayload } from '../../core/realtime.service';
 
@@ -141,13 +145,13 @@ export class FixedRouteMapPage {
         position: pickup,
         map: this.map,
         title: 'Pickup',
-        content: this.buildPin('P', '#12B35B'),
+        content: buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }),
       });
       this.dropMarker = new google.maps.marker.AdvancedMarkerElement({
         position: drop,
         map: this.map,
         title: 'Drop',
-        content: this.buildPin('D', '#E11D48'),
+        content: buildPassengerMarkerElement({ kind: 'drop', name: 'Drop' }),
       });
 
       await this.drawRoute(pickup, drop);

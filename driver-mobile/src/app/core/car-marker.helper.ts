@@ -106,11 +106,17 @@ export function buildPassengerMarkerElement(options: PassengerMarkerOptions = {}
 
   const iconHtml = kind === 'pickup'
     ? `<div class="person-avatar-wrap">
-         <span class="person-cap-icon">🧢</span>
-         ${isLive ? '<span class="person-walking-pulse"></span>' : ''}
+         <svg viewBox="0 0 24 32" width="28" height="38" fill="#2563EB" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round" class="person-avatar-svg">
+           <!-- Head -->
+           <circle cx="12" cy="5" r="3.5" />
+           <!-- Full Body: Torso, Arms, Legs -->
+           <path d="M15 10.5h-6c-1.1 0-2 .9-2 2v5.5c0 .6.45 1 1 1s1-.4 1-1V13.5h1V28c0 .6.45 1 1 1s1-.4 1-1v-8h2v8c0 .6.45 1 1 1s1-.4 1-1V13.5h1v4.5c0 .6.45 1 1 1s1-.4 1-1v-5.5c0-1.1-.9-2-2-2z" />
+         </svg>
        </div>`
     : `<div class="person-avatar-wrap person-avatar-wrap--drop">
-         <span class="person-cap-icon">📍</span>
+         <svg viewBox="0 0 24 32" width="26" height="36" fill="#F59E0B" stroke="#FFFFFF" stroke-width="1.2" class="person-avatar-svg">
+           <path d="M12 2C7.58 2 4 5.58 4 10c0 6 8 16 8 16s8-10 8-16c0-4.42-3.58-8-8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
+         </svg>
        </div>`;
 
   const safeName = (name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

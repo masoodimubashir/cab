@@ -11,6 +11,7 @@ import {
 import { Router } from '@angular/router';
 import { ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
 
+import { buildPassengerMarkerElement } from '../../../core/car-marker.helper';
 import { GeolocationService } from '../../../core/geolocation.service';
 import { PlacesService } from '../../../core/places.service';
 import {
@@ -211,28 +212,18 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.currentCoords = latlng;
 
     if (!this.userMarker) {
-      // Build classic, premium teardrop pickup pin
       const { AdvancedMarkerElement } = await (google.maps as any).importLibrary('marker');
-
-      const pinEl = document.createElement('div');
-      pinEl.className = 'dc-pickup-pin';
-      pinEl.innerHTML = `
-        <div class="dc-pickup-pin__shadow"></div>
-        <div class="dc-pickup-pin__head">
-          <svg viewBox="0 0 32 42" width="32" height="42" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M16 0C7.163 0 0 7.163 0 16C0 26.5 16 42 16 42C16 42 32 26.5 32 16C32 7.163 24.837 0 16 0Z" fill="#12B35B"/>
-            <circle cx="16" cy="15" r="6" fill="#FFFFFF"/>
-            <circle cx="16" cy="15" r="3" fill="#0D1B2A"/>
-          </svg>
-        </div>
-      `;
 
       this.userMarker = new AdvancedMarkerElement({
         map: this.map,
         position: latlng,
-        content: pinEl,
+        content: buildPassengerMarkerElement({
+          kind: 'pickup',
+          name: 'You',
+          isLive: true,
+        }),
         zIndex: 1000,
-        title: 'Your pickup location',
+        title: 'Your location',
       });
     } else {
       this.userMarker.position = latlng;
