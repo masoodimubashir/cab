@@ -508,7 +508,7 @@
                   </div>
 
                   <!-- Stop Details Card -->
-                  <div class="dc-metro-card">
+                  <div class="dc-metro-card dc-press" (click)="openStopDetail(stop)">
                     <div class="dc-metro-card-top">
                       <h4 class="dc-metro-name">{{ stop.name }}</h4>
                       <span class="dc-metro-status-pill" *ngIf="stop.status === 'next'">Next Stop</span>
@@ -535,6 +535,165 @@
       </div>
 
     </ng-container>
+  </div>
+
+  <!-- ==================== STOP DETAILS & ADMIN RULES MODAL ==================== -->
+  <div class="stop-detail-overlay" *ngIf="selectedStopDetail" (click)="closeStopDetail()">
+    <div class="stop-detail-sheet" (click)="$event.stopPropagation()">
+      <button type="button" class="stop-detail-close dc-press" (click)="closeStopDetail()" aria-label="Close">
+        <ion-icon name="close-outline"></ion-icon>
+      </button>
+
+      <!-- Stop Header -->
+      <div class="stop-detail-header">
+        <div class="stop-detail-seq-badge">Stop {{ selectedStopDetail.stop.seq }}</div>
+        <div class="stop-detail-title-wrap">
+          <h2 class="stop-detail-name">{{ selectedStopDetail.stop.name }}</h2>
+          <div class="stop-detail-status-row">
+            <span class="stop-status-pill stop-status-pill--next" *ngIf="selectedStopDetail.isNext">
+              <ion-icon name="navigate-circle-outline"></ion-icon> Active Next Stop
+            </span>
+            <span class="stop-status-pill stop-status-pill--done" *ngIf="selectedStopDetail.isReached">
+              <ion-icon name="checkmark-circle-outline"></ion-icon> Completed / Passed
+            </span>
+            <span class="stop-status-pill stop-status-pill--pending" *ngIf="!selectedStopDetail.isNext && !selectedStopDetail.isReached">
+              <ion-icon name="time-outline"></ion-icon> Upcoming Stop
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin City Settings Parameters for this stop -->
+      <div class="stop-rules-section">
+        <h3 class="stop-rules-title">
+          <ion-icon name="options-outline"></ion-icon> Boarding &amp; No-Show Rules
+        </h3>
+        
+        <div class="stop-rules-grid">
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="locate-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Stop Arrival Radius</span>
+              <strong class="rule-value">{{ selectedStopDetail.arrivalRadiusM }} m</strong>
+              <small class="rule-hint">Light circle zone on map</small>
+            </div>
+          </div>
+
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="time-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Wait Time Per Stop</span>
+              <strong class="rule-value">{{ selectedStopDetail.waitTimeMin }} min</strong>
+              <small class="rule-hint">Station dwell budget</small>
+            </div>
+          </div>
+
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="hourglass-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Arrival Dwell Time</span>
+              <strong class="rule-value">{{ selectedStopDetail.dwellSec }} sec</strong>
+              <small class="rule-hint">Required to confirm arrival</small>
+            </div>
+          </div>
+
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="walk-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Customer Pickup Radius</span>
+              <strong class="rule-value">{{ selectedStopDetail.customerPickupRadiusM }} m</strong>
+              <small class="rule-hint">Pickup match area</small>
+            </div>
+          </div>
+
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="radio-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Approaching Alert</span>
+              <strong class="rule-value">{{ selectedStopDetail.approachingRadiusM }} m</strong>
+              <small class="rule-hint">Passenger alert trigger</small>
+            </div>
+          </div>
+
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Customer Grace Time</span>
+              <strong class="rule-value">{{ selectedStopDetail.customerGraceMin }} min</strong>
+              <small class="rule-hint">Before no-show unlocks</small>
+            </div>
+          </div>
+
+          <div class="stop-rule-card">
+            <div class="rule-icon"><ion-icon name="car-outline"></ion-icon></div>
+            <div class="rule-content">
+              <span class="rule-label">Driver Missed Grace</span>
+              <strong class="rule-value">{{ selectedStopDetail.driverMissedGraceMin }} min</strong>
+              <small class="rule-hint">Grace if stop skipped</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Passengers at this Stop -->
+      <div class="stop-passengers-section">
+        <h3 class="stop-passengers-title">
+          <ion-icon name="people-outline"></ion-icon> Passengers at this Stop
+        </h3>
+
+        <!-- Boarding List -->
+        <div class="stop-passengers-group" *ngIf="selectedStopDetail.boardingPassengers.length">
+          <span class="group-title group-title--board">
+            <ion-icon name="arrow-up-circle-outline"></ion-icon> Boarding ({{ selectedStopDetail.boardingPassengers.length }})
+          </span>
+          <div class="stop-passenger-mini-card" *ngFor="let p of selectedStopDetail.boardingPassengers">
+            <div class="p-mini-avatar">🧢</div>
+            <div class="p-mini-info">
+              <strong>{{ p.customer_name || 'Passenger' }}</strong>
+              <span>{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }} · {{ p.drop ? 'To: ' + p.drop : 'Fixed Ride' }}</span>
+            </div>
+            <span class="p-mini-status" [class.is-boarded]="p.status === 'BOARDED'">{{ p.status }}</span>
+          </div>
+        </div>
+
+        <!-- Dropping List -->
+        <div class="stop-passengers-group" *ngIf="selectedStopDetail.droppingPassengers.length">
+          <span class="group-title group-title--drop">
+            <ion-icon name="arrow-down-circle-outline"></ion-icon> Dropping ({{ selectedStopDetail.droppingPassengers.length }})
+          </span>
+          <div class="stop-passenger-mini-card" *ngFor="let p of selectedStopDetail.droppingPassengers">
+            <div class="p-mini-avatar">📍</div>
+            <div class="p-mini-info">
+              <strong>{{ p.customer_name || 'Passenger' }}</strong>
+              <span>{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }} · {{ p.board ? 'From: ' + p.board : 'Boarded' }}</span>
+            </div>
+            <span class="p-mini-status">{{ p.status }}</span>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="stop-passengers-empty" *ngIf="!selectedStopDetail.boardingPassengers.length && !selectedStopDetail.droppingPassengers.length">
+          <span>No passengers currently scheduled for boarding or drop-off at this stop.</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="stop-detail-actions">
+        <button 
+          type="button" 
+          class="dc-cta dc-cta--primary dc-press stop-nav-btn"
+          *ngIf="selectedStopDetail.stop.lat && selectedStopDetail.stop.lng"
+          (click)="navigateToStop(selectedStopDetail.stop)"
+        >
+          <ion-icon name="navigate-outline"></ion-icon>
+          <span>Navigate to Stop</span>
+        </button>
+        <button type="button" class="dc-cta dc-cta--secondary dc-press stop-close-action-btn" (click)="closeStopDetail()">
+          <span>Close</span>
+        </button>
+      </div>
+
+    </div>
   </div>
 
   <!-- ==================== BOARDING OTP BOTTOM SHEET MODAL ==================== -->

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CitySetting;
 use App\Models\DepartureSeat;
 use App\Models\FixedSeatHold;
 use App\Models\RouteDeparture;
@@ -19,9 +20,17 @@ class FixedManifestService
         $this->availability->assertFixedDeparture($departure);
         $departure->loadMissing(['route.stops' => fn ($q) => $q->orderBy('seq'), 'driver:id,name']);
 
-        $waitMinutes = $departure->route
-            ? FixedNoShowPolicy::waitMinutes($departure->route)
-            : FixedNoShowPolicy::MIN_WAIT_MINUTES;
+        $route = $departure->route;
+        $legacySettings = is_array($route?->fixed_settings_json) ? $route->fixed_settings_json : [];
+        $citySettings = $route?->city_id ? CitySetting::query()->where('city_id', $route->city_id)->first() : null;
+
+        $driverRadius = (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacySettings['stop_arrival_radius_m'] ?? 150));
+        $approachingRadius = max($driverRadius, (int) ($citySettings?->fixed_vehicle_approaching_alert_radius_m ?? ($legacySettings['vehicle_approaching_alert_radius_m'] ?? 500)));
+        $customerRadius = (int) ($citySettings?->fixed_customer_pickup_radius_m ?? ($legacySettings['customer_pickup_radius_m'] ?? 150));
+        $arrivalDwellSeconds = max(0, (int) ($citySettings?->fixed_stop_arrival_dwell_seconds ?? ($legacySettings['stop_arrival_dwell_seconds'] ?? 20)));
+        $waitMinutes = $route ? FixedNoShowPolicy::waitMinutes($route, $citySettings) : FixedNoShowPolicy::MIN_WAIT_MINUTES;
+        $customerGraceMinutes = max(0, (int) ($citySettings?->fixed_customer_grace_minutes ?? ($legacySettings['customer_grace_minutes'] ?? 2)));
+        $driverMissedGraceMinutes = max(0, (int) ($citySettings?->fixed_driver_missed_stop_grace_minutes ?? ($legacySettings['driver_missed_stop_grace_minutes'] ?? 3)));
 
         // Map reservation_id → sorted seat labels (M6 — driver sees "2A, 2B"
         // next to the passenger name).
@@ -106,6 +115,15 @@ class FixedManifestService
                 'is_temporarily_unavailable' => (bool) $stop->is_temporarily_unavailable,
             ])->values() ?? [],
             'passengers' => $passengers,
+            'city_settings' => [
+                'fixed_waiting_time_per_stop_minutes' => $waitMinutes,
+                'fixed_stop_arrival_radius_m' => $driverRadius,
+                'fixed_stop_arrival_dwell_seconds' => $arrivalDwellSeconds,
+                'fixed_driver_missed_stop_grace_minutes' => $driverMissedGraceMinutes,
+                'fixed_customer_pickup_radius_m' => $customerRadius,
+                'fixed_vehicle_approaching_alert_radius_m' => $approachingRadius,
+                'fixed_customer_grace_minutes' => $customerGraceMinutes,
+            ],
         ];
     }
 }
