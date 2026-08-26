@@ -145,9 +145,39 @@ export class FixedDriverMapPage implements OnDestroy {
     void this.router.navigateByUrl('/tabs/fixed');
   }
 
+  get routeOriginName(): string {
+    const raw = this.vehicle?.origin_name;
+    if (raw && raw.trim().toLowerCase() !== 'origin') return raw.trim();
+    if (this.stops.length > 0 && this.stops[0]?.name) return this.stops[0].name;
+    const rName = this.vehicle?.route_name;
+    if (rName) {
+      if (rName.includes('->')) return rName.split('->')[0].trim();
+      if (rName.includes('→')) return rName.split('→')[0].trim();
+      if (rName.toLowerCase().includes(' to ')) return rName.split(/ to /i)[0].trim();
+    }
+    return this.stops[0]?.name || 'Origin';
+  }
+
+  get routeDestName(): string {
+    const raw = this.vehicle?.dest_name;
+    if (raw && raw.trim().toLowerCase() !== 'destination') return raw.trim();
+    if (this.stops.length > 1 && this.stops[this.stops.length - 1]?.name) {
+      return this.stops[this.stops.length - 1].name;
+    }
+    const rName = this.vehicle?.route_name;
+    if (rName) {
+      if (rName.includes('->')) return rName.split('->')[1].trim();
+      if (rName.includes('→')) return rName.split('→')[1].trim();
+      if (rName.toLowerCase().includes(' to ')) return rName.split(/ to /i)[1].trim();
+    }
+    return this.stops[this.stops.length - 1]?.name || 'Destination';
+  }
+
   routeLineText(): string {
     if (!this.vehicle) return 'Fixed route';
-    if (this.vehicle.origin_name && this.vehicle.dest_name) return this.vehicle.origin_name + ' to ' + this.vehicle.dest_name;
+    const orig = this.routeOriginName;
+    const dest = this.routeDestName;
+    if (orig && dest && orig !== 'Origin' && dest !== 'Destination') return orig + ' to ' + dest;
     return this.vehicle.route_name || 'Fixed route';
   }
 
