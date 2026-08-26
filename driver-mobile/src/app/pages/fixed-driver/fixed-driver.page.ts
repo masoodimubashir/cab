@@ -165,7 +165,6 @@ export class FixedDriverPage implements OnDestroy {
   private map: any = null;
   private routeLine: any = null;
   private stopMarkers: any[] = [];
-  private stopRadiusCircles: any[] = [];
   private passengerMarkers: any[] = [];
   private selfMarker: any = null;
   private selfWatchId: string | null = null;
@@ -252,7 +251,7 @@ export class FixedDriverPage implements OnDestroy {
     this.unsubscribeFixedCatalog = this.realtime.subscribeFixedCatalog(() => this.refresh());
   }
 
-  refresh(): void {
+  refresh(forceMap = true): void {
     this.loading = true;
     this.error = null;
     this.message = null;
@@ -281,12 +280,13 @@ export class FixedDriverPage implements OnDestroy {
         this.vehicles = res.data ?? [];
         this.activeVehicle = this.pickActiveVehicle();
         if (this.activeVehicle) {
-          this.loadManifest(this.activeVehicle.id, false);
+          this.loadManifest(this.activeVehicle.id, false, forceMap);
           this.startManifestPolling();
           void this.syncFixedTripLocationStreaming();
         } else {
           this.stopManifestPolling();
           void this.stopFixedTripLocationStreaming();
+          this.resetEmbeddedMap();
         }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed vehicles.',
@@ -403,7 +403,7 @@ export class FixedDriverPage implements OnDestroy {
       });
   }
 
-  loadManifest(vehicleId: number, showSpinner = true): void {
+  loadManifest(vehicleId: number, showSpinner = true, forceMap = false): void {
     if (showSpinner) this.busy = true;
     const oldRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
     const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
@@ -434,14 +434,18 @@ export class FixedDriverPage implements OnDestroy {
           }
 
           if (!hadMap) {
-            this.ensureEmbeddedMap();
+            this.ensureEmbeddedMap(forceMap);
           } else if (
+            forceMap ||
             oldStopsJson !== newStopsJson ||
             oldPassengersJson !== newPassengersJson ||
             oldCitySettingsJson !== newCitySettingsJson ||
             oldRadius !== newRadius
           ) {
-            this.refreshEmbeddedMap(false);
+            if (this.map && typeof google !== 'undefined' && google.maps?.event) {
+              google.maps.event.trigger(this.map, 'resize');
+            }
+            this.refreshEmbeddedMap(forceMap);
           }
         },
         error: (err) => {
@@ -1203,9 +1207,12 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   /* ─── Embedded Map Management ─── */
-  ensureEmbeddedMap(): void {
+  ensureEmbeddedMap(forceRefit = false): void {
     if (this.map) {
-      this.refreshEmbeddedMap();
+      if (typeof google !== 'undefined' && google.maps?.event) {
+        google.maps.event.trigger(this.map, 'resize');
+      }
+      this.refreshEmbeddedMap(forceRefit);
       return;
     }
     requestAnimationFrame(() => void this.initEmbeddedMap());
@@ -1258,34 +1265,6 @@ export class FixedDriverPage implements OnDestroy {
       strokeColor: '#12B35B',
       strokeOpacity: 0.9,
       strokeWeight: 5,
-    });
-
-    const reachedSeq = Number(this.activeVehicle?.fixed_last_reached_stop_seq || 0);
-    const radiusM = this.citySettings?.fixed_stop_arrival_radius_m || 150;
-
-    // Render light-colored Stop Arrival Radius Circles on the map
-    this.stopRadiusCircles = routeStops.map((stop) => {
-      const isReached = stop.seq <= reachedSeq;
-      const isNext = !isReached && (reachedSeq === 0 ? stop.seq === 1 : stop.seq === reachedSeq + 1);
-
-      const circle = new google.maps.Circle({
-        map: this.map,
-        center: this.stopPosition(stop),
-        radius: radiusM,
-        fillColor: isNext ? '#10B981' : (isReached ? '#94A3B8' : '#0EA5E9'),
-        fillOpacity: isNext ? 0.18 : 0.08,
-        strokeColor: isNext ? '#059669' : (isReached ? '#64748B' : '#0284C7'),
-        strokeOpacity: isNext ? 0.7 : 0.35,
-        strokeWeight: isNext ? 2 : 1,
-        clickable: true,
-        zIndex: 5,
-      });
-
-      circle.addListener('click', () => {
-        this.openStopDetail(stop);
-      });
-
-      return circle;
     });
 
     this.stopMarkers = routeStops.map((stop) => {
@@ -1452,10 +1431,8 @@ export class FixedDriverPage implements OnDestroy {
       this.routeLine.setMap(null);
       this.routeLine = null;
     }
-    for (const circle of this.stopRadiusCircles) circle.setMap(null);
     for (const marker of this.stopMarkers) marker.map = null;
     for (const marker of this.passengerMarkers) marker.map = null;
-    this.stopRadiusCircles = [];
     this.stopMarkers = [];
     this.passengerMarkers = [];
   }

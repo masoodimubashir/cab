@@ -150,17 +150,6 @@ export class FixedRouteMapPage {
         content: this.buildPin('D', '#E11D48'),
       });
 
-      new google.maps.Circle({
-        map: this.map,
-        center: pickup,
-        radius: 150,
-        fillColor: '#12B35B',
-        fillOpacity: 0.14,
-        strokeColor: '#059669',
-        strokeOpacity: 0.55,
-        strokeWeight: 1.5,
-      });
-
       await this.drawRoute(pickup, drop);
       this.seedDriverLocation(booking);
       this.subscribeLiveTracking(booking);
