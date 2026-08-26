@@ -227,6 +227,14 @@ class FixedDriverController extends Controller
             'status' => 'FORMING',
         ]);
 
+        $driver->update([
+            'is_online' => true,
+            'active_service_mode' => Driver::SERVICE_MODE_FIXED,
+            'active_service_scope' => $route->scope ?: Driver::SERVICE_SCOPE_LOCAL,
+            'active_status' => Driver::ACTIVE_STATUS_DUTY,
+            'last_online_at' => now(),
+        ]);
+
         $this->seatMap->snapshotForDeparture($departure);
         $this->broadcastAvailability($departure, 'vehicle_opened');
 
@@ -324,6 +332,15 @@ class FixedDriverController extends Controller
         });
 
         $this->notifyFixedStarted($departure);
+
+        $driver = $this->driverProfile($request);
+        $driver->update([
+            'is_online' => true,
+            'active_service_mode' => Driver::SERVICE_MODE_FIXED,
+            'active_service_scope' => $departure->route?->scope ?: Driver::SERVICE_SCOPE_LOCAL,
+            'active_status' => Driver::ACTIVE_STATUS_DUTY,
+            'last_online_at' => now(),
+        ]);
 
         return response()->json([
             'vehicle' => $this->departures->shapeAdminDeparture($departure),
