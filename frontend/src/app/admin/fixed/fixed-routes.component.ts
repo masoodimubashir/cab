@@ -78,11 +78,9 @@ interface FixedRouteRow {
   fare_config?: FareConfig;
   flat_fare: number;
   booking_window_hours: number;
-  max_seats_per_booking: number;
   waiting_time_per_stop_minutes: number;
   luggage_surcharge_amount: number;
   max_luggage_per_vehicle: number;
-  requires_prepaid: boolean;
   fixed_settings_json?: Partial<FixedNoShowSettings> | null;
   is_active: boolean;
   sort_order: number;
@@ -191,12 +189,6 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
           <tm-column key="fare" label="Fare" width="100">
             <ng-template let-row>
               <span class="cell-amt">₹{{ row.flat_fare | number: '1.0-2' }}</span>
-            </ng-template>
-          </tm-column>
-
-          <tm-column key="seats" label="Seats" width="82" align="right">
-            <ng-template let-row>
-              <span class="muted">{{ row.max_seats_per_booking || '-' }}</span>
             </ng-template>
           </tm-column>
 
@@ -449,18 +441,12 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
             <label class="field"><span class="field__lbl">Luggage surcharge (₹) <span class="help" data-tip="Extra amount charged for each additional luggage item.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
           </div>
 
-          <div class="grid2">
-            <label class="field"><span class="field__lbl">Seats per vehicle <span class="help" data-tip="Set by the selected vehicle — pick a vehicle above to update.">!</span></span>
-              <input type="number" [ngModel]="form.max_seats_per_booking" readonly class="field--locked" />
-            </label>
-            <label class="field"><span class="field__lbl">Luggage capacity <span class="help" data-tip="Set by the selected vehicle — pick a vehicle above to update.">!</span></span>
-              <input type="number" [ngModel]="form.max_luggage_per_vehicle" readonly class="field--locked" />
-            </label>
-          </div>
+          <label class="field"><span class="field__lbl">Luggage capacity <span class="help" data-tip="Maximum luggage bags allowed on this route.">!</span></span>
+            <input type="number" min="0" step="1" [(ngModel)]="form.max_luggage_per_vehicle" />
+          </label>
 
-          <div class="toggles">
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.requires_prepaid" /><span>Prepaid required <span class="help" data-tip="Customers must pay before the fixed ride booking is confirmed.">!</span></span></label>
-            <label class="toggle" *ngIf="editingId"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active <span class="help" data-tip="Controls whether this fixed route is visible and bookable.">!</span></span></label>
+          <div class="toggles" *ngIf="editingId">
+            <label class="toggle"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active <span class="help" data-tip="Controls whether this fixed route is visible and bookable.">!</span></span></label>
           </div>
 
 
@@ -878,7 +864,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (!f.name.trim() || !f.origin_name.trim() || !f.dest_name.trim()) return false;
     if (f.origin_lat == null || f.origin_lng == null || f.dest_lat == null || f.dest_lng == null) return false;
     if (f.seat_fare == null || f.seat_fare <= 0) return false;
-    if (f.max_seats_per_booking == null || f.max_seats_per_booking < 1) return false;
     if (f.scope === 'outstation' && (f.origin_city_id == null || f.dest_city_id == null)) return false;
     return true;
   }
@@ -905,7 +890,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       fixed_commission: null as number | null,
       city_vehicle_type_id: this.cityVehicleTypeId,
       booking_window_hours: 6,
-      max_seats_per_booking: 4 as number | null,
       waiting_time_per_stop_minutes: 5,
       luggage_surcharge_amount: 0,
       max_luggage_per_vehicle: 0,
@@ -915,7 +899,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       vehicle_approaching_alert_radius_m: 500,
       customer_grace_minutes: 2,
       boarding_confirmation_mode: 'driver_only' as FixedNoShowSettings['boarding_confirmation_mode'],
-      requires_prepaid: true,
       is_active: true,
       sort_order: 0,
       path: [] as LatLng[],
@@ -931,13 +914,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Optional convenience: picking a vehicle pre-fills the route's own capacity.
-   *  The vehicle is not required and no longer decides allocation. */
+  /** Optional convenience: picking a vehicle pre-fills the route's luggage capacity. */
   onVehiclePicked(id: number | null): void {
     if (id == null) return;
     const v = this.vehicleTypes.find((x) => x.id === id);
     if (!v) return;
-    this.form.max_seats_per_booking = v.max_people || this.form.max_seats_per_booking;
     this.form.max_luggage_per_vehicle = v.luggage_capacity ?? this.form.max_luggage_per_vehicle;
   }
 
@@ -1016,7 +997,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       fixed_commission: fc.fixed_commission ?? null,
       city_vehicle_type_id: r.city_vehicle_type_id,
       booking_window_hours: r.booking_window_hours,
-      max_seats_per_booking: r.max_seats_per_booking,
       waiting_time_per_stop_minutes: r.waiting_time_per_stop_minutes,
       luggage_surcharge_amount: r.luggage_surcharge_amount,
       max_luggage_per_vehicle: r.max_luggage_per_vehicle ?? 0,
@@ -1026,7 +1006,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       vehicle_approaching_alert_radius_m: Number(ns.vehicle_approaching_alert_radius_m ?? 500),
       customer_grace_minutes: Number(ns.customer_grace_minutes ?? 2),
       boarding_confirmation_mode: (ns.boarding_confirmation_mode ?? 'driver_only') as FixedNoShowSettings['boarding_confirmation_mode'],
-      requires_prepaid: r.requires_prepaid,
       is_active: r.is_active,
       sort_order: r.sort_order,
       path: [],
@@ -1085,7 +1064,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         fixed_commission: fc.fixed_commission ?? null,
         city_vehicle_type_id: existing.city_vehicle_type_id,
         booking_window_hours: existing.booking_window_hours,
-        max_seats_per_booking: existing.max_seats_per_booking,
         waiting_time_per_stop_minutes: existing.waiting_time_per_stop_minutes,
         luggage_surcharge_amount: existing.luggage_surcharge_amount,
         max_luggage_per_vehicle: existing.max_luggage_per_vehicle ?? 0,
@@ -1095,7 +1073,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         vehicle_approaching_alert_radius_m: Number(ns.vehicle_approaching_alert_radius_m ?? 500),
         customer_grace_minutes: Number(ns.customer_grace_minutes ?? 2),
         boarding_confirmation_mode: (ns.boarding_confirmation_mode ?? 'driver_only') as FixedNoShowSettings['boarding_confirmation_mode'],
-        requires_prepaid: existing.requires_prepaid,
         is_active: existing.is_active,
         sort_order: existing.sort_order,
       };
@@ -2158,12 +2135,10 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lng: f.dest_lng,
       path_polyline,
       city_vehicle_type_id: this.cityVehicleTypeId ?? f.city_vehicle_type_id,
-      max_seats_per_booking: f.max_seats_per_booking,
       max_luggage_per_vehicle: f.max_luggage_per_vehicle,
       booking_window_hours: f.booking_window_hours,
       waiting_time_per_stop_minutes: f.waiting_time_per_stop_minutes,
       luggage_surcharge_amount: f.luggage_surcharge_amount,
-      requires_prepaid: f.requires_prepaid,
       fixed_settings_json: {
         auto_no_show_enabled: true,
         stop_arrival_radius_m: Number(f.stop_arrival_radius_m ?? 150),

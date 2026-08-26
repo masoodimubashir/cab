@@ -99,8 +99,8 @@ class FixedSeatHoldService
             if (!$route) {
                 throw new ReservationException('This fixed route is not available.', 404);
             }
-            if ($seats > max(1, (int) $route->max_seats_per_booking)) {
-                throw new ReservationException('You cannot book that many seats in one fixed booking.', 422);
+            if ($seats > max(1, (int) $dep->capacity)) {
+                throw new ReservationException('You cannot book more seats than the vehicle capacity.', 422);
             }
 
             $boardStop = $this->resolveStop($route->id, $boardStopId, 'is_pickup', 'boarding');

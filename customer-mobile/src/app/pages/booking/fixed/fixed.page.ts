@@ -21,7 +21,7 @@ interface FixedRoute {
   id: number; name: string; scope: 'local' | 'outstation';
   origin_name: string; dest_name: string;
   flat_fare: number; luggage_surcharge_amount: number;
-  max_seats_per_booking: number; stops: FixedStop[];
+  stops: FixedStop[];
 }
 interface FixedDeparture {
   id: number; depart_at: string | null; announced_depart_at: string | null;
@@ -231,7 +231,7 @@ export class FixedBookPage implements OnInit {
   }
 
   get maxSeats(): number {
-    return Math.max(1, Math.min(this.route?.max_seats_per_booking ?? 1, this.departure?.seats_remaining ?? 1));
+    return Math.max(1, this.departure?.seats_remaining ?? 1);
   }
 
   /** The seat grid emits a label; toggle it in/out of the selection. */

@@ -50,7 +50,6 @@ interface RouteLite {
   origin_name: string;
   dest_name: string;
   flat_fare: number | null;
-  max_seats_per_booking: number | null;
   booking_window_hours: number | null;
   stops?: { id: number }[];
   is_active: boolean;

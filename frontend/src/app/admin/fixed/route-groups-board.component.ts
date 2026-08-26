@@ -13,7 +13,6 @@ interface RouteCard {
   origin_name: string;
   dest_name: string;
   flat_fare: number | null;
-  max_seats_per_booking: number;
   is_active: boolean;
   stops?: { id: number }[];
 }
@@ -125,7 +124,7 @@ interface DriverOpt { user_id: number; name: string; phone?: string | null; }
       </div>
       <div class="card__leg"><span class="dot dot--o"></span>{{ r.origin_name }}</div>
       <div class="card__leg"><span class="dot dot--d"></span>{{ r.dest_name }}</div>
-      <div class="card__foot"><span>👤 {{ r.max_seats_per_booking }}</span><span>🔗 {{ r.stops?.length || 0 }} stops</span></div>
+      <div class="card__foot"><span>🔗 {{ r.stops?.length || 0 }} stops</span></div>
     </ng-template>
   `,
   styles: [`

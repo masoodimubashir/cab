@@ -1,6 +1,7 @@
 import { Component, NgZone } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
 import { PlacesService } from '../../core/places.service';
 import { RealtimeService, TripLocationPayload } from '../../core/realtime.service';
 
@@ -293,10 +294,10 @@ export class FixedRouteMapPage {
   }
 
   private buildDriverMarker(): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'fixed-full-driver-marker';
-    el.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8a1 1 0 001 1h1a1 1 0 001-1v-1h12v1a1 1 0 001 1h1a1 1 0 001-1v-8l-2.08-5.99zM6.5 16a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm11 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM5 11l1.5-4.5h11L19 11H5z"/></svg>';
-    return el;
+    return buildReusableCarMarkerElement({
+      bearing: 0,
+      label: this.booking?.driver_name || 'Driver',
+    });
   }
 
   private stopTracking(): void {

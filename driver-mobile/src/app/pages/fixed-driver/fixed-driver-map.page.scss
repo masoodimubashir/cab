@@ -153,76 +153,190 @@
 }
 
 :host ::ng-deep .fixed-driver-stop-marker {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 3px solid #FFFFFF;
-  border-radius: 50%;
-  background: var(--stop-color, #12B35B);
-  box-shadow: 0 4px 12px rgba(13, 27, 42, 0.28);
-  color: #FFFFFF;
-  font-size: 12px;
-  font-weight: 900;
+  width: 0 !important;
+  height: 0 !important;
+  position: relative !important;
+  overflow: visible !important;
+
+  span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2.5px solid #FFFFFF;
+    border-radius: 50%;
+    background: var(--stop-color, #12B35B);
+    box-shadow: 0 4px 10px rgba(13, 27, 42, 0.25);
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 900;
+  }
 }
 
-:host ::ng-deep .fixed-driver-passenger-marker {
-  min-width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 0 7px;
-  border: 3px solid #FFFFFF;
-  border-radius: 999px;
-  color: #FFFFFF;
-  box-shadow: 0 7px 16px rgba(13, 27, 42, 0.28);
+/* ─── Modern Map Markers (Customer Person-with-Cap & Driver Car) ─── */
+:host ::ng-deep .fixed-driver-person-marker {
+  width: 0 !important;
+  height: 0 !important;
+  position: relative !important;
+  overflow: visible !important;
+  user-select: none;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 10px rgba(13, 27, 42, 0.22));
+
+  .person-avatar-wrap {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+    border: 2.5px solid #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 10px rgba(29, 78, 216, 0.35);
+    z-index: 2;
+
+    .person-cap-icon {
+      font-size: 18px;
+      line-height: 1;
+      transform: translateY(-1px);
+    }
+
+    &--drop {
+      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      box-shadow: 0 3px 10px rgba(217, 119, 6, 0.35);
+
+      .person-cap-icon {
+        font-size: 16px;
+      }
+    }
+  }
+
+  .person-walking-pulse {
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    border-radius: 50%;
+    border: 2px solid #2563EB;
+    animation: person-pulse-ring 1.8s infinite;
+    pointer-events: none;
+  }
+
+  .person-tag-pill {
+    position: absolute;
+    left: 17px;
+    top: 0;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #0D1B2A;
+    border: 1.5px solid #FFFFFF;
+    border-radius: 100px;
+    padding: 3px 8px;
+    color: #FFFFFF;
+    box-shadow: 0 2px 8px rgba(13, 27, 42, 0.25);
+    z-index: 3;
+    white-space: nowrap;
+
+    .person-tag-name {
+      font-size: 11px;
+      font-weight: 900;
+      color: #FFFFFF;
+      max-width: 90px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .person-tag-seats {
+      font-size: 9.5px;
+      font-weight: 850;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #E2E8F0;
+    }
+
+    .person-live-dot {
+      color: #10B981;
+      font-size: 8px;
+      animation: person-dot-blink 1.2s infinite;
+    }
+  }
+
+  &.is-live-walking {
+    .person-avatar-wrap {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      border-color: #ECFDF5;
+    }
+  }
 }
 
-:host ::ng-deep .fixed-driver-passenger-marker span {
-  font-size: 11px;
-  font-weight: 950;
+@keyframes person-pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  70% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
 }
 
-:host ::ng-deep .fixed-driver-passenger-marker strong {
-  min-width: 15px;
-  height: 15px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
-  font-size: 10px;
-  font-weight: 950;
+@keyframes person-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
 }
 
-:host ::ng-deep .fixed-driver-passenger-marker--pickup {
-  background: #12B35B;
-}
+/* ─── Driver Car Marker (Sleek Real Vehicle Graphic with Transparent Background) ─── */
+:host ::ng-deep .fixed-driver-car-marker {
+  width: 0 !important;
+  height: 0 !important;
+  position: relative !important;
+  overflow: visible !important;
+  user-select: none;
+  cursor: pointer;
 
-:host ::ng-deep .fixed-driver-passenger-marker--drop {
-  background: #F59E0B;
-}
+  .car-icon-wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4));
+    transition: transform 0.2s ease-out;
 
-:host ::ng-deep .fixed-driver-self-marker {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 3px solid #FFFFFF;
-  border-radius: 50%;
-  background: #0D1B2A;
-  box-shadow: 0 4px 14px rgba(13, 27, 42, 0.35);
-}
+    .vector-car-svg {
+      display: block;
+    }
+  }
 
-:host ::ng-deep .fixed-driver-self-marker span {
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-bottom: 18px solid #FFFFFF;
-  transform-origin: 50% 62%;
+  .car-driver-pill {
+    position: absolute;
+    left: 0;
+    top: 32px;
+    transform: translateX(-50%);
+    z-index: 4;
+    font-size: 10px;
+    font-weight: 900;
+    color: #FFFFFF;
+    background: #0D1B2A;
+    border: 1px solid #12B35B;
+    border-radius: 100px;
+    padding: 1.5px 7px;
+    box-shadow: 0 2px 6px rgba(13, 27, 42, 0.25);
+    white-space: nowrap;
+    letter-spacing: 0.2px;
+  }
 }

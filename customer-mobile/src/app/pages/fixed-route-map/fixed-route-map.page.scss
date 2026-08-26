@@ -173,14 +173,49 @@
   font-weight: 900;
 }
 
-:host ::ng-deep .fixed-full-driver-marker {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 3px solid #fff;
-  border-radius: 50%;
-  background: #2563EB;
-  box-shadow: 0 5px 14px rgba(16, 24, 40, 0.32);
+:host ::ng-deep .fixed-driver-car-marker {
+  width: 0 !important;
+  height: 0 !important;
+  position: relative !important;
+  overflow: visible !important;
+  user-select: none;
+  cursor: pointer;
+
+  .car-icon-wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4));
+    transition: transform 0.2s ease-out;
+
+    .vector-car-svg {
+      display: block;
+    }
+  }
+
+  .car-driver-pill {
+    position: absolute;
+    left: 0;
+    top: 32px;
+    transform: translateX(-50%);
+    z-index: 4;
+    font-size: 10px;
+    font-weight: 900;
+    color: #FFFFFF;
+    background: #0D1B2A;
+    border: 1px solid #12B35B;
+    border-radius: 100px;
+    padding: 1.5px 7px;
+    box-shadow: 0 2px 6px rgba(13, 27, 42, 0.25);
+    white-space: nowrap;
+    letter-spacing: 0.2px;
+  }
 }

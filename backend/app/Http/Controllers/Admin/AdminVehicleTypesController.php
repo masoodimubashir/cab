@@ -462,7 +462,6 @@ class AdminVehicleTypesController
         Route::query()
             ->whereIn('id', $routeIds)
             ->update([
-                'max_seats_per_booking' => max(1, (int) $vehicleType->max_people),
                 'max_luggage_per_vehicle' => max(0, (int) $vehicleType->luggage_capacity),
             ]);
 
