@@ -5,7 +5,12 @@ import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
-import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+  buildStopMarkerElement,
+} from '../../core/car-marker.helper';
 import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { PlacesService } from '../../core/places.service';
 import { RealtimeService } from '../../core/realtime.service';
@@ -1527,42 +1532,15 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   private buildPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
-    const el = document.createElement('div');
-    el.className = `fixed-driver-person-marker fixed-driver-person-marker--${kind} ${isLive ? 'is-live-walking' : ''}`;
-
-    const iconHtml = kind === 'pickup'
-      ? `<div class="person-avatar-wrap">
-           <span class="person-cap-icon">🧢</span>
-           ${isLive ? '<span class="person-walking-pulse"></span>' : ''}
-         </div>`
-      : `<div class="person-avatar-wrap person-avatar-wrap--drop">
-           <span class="person-cap-icon">📍</span>
-         </div>`;
-
-    const labelHtml = `
-      <div class="person-tag-pill">
-        <span class="person-tag-name">${this.escapeMarkerHtml(name)}</span>
-        <span class="person-tag-seats">${count}s</span>
-        ${isLive ? '<span class="person-live-dot" title="Live Walking">●</span>' : ''}
-      </div>
-    `;
-
-    el.innerHTML = `${iconHtml}${labelHtml}`;
-    return el;
-  }
-
-  private escapeMarkerHtml(str: string): string {
-    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return buildPassengerMarkerElement({ kind, count, name, isLive });
   }
 
   private buildStopMarker(stop: FixedStop): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'fixed-driver-stop-marker';
     const reachedSeq = Number(this.activeVehicle?.fixed_last_reached_stop_seq || 0);
-    const tone = Number(stop.seq || 0) <= reachedSeq ? '#64748B' : '#12B35B';
-    el.style.setProperty('--stop-color', tone);
-    el.innerHTML = `<span>${stop.seq}</span>`;
-    return el;
+    return buildStopMarkerElement({
+      seq: stop.seq,
+      isReached: Number(stop.seq || 0) <= reachedSeq,
+    });
   }
 
   private buildDriverMarker(bearing: number): HTMLElement {

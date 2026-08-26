@@ -15,6 +15,11 @@ import {
   googleMapsDirectionsUrl,
   openExternalUrl,
 } from '../../core/maps-navigation';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+} from '../../core/car-marker.helper';
 
 declare const google: any;
 
@@ -938,7 +943,8 @@ export class RidesPage implements OnInit, OnDestroy {
           position: pickup,
           map: this.map,
           title: 'Pickup',
-          content: this.buildPin('P', '#1f8b4c'),
+          content: buildPassengerMarkerElement({ kind: 'pickup', name: 'Pickup' }),
+          zIndex: 900,
         });
       } else {
         this.pickupMarker.position = pickup;
@@ -950,7 +956,8 @@ export class RidesPage implements OnInit, OnDestroy {
           position: drop,
           map: this.map,
           title: 'Drop',
-          content: this.buildPin('D', '#c0392b'),
+          content: buildPassengerMarkerElement({ kind: 'drop', name: 'Drop' }),
+          zIndex: 850,
         });
       } else {
         this.dropMarker.position = drop;
@@ -983,8 +990,12 @@ export class RidesPage implements OnInit, OnDestroy {
         position: pos,
         map: this.map,
         title: 'Customer',
-        content: this.buildDot('#1e6cf0'),
-        zIndex: 3,
+        content: buildPassengerMarkerElement({
+          kind: 'pickup',
+          name: this.customerName || 'Passenger',
+          isLive: true,
+        }),
+        zIndex: 950,
       });
       this.fitMap();
     } else {
@@ -1021,15 +1032,14 @@ export class RidesPage implements OnInit, OnDestroy {
         position: p,
         map: this.map,
         title: 'You',
-        content: this.buildArrow(fix.bearing ?? 0, '#1f8b4c'),
-        zIndex: 2,
+        content: buildReusableCarMarkerElement({ bearing: fix.bearing ?? 0, label: 'You' }),
+        zIndex: 1000,
       });
       this.fitMap();
     } else {
       this.selfMarker.position = p;
-      const arrow = (this.selfMarker.content as HTMLElement | null)?.firstElementChild as HTMLElement | null;
-      if (arrow && fix.bearing != null) {
-        arrow.style.transform = `rotate(${fix.bearing}deg)`;
+      if (fix.bearing != null) {
+        updateCarMarkerBearing(this.selfMarker, fix.bearing);
       }
     }
   }

@@ -59,7 +59,7 @@ class Driver extends Model
     // that they are still *reachable* is the periodic ping. After this many
     // seconds without a fresh ping (browser tab closed, app killed by OS,
     // network dropped) we treat them as offline regardless of `is_online`.
-    public const STALE_AFTER_SECONDS = 60;
+    public const STALE_AFTER_SECONDS = 300;
 
     protected $casts = [
         'approved_at' => 'datetime',
@@ -127,6 +127,12 @@ class Driver extends Model
     {
         // trips.driver_id points to users.id (not drivers.id).
         return $this->hasMany(Trip::class, 'driver_id', 'user_id');
+    }
+
+    public function routeDepartures(): HasMany
+    {
+        // route_departures.driver_id points to users.id
+        return $this->hasMany(\App\Models\RouteDeparture::class, 'driver_id', 'user_id');
     }
 }
 
