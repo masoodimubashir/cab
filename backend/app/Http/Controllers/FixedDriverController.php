@@ -205,6 +205,19 @@ class FixedDriverController extends Controller
             ->withCount(['cells as seat_count' => fn ($q) => $q->where('kind', 'seat')])
             ->value('seat_count');
 
+        // Idempotent: if driver already has an active departure, return it directly
+        $existing = RouteDeparture::query()
+            ->where('driver_id', $request->user()->id)
+            ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'vehicle' => $this->departures->shapeAdminDeparture($existing->fresh(['route.stops', 'driver:id,name'])),
+                'message' => 'Active fixed vehicle already open.',
+            ], 200);
+        }
+
         $departure = RouteDeparture::query()->create([
             'route_id' => $route->id,
             'route_schedule_id' => null,
@@ -240,7 +253,12 @@ class FixedDriverController extends Controller
         } catch (\Throwable $e) {
             Log::warning('Seat map snapshot failed on open', ['error' => $e->getMessage()]);
         }
-        $this->broadcastAvailability($departure, 'vehicle_opened');
+
+        try {
+            $this->broadcastAvailability($departure, 'vehicle_opened');
+        } catch (\Throwable $e) {
+            Log::warning('Broadcast failed on open', ['error' => $e->getMessage()]);
+        }
 
         return response()->json([
             'vehicle' => $this->departures->shapeAdminDeparture($departure->fresh(['route.stops', 'driver:id,name'])),

@@ -370,11 +370,13 @@ export class FixedDriverPage implements OnDestroy {
         this.refresh();
       },
       error: (err) => {
-        // Check if the vehicle was opened despite the network/response error
-        this.api.get<{ vehicle: FixedVehicle | null }>('/fixed/driver/vehicles').subscribe({
+        // If 500 or error occurs but vehicle was actually created on server, recover automatically
+        this.api.get<{ vehicle?: FixedVehicle | null; data?: FixedVehicle[] }>('/fixed/driver/vehicles').subscribe({
           next: (check) => {
-            if (check?.vehicle) {
-              this.activeVehicle = check.vehicle;
+            const v = check?.vehicle || (Array.isArray(check?.data) && check.data.length > 0 ? check.data[0] : null);
+            if (v) {
+              this.activeVehicle = v;
+              this.error = null;
               this.message = 'Ride active.';
               this.refresh();
             } else {
