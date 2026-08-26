@@ -814,9 +814,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   selectCity(cityId: number | null): void {
-    if (this.cityId === cityId && this.routes.length) return;
     this.cityId = cityId;
-    this.selectedCity = this.cities.find((c) => c.id === cityId) || null;
+    this.selectedCity = cityId ? (this.cities.find((c) => c.id === cityId) || null) : null;
     this.selectedRoute = null;
     this.clearRouteFromMap();
     this.selectedDeparture = null;

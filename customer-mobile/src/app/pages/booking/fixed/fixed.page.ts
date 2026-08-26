@@ -134,6 +134,8 @@ export class FixedBookPage implements OnInit {
       this.cities = await this.booking.cities().catch(() => [] as City[]);
       if (this.cityId != null && this.cityId > 0) {
         this.selectedCity = this.cities.find((c) => c.id === this.cityId) || null;
+      } else {
+        this.selectedCity = null;
       }
       this.cdr.markForCheck();
     } catch {
@@ -164,7 +166,7 @@ export class FixedBookPage implements OnInit {
   selectCity(cityId: number | null): void {
     this.cityId = cityId;
     this.booking.setCity(cityId);
-    this.selectedCity = this.cities.find((c) => c.id === cityId) || null;
+    this.selectedCity = cityId ? (this.cities.find((c) => c.id === cityId) || null) : null;
     this.route = null;
     this.departure = null;
     this.boardStopId = null;

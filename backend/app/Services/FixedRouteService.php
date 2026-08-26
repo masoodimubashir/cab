@@ -32,14 +32,27 @@ class FixedRouteService
             ->with('stops')
             ->where('mode', 'fixed')
             ->where('is_active', true)
-            ->whereHas('cityVehicleType', fn ($q) => $q->where('is_active', true))
+            ->where(function ($q) {
+                $q->whereNull('city_vehicle_type_id')
+                    ->orWhereHas('cityVehicleType', fn ($cvt) => $cvt->where('is_active', true));
+            })
             ->when(isset($filters['scope']), fn ($q) => $q->where('scope', $filters['scope']))
             ->when(isset($filters['city_id']), function ($q) use ($filters) {
                 $cityId = (int) $filters['city_id'];
-                $q->where(function ($inner) use ($cityId) {
+                $cityName = City::where('id', $cityId)->value('name');
+
+                $q->where(function ($inner) use ($cityId, $cityName) {
                     $inner->where('city_id', $cityId)
                         ->orWhere('origin_city_id', $cityId)
                         ->orWhere('dest_city_id', $cityId);
+
+                    if ($cityName) {
+                        $term = '%' . str_replace(['%', '_'], ['\\%', '\\_'], trim($cityName)) . '%';
+                        $inner->orWhere('name', 'like', $term)
+                            ->orWhere('origin_name', 'like', $term)
+                            ->orWhere('dest_name', 'like', $term)
+                            ->orWhereHas('stops', fn ($stop) => $stop->where('name', 'like', $term));
+                    }
                 });
             })
             ->when(isset($filters['origin_city_id']), fn ($q) => $q->where('origin_city_id', (int) $filters['origin_city_id']))
