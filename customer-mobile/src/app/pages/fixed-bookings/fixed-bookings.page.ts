@@ -87,6 +87,11 @@ export class FixedBookingsPage {
   loadingMore = false;
   statusFilter: FixedBookingStatusFilter = 'all';
   routeFilter = 'all';
+  paymentFilter: 'all' | 'paid' | 'unpaid' = 'all';
+  dateRange: 'all' | '7d' | '30d' | '90d' = 'all';
+  filtersOpen = false;
+  selectedBooking: FixedBooking | null = null;
+  detailsModalOpen = false;
   fromDate = '';
   toDate = '';
   expandedId: number | null = null;
@@ -207,8 +212,25 @@ export class FixedBookingsPage {
     }
   }
 
+  openDetails(booking: FixedBooking): void {
+    this.selectedBooking = booking;
+    this.detailsModalOpen = true;
+  }
+
+  closeDetails(): void {
+    this.detailsModalOpen = false;
+    this.selectedBooking = null;
+  }
+
+  callDriver(phone?: string | null): void {
+    if (phone) {
+      window.open('tel:' + phone, '_system');
+    }
+  }
+
   openRide(event: Event, booking: FixedBooking): void {
     event.stopPropagation();
+    this.closeDetails();
     this.router.navigateByUrl('/customer-tabs/fixed-rides/' + booking.id);
   }
 
@@ -223,8 +245,55 @@ export class FixedBookingsPage {
     return routes.sort((a, b) => a.localeCompare(b));
   }
 
+  get activeFilterCount(): number {
+    let count = 0;
+    if (this.statusFilter !== 'all') count++;
+    if (this.routeFilter !== 'all') count++;
+    if (this.paymentFilter !== 'all') count++;
+    if (this.dateRange !== 'all') count++;
+    return count;
+  }
+
   get hasActiveFilters(): boolean {
-    return this.statusFilter !== 'all' || this.routeFilter !== 'all' || !!this.fromDate || !!this.toDate;
+    return this.activeFilterCount > 0;
+  }
+
+  openFilters(): void {
+    this.filtersOpen = true;
+  }
+
+  closeFilters(): void {
+    this.filtersOpen = false;
+  }
+
+  setStatus(status: FixedBookingStatusFilter): void {
+    this.statusFilter = status;
+    this.applyFilters();
+  }
+
+  setRoute(route: string): void {
+    this.routeFilter = route;
+    this.applyFilters();
+  }
+
+  setPayment(payment: 'all' | 'paid' | 'unpaid'): void {
+    this.paymentFilter = payment;
+    this.applyFilters();
+  }
+
+  setDateRange(range: 'all' | '7d' | '30d' | '90d'): void {
+    this.dateRange = range;
+    this.applyFilters();
+  }
+
+  clearFilters(): void {
+    this.statusFilter = 'all';
+    this.routeFilter = 'all';
+    this.paymentFilter = 'all';
+    this.dateRange = 'all';
+    this.fromDate = '';
+    this.toDate = '';
+    this.applyFilters();
   }
 
   applyFilters(): void {
@@ -237,6 +306,7 @@ export class FixedBookingsPage {
       : source.filter((booking) => {
           if (!this.matchesStatusFilter(booking)) return false;
           if (this.routeFilter !== 'all' && (booking.route_name || 'Fixed ride') !== this.routeFilter) return false;
+          if (!this.matchesPaymentFilter(booking)) return false;
           return this.matchesDateRange(booking);
         });
 
@@ -246,14 +316,6 @@ export class FixedBookingsPage {
     this.syncFixedLocationStream();
   }
 
-  clearFilters(): void {
-    this.statusFilter = 'all';
-    this.routeFilter = 'all';
-    this.fromDate = '';
-    this.toDate = '';
-    this.applyFilters();
-  }
-
   private matchesStatusFilter(booking: FixedBooking): boolean {
     const status = (booking.status || '').toUpperCase();
     if (this.statusFilter === 'all') return true;
@@ -261,12 +323,31 @@ export class FixedBookingsPage {
     return status === this.statusFilter.toUpperCase();
   }
 
-  private matchesDateRange(booking: FixedBooking): boolean {
-    const dateValue = this.bookingDateValue(booking);
-    if (!dateValue) return !this.fromDate && !this.toDate;
-    if (this.fromDate && dateValue < this.fromDate) return false;
-    if (this.toDate && dateValue > this.toDate) return false;
+  private matchesPaymentFilter(booking: FixedBooking): boolean {
+    if (this.paymentFilter === 'all') return true;
+    const status = (booking.payment_status || '').toUpperCase();
+    if (this.paymentFilter === 'paid') return status === 'PAID';
+    if (this.paymentFilter === 'unpaid') return status !== 'PAID';
     return true;
+  }
+
+  private matchesDateRange(booking: FixedBooking): boolean {
+    if (this.fromDate || this.toDate) {
+      const dateValue = this.bookingDateValue(booking);
+      if (!dateValue) return !this.fromDate && !this.toDate;
+      if (this.fromDate && dateValue < this.fromDate) return false;
+      if (this.toDate && dateValue > this.toDate) return false;
+      return true;
+    }
+
+    if (this.dateRange === 'all') return true;
+    const raw = booking.announced_depart_at || booking.depart_at || booking.service_date || booking.created_at;
+    if (!raw) return true;
+    const bookingTime = new Date(raw).getTime();
+    if (isNaN(bookingTime)) return true;
+    const now = Date.now();
+    const days = this.dateRange === '7d' ? 7 : this.dateRange === '30d' ? 30 : 90;
+    return bookingTime >= now - days * 86400000;
   }
 
   private bookingDateValue(booking: FixedBooking): string {

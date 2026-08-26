@@ -16,6 +16,7 @@ import { filter } from 'rxjs/operators';
 import { App as CapacitorApp } from '@capacitor/app';
 import { AuthService } from './core/auth.service';
 import { PushService } from './core/push.service';
+import { GeolocationService } from './core/geolocation.service';
 
 @Component({
   selector: 'app-root',
@@ -33,6 +34,7 @@ export class AppComponent implements OnInit {
   constructor(
     private auth: AuthService,
     private push: PushService,
+    private geo: GeolocationService,
     private platform: Platform,
     private router: Router,
     private navCtrl: NavController,
@@ -48,6 +50,7 @@ export class AppComponent implements OnInit {
   ngOnInit(): void {
     if (this.auth.isLoggedIn()) {
       void this.push.registerForUser();
+      void this.geo.getCurrentPosition();
     }
 
     this.trackNavigationHistory();
