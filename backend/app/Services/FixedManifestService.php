@@ -82,13 +82,20 @@ class FixedManifestService
                 'drop_lng' => $reservation->drop_lng !== null ? (float) $reservation->drop_lng : ($reservation->dropStop?->lng !== null ? (float) $reservation->dropStop->lng : null),
             ]);
 
+        $firstStop = $departure->route?->stops?->sortBy('seq')->first();
+        $lastStop = $departure->route?->stops?->sortBy('seq')->last();
+        $originRaw = trim((string) ($departure->route?->origin_name ?? ''));
+        $destRaw = trim((string) ($departure->route?->dest_name ?? ''));
+        $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($firstStop?->name ?: 'Origin');
+        $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($lastStop?->name ?: 'Destination');
+
         return [
             'departure' => [
                 'id' => $departure->id,
                 'route_id' => $departure->route_id,
                 'route_name' => $departure->route?->name,
-                'origin_name' => $departure->route?->origin_name,
-                'dest_name' => $departure->route?->dest_name,
+                'origin_name' => $originName,
+                'dest_name' => $destName,
                 'service_date' => optional($departure->service_date)->toDateString(),
                 'depart_at' => optional($departure->depart_at)->toIso8601String(),
                 'announced_depart_at' => optional($departure->announced_depart_at)->toIso8601String(),

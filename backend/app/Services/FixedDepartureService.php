@@ -303,13 +303,20 @@ class FixedDepartureService
     {
         $this->availability->assertFixedDeparture($departure);
 
+        $firstStop = $departure->route?->stops?->sortBy('seq')->first();
+        $lastStop = $departure->route?->stops?->sortBy('seq')->last();
+        $originRaw = trim((string) ($departure->route?->origin_name ?? ''));
+        $destRaw = trim((string) ($departure->route?->dest_name ?? ''));
+        $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($firstStop?->name ?: 'Origin');
+        $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($lastStop?->name ?: 'Destination');
+
         return [
             'id' => $departure->id,
             'route_id' => $departure->route_id,
             'trip_id' => $departure->trip_id,
             'route_name' => $departure->route?->name,
-            'origin_name' => $departure->route?->origin_name,
-            'dest_name' => $departure->route?->dest_name,
+            'origin_name' => $originName,
+            'dest_name' => $destName,
             'scope' => $departure->route?->scope,
             'mode' => $departure->route?->mode,
             'service_date' => optional($departure->service_date)->toDateString(),
