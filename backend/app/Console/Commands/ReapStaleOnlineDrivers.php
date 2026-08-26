@@ -28,6 +28,12 @@ class ReapStaleOnlineDrivers extends Command
 
         $affected = Driver::query()
             ->where('is_online', true)
+            ->whereDoesntHave('routeDepartures', function ($q) {
+                $q->whereNotIn('status', ['COMPLETED', 'CANCELLED']);
+            })
+            ->whereDoesntHave('trips', function ($q) {
+                $q->whereIn('status', ['ACCEPTED', 'ARRIVED', 'STARTED', 'IN_PROGRESS']);
+            })
             ->where(function ($q) use ($cutoff) {
                 $q->whereNull('last_online_at')
                     ->orWhere('last_online_at', '<', $cutoff);

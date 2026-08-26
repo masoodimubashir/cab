@@ -12,7 +12,12 @@ import { RealtimeService } from '../../core/realtime.service';
 import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 import { ModeSelectModalComponent, DriverMode } from '../../shared/mode-select-modal/mode-select-modal.component';
 import { SubscriptionPromptModalComponent } from '../../shared/subscription-prompt-modal/subscription-prompt-modal.component';
-import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
+import {
+  buildReusableCarMarkerElement,
+  updateCarMarkerBearing,
+  buildPassengerMarkerElement,
+  buildStopMarkerElement,
+} from '../../core/car-marker.helper';
 
 declare const google: any;
 
@@ -249,7 +254,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
 
   ionViewWillEnter(): void {
+    this.hasInitialOverviewFramed = false;
     this.refresh();
+    void this.loadActiveFixedVehicleState();
     this.startSyncTimer();
   }
 
@@ -271,6 +278,12 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     // App-open greeting: the AI mode chooser (Voice / Self), then — if the
     // operator enabled it — the subscription nudge.
     void this.greetOnAppOpen();
+    if (this.map) {
+      google.maps.event.trigger(this.map, 'resize');
+      if (this.activeFixedVehicleOpen) {
+        this.renderFixedRouteOnDashboard();
+      }
+    }
   }
 
   /**
@@ -585,9 +598,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   private startFixedManifestPolling(vehicleId: number): void {
     this.stopFixedManifestPolling();
-    this.loadFixedManifest(vehicleId);
+    this.loadFixedManifest(vehicleId, true);
     this.fixedManifestPoll = interval(4000).subscribe(() => {
-      this.loadFixedManifest(vehicleId);
+      this.loadFixedManifest(vehicleId, false);
     });
   }
 
@@ -596,7 +609,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.fixedManifestPoll = undefined;
   }
 
-  private loadFixedManifest(vehicleId: number): void {
+  private loadFixedManifest(vehicleId: number, forceRedraw = false): void {
     const oldStopsJson = JSON.stringify(this.fixedStops.map((s) => ({ id: s.id, seq: s.seq })));
     const oldPassengersJson = JSON.stringify(this.fixedPassengers.map((p) => ({
       id: p.id,
@@ -623,7 +636,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           lng: p.customer_lng,
         })));
 
-        if (!this.fixedRouteLine || oldStopsJson !== newStopsJson || oldPassengersJson !== newPassengersJson) {
+        if (forceRedraw || !this.fixedRouteLine || oldStopsJson !== newStopsJson || oldPassengersJson !== newPassengersJson) {
           this.renderFixedRouteOnDashboard();
         }
       },
@@ -743,13 +756,11 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   private buildFixedStopMarker(stop: FixedStop): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'fixed-driver-stop-marker';
     const reachedSeq = Number(this.activeDepartureManifest?.fixed_last_reached_stop_seq || 0);
-    const tone = Number(stop.seq || 0) <= reachedSeq ? '#64748B' : '#12B35B';
-    el.style.setProperty('--stop-color', tone);
-    el.innerHTML = `<span>${stop.seq}</span>`;
-    return el;
+    return buildStopMarkerElement({
+      seq: stop.seq,
+      isReached: Number(stop.seq || 0) <= reachedSeq,
+    });
   }
 
   private fixedPassengerPointGroups(): Array<{
@@ -829,28 +840,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   private buildFixedPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
-    const el = document.createElement('div');
-    el.className = `fixed-driver-person-marker fixed-driver-person-marker--${kind} ${isLive ? 'is-live-walking' : ''}`;
-
-    const iconHtml = kind === 'pickup'
-      ? `<div class="person-avatar-wrap">
-           <span class="person-cap-icon">🧢</span>
-           ${isLive ? '<span class="person-walking-pulse"></span>' : ''}
-         </div>`
-      : `<div class="person-avatar-wrap person-avatar-wrap--drop">
-           <span class="person-cap-icon">📍</span>
-         </div>`;
-
-    const labelHtml = `
-      <div class="person-tag-pill">
-        <span class="person-tag-name">${(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
-        <span class="person-tag-seats">${count}s</span>
-        ${isLive ? '<span class="person-live-dot" title="Live Walking">●</span>' : ''}
-      </div>
-    `;
-
-    el.innerHTML = `${iconHtml}${labelHtml}`;
-    return el;
+    return buildPassengerMarkerElement({ kind, count, name, isLive });
   }
 
   async choosePrivateRides(): Promise<void> {
@@ -986,19 +976,24 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         }
         // App may have been reloaded while online — resume the presence stream
         // so dispatch keeps seeing us as Free, and hand GPS ownership to it.
-        if (this.driver?.['is_online']) {
-          // Hand GPS ownership to the presence service, THEN drop our visual
-          // watch — ordered so the two watchers never overlap (otherwise both
-          // could emit fixes during the hand-off).
-          if (!this.presence.isStreaming()) {
-            void this.presence.start().then(() => this.stopVisualWatch());
+        const wasIntendedOnline = localStorage.getItem('dc_driver_intended_online') === '1';
+        const isServerOnline = !!this.driver?.['is_online'];
+
+        if (isServerOnline || wasIntendedOnline) {
+          if (!isServerOnline && wasIntendedOnline && this.canGoOnline) {
+            void this.goOnline(true);
           } else {
-            void this.stopVisualWatch();
+            try { localStorage.setItem('dc_driver_intended_online', '1'); } catch { /* ignore */ }
+            if (!this.presence.isStreaming()) {
+              void this.presence.start().then(() => this.stopVisualWatch());
+            } else {
+              void this.stopVisualWatch();
+            }
+            this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
+            this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
+            void this.loadActiveFixedVehicleState();
+            this.startOnlineTimer();
           }
-          this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
-          this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
-          void this.loadActiveFixedVehicleState();
-          this.startOnlineTimer();
         } else {
           this.clearActiveFixedRide();
           this.stopOnlineTimer();
@@ -1211,80 +1206,29 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.lastPos = { lat, lng };
     const pos = { lat, lng };
 
-    const isFixedRide = this.activeFixedVehicleOpen;
+    if (this.accuracyCircle) {
+      this.accuracyCircle.setMap(null);
+      this.accuracyCircle = null;
+    }
+    this.markerHeading = null;
 
-    if (isFixedRide) {
-      if (this.accuracyCircle) {
-        this.accuracyCircle.setMap(null);
-        this.accuracyCircle = null;
-      }
-      this.markerHeading = null;
-
-      const hasCarContent = this.selfMarker?.content?.classList?.contains('fixed-driver-car-marker');
-      if (!this.selfMarker || !hasCarContent) {
-        if (this.selfMarker) this.selfMarker.map = null;
-        this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
-          map: this.map,
-          position: pos,
-          title: 'You (Car)',
-          content: buildReusableCarMarkerElement({ bearing: bearing ?? 0, label: 'You (Car)' }),
-          zIndex: 1000,
-        });
-      } else {
-        this.selfMarker.position = pos;
-        if (this.selfMarker.map !== this.map) {
-          this.selfMarker.map = this.map;
-        }
-        if (bearing != null) {
-          updateCarMarkerBearing(this.selfMarker, bearing);
-        }
-      }
+    const hasCarContent = this.selfMarker?.content?.classList?.contains('fixed-driver-car-marker');
+    if (!this.selfMarker || !hasCarContent) {
+      if (this.selfMarker) this.selfMarker.map = null;
+      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+        map: this.map,
+        position: pos,
+        title: 'You',
+        content: buildReusableCarMarkerElement({ bearing: bearing ?? 0, label: 'You' }),
+        zIndex: 1000,
+      });
     } else {
-      const hasCarContent = this.selfMarker?.content?.classList?.contains('fixed-driver-car-marker');
-      if (!this.selfMarker || hasCarContent) {
-        if (this.selfMarker) this.selfMarker.map = null;
-        this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
-          map: this.map,
-          position: pos,
-          title: 'You',
-          content: this.buildSelfMarkerContent(),
-          zIndex: 1000,
-        });
-      } else {
-        this.selfMarker.position = pos;
-        if (this.selfMarker.map !== this.map) {
-          this.selfMarker.map = this.map;
-        }
+      this.selfMarker.position = pos;
+      if (this.selfMarker.map !== this.map) {
+        this.selfMarker.map = this.map;
       }
-
-      // Rotate heading wedge
-      if (this.markerHeading) {
-        if (bearing != null && Number.isFinite(bearing)) {
-          this.markerHeading.style.opacity = '1';
-          this.markerHeading.style.transform = `rotate(${bearing}deg)`;
-        } else {
-          this.markerHeading.style.opacity = '0';
-        }
-      }
-
-      // GPS accuracy halo when offline or normal duty
-      if (accuracy != null && Number.isFinite(accuracy)) {
-        if (!this.accuracyCircle) {
-          this.accuracyCircle = new google.maps.Circle({
-            map: this.map,
-            center: pos,
-            radius: accuracy,
-            strokeColor: '#12B35B',
-            strokeOpacity: 0.35,
-            strokeWeight: 1,
-            fillColor: '#12B35B',
-            fillOpacity: 0.1,
-            clickable: false,
-          });
-        } else {
-          this.accuracyCircle.setCenter(pos);
-          this.accuracyCircle.setRadius(accuracy);
-        }
+      if (bearing != null) {
+        updateCarMarkerBearing(this.selfMarker, bearing);
       }
     }
 
@@ -1320,14 +1264,14 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
 
   // ------------------------------------------------------------ online flip ---
 
-  async goOnline(): Promise<void> {
+  async goOnline(silent = false): Promise<void> {
     if (this.toggling) return;
     if (this.isWalletBelowLimit) {
-      void this.showWalletLowAlert();
+      if (!silent) void this.showWalletLowAlert();
       return;
     }
     if (!this.canGoOnline) {
-      this.error = this.reviewBannerText || 'You cannot go online until your documents are approved.';
+      if (!silent) this.error = this.reviewBannerText || 'You cannot go online until your documents are approved.';
       return;
     }
     this.toggling = true;
@@ -1335,6 +1279,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.error = null;
 
     try {
+      try { localStorage.setItem('dc_driver_intended_online', '1'); } catch { /* ignore */ }
       await this.geo.requestPermissions();
 
       await new Promise<void>((resolve, reject) => {
@@ -1360,8 +1305,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       }
       this.followMe = true;
     } catch (e) {
-      const body = (e as { error?: Record<string, unknown> })?.error;
-      this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not go online';
+      if (!silent) {
+        const body = (e as { error?: Record<string, unknown> })?.error;
+        this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not go online';
+      }
     } finally {
       this.toggling = false;
       this.isGoingOnline = false;
@@ -1392,6 +1339,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.error = null;
 
     try {
+      try { localStorage.removeItem('dc_driver_intended_online'); } catch { /* ignore */ }
       await new Promise<void>((resolve, reject) => {
         this.api.post<{ driver: Record<string, unknown> }>('/drivers/go-offline', {}).subscribe({
           next: (res) => { this.driver = res.driver; resolve(); },
