@@ -101,19 +101,11 @@ class FixedBookingService
         $driverLocationStale = false;
         if ($departure?->driver_id) {
             $latestDriverLocation = DriverLocation::query()
-                ->when($departure?->trip_id, fn ($query) => $query->where('trip_id', $departure->trip_id))
                 ->where('driver_id', $departure->driver_id)
                 ->orderByDesc('recorded_at')
                 ->first(['lat', 'lng', 'recorded_at']);
 
-            if (!$latestDriverLocation && $departure?->trip_id) {
-                $latestDriverLocation = DriverLocation::query()
-                    ->where('driver_id', $departure->driver_id)
-                    ->orderByDesc('recorded_at')
-                    ->first(['lat', 'lng', 'recorded_at']);
-            }
-            if ($latestDriverLocation && optional($latestDriverLocation->recorded_at)->lt(now()->subMinutes(5))) {
-                $latestDriverLocation = null;
+            if ($latestDriverLocation && optional($latestDriverLocation->recorded_at)->lt(now()->subMinutes(30))) {
                 $driverLocationStale = true;
             }
         }

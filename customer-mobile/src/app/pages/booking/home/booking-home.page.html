@@ -55,8 +55,96 @@
     <ion-menu-button menu="customer-menu" aria-label="Open menu"></ion-menu-button>
   </div>
 
-  <!-- ── Bottom sheet ── -->
-  <section class="bh-sheet" *ngIf="!locationPermissionNeeded && city" [class.bh-sheet--loading]="loading">
+  <!-- ── 1. Active Fixed Ride Bottom Sheet (Replaces "Where are you going" when booking exists) ── -->
+  <section class="bh-sheet bh-active-sheet dc-anim-pop" *ngIf="!locationPermissionNeeded && activeFixedRide as ride">
+    <!-- Recenter / My Location Floating Button -->
+    <button
+      type="button"
+      class="bh-recenter-btn dc-press"
+      (click)="recenterMap()"
+      aria-label="Recenter to my location">
+      <ion-icon name="locate"></ion-icon>
+    </button>
+
+    <span class="bh-grip" aria-hidden="true"></span>
+
+    <!-- Status & OTP Row -->
+    <div class="bh-active-top-row">
+      <div class="bh-active-status-pill" [class.is-onboard]="ride.status === 'BOARDED'">
+        <span class="bh-live-dot"></span>
+        <span>{{ activeRideStatusLabel(ride) }}</span>
+      </div>
+
+      <div class="bh-active-otp-box" *ngIf="ride.boarding_code">
+        <span class="bh-otp-tag">OTP</span>
+        <span class="bh-otp-code">{{ ride.boarding_code }}</span>
+      </div>
+    </div>
+
+    <!-- Route Title & Seats -->
+    <div class="bh-active-title-row">
+      <div class="bh-active-route-col">
+        <h2 class="bh-active-route-text">{{ ride.route_name || (ride.board + ' → ' + ride.drop) }}</h2>
+        <span class="bh-active-seat-tag" *ngIf="ride.seats">
+          💺 {{ ride.seats }} Seat{{ ride.seats > 1 ? 's' : '' }} Booked
+        </span>
+      </div>
+    </div>
+
+    <!-- Driver & Vehicle Box -->
+    <div class="bh-active-driver-box">
+      <div class="bh-active-driver-left">
+        <div class="bh-driver-avatar">
+          <ion-icon name="person"></ion-icon>
+        </div>
+        <div class="bh-driver-meta">
+          <strong class="bh-driver-name">{{ ride.driver_name || 'Driver Assigned' }}</strong>
+          <span class="bh-driver-vehicle">
+            {{ ride.vehicle_name || ride.vehicle_model || 'Fixed Ride' }}
+            <span *ngIf="ride.vehicle_reg_no"> · {{ ride.vehicle_reg_no }}</span>
+          </span>
+        </div>
+      </div>
+
+      <a
+        *ngIf="ride.driver_phone"
+        class="bh-driver-call-btn dc-press"
+        [href]="'tel:' + ride.driver_phone"
+        (click)="$event.stopPropagation()"
+        aria-label="Call Driver"
+      >
+        <ion-icon name="call"></ion-icon>
+      </a>
+    </div>
+
+    <!-- Transit Itinerary (Pickup & Drop) -->
+    <div class="bh-active-itinerary">
+      <div class="bh-itinerary-point">
+        <span class="bh-itinerary-dot bh-itinerary-dot--pickup"></span>
+        <div class="bh-itinerary-text">
+          <span class="bh-itinerary-label">PICKUP</span>
+          <span class="bh-itinerary-stop">{{ ride.board }}</span>
+        </div>
+      </div>
+
+      <div class="bh-itinerary-point">
+        <span class="bh-itinerary-dot bh-itinerary-dot--drop"></span>
+        <div class="bh-itinerary-text">
+          <span class="bh-itinerary-label">DROP OFF</span>
+          <span class="bh-itinerary-stop">{{ ride.drop }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- View Live Full Page Details CTA -->
+    <button class="bh-active-cta dc-press" type="button" (click)="openActiveFixedRide()">
+      <span>Open Live Map &amp; Stop Manifest</span>
+      <ion-icon name="arrow-forward-outline"></ion-icon>
+    </button>
+  </section>
+
+  <!-- ── 2. Standard "Where are you going?" Bottom Sheet (When NO active ride) ── -->
+  <section class="bh-sheet" *ngIf="!locationPermissionNeeded && city && !activeFixedRide" [class.bh-sheet--loading]="loading">
     <!-- Recenter / My Location Floating Button -->
     <button
       type="button"
