@@ -26,7 +26,24 @@
       </span>
       <span class="bk-opt__r">₹{{ r.flat_fare }}<small>a seat</small></span>
     </button>
-    <p class="bk-note" *ngIf="!loading && !visibleRoutes.length">No routes match. Try a different search.</p>
+    <div class="fb-empty-state" *ngIf="!loading && !visibleRoutes.length">
+      <div class="fb-empty-icon">
+        <ion-icon name="map-outline"></ion-icon>
+      </div>
+      <p class="fb-empty-title" *ngIf="cityId != null && cityId > 0">
+        No fixed routes found in <b>{{ selectedCityName }}</b>
+      </p>
+      <p class="fb-empty-title" *ngIf="cityId == null || cityId === 0">
+        No active fixed routes available yet
+      </p>
+      <p class="fb-empty-sub">
+        Fixed corridors are currently active in Sopore and connected regions.
+      </p>
+      <button *ngIf="cityId != null && cityId > 0" type="button" class="fb-switch-city-btn dc-press" (click)="selectCity(null)">
+        <ion-icon name="globe-outline"></ion-icon>
+        <span>View all routes (All Cities)</span>
+      </button>
+    </div>
   </app-step-shell>
 
   <!-- Step 2 — departure -->
