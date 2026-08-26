@@ -166,7 +166,16 @@ export class FixedDriverPage implements OnDestroy {
   sheetTab: 'passengers' | 'stops' = 'passengers';
   showStopsTimeline = false;
   passengerSheetExpanded = true;
+  detailsModalOpen = false;
   fixedLocationStreaming = false;
+
+  openDetailsModal(): void {
+    this.detailsModalOpen = true;
+  }
+
+  closeDetailsModal(): void {
+    this.detailsModalOpen = false;
+  }
 
   private map: any = null;
   private routeLine: any = null;
