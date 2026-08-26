@@ -39,9 +39,7 @@ interface FixedRoute {
   luggage_surcharge_amount: number;
   max_luggage_per_vehicle: number;
   booking_window_hours: number;
-  max_seats_per_booking: number;
   waiting_time_per_stop_minutes: number;
-  requires_prepaid: boolean;
   stops: FixedStop[];
 }
 
@@ -310,9 +308,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   get maxSeats(): number {
-    const routeMax = this.selectedRoute?.max_seats_per_booking ?? 4;
-    const remaining = this.selectedDeparture?.seats_remaining ?? routeMax;
-    return Math.max(0, Math.min(routeMax, remaining));
+    const remaining = this.selectedDeparture?.seats_remaining ?? this.selectedDeparture?.capacity ?? 4;
+    return Math.max(0, remaining);
   }
 
   get luggageAvailable(): boolean {

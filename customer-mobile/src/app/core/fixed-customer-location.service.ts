@@ -43,7 +43,7 @@ export class FixedCustomerLocationService {
   private webWatchId: string | null = null;
   private lastSentAt = 0;
   private startedAt = 0;
-  private readonly minIntervalMs = 5000;
+  private readonly minIntervalMs = 3000;
   private readonly maxSessionMs = 6 * 60 * 60 * 1000;
   private readonly stateSubject = new BehaviorSubject<FixedLocationState>({ streaming: false, degraded: false, message: null });
   readonly state$ = this.stateSubject.asObservable();
@@ -67,7 +67,7 @@ export class FixedCustomerLocationService {
             backgroundMessage: 'Your location helps confirm fixed ride pickup status.',
             requestPermissions: true,
             stale: false,
-            distanceFilter: 10,
+            distanceFilter: 2,
           },
           (location, error) => {
             if (error) {
@@ -111,7 +111,7 @@ export class FixedCustomerLocationService {
     try {
       await this.geo.requestPermissions();
       this.webWatchId = await this.geo.watchPosition(
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
         (fix, err) => {
           if (err) {
             this.publishState(true, 'Location tracking is unavailable. Fixed pickup status may be less accurate.');

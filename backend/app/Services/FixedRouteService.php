@@ -145,11 +145,9 @@ class FixedRouteService
             'path_polyline' => is_array($route->path_polyline) ? $route->path_polyline : null,
             'flat_fare' => $this->pricing->routeFare($route),
             'booking_window_hours' => (int) $route->booking_window_hours,
-            'max_seats_per_booking' => (int) $route->max_seats_per_booking,
             'waiting_time_per_stop_minutes' => (int) $route->waiting_time_per_stop_minutes,
             'luggage_surcharge_amount' => (float) $route->luggage_surcharge_amount,
             'max_luggage_per_vehicle' => (int) $route->max_luggage_per_vehicle,
-            'requires_prepaid' => (bool) $route->requires_prepaid,
             'stops' => $route->relationLoaded('stops')
                 ? $route->stops->map(fn ($stop) => [
                     'id' => $stop->id,
@@ -201,7 +199,6 @@ class FixedRouteService
             ? CityVehicleType::query()->where('city_id', $city->id)->find((int) $data['city_vehicle_type_id'])
             : null;
 
-        $seats = $data['max_seats_per_booking'] ?? $vehicle?->max_people ?? 4;
         $luggage = $data['max_luggage_per_vehicle'] ?? $vehicle?->luggage_capacity ?? 0;
 
         return [
@@ -227,11 +224,9 @@ class FixedRouteService
                 'fixed_commission' => isset($fareConfig['fixed_commission']) ? (float) $fareConfig['fixed_commission'] : null,
             ],
             'booking_window_hours' => (int) ($data['booking_window_hours'] ?? 6),
-            'max_seats_per_booking' => max(1, (int) $seats),
             'waiting_time_per_stop_minutes' => (int) ($data['waiting_time_per_stop_minutes'] ?? 0),
             'luggage_surcharge_amount' => (float) ($data['luggage_surcharge_amount'] ?? 0),
             'max_luggage_per_vehicle' => max(0, (int) $luggage),
-            'requires_prepaid' => (bool) ($data['requires_prepaid'] ?? true),
             'fixed_settings_json' => $fixedSettings,
             'advance_required' => false,
             'board_anywhere' => false,

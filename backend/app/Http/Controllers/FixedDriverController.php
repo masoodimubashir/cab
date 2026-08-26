@@ -220,7 +220,7 @@ class FixedDriverController extends Controller
             'boarding_opened_at' => now(),
             'boarding_closed_at' => null,
             'visible_to_customers' => true,
-            'capacity' => max(1, $seatCount ?: (int) ($data['capacity'] ?? $route->max_seats_per_booking)),
+            'capacity' => max(1, $seatCount ?: (int) ($data['capacity'] ?? 4)),
             'seats_taken' => 0,
             'luggage_capacity' => (int) $route->max_luggage_per_vehicle,
             'luggage_taken' => 0,

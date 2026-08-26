@@ -36,13 +36,20 @@ class FixedManifestService
         $passengers = SeatReservation::query()
             ->where('route_departure_id', $departure->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
-            ->with(['customer:id,name,phone', 'boardStop:id,name,lat,lng,seq', 'dropStop:id,name,lat,lng'])
+            ->with([
+                'customer:id,name,phone,current_lat,current_lng,current_location_updated_at',
+                'boardStop:id,name,lat,lng,seq',
+                'dropStop:id,name,lat,lng',
+            ])
             ->orderBy('id')
             ->get()
             ->map(fn (SeatReservation $reservation) => [
                 'id' => $reservation->id,
                 'customer_name' => $reservation->customer?->name,
                 'customer_phone' => $reservation->customer?->phone,
+                'customer_lat' => $reservation->customer?->current_lat !== null ? (float) $reservation->customer->current_lat : null,
+                'customer_lng' => $reservation->customer?->current_lng !== null ? (float) $reservation->customer->current_lng : null,
+                'customer_location_updated_at' => optional($reservation->customer?->current_location_updated_at)->toIso8601String(),
                 'seats' => (int) $reservation->seats,
                 'seat_labels' => $labelsByReservation->get($reservation->id, []),
                 'status' => $reservation->status,

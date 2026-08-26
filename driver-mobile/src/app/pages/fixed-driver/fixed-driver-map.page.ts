@@ -1,6 +1,7 @@
 import { Component, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
 import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { PlacesService } from '../../core/places.service';
 
@@ -28,6 +29,10 @@ interface FixedStop {
 interface FixedPassenger {
   id?: number;
   customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_lat?: number | null;
+  customer_lng?: number | null;
+  customer_location_updated_at?: string | null;
   seats?: number | null;
   status?: string | null;
   board_stop_id?: number | null;
@@ -193,8 +198,8 @@ export class FixedDriverMapPage implements OnDestroy {
       position: point.position,
       map: this.map,
       title: point.title,
-      content: this.buildPassengerMarker(point.kind, point.count),
-      zIndex: point.kind === 'pickup' ? 900 : 850,
+      content: this.buildPassengerMarker(point.kind, point.count, point.name, point.isLive),
+      zIndex: point.kind === 'pickup' ? (point.isLive ? 960 : 920) : 850,
     }));
     this.fitMap();
   }
@@ -203,7 +208,7 @@ export class FixedDriverMapPage implements OnDestroy {
     if (this.selfWatchId !== null) return;
     try {
       this.selfWatchId = await this.geo.watchPosition(
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
         (fix, err) => {
           if (err) {
             void this.stopDriverWatch();
@@ -231,7 +236,7 @@ export class FixedDriverMapPage implements OnDestroy {
       this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
         position,
         map: this.map,
-        title: 'You',
+        title: 'You (Driver)',
         content: this.buildDriverMarker(fix.bearing ?? 0),
         zIndex: 1000,
       });
@@ -239,8 +244,9 @@ export class FixedDriverMapPage implements OnDestroy {
       return;
     }
     this.selfMarker.position = position;
-    const arrow = (this.selfMarker.content as HTMLElement | null)?.firstElementChild as HTMLElement | null;
-    if (arrow && fix.bearing != null) arrow.style.transform = `rotate(${fix.bearing}deg)`;
+    if (fix.bearing != null) {
+      updateCarMarkerBearing(this.selfMarker, fix.bearing);
+    }
   }
 
   private fitMap(): void {
@@ -284,61 +290,111 @@ export class FixedDriverMapPage implements OnDestroy {
     return { lat: Number(stop.lat), lng: Number(stop.lng) };
   }
 
-  private passengerPointGroups(): Array<{ kind: 'pickup' | 'drop'; count: number; title: string; position: { lat: number; lng: number } }> {
-    const groups = new Map<string, { kind: 'pickup' | 'drop'; count: number; title: string; position: { lat: number; lng: number } }>();
+  private passengerPointGroups(): Array<{
+    kind: 'pickup' | 'drop';
+    count: number;
+    title: string;
+    name: string;
+    isLive: boolean;
+    position: { lat: number; lng: number };
+  }> {
+    const points: Array<{
+      kind: 'pickup' | 'drop';
+      count: number;
+      title: string;
+      name: string;
+      isLive: boolean;
+      position: { lat: number; lng: number };
+    }> = [];
 
     for (const passenger of this.passengers) {
       const status = (passenger.status || '').toUpperCase();
       if (['CANCELLED', 'NO_SHOW', 'DROPPED', 'COMPLETED'].includes(status)) continue;
 
-      const pickup = this.passengerPosition(passenger, 'pickup');
-      if (pickup) this.addPassengerPoint(groups, 'pickup', pickup, passenger.board || 'Pickup');
-
-      const drop = this.passengerPosition(passenger, 'drop');
-      if (drop && status === 'BOARDED') this.addPassengerPoint(groups, 'drop', drop, passenger.drop || 'Drop');
+      if (['BOOKED', 'CONFIRMED'].includes(status)) {
+        const pickup = this.passengerPosition(passenger, 'pickup');
+        if (pickup) {
+          const isLive = passenger.customer_lat != null && passenger.customer_lng != null &&
+            Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng));
+          const name = passenger.customer_name || 'Passenger';
+          points.push({
+            kind: 'pickup',
+            count: passenger.seats || 1,
+            name,
+            isLive,
+            title: `${name} (${passenger.seats || 1} seat${(passenger.seats || 1) > 1 ? 's' : ''}) - ${isLive ? 'Live Walking' : 'Pickup at ' + (passenger.board || 'stop')}`,
+            position: pickup,
+          });
+        }
+      } else if (status === 'BOARDED') {
+        const drop = this.passengerPosition(passenger, 'drop');
+        if (drop) {
+          const name = passenger.customer_name || 'Passenger';
+          points.push({
+            kind: 'drop',
+            count: passenger.seats || 1,
+            name,
+            isLive: false,
+            title: `${name} - Drop off at ${passenger.drop || 'destination'}`,
+            position: drop,
+          });
+        }
+      }
     }
-
-    return Array.from(groups.values());
-  }
-
-  private addPassengerPoint(
-    groups: Map<string, { kind: 'pickup' | 'drop'; count: number; title: string; position: { lat: number; lng: number } }>,
-    kind: 'pickup' | 'drop',
-    position: { lat: number; lng: number },
-    label: string,
-  ): void {
-    const key = kind + ':' + position.lat.toFixed(6) + ',' + position.lng.toFixed(6);
-    const existing = groups.get(key);
-    if (existing) {
-      existing.count += 1;
-      existing.title = existing.count + ' passenger ' + (kind === 'pickup' ? 'pickup' : 'drop') + 's at ' + label;
-      return;
-    }
-    groups.set(key, {
-      kind,
-      count: 1,
-      title: '1 passenger ' + (kind === 'pickup' ? 'pickup' : 'drop') + ' at ' + label,
-      position,
-    });
+    return points;
   }
 
   private passengerPosition(passenger: FixedPassenger, kind: 'pickup' | 'drop'): { lat: number; lng: number } | null {
-    const lat = kind === 'pickup' ? passenger.board_lat : passenger.drop_lat;
-    const lng = kind === 'pickup' ? passenger.board_lng : passenger.drop_lng;
-    if (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
-      return { lat: Number(lat), lng: Number(lng) };
+    if (kind === 'pickup') {
+      if (passenger.customer_lat != null && passenger.customer_lng != null &&
+          Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng))) {
+        return { lat: Number(passenger.customer_lat), lng: Number(passenger.customer_lng) };
+      }
+      if (passenger.board_lat != null && passenger.board_lng != null &&
+          Number.isFinite(Number(passenger.board_lat)) && Number.isFinite(Number(passenger.board_lng))) {
+        return { lat: Number(passenger.board_lat), lng: Number(passenger.board_lng) };
+      }
+      const stopId = passenger.board_stop_id;
+      const stop = this.stops.find((item) => Number(item.id) === Number(stopId));
+      return stop && this.hasStopCoords(stop) ? this.stopPosition(stop) : null;
     }
 
-    const stopId = kind === 'pickup' ? passenger.board_stop_id : passenger.drop_stop_id;
-    const stop = this.stops.find((item) => Number(item.id) === Number(stopId));
-    return stop && this.hasStopCoords(stop) ? this.stopPosition(stop) : null;
+    if (passenger.drop_lat != null && passenger.drop_lng != null &&
+        Number.isFinite(Number(passenger.drop_lat)) && Number.isFinite(Number(passenger.drop_lng))) {
+      return { lat: Number(passenger.drop_lat), lng: Number(passenger.drop_lng) };
+    }
+    const dropStopId = passenger.drop_stop_id;
+    const dropStop = this.stops.find((item) => Number(item.id) === Number(dropStopId));
+    return dropStop && this.hasStopCoords(dropStop) ? this.stopPosition(dropStop) : null;
   }
 
-  private buildPassengerMarker(kind: 'pickup' | 'drop', count: number): HTMLElement {
+  private buildPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
     const el = document.createElement('div');
-    el.className = 'fixed-driver-passenger-marker fixed-driver-passenger-marker--' + kind;
-    el.innerHTML = '<span>' + (kind === 'pickup' ? 'P' : 'D') + '</span><strong>' + count + '</strong>';
+    el.className = `fixed-driver-person-marker fixed-driver-person-marker--${kind} ${isLive ? 'is-live-walking' : ''}`;
+
+    const iconHtml = kind === 'pickup'
+      ? `<div class="person-avatar-wrap">
+           <span class="person-cap-icon">🧢</span>
+           ${isLive ? '<span class="person-walking-pulse"></span>' : ''}
+         </div>`
+      : `<div class="person-avatar-wrap person-avatar-wrap--drop">
+           <span class="person-cap-icon">📍</span>
+         </div>`;
+
+    const labelHtml = `
+      <div class="person-tag-pill">
+        <span class="person-tag-name">${this.escapeMarkerHtml(name)}</span>
+        <span class="person-tag-seats">${count}s</span>
+        ${isLive ? '<span class="person-live-dot" title="Live Walking">●</span>' : ''}
+      </div>
+    `;
+
+    el.innerHTML = `${iconHtml}${labelHtml}`;
     return el;
+  }
+
+  private escapeMarkerHtml(str: string): string {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   private buildStopMarker(stop: FixedStop): HTMLElement {
@@ -352,9 +408,9 @@ export class FixedDriverMapPage implements OnDestroy {
   }
 
   private buildDriverMarker(bearing: number): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'fixed-driver-self-marker';
-    el.innerHTML = `<span style="transform: rotate(${bearing}deg)"></span>`;
-    return el;
+    return buildReusableCarMarkerElement({
+      bearing,
+      label: 'You (Car)',
+    });
   }
 }

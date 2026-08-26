@@ -1,12 +1,16 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
 import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
-import { GeolocationService } from '../../core/geolocation.service';
+import { buildReusableCarMarkerElement, updateCarMarkerBearing } from '../../core/car-marker.helper';
+import { GeoFix, GeolocationService } from '../../core/geolocation.service';
+import { PlacesService } from '../../core/places.service';
 import { RealtimeService } from '../../core/realtime.service';
+
+declare const google: any;
 
 
 interface FixedRoute {
@@ -17,7 +21,6 @@ interface FixedRoute {
   origin_name: string;
   dest_name: string;
   flat_fare: number | null;
-  max_seats_per_booking: number;
   max_luggage_per_vehicle: number;
 }
 
@@ -52,6 +55,9 @@ interface FixedPassenger {
   id: number;
   customer_name: string | null;
   customer_phone: string | null;
+  customer_lat?: number | null;
+  customer_lng?: number | null;
+  customer_location_updated_at?: string | null;
   seats: number;
   seat_labels?: string[];
   status: string;
@@ -100,7 +106,7 @@ interface ManifestResponse {
   styleUrls: ['./fixed-driver.page.scss'],
   standalone: false,
 })
-export class FixedDriverPage {
+export class FixedDriverPage implements OnDestroy {
   loading = false;
   busy = false;
   error: string | null = null;
@@ -121,7 +127,19 @@ export class FixedDriverPage {
   activeVehicle: FixedVehicle | null = null;
   passengers: FixedPassenger[] = [];
   stops: FixedStop[] = [];
+  passengerFilter: 'all' | 'waiting' | 'onboard' | 'done' = 'all';
+  sheetTab: 'passengers' | 'stops' = 'passengers';
+  showStopsTimeline = false;
+  passengerSheetExpanded = false;
   fixedLocationStreaming = false;
+
+  private map: any = null;
+  private routeLine: any = null;
+  private stopMarkers: any[] = [];
+  private passengerMarkers: any[] = [];
+  private selfMarker: any = null;
+  private selfWatchId: string | null = null;
+
   private manifestPoll?: Subscription;
   private unsubscribeFixedCatalog: (() => void) | null = null;
   // Ticks every second while the page is open so the No-show waiting-time
@@ -154,6 +172,7 @@ export class FixedDriverPage {
     private realtime: RealtimeService,
     private backgroundLocation: BackgroundLocationService,
     private geo: GeolocationService,
+    private places: PlacesService,
   ) {}
 
   /**
@@ -189,6 +208,13 @@ export class FixedDriverPage {
     this.otpTimer?.unsubscribe();
     this.otpTimer = undefined;
     void this.stopFixedTripLocationStreaming();
+    void this.stopDriverWatch();
+    this.resetEmbeddedMap();
+  }
+
+  ngOnDestroy(): void {
+    void this.stopDriverWatch();
+    this.resetEmbeddedMap();
   }
 
   private subscribeFixedCatalog(): void {
@@ -283,7 +309,7 @@ export class FixedDriverPage {
   private applyLayoutCapacity(): void {
     const layout = this.layouts.find((l) => l.id === this.selectedLayoutId);
     if (layout) this.capacity = layout.seat_count;
-    else this.capacity = Number(this.selectedRoute?.max_seats_per_booking ?? 1);
+    else this.capacity = 4;
   }
 
   openVehicle(): void {
@@ -292,7 +318,7 @@ export class FixedDriverPage {
       return;
     }
     if (!this.selectedLayoutId) {
-      this.error = 'Pick a seat layout for this vehicle.';
+      this.error = 'Pick a seat layout.';
       return;
     }
 
@@ -303,11 +329,11 @@ export class FixedDriverPage {
       vehicle_seat_layout_id: this.selectedLayoutId,
     }).pipe(finalize(() => this.busy = false)).subscribe({
       next: (res) => {
-        this.message = res.message || 'Fixed vehicle opened.';
+        this.message = res.message || 'Ride opened.';
         this.activeVehicle = res.vehicle;
         this.refresh();
       },
-      error: (err) => this.error = err?.error?.message || 'Could not open fixed vehicle.',
+      error: (err) => this.error = err?.error?.message || 'Could not open ride.',
     });
   }
 
@@ -315,11 +341,11 @@ export class FixedDriverPage {
     if (!this.activeVehicle || !this.canCloseVehicle(this.activeVehicle)) return;
 
     const alert = await this.alerts.create({
-      header: 'Close fixed vehicle?',
-      message: 'This removes the opened vehicle because no customer has booked yet.',
+      header: 'Close ride?',
+      message: 'This closes the active ride because no customer has booked yet.',
       buttons: [
         { text: 'Keep open', role: 'cancel' },
-        { text: 'Close vehicle', role: 'confirm' },
+        { text: 'Close', role: 'confirm' },
       ],
     });
     await alert.present();
@@ -337,11 +363,11 @@ export class FixedDriverPage {
           this.stops = [];
           this.stopManifestPolling();
           await this.stopFixedTripLocationStreaming();
-          await this.showToast(res.message || 'Fixed vehicle closed.');
+          await this.showToast(res.message || 'Ride closed.');
           this.refresh();
         },
         error: (err) => {
-          this.error = this.apiErrorMessage(err, 'Could not close fixed vehicle.');
+          this.error = this.apiErrorMessage(err, 'Could not close ride.');
           if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
         },
       });
@@ -349,16 +375,31 @@ export class FixedDriverPage {
 
   loadManifest(vehicleId: number, showSpinner = true): void {
     if (showSpinner) this.busy = true;
+    const oldStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
+    const oldPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
+    const hadMap = !!this.map;
+
     this.api.get<ManifestResponse>(`/fixed/departures/${vehicleId}/manifest`)
-      .pipe(finalize(() => this.busy = false))
+      .pipe(finalize(() => { if (showSpinner) this.busy = false; }))
       .subscribe({
         next: (res) => {
           this.activeVehicle = res.departure;
           this.passengers = res.passengers ?? [];
           this.stops = this.visibleManifestStops(res.stops ?? [], this.passengers);
           void this.syncFixedTripLocationStreaming();
+
+          const newStopsJson = JSON.stringify(this.stops.map((s) => ({ id: s.id, seq: s.seq })));
+          const newPassengersJson = JSON.stringify(this.passengers.map((p) => ({ id: p.id, status: p.status })));
+
+          if (!hadMap) {
+            this.ensureEmbeddedMap();
+          } else if (oldStopsJson !== newStopsJson || oldPassengersJson !== newPassengersJson) {
+            this.refreshEmbeddedMap(false);
+          }
         },
-        error: (err) => this.error = err?.error?.message || 'Could not load passenger list.',
+        error: (err) => {
+          if (showSpinner) this.error = err?.error?.message || 'Could not load passenger list.';
+        },
       });
   }
 
@@ -643,6 +684,40 @@ export class FixedDriverPage {
     this.updatePassenger(passenger, 'no-show');
   }
 
+  get filteredGroupedPassengers(): Array<{ stop: string; waiting: number; boarded: number; passengers: FixedPassenger[] }> {
+    const list = this.passengerFilter === 'all' 
+      ? this.activeManifestPassengers 
+      : this.passengerFilter === 'waiting'
+      ? this.passengers.filter(p => ['BOOKED', 'CONFIRMED'].includes((p.status || '').toUpperCase()))
+      : this.passengerFilter === 'onboard'
+      ? this.passengers.filter(p => (p.status || '').toUpperCase() === 'BOARDED')
+      : this.passengers.filter(p => ['DROPPED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'].includes((p.status || '').toUpperCase()));
+
+    const groups = new Map<string, FixedPassenger[]>();
+    for (const passenger of list) {
+      const stop = passenger.board || 'Boarding point';
+      groups.set(stop, [...(groups.get(stop) ?? []), passenger]);
+    }
+    return Array.from(groups.entries()).map(([stop, passengers]) => ({
+      stop,
+      passengers,
+      waiting: passengers.filter((p) => ['BOOKED', 'CONFIRMED'].includes((p.status || '').toUpperCase())).length,
+      boarded: passengers.filter((p) => (p.status || '').toUpperCase() === 'BOARDED').length,
+    }));
+  }
+
+  get waitingCount(): number {
+    return this.passengers.filter(p => ['BOOKED', 'CONFIRMED'].includes((p.status || '').toUpperCase())).length;
+  }
+
+  get onboardCount(): number {
+    return this.passengers.filter(p => (p.status || '').toUpperCase() === 'BOARDED').length;
+  }
+
+  get completedCount(): number {
+    return this.passengers.filter(p => ['DROPPED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'].includes((p.status || '').toUpperCase())).length;
+  }
+
   get groupedPassengers(): Array<{ stop: string; waiting: number; boarded: number; passengers: FixedPassenger[] }> {
     const groups = new Map<string, FixedPassenger[]>();
     for (const passenger of this.activeManifestPassengers) {
@@ -699,7 +774,7 @@ export class FixedDriverPage {
     const boarded = this.passengers.filter((p) => (p.status || '').toUpperCase() === 'BOARDED').length;
     return [
       { label: 'Waiting to board', count: waiting },
-      { label: 'On vehicle', count: boarded },
+      { label: 'Onboard', count: boarded },
     ].filter((item) => item.count > 0);
   }
 
@@ -711,7 +786,7 @@ export class FixedDriverPage {
     const cancelled = this.passengers.filter((p) => (p.status || '').toUpperCase() === 'CANCELLED').length;
     return [
       { label: 'Waiting', count: waiting, tone: waiting > 0 ? 'block' : 'done' },
-      { label: 'On vehicle', count: boarded, tone: boarded > 0 ? 'block' : 'done' },
+      { label: 'Onboard', count: boarded, tone: boarded > 0 ? 'block' : 'done' },
       { label: 'Dropped', count: dropped, tone: 'done' },
       { label: 'No-show', count: noShow, tone: 'done' },
       { label: 'Cancelled', count: cancelled, tone: 'done' },
@@ -747,7 +822,7 @@ export class FixedDriverPage {
 
   completeBlockReason(vehicle: FixedVehicle | null): string | null {
     if (!vehicle) return null;
-    if (['COMPLETED', 'CANCELLED'].includes(vehicle.status)) return 'This fixed vehicle is already closed.';
+    if (['COMPLETED', 'CANCELLED'].includes(vehicle.status)) return 'This ride is already closed.';
     const active = this.passengers.filter((passenger) => ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(passenger.status)).length;
     if (active > 0) {
       const parts = this.activePassengerSummary.map((item) => item.count + ' ' + item.label.toLowerCase());
@@ -757,18 +832,22 @@ export class FixedDriverPage {
   }
 
   canStart(vehicle: FixedVehicle | null): boolean {
-    return !!vehicle && !['DEPARTED', 'COMPLETED', 'CANCELLED'].includes(vehicle.status);
+    if (!vehicle) return false;
+    const status = (vehicle.status || '').toUpperCase();
+    return !['DEPARTED', 'COMPLETED', 'CANCELLED', 'DISPATCHED'].includes(status);
   }
 
   canComplete(vehicle: FixedVehicle | null): boolean {
-    return !!vehicle
-      && !['COMPLETED', 'CANCELLED'].includes(vehicle.status)
-      && !this.passengers.some((passenger) => ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(passenger.status));
+    if (!vehicle) return false;
+    const status = (vehicle.status || '').toUpperCase();
+    return !['COMPLETED', 'CANCELLED'].includes(status)
+      && !this.passengers.some((passenger) => ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((passenger.status || '').toUpperCase()));
   }
 
   canCloseVehicle(vehicle: FixedVehicle | null): boolean {
-    return !!vehicle
-      && vehicle.status === 'FORMING'
+    if (!vehicle) return false;
+    const status = (vehicle.status || '').toUpperCase();
+    return status === 'FORMING'
       && (vehicle.seats_taken || 0) <= 0
       && (vehicle.active_hold_count || 0) <= 0
       && (vehicle.reservation_count || 0) <= 0
@@ -1034,5 +1113,308 @@ export class FixedDriverPage {
   private async showToast(message: string): Promise<void> {
     const toast = await this.toasts.create({ message, duration: 1800, position: 'bottom' });
     await toast.present();
+  }
+
+  /* ─── Embedded Map Management ─── */
+  ensureEmbeddedMap(): void {
+    if (this.map) {
+      this.refreshEmbeddedMap();
+      return;
+    }
+    requestAnimationFrame(() => void this.initEmbeddedMap());
+  }
+
+  togglePassengerSheet(): void {
+    this.passengerSheetExpanded = !this.passengerSheetExpanded;
+  }
+
+  recenterMap(): void {
+    if (!this.map) return;
+    if (this.selfMarker?.position) {
+      this.map.panTo(this.selfMarker.position);
+      this.map.setZoom(16);
+    } else {
+      this.fitEmbeddedMap();
+    }
+  }
+
+  private async initEmbeddedMap(): Promise<void> {
+    if (this.map) return;
+    try {
+      await this.places.ensureLoaded();
+      const div = document.getElementById('fixed-driver-embedded-map');
+      if (!div) return;
+      const firstStop = this.stops.find((stop) => this.hasStopCoords(stop));
+      this.map = new google.maps.Map(div, {
+        center: firstStop ? this.stopPosition(firstStop) : { lat: 28.6139, lng: 77.209 },
+        zoom: 13,
+        disableDefaultUI: true,
+        zoomControl: false,
+        mapId: 'DEMO_MAP_ID',
+      });
+      this.refreshEmbeddedMap();
+      void this.startDriverWatch();
+    } catch {
+      // Graceful fallback if map API cannot be reached
+    }
+  }
+
+  private refreshEmbeddedMap(refit = true): void {
+    if (!this.map) return;
+    this.clearRouteObjects();
+    const routeStops = this.stops.filter((stop) => this.hasStopCoords(stop));
+    if (!routeStops.length) return;
+
+    this.routeLine = new google.maps.Polyline({
+      path: routeStops.map((stop) => this.stopPosition(stop)),
+      map: this.map,
+      strokeColor: '#12B35B',
+      strokeOpacity: 0.9,
+      strokeWeight: 5,
+    });
+
+    this.stopMarkers = routeStops.map((stop) => new google.maps.marker.AdvancedMarkerElement({
+      position: this.stopPosition(stop),
+      map: this.map,
+      title: stop.name,
+      content: this.buildStopMarker(stop),
+      zIndex: Number(stop.seq || 0),
+    }));
+
+    this.passengerMarkers = this.passengerPointGroups().map((point) => new google.maps.marker.AdvancedMarkerElement({
+      position: point.position,
+      map: this.map,
+      title: point.title,
+      content: this.buildPassengerMarker(point.kind, point.count, point.name, point.isLive),
+      zIndex: point.kind === 'pickup' ? (point.isLive ? 960 : 920) : 850,
+    }));
+    if (refit) {
+      this.fitEmbeddedMap();
+    }
+  }
+
+  trackByStopId(_index: number, stop: StopGuide): number {
+    return stop.id;
+  }
+
+  trackByPassengerId(_index: number, passenger: FixedPassenger): number {
+    return passenger.id;
+  }
+
+  trackByGroup(_index: number, group: { stop: string }): string {
+    return group.stop;
+  }
+
+  private async startDriverWatch(): Promise<void> {
+    if (this.selfWatchId !== null) return;
+    try {
+      this.selfWatchId = await this.geo.watchPosition(
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
+        (fix, err) => {
+          if (err) {
+            void this.stopDriverWatch();
+            return;
+          }
+          if (fix) this.onDriverPosition(fix);
+        },
+      );
+    } catch {
+      this.selfWatchId = null;
+    }
+  }
+
+  private async stopDriverWatch(): Promise<void> {
+    if (this.selfWatchId !== null) {
+      await this.geo.clearWatch(this.selfWatchId);
+      this.selfWatchId = null;
+    }
+  }
+
+  private onDriverPosition(fix: GeoFix): void {
+    if (!this.map) return;
+    const position = { lat: fix.lat, lng: fix.lng };
+    if (!this.selfMarker) {
+      this.selfMarker = new google.maps.marker.AdvancedMarkerElement({
+        position,
+        map: this.map,
+        title: 'You (Driver)',
+        content: this.buildDriverMarker(fix.bearing ?? 0),
+        zIndex: 1000,
+      });
+      this.fitEmbeddedMap();
+      return;
+    }
+    this.selfMarker.position = position;
+    if (fix.bearing != null) {
+      updateCarMarkerBearing(this.selfMarker, fix.bearing);
+    }
+  }
+
+  private fitEmbeddedMap(): void {
+    if (!this.map) return;
+    const bounds = new google.maps.LatLngBounds();
+    let any = false;
+    for (const marker of [...this.stopMarkers, ...this.passengerMarkers, this.selfMarker]) {
+      if (marker?.position) {
+        bounds.extend(marker.position as any);
+        any = true;
+      }
+    }
+    if (any) this.map.fitBounds(bounds, 40);
+  }
+
+  private resetEmbeddedMap(): void {
+    this.clearRouteObjects();
+    if (this.selfMarker) {
+      this.selfMarker.map = null;
+      this.selfMarker = null;
+    }
+    this.map = null;
+  }
+
+  private clearRouteObjects(): void {
+    if (this.routeLine) {
+      this.routeLine.setMap(null);
+      this.routeLine = null;
+    }
+    for (const marker of this.stopMarkers) marker.map = null;
+    for (const marker of this.passengerMarkers) marker.map = null;
+    this.stopMarkers = [];
+    this.passengerMarkers = [];
+  }
+
+  private hasStopCoords(stop: FixedStop): boolean {
+    return stop.lat != null && stop.lng != null && Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng));
+  }
+
+  private stopPosition(stop: FixedStop): { lat: number; lng: number } {
+    return { lat: Number(stop.lat), lng: Number(stop.lng) };
+  }
+
+  private passengerPointGroups(): Array<{
+    kind: 'pickup' | 'drop';
+    count: number;
+    title: string;
+    name: string;
+    isLive: boolean;
+    position: { lat: number; lng: number };
+  }> {
+    const points: Array<{
+      kind: 'pickup' | 'drop';
+      count: number;
+      title: string;
+      name: string;
+      isLive: boolean;
+      position: { lat: number; lng: number };
+    }> = [];
+
+    for (const passenger of this.passengers) {
+      const status = (passenger.status || '').toUpperCase();
+      if (['CANCELLED', 'NO_SHOW', 'DROPPED', 'COMPLETED'].includes(status)) continue;
+
+      if (['BOOKED', 'CONFIRMED'].includes(status)) {
+        const pickup = this.passengerPosition(passenger, 'pickup');
+        if (pickup) {
+          const isLive = passenger.customer_lat != null && passenger.customer_lng != null &&
+            Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng));
+          const name = passenger.customer_name || 'Passenger';
+          points.push({
+            kind: 'pickup',
+            count: passenger.seats || 1,
+            name,
+            isLive,
+            title: `${name} (${passenger.seats || 1} seat${(passenger.seats || 1) > 1 ? 's' : ''}) - ${isLive ? 'Live Walking' : 'Pickup at ' + (passenger.board || 'stop')}`,
+            position: pickup,
+          });
+        }
+      } else if (status === 'BOARDED') {
+        const drop = this.passengerPosition(passenger, 'drop');
+        if (drop) {
+          const name = passenger.customer_name || 'Passenger';
+          points.push({
+            kind: 'drop',
+            count: passenger.seats || 1,
+            name,
+            isLive: false,
+            title: `${name} - Drop off at ${passenger.drop || 'destination'}`,
+            position: drop,
+          });
+        }
+      }
+    }
+    return points;
+  }
+
+  private passengerPosition(passenger: FixedPassenger, kind: 'pickup' | 'drop'): { lat: number; lng: number } | null {
+    if (kind === 'pickup') {
+      // 1. Live walking / customer GPS location if available
+      if (passenger.customer_lat != null && passenger.customer_lng != null &&
+          Number.isFinite(Number(passenger.customer_lat)) && Number.isFinite(Number(passenger.customer_lng))) {
+        return { lat: Number(passenger.customer_lat), lng: Number(passenger.customer_lng) };
+      }
+      // 2. Pickup stop coordinates
+      if (passenger.board_lat != null && passenger.board_lng != null &&
+          Number.isFinite(Number(passenger.board_lat)) && Number.isFinite(Number(passenger.board_lng))) {
+        return { lat: Number(passenger.board_lat), lng: Number(passenger.board_lng) };
+      }
+      const stopId = passenger.board_stop_id;
+      const stop = this.stops.find((item) => Number(item.id) === Number(stopId));
+      return stop && this.hasStopCoords(stop) ? this.stopPosition(stop) : null;
+    }
+
+    // Drop position
+    if (passenger.drop_lat != null && passenger.drop_lng != null &&
+        Number.isFinite(Number(passenger.drop_lat)) && Number.isFinite(Number(passenger.drop_lng))) {
+      return { lat: Number(passenger.drop_lat), lng: Number(passenger.drop_lng) };
+    }
+    const dropStopId = passenger.drop_stop_id;
+    const dropStop = this.stops.find((item) => Number(item.id) === Number(dropStopId));
+    return dropStop && this.hasStopCoords(dropStop) ? this.stopPosition(dropStop) : null;
+  }
+
+  private buildPassengerMarker(kind: 'pickup' | 'drop', count: number, name = 'Passenger', isLive = false): HTMLElement {
+    const el = document.createElement('div');
+    el.className = `fixed-driver-person-marker fixed-driver-person-marker--${kind} ${isLive ? 'is-live-walking' : ''}`;
+
+    const iconHtml = kind === 'pickup'
+      ? `<div class="person-avatar-wrap">
+           <span class="person-cap-icon">🧢</span>
+           ${isLive ? '<span class="person-walking-pulse"></span>' : ''}
+         </div>`
+      : `<div class="person-avatar-wrap person-avatar-wrap--drop">
+           <span class="person-cap-icon">📍</span>
+         </div>`;
+
+    const labelHtml = `
+      <div class="person-tag-pill">
+        <span class="person-tag-name">${this.escapeMarkerHtml(name)}</span>
+        <span class="person-tag-seats">${count}s</span>
+        ${isLive ? '<span class="person-live-dot" title="Live Walking">●</span>' : ''}
+      </div>
+    `;
+
+    el.innerHTML = `${iconHtml}${labelHtml}`;
+    return el;
+  }
+
+  private escapeMarkerHtml(str: string): string {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  private buildStopMarker(stop: FixedStop): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'fixed-driver-stop-marker';
+    const reachedSeq = Number(this.activeVehicle?.fixed_last_reached_stop_seq || 0);
+    const tone = Number(stop.seq || 0) <= reachedSeq ? '#64748B' : '#12B35B';
+    el.style.setProperty('--stop-color', tone);
+    el.innerHTML = `<span>${stop.seq}</span>`;
+    return el;
+  }
+
+  private buildDriverMarker(bearing: number): HTMLElement {
+    return buildReusableCarMarkerElement({
+      bearing,
+      label: 'You (Car)',
+    });
   }
 }
