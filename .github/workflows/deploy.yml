@@ -28,9 +28,9 @@ jobs:
             set -e
             echo "🚀 Starting automated deployment on GoDaddy VPS..."
             cd /var/www/dreamcabs
-            
-            echo "📥 Fetching latest changes from Git..."
-            git pull origin master
+            CURRENT_BRANCH=$(git branch --show-current || echo "master")
+            echo "📥 Fetching latest changes from Git ($CURRENT_BRANCH)..."
+            git pull origin "$CURRENT_BRANCH" || git pull
             
             echo "🔨 Running unified build & deploy..."
             bash backend/deploy/deploy.sh

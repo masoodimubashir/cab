@@ -2613,51 +2613,6 @@
   }
 }
 
-.dc-seat-guidance-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
-  border-radius: 14px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-
-  ion-icon {
-    font-size: 20px;
-    color: var(--fixed-green);
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-
-  .dc-seat-guidance-text {
-    strong {
-      display: block;
-      font-size: 13px;
-      font-weight: 800;
-      color: var(--fixed-dark);
-      margin-bottom: 3px;
-    }
-
-    p {
-      margin: 0;
-      font-size: 12px;
-      color: #475569;
-      line-height: 1.4;
-    }
-
-    .badge-text-green {
-      color: var(--fixed-green);
-      font-weight: 800;
-    }
-
-    .badge-text-black {
-      color: #0D1B2A;
-      font-weight: 800;
-    }
-  }
-}
-
 /* Vehicle Cabin Layout */
 .dc-vehicle-cabin {
   background: #FFFFFF;
@@ -2672,14 +2627,18 @@
   margin: 0 auto 20px;
 }
 
-.dc-cabin-front {
+.dc-cabin-windshield {
   width: 100%;
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: #F1F5F9;
-  border-radius: 14px;
+  justify-content: flex-end; /* Right Hand Drive (India) Driver Position */
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #E2E8F0 0%, #F8FAFC 100%);
+  border: 1.5px solid #CBD5E1;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  border-bottom: 2px solid #94A3B8;
   margin-bottom: 16px;
 
   .dc-cabin-driver-seat {
@@ -2691,20 +2650,13 @@
     padding: 6px 12px;
     border-radius: 10px;
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 850;
+    box-shadow: 0 2px 8px rgba(13, 27, 42, 0.2);
 
     ion-icon {
       font-size: 15px;
       color: #38BDF8;
     }
-  }
-
-  .dc-cabin-dashboard-label {
-    font-size: 11px;
-    font-weight: 800;
-    color: var(--fixed-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
   }
 }
 
