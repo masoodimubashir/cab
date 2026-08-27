@@ -845,7 +845,7 @@ class FixedDriverController extends Controller
         $departure->loadMissing('route:id,city_id,fixed_settings_json');
         $legacy = is_array($departure->route?->fixed_settings_json) ? $departure->route->fixed_settings_json : [];
         $citySettings = \App\Models\CitySetting::query()->where('city_id', $departure->route?->city_id)->first();
-        $radiusM = max(25, (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacy['stop_arrival_radius_m'] ?? 150)));
+        $radiusM = max(5, (int) ($citySettings?->fixed_stop_arrival_radius_m ?? ($legacy['stop_arrival_radius_m'] ?? 150)));
 
         $location = DriverLocation::query()
             ->where('driver_id', $driverId)
