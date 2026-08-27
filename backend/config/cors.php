@@ -18,7 +18,7 @@ return [
     // 'broadcasting/auth' is the Reverb private-channel auth endpoint — the
     // mobile apps call it from a different origin (Ionic dev server / native
     // shell) so it must be CORS-enabled like the API routes.
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'broadcasting/auth'],
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'broadcasting/auth', 'up'],
 
     'allowed_methods' => ['*'],
 
@@ -28,9 +28,9 @@ return [
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => [],
+    'exposed_headers' => ['*'],
 
-    'max_age' => 0,
+    'max_age' => 86400,
 
     'supports_credentials' => false,
 

@@ -23,6 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ['middleware' => ['auth:sanctum']]
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\Illuminate\Http\Middleware\HandleCors::class);
+        $middleware->prepend(\App\Http\Middleware\AssignRequestId::class);
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
             'role_any' => \App\Http\Middleware\EnsureAnyRole::class,
@@ -30,10 +33,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'idempotent' => \App\Http\Middleware\IdempotencyKey::class,
             'manager.city' => \App\Http\Middleware\EnforceManagerCity::class,
         ]);
-
-        // Tag every API request with an X-Request-Id and push it into the log
-        // context so a single ride can be traced end-to-end across services.
-        $middleware->prepend(\App\Http\Middleware\AssignRequestId::class);
 
         // For API requests, tell the Authenticate middleware NOT to compute a
         // redirect URL — otherwise it tries `route('login')` which doesn't
