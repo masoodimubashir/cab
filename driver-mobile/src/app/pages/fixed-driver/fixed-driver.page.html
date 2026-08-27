@@ -737,7 +737,7 @@
             <!-- TAB 3: VEHICLE SEAT LAYOUT & WALK-IN BLOCK/UNBLOCK VIEW -->
             <div class="dc-modal-tab-pane" *ngIf="sheetTab === 'seats'">
               
-              <!-- Seat Status Counter Header -->
+              <!-- Clean Seat Status Counter Header -->
               <div class="dc-seat-legend-bar">
                 <div class="dc-seat-legend-item">
                   <span class="seat-dot seat-dot--available"></span>
@@ -747,21 +747,12 @@
                 <div class="dc-seat-legend-item">
                   <span class="seat-dot seat-dot--booked"></span>
                   <strong>{{ bookedSeatCellsCount }}</strong>
-                  <small>Online Booked</small>
+                  <small>Booked</small>
                 </div>
                 <div class="dc-seat-legend-item">
                   <span class="seat-dot seat-dot--blocked"></span>
                   <strong>{{ blockedSeatCellsCount }}</strong>
-                  <small>Offline Walk-in</small>
-                </div>
-              </div>
-
-              <!-- Driver Guidance Banner -->
-              <div class="dc-seat-guidance-card">
-                <ion-icon name="information-circle-outline"></ion-icon>
-                <div class="dc-seat-guidance-text">
-                  <strong>Manage Offline Walk-in Passengers</strong>
-                  <p>Tap an <span class="badge-text-green">Available</span> seat to mark walk-in. Tap a <span class="badge-text-black">Blocked</span> seat to release when dropped.</p>
+                  <small>Walk-in Blocked</small>
                 </div>
               </div>
 
@@ -774,14 +765,12 @@
               <!-- Vehicle Cabin Representation -->
               <div class="dc-vehicle-cabin" *ngIf="!seatMapLoading && seatMapData">
                 
-                <!-- Windshield / Front Cabin Header -->
-                <div class="dc-cabin-front">
+                <!-- Windshield Front with Driver in exact position -->
+                <div class="dc-cabin-windshield">
+                  <div class="dc-cabin-windshield-curve"></div>
                   <div class="dc-cabin-driver-seat">
                     <ion-icon name="disc-outline"></ion-icon>
                     <span>Driver</span>
-                  </div>
-                  <div class="dc-cabin-dashboard-label">
-                    <span>Front Dashboard</span>
                   </div>
                 </div>
 

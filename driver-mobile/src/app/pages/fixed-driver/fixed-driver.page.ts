@@ -1258,7 +1258,7 @@ export class FixedDriverPage implements OnDestroy {
 
   loadDepartureSeatMap(departureId: number): void {
     this.seatMapLoading = true;
-    this.api.get<DepartureSeatMap>(`/fixed/departures/${departureId}/seat-map`)
+    this.api.get<DepartureSeatMap>(`/fixed/driver/departures/${departureId}/seat-map`)
       .pipe(finalize(() => { this.seatMapLoading = false; }))
       .subscribe({
         next: (res) => {
@@ -1353,7 +1353,7 @@ export class FixedDriverPage implements OnDestroy {
     if (!this.activeVehicle) return;
     this.seatActionBusy = true;
     this.api.post<{ message: string; seat_map: DepartureSeatMap; vehicle: FixedVehicle }>(
-      `/fixed/departures/${this.activeVehicle.id}/seats/block`,
+      `/fixed/driver/departures/${this.activeVehicle.id}/seats/block`,
       { label }
     ).pipe(finalize(() => { this.seatActionBusy = false; })).subscribe({
       next: (res) => {
@@ -1371,7 +1371,7 @@ export class FixedDriverPage implements OnDestroy {
     if (!this.activeVehicle) return;
     this.seatActionBusy = true;
     this.api.post<{ message: string; seat_map: DepartureSeatMap; vehicle: FixedVehicle }>(
-      `/fixed/departures/${this.activeVehicle.id}/seats/unblock`,
+      `/fixed/driver/departures/${this.activeVehicle.id}/seats/unblock`,
       { label }
     ).pipe(finalize(() => { this.seatActionBusy = false; })).subscribe({
       next: (res) => {
