@@ -260,7 +260,7 @@ class AdminDriversController
      */
     public function fullProfile(Driver $driver)
     {
-        $driver->load(['user', 'rideType', 'vehicleTypeRef', 'cityVehicleType']);
+        $driver->load(['user', 'rideType', 'vehicleTypeRef', 'cityVehicleType', 'cities:id,name', 'city:id,name']);
 
         $docs = DriverDocument::query()
             ->where('driver_id', $driver->id)
@@ -309,6 +309,13 @@ class AdminDriversController
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
                 'vehicle_model' => $driver->vehicle_model,
                 'vehicle_color' => $driver->vehicle_color,
+                'city_id' => $driver->city_id,
+                'city_ids' => $driver->city_ids,
+                'cities' => $driver->cities->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values(),
+                'city_name' => $driver->city?->name,
+                'city_names' => $driver->cities->pluck('name')->join(', '),
+                'service_scope' => $driver->service_scope,
+                'service_mode' => $driver->service_mode,
                 'approval_status' => $driver->approval_status,
                 // Payout account ("driver KYC") — informational on the approval
                 // panel. Verification is skippable, so it never blocks approval.
@@ -335,6 +342,7 @@ class AdminDriversController
             'vehicleTypeRef:id,name',
             'cityVehicleType:id,display_name',
             'city:id,name',
+            'cities:id,name',
         ]);
 
         $user = $driver->user;
@@ -361,7 +369,7 @@ class AdminDriversController
                 'email' => $user?->email,
                 'avatar_path' => $user?->avatar_path,
                 'avatar_url' => $this->avatarUrl($user?->avatar_path),
-                'dob' => $user?->dob,
+                'dob' => $user?->dob ? (is_string($user->dob) ? substr($user->dob, 0, 10) : optional($user->dob)->format('Y-m-d')) : null,
                 'address' => $user?->address,
                 'date_registered' => optional($driver->created_at)->toIso8601String(),
                 'last_login_at' => optional($user?->last_login_at)->toIso8601String(),
@@ -370,6 +378,7 @@ class AdminDriversController
                 'device_type' => $user?->device_type,
                 'push_unsubscribed' => (bool) $user?->push_unsubscribed,
                 'ride_type_name' => $driver->rideType?->name,
+                'vehicle_type_id' => $driver->vehicle_type_id,
                 'vehicle_type_name' => $driver->vehicleTypeRef?->name,
                 'city_vehicle_type_id' => $driver->city_vehicle_type_id,
                 'city_vehicle_type_name' => $driver->cityVehicleType?->display_name,
@@ -377,7 +386,13 @@ class AdminDriversController
                 'vehicle_model' => $driver->vehicle_model,
                 'vehicle_color' => $driver->vehicle_color,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
+                'city_id' => $driver->city_id,
+                'city_ids' => $driver->city_ids,
+                'cities' => $driver->cities->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values(),
                 'city_name' => $driver->city?->name,
+                'city_names' => $driver->cities->pluck('name')->join(', '),
+                'service_scope' => $driver->service_scope,
+                'service_mode' => $driver->service_mode,
                 'approval_status' => $driver->approval_status,
                 'is_online' => $driver->isOnlineFresh(),
                 'is_suspended' => (bool) $user?->is_suspended,
@@ -954,14 +969,17 @@ class AdminDriversController
     {
         $data = $request->validate([
             'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
+            'vehicle_brand' => ['nullable', 'string', 'max:100'],
             'vehicle_model' => ['nullable', 'string', 'max:100'],
             'vehicle_color' => ['nullable', 'string', 'max:100'],
             'ride_type_id' => ['nullable', 'integer', 'exists:ride_types,id'],
             'vehicle_type_id' => ['nullable', 'integer', 'exists:vehicle_types,id'],
-            // The driver's "Car". Chosen by the driver at signup and frozen for
-            // them once approved, so the operator is the only one who can move
-            // it — that happens on the vehicle workspace's Drivers tab.
-            'city_vehicle_type_id' => ['sometimes', 'required', 'integer', 'exists:city_vehicle_types,id'],
+            'city_vehicle_type_id' => ['sometimes', 'nullable', 'integer', 'exists:city_vehicle_types,id'],
+            'city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'city_ids' => ['nullable', 'array', 'min:1'],
+            'city_ids.*' => ['integer', 'exists:cities,id'],
+            'service_scope' => ['nullable', 'string', 'in:local,outstation'],
+            'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
             // Linked User profile fields — driver identity lives on User
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'phone')->ignore($driver->user_id)],
@@ -970,18 +988,28 @@ class AdminDriversController
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
-        // Mirror the signup rule (DriversController::register): a driver's car
-        // must be a city vehicle in their own city, of their own vehicle type.
-        // Without this the admin path could silently create a pairing the
-        // driver app would have refused.
-        if (array_key_exists('city_vehicle_type_id', $data)) {
+        if (array_key_exists('city_ids', $data) && is_array($data['city_ids'])) {
+            $cityIds = array_values(array_unique(array_map('intval', $data['city_ids'])));
+            $driver->cities()->sync($cityIds);
+            if (! empty($cityIds)) {
+                $driver->city_id = $cityIds[0];
+            }
+        } elseif (array_key_exists('city_id', $data) && $data['city_id'] !== null) {
+            $driver->cities()->sync([(int) $data['city_id']]);
+            $driver->city_id = (int) $data['city_id'];
+        }
+
+        if (array_key_exists('city_vehicle_type_id', $data) && ! empty($data['city_vehicle_type_id'])) {
             $cityVehicle = \App\Models\CityVehicleType::query()->find((int) $data['city_vehicle_type_id']);
+            $driverCityIds = $driver->city_ids;
+            $targetVehicleTypeId = $data['vehicle_type_id'] ?? $driver->vehicle_type_id;
+
             if (! $cityVehicle
                 || ! $cityVehicle->is_active
-                || ($driver->city_id !== null && (int) $cityVehicle->city_id !== (int) $driver->city_id)
-                || ($driver->vehicle_type_id !== null && (int) $cityVehicle->vehicle_type_id !== (int) $driver->vehicle_type_id)) {
+                || (! empty($driverCityIds) && ! in_array((int) $cityVehicle->city_id, $driverCityIds, true))
+                || ($targetVehicleTypeId !== null && (int) $cityVehicle->vehicle_type_id !== (int) $targetVehicleTypeId)) {
                 return response()->json([
-                    'message' => 'Selected city vehicle does not match this driver\'s city and vehicle type.',
+                    'message' => 'Selected city vehicle does not match this driver\'s assigned cities and vehicle type.',
                 ], 422);
             }
         }
@@ -989,18 +1017,27 @@ class AdminDriversController
         // Split into driver-owned vs user-owned fields
         $userKeys = ['name', 'phone', 'email', 'dob', 'address'];
         $userData = array_intersect_key($data, array_flip($userKeys));
-        $driverData = array_diff_key($data, array_flip($userKeys));
+        $driverData = array_diff_key($data, array_flip(array_merge($userKeys, ['city_ids'])));
 
-        if (!empty($driverData)) {
+        if (! empty($driverData)) {
+            if (array_key_exists('service_scope', $driverData) && $driverData['service_scope']) {
+                $driverData['active_service_scope'] = $driverData['service_scope'];
+            }
+            if (array_key_exists('service_mode', $driverData) && $driverData['service_mode']) {
+                $driverData['active_service_mode'] = $driverData['service_mode'];
+            }
             $driver->fill($driverData);
             $driver->save();
         }
 
-        if (!empty($userData) && $driver->user) {
+        if (! empty($userData) && $driver->user) {
             $driver->user->fill($userData)->save();
         }
 
-        return response()->json(['driver' => $driver->fresh()->load('user')]);
+        return response()->json([
+            'driver' => $driver->fresh(['user', 'cities:id,name', 'city:id,name', 'vehicleTypeRef:id,name', 'cityVehicleType:id,display_name']),
+            'message' => 'Driver details updated successfully.',
+        ]);
     }
 
     /**

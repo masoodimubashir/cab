@@ -54,7 +54,8 @@ class FixedDriverController extends Controller
             abort(422, 'Go online with your registered fixed service before choosing a fixed route.');
         }
 
-        if (!$driver->city_id) {
+        $cityIds = $driver->city_ids;
+        if (empty($cityIds)) {
             abort(422, 'Your registered city is required before choosing a fixed route.');
         }
 
@@ -63,7 +64,7 @@ class FixedDriverController extends Controller
         // Route allocation is driven by the driver's assigned route groups
         // (DriverRouteAccessService) — NOT their vehicle. The driver sees the
         // fixed routes their groups grant, still narrowed to their current online
-        // city + scope + active routes. No groups assigned => empty list.
+        // cities + scope + active routes. No groups assigned => empty list.
         $allowedRouteIds = $this->routeAccess->effectiveRouteIds((int) $request->user()->id);
         if (empty($allowedRouteIds)) {
             return response()->json(['data' => []]);
@@ -75,7 +76,7 @@ class FixedDriverController extends Controller
             ->where('mode', 'fixed')
             ->where('scope', $scope)
             ->where('is_active', true)
-            ->where('city_id', (int) $driver->city_id)
+            ->whereIn('city_id', $cityIds)
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
