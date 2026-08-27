@@ -146,6 +146,11 @@ class FixedRouteService
         return [
             'id' => $route->id,
             'city_id' => $route->city_id,
+            'origin_city_id' => $route->origin_city_id,
+            'dest_city_id' => $route->dest_city_id,
+            'city_name' => $route->relationLoaded('city') ? $route->city?->name : null,
+            'origin_city_name' => $route->relationLoaded('originCity') ? $route->originCity?->name : null,
+            'dest_city_name' => $route->relationLoaded('destCity') ? $route->destCity?->name : null,
             'name' => $route->name,
             'scope' => $route->scope,
             'mode' => $route->mode,

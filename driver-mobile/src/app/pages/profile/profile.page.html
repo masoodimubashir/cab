@@ -279,7 +279,7 @@
       </button>
     </ng-container>
 
-    <!-- ============ ONBOARDING STEP 2: VEHICLE & SERVICE (FORM) ============ -->
+    <!-- ============ ONBOARDING STEP 2: VEHICLE & SERVICE ============ -->
     <ng-container *ngIf="onboarding && onboardingStep === 'vehicle'">
       <div class="pg-card pf-form">
         <div class="pg-card__head">
@@ -287,63 +287,140 @@
           <h2 class="pg-card__title">Your Vehicle &amp; Service</h2>
         </div>
 
-        <label class="pf-field">
+        <!-- 1. Operating Cities (Bottom Sheet Trigger) -->
+        <div class="pf-field">
           <span class="pf-field__label">Operating Cities <em>*</em></span>
-          <ion-select class="pf-input" [multiple]="true" interface="alert" placeholder="Select your operating cities"
-            [(ngModel)]="city_ids" (ionChange)="onOnboardingCityChange()" [disabled]="submitting">
-            <ion-select-option *ngFor="let c of cities" [value]="c.id">{{ c.name }}</ion-select-option>
-          </ion-select>
-        </label>
+          <div class="pf-input pf-city-box dc-press" (click)="openCityModal()" [class.is-filled]="city_ids && city_ids.length">
+            <div class="pf-city-box__left">
+              <ion-icon name="location-outline" class="pf-city-box__icon"></ion-icon>
+              <span class="pf-city-box__text" *ngIf="city_ids && city_ids.length">{{ selectedCityNames }}</span>
+              <span class="pf-city-box__placeholder" *ngIf="!city_ids || !city_ids.length">Select your operating cities</span>
+            </div>
+            <div class="pf-city-box__right">
+              <span class="pf-city-box__badge" *ngIf="city_ids && city_ids.length">
+                {{ city_ids.length }} {{ city_ids.length === 1 ? 'city' : 'cities' }}
+              </span>
+              <ion-icon name="chevron-forward-outline" class="pf-city-box__chevron"></ion-icon>
+            </div>
+          </div>
+        </div>
 
-        <label class="pf-field" *ngIf="rideModes.length">
+        <!-- 2. Service Selection (Local / Outstation Modes) -->
+        <div class="pf-field" *ngIf="rideModes.length">
           <span class="pf-field__label">Service <em>*</em></span>
-          <ion-select class="pf-input" interface="action-sheet" placeholder="Select the service you drive"
-            [(ngModel)]="selectedRideKey" (ionChange)="onRideModeChange()" [disabled]="submitting">
-            <ion-select-option *ngFor="let m of rideModes" [value]="m.key">
-              {{ m.scope === 'outstation' ? 'Outstation' : 'Local' }} · {{ m.name }}
-            </ion-select-option>
-          </ion-select>
-        </label>
+          <div class="pf-service-list">
+            <div
+              *ngFor="let m of rideModes"
+              class="pf-service-item dc-press"
+              [class.is-active]="selectedRideKey === m.key"
+              (click)="selectRideMode(m)"
+            >
+              <div class="pf-service-item__left">
+                <div class="pf-service-item__radio" [class.is-checked]="selectedRideKey === m.key">
+                  <div class="pf-service-item__radio-dot" *ngIf="selectedRideKey === m.key"></div>
+                </div>
+                <div class="pf-service-item__info">
+                  <span class="pf-service-item__name">{{ m.name }}</span>
+                  <span class="pf-service-item__sub">{{ m.scope === 'outstation' ? 'Outstation Service' : 'Local Service' }}</span>
+                </div>
+              </div>
+              <span class="pf-service-item__scope-tag" [class.is-outstation]="m.scope === 'outstation'">
+                {{ m.scope === 'outstation' ? 'Outstation' : 'Local' }}
+              </span>
+            </div>
+          </div>
+        </div>
 
+        <!-- 3. Vehicle Type Selection -->
+        <div class="pf-field">
+          <span class="pf-field__label">Vehicle Type <em>*</em></span>
+          <div class="pf-vtype-grid">
+            <div
+              *ngFor="let v of vehicleTypes"
+              class="pf-vtype-card dc-press"
+              [class.is-active]="vehicle_type_id === v.id"
+              (click)="selectVehicleType(v.id)"
+            >
+              <ion-icon class="pf-vtype-card__icon" [name]="getVehicleTypeIconByName(v.name)"></ion-icon>
+              <span class="pf-vtype-card__name">{{ v.name }}</span>
+              <div class="pf-vtype-card__check" *ngIf="vehicle_type_id === v.id">
+                <ion-icon name="checkmark"></ion-icon>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. City Vehicle Specific Model (if available) -->
+        <div class="pf-field" *ngIf="cityVehicles.length">
+          <span class="pf-field__label">Vehicle Model <em>*</em></span>
+          <div class="pf-model-list">
+            <div
+              *ngFor="let cv of cityVehicles"
+              class="pf-model-item dc-press"
+              [class.is-active]="city_vehicle_type_id === cv.id"
+              (click)="selectCityVehicle(cv.id)"
+            >
+              <div class="pf-model-item__left">
+                <div class="pf-model-item__radio" [class.is-checked]="city_vehicle_type_id === cv.id">
+                  <div class="pf-model-item__radio-dot" *ngIf="city_vehicle_type_id === cv.id"></div>
+                </div>
+                <div class="pf-model-item__info">
+                  <span class="pf-model-item__name">{{ cv.display_name }}</span>
+                  <span class="pf-model-item__sub" *ngIf="cv.max_people">{{ cv.max_people }} Passenger Seats</span>
+                </div>
+              </div>
+              <span class="pf-model-item__badge" *ngIf="city_vehicle_type_id === cv.id">Selected</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Registration Number -->
         <label class="pf-field">
-          <span class="pf-field__label">Vehicle type <em>*</em></span>
-          <ion-select class="pf-input" interface="action-sheet" placeholder="Select vehicle type"
-            [(ngModel)]="vehicle_type_id" (ionChange)="onOnboardingVehicleTypeChange()" [disabled]="submitting">
-            <ion-select-option *ngFor="let v of vehicleTypes" [value]="v.id">{{ v.name }}</ion-select-option>
-          </ion-select>
+          <span class="pf-field__label">Registration Number <em>*</em></span>
+          <input
+            class="pf-input pf-input--reg"
+            [(ngModel)]="vehicle_reg_no"
+            placeholder="e.g. JK01AB1234"
+            maxlength="15"
+            [disabled]="submitting"
+            autocapitalize="characters"
+          />
         </label>
 
-        <label class="pf-field" *ngIf="cityVehicles.length">
-          <span class="pf-field__label">Vehicle <em>*</em></span>
-          <ion-select class="pf-input" interface="action-sheet" placeholder="Select your vehicle"
-            [(ngModel)]="city_vehicle_type_id" [disabled]="submitting">
-            <ion-select-option *ngFor="let cv of cityVehicles" [value]="cv.id">{{ cv.display_name }}</ion-select-option>
-          </ion-select>
-        </label>
+        <!-- 6. Model Year & Colour (2 Columns) -->
+        <div class="pf-row-2col">
+          <label class="pf-field">
+            <span class="pf-field__label">Model Year <small>(optional)</small></span>
+            <input
+              class="pf-input"
+              type="tel"
+              inputmode="numeric"
+              maxlength="4"
+              [(ngModel)]="vehicle_model_year"
+              placeholder="e.g. 2022"
+              [disabled]="submitting"
+            />
+          </label>
 
-        <label class="pf-field">
-          <span class="pf-field__label">Registration number <em>*</em></span>
-          <input class="pf-input" [(ngModel)]="vehicle_reg_no" placeholder="e.g. JK01AB1234" [disabled]="submitting" />
-        </label>
+          <label class="pf-field">
+            <span class="pf-field__label">Colour <small>(optional)</small></span>
+            <input
+              class="pf-input"
+              [(ngModel)]="vehicle_color"
+              placeholder="e.g. White"
+              [disabled]="submitting"
+            />
+          </label>
+        </div>
 
-        <label class="pf-field">
-          <span class="pf-field__label">Model year <small>(optional)</small></span>
-          <input class="pf-input" type="tel" inputmode="numeric" maxlength="4"
-            [(ngModel)]="vehicle_model_year" placeholder="e.g. 2020" [disabled]="submitting" />
-        </label>
-
-        <label class="pf-field">
-          <span class="pf-field__label">Colour <small>(optional)</small></span>
-          <input class="pf-input" [(ngModel)]="vehicle_color" placeholder="e.g. White" [disabled]="submitting" />
-        </label>
       </div>
 
       <button class="dc-cta pf-save" (click)="submitRegistration()" [disabled]="submitting">
         <ion-spinner *ngIf="submitting" name="crescent"></ion-spinner>
-        {{ submitting ? 'Submitting…' : 'Complete registration' }}
+        {{ submitting ? 'Submitting…' : 'Complete Registration' }}
       </button>
       <button class="dc-cta dc-cta--ghost" (click)="backToProfileStep()" [disabled]="submitting" style="margin-top:10px;">
-        Back
+        Back to Personal Details
       </button>
     </ng-container>
 
@@ -413,32 +490,76 @@
     <ng-container *ngIf="(activeSegment === 'documents' && !onboarding) || (onboarding && onboardingStep === 'documents')">
       <div class="doc-list pg-anim-body">
 
+        <!-- Onboarding Step 3 Progress Banner -->
+        <div class="doc-header-card" *ngIf="onboarding">
+          <div class="doc-header-card__left">
+            <div class="doc-header-card__icon">
+              <ion-icon name="document-text-outline"></ion-icon>
+            </div>
+            <div class="doc-header-card__info">
+              <h2 class="doc-header-card__title">Verification Documents</h2>
+              <p class="doc-header-card__subtitle">Upload clear copies of required documents to verify your account</p>
+            </div>
+          </div>
+          <div class="doc-header-card__badge" [class.is-complete]="requiredDocsSubmitted">
+            <ion-icon [name]="requiredDocsSubmitted ? 'checkmark-circle' : 'time-outline'"></ion-icon>
+            <span>{{ uploadedMandatoryCount }} / {{ totalMandatoryCount }} Uploaded</span>
+          </div>
+        </div>
+
         <!-- Zero Documents State -->
-        <div class="pg-card pf-form" *ngIf="docs.length === 0" style="text-align: center; padding: 24px 16px;">
-          <div style="font-size: 40px; color: var(--ion-color-success); margin-bottom: 8px;">
+        <div class="pg-card doc-empty-card" *ngIf="docs.length === 0">
+          <div class="doc-empty-card__icon">
             <ion-icon name="checkmark-done-circle-outline"></ion-icon>
           </div>
-          <h3 style="font-size: 18px; font-weight: 700; margin: 0 0 8px 0; color: #fff;">No Documents Required</h3>
-          <p style="color: var(--ion-color-medium); font-size: 14px; margin: 0 auto; line-height: 1.5; max-width: 320px;">
-            No verification documents are configured at this time. You can continue directly to your driver dashboard.
+          <h3 class="doc-empty-card__title">No Documents Required</h3>
+          <p class="doc-empty-card__desc">
+            No verification documents are required at this time. You can continue directly to your driver dashboard.
           </p>
         </div>
 
+        <!-- Document Cards -->
         <div class="pg-card doc-card" *ngFor="let slot of docs">
 
           <div class="doc-card__head">
-            <div class="doc-card__title">
-              <div class="doc-card__icon"><ion-icon name="document-text-outline"></ion-icon></div>
-              <strong>{{ slot.doc.name }}</strong>
+            <div class="doc-card__left">
+              <div class="doc-card__icon">
+                <ion-icon name="document-text-outline"></ion-icon>
+              </div>
+              <div class="doc-card__title-box">
+                <div class="doc-card__name-row">
+                  <strong class="doc-card__name">{{ slot.doc.name }}</strong>
+                  <span class="doc-req-tag" [class.is-mandatory]="isDocRequired(slot.doc)">
+                    {{ isDocRequired(slot.doc) ? 'Required' : 'Optional' }}
+                  </span>
+                </div>
+                <p class="doc-card__instructions" *ngIf="slot.doc.instructions">{{ slot.doc.instructions }}</p>
+              </div>
+            </div>
+
+            <!-- Overall Slot Status Badge -->
+            <div class="doc-card__status">
+              <span class="doc-status-badge doc-status-badge--approved" *ngIf="getSlotOverallStatus(slot) === 'approved'">
+                <ion-icon name="checkmark-circle"></ion-icon> Verified
+              </span>
+              <span class="doc-status-badge doc-status-badge--pending" *ngIf="getSlotOverallStatus(slot) === 'pending'">
+                <ion-icon name="time-outline"></ion-icon> In Review
+              </span>
+              <span class="doc-status-badge doc-status-badge--rejected" *ngIf="getSlotOverallStatus(slot) === 'rejected'">
+                <ion-icon name="alert-circle"></ion-icon> Action Needed
+              </span>
+              <span class="doc-status-badge doc-status-badge--missing" *ngIf="getSlotOverallStatus(slot) === 'missing'">
+                <ion-icon name="cloud-upload-outline"></ion-icon> Pending
+              </span>
             </div>
           </div>
 
-          <!-- Label Values (e.g. License Number, Expiry Date) — editable while onboarding -->
-          <div class="doc-view-labels" *ngIf="slot.doc.labels.length">
+          <!-- Document Label Fields (e.g. License Number, Expiry Date) -->
+          <div class="doc-labels-form" *ngIf="slot.doc.labels.length">
             <ng-container *ngFor="let l of slot.doc.labels">
               <label class="pf-field" *ngIf="onboarding">
                 <span class="pf-field__label">{{ l.label }} <em *ngIf="l.mandatory">*</em></span>
-                <input class="pf-input" [(ngModel)]="slot.labelValues[l.label]" [placeholder]="l.label" />
+                <input class="pf-input" [(ngModel)]="slot.labelValues[l.label]" [placeholder]="'Enter ' + l.label" />
               </label>
               <div class="doc-view-label-item" *ngIf="!onboarding">
                 <span class="doc-view-label-item__key">{{ l.label }}:</span>
@@ -447,76 +568,101 @@
             </ng-container>
           </div>
 
-          <!-- Uploaded Images & Action Buttons (View & Download) -->
-          <div class="doc-card__images">
-            <div class="doc-image" *ngFor="let image of slot.uploads">
-              <div class="doc-image__head">
-                <span class="doc-image__title">Image {{ image.index }} / {{ slot.doc.no_of_images }}</span>
-                <ng-container *ngIf="image.existing as ex">
-                  <span *ngIf="ex.status === 'approved'" class="badge badge--ok">
-                    <ion-icon name="checkmark-circle"></ion-icon>Approved
-                  </span>
-                  <span *ngIf="ex.status === 'uploaded'" class="badge badge--pending">
-                    <ion-icon name="time-outline"></ion-icon>Pending
-                  </span>
-                  <span *ngIf="ex.status === 'rejected'" class="badge badge--bad">
-                    <ion-icon name="close-circle"></ion-icon>Rejected
-                  </span>
-                </ng-container>
-                <span *ngIf="!image.existing" class="badge badge--pending">
-                  <ion-icon name="help-circle-outline"></ion-icon>Not Uploaded
+          <!-- Upload Slots for this document -->
+          <div class="doc-slots-grid">
+            <div class="doc-slot-item" *ngFor="let image of slot.uploads">
+
+              <div class="doc-slot-item__header" *ngIf="slot.doc.no_of_images > 1">
+                <span class="doc-slot-item__label">
+                  <ion-icon name="images-outline"></ion-icon>
+                  Side {{ image.index }} of {{ slot.doc.no_of_images }}
                 </span>
               </div>
 
-              <!-- Document File Actions -->
-              <div class="doc-preview" *ngIf="image.existing as ex">
-                <button type="button" class="ghost-btn dc-press" (click)="viewDoc(image)">
-                  <ion-icon name="eye-outline"></ion-icon>View Document
-                </button>
-                <button type="button" class="ghost-btn dc-press" (click)="downloadDoc(image)">
-                  <ion-icon name="download-outline"></ion-icon>Download
-                </button>
-                <span class="doc-preview__date" *ngIf="ex.uploaded_at">
-                  Uploaded {{ ex.uploaded_at | date:'dd MMM yyyy' }}
-                </span>
-              </div>
-
-              <!-- Rejection reason -->
-              <div class="doc-reject" *ngIf="image.existing && image.existing.status === 'rejected'"
-                   style="display:flex;gap:6px;align-items:center;color:var(--ion-color-danger);font-size:13px;margin-top:6px;">
-                <ion-icon name="alert-circle-outline"></ion-icon>
-                <span>{{ image.existing.rejection_reason || 'Rejected — please upload a clearer copy.' }}</span>
-              </div>
-
-              <!-- Upload / Re-upload (only when missing or rejected) -->
-              <label class="dc-cta dc-cta--ghost dc-press"
-                     *ngIf="!image.existing || image.existing.status === 'rejected'"
-                     style="margin-top:8px;display:flex;gap:8px;align-items:center;justify-content:center;cursor:pointer;">
-                <input type="file" accept="image/*,application/pdf" hidden
-                       (change)="onDocFileSelected(slot, image, $event)"
-                       [disabled]="image.status === 'uploading'" />
-                <ion-spinner *ngIf="image.status === 'uploading'" name="crescent"></ion-spinner>
-                <ion-icon *ngIf="image.status !== 'uploading'" name="cloud-upload-outline"></ion-icon>
-                <span>{{ image.status === 'uploading'
-                          ? 'Uploading…'
-                          : (image.existing && image.existing.status === 'rejected' ? 'Re-upload document' : 'Upload document') }}</span>
+              <!-- 1. NOT UPLOADED: Clean Dropzone Box -->
+              <label class="doc-dropzone dc-press" *ngIf="!image.existing && image.status !== 'uploading'">
+                <input type="file" accept="image/*,application/pdf" hidden (change)="onDocFileSelected(slot, image, $event)" />
+                <div class="doc-dropzone__icon">
+                  <ion-icon name="cloud-upload-outline"></ion-icon>
+                </div>
+                <div class="doc-dropzone__body">
+                  <span class="doc-dropzone__title">Tap to Upload {{ slot.doc.no_of_images > 1 ? '(Side ' + image.index + ')' : '' }}</span>
+                  <span class="doc-dropzone__hint">Supports JPG, PNG, PDF (Max 10MB)</span>
+                </div>
               </label>
-              <div class="doc-upload-err" *ngIf="image.status === 'error' && image.error"
-                   style="color:var(--ion-color-danger);font-size:13px;margin-top:4px;">{{ image.error }}</div>
+
+              <!-- 2. UPLOADING STATE -->
+              <div class="doc-uploading-box" *ngIf="image.status === 'uploading'">
+                <ion-spinner name="crescent"></ion-spinner>
+                <span>Uploading document...</span>
+              </div>
+
+              <!-- 3. UPLOADED FILE CARD (Pending / Approved / Rejected) -->
+              <div class="doc-uploaded-box" *ngIf="image.existing as ex">
+                <div class="doc-uploaded-box__top">
+                  <div class="doc-uploaded-box__file-info">
+                    <div class="doc-uploaded-box__file-icon" [class.is-approved]="ex.status === 'approved'" [class.is-rejected]="ex.status === 'rejected'">
+                      <ion-icon [name]="ex.status === 'approved' ? 'checkmark-circle' : (ex.status === 'rejected' ? 'alert-circle' : 'document-attach-outline')"></ion-icon>
+                    </div>
+                    <div>
+                      <div class="doc-uploaded-box__status-pill badge" [class.badge--ok]="ex.status === 'approved'" [class.badge--pending]="ex.status === 'uploaded'" [class.badge--bad]="ex.status === 'rejected'">
+                        <ion-icon [name]="ex.status === 'approved' ? 'checkmark-circle' : (ex.status === 'uploaded' ? 'time-outline' : 'close-circle')"></ion-icon>
+                        {{ ex.status === 'approved' ? 'Approved' : (ex.status === 'uploaded' ? 'Pending Review' : 'Rejected') }}
+                      </div>
+                      <span class="doc-uploaded-box__date" *ngIf="ex.uploaded_at">Uploaded {{ ex.uploaded_at | date:'dd MMM yyyy' }}</span>
+                    </div>
+                  </div>
+
+                  <div class="doc-uploaded-box__actions">
+                    <button type="button" class="ghost-btn dc-press" (click)="viewDoc(image)" title="View">
+                      <ion-icon name="eye-outline"></ion-icon> View
+                    </button>
+                    <button type="button" class="ghost-btn dc-press" (click)="downloadDoc(image)" title="Download">
+                      <ion-icon name="download-outline"></ion-icon>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Rejection Banner if rejected -->
+                <div class="doc-rejection-banner" *ngIf="ex.status === 'rejected'">
+                  <ion-icon name="alert-circle-outline"></ion-icon>
+                  <div class="doc-rejection-banner__text">
+                    <strong>Document Rejected:</strong>
+                    <span>{{ ex.rejection_reason || 'Please upload a clearer, valid copy of this document.' }}</span>
+                  </div>
+                </div>
+
+                <!-- Re-upload Action (if rejected or during onboarding) -->
+                <label class="doc-reupload-btn dc-press" *ngIf="ex.status === 'rejected' || onboarding">
+                  <input type="file" accept="image/*,application/pdf" hidden (change)="onDocFileSelected(slot, image, $event)" [disabled]="image.status === 'uploading'" />
+                  <ion-icon name="refresh-outline"></ion-icon>
+                  <span>{{ ex.status === 'rejected' ? 'Re-upload Document' : 'Replace File' }}</span>
+                </label>
+              </div>
+
+              <!-- Error notice -->
+              <div class="doc-upload-err" *ngIf="image.status === 'error' && image.error">
+                <ion-icon name="warning-outline"></ion-icon>
+                <span>{{ image.error }}</span>
+              </div>
+
             </div>
           </div>
         </div>
 
         <!-- Onboarding Step 3 Navigation Buttons -->
-        <div *ngIf="onboarding && onboardingStep === 'documents'" style="margin-top: 24px; display: flex; flex-direction: column; gap: 10px;">
+        <div class="doc-nav-card" *ngIf="onboarding && onboardingStep === 'documents'">
           <button class="dc-cta pf-save" type="button" (click)="finishOnboardingDocuments()" [disabled]="!requiredDocsSubmitted">
-            Continue to Dashboard &rarr;
+            <span>Continue to Dashboard</span>
+            <ion-icon name="arrow-forward-outline"></ion-icon>
           </button>
-          <p *ngIf="!requiredDocsSubmitted" style="text-align:center;color:var(--ion-color-medium);font-size:13px;margin:0;">
-            Upload your required documents to continue.
+          <p class="doc-nav-card__hint" *ngIf="!requiredDocsSubmitted">
+            <ion-icon name="information-circle-outline"></ion-icon>
+            Please upload all required documents above to complete your registration.
           </p>
           <button class="dc-cta dc-cta--ghost" type="button" (click)="backToVehicleStep()">
-            Back to Vehicle
+            <ion-icon name="arrow-back-outline"></ion-icon>
+            <span>Back to Vehicle Details</span>
           </button>
         </div>
       </div>
@@ -559,5 +705,75 @@
         Use this address
       </button>
     </ion-footer>
+  </ng-template>
+</ion-modal>
+
+<!-- ============ OPERATING CITIES BOTTOM-TO-TOP MODAL (WHITE THEME) ============ -->
+<ion-modal
+  class="pf-city-modal-white"
+  [isOpen]="cityModalOpen"
+  [initialBreakpoint]="0.75"
+  [breakpoints]="[0, 0.75, 0.95]"
+  (didDismiss)="closeCityModal()"
+>
+  <ng-template>
+    <div class="city-sheet-white">
+      <div class="city-sheet-white__grab"></div>
+      <div class="city-sheet-white__head">
+        <div class="city-sheet-white__title-box">
+          <h2 class="city-sheet-white__title">Select Operating Cities</h2>
+          <p class="city-sheet-white__subtitle">Choose all cities where you want to provide rides</p>
+        </div>
+        <button type="button" class="city-sheet-white__close dc-press" (click)="closeCityModal()">
+          <ion-icon name="close"></ion-icon>
+        </button>
+      </div>
+
+      <div class="city-sheet-white__search" *ngIf="cities.length > 4">
+        <ion-icon name="search-outline"></ion-icon>
+        <input
+          type="text"
+          [(ngModel)]="citySearch"
+          placeholder="Search cities..."
+          class="city-sheet-white__search-input"
+        />
+        <button *ngIf="citySearch" (click)="citySearch = ''" class="city-sheet-white__search-clear">
+          <ion-icon name="close-circle"></ion-icon>
+        </button>
+      </div>
+
+      <div class="city-sheet-white__list">
+        <div
+          *ngFor="let c of filteredCities"
+          class="city-row-white dc-press"
+          [class.is-selected]="isCitySelected(c.id)"
+          (click)="toggleCity(c.id)"
+        >
+          <div class="city-row-white__left">
+            <div class="city-row-white__checkbox" [class.is-checked]="isCitySelected(c.id)">
+              <ion-icon name="checkmark" *ngIf="isCitySelected(c.id)"></ion-icon>
+            </div>
+            <div class="city-row-white__info">
+              <span class="city-row-white__name">{{ c.name }}</span>
+            </div>
+          </div>
+          <div class="city-row-white__badge" *ngIf="isCitySelected(c.id)">
+            <ion-icon name="checkmark-circle"></ion-icon>
+            <span>Selected</span>
+          </div>
+        </div>
+
+        <div class="city-sheet-white__empty" *ngIf="!filteredCities.length">
+          <ion-icon name="location-outline"></ion-icon>
+          <p>No cities found</p>
+        </div>
+      </div>
+
+      <div class="city-sheet-white__footer">
+        <button type="button" class="dc-cta city-sheet-white__done dc-press" (click)="closeCityModal()">
+          {{ (city_ids && city_ids.length) ? 'Apply (' + city_ids.length + ' Selected)' : 'Confirm Cities' }}
+        </button>
+      </div>
+    </div>
   </ng-template>
 </ion-modal>
