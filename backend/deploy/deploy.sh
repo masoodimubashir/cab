@@ -133,13 +133,9 @@ if [ -z "$(docker compose ps -q app 2>/dev/null)" ]; then
   CONTAINERS_RUNNING=false
 fi
 
-if [ "$CONTAINERS_RUNNING" = "false" ] || [ "$DOCKER_IMAGE_CHANGED" = "true" ]; then
-  echo "==> Rebuilding and starting Docker stack..."
+if [ "$CONTAINERS_RUNNING" = "false" ] || [ "$DOCKER_IMAGE_CHANGED" = "true" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
+  echo "==> Rebuilding and starting Docker stack with fresh code..."
   docker compose up -d --build
-elif [ "$BACKEND_CODE_CHANGED" = "true" ]; then
-  echo "==> Backend files updated. Restarting application services..."
-  docker compose up -d
-  docker compose restart app reverb queue scheduler
 elif [ "$FRONTEND_CHANGED" = "true" ]; then
   echo "==> Reloading Nginx with new frontend assets..."
   docker compose restart nginx
@@ -148,19 +144,21 @@ else
 fi
 
 # --- 3. DATABASE MIGRATIONS ------------------------------------------------
-if [ "$MIGRATIONS_CHANGED" = "true" ] || [ "$CONTAINERS_RUNNING" = "false" ]; then
-  echo "==> New migrations detected. Running database migrations..."
-  docker compose exec -T app php artisan migrate --force --no-interaction
+if [ "$MIGRATIONS_CHANGED" = "true" ] || [ "$CONTAINERS_RUNNING" = "false" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
+  echo "==> Checking and running database migrations..."
+  docker compose exec -T app php artisan migrate --force --no-interaction || true
 else
   echo "==> [SKIP] No new migration files. Database is up to date."
 fi
 
 # --- 4. LARAVEL CACHE OPTIMIZATION -----------------------------------------
-if [ "$CONFIG_CHANGED" = "true" ] || [ "$CONTAINERS_RUNNING" = "false" ]; then
-  echo "==> Refreshing route, config, and event caches..."
-  docker compose exec -T app php artisan config:cache
-  docker compose exec -T app php artisan route:cache
-  docker compose exec -T app php artisan event:cache
+if [ "$CONFIG_CHANGED" = "true" ] || [ "$CONTAINERS_RUNNING" = "false" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
+  echo "==> Refreshing route, config, and view caches..."
+  docker compose exec -T app php artisan config:clear || true
+  docker compose exec -T app php artisan route:clear || true
+  docker compose exec -T app php artisan view:clear || true
+  docker compose exec -T app php artisan config:cache || true
+  docker compose exec -T app php artisan route:cache || true
 else
   echo "==> [SKIP] Config and routes are unchanged. Caches are fresh."
 fi
