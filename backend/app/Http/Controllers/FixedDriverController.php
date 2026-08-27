@@ -66,25 +66,50 @@ class FixedDriverController extends Controller
         // fixed routes their groups grant, across all their registered cities.
         $allowedRouteIds = $this->routeAccess->effectiveRouteIds((int) $request->user()->id);
         if (empty($allowedRouteIds)) {
-            return response()->json(['data' => []]);
+            return response()->json([
+                'data' => [],
+                'driver_cities' => [],
+                'driver_scope' => $scope,
+            ]);
         }
 
-        $routes = Route::query()
-            ->with('stops')
+        $routesQuery = Route::query()
+            ->with(['stops', 'city:id,name', 'originCity:id,name', 'destCity:id,name'])
             ->whereIn('id', $allowedRouteIds)
             ->where('mode', 'fixed')
             ->where('is_active', true)
+            ->where('scope', $scope) // STRICT: Local driver gets only Local routes, Outstation gets only Outstation
             ->where(function ($q) use ($cityIds) {
                 $q->whereIn('city_id', $cityIds)
                     ->orWhereIn('origin_city_id', $cityIds)
                     ->orWhereIn('dest_city_id', $cityIds);
-            })
+            });
+
+        // If query specifies a specific city filter:
+        if ($request->has('city_id') && is_numeric($request->query('city_id'))) {
+            $cId = (int) $request->query('city_id');
+            $routesQuery->where(function ($q) use ($cId) {
+                $q->where('city_id', $cId)
+                    ->orWhere('origin_city_id', $cId)
+                    ->orWhere('dest_city_id', $cId);
+            });
+        }
+
+        $routes = $routesQuery
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
 
+        // Get driver's assigned operating cities details:
+        $assignedCities = \App\Models\City::whereIn('id', $cityIds)
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         return response()->json([
             'data' => $routes->map(fn (Route $route) => $this->routes->shapeCustomerRoute($route))->values(),
+            'driver_cities' => $assignedCities,
+            'driver_scope' => $scope,
         ]);
     }
 

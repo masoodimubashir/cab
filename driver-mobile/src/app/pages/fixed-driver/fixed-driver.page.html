@@ -41,15 +41,91 @@
 
     <!-- ==================== STEP 1: ROUTE LIST (NONE SELECTED) ==================== -->
     <section class="route-list-section" *ngIf="!activeVehicle && routes.length && !selectedRouteId && !loading">
-      <div class="section-heading">
-        <h2>Available Routes</h2>
-        <span>{{ routes.length }} route{{ routes.length > 1 ? 's' : '' }} assigned</span>
+      
+      <!-- Top Filters Container -->
+      <div class="route-filter-bar">
+        
+        <!-- Search input if multiple routes -->
+        <div class="route-search-box" *ngIf="routes.length > 3">
+          <ion-icon name="search-outline"></ion-icon>
+          <input
+            type="text"
+            [(ngModel)]="routeSearchQuery"
+            placeholder="Search routes or stops..."
+            class="route-search-input"
+          />
+          <button *ngIf="routeSearchQuery" (click)="routeSearchQuery = ''" class="route-search-clear">
+            <ion-icon name="close-circle"></ion-icon>
+          </button>
+        </div>
+
+        <!-- Scope Switcher: All / Local / Outstation -->
+        <div class="route-scope-chips">
+          <button
+            type="button"
+            class="scope-chip dc-press"
+            [class.is-active]="selectedScopeFilter === 'all'"
+            (click)="setScopeFilter('all')"
+          >
+            All Types
+          </button>
+          <button
+            type="button"
+            class="scope-chip dc-press"
+            [class.is-active]="selectedScopeFilter === 'local'"
+            (click)="setScopeFilter('local')"
+          >
+            <ion-icon name="location-outline"></ion-icon>
+            Local
+          </button>
+          <button
+            type="button"
+            class="scope-chip dc-press"
+            [class.is-active]="selectedScopeFilter === 'outstation'"
+            (click)="setScopeFilter('outstation')"
+          >
+            <ion-icon name="navigate-outline"></ion-icon>
+            Outstation
+          </button>
+        </div>
+
+        <!-- City Filter Chips (Kupwara, Sopore, etc.) -->
+        <div class="route-city-chips-wrap" *ngIf="driverCities.length > 1">
+          <span class="filter-label">City:</span>
+          <div class="route-city-chips">
+            <button
+              type="button"
+              class="city-chip dc-press"
+              [class.is-active]="selectedCityFilter === 'all'"
+              (click)="setCityFilter('all')"
+            >
+              All Cities
+            </button>
+            <button
+              type="button"
+              class="city-chip dc-press"
+              *ngFor="let c of driverCities"
+              [class.is-active]="selectedCityFilter === c.id"
+              (click)="setCityFilter(c.id)"
+            >
+              <ion-icon name="business-outline"></ion-icon>
+              {{ c.name }}
+            </button>
+          </div>
+        </div>
+
       </div>
 
-      <div class="route-cards-list">
+      <div class="section-heading">
+        <h2>Available Routes</h2>
+        <span>{{ filteredRoutes.length }} of {{ routes.length }} route{{ routes.length > 1 ? 's' : '' }}</span>
+      </div>
+
+      <!-- Filtered Routes List -->
+      <div class="route-cards-list" *ngIf="filteredRoutes.length">
         <article 
           class="pg-card route-pick-card dc-press" 
-          *ngFor="let route of routes" 
+          *ngFor="let route of filteredRoutes" 
           (click)="selectRoute(route)"
         >
           <div class="route-pick-card__header">
@@ -57,9 +133,14 @@
               <div class="route-icon"><ion-icon name="git-branch-outline"></ion-icon></div>
               <strong>{{ route.name }}</strong>
             </div>
-            <span class="scope-pill" [class.scope-pill--outstation]="route.scope === 'outstation'">
-              {{ route.scope === 'outstation' ? 'Outstation' : 'Local' }}
-            </span>
+            <div class="route-pick-card__badges">
+              <span class="city-pill" *ngIf="route.city_name || route.origin_city_name">
+                {{ route.city_name || route.origin_city_name }}
+              </span>
+              <span class="scope-pill" [class.scope-pill--outstation]="route.scope === 'outstation'">
+                {{ route.scope === 'outstation' ? 'Outstation' : 'Local' }}
+              </span>
+            </div>
           </div>
 
           <div class="route-pick-card__path">
@@ -88,6 +169,19 @@
           </div>
         </article>
       </div>
+
+      <!-- No Routes Match Filters Empty State -->
+      <div class="pg-card route-empty-state" *ngIf="!filteredRoutes.length">
+        <div class="route-empty-state__icon">
+          <ion-icon name="filter-outline"></ion-icon>
+        </div>
+        <h3>No Matching Routes</h3>
+        <p>No routes match your selected city or service scope filter.</p>
+        <button type="button" class="dc-cta dc-cta--ghost" (click)="resetRouteFilters()" style="margin-top: 10px;">
+          Clear Filters
+        </button>
+      </div>
+
     </section>
 
     <!-- ==================== STEP 2: SELECTED ROUTE DETAILS & CONFIRMATION ==================== -->

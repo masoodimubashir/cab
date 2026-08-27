@@ -51,6 +51,16 @@ class Route extends Model
         return $this->belongsTo(City::class, 'city_id');
     }
 
+    public function originCity(): BelongsTo
+    {
+        return $this->belongsTo(City::class, 'origin_city_id');
+    }
+
+    public function destCity(): BelongsTo
+    {
+        return $this->belongsTo(City::class, 'dest_city_id');
+    }
+
     public function cityVehicleType(): BelongsTo
     {
         return $this->belongsTo(CityVehicleType::class, 'city_vehicle_type_id');

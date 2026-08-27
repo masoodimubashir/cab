@@ -21,6 +21,11 @@ declare const google: any;
 interface FixedRoute {
   id: number;
   city_id: number;
+  origin_city_id?: number | null;
+  dest_city_id?: number | null;
+  city_name?: string | null;
+  origin_city_name?: string | null;
+  dest_city_name?: string | null;
   name: string;
   scope: 'local' | 'outstation';
   origin_name: string;
@@ -150,6 +155,55 @@ export class FixedDriverPage implements OnDestroy {
   selectedRouteId: number | null = null;
   capacity = 4;
 
+  // Filters for available routes list
+  driverCities: { id: number; name: string }[] = [];
+  driverScope: string | null = null;
+  selectedCityFilter: number | 'all' = 'all';
+  selectedScopeFilter: 'all' | 'local' | 'outstation' = 'all';
+  routeSearchQuery = '';
+
+  get filteredRoutes(): FixedRoute[] {
+    return this.routes.filter((r) => {
+      // 1. City Filter (matches city_id, origin_city_id, dest_city_id)
+      if (this.selectedCityFilter !== 'all') {
+        const cId = Number(this.selectedCityFilter);
+        const matchesCity = r.city_id === cId || r.origin_city_id === cId || r.dest_city_id === cId;
+        if (!matchesCity) return false;
+      }
+
+      // 2. Scope Filter (Local / Outstation)
+      if (this.selectedScopeFilter !== 'all') {
+        if (r.scope !== this.selectedScopeFilter) return false;
+      }
+
+      // 3. Search Query Filter
+      if (this.routeSearchQuery && this.routeSearchQuery.trim()) {
+        const q = this.routeSearchQuery.toLowerCase().trim();
+        const nameMatches = (r.name || '').toLowerCase().includes(q);
+        const originMatches = (r.origin_name || '').toLowerCase().includes(q);
+        const destMatches = (r.dest_name || '').toLowerCase().includes(q);
+        const stopsMatch = (r.stops || []).some((s) => (s.name || '').toLowerCase().includes(q));
+        if (!nameMatches && !originMatches && !destMatches && !stopsMatch) return false;
+      }
+
+      return true;
+    });
+  }
+
+  setCityFilter(cityId: number | 'all'): void {
+    this.selectedCityFilter = cityId;
+  }
+
+  setScopeFilter(scope: 'all' | 'local' | 'outstation'): void {
+    this.selectedScopeFilter = scope;
+  }
+
+  resetRouteFilters(): void {
+    this.selectedCityFilter = 'all';
+    this.selectedScopeFilter = 'all';
+    this.routeSearchQuery = '';
+  }
+
   // Seat layouts (M6): fetched per selected route; driver picks which one to
   // open the vehicle with. Capacity derives from the layout's seat_count so
   // the seat map and the "seats total" counter can never disagree.
@@ -276,9 +330,25 @@ export class FixedDriverPage implements OnDestroy {
       if (pending === 0) this.loading = false;
     };
 
-    this.api.get<{ data: FixedRoute[] }>('/fixed/driver/routes').subscribe({
+    this.api.get<{ data: FixedRoute[]; driver_cities?: { id: number; name: string }[]; driver_scope?: string }>('/fixed/driver/routes').subscribe({
       next: (res) => {
         this.routes = res.data ?? [];
+        if (res.driver_cities && res.driver_cities.length) {
+          this.driverCities = res.driver_cities;
+        } else {
+          const map = new Map<number, string>();
+          for (const r of this.routes) {
+            if (r.city_id && r.city_name) map.set(r.city_id, r.city_name);
+            if (r.origin_city_id && r.origin_city_name) map.set(r.origin_city_id, r.origin_city_name);
+            if (r.dest_city_id && r.dest_city_name) map.set(r.dest_city_id, r.dest_city_name);
+          }
+          this.driverCities = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+        }
+
+        if (res.driver_scope) {
+          this.driverScope = res.driver_scope;
+        }
+
         if (this.selectedRouteId && !this.routes.some(r => r.id === this.selectedRouteId)) {
           this.selectedRouteId = null;
         }

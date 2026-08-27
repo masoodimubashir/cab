@@ -99,6 +99,199 @@
 }
 
 /* ==================== STEP 1: ROUTE LIST VIEW ==================== */
+
+/* Filter bar & chips */
+.route-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.route-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #FFFFFF;
+  border: 1.5px solid var(--fixed-border);
+  border-radius: 14px;
+  padding: 0 12px;
+  box-shadow: 0 2px 8px rgba(13, 27, 42, 0.04);
+
+  ion-icon {
+    font-size: 1.15rem;
+    color: var(--fixed-muted);
+    margin-right: 8px;
+  }
+
+  .route-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fixed-dark);
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 11px 0;
+
+    &::placeholder {
+      color: #94A3B8;
+      font-weight: 500;
+    }
+  }
+
+  .route-search-clear {
+    background: transparent;
+    border: none;
+    color: #94A3B8;
+    font-size: 1.1rem;
+    padding: 0;
+    cursor: pointer;
+  }
+}
+
+.route-scope-chips {
+  display: flex;
+  background: #EBF0F5;
+  padding: 4px;
+  border-radius: 14px;
+  gap: 4px;
+
+  .scope-chip {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 8px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--fixed-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+
+    ion-icon {
+      font-size: 0.95rem;
+    }
+
+    &.is-active {
+      background: #FFFFFF;
+      color: var(--fixed-dark);
+      box-shadow: 0 2px 8px rgba(13, 27, 42, 0.08);
+
+      ion-icon {
+        color: var(--fixed-green);
+      }
+    }
+  }
+}
+
+.route-city-chips-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+
+  .filter-label {
+    font-size: 0.76rem;
+    font-weight: 800;
+    color: var(--fixed-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+}
+
+.route-city-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+  -webkit-overflow-scrolling: touch;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  .city-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    background: #FFFFFF;
+    border: 1.5px solid var(--fixed-border);
+    color: var(--fixed-dark);
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+
+    ion-icon {
+      font-size: 0.95rem;
+      color: var(--fixed-muted);
+    }
+
+    &.is-active {
+      background: #E7F8EF;
+      border-color: var(--fixed-green);
+      color: var(--fixed-green);
+
+      ion-icon {
+        color: var(--fixed-green);
+      }
+    }
+  }
+}
+
+.route-pick-card__badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.city-pill {
+  padding: 3px 9px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 800;
+  background: #F1F5F9;
+  color: #475569;
+}
+
+.route-empty-state {
+  text-align: center;
+  padding: 36px 20px;
+
+  .route-empty-state__icon {
+    font-size: 2.8rem;
+    color: var(--fixed-muted);
+    margin-bottom: 8px;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--fixed-dark);
+    margin: 0 0 6px;
+  }
+
+  p {
+    font-size: 0.86rem;
+    color: var(--fixed-muted);
+    margin: 0 auto;
+    max-width: 280px;
+    line-height: 1.4;
+  }
+}
+
 .section-heading {
   display: flex;
   align-items: center;

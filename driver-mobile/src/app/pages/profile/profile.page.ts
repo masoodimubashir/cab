@@ -90,6 +90,8 @@ export class ProfilePage implements OnInit, OnDestroy {
 
   city_id: number | null = null;
   city_ids: number[] = [];
+  cityModalOpen = false;
+  citySearch = '';
   service_scope: ServiceScope | null = null;
   service_mode: ServiceMode | null = null;
   vehicle_type_id: number | null = null;
@@ -705,6 +707,47 @@ export class ProfilePage implements OnInit, OnDestroy {
     this.onboardingStep = 'profile';
   }
 
+  openCityModal(): void {
+    if (this.submitting) return;
+    this.citySearch = '';
+    this.cityModalOpen = true;
+  }
+
+  closeCityModal(): void {
+    this.cityModalOpen = false;
+    this.onOnboardingCityChange();
+  }
+
+  toggleCity(cityId: number): void {
+    if (!this.city_ids) this.city_ids = [];
+    const id = Number(cityId);
+    const idx = this.city_ids.indexOf(id);
+    if (idx >= 0) {
+      this.city_ids.splice(idx, 1);
+    } else {
+      this.city_ids.push(id);
+    }
+  }
+
+  isCitySelected(cityId: number): boolean {
+    if (!this.city_ids) return false;
+    return this.city_ids.includes(Number(cityId));
+  }
+
+  get selectedCityNames(): string {
+    if (!this.city_ids || !this.city_ids.length) return '';
+    const names = this.cities
+      .filter((c) => this.city_ids.includes(Number(c.id)))
+      .map((c) => c.name);
+    return names.join(', ');
+  }
+
+  get filteredCities(): CityOpt[] {
+    const q = (this.citySearch || '').trim().toLowerCase();
+    if (!q) return this.cities;
+    return this.cities.filter((c) => c.name.toLowerCase().includes(q));
+  }
+
   /** City chosen: reset dependent picks and load the city's ride products. */
   onOnboardingCityChange(): void {
     if (Array.isArray(this.city_ids) && this.city_ids.length > 0) {
@@ -738,6 +781,37 @@ export class ProfilePage implements OnInit, OnDestroy {
         this.rideModes = modes;
       },
     });
+  }
+
+  selectRideMode(m: RideModeOption & { key: string }): void {
+    this.selectedRideKey = m.key;
+    this.onRideModeChange();
+  }
+
+  selectVehicleType(vId: number): void {
+    this.vehicle_type_id = vId;
+    this.onOnboardingVehicleTypeChange();
+  }
+
+  selectCityVehicle(cvId: number): void {
+    this.city_vehicle_type_id = cvId;
+  }
+
+  getServiceModeIcon(mode?: string | null): string {
+    const m = (mode || '').toLowerCase();
+    if (m === 'fixed') return 'bus-outline';
+    if (m === 'shuttle') return 'git-network-outline';
+    return 'car-sport-outline';
+  }
+
+  getVehicleTypeIconByName(name?: string | null): string {
+    const n = (name || '').toLowerCase();
+    if (n.includes('bike') || n.includes('moto') || n.includes('two')) return 'bicycle-outline';
+    if (n.includes('auto') || n.includes('rickshaw')) return 'car-outline';
+    if (n.includes('sedan')) return 'car-sport-outline';
+    if (n.includes('suv') || n.includes('muv') || n.includes('innova')) return 'car-sport';
+    if (n.includes('hatch')) return 'car-outline';
+    return 'car-sport-outline';
   }
 
   /** Ride product chosen: derive ride_type_id + scope + mode from the pick. */
@@ -832,6 +906,32 @@ export class ProfilePage implements OnInit, OnDestroy {
     this.router.navigateByUrl('/tabs/dashboard', { replaceUrl: true });
   }
 
+  isDocRequired(doc: CatalogDoc): boolean {
+    const req = (doc.required || '').toString().toLowerCase();
+    return req.startsWith('mandatory') || req === 'required' || req === '1' || req === 'true';
+  }
+
+  getSlotOverallStatus(slot: DocUploadState): 'approved' | 'pending' | 'rejected' | 'missing' {
+    const statuses = slot.uploads.map((u) => u.existing?.status);
+    if (statuses.some((s) => s === 'rejected')) return 'rejected';
+    if (slot.uploads.length > 0 && slot.uploads.every((u) => u.existing?.status === 'approved')) return 'approved';
+    if (slot.uploads.some((u) => !!u.existing)) return 'pending';
+    return 'missing';
+  }
+
+  get uploadedMandatoryCount(): number {
+    const mandatory = this.docs.filter((s) => this.isDocRequired(s.doc));
+    if (!mandatory.length) {
+      return this.docs.filter((s) => s.uploads.some((u) => !!u.existing)).length;
+    }
+    return mandatory.filter((s) => s.uploads.every((u) => !!u.existing && u.existing.status !== 'rejected')).length;
+  }
+
+  get totalMandatoryCount(): number {
+    const mandatory = this.docs.filter((s) => this.isDocRequired(s.doc));
+    return mandatory.length || this.docs.length;
+  }
+
   /**
    * True when:
    * 1. No documents are configured in the system (docs.length === 0), OR
@@ -840,10 +940,7 @@ export class ProfilePage implements OnInit, OnDestroy {
    */
   get requiredDocsSubmitted(): boolean {
     if (!this.docs.length) return true; // nothing to upload
-    const mandatory = this.docs.filter((s) => {
-      const req = (s.doc.required || '').toString().toLowerCase();
-      return req.startsWith('mandatory') || req === 'required' || req === '1' || req === 'true';
-    });
+    const mandatory = this.docs.filter((s) => this.isDocRequired(s.doc));
     if (!mandatory.length) return true; // All documents are optional
     return mandatory.every((s) => s.uploads.every((u) => !!u.existing && u.existing.status !== 'rejected'));
   }
