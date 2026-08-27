@@ -29,6 +29,7 @@ WORKDIR /var/www/html
 
 # --- PHP-FPM + opcache tuning ---------------------------------------------
 COPY deploy/php.ini /usr/local/etc/php/conf.d/zz-dreamcabs.ini
+COPY deploy/fpm-pool.conf /usr/local/etc/php-fpm.d/zz-dreamcabs.conf
 
 # --- App code -------------------------------------------------------------
 # Copy composer files first so `composer install` is cached across code edits.

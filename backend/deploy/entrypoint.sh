@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Runs once per container start. For the web (php-fpm) role it prepares the app;
 # for reverb/queue roles we pass a different CMD so this still execs it cleanly.
-set -e
 
 # Every role: make sure the storage tree + perms exist. `storage` is a named
 # volume that starts empty on first boot, so we recreate the framework dirs
@@ -16,12 +15,12 @@ chmod -R 775 storage bootstrap/cache || true
 # the queue + reverb containers don't race on migrations.
 if [ "${RUN_RELEASE_TASKS:-false}" = "true" ]; then
   echo "[entrypoint] Waiting for database…"
-  for i in {1..30}; do
+  for i in {1..20}; do
     if php -r "new PDO('mysql:host=' . (getenv('DB_HOST') ?: 'mysql') . ';port=' . (getenv('DB_PORT') ?: '3306'), getenv('DB_USERNAME') ?: 'dreamcabs', getenv('DB_PASSWORD') ?: '');" 2>/dev/null; then
       echo "  …database is ready!"
       break
     fi
-    echo "  …db not ready, retrying in 2s ($i/30)..."; sleep 2
+    echo "  …db not ready, retrying in 1s ($i/20)..."; sleep 1
   done
 
   if [ -z "${APP_KEY:-}" ]; then
@@ -32,11 +31,15 @@ if [ "${RUN_RELEASE_TASKS:-false}" = "true" ]; then
   echo "[entrypoint] Running migrations…"
   php artisan migrate --force --no-interaction || true
 
-  echo "[entrypoint] Caching config / routes / events…"
+  echo "[entrypoint] Preparing cache…"
+  php artisan config:clear || true
+  php artisan route:clear || true
+  php artisan view:clear || true
+
   php artisan config:cache || true
   php artisan route:cache || true
-  php artisan event:cache || true
   php artisan storage:link || true
 fi
 
+echo "[entrypoint] Launching: $@"
 exec "$@"
