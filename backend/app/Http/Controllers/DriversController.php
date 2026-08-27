@@ -277,7 +277,7 @@ class DriversController extends Controller
                     'vehicle_type_id' => $d->vehicle_type_id,
                     'status' => $d->status,
                     'rejection_reason' => $d->rejection_reason,
-                    'file_url' => route('driver.me.documents.file', ['document' => $d->id]),
+                    'file_url' => url('/api/drivers/me/documents/' . $d->id . '/file'),
                     'label_values' => $d->label_values,
                     'uploaded_at' => optional($d->created_at)->toIso8601String(),
                 ])
@@ -291,8 +291,9 @@ class DriversController extends Controller
             : null;
 
         // City-level wallet warning config.
-        $citySettings = $driver?->city_id
-            ? CitySetting::query()->firstOrCreate(['city_id' => $driver->city_id])
+        $primaryCityId = $driver?->city_id ?: ($driver?->cities?->first()?->id);
+        $citySettings = $primaryCityId
+            ? CitySetting::query()->where('city_id', $primaryCityId)->first()
             : null;
 
         return response()->json([
