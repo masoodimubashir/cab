@@ -70,7 +70,7 @@ class DriverServiceModeService
 
     public function assertFixedMode(Driver $driver, ?string $scope = null): void
     {
-        if ($driver->active_service_mode !== Driver::SERVICE_MODE_FIXED || ($scope !== null && $driver->active_service_scope !== $scope)) {
+        if ($driver->active_service_mode !== Driver::SERVICE_MODE_FIXED) {
             abort(422, 'Choose your registered fixed service before opening this fixed vehicle.');
         }
 

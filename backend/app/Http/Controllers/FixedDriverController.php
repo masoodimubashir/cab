@@ -63,8 +63,7 @@ class FixedDriverController extends Controller
 
         // Route allocation is driven by the driver's assigned route groups
         // (DriverRouteAccessService) — NOT their vehicle. The driver sees the
-        // fixed routes their groups grant, still narrowed to their current online
-        // cities + scope + active routes. No groups assigned => empty list.
+        // fixed routes their groups grant, across all their registered cities.
         $allowedRouteIds = $this->routeAccess->effectiveRouteIds((int) $request->user()->id);
         if (empty($allowedRouteIds)) {
             return response()->json(['data' => []]);
@@ -74,9 +73,12 @@ class FixedDriverController extends Controller
             ->with('stops')
             ->whereIn('id', $allowedRouteIds)
             ->where('mode', 'fixed')
-            ->where('scope', $scope)
             ->where('is_active', true)
-            ->whereIn('city_id', $cityIds)
+            ->where(function ($q) use ($cityIds) {
+                $q->whereIn('city_id', $cityIds)
+                    ->orWhereIn('origin_city_id', $cityIds)
+                    ->orWhereIn('dest_city_id', $cityIds);
+            })
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
