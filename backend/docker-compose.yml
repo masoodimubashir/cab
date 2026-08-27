@@ -24,6 +24,7 @@ services:
     volumes:
       - ./.env:/var/www/html/.env
       - storage_data:/var/www/html/storage
+      - ./deploy/fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-dreamcabs.conf:ro
       - ./deploy/secrets:/secrets:ro     # put firebase.json here (see .env)
     depends_on:
       mysql:
