@@ -59,8 +59,8 @@
           </button>
         </div>
 
-        <!-- Scope Switcher: All / Local / Outstation -->
-        <div class="route-scope-chips">
+        <!-- Scope Switcher: only shown if driver has access to both scopes -->
+        <div class="route-scope-chips" *ngIf="hasMultipleScopes">
           <button
             type="button"
             class="scope-chip dc-press"
@@ -87,6 +87,12 @@
             <ion-icon name="navigate-outline"></ion-icon>
             Outstation
           </button>
+        </div>
+
+        <!-- Scope Banner: when locked to driver registered scope -->
+        <div class="route-registered-scope-badge" *ngIf="!hasMultipleScopes && driverScope">
+          <ion-icon [name]="driverScope === 'outstation' ? 'navigate-outline' : 'location-outline'"></ion-icon>
+          <span>{{ driverScope === 'outstation' ? 'Outstation Fixed Routes' : 'Local Fixed Routes' }}</span>
         </div>
 
         <!-- City Filter Chips (Kupwara, Sopore, etc.) -->

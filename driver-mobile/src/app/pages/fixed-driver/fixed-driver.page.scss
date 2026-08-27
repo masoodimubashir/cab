@@ -190,6 +190,24 @@
   }
 }
 
+.route-registered-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #E7F8EF;
+  border: 1px solid rgba(18, 179, 91, 0.25);
+  border-radius: 12px;
+  color: var(--fixed-green);
+  font-size: 0.84rem;
+  font-weight: 700;
+  width: fit-content;
+
+  ion-icon {
+    font-size: 1rem;
+  }
+}
+
 .route-city-chips-wrap {
   display: flex;
   align-items: center;
