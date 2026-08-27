@@ -288,9 +288,9 @@
         </div>
 
         <label class="pf-field">
-          <span class="pf-field__label">City <em>*</em></span>
-          <ion-select class="pf-input" interface="action-sheet" placeholder="Select your city"
-            [(ngModel)]="city_id" (ionChange)="onOnboardingCityChange()" [disabled]="submitting">
+          <span class="pf-field__label">Operating Cities <em>*</em></span>
+          <ion-select class="pf-input" [multiple]="true" interface="alert" placeholder="Select your operating cities"
+            [(ngModel)]="city_ids" (ionChange)="onOnboardingCityChange()" [disabled]="submitting">
             <ion-select-option *ngFor="let c of cities" [value]="c.id">{{ c.name }}</ion-select-option>
           </ion-select>
         </label>

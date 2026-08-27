@@ -35,6 +35,7 @@ interface DriverProfile {
   os_version: string | null;
   device_type: string | null;
   ride_type_name: string | null;
+  vehicle_type_id: number | null;
   vehicle_type_name: string | null;
   city_vehicle_type_id: number | null;
   city_vehicle_type_name: string | null;
@@ -42,7 +43,13 @@ interface DriverProfile {
   vehicle_model: string | null;
   vehicle_color: string | null;
   vehicle_reg_no: string | null;
+  city_id: number | null;
+  city_ids?: number[];
+  cities?: { id: number; name: string }[];
   city_name: string | null;
+  city_names?: string | null;
+  service_scope?: 'local' | 'outstation' | string | null;
+  service_mode?: 'private' | 'fixed' | 'shuttle' | string | null;
   approval_status: 'approved' | 'rejected' | 'pending' | string;
   is_online: boolean;
   is_suspended: boolean;
@@ -550,12 +557,14 @@ const BLOCK_REASONS = [
                 <button class="sp-edit-btn" (click)="openEditProfile()">Edit</button>
               </div>
               <div class="sp-list">
+                <div class="sp-row"><span>Assigned Cities</span><strong>{{ profile.city_names || profile.city_name || 'All Cities' }}</strong></div>
+                <div class="sp-row"><span>Service Scope</span><strong>{{ profile.service_scope ? (profile.service_scope | titlecase) : '—' }}</strong></div>
+                <div class="sp-row"><span>Service Mode</span><strong>{{ profile.service_mode ? (profile.service_mode | titlecase) : '—' }}</strong></div>
                 <div class="sp-row"><span>Registration No</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
                 <div class="sp-row"><span>Vehicle Model</span><strong>{{ profile.vehicle_model || '—' }}</strong></div>
                 <div class="sp-row"><span>Vehicle Colour</span><strong>{{ profile.vehicle_color || '—' }}</strong></div>
                 <div class="sp-row"><span>Vehicle Category</span><strong>{{ profile.vehicle_type_name || profile.vehicle_type || '—' }}</strong></div>
                 <div class="sp-row"><span>City Vehicle Type</span><strong>{{ profile.city_vehicle_type_name || '—' }}</strong></div>
-                <div class="sp-row"><span>Assigned City</span><strong>{{ profile.city_name || 'All Cities' }}</strong></div>
               </div>
             </div>
 
@@ -826,7 +835,7 @@ const BLOCK_REASONS = [
     </tm-modal>
 
     <!-- =================== Edit Profile Drawer =================== -->
-    <tm-drawer [open]="editOpen" title="Edit Driver Details" (closed)="editOpen = false">
+    <tm-drawer [open]="editOpen" title="Edit Driver & Service Details" (closed)="editOpen = false">
       <div slot="body" class="drawer-form-wrap" *ngIf="editForm">
         
         <div class="drawer-section-heading">Personal Details</div>
@@ -856,21 +865,60 @@ const BLOCK_REASONS = [
           <textarea class="form-control" rows="2" [(ngModel)]="editForm.address" maxlength="500"></textarea>
         </div>
 
+        <div class="drawer-section-heading mt-4">Operating Cities (Multi-Select)</div>
+        <div class="form-group">
+          <label class="form-label">Select All Cities where Driver Operates</label>
+          <div class="city-chips-grid">
+            <button
+              type="button"
+              *ngFor="let c of allCities"
+              class="city-chip"
+              [class.is-selected]="isEditCitySelected(c.id)"
+              (click)="toggleEditCity(c.id)"
+            >
+              <tm-icon [name]="isEditCitySelected(c.id) ? 'check' : 'plus'" [size]="12" />
+              <span>{{ c.name }}</span>
+            </button>
+          </div>
+          <small class="form-text-muted" *ngIf="!allCities.length">Loading cities list...</small>
+        </div>
+
+        <div class="drawer-section-heading mt-4">Service &amp; Mode Settings</div>
+        <div class="form-group-grid">
+          <div class="form-group">
+            <label class="form-label">Service Scope</label>
+            <select class="form-control" [(ngModel)]="editForm.service_scope">
+              <option value="">Not Assigned</option>
+              <option value="local">Local</option>
+              <option value="outstation">Outstation</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Service Mode</label>
+            <select class="form-control" [(ngModel)]="editForm.service_mode">
+              <option value="">Not Assigned</option>
+              <option value="private">Private Rides</option>
+              <option value="fixed">Fixed Routes</option>
+              <option value="shuttle">Shuttle</option>
+            </select>
+          </div>
+        </div>
+
         <div class="drawer-section-heading mt-4">Vehicle Information</div>
 
         <div class="form-group">
           <label class="form-label">Registration Number</label>
-          <input class="form-control mono" type="text" [(ngModel)]="editForm.vehicle_reg_no" maxlength="50" />
+          <input class="form-control mono" type="text" [(ngModel)]="editForm.vehicle_reg_no" maxlength="50" placeholder="e.g. JK01AB1234" />
         </div>
 
         <div class="form-group-grid">
           <div class="form-group">
-            <label class="form-label">Vehicle Model</label>
-            <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_model" maxlength="100" />
+            <label class="form-label">Vehicle Model Year / Details</label>
+            <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_model" maxlength="100" placeholder="e.g. 2022" />
           </div>
           <div class="form-group">
             <label class="form-label">Vehicle Colour</label>
-            <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_color" maxlength="100" />
+            <input class="form-control" type="text" [(ngModel)]="editForm.vehicle_color" maxlength="100" placeholder="e.g. White" />
           </div>
         </div>
 
@@ -1574,6 +1622,30 @@ const BLOCK_REASONS = [
       letter-spacing: 0.05em;
     }
     .form-group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-text-muted { font-size: 11px; color: var(--tm-text-muted); margin-top: 4px; display: block; }
+    .city-chips-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .city-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--tm-line-2);
+      background: var(--tm-canvas);
+      color: var(--tm-text);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--tm-font-body);
+      transition: all 0.15s ease;
+    }
+    .city-chip:hover { border-color: var(--tm-ink); }
+    .city-chip.is-selected {
+      background: var(--tm-green-tint, rgba(18,179,91,0.12));
+      border-color: var(--tm-green, #12b35b);
+      color: var(--tm-green-deep, #0e8f49);
+      font-weight: 700;
+    }
 
     .mono { font-family: var(--tm-font-mono) !important; font-variant-numeric: tabular-nums; }
     .text-emerald { color: var(--tm-green-deep) !important; }
@@ -1618,12 +1690,28 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Send OTP
   otpSending = false;
 
+  // Options for Edit Form
+  allCities: { id: number; name: string }[] = [];
+  globalVehicleTypes: { id: number; name: string }[] = [];
+  cityVehicleOptions: { id: number; display_name: string; vehicle_type_id?: number }[] = [];
+
   // Edit profile drawer
   editOpen = false;
   editSaving = false;
   editForm: {
-    name: string; phone: string; email: string; dob: string; address: string;
-    vehicle_reg_no: string; vehicle_model: string; vehicle_color: string;
+    name: string;
+    phone: string;
+    email: string;
+    dob: string;
+    address: string;
+    city_ids: number[];
+    service_scope: 'local' | 'outstation' | '';
+    service_mode: 'private' | 'fixed' | 'shuttle' | '';
+    vehicle_type_id: number | null;
+    city_vehicle_type_id: number | null;
+    vehicle_reg_no: string;
+    vehicle_model: string;
+    vehicle_color: string;
   } | null = null;
 
   // Block / Delete modal
@@ -1683,6 +1771,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.ensureOptionsLoaded();
     this.route.paramMap.subscribe((p) => {
       this.driverId = parseInt(p.get('id') || '0', 10);
       this.loadProfile();
@@ -1897,21 +1986,151 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   openEditProfile(): void {
     if (!this.profile) return;
+    this.ensureOptionsLoaded();
+
+    let cityIds: number[] = [];
+    if (this.profile.city_ids && Array.isArray(this.profile.city_ids) && this.profile.city_ids.length > 0) {
+      cityIds = this.profile.city_ids.map((id) => Number(id));
+    } else if (this.profile.cities && Array.isArray(this.profile.cities) && this.profile.cities.length > 0) {
+      cityIds = this.profile.cities.map((c) => Number(c.id));
+    } else if (this.profile.city_id != null) {
+      cityIds = [Number(this.profile.city_id)];
+    } else if (this.profile.city_name && this.allCities.length > 0) {
+      const match = this.allCities.find((c) => c.name.toLowerCase() === this.profile!.city_name!.toLowerCase());
+      if (match) cityIds = [Number(match.id)];
+    }
+
+    let vehicleTypeId = this.profile.vehicle_type_id != null ? Number(this.profile.vehicle_type_id) : null;
+    if (vehicleTypeId == null && (this.profile.vehicle_type_name || this.profile.vehicle_type) && this.globalVehicleTypes.length > 0) {
+      const name = (this.profile.vehicle_type_name || this.profile.vehicle_type || '').toLowerCase();
+      const match = this.globalVehicleTypes.find((vt) => vt.name.toLowerCase() === name);
+      if (match) vehicleTypeId = Number(match.id);
+    }
+
+    let formattedDob = '';
+    if (this.profile.dob) {
+      const m = String(this.profile.dob).match(/^\d{4}-\d{2}-\d{2}/);
+      formattedDob = m ? m[0] : '';
+    }
+
     this.editForm = {
       name: this.profile.name ?? '',
       phone: this.profile.phone ?? '',
       email: this.profile.email ?? '',
-      dob: this.profile.dob ?? '',
+      dob: formattedDob,
       address: this.profile.address ?? '',
+      city_ids: cityIds,
+      service_scope: (this.profile.service_scope as any) || 'local',
+      service_mode: (this.profile.service_mode as any) || 'fixed',
+      vehicle_type_id: vehicleTypeId,
+      city_vehicle_type_id: this.profile.city_vehicle_type_id != null ? Number(this.profile.city_vehicle_type_id) : null,
       vehicle_reg_no: this.profile.vehicle_reg_no ?? '',
       vehicle_model: this.profile.vehicle_model ?? '',
       vehicle_color: this.profile.vehicle_color ?? '',
     };
+    this.loadCityVehiclesForEdit();
     this.editOpen = true;
+  }
+
+  onCityVehicleChange(cityVehicleId: number | null): void {
+    if (!this.editForm) return;
+    if (cityVehicleId == null) {
+      this.editForm.city_vehicle_type_id = null;
+      return;
+    }
+    const cv = this.cityVehicleOptions.find((o) => Number(o.id) === Number(cityVehicleId));
+    if (cv && cv.vehicle_type_id != null) {
+      this.editForm.vehicle_type_id = Number(cv.vehicle_type_id);
+    }
+  }
+
+  toggleEditCity(cityId: number): void {
+    if (!this.editForm) return;
+    const cid = Number(cityId);
+    const idx = this.editForm.city_ids.findIndex((id) => Number(id) === cid);
+    if (idx >= 0) {
+      if (this.editForm.city_ids.length > 1) {
+        this.editForm.city_ids.splice(idx, 1);
+      } else {
+        this.toast.error('Driver must have at least one operating city.');
+      }
+    } else {
+      this.editForm.city_ids.push(cid);
+    }
+    this.loadCityVehiclesForEdit();
+  }
+
+  isEditCitySelected(cityId: number): boolean {
+    if (!this.editForm?.city_ids) return false;
+    const cid = Number(cityId);
+    return this.editForm.city_ids.some((id) => Number(id) === cid);
+  }
+
+  ensureOptionsLoaded(): void {
+    if (!this.allCities.length) {
+      this.api.get<{ data: { id: number; name: string }[] }>('/admin/cities').subscribe({
+        next: (res) => {
+          this.allCities = res.data ?? [];
+          if (this.editForm && (!this.editForm.city_ids || !this.editForm.city_ids.length) && this.profile?.city_name) {
+            const match = this.allCities.find((c) => c.name.toLowerCase() === this.profile!.city_name!.toLowerCase());
+            if (match) {
+              this.editForm.city_ids = [Number(match.id)];
+              this.loadCityVehiclesForEdit();
+            }
+          }
+        },
+      });
+    }
+    if (!this.globalVehicleTypes.length) {
+      this.api.get<{ data: { id: number; name: string }[] }>('/admin/vehicle-types-global').subscribe({
+        next: (res) => {
+          this.globalVehicleTypes = res.data ?? [];
+          if (this.editForm && this.editForm.vehicle_type_id == null && (this.profile?.vehicle_type_name || this.profile?.vehicle_type)) {
+            const name = (this.profile.vehicle_type_name || this.profile.vehicle_type || '').toLowerCase();
+            const match = this.globalVehicleTypes.find((vt) => vt.name.toLowerCase() === name);
+            if (match) {
+              this.editForm.vehicle_type_id = Number(match.id);
+              this.loadCityVehiclesForEdit();
+            }
+          }
+        },
+      });
+    }
+  }
+
+  loadCityVehiclesForEdit(): void {
+    if (!this.editForm || !this.editForm.city_ids.length) {
+      this.cityVehicleOptions = [];
+      return;
+    }
+    const primaryCityId = this.editForm.city_ids[0];
+    this.api.get<{ data?: any[]; vehicle_types?: any[] }>(`/admin/cities/${primaryCityId}/vehicle-types`).subscribe({
+      next: (res) => {
+        const list = (res.data ?? res.vehicle_types ?? []).map((cv: any) => ({
+          id: Number(cv.id),
+          display_name: cv.display_name,
+          vehicle_type_id: cv.vehicle_type_id != null ? Number(cv.vehicle_type_id) : undefined,
+        }));
+        this.cityVehicleOptions = list;
+        if (this.editForm?.city_vehicle_type_id) {
+          const match = list.find((o) => Number(o.id) === Number(this.editForm!.city_vehicle_type_id));
+          if (match && match.vehicle_type_id != null) {
+            this.editForm.vehicle_type_id = Number(match.vehicle_type_id);
+          }
+        }
+      },
+      error: () => {
+        this.cityVehicleOptions = [];
+      },
+    });
   }
 
   submitEditProfile(): void {
     if (!this.driverId || !this.editForm || this.editSaving) return;
+    if (!this.editForm.city_ids.length) {
+      this.toast.error('Please select at least one city.');
+      return;
+    }
     this.editSaving = true;
     const f = this.editForm;
     const payload = {
@@ -1920,15 +2139,20 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       email: f.email.trim() || null,
       dob: f.dob || null,
       address: f.address.trim() || null,
+      city_ids: f.city_ids,
+      service_scope: f.service_scope || null,
+      service_mode: f.service_mode || null,
+      vehicle_type_id: f.vehicle_type_id || null,
+      city_vehicle_type_id: f.city_vehicle_type_id || null,
       vehicle_reg_no: f.vehicle_reg_no.trim() || null,
       vehicle_model: f.vehicle_model.trim() || null,
       vehicle_color: f.vehicle_color.trim() || null,
     };
-    this.api.patch<{ driver: any }>(`/admin/drivers/${this.driverId}`, payload).subscribe({
+    this.api.patch<{ driver: any; message?: string }>(`/admin/drivers/${this.driverId}`, payload).subscribe({
       next: () => {
         this.editSaving = false;
         this.editOpen = false;
-        this.toast.success('Driver profile updated successfully');
+        this.toast.success('Driver profile & service updated successfully');
         this.loadProfile();
       },
       error: (err) => {

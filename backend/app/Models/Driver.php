@@ -6,7 +6,9 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable([
     'user_id',
@@ -116,6 +118,38 @@ class Driver extends Model
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class, 'city_id');
+    }
+
+    public function cities(): BelongsToMany
+    {
+        return $this->belongsToMany(City::class, 'driver_city', 'driver_id', 'city_id')
+            ->withTimestamps();
+    }
+
+    public function getCityIdsAttribute(): array
+    {
+        $pivotIds = $this->relationLoaded('cities')
+            ? $this->cities->pluck('id')->all()
+            : $this->cities()->pluck('cities.id')->all();
+
+        if ($this->city_id && !in_array((int) $this->city_id, array_map('intval', $pivotIds), true)) {
+            $pivotIds[] = (int) $this->city_id;
+        }
+
+        return array_values(array_unique(array_map('intval', $pivotIds)));
+    }
+
+    public function scopeForCity($q, int $cityId)
+    {
+        return $q->where(function ($sub) use ($cityId) {
+            $sub->where('drivers.city_id', $cityId)
+                ->orWhereExists(function ($sub2) use ($cityId) {
+                    $sub2->select(DB::raw(1))
+                        ->from('driver_city')
+                        ->whereColumn('driver_city.driver_id', 'drivers.id')
+                        ->where('driver_city.city_id', $cityId);
+                });
+        });
     }
 
     public function documents(): HasMany

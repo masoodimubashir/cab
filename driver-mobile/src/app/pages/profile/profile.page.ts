@@ -89,6 +89,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   rideScopes: RideScopeOption[] = [];
 
   city_id: number | null = null;
+  city_ids: number[] = [];
   service_scope: ServiceScope | null = null;
   service_mode: ServiceMode | null = null;
   vehicle_type_id: number | null = null;
@@ -307,6 +308,8 @@ export class ProfilePage implements OnInit, OnDestroy {
     this.api.get<{
       driver: {
         city_id?: number | null;
+        city_ids?: number[] | null;
+        cities?: Array<{ id: number; name: string }> | null;
         vehicle_type_id?: number | null;
         city_vehicle_type_id?: number | null;
         fleet_id?: number | null;
@@ -336,7 +339,12 @@ export class ProfilePage implements OnInit, OnDestroy {
         if (res.driver) {
           if (res.driver.dob) this.dob = res.driver.dob;
           if (res.driver.address) this.address = res.driver.address;
-          this.city_id = res.driver.city_id ?? this.city_id;
+          if (res.driver.city_ids && Array.isArray(res.driver.city_ids) && res.driver.city_ids.length > 0) {
+            this.city_ids = res.driver.city_ids;
+          } else if (res.driver.city_id) {
+            this.city_ids = [res.driver.city_id];
+          }
+          this.city_id = this.city_ids[0] ?? res.driver.city_id ?? this.city_id;
           this.vehicle_type_id = res.driver.vehicle_type_id ?? this.vehicle_type_id;
           this.city_vehicle_type_id = res.driver.city_vehicle_type_id ?? this.city_vehicle_type_id;
           this.fleet_id = res.driver.fleet_id ?? this.fleet_id;
@@ -360,6 +368,10 @@ export class ProfilePage implements OnInit, OnDestroy {
   // ── Computed Registered Info for Clean Read-Only View ──────
 
   get cityNameDisplay(): string {
+    if (this.city_ids && this.city_ids.length > 0) {
+      const names = this.cities.filter((c) => this.city_ids.includes(c.id)).map((c) => c.name);
+      if (names.length) return names.join(', ');
+    }
     if (!this.city_id) return 'Not registered';
     const c = this.cities.find((city) => city.id === this.city_id);
     return c ? c.name : 'Registered City';
@@ -695,6 +707,14 @@ export class ProfilePage implements OnInit, OnDestroy {
 
   /** City chosen: reset dependent picks and load the city's ride products. */
   onOnboardingCityChange(): void {
+    if (Array.isArray(this.city_ids) && this.city_ids.length > 0) {
+      this.city_id = this.city_ids[0];
+    } else if (this.city_id && (!this.city_ids || !this.city_ids.length)) {
+      this.city_ids = [this.city_id];
+    } else {
+      this.city_id = null;
+    }
+
     this.selectedRideKey = null;
     this.ride_type_id = null;
     this.service_scope = null;
@@ -740,7 +760,8 @@ export class ProfilePage implements OnInit, OnDestroy {
     this.error = null;
     this.message = null;
 
-    if (!this.city_id) { this.error = 'Please select your city.'; return; }
+    const chosenCityIds = this.city_ids && this.city_ids.length ? this.city_ids : (this.city_id ? [this.city_id] : []);
+    if (!chosenCityIds.length) { this.error = 'Please select your operating city.'; return; }
     if (!this.ride_type_id || !this.service_scope || !this.service_mode) { this.error = 'Please select your service.'; return; }
     if (!this.vehicle_type_id) { this.error = 'Please select your vehicle type.'; return; }
     if (!this.city_vehicle_type_id) { this.error = 'Please select your vehicle.'; return; }
@@ -762,7 +783,8 @@ export class ProfilePage implements OnInit, OnDestroy {
     fd.append('ride_type_id', String(this.ride_type_id));
     fd.append('vehicle_type_id', String(this.vehicle_type_id));
     fd.append('city_vehicle_type_id', String(this.city_vehicle_type_id));
-    fd.append('city_id', String(this.city_id));
+    fd.append('city_id', String(chosenCityIds[0]));
+    chosenCityIds.forEach((cid) => fd.append('city_ids[]', String(cid)));
     fd.append('service_scope', this.service_scope);
     fd.append('service_mode', this.service_mode);
     const vtName = this.selectedVehicleTypeOpt?.name;

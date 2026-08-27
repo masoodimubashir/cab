@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core';
 export interface DriverRegistrationDraft {
   step: 1 | 2 | 3 | 4;
   city_id: number | null;
+  city_ids?: number[];
   service_scope: 'local' | 'outstation' | null;
   service_mode: 'private' | 'fixed' | 'shuttle' | null;
   vehicle_type_id: number | null;

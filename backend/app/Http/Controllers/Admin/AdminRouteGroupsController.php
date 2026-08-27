@@ -98,7 +98,7 @@ class AdminRouteGroupsController
 
         $ids = array_values(array_unique(array_map('intval', $data['driver_user_ids'])));
         if ($ids) {
-            $validCount = Driver::query()->whereIn('user_id', $ids)->where('city_id', $city->id)->count();
+            $validCount = Driver::query()->whereIn('user_id', $ids)->forCity((int) $city->id)->count();
             if ($validCount !== count($ids)) {
                 abort(422, 'Some drivers are not registered in this city.');
             }
@@ -116,8 +116,8 @@ class AdminRouteGroupsController
     public function cityDrivers(City $city)
     {
         $drivers = Driver::query()
-            ->where('city_id', $city->id)
-            ->with('user:id,name,phone')
+            ->forCity((int) $city->id)
+            ->with(['user:id,name,phone', 'cities:id,name'])
             ->get()
             ->map(fn (Driver $d) => [
                 'id' => (int) $d->id,

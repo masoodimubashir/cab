@@ -46,6 +46,8 @@ class DriversController extends Controller
             // Onboarding wizard now also captures the city + fleet. Both are
             // nullable (fleet = "none" allowed; city set later by admin if missing).
             'city_id' => ['nullable', 'integer', 'exists:cities,id'],
+            'city_ids' => ['nullable', 'array', 'min:1'],
+            'city_ids.*' => ['integer', 'exists:cities,id'],
             'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
             'service_scope' => ['nullable', 'string', 'in:local,outstation'],
             'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
@@ -59,9 +61,20 @@ class DriversController extends Controller
             'photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
+        $chosenCityIds = [];
+        if (! empty($data['city_ids'])) {
+            $chosenCityIds = array_values(array_unique(array_map('intval', $data['city_ids'])));
+        } elseif (! empty($data['city_id'])) {
+            $chosenCityIds = [(int) $data['city_id']];
+        } elseif ($existing && ! empty($existing->city_ids)) {
+            $chosenCityIds = $existing->city_ids;
+        }
+
         if (!$existing || $existing->approval_status !== 'approved') {
+            if (empty($chosenCityIds)) {
+                return response()->json(['message' => 'Please pick your city.'], 422);
+            }
             foreach ([
-                'city_id' => 'Please pick your city.',
                 'service_scope' => 'Choose the service area before continuing.',
                 'service_mode' => 'Choose the service type before continuing.',
                 'vehicle_type_id' => 'Please pick your vehicle type.',
@@ -75,10 +88,11 @@ class DriversController extends Controller
                 }
             }
 
+            $primaryCityId = $chosenCityIds[0] ?? null;
             $hasFleetChoices = Fleet::query()
                 ->where('is_active', true)
-                ->where(function ($q) use ($data, $existing) {
-                    $cityId = $data['city_id'] ?? $existing?->city_id;
+                ->where(function ($q) use ($primaryCityId, $existing) {
+                    $cityId = $primaryCityId ?? $existing?->city_id;
                     $q->whereNull('city_id');
                     if ($cityId) $q->orWhere('city_id', (int) $cityId);
                 })
@@ -104,7 +118,7 @@ class DriversController extends Controller
             $cityVehicle = CityVehicleType::query()->find((int) $data['city_vehicle_type_id']);
             if (! $cityVehicle
                 || ! $cityVehicle->is_active
-                || (int) $cityVehicle->city_id !== (int) ($data['city_id'] ?? $existing?->city_id)
+                || (! empty($chosenCityIds) && ! in_array((int) $cityVehicle->city_id, $chosenCityIds, true))
                 || (int) $cityVehicle->vehicle_type_id !== (int) ($data['vehicle_type_id'] ?? $existing?->vehicle_type_id)) {
                 return response()->json([
                     'message' => 'Selected city vehicle does not match your city and vehicle type.',
@@ -173,7 +187,7 @@ class DriversController extends Controller
             'vehicle_model' => $data['vehicle_model'] ?? ($existing->vehicle_model ?? null),
             'vehicle_color' => $data['vehicle_color'] ?? ($existing->vehicle_color ?? null),
             'vehicle_reg_no' => $data['vehicle_reg_no'] ?? ($existing->vehicle_reg_no ?? null),
-            'city_id' => array_key_exists('city_id', $data) ? $data['city_id'] : ($existing->city_id ?? null),
+            'city_id' => !empty($chosenCityIds) ? $chosenCityIds[0] : ($existing->city_id ?? null),
             'city_vehicle_type_id' => array_key_exists('city_vehicle_type_id', $data) ? $data['city_vehicle_type_id'] : ($existing->city_vehicle_type_id ?? null),
             'fleet_id' => array_key_exists('fleet_id', $data) ? $data['fleet_id'] : ($existing->fleet_id ?? null),
         ];
@@ -217,12 +231,16 @@ class DriversController extends Controller
             $payload,
         );
 
+        if (! empty($chosenCityIds)) {
+            $driver->cities()->sync($chosenCityIds);
+        }
+
         $user->addRole('driver');
 
         $fresh = $user->fresh();
 
         return response()->json([
-            'driver' => $driver->fresh(),
+            'driver' => $driver->fresh(['cities:id,name']),
             'user' => [
                 'id' => $fresh->id,
                 'name' => $fresh->name,
@@ -239,7 +257,10 @@ class DriversController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
-        $driver = Driver::query()->where('user_id', $user->id)->first();
+        $driver = Driver::query()->where('user_id', $user->id)->with('cities:id,name')->first();
+        if ($driver) {
+            $driver->append('city_ids');
+        }
 
         $documents = [];
         if ($driver) {

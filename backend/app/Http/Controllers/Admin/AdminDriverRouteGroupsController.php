@@ -23,8 +23,9 @@ class AdminDriverRouteGroupsController
 
     public function index(Driver $driver)
     {
-        $groups = $driver->city_id
-            ? RouteGroup::query()->where('city_id', $driver->city_id)->orderBy('name')->get(['id', 'name', 'is_active'])
+        $cityIds = $driver->city_ids;
+        $groups = !empty($cityIds)
+            ? RouteGroup::query()->whereIn('city_id', $cityIds)->with('city:id,name')->orderBy('name')->get(['id', 'city_id', 'name', 'is_active'])
             : collect();
 
         return response()->json([
@@ -32,6 +33,8 @@ class AdminDriverRouteGroupsController
             'groups' => $groups->map(fn (RouteGroup $g) => [
                 'id' => $g->id,
                 'name' => $g->name,
+                'city_id' => $g->city_id,
+                'city_name' => $g->city?->name,
                 'is_active' => (bool) $g->is_active,
             ])->values(),
             'effective_routes' => $this->effectiveRoutesPayload($driver),
@@ -47,13 +50,14 @@ class AdminDriverRouteGroupsController
 
         $groupIds = array_values(array_unique(array_map('intval', $data['group_ids'])));
 
+        $cityIds = $driver->city_ids;
         if ($groupIds) {
             $validCount = RouteGroup::query()
                 ->whereIn('id', $groupIds)
-                ->where('city_id', $driver->city_id)
+                ->whereIn('city_id', $cityIds)
                 ->count();
             if ($validCount !== count($groupIds)) {
-                abort(422, "Some route groups do not belong to this driver's city.");
+                abort(422, "Some route groups do not belong to this driver's registered cities.");
             }
         }
 
