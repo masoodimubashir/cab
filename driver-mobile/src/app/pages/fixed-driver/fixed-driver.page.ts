@@ -190,6 +190,11 @@ export class FixedDriverPage implements OnDestroy {
     });
   }
 
+  get hasMultipleScopes(): boolean {
+    const scopes = new Set(this.routes.map((r) => r.scope));
+    return scopes.size > 1;
+  }
+
   setCityFilter(cityId: number | 'all'): void {
     this.selectedCityFilter = cityId;
   }
