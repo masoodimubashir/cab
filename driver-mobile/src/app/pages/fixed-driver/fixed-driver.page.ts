@@ -62,6 +62,22 @@ interface SeatLayout {
   seat_count: number;
 }
 
+export interface SeatMapCell {
+  row: number;
+  col: number;
+  kind: 'seat' | 'blocked' | 'aisle';
+  label: string | null;
+  category?: string | null;
+  price_delta?: number;
+  status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'BLOCKED' | 'AISLE';
+}
+
+export interface DepartureSeatMap {
+  departure: { id: number; route_id: number; status: string };
+  layout: { id: number; name: string; rows: number; cols: number };
+  cells: SeatMapCell[];
+}
+
 interface FixedPassenger {
   id: number;
   customer_name: string | null;
@@ -222,14 +238,34 @@ export class FixedDriverPage implements OnDestroy {
   citySettings: FixedCitySettings | null = null;
   selectedStopDetail: StopDetailModalData | null = null;
   passengerFilter: 'all' | 'waiting' | 'onboard' | 'done' = 'all';
-  sheetTab: 'passengers' | 'stops' = 'passengers';
+  sheetTab: 'passengers' | 'stops' | 'seats' = 'passengers';
   showStopsTimeline = false;
   passengerSheetExpanded = true;
   detailsModalOpen = false;
   fixedLocationStreaming = false;
 
-  openDetailsModal(): void {
+  // Seat layout map state
+  seatMapData: DepartureSeatMap | null = null;
+  seatMapLoading = false;
+  seatActionBusy = false;
+
+  openDetailsModal(tab: 'passengers' | 'stops' | 'seats' = 'passengers'): void {
+    this.sheetTab = tab;
     this.detailsModalOpen = true;
+    if (this.activeVehicle) {
+      this.loadDepartureSeatMap(this.activeVehicle.id);
+    }
+  }
+
+  openDetailsModalWithTab(tab: 'passengers' | 'stops' | 'seats'): void {
+    this.openDetailsModal(tab);
+  }
+
+  selectSheetTab(tab: 'passengers' | 'stops' | 'seats'): void {
+    this.sheetTab = tab;
+    if (tab === 'seats' && this.activeVehicle && !this.seatMapData) {
+      this.loadDepartureSeatMap(this.activeVehicle.id);
+    }
   }
 
   closeDetailsModal(): void {
@@ -1099,11 +1135,11 @@ export class FixedDriverPage implements OnDestroy {
   canStart(vehicle: FixedVehicle | null): boolean {
     if (!vehicle) return false;
     const status = (vehicle.status || '').toUpperCase();
-    return !['DEPARTED', 'COMPLETED', 'CANCELLED', 'DISPATCHED'].includes(status);
+    return status === 'FORMING' && !this.rideStarted;
   }
 
   canComplete(vehicle: FixedVehicle | null): boolean {
-    if (!vehicle) return false;
+    if (!vehicle || !this.rideStarted) return false;
     const status = (vehicle.status || '').toUpperCase();
     return !['COMPLETED', 'CANCELLED'].includes(status)
       && !this.passengers.some((passenger) => ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((passenger.status || '').toUpperCase()));
@@ -1113,10 +1149,11 @@ export class FixedDriverPage implements OnDestroy {
     if (!vehicle) return false;
     const status = (vehicle.status || '').toUpperCase();
     return status === 'FORMING'
+      && !this.rideStarted
       && (vehicle.seats_taken || 0) <= 0
       && (vehicle.active_hold_count || 0) <= 0
       && (vehicle.reservation_count || 0) <= 0
-      && !this.passengers.length;
+      && !this.passengers.some((p) => !['CANCELLED', 'NO_SHOW'].includes((p.status || '').toUpperCase()));
   }
 
   /** The ride is under way — the backend only boards/drops on a started vehicle. */
@@ -1217,6 +1254,135 @@ export class FixedDriverPage implements OnDestroy {
       default:
         return passenger.status || 'Status';
     }
+  }
+
+  loadDepartureSeatMap(departureId: number): void {
+    this.seatMapLoading = true;
+    this.api.get<DepartureSeatMap>(`/fixed/departures/${departureId}/seat-map`)
+      .pipe(finalize(() => { this.seatMapLoading = false; }))
+      .subscribe({
+        next: (res) => {
+          this.seatMapData = res;
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not load vehicle seat layout.';
+        },
+      });
+  }
+
+  get availableSeatCellsCount(): number {
+    return (this.seatMapData?.cells || []).filter((c) => c.kind === 'seat' && c.status === 'AVAILABLE').length;
+  }
+
+  get bookedSeatCellsCount(): number {
+    return (this.seatMapData?.cells || []).filter((c) => c.kind === 'seat' && (c.status === 'BOOKED' || c.status === 'HELD')).length;
+  }
+
+  get blockedSeatCellsCount(): number {
+    return (this.seatMapData?.cells || []).filter((c) => c.kind === 'seat' && c.status === 'BLOCKED').length;
+  }
+
+  get seatMapRows(): { rowIndex: number; cells: SeatMapCell[] }[] {
+    if (!this.seatMapData || !this.seatMapData.cells) return [];
+    const rowMap = new Map<number, SeatMapCell[]>();
+    for (const cell of this.seatMapData.cells) {
+      const list = rowMap.get(cell.row) || [];
+      list.push(cell);
+      rowMap.set(cell.row, list);
+    }
+    return Array.from(rowMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([rowIndex, cells]) => ({
+        rowIndex,
+        cells: cells.sort((a, b) => a.col - b.col),
+      }));
+  }
+
+  async onSeatCellTap(cell: SeatMapCell): Promise<void> {
+    if (cell.kind !== 'seat' || !cell.label || !this.activeVehicle) return;
+
+    if (cell.status === 'AVAILABLE') {
+      const alert = await this.alerts.create({
+        header: `Block Seat ${cell.label}?`,
+        subHeader: 'Walk-in / Offline Passenger',
+        message: `Marking seat ${cell.label} will block online app customers from booking it.`,
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          {
+            text: 'Block Seat',
+            role: 'confirm',
+            handler: () => {
+              this.blockSeat(cell.label!);
+            },
+          },
+        ],
+      });
+      await alert.present();
+    } else if (cell.status === 'BLOCKED') {
+      const alert = await this.alerts.create({
+        header: `Unblock Seat ${cell.label}?`,
+        subHeader: 'Passenger Dropped Off',
+        message: `Release seat ${cell.label} and make it available for online customer bookings again?`,
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          {
+            text: 'Unblock & Make Available',
+            role: 'confirm',
+            handler: () => {
+              this.unblockSeat(cell.label!);
+            },
+          },
+        ],
+      });
+      await alert.present();
+    } else if (cell.status === 'BOOKED' || cell.status === 'HELD') {
+      const p = this.passengers.find((pass) => (pass.seat_labels || []).includes(cell.label!));
+      const msg = p
+        ? `Booked by: ${p.customer_name || 'Passenger'} (${p.customer_phone || 'Online'})\nFrom: ${p.board || 'Origin'} → ${p.drop || 'Destination'}`
+        : 'This seat is reserved online by an app customer.';
+      const alert = await this.alerts.create({
+        header: `Seat ${cell.label} (Online Booked)`,
+        message: msg,
+        buttons: ['OK'],
+      });
+      await alert.present();
+    }
+  }
+
+  blockSeat(label: string): void {
+    if (!this.activeVehicle) return;
+    this.seatActionBusy = true;
+    this.api.post<{ message: string; seat_map: DepartureSeatMap; vehicle: FixedVehicle }>(
+      `/fixed/departures/${this.activeVehicle.id}/seats/block`,
+      { label }
+    ).pipe(finalize(() => { this.seatActionBusy = false; })).subscribe({
+      next: (res) => {
+        if (res.seat_map) this.seatMapData = res.seat_map;
+        if (res.vehicle) this.activeVehicle = { ...this.activeVehicle, ...res.vehicle };
+        void this.showToast(res.message || `Seat ${label} blocked.`);
+      },
+      error: (err) => {
+        this.error = err?.error?.message || `Could not block seat ${label}.`;
+      },
+    });
+  }
+
+  unblockSeat(label: string): void {
+    if (!this.activeVehicle) return;
+    this.seatActionBusy = true;
+    this.api.post<{ message: string; seat_map: DepartureSeatMap; vehicle: FixedVehicle }>(
+      `/fixed/departures/${this.activeVehicle.id}/seats/unblock`,
+      { label }
+    ).pipe(finalize(() => { this.seatActionBusy = false; })).subscribe({
+      next: (res) => {
+        if (res.seat_map) this.seatMapData = res.seat_map;
+        if (res.vehicle) this.activeVehicle = { ...this.activeVehicle, ...res.vehicle };
+        void this.showToast(res.message || `Seat ${label} released.`);
+      },
+      error: (err) => {
+        this.error = err?.error?.message || `Could not unblock seat ${label}.`;
+      },
+    });
   }
 
   passengerStatusColor(passenger: FixedPassenger): string {

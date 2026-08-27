@@ -969,6 +969,44 @@ class FixedDriverController extends Controller
         return $driver;
     }
 
+    public function seatMap(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+        return response()->json($this->seatMap->mapForDeparture($departure));
+    }
+
+    public function blockSeat(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+        $data = $request->validate([
+            'label' => ['required', 'string', 'max:20'],
+        ]);
+
+        $map = $this->seatMap->blockSeatForDeparture($departure, trim($data['label']));
+
+        return response()->json([
+            'message' => "Seat {$data['label']} marked as offline walk-in.",
+            'seat_map' => $map,
+            'vehicle' => $this->departures->shapeAdminDeparture($departure->fresh(['route', 'driver'])),
+        ]);
+    }
+
+    public function unblockSeat(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+        $data = $request->validate([
+            'label' => ['required', 'string', 'max:20'],
+        ]);
+
+        $map = $this->seatMap->unblockSeatForDeparture($departure, trim($data['label']));
+
+        return response()->json([
+            'message' => "Seat {$data['label']} released back to online bookings.",
+            'seat_map' => $map,
+            'vehicle' => $this->departures->shapeAdminDeparture($departure->fresh(['route', 'driver'])),
+        ]);
+    }
+
     private function resolveRideTypeId(Route $route): int
     {
         $cvt = $route->cityVehicleType()->first();

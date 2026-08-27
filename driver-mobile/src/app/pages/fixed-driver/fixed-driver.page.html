@@ -364,7 +364,8 @@
 
         <!-- 3. FLOATING BOTTOM BAR WITH MANIFEST FAB & PRIMARY CTA -->
         <div class="dc-map-floating-bottom-bar">
-          <!-- Primary Lifecycle Action (Start / Complete / Close) -->
+          <!-- Primary Lifecycle Action (Start / Complete / Cancel) -->
+          <!-- 1. START RIDE (Before departure) -->
           <button 
             class="dc-float-cta dc-float-cta--start dc-press" 
             *ngIf="canStart(vehicle)" 
@@ -375,9 +376,10 @@
             <span>Start Ride</span>
           </button>
 
+          <!-- 2. COMPLETE RIDE (Only shown once the ride has started) -->
           <button 
             class="dc-float-cta dc-float-cta--complete dc-press" 
-            *ngIf="rideStarted || canComplete(vehicle)" 
+            *ngIf="rideStarted" 
             (click)="completeRide()" 
             [disabled]="busy || !canComplete(vehicle)"
           >
@@ -385,33 +387,53 @@
             <span>Complete Ride</span>
           </button>
 
+          <!-- 3. CANCEL / CLOSE (If 0 bookings before departure) -->
           <button 
             class="dc-float-cta dc-float-cta--close dc-press" 
-            *ngIf="canCloseVehicle(vehicle) && !canStart(vehicle)" 
+            *ngIf="canCloseVehicle(vehicle)" 
             (click)="closeBookings()" 
             [disabled]="busy"
           >
             <ion-icon name="close-circle-outline"></ion-icon>
-            <span>Close</span>
+            <span>Cancel Ride</span>
           </button>
 
-          <!-- Floating Button to Open Full Details Modal -->
-          <button 
-            type="button" 
-            class="dc-float-manifest-btn dc-press" 
-            (click)="openDetailsModal()" 
-            aria-label="Open Passenger Details"
-          >
-            <div class="dc-manifest-btn-icon-wrap">
-              <ion-icon name="people"></ion-icon>
-              <span class="dc-manifest-badge" *ngIf="waitingCount > 0">{{ waitingCount }}</span>
-            </div>
-            <div class="dc-manifest-btn-text">
-              <strong>Passengers</strong>
-              <span>{{ activeManifestPassengers.length }} booked · {{ vehicle.seats_remaining }} free</span>
-            </div>
-            <ion-icon name="chevron-forward-outline" class="dc-manifest-arrow"></ion-icon>
-          </button>
+          <!-- Floating Action Sheets Quick Launcher -->
+          <div class="dc-float-sheets-bar">
+            <!-- 1. Passengers Sheet Button -->
+            <button 
+              type="button" 
+              class="dc-float-manifest-btn dc-press" 
+              (click)="openDetailsModalWithTab('passengers')" 
+              aria-label="Open Passenger Details"
+            >
+              <div class="dc-manifest-btn-icon-wrap">
+                <ion-icon name="people"></ion-icon>
+                <span class="dc-manifest-badge" *ngIf="waitingCount > 0">{{ waitingCount }}</span>
+              </div>
+              <div class="dc-manifest-btn-text">
+                <strong>Passengers</strong>
+                <span>{{ activeManifestPassengers.length }} booked</span>
+              </div>
+            </button>
+
+            <!-- 2. Seats Layout Sheet Button (One-tap walk-in manager) -->
+            <button 
+              type="button" 
+              class="dc-float-manifest-btn dc-float-manifest-btn--seats dc-press" 
+              (click)="openDetailsModalWithTab('seats')" 
+              aria-label="Open Vehicle Seat Layout"
+            >
+              <div class="dc-manifest-btn-icon-wrap dc-manifest-btn-icon-wrap--seats">
+                <ion-icon name="car-outline"></ion-icon>
+                <span class="dc-manifest-badge dc-manifest-badge--blocked" *ngIf="blockedSeatCellsCount > 0">{{ blockedSeatCellsCount }}</span>
+              </div>
+              <div class="dc-manifest-btn-text">
+                <strong>Seats Layout</strong>
+                <span>{{ vehicle.seats_remaining }} free</span>
+              </div>
+            </button>
+          </div>
         </div>
 
       </div>
@@ -460,31 +482,34 @@
               </div>
 
               <!-- Contextual Ride Action Button inside Overview Card -->
-              <div class="dc-overview-actions" *ngIf="canStart(vehicle) || canComplete(vehicle) || canCloseVehicle(vehicle)">
+              <div class="dc-overview-actions" *ngIf="canStart(vehicle) || rideStarted || canCloseVehicle(vehicle)">
+                <!-- 1. START RIDE (Before departure) -->
                 <button class="dc-modal-action-cta dc-modal-action-cta--start dc-press" *ngIf="canStart(vehicle)" (click)="startRide()" [disabled]="busy">
                   <ion-icon name="play"></ion-icon>
                   <span>Start Fixed Ride</span>
                 </button>
 
-                <button class="dc-modal-action-cta dc-modal-action-cta--complete dc-press" *ngIf="rideStarted || canComplete(vehicle)" (click)="completeRide()" [disabled]="busy || !canComplete(vehicle)">
+                <!-- 2. COMPLETE RIDE (Only shown once the ride has started) -->
+                <button class="dc-modal-action-cta dc-modal-action-cta--complete dc-press" *ngIf="rideStarted" (click)="completeRide()" [disabled]="busy || !canComplete(vehicle)">
                   <ion-icon name="checkmark-done-circle"></ion-icon>
                   <span>Complete Fixed Ride</span>
                 </button>
 
-                <button class="dc-modal-action-cta dc-modal-action-cta--close dc-press" *ngIf="canCloseVehicle(vehicle) && !canStart(vehicle)" (click)="closeBookings()" [disabled]="busy">
+                <!-- 3. CANCEL / CLOSE (If 0 bookings before departure) -->
+                <button class="dc-modal-action-cta dc-modal-action-cta--close dc-press" *ngIf="canCloseVehicle(vehicle)" (click)="closeBookings()" [disabled]="busy">
                   <ion-icon name="close-circle-outline"></ion-icon>
-                  <span>Close Bookings</span>
+                  <span>Cancel / Close Ride</span>
                 </button>
               </div>
             </div>
 
-            <!-- Section 2: Segmented Tabs (Passengers vs Stops) -->
+            <!-- Section 2: Segmented Tabs (Passengers vs Stops vs Seats) -->
             <div class="dc-modal-nav-tabs">
               <button 
                 type="button" 
                 class="dc-modal-tab-btn dc-press" 
                 [class.is-active]="sheetTab === 'passengers'" 
-                (click)="sheetTab = 'passengers'"
+                (click)="selectSheetTab('passengers')"
               >
                 <ion-icon name="people"></ion-icon>
                 <span>Passengers ({{ activeManifestPassengers.length }})</span>
@@ -495,10 +520,21 @@
                 type="button" 
                 class="dc-modal-tab-btn dc-press" 
                 [class.is-active]="sheetTab === 'stops'" 
-                (click)="sheetTab = 'stops'"
+                (click)="selectSheetTab('stops')"
               >
                 <ion-icon name="git-commit-outline"></ion-icon>
                 <span>Stops ({{ stopGuide.length }})</span>
+              </button>
+
+              <button 
+                type="button" 
+                class="dc-modal-tab-btn dc-press" 
+                [class.is-active]="sheetTab === 'seats'" 
+                (click)="selectSheetTab('seats')"
+              >
+                <ion-icon name="car-outline"></ion-icon>
+                <span>Seats</span>
+                <span class="dc-modal-tab-badge dc-modal-tab-badge--blocked" *ngIf="blockedSeatCellsCount > 0">{{ blockedSeatCellsCount }}</span>
               </button>
             </div>
 
@@ -694,6 +730,106 @@
                     </div>
                   </div>
                 </div>
+              </div>
+
+            </div>
+
+            <!-- TAB 3: VEHICLE SEAT LAYOUT & WALK-IN BLOCK/UNBLOCK VIEW -->
+            <div class="dc-modal-tab-pane" *ngIf="sheetTab === 'seats'">
+              
+              <!-- Seat Status Counter Header -->
+              <div class="dc-seat-legend-bar">
+                <div class="dc-seat-legend-item">
+                  <span class="seat-dot seat-dot--available"></span>
+                  <strong>{{ availableSeatCellsCount }}</strong>
+                  <small>Available</small>
+                </div>
+                <div class="dc-seat-legend-item">
+                  <span class="seat-dot seat-dot--booked"></span>
+                  <strong>{{ bookedSeatCellsCount }}</strong>
+                  <small>Online Booked</small>
+                </div>
+                <div class="dc-seat-legend-item">
+                  <span class="seat-dot seat-dot--blocked"></span>
+                  <strong>{{ blockedSeatCellsCount }}</strong>
+                  <small>Offline Walk-in</small>
+                </div>
+              </div>
+
+              <!-- Driver Guidance Banner -->
+              <div class="dc-seat-guidance-card">
+                <ion-icon name="information-circle-outline"></ion-icon>
+                <div class="dc-seat-guidance-text">
+                  <strong>Manage Offline Walk-in Passengers</strong>
+                  <p>Tap an <span class="badge-text-green">Available</span> seat to mark walk-in. Tap a <span class="badge-text-black">Blocked</span> seat to release when dropped.</p>
+                </div>
+              </div>
+
+              <!-- Loader while fetching seat map -->
+              <div class="fixed-loading" *ngIf="seatMapLoading">
+                <ion-spinner name="crescent"></ion-spinner>
+                <span>Loading vehicle layout…</span>
+              </div>
+
+              <!-- Vehicle Cabin Representation -->
+              <div class="dc-vehicle-cabin" *ngIf="!seatMapLoading && seatMapData">
+                
+                <!-- Windshield / Front Cabin Header -->
+                <div class="dc-cabin-front">
+                  <div class="dc-cabin-driver-seat">
+                    <ion-icon name="disc-outline"></ion-icon>
+                    <span>Driver</span>
+                  </div>
+                  <div class="dc-cabin-dashboard-label">
+                    <span>Front Dashboard</span>
+                  </div>
+                </div>
+
+                <!-- 2D Seats Grid Rows -->
+                <div class="dc-cabin-grid">
+                  <div class="dc-cabin-row" *ngFor="let row of seatMapRows">
+                    
+                    <ng-container *ngFor="let cell of row.cells">
+                      
+                      <!-- Aisle spacer -->
+                      <div class="dc-cabin-cell dc-cabin-cell--aisle" *ngIf="cell.kind === 'aisle'"></div>
+
+                      <!-- Standard Blank Blocked cell -->
+                      <div class="dc-cabin-cell dc-cabin-cell--spacer" *ngIf="cell.kind === 'blocked'"></div>
+
+                      <!-- Actual Passenger Seat -->
+                      <button 
+                        type="button"
+                        class="dc-cabin-cell dc-cabin-seat dc-press"
+                        *ngIf="cell.kind === 'seat'"
+                        [class.is-available]="cell.status === 'AVAILABLE'"
+                        [class.is-booked]="cell.status === 'BOOKED' || cell.status === 'HELD'"
+                        [class.is-blocked]="cell.status === 'BLOCKED'"
+                        [disabled]="seatActionBusy"
+                        (click)="onSeatCellTap(cell)"
+                      >
+                        <div class="dc-seat-top">
+                          <ion-icon [name]="cell.status === 'BLOCKED' ? 'person-circle' : (cell.status === 'BOOKED' || cell.status === 'HELD' ? 'lock-closed' : 'car-sport-outline')"></ion-icon>
+                          <span class="dc-seat-label">{{ cell.label }}</span>
+                        </div>
+
+                        <div class="dc-seat-bottom">
+                          <span class="dc-seat-badge" [class.dc-seat-badge--green]="cell.status === 'AVAILABLE'" [class.dc-seat-badge--blue]="cell.status === 'BOOKED' || cell.status === 'HELD'" [class.dc-seat-badge--black]="cell.status === 'BLOCKED'">
+                            {{ cell.status === 'AVAILABLE' ? 'Open' : (cell.status === 'BLOCKED' ? 'Walk-in' : 'Booked') }}
+                          </span>
+                        </div>
+                      </button>
+
+                    </ng-container>
+
+                  </div>
+                </div>
+
+                <!-- Back of Vehicle Indicator -->
+                <div class="dc-cabin-rear">
+                  <span>Rear / Luggage</span>
+                </div>
+
               </div>
 
             </div>

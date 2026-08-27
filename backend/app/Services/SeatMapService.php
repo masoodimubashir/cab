@@ -286,4 +286,84 @@ class SeatMapService
                 ]);
         });
     }
+
+    /**
+     * Driver offline walk-in booking: Lock a specific available seat as BLOCKED.
+     */
+    public function blockSeatForDeparture(RouteDeparture $departure, string $label): array
+    {
+        return DB::transaction(function () use ($departure, $label) {
+            $this->snapshotForDeparture($departure);
+
+            $seat = DepartureSeat::query()
+                ->where('route_departure_id', $departure->id)
+                ->where('label', $label)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$seat) {
+                throw new ReservationException("Seat {$label} was not found on this vehicle.", 404);
+            }
+
+            if ($seat->status !== 'AVAILABLE') {
+                throw new ReservationException("Seat {$label} is already {$seat->status} and cannot be blocked.", 422);
+            }
+
+            $seat->status = 'BLOCKED';
+            $seat->save();
+
+            // Increment departure seats_taken so customer search/booking reflects reduced capacity
+            $lockedDeparture = RouteDeparture::query()
+                ->where('id', $departure->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($lockedDeparture) {
+                $lockedDeparture->increment('seats_taken', 1);
+            }
+
+            return $this->mapForDeparture($departure);
+        });
+    }
+
+    /**
+     * Driver offline drop-off: Release a BLOCKED seat back to AVAILABLE for online bookings.
+     */
+    public function unblockSeatForDeparture(RouteDeparture $departure, string $label): array
+    {
+        return DB::transaction(function () use ($departure, $label) {
+            $this->snapshotForDeparture($departure);
+
+            $seat = DepartureSeat::query()
+                ->where('route_departure_id', $departure->id)
+                ->where('label', $label)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$seat) {
+                throw new ReservationException("Seat {$label} was not found on this vehicle.", 404);
+            }
+
+            if ($seat->status !== 'BLOCKED') {
+                throw new ReservationException("Seat {$label} is not blocked (current status: {$seat->status}).", 422);
+            }
+
+            $seat->status = 'AVAILABLE';
+            $seat->save();
+
+            // Decrement departure seats_taken so customer search/booking sees the freed seat
+            $lockedDeparture = RouteDeparture::query()
+                ->where('id', $departure->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($lockedDeparture) {
+                $lockedDeparture->update([
+                    'seats_taken' => max(0, (int) $lockedDeparture->seats_taken - 1),
+                ]);
+            }
+
+            return $this->mapForDeparture($departure);
+        });
+    }
 }

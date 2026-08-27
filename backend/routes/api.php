@@ -556,6 +556,9 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/fixed/driver/vehicles', [FixedDriverController::class, 'vehicles']);
     Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
     Route::get('/fixed/departures/{departure}/manifest', [FixedDriverController::class, 'manifest']);
+    Route::get('/fixed/departures/{departure}/seat-map', [FixedDriverController::class, 'seatMap']);
+    Route::post('/fixed/departures/{departure}/seats/block', [FixedDriverController::class, 'blockSeat']);
+    Route::post('/fixed/departures/{departure}/seats/unblock', [FixedDriverController::class, 'unblockSeat']);
     Route::post('/fixed/departures/{departure}/start', [FixedDriverController::class, 'start']);
     Route::post('/fixed/departures/{departure}/close-bookings', [FixedDriverController::class, 'closeBookings']);
     Route::post('/fixed/departures/{departure}/open-bookings', [FixedDriverController::class, 'openBookings']);
