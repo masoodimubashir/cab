@@ -43,8 +43,14 @@ echo "==> Building + starting Docker stack (Backend + Database + WebSockets + Ng
 cd "$ROOT_DIR/backend"
 docker compose up -d --build
 
+echo "==> Running database migrations & cache optimization..."
+docker compose exec -T app php artisan migrate --force --no-interaction
+docker compose exec -T app php artisan config:cache
+docker compose exec -T app php artisan route:cache
+docker compose exec -T app php artisan event:cache
+
 echo "==> Waiting a moment, then checking container status..."
-sleep 5
+sleep 2
 docker compose ps
 
 echo ""
