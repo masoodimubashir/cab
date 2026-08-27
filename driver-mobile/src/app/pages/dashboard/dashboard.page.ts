@@ -1007,6 +1007,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         }
       },
       error: (err) => {
+        if (err?.status === 401) {
+          this.finishSignOut();
+          return;
+        }
         this.error = err?.error?.message || 'Could not load driver profile';
         this.driver = null;
         this.profileReady = true;
