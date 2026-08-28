@@ -686,17 +686,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     });
 
     if (routeStops.length > 0) {
-      // 1. Fixed Route Line
-      this.fixedRouteLine = new google.maps.Polyline({
-        path: routeStops.map((s) => ({ lat: Number(s.lat), lng: Number(s.lng) })),
-        map: this.map,
-        strokeColor: '#12B35B',
-        strokeOpacity: 0.95,
-        strokeWeight: 5,
-        zIndex: 50,
-      });
-
-      // 2. Stop Markers
+      // 1. Stop Markers (Route line eliminated as requested: driver sees stop points and passenger pins only)
       this.fixedStopMarkers = routeStops.map((stop) => {
         return new google.maps.marker.AdvancedMarkerElement({
           position: { lat: Number(stop.lat), lng: Number(stop.lng) },

@@ -2,7 +2,7 @@ import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild } fro
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription, forkJoin } from 'rxjs';
+import { Subscription, forkJoin, firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -122,10 +122,13 @@ interface TabDef { key: string; label: string; count?: number; }
       <app-return-to-setup></app-return-to-setup>
 
       <header class="ws__head">
+        <tm-button variant="green" size="sm" icon="plus" [disabled]="cityId == null" (clicked)="addNewRouteFromTop()">Add route</tm-button>
+        <tm-button variant="outline" size="sm" icon="grid" [disabled]="cityId == null" (clicked)="openUnifiedGroupDrawerFromTop()">Manage Routes & Groups</tm-button>
+        <tm-button variant="outline" size="sm" icon="upload" [disabled]="cityId == null || importingKml" (clicked)="triggerKmlImportFromTop()">{{ importingKml ? 'Reading…' : 'Import from My Maps' }}</tm-button>
         <span class="ws__grow"></span>
         <tm-button variant="outline" size="sm" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
         <tm-button variant="outline" size="sm" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
-        <tm-button variant="green" size="sm" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
+        <tm-button variant="outline" size="sm" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
       </header>
 
       <div class="cue" *ngIf="cityId == null">
@@ -270,10 +273,6 @@ interface TabDef { key: string; label: string; count?: number; }
                     <div class="detailwrap">
                       <div class="detailhead">
                         <span class="ovl">Fixed-route groups · {{ v.display_name }}</span>
-                        <span class="ws__grow"></span>
-                        <tm-button variant="green" size="sm" icon="plus" (clicked)="openUnifiedGroupDrawer(v)">Manage Routes & Groups</tm-button>
-                        <tm-button variant="outline" size="sm" icon="plus" (clicked)="newRouteFor(v)">Add route</tm-button>
-                        <tm-button variant="outline" size="sm" icon="upload" [disabled]="importingKml" (clicked)="openImportChoice(v)">{{ importingKml ? 'Reading…' : 'Import from My Maps' }}</tm-button>
                       </div>
 
                       <div class="gline" *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup">
@@ -370,7 +369,7 @@ interface TabDef { key: string; label: string; count?: number; }
         </div>
 
         <!-- Map route editor: hidden table, opens as a drawer via Add route / edit route. -->
-        <app-fixed-routes *ngIf="selected" [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="loadRoutes()" (editorClosed)="onRouteEditorClosed()"></app-fixed-routes>
+        <app-fixed-routes *ngIf="selected" [cityVehicleTypeId]="selected.id" [embedded]="true" [hideTable]="true" [drawerMode]="true" (routesChanged)="onRouteMutation()" (editorClosed)="onRouteEditorClosed()"></app-fixed-routes>
 
         <!-- Hidden picker for "Import from My Maps" (KML/KMZ upload) — creates. -->
         <input #kmlInput type="file" accept=".kml,.kmz" hidden (change)="onKmlFileSelected($event)" />
@@ -1800,6 +1799,26 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     });
   }
 
+  onRouteMutation(): void {
+    this.loadRoutes();
+    this.loadGroups();
+    this.loadDrivers();
+    const cityId = this.cityId;
+    if (cityId != null) {
+      this.api.get<{
+        data: CityVehicleRow[];
+        available_ride_types?: RideTypeRef[];
+        available_vehicle_types?: VehicleTypeRef[];
+      }>(`/admin/cities/${cityId}/vehicle-types`).subscribe({
+        next: (res) => {
+          this.rows = res.data ?? [];
+          this.vehicles = this.groupRows(this.rows);
+          this.recompute();
+        },
+      });
+    }
+  }
+
   private applyDeepLink(): void {
     if (this.deepLinkId == null) return;
     const raw = this.rows.find((r) => r.id === this.deepLinkId);
@@ -2494,6 +2513,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   inactiveRoutesForVehicle(v: CityVehicleRow): RouteLite[] {
     return this.routesForVehicle(v).filter((r) => !r.is_active || (r.is_active as any) === 0 || (r.is_active as any) === '0' || (r.is_active as any) === false);
   }
+
   toggleRouteActive(r: RouteLite, active: boolean, ev?: Event): void {
     ev?.stopPropagation();
     if (this.cityId == null) return;
@@ -2755,10 +2775,39 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   /** After a reviewed import is saved or cancelled, open the next queued route. */
   onRouteEditorClosed(): void {
+    this.onRouteMutation();
     if (this.importQueue.length) setTimeout(() => this.openNextImported(), 150);
     else { this.importTotal = 0; this.importTargetVehicle = null; }
   }
   openGroupDrawerFor(v: CityVehicleRow): void { this.select(v); this.openGroupDrawer(); }
+
+  openUnifiedGroupDrawerFromTop(): void {
+    const v = this.selected ?? this.vehicles[0];
+    if (v) {
+      this.openUnifiedGroupDrawer(v);
+    } else {
+      this.toast.error('Please create or select a vehicle first.');
+    }
+  }
+
+  triggerKmlImportFromTop(): void {
+    const v = this.selected ?? this.vehicles[0];
+    if (v) {
+      this.openImportChoice(v);
+    } else {
+      this.toast.error('Please create or select a vehicle first.');
+    }
+  }
+
+  addNewRouteFromTop(): void {
+    const v = this.selected ?? this.vehicles[0];
+    if (v) {
+      this.select(v);
+      setTimeout(() => this.newRoute());
+    } else {
+      this.fixedRoutes?.openCreate();
+    }
+  }
 
   // floating row kebab menu
   openRowMenu(v: CityVehicleRow, ev: MouseEvent): void {

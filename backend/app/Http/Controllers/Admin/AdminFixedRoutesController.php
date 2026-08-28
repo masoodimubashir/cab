@@ -150,13 +150,56 @@ class AdminFixedRoutesController
     {
         $this->availability->assertCityOwnsRoute($city, $route);
 
-        // Partial update: when only is_active or lightweight fields are passed (no stops/scope payload)
-        if ($request->has('is_active') && (!$request->has('stops') || !$request->has('scope'))) {
+        // Partial update: when only is_active or lightweight pricing fields are passed (no stops/scope payload)
+        if (!$request->has('stops') && !$request->has('scope')) {
             $data = $request->validate([
-                'is_active' => ['required', 'boolean'],
+                'is_active' => ['nullable', 'boolean'],
+                'flat_fare' => ['nullable', 'numeric', 'min:0'],
+                'booking_window_hours' => ['nullable', 'integer', 'min:0', 'max:24'],
+                'waiting_time_per_stop_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
+                'luggage_surcharge_amount' => ['nullable', 'numeric', 'min:0'],
+                'max_luggage_per_vehicle' => ['nullable', 'integer', 'min:0'],
+                'fare_config' => ['nullable', 'array'],
+                'fare_config.seat_fare' => ['nullable', 'numeric', 'min:0'],
+                'fare_config.commission_type' => ['nullable', 'in:percent,fixed'],
+                'fare_config.commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+                'fare_config.fixed_commission' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
             ]);
-            $route->update(['is_active' => (bool) $data['is_active']]);
-            broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_updated'))->toOthers();
+
+            $updates = [];
+            if (isset($data['is_active'])) {
+                $updates['is_active'] = (bool) $data['is_active'];
+            }
+            if (isset($data['booking_window_hours'])) {
+                $updates['booking_window_hours'] = (int) $data['booking_window_hours'];
+            }
+            if (isset($data['waiting_time_per_stop_minutes'])) {
+                $updates['waiting_time_per_stop_minutes'] = (int) $data['waiting_time_per_stop_minutes'];
+            }
+            if (isset($data['luggage_surcharge_amount'])) {
+                $updates['luggage_surcharge_amount'] = (float) $data['luggage_surcharge_amount'];
+            }
+            if (isset($data['max_luggage_per_vehicle'])) {
+                $updates['max_luggage_per_vehicle'] = (int) $data['max_luggage_per_vehicle'];
+            }
+            if (isset($data['fare_config'])) {
+                $seatFare = $data['fare_config']['seat_fare'] ?? $data['flat_fare'] ?? $route->flat_fare;
+                $updates['flat_fare'] = (float) $seatFare;
+                $updates['fare_config'] = array_merge((array) ($route->fare_config ?? []), $data['fare_config'], [
+                    'seat_fare' => (float) $seatFare,
+                ]);
+            } elseif (isset($data['flat_fare'])) {
+                $updates['flat_fare'] = (float) $data['flat_fare'];
+                $updates['fare_config'] = array_merge((array) ($route->fare_config ?? []), [
+                    'seat_fare' => (float) $data['flat_fare'],
+                ]);
+            }
+
+            if (!empty($updates)) {
+                $route->update($updates);
+                broadcast(new FixedRouteCatalogUpdated($city->id, $route->id, 'route_updated'))->toOthers();
+            }
+
             return response()->json([
                 'route' => $this->routes->shapeAdminRoute($route->loadMissing('stops')),
                 'message' => 'Fixed route updated.',

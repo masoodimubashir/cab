@@ -1,7 +1,7 @@
 import { Component, EventEmitter, HostListener, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -11,6 +11,7 @@ import {
   ButtonComponent,
   ColumnComponent,
   DataTableComponent,
+  DrawerComponent,
   FilterPillComponent,
   FilterSelectComponent,
   IconComponent,
@@ -31,6 +32,15 @@ interface RouteStopRow {
   is_active: boolean;
   is_temporarily_unavailable: boolean;
   unavailable_reason: string | null;
+}
+
+export interface SuggestedStop {
+  name: string;
+  lat: number;
+  lng: number;
+  distanceFromStartKm: number;
+  type?: 'transit' | 'junction' | 'locality' | 'landmark';
+  added?: boolean;
 }
 
 interface FareConfig {
@@ -123,6 +133,7 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     ButtonComponent,
     ColumnComponent,
     DataTableComponent,
+    DrawerComponent,
     FilterPillComponent,
     FilterSelectComponent,
     IconComponent,
@@ -235,268 +246,601 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
       </ng-container>
     </div>
 
-    <div class="rt-scrim" *ngIf="open && drawerMode" (click)="closeEditor()"></div>
+    <div class="rt-scrim" *ngIf="open && drawerMode" (click)="promptCloseEditor()"></div>
     <div class="rt-editor" [class.rt-editor--drawer]="drawerMode" *ngIf="open">
       <div class="rt-map-wrap">
         <div id="fixed-rt-edit-map" class="rt-map"></div>
 
-        <div class="rt-search">
-          <tm-icon name="search" [size]="16" />
-          <input #searchBox type="text" placeholder="Search a place to jump the map…" />
-        </div>
-
-        <div class="rt-tools">
-          <button class="rt-tool" [class.on]="tool === 'origin'" (click)="setTool('origin')" title="Place origin">
-            <span class="rt-tool__dot a"></span> Start
-          </button>
-          <button class="rt-tool" [class.on]="tool === 'dest'" (click)="setTool('dest')" title="Place destination">
-            <span class="rt-tool__dot b"></span> Destination
-          </button>
-          <button class="rt-tool" [class.on]="tool === 'path'" [disabled]="!endpointsSet" (click)="setTool('path')"
-            title="Draw the route path from start to destination">
-            <tm-icon name="road" [size]="13" /> Draw path
-          </button>
-          <button class="rt-tool" [class.on]="tool === 'stop'" [disabled]="!endpointsSet" (click)="setTool('stop')"
-            title="Add fixed stops (set start & destination first)">
-            <tm-icon name="map-marker" [size]="13" /> Stops
-          </button>
-          <div class="rt-tools__sep"></div>
-          <button class="rt-tool" [class.on]="tool === 'path' && pathMode === 'road'" [disabled]="!endpointsSet" (click)="showRouteOptions()"
-            title="Show every real-road route Google has between the start and the destination">
-            <tm-icon name="road" [size]="13" /> Route options
-          </button>
-          <button class="rt-tool" [class.on]="tool === 'path' && pathMode === 'free'" [disabled]="!endpointsSet" (click)="setPathMode('free')"
-            title="Draw your own path by hand, ignoring roads">
-            <tm-icon name="edit" [size]="13" /> Free draw
-          </button>
-          <div class="rt-tools__sep"></div>
-          <button class="rt-tool ghost" *ngIf="pathMode === 'free'" (click)="undoPath()" [disabled]="!form.path.length" title="Undo last path point">
-            <tm-icon name="chevron-left" [size]="13" /> Undo
-          </button>
-          <button class="rt-tool ghost" (click)="clearPath()" [disabled]="!hasRouteDraftData" title="Clear path and route details">Clear path</button>
-        </div>
-
         <div class="rt-hint">
           <tm-icon name="pin" [size]="14" />
-          <span>{{ toolHint }}</span>
+          <span>{{ wizardStepHint }}</span>
         </div>
 
-        <div class="rt-alts" *ngIf="tool === 'path' && pathMode === 'road' && (altsLoading || routeAlts.length)">
-          <div class="rt-alts__head">
-            <span>Route options</span>
-            <small *ngIf="routeAlts.length">{{ routeAlts.length }} found</small>
-          </div>
-          <p class="rt-alts__loading" *ngIf="altsLoading">Finding every road route…</p>
-          <button
-            type="button" class="rt-alt"
-            *ngFor="let a of routeAlts; let i = index"
-            [class.on]="selectedAltIdx === i"
-            (click)="selectAlternative(i)"
-            (mouseenter)="hoverAlternative(i)"
-            (mouseleave)="hoverAlternative(null)"
-          >
-            <span class="rt-alt__bar"></span>
-            <span class="rt-alt__txt">
-              <b>{{ a.summary || 'Route ' + (i + 1) }}</b>
-              <small>{{ a.distanceText }}<ng-container *ngIf="a.durationText"> · {{ a.durationText }}</ng-container></small>
-            </span>
-            <tm-icon *ngIf="selectedAltIdx === i" name="check" [size]="14" />
+        <div class="wizard-stepper">
+          <button type="button" class="wstep" [class.is-active]="wizardStep === 1" [class.is-done]="form.origin_lat != null" (click)="goToStep(1)">
+            <span class="wstep__num">1</span>
+            <span class="wstep__lbl">Start</span>
           </button>
-          <p class="rt-alts__hint" *ngIf="routeAlts.length">Hover to preview, click to use it. All options follow real roads.</p>
-        </div>
-
-        <div class="rt-steps">
-          <span [class.done]="form.origin_lat != null" [class.on]="tool === 'origin'">1 Start</span>
-          <span [class.done]="form.dest_lat != null" [class.on]="tool === 'dest'">2 Destination</span>
-          <span [class.done]="roadPath.length > 1 || form.path.length > 0" [class.on]="tool === 'path'">3 Path</span>
-          <span [class.done]="form.stops.length > 0" [class.on]="tool === 'stop'">4 Stops</span>
+          <span class="wstep__sep">→</span>
+          <button type="button" class="wstep" [class.is-active]="wizardStep === 2" [class.is-done]="form.dest_lat != null" (click)="goToStep(2)">
+            <span class="wstep__num">2</span>
+            <span class="wstep__lbl">Destination</span>
+          </button>
+          <span class="wstep__sep">→</span>
+          <button type="button" class="wstep" [class.is-active]="wizardStep === 3" [class.is-done]="form.stops.length > 0" (click)="goToStep(3)">
+            <span class="wstep__num">3</span>
+            <span class="wstep__lbl">Stops ({{ form.stops.length }})</span>
+          </button>
+          <span class="wstep__sep">→</span>
+          <button type="button" class="wstep" [class.is-active]="wizardStep === 4" [class.is-done]="form.seat_fare != null" (click)="goToStep(4)">
+            <span class="wstep__num">4</span>
+            <span class="wstep__lbl">Fare & Policy</span>
+          </button>
+          <span class="wstep__sep">→</span>
+          <button type="button" class="wstep" [class.is-active]="wizardStep === 5" [class.is-done]="form.city_vehicle_type_id != null" (click)="goToStep(5)">
+            <span class="wstep__num">5</span>
+            <span class="wstep__lbl">Group & Drivers</span>
+          </button>
+          <span class="wstep__sep">→</span>
+          <button type="button" class="wstep" [class.is-active]="wizardStep === 6" (click)="goToStep(6)">
+            <span class="wstep__num">6</span>
+            <span class="wstep__lbl">Review & Save</span>
+          </button>
         </div>
       </div>
 
       <aside class="rt-panel">
         <header class="rt-panel__head">
           <div>
-            <h2>{{ editingId ? 'Edit fixed route' : 'New fixed route' }}</h2>
-            <p>{{ cityName }}</p>
+            <h2>{{ editingId ? 'Edit Route' : 'Add Fixed Route' }}</h2>
+            <p>Step {{ wizardStep }} of 6: {{ wizardStepTitle }}</p>
           </div>
           <div class="rt-panel__head-actions">
-            <button type="button" class="removed-badge" *ngIf="removedStops.length" (click)="openRemovedStopsModal()">
-              Removed stops {{ removedStops.length }}
-            </button>
-            <button class="icon-btn rt-x" (click)="closeEditor()" aria-label="Close">×</button>
+            <button class="icon-btn rt-x" (click)="promptCloseEditor()" aria-label="Close">×</button>
           </div>
         </header>
 
         <div class="rt-panel__body">
-          <div class="edit-warning" *ngIf="editingId">
-            <tm-icon name="shield" [size]="15" />
-            <span>Structural route changes are blocked while live fixed vehicles, active bookings, or active holds exist. Safe text and availability edits can still be saved.</span>
-          </div>
-          <div class="grid2">
-            <label class="field">
-              <span class="field__lbl">Scope <span class="help" data-tip="Choose whether this fixed route runs inside one city or between cities.">!</span></span>
-              <select [(ngModel)]="form.scope" (ngModelChange)="onScopeChange()">
-                <option *ngFor="let s of scopeOptions" [value]="s.value">{{ s.label }}</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field__lbl">Route name <i>*</i> <span class="help" data-tip="Internal and customer-facing name for this fixed route.">!</span></span>
-              <input type="text" [(ngModel)]="form.name" placeholder="e.g. Sopore → Srinagar" />
-            </label>
-          </div>
+          <!-- STEP 1: ROUTE TYPE & ORIGIN -->
+          <div class="wstep-content" *ngIf="wizardStep === 1">
+            <div class="wstep-lead">
+              <h3>Route Scope & Starting Point</h3>
+              <p>Choose whether this route operates within {{ cityName }} or connects between cities.</p>
+            </div>
 
-          <div class="grid2" *ngIf="form.scope === 'outstation'">
-            <label class="field">
-              <span class="field__lbl">Origin city <i>*</i> <span class="help" data-tip="Starting city for an outstation fixed route.">!</span></span>
-              <select [(ngModel)]="form.origin_city_id">
-                <option [ngValue]="null">Select…</option>
-                <option *ngFor="let c of cities" [ngValue]="c.id">{{ c.name }}</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field__lbl">Destination city <i>*</i> <span class="help" data-tip="Ending city for an outstation fixed route.">!</span></span>
-              <select [(ngModel)]="form.dest_city_id">
-                <option [ngValue]="null">Select…</option>
-                <option *ngFor="let c of cities" [ngValue]="c.id">{{ c.name }}</option>
-              </select>
-            </label>
-          </div>
+            <!-- Scope Selection Cards -->
+            <div class="scope-choice-row">
+              <button type="button" class="scope-choice-card" [class.is-active]="form.scope === 'local'" (click)="setScope('local')">
+                <span class="scope-choice-icon">🏠</span>
+                <div class="scope-choice-body">
+                  <b>Local Route</b>
+                  <small>Inside {{ cityName || 'city' }}</small>
+                </div>
+                <tm-icon *ngIf="form.scope === 'local'" name="check" [size]="16" class="text-green" />
+              </button>
 
-          <div class="endpoints">
-            <div class="endpoint" [class.set]="form.origin_lat != null">
-              <span class="endpoint__dot a"></span>
-              <div class="endpoint__main">
-                <input type="text" [(ngModel)]="form.origin_name" placeholder="Start name" />
-                <span class="endpoint__coord" *ngIf="form.origin_lat != null">{{ form.origin_lat | number:'1.4-4' }}, {{ form.origin_lng | number:'1.4-4' }}</span>
-                <button type="button" class="endpoint__set" [class.on]="tool==='origin'" (click)="setTool('origin')" *ngIf="form.origin_lat == null">Tap “Start”, then click the map</button>
+              <button type="button" class="scope-choice-card" [class.is-active]="form.scope === 'outstation'" (click)="setScope('outstation')">
+                <span class="scope-choice-icon">🚗</span>
+                <div class="scope-choice-body">
+                  <b>Outstation Route</b>
+                  <small>Between two cities</small>
+                </div>
+                <tm-icon *ngIf="form.scope === 'outstation'" name="check" [size]="16" class="text-green" />
+              </button>
+            </div>
+
+            <!-- Outstation City Selectors -->
+            <div class="outstation-cities-box" *ngIf="form.scope === 'outstation'">
+              <div class="grid2">
+                <label class="field">
+                  <span class="field__lbl">Origin City <i>*</i></span>
+                  <select [(ngModel)]="form.origin_city_id" (ngModelChange)="onOriginCityChange()">
+                    <option *ngFor="let c of cities" [ngValue]="c.id">{{ c.name }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__lbl">Destination City <i>*</i></span>
+                  <select [(ngModel)]="form.dest_city_id" (ngModelChange)="onDestCityChange()">
+                    <option [ngValue]="null">Select destination city…</option>
+                    <option *ngFor="let c of availableDestCities" [ngValue]="c.id">{{ c.name }}</option>
+                  </select>
+                </label>
               </div>
             </div>
-            <div class="endpoint" [class.set]="form.dest_lat != null">
-              <span class="endpoint__dot b"></span>
-              <div class="endpoint__main">
-                <input type="text" [(ngModel)]="form.dest_name" placeholder="Destination name" />
-                <span class="endpoint__coord" *ngIf="form.dest_lat != null">{{ form.dest_lat | number:'1.4-4' }}, {{ form.dest_lng | number:'1.4-4' }}</span>
-                <button type="button" class="endpoint__set" [class.on]="tool==='dest'" (click)="setTool('dest')" *ngIf="form.dest_lat == null">Tap “Destination”, then click the map</button>
+
+            <label class="field" style="margin-top: 4px;">
+              <span class="field__lbl">
+                Start Location (Origin in {{ getCityName(form.origin_city_id) || cityName }}) <i>*</i>
+              </span>
+              <input
+                id="wizard-origin-search"
+                type="text"
+                [(ngModel)]="form.origin_name"
+                (keydown.enter)="onOriginSearchEnter($event)"
+                (blur)="onOriginSearchBlur()"
+                [placeholder]="'Search start in ' + (getCityName(form.origin_city_id) || cityName) + '...'" />
+            </label>
+
+            <!-- Origin Loading Indicator -->
+            <div class="location-setting-loader" *ngIf="isSettingOrigin">
+              <div class="spinner-sm"></div>
+              <span>Adding the origin, please wait...</span>
+            </div>
+
+            <div class="selected-point-box" *ngIf="form.origin_lat != null && !isSettingOrigin">
+              <span class="point-dot a">A</span>
+              <div class="point-details">
+                <b>{{ form.origin_name }}</b>
+                <small>{{ form.origin_lat | number:'1.4-4' }}, {{ form.origin_lng | number:'1.4-4' }}</small>
               </div>
+              <tm-icon name="check" [size]="16" class="text-green" />
+            </div>
+
+            <div class="wstep-tip">
+              💡 <b>Tip:</b> You can also click directly anywhere on the map to set or move the green Start marker.
             </div>
           </div>
 
-          <div class="section-lbl">
-            Stops
-            <span class="hint-inline">Click on the green route line</span>
+          <!-- STEP 2: SET DESTINATION -->
+          <div class="wstep-content" *ngIf="wizardStep === 2">
+            <div class="wstep-lead">
+              <h3>Where does this route end?</h3>
+              <p *ngIf="form.scope === 'local'">Type the destination terminal / landmark in {{ cityName }}, or tap on the map.</p>
+              <p *ngIf="form.scope === 'outstation'">Type the destination terminal / landmark in {{ getCityName(form.dest_city_id) || 'the destination city' }}, or tap on the map.</p>
+            </div>
+
+            <label class="field">
+              <span class="field__lbl">
+                Destination Location (in {{ (form.scope === 'outstation' ? getCityName(form.dest_city_id) : null) || cityName }}) <i>*</i>
+              </span>
+              <input
+                id="wizard-dest-search"
+                type="text"
+                [(ngModel)]="form.dest_name"
+                (keydown.enter)="onDestSearchEnter($event)"
+                (blur)="onDestSearchBlur()"
+                [placeholder]="'Search destination in ' + ((form.scope === 'outstation' ? getCityName(form.dest_city_id) : null) || cityName) + '...'" />
+            </label>
+
+            <!-- Destination Loading Indicator -->
+            <div class="location-setting-loader" *ngIf="isSettingDest">
+              <div class="spinner-sm"></div>
+              <span>Adding the destination, please wait...</span>
+            </div>
+
+            <div class="selected-point-box" *ngIf="form.dest_lat != null && !isSettingDest">
+              <span class="point-dot b">B</span>
+              <div class="point-details">
+                <b>{{ form.dest_name }}</b>
+                <small>{{ form.dest_lat | number:'1.4-4' }}, {{ form.dest_lng | number:'1.4-4' }}</small>
+              </div>
+              <tm-icon name="check" [size]="16" class="text-green" />
+            </div>
+
+            <div class="route-metrics" *ngIf="estimatedDistanceText">
+              <div class="route-metric">
+                <tm-icon name="road" [size]="14" />
+                <span><b>{{ estimatedDistanceText }}</b></span>
+              </div>
+              <div class="route-metric" *ngIf="estimatedDurationText">
+                <tm-icon name="bolt" [size]="14" />
+                <span>{{ estimatedDurationText }}</span>
+              </div>
+              <span class="ws__grow"></span>
+              <button type="button" class="micro-action-btn" (click)="reverseRoute()" title="Swap Start and Destination">
+                <tm-icon name="refresh" [size]="12" /> Swap / Reverse
+              </button>
+            </div>
           </div>
-          <div class="stop-guide">
-            <button type="button" class="stop-guide__btn" [class.on]="tool === 'stop'" [disabled]="!endpointsSet" (click)="setTool('stop')">Add stops on route</button>
-            <span>{{ form.stops.length }} stop{{ form.stops.length === 1 ? '' : 's' }} added</span>
-          </div>
-          <p class="muted small" *ngIf="!form.stops.length">Click directly on the green route line. The stop will snap to the path automatically.</p>
-          <div class="stop-card" *ngFor="let s of form.stops; let i = index" [class.is-paused]="!isStopBookable(s)" [class.is-restored]="isRestoredStop(s)">
-            <div class="stop-card__head">
-              <span class="stop-seq">Stop {{ i + 1 }}</span>
-              <div class="stop-availability" *ngIf="editingId && s.id">
-                <span class="stop-state" [class.is-paused]="!isStopBookable(s)">{{ stopStateLabel(s) }}</span>
-                <button type="button" class="stop-toggle" [class.is-resume]="!isStopBookable(s)" (click)="toggleStopAvailability(s)" [attr.aria-label]="stopToggleLabel(s)">
-                  <tm-icon [name]="stopToggleIcon(s)" [size]="13" />
-                  <span>{{ stopToggleLabel(s) }}</span>
+
+          <!-- STEP 3: INTERMEDIATE STOPS -->
+          <div class="wstep-content" *ngIf="wizardStep === 3">
+            <div class="wstep-lead">
+              <h3>Intermediate Stops Along Corridor</h3>
+              <p>Add transit stops, bus stands, and key intersections along your route corridor.</p>
+            </div>
+
+            <!-- Stop Search Form with Transit Autocomplete & Live Dropdown -->
+            <div class="stop-search-box">
+              <label class="field">
+                <span class="field__lbl">Search Transit Stop / Intersection / Chowk</span>
+                <div class="search-input-wrap">
+                  <tm-icon name="search" [size]="14" class="search-input-icon" />
+                  <input
+                    id="wizard-stop-search"
+                    type="text"
+                    [(ngModel)]="stopSearchQuery"
+                    (input)="onStopSearchInput(stopSearchQuery)"
+                    (keydown.enter)="onStopSearchEnter()"
+                    (focus)="onStopSearchFocus()"
+                    (blur)="onStopSearchBlur()"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Type Chowk, Bus Stand, Bypass, Junction..." />
+                  <button *ngIf="stopSearchQuery" type="button" class="search-clear-btn" (click)="clearStopSearch()" aria-label="Clear search">✕</button>
+                </div>
+              </label>
+
+              <!-- Live Transit Autocomplete Predictions Dropdown -->
+              <div class="stop-search-dropdown" *ngIf="stopSearchResults.length > 0 && isStopSearchDropdownOpen">
+                <div class="search-dropdown-header">
+                  <span>Transit Places along Corridor</span>
+                  <button type="button" class="close-drop-btn" (click)="isStopSearchDropdownOpen = false">✕</button>
+                </div>
+                <div class="search-dropdown-list">
+                  <button
+                    type="button"
+                    class="search-dropdown-item"
+                    *ngFor="let item of stopSearchResults"
+                    (click)="selectStopSearchResult(item)">
+                    <span class="item-icon">🚏</span>
+                    <div class="item-text">
+                      <span class="item-main">{{ item.main_text }}</span>
+                      <span class="item-sub" *ngIf="item.secondary_text">{{ item.secondary_text }}</span>
+                    </div>
+                    <span class="item-add-tag">+ Add</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Loading Indicator -->
+              <div class="search-loading-hint" *ngIf="isSearchingStops">
+                <span>Searching transit locations...</span>
+              </div>
+            </div>
+
+            <!-- Suggested Stops Along Corridor -->
+            <div class="suggested-stops-section">
+              <div class="suggested-stops-head">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span>✨</span>
+                  <b>Suggested Stops Along Corridor</b>
+                  <span class="count-badge" *ngIf="suggestedStops.length">({{ suggestedStops.length }} found)</span>
+                </div>
+                <button type="button" class="btn-link" (click)="detectSuggestedStops()" [disabled]="loadingSuggestedStops || !roadPath.length">
+                  {{ loadingSuggestedStops ? 'Scanning…' : '🔄 Refresh' }}
                 </button>
-                <span class="help" [attr.data-tip]="stopToggleHelp(s)">!</span>
               </div>
-              <button type="button" class="stop-remove" (click)="removeStop(i)" aria-label="Remove stop">Remove</button>
-            </div>
-            <input type="text" class="stop-name" [(ngModel)]="s.name" placeholder="Stop name" />
-            <div class="stop-flags">
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_pickup" /> <span>Boarding allowed <span class="help" data-tip="Customers can choose this stop as their boarding point.">!</span></span></label>
-              <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_drop" /> <span>Drop allowed <span class="help" data-tip="Customers can choose this stop as their drop point.">!</span></span></label>
-            </div>
-          </div>
 
-          <div class="section-lbl">Fare, seats and luggage</div>
-          <div class="grid2">
-            <label class="field">
-              <span class="field__lbl">Flat fare (₹) <i>*</i> <span class="help" data-tip="Seat fare charged to the customer before any luggage surcharge.">!</span></span>
-              <input type="number" min="0" step="0.01" [(ngModel)]="form.seat_fare" placeholder="150" />
-            </label>
-            <label class="field">
-              <span class="field__lbl">Commission type <span class="help" data-tip="Percent = a share of the fixed fare. Fixed = a flat ₹ per booked seat.">!</span></span>
-              <div class="seg">
-                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'percent'" (click)="form.commission_type = 'percent'">Percent</button>
-                <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'fixed'" (click)="form.commission_type = 'fixed'">Fixed</button>
+              <div class="suggested-chips-wrap" *ngIf="suggestedStops.length; else noSuggestionsCue">
+                <button type="button" class="suggested-stop-chip" *ngFor="let s of suggestedStops"
+                  [class.is-added]="s.added || isStopAlreadyAdded(s.name)"
+                  [disabled]="s.added || isStopAlreadyAdded(s.name)"
+                  (click)="addSuggestedStop(s)">
+                  <span class="chip-add-icon">{{ (s.added || isStopAlreadyAdded(s.name)) ? '✓' : '+' }}</span>
+                  <span class="chip-stop-name">{{ s.name }}</span>
+                  <span class="chip-dist-badge" *ngIf="s.distanceFromStartKm">{{ s.distanceFromStartKm }} km</span>
+                </button>
               </div>
-            </label>
-            <label class="field" *ngIf="form.commission_type === 'percent'">
-              <span class="field__lbl">Commission (%) <span class="help" data-tip="Platform cut calculated as a percentage of the fixed booking fare.">!</span></span>
-              <input type="number" min="0" max="100" step="0.01" [(ngModel)]="form.commission_percent" placeholder="20" />
-            </label>
-            <label class="field" *ngIf="form.commission_type === 'fixed'">
-              <span class="field__lbl">Fixed commission (₹) <span class="help" data-tip="Flat platform cut per booked seat for this fixed route.">!</span></span>
-              <input type="number" min="0" step="0.01" [(ngModel)]="form.fixed_commission" placeholder="20" />
-            </label>
-            <label class="field"><span class="field__lbl">Vehicle <span class="help" data-tip="Pick the vehicle running this route. Seats and luggage capacity below are derived from it.">!</span></span>
-              <select [(ngModel)]="form.city_vehicle_type_id" [disabled]="cityVehicleTypeId != null" (ngModelChange)="onVehiclePicked($event)">
-                <option [ngValue]="null">No vehicle</option>
-                <option *ngFor="let v of vehicleTypes" [ngValue]="v.id">{{ v.display_name }} - {{ v.max_people }} seats - {{ v.luggage_capacity }} bags</option>
-              </select>
-            </label>
-            <label class="field"><span class="field__lbl">Booking window (hours) <span class="help" data-tip="How long before departure customers can book this route.">!</span></span><input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" /></label>
-            <label class="field"><span class="field__lbl">Luggage surcharge (₹) <span class="help" data-tip="Extra amount charged for each additional luggage item.">!</span></span><input type="number" min="0" step="0.01" [(ngModel)]="form.luggage_surcharge_amount" /></label>
+
+              <ng-template #noSuggestionsCue>
+                <div class="suggestions-loading" *ngIf="loadingSuggestedStops">
+                  Scanning corridor for bus stands, chowks, and transit points…
+                </div>
+                <div class="suggestions-empty" *ngIf="!loadingSuggestedStops">
+                  <p class="muted small">Click "Refresh" or search above to find stops along this corridor.</p>
+                </div>
+              </ng-template>
+            </div>
+
+            <!-- Map Placement Helper -->
+            <div class="stops-actions-row">
+              <button type="button" class="btn-action-secondary" [class.on]="tool === 'stop'" (click)="setTool('stop')">
+                <tm-icon name="map-marker" [size]="13" /> {{ tool === 'stop' ? 'Map pin mode active (Click green road line)' : 'Click map to place custom stop' }}
+              </button>
+            </div>
+
+            <!-- Added Stops Sequence List -->
+            <div class="stops-list-container">
+              <div class="stops-list-head">
+                <b>{{ form.stops.length }} Added Stop{{ form.stops.length === 1 ? '' : 's' }} in Route Sequence</b>
+              </div>
+
+              <p class="muted small" *ngIf="!form.stops.length">No intermediate stops added yet. Passengers will only ride directly from Start to Destination.</p>
+
+              <div class="stop-card" *ngFor="let s of form.stops; let i = index">
+                <div class="stop-card__head">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="stop-seq">Stop {{ i + 1 }}</span>
+                    <span class="stop-loc-tag" *ngIf="s.lat != null && s.lng != null">{{ calculateDistanceFromOriginKm({ lat: s.lat, lng: s.lng }) }} km from start</span>
+                  </div>
+                  <span class="ws__grow"></span>
+                  <button type="button" class="stop-remove" (click)="removeStop(i)" aria-label="Remove stop">✕ Remove</button>
+                </div>
+                <input type="text" class="stop-name" [(ngModel)]="s.name" placeholder="Stop name" />
+                <div class="stop-flags">
+                  <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_pickup" /> <span>Boarding allowed</span></label>
+                  <label class="stop-chip"><input type="checkbox" [(ngModel)]="s.is_drop" /> <span>Drop allowed</span></label>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <label class="field"><span class="field__lbl">Luggage capacity <span class="help" data-tip="Maximum luggage bags allowed on this route.">!</span></span>
-            <input type="number" min="0" step="1" [(ngModel)]="form.max_luggage_per_vehicle" />
-          </label>
+          <!-- STEP 4: FARE, SEATS & LUGGAGE -->
+          <div class="wstep-content" *ngIf="wizardStep === 4">
+            <div class="wstep-lead">
+              <h3>Pricing & Booking Policies</h3>
+              <p>Configure passenger fare, platform commission, and luggage capacity.</p>
+            </div>
 
-          <div class="toggles" *ngIf="editingId">
-            <label class="toggle"><input type="checkbox" [(ngModel)]="form.is_active" /><span>Active <span class="help" data-tip="Controls whether this fixed route is visible and bookable.">!</span></span></label>
+            <label class="field">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <span class="field__lbl">Route Name <i>*</i></span>
+                <span class="muted small" *ngIf="form.scope === 'local'">Local ({{ cityName }})</span>
+                <span class="muted small" *ngIf="form.scope === 'outstation'">Outstation ({{ getCityName(form.origin_city_id) }} → {{ getCityName(form.dest_city_id) }})</span>
+              </div>
+              <input type="text" [(ngModel)]="form.name" placeholder="e.g. Srinagar → Sopore" />
+            </label>
+
+            <div class="grid2">
+              <label class="field">
+                <span class="field__lbl">Flat Fare per Seat (₹) <i>*</i></span>
+                <input type="number" min="0" step="1" [(ngModel)]="form.seat_fare" placeholder="150" />
+              </label>
+              <label class="field">
+                <span class="field__lbl">Commission Type</span>
+                <div class="seg">
+                  <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'percent'" (click)="form.commission_type = 'percent'">Percent (%)</button>
+                  <button type="button" class="seg__btn" [class.is-on]="form.commission_type === 'fixed'" (click)="form.commission_type = 'fixed'">Fixed (₹)</button>
+                </div>
+              </label>
+            </div>
+
+            <div class="grid2">
+              <label class="field" *ngIf="form.commission_type === 'percent'">
+                <span class="field__lbl">Commission (%)</span>
+                <input type="number" min="0" max="100" step="1" [(ngModel)]="form.commission_percent" placeholder="20" />
+              </label>
+              <label class="field" *ngIf="form.commission_type === 'fixed'">
+                <span class="field__lbl">Fixed Commission (₹)</span>
+                <input type="number" min="0" step="1" [(ngModel)]="form.fixed_commission" placeholder="20" />
+              </label>
+              <label class="field">
+                <span class="field__lbl">Booking Window (Hours)</span>
+                <input type="number" min="0" max="24" step="1" [(ngModel)]="form.booking_window_hours" placeholder="6" />
+              </label>
+            </div>
+
+            <div class="grid2">
+              <label class="field">
+                <span class="field__lbl">Max Luggage per Vehicle</span>
+                <input type="number" min="0" step="1" [(ngModel)]="form.max_luggage_per_vehicle" placeholder="2" />
+              </label>
+              <label class="field">
+                <span class="field__lbl">Luggage Surcharge (₹)</span>
+                <input type="number" min="0" step="1" [(ngModel)]="form.luggage_surcharge_amount" placeholder="0" />
+              </label>
+            </div>
           </div>
 
+          <!-- STEP 5: ASSIGN VEHICLE, GROUP & DRIVERS -->
+          <div class="wstep-content" *ngIf="wizardStep === 5">
+            <div class="wstep-lead">
+              <h3>Assign Vehicle, Group & Drivers</h3>
+              <p>Attach this route to a vehicle model, route group, and assign local drivers.</p>
+            </div>
 
+            <!-- 1. Vehicle Type Chips -->
+            <div class="field">
+              <span class="field__lbl">1. Select Vehicle Type <i>*</i></span>
+              <div class="chips-grid" *ngIf="vehicleTypes.length; else noVehiclesCue">
+                <button type="button" class="chip-card" *ngFor="let v of vehicleTypes"
+                  [class.is-selected]="form.city_vehicle_type_id === v.id"
+                  (click)="onVehiclePicked(v.id)">
+                  <span class="chip-icon">🚐</span>
+                  <div class="chip-info">
+                    <b class="chip-title">{{ v.display_name }}</b>
+                    <span class="chip-sub">{{ v.max_people }} seats • {{ v.luggage_capacity || 0 }} luggage</span>
+                  </div>
+                  <tm-icon *ngIf="form.city_vehicle_type_id === v.id" name="check" [size]="16" class="chip-check text-green" />
+                </button>
+              </div>
+              <ng-template #noVehiclesCue>
+                <p class="muted small">No active vehicle models in this city.</p>
+              </ng-template>
+            </div>
+
+            <!-- Vehicle Groups Loader -->
+            <div class="vehicle-groups-loader" *ngIf="loadingVehicleGroups">
+              <div class="spinner-sm"></div>
+              <span>Loading route groups and drivers for vehicle...</span>
+            </div>
+
+            <!-- Hidden until a vehicle is picked and loaded -->
+            <ng-container *ngIf="form.city_vehicle_type_id && !loadingVehicleGroups">
+              <!-- 2. Route Group Assignment Chips -->
+              <div class="field" style="margin-top: 14px;">
+                <span class="field__lbl">2. Route Group Assignment <i>*</i></span>
+                <div class="chips-grid">
+                  <button type="button" class="chip-card" *ngFor="let g of vehicleFilteredGroups"
+                    [class.is-selected]="form.assigned_group_id === g.id"
+                    (click)="form.assigned_group_id = g.id; onGroupSelected(g.id)">
+                    <span class="chip-icon">📁</span>
+                    <div class="chip-info">
+                      <b class="chip-title">{{ g.name }}</b>
+                      <span class="chip-sub">{{ g.route_ids.length }} route(s)</span>
+                    </div>
+                    <tm-icon *ngIf="form.assigned_group_id === g.id" name="check" [size]="16" class="chip-check text-green" />
+                  </button>
+
+                  <button type="button" class="chip-card"
+                    [class.is-selected]="form.assigned_group_id === 'new'"
+                    (click)="form.assigned_group_id = 'new'">
+                    <span class="chip-icon">➕</span>
+                    <div class="chip-info">
+                      <b class="chip-title">New Group</b>
+                      <span class="chip-sub">Create bundle</span>
+                    </div>
+                    <tm-icon *ngIf="form.assigned_group_id === 'new'" name="check" [size]="16" class="chip-check text-green" />
+                  </button>
+                </div>
+              </div>
+
+              <label class="field" *ngIf="form.assigned_group_id === 'new'" style="margin-top: 8px;">
+                <span class="field__lbl">New Group Name <i>*</i></span>
+                <input type="text" [(ngModel)]="form.new_group_name" placeholder="e.g. Sopore Express Corridor" />
+              </label>
+
+              <!-- 3. Drivers Assignment -->
+              <div class="field" style="margin-top: 14px;">
+                <div class="drivers-head-bar">
+                  <span class="field__lbl">3. Assign Drivers in Area ({{ form.assigned_driver_ids.length }} selected)</span>
+                  <button type="button" class="btn-link" (click)="toggleSelectAllDrivers()" *ngIf="vehicleFilteredDrivers.length">
+                    {{ form.assigned_driver_ids.length === vehicleFilteredDrivers.length ? 'Deselect All' : 'Select All' }}
+                  </button>
+                </div>
+
+                <div class="drivers-card-list" *ngIf="vehicleFilteredDrivers.length; else noDriversCue">
+                  <div class="driver-card-row" *ngFor="let d of vehicleFilteredDrivers"
+                    [class.is-selected]="form.assigned_driver_ids.includes(d.user_id || d.id)"
+                    (click)="toggleDriverAssignment(d.user_id || d.id)">
+                    <input type="checkbox"
+                      [checked]="form.assigned_driver_ids.includes(d.user_id || d.id)"
+                      (click)="$event.stopPropagation()"
+                      (change)="toggleDriverAssignment(d.user_id || d.id)" />
+                    
+                    <div class="driver-avatar">👤</div>
+
+                    <div class="driver-main-info">
+                      <div class="driver-name-row">
+                        <b class="driver-name">{{ d.name }}</b>
+                        <span class="driver-vehicle-badge" *ngIf="d.vehicle_model">{{ d.vehicle_model }}</span>
+                      </div>
+                    </div>
+
+                    <span class="driver-phone" *ngIf="d.phone">{{ d.phone }}</span>
+                  </div>
+                </div>
+
+                <ng-template #noDriversCue>
+                  <p class="muted small" style="margin-top: 4px;">No approved drivers giving service in this city area yet. You can assign drivers anytime later.</p>
+                </ng-template>
+              </div>
+            </ng-container>
+          </div>
+
+          <!-- STEP 6: OVERVIEW & PUBLISH -->
+          <div class="wstep-content" *ngIf="wizardStep === 6">
+            <div class="wstep-lead">
+              <h3>Route Review & Map Overview</h3>
+              <p>Review the finalized route details and road path before publishing.</p>
+            </div>
+
+            <div class="review-summary-card">
+              <div class="review-head">
+                <div>
+                  <h4 class="review-name">{{ form.name }}</h4>
+                  <span class="scope-tag" *ngIf="form.scope === 'local'">LOCAL ROUTE ({{ cityName }})</span>
+                  <span class="scope-tag" *ngIf="form.scope === 'outstation'" style="background: #ffedd5; color: #c2410c;">OUTSTATION ({{ getCityName(form.origin_city_id) }} → {{ getCityName(form.dest_city_id) }})</span>
+                </div>
+                <div class="review-fare">
+                  <b>₹{{ form.seat_fare }}</b>
+                  <small>/ seat</small>
+                </div>
+              </div>
+
+              <div class="review-stats">
+                <div class="review-stat" *ngIf="estimatedDistanceText">
+                  <tm-icon name="road" [size]="14" />
+                  <span>{{ estimatedDistanceText }}</span>
+                </div>
+                <div class="review-stat" *ngIf="estimatedDurationText">
+                  <tm-icon name="bolt" [size]="14" />
+                  <span>{{ estimatedDurationText }}</span>
+                </div>
+                <div class="review-stat">
+                  <tm-icon name="map-marker" [size]="14" />
+                  <span>{{ form.stops.length + 2 }} total stops</span>
+                </div>
+              </div>
+
+              <div class="review-itinerary">
+                <div class="itinerary-stop is-start">
+                  <span class="dot a">A</span>
+                  <span class="txt"><b>Start:</b> {{ form.origin_name }}</span>
+                </div>
+                <div class="itinerary-stop is-intermediate" *ngFor="let s of form.stops; let i = index">
+                  <span class="dot mid">{{ i + 1 }}</span>
+                  <span class="txt">{{ s.name }}</span>
+                </div>
+                <div class="itinerary-stop is-end">
+                  <span class="dot b">B</span>
+                  <span class="txt"><b>Destination:</b> {{ form.dest_name }}</span>
+                </div>
+              </div>
+
+              <div class="review-meta-grid">
+                <div class="meta-item">
+                  <span class="meta-label">Vehicle:</span>
+                  <span class="meta-val">{{ getVehicleDisplayName(form.city_vehicle_type_id) }}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Group:</span>
+                  <span class="meta-val">{{ getGroupDisplayName() }}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Assigned Drivers:</span>
+                  <span class="meta-val">{{ form.assigned_driver_ids.length }} driver(s)</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Commission:</span>
+                  <span class="meta-val">{{ form.commission_type === 'percent' ? ((form.commission_percent || 0) + '%') : ('₹' + (form.fixed_commission || 0)) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <footer class="rt-panel__foot">
-          <tm-button variant="ghost" (clicked)="closeEditor()">Cancel</tm-button>
-          <tm-button variant="green" [disabled]="!formValid || saving" (clicked)="submit()">
-            {{ saving ? 'Saving…' : editingId ? 'Save changes' : 'Create route' }}
+          <tm-button variant="ghost" *ngIf="wizardStep === 1" (clicked)="promptCloseEditor()">Cancel</tm-button>
+          <tm-button variant="outline" *ngIf="wizardStep > 1" (clicked)="prevStep()">← Back</tm-button>
+
+          <span class="ws__grow"></span>
+
+          <tm-button variant="green" *ngIf="wizardStep === 1" [disabled]="form.origin_lat == null" (clicked)="goToStep(2)">
+            Next: Set Destination →
+          </tm-button>
+          <tm-button variant="green" *ngIf="wizardStep === 2" [disabled]="form.dest_lat == null" (clicked)="goToStep(3)">
+            Next: Add Stops →
+          </tm-button>
+          <tm-button variant="green" *ngIf="wizardStep === 3" (clicked)="goToStep(4)">
+            Next: Fare & Policy →
+          </tm-button>
+          <tm-button variant="green" *ngIf="wizardStep === 4" [disabled]="!form.name.trim() || form.seat_fare == null" (clicked)="goToStep(5)">
+            Next: Group & Drivers →
+          </tm-button>
+          <tm-button variant="green" *ngIf="wizardStep === 5" (clicked)="goToStep(6)">
+            Next: Review & Overview →
+          </tm-button>
+          <tm-button variant="green" icon="check" *ngIf="wizardStep === 6" [disabled]="saving" (clicked)="promptSave()">
+            {{ saving ? 'Saving…' : (editingId ? '💾 Save Changes' : '💾 Save & Publish Route') }}
           </tm-button>
         </footer>
       </aside>
     </div>
 
-    <tm-modal [open]="clearPathConfirmOpen" title="Clear fixed route" (closed)="clearPathConfirmOpen = false">
+    <!-- Discard Warning Modal -->
+    <tm-modal [open]="discardConfirmOpen" title="Discard Route?" (closed)="discardConfirmOpen = false">
       <div slot="body">
-        <p>Clear the current path, start, destination, stops, and route form data? This cannot be undone.</p>
+        <p>You have unsaved route progress. Are you sure you want to discard this route? All entered steps and settings will be lost.</p>
       </div>
       <div slot="footer">
-        <tm-button variant="ghost" (clicked)="clearPathConfirmOpen = false">Cancel</tm-button>
-        <tm-button variant="danger" (clicked)="confirmClearPath()">Clear</tm-button>
+        <tm-button variant="ghost" (clicked)="discardConfirmOpen = false">Continue Editing</tm-button>
+        <tm-button variant="danger" (clicked)="forceCloseEditor()">Discard & Exit</tm-button>
       </div>
     </tm-modal>
 
-
-    <tm-modal [open]="stopAvailabilityConfirmOpen" title="Confirm stop availability" (closed)="cancelStopAvailabilityConfirm()">
+    <!-- Save Confirmation Modal -->
+    <tm-modal [open]="saveConfirmOpen" title="Confirm & Publish Route" (closed)="saveConfirmOpen = false">
       <div slot="body">
-        <p>{{ stopAvailabilityConfirmMessage }}</p>
+        <p>Are you sure you want to save and publish route <b>"{{ form.name }}"</b> with <b>{{ form.stops.length + 2 }} total stops</b> at <b>₹{{ form.seat_fare }} per seat</b>?</p>
+        <p *ngIf="form.assigned_group_id === 'new'" style="margin-top: 6px; color: var(--tm-green); font-weight: 700;">
+          A new route group "{{ form.new_group_name }}" will also be created.
+        </p>
       </div>
       <div slot="footer">
-        <tm-button variant="ghost" (clicked)="cancelStopAvailabilityConfirm()">Cancel</tm-button>
-        <tm-button variant="green" (clicked)="confirmStopAvailabilitySave()">Confirm</tm-button>
-      </div>
-    </tm-modal>
-
-    <tm-modal [open]="removedStopsModalOpen" title="Removed stops" (closed)="closeRemovedStopsModal()">
-      <div slot="body" class="removed-modal">
-        <p class="removed-modal__hint">Select one or more removed stops to add them back to the current route form.</p>
-        <label class="removed-modal__row" *ngFor="let s of removedStops; let i = index" [class.is-selected]="isRemovedStopSelected(i)">
-          <input type="checkbox" [checked]="isRemovedStopSelected(i)" (change)="toggleRemovedStopSelection(i)" />
-          <span class="removed-modal__name">{{ s.name || ('Stop ' + (i + 1)) }}</span>
-          <small *ngIf="s.lat != null && s.lng != null">{{ s.lat | number:'1.4-4' }}, {{ s.lng | number:'1.4-4' }}</small>
-        </label>
-        <p class="muted small" *ngIf="!removedStops.length">No removed stops for this route.</p>
-      </div>
-      <div slot="footer">
-        <tm-button variant="ghost" (clicked)="closeRemovedStopsModal()">Cancel</tm-button>
-        <tm-button variant="green" [disabled]="!selectedRemovedStopCount" (clicked)="addSelectedRemovedStops()">
-          Add {{ selectedRemovedStopCount || '' }}
-        </tm-button>
+        <tm-button variant="ghost" (clicked)="saveConfirmOpen = false">Cancel</tm-button>
+        <tm-button variant="green" (clicked)="confirmSave()">Confirm & Publish</tm-button>
       </div>
     </tm-modal>
 
@@ -652,6 +996,161 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .stop-flags { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stop-chip { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 10px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface); font-size: 12px; font-weight: 600; color: var(--tm-text); }
     .stop-chip input { width: 15px; height: 15px; flex: none; }
+    .route-metrics { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 9px; font-size: 12px; color: #065f46; }
+    .route-metric { display: inline-flex; align-items: center; gap: 5px; }
+    .micro-action-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #10b981; background: #fff; color: #047857; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .micro-action-btn:hover { background: #047857; color: #fff; }
+    .sec-acts { display: inline-flex; align-items: center; gap: 6px; }
+    .micro-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; cursor: pointer; border: 1px solid var(--tm-line); background: #fff; color: var(--tm-text); }
+    .micro-btn--green { border-color: #86efac; background: #f0fdf4; color: #166534; }
+    .micro-btn--green:hover { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .micro-btn:disabled { opacity: 0.5; cursor: default; }
+    .rt-tool--sparkle { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+    .rt-tool--sparkle:hover { background: #dcfce7; }
+    .stop-add-search { display: flex; align-items: center; gap: 7px; padding: 0 10px; height: 34px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text-muted); }
+    .stop-add-search input { flex: 1; border: 0; outline: none; background: transparent; font-size: 12px; color: var(--tm-text); font-family: inherit; }
+    
+    /* Wizard Stepper on top of map */
+    .wizard-stepper { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 6px 12px; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgba(13,27,42,0.16); max-width: 640px; z-index: 10; }
+    .wstep { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; cursor: pointer; padding: 4px 6px; border-radius: 8px; font-family: inherit; font-size: 11.5px; font-weight: 700; color: var(--tm-text-muted); }
+    .wstep:hover { background: var(--tm-canvas-2, #eef1f5); color: var(--tm-text); }
+    .wstep.is-active { background: #ecfdf5; color: #15803d; font-weight: 850; }
+    .wstep.is-done .wstep__num { background: #16a34a; color: #fff; }
+    .wstep__num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--tm-canvas-2, #e2e8f0); color: var(--tm-text-muted); font-size: 10px; font-weight: 800; }
+    .wstep.is-active .wstep__num { background: #15803d; color: #fff; }
+    .wstep__lbl { white-space: nowrap; }
+    .wstep__sep { color: var(--tm-line, #cbd5e1); font-size: 11px; font-weight: 800; }
+
+    /* Wizard step content panels */
+    .wstep-content { display: flex; flex-direction: column; gap: 14px; }
+    .wstep-lead { margin-bottom: 2px; }
+    .wstep-lead h3 { margin: 0 0 4px; font-size: 15px; font-weight: 800; color: var(--tm-text); }
+    .wstep-lead p { margin: 0; font-size: 12px; color: var(--tm-text-muted); line-height: 1.4; }
+    
+    .scope-choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .scope-choice-card { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1.5px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); cursor: pointer; text-align: left; transition: all .15s; font-family: inherit; }
+    .scope-choice-card:hover { border-color: #86efac; background: #f0fdf4; }
+    .scope-choice-card.is-active { border-color: var(--tm-green, #16a34a); background: #f0fdf4; box-shadow: 0 2px 8px rgba(22,163,74,0.12); }
+    .scope-choice-icon { font-size: 20px; flex: none; }
+    .scope-choice-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .scope-choice-body b { font-size: 13px; font-weight: 850; color: var(--tm-text); }
+    .scope-choice-body small { font-size: 11px; color: var(--tm-text-muted); }
+    .outstation-cities-box { padding: 12px; border-radius: 10px; background: #fff7ed; border: 1px solid #fed7aa; }
+
+    .wstep-tip { padding: 10px 12px; border-radius: 9px; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; font-size: 11.5px; line-height: 1.4; }
+    
+    .selected-point-box { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid #86efac; background: #f0fdf4; }
+    .point-dot { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 900; color: #fff; flex: none; }
+    .point-dot.a { background: #16a34a; }
+    .point-dot.b { background: #ef4444; }
+    .point-details { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .point-details b { font-size: 12.5px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .point-details small { font-size: 10.5px; font-family: var(--tm-font-mono); color: var(--tm-text-muted); }
+    .text-green { color: #16a34a; }
+    .location-setting-loader { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: #f0fdf4; border: 1.5px solid #86efac; color: #166534; font-size: 12px; font-weight: 750; margin-top: 6px; animation: fadeIn .2s ease; }
+    .vehicle-groups-loader { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 9px; background: #f8fafc; border: 1px solid var(--tm-line); color: var(--tm-text); font-size: 12px; font-weight: 750; margin-top: 10px; animation: fadeIn .2s ease; }
+    .spinner-sm { width: 14px; height: 14px; border: 2px solid #86efac; border-top-color: #16a34a; border-radius: 50%; animation: spin 0.7s linear infinite; flex: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Step 3 Stops actions & suggestions */
+    .stop-search-box { position: relative; margin-bottom: 2px; }
+    .search-input-wrap { position: relative; display: flex; align-items: center; width: 100%; }
+    .search-input-icon { position: absolute; left: 10px; color: var(--tm-text-muted); pointer-events: none; }
+    .search-input-wrap input { width: 100%; padding: 8px 30px 8px 32px; border: 1.5px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 12.5px; font-weight: 600; outline: none; transition: border-color .15s; }
+    .search-input-wrap input:focus { border-color: var(--tm-green, #16a34a); background: #fff; }
+    .search-clear-btn { position: absolute; right: 8px; border: none; background: #e2e8f0; color: #475569; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; cursor: pointer; }
+    .search-clear-btn:hover { background: #cbd5e1; color: #0f172a; }
+
+    .stop-search-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1.5px solid var(--tm-green, #16a34a); border-radius: 10px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18), 0 8px 10px -6px rgba(0,0,0,0.1); z-index: 99; overflow: hidden; max-height: 280px; display: flex; flex-direction: column; }
+    .search-dropdown-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: #f8fafc; border-bottom: 1px solid var(--tm-line); font-size: 11px; font-weight: 800; color: var(--tm-text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .close-drop-btn { border: none; background: none; font-size: 12px; color: var(--tm-text-muted); cursor: pointer; padding: 0 4px; }
+    .close-drop-btn:hover { color: #000; }
+    .search-dropdown-list { overflow-y: auto; display: flex; flex-direction: column; }
+    .search-dropdown-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: none; background: transparent; text-align: left; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background .12s; font-family: inherit; width: 100%; }
+    .search-dropdown-item:last-child { border-bottom: none; }
+    .search-dropdown-item:hover { background: #f0fdf4; }
+    .item-icon { font-size: 14px; flex: none; }
+    .item-text { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 1px; }
+    .item-main { font-size: 12px; font-weight: 750; color: var(--tm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-sub { font-size: 10.5px; color: var(--tm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-add-tag { font-size: 10px; font-weight: 800; color: var(--tm-green, #16a34a); background: #dcfce7; padding: 2px 7px; border-radius: 6px; flex: none; }
+    .search-dropdown-item:hover .item-add-tag { background: #16a34a; color: #fff; }
+    .search-loading-hint { font-size: 11px; color: var(--tm-text-muted); padding: 4px 8px; font-style: italic; }
+
+    .suggested-stops-section { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: #f8fafc; border: 1px solid var(--tm-line); }
+    .suggested-stops-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 800; color: var(--tm-text); }
+    .count-badge { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
+    .suggested-chips-wrap { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow-y: auto; padding: 2px; }
+    .suggested-stop-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 20px; border: 1px solid #cbd5e1; background: #fff; color: var(--tm-text); font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s; font-family: inherit; }
+    .suggested-stop-chip:hover:not(:disabled) { border-color: var(--tm-green, #16a34a); background: #f0fdf4; color: #166534; transform: translateY(-1px); }
+    .suggested-stop-chip.is-added { border-color: #86efac; background: #ecfdf5; color: #15803d; opacity: 0.75; cursor: default; }
+    .chip-add-icon { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: #e2e8f0; font-size: 10px; font-weight: 900; color: var(--tm-text-muted); flex: none; }
+    .suggested-stop-chip:hover:not(:disabled) .chip-add-icon { background: #16a34a; color: #fff; }
+    .suggested-stop-chip.is-added .chip-add-icon { background: #16a34a; color: #fff; }
+    .chip-stop-name { font-size: 11.5px; font-weight: 750; }
+    .chip-dist-badge { font-size: 9.5px; font-weight: 700; color: var(--tm-text-muted); background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; }
+    
+    .stop-loc-tag { font-size: 10px; font-weight: 700; color: var(--tm-text-muted); background: #e2e8f0; padding: 1px 5px; border-radius: 4px; }
+    .suggestions-loading, .suggestions-empty { font-size: 11.5px; color: var(--tm-text-muted); padding: 4px 0; }
+
+    .stops-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn-action-primary { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid #86efac; background: #f0fdf4; color: #166534; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; }
+    .btn-action-primary:hover:not(:disabled) { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .btn-action-primary:disabled { opacity: .5; cursor: default; }
+    .btn-action-secondary { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 8px; border: 1px solid var(--tm-line); background: var(--tm-canvas); color: var(--tm-text); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .btn-action-secondary.on { border-color: var(--tm-green); background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .stops-list-container { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+    .stops-list-head { font-size: 12px; font-weight: 800; color: var(--tm-text); }
+
+    /* Step 5 Chips & Drivers */
+    .chips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 4px; }
+    .chip-card { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border: 1.5px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); cursor: pointer; text-align: left; transition: all .15s; font-family: inherit; position: relative; }
+    .chip-card:hover { border-color: #86efac; background: #f0fdf4; }
+    .chip-card.is-selected { border-color: var(--tm-green, #16a34a); background: #f0fdf4; box-shadow: 0 1px 6px rgba(22,163,74,0.12); }
+    .chip-icon { font-size: 16px; flex: none; }
+    .chip-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .chip-title { font-size: 11.5px; font-weight: 800; color: var(--tm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chip-sub { font-size: 10px; color: var(--tm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chip-check { flex: none; margin-left: auto; }
+
+    .btn-link { border: 0; background: transparent; color: var(--tm-green, #16a34a); font-size: 11.5px; font-weight: 800; cursor: pointer; padding: 0; }
+    .btn-link:hover { text-decoration: underline; }
+    .drivers-head-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .drivers-card-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; padding: 4px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); }
+    .driver-card-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: var(--tm-surface); border: 1px solid transparent; cursor: pointer; transition: all .15s; }
+    .driver-card-row:hover { background: var(--tm-canvas-2, #f1f5f9); }
+    .driver-card-row.is-selected { border-color: #86efac; background: #f0fdf4; }
+    .driver-card-row input[type="checkbox"] { width: 16px; height: 16px; flex: none; cursor: pointer; }
+    .driver-avatar { width: 26px; height: 26px; border-radius: 50%; background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: none; }
+    .driver-main-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .driver-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .driver-name { font-size: 12px; font-weight: 750; color: var(--tm-text); }
+    .driver-vehicle-badge { display: inline-block; font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #e0e7ff; color: #3730a3; }
+    .driver-phone { font-size: 11px; font-family: var(--tm-font-mono); color: var(--tm-text-muted); flex: none; }
+
+    /* Step 6 Review Card */
+    .review-summary-card { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 12px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas); }
+    .review-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--tm-line); }
+    .review-name { margin: 0 0 4px; font-size: 14px; font-weight: 850; color: var(--tm-text); }
+    .scope-tag { display: inline-block; font-size: 9.5px; font-weight: 900; padding: 2px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1; letter-spacing: .3px; }
+    .review-fare { text-align: right; }
+    .review-fare b { font-size: 18px; font-weight: 900; color: var(--tm-green, #16a34a); font-family: var(--tm-font-mono); }
+    .review-fare small { font-size: 11px; color: var(--tm-text-muted); margin-left: 2px; }
+    .review-stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-size: 11.5px; font-weight: 750; }
+    .review-stat { display: inline-flex; align-items: center; gap: 4px; }
+    .review-itinerary { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--tm-line); }
+    .itinerary-stop { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .itinerary-stop .dot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 9.5px; font-weight: 900; color: #fff; flex: none; }
+    .itinerary-stop .dot.a { background: #16a34a; }
+    .itinerary-stop .dot.b { background: #ef4444; }
+    .itinerary-stop .dot.mid { background: #64748b; font-size: 8.5px; }
+    .itinerary-stop .txt { color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .review-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11.5px; }
+    .meta-item { display: flex; flex-direction: column; gap: 1px; }
+    .meta-label { color: var(--tm-text-muted); font-size: 10.5px; font-weight: 700; }
+    .meta-val { color: var(--tm-text); font-weight: 750; }
+
     @media (max-width: 920px) { .rt-editor { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; } .rt-panel { border-left: 0; border-top: 1px solid var(--tm-line); } }
   `],
 })
@@ -691,6 +1190,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   editingId: number | null = null;
   saving = false;
   tool: MapTool = 'origin';
+  wizardStep: 1 | 2 | 3 | 4 | 5 | 6 = 1;
+  discardConfirmOpen = false;
+  saveConfirmOpen = false;
+  groups: Array<{ id: number; name: string; vehicle_type_id?: number | null; route_ids: number[]; driver_user_ids: number[] }> = [];
+  cityDrivers: Array<{ id: number; user_id?: number; name: string; phone?: string; city_vehicle_type_id?: number | null; vehicle_model?: string }> = [];
   clearPathConfirmOpen = false;
   stopAvailabilityConfirmOpen = false;
   stopAvailabilityConfirmMessage = '';
@@ -701,6 +1205,46 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   stopsPopoverLines: string[] = [];
   stopsPopoverX = 0;
   stopsPopoverY = 0;
+
+  estimatedDistanceText = '';
+  estimatedDurationText = '';
+  estimatedDistanceKm = 0;
+  generatingStops = false;
+  suggestedStops: SuggestedStop[] = [];
+  loadingSuggestedStops = false;
+  stopSearchQuery = '';
+  stopSearchResults: { place_id: string; main_text: string; secondary_text: string; description: string }[] = [];
+  isStopSearchDropdownOpen = false;
+  isSearchingStops = false;
+  private stopSearchDebounceTimer: any = null;
+  private autocompleteSvc: google.maps.places.AutocompleteService | null = null;
+  private boundOriginEl: HTMLInputElement | null = null;
+  private boundDestEl: HTMLInputElement | null = null;
+  isSettingOrigin = false;
+  isSettingDest = false;
+  loadingVehicleGroups = false;
+
+  get wizardStepTitle(): string {
+    switch (this.wizardStep) {
+      case 1: return 'Set Origin';
+      case 2: return 'Set Destination';
+      case 3: return 'Intermediate Stops';
+      case 4: return 'Fare & Policy';
+      case 5: return 'Group & Drivers';
+      case 6: return 'Review & Publish';
+    }
+  }
+
+  get wizardStepHint(): string {
+    switch (this.wizardStep) {
+      case 1: return 'Click on the map or type in search to place the green Start marker (A).';
+      case 2: return 'Click on the map or type in search to place the red Destination marker (B).';
+      case 3: return 'Type landmark names to add stops, tap Auto-detect, or click along the road line.';
+      case 4: return 'Configure passenger seat fare, platform commission, and luggage.';
+      case 5: return 'Select vehicle type, route group, and assigned drivers.';
+      case 6: return 'Review high-level map overview and finalize.';
+    }
+  }
 
   form = this.blankForm();
   removedStops: RouteStopRow[] = [];
@@ -865,6 +1409,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (f.origin_lat == null || f.origin_lng == null || f.dest_lat == null || f.dest_lng == null) return false;
     if (f.seat_fare == null || f.seat_fare <= 0) return false;
     if (f.scope === 'outstation' && (f.origin_city_id == null || f.dest_city_id == null)) return false;
+    if (f.city_vehicle_type_id == null) return false;
+    if (f.assigned_group_id == null || (f.assigned_group_id === 'new' && !f.new_group_name.trim())) return false;
     return true;
   }
 
@@ -873,8 +1419,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   blankForm() {
     return {
       scope: 'local' as RouteScope,
-      origin_city_id: null as number | null,
-      dest_city_id: null as number | null,
+      origin_city_id: this.cityId,
+      dest_city_id: this.cityId,
       origin_stop_id: null as number | null,
       dest_stop_id: null as number | null,
       name: '',
@@ -886,13 +1432,13 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       dest_lng: null as number | null,
       seat_fare: null as number | null,
       commission_type: 'percent' as 'percent' | 'fixed',
-      commission_percent: null as number | null,
+      commission_percent: 20 as number | null,
       fixed_commission: null as number | null,
-      city_vehicle_type_id: this.cityVehicleTypeId,
+      city_vehicle_type_id: this.cityVehicleTypeId ?? null,
       booking_window_hours: 6,
       waiting_time_per_stop_minutes: 5,
       luggage_surcharge_amount: 0,
-      max_luggage_per_vehicle: 0,
+      max_luggage_per_vehicle: 2,
       stop_arrival_radius_m: 150,
       driver_missed_stop_grace_minutes: 3,
       customer_pickup_radius_m: 150,
@@ -903,23 +1449,901 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       sort_order: 0,
       path: [] as LatLng[],
       stops: [] as RouteStopRow[],
+      assigned_group_id: null as number | 'new' | null,
+      new_group_name: '',
+      assigned_driver_ids: [] as number[],
     };
   }
 
   loadVehicleTypes(): void {
     if (this.cityId == null) { this.vehicleTypes = []; return; }
     this.api.get<{ data: any[] }>(`/admin/cities/${this.cityId}/vehicle-types`).subscribe({
-      next: (res) => { this.vehicleTypes = (res?.data || []).map((v) => ({ id: v.id, display_name: v.display_name ?? v.name ?? ("#" + v.id), max_people: Number(v.max_people ?? 0), luggage_capacity: Number(v.luggage_capacity ?? 0) })); },
+      next: (res) => {
+        const rawList = (res?.data || []).filter((v: any) => v.is_active !== false);
+
+        // Exclude private on-demand vehicles; only show Fixed / Shuttle / Shared vehicles
+        let list = rawList.filter((v: any) => {
+          if (v.is_fixed === true) return true;
+          const mode = (v.ride_type_mode || '').toLowerCase();
+          if (mode === 'fixed' || mode === 'shuttle') return true;
+          const rideName = (v.ride_type_name || '').toLowerCase();
+          if (rideName.includes('fixed') || rideName.includes('shuttle') || rideName.includes('maxi') || rideName.includes('share')) return true;
+          if (mode === 'private' || rideName.includes('private')) return false;
+          return true;
+        });
+
+        if (!list.length) {
+          list = rawList;
+        }
+
+        this.vehicleTypes = list.map((v: any) => ({
+          id: v.id,
+          display_name: v.display_name ?? v.name ?? ('#' + v.id),
+          max_people: Number(v.max_people ?? 0),
+          luggage_capacity: Number(v.luggage_capacity ?? 0),
+        }));
+
+        if (this.vehicleTypes.length && (!this.form.city_vehicle_type_id || !this.vehicleTypes.some((vt) => vt.id === this.form.city_vehicle_type_id))) {
+          this.form.city_vehicle_type_id = this.vehicleTypes[0].id;
+        }
+      },
       error: () => (this.vehicleTypes = []),
     });
   }
 
-  /** Optional convenience: picking a vehicle pre-fills the route's luggage capacity. */
-  onVehiclePicked(id: number | null): void {
-    if (id == null) return;
+  get availableDestCities(): CityOption[] {
+    return this.cities.filter((c) => c.id !== this.form.origin_city_id);
+  }
+
+  getCityName(cityId: number | null): string {
+    if (cityId == null) return '';
+    return this.cities.find((c) => c.id === cityId)?.name || '';
+  }
+
+  setScope(scope: RouteScope): void {
+    this.form.scope = scope;
+    if (scope === 'local') {
+      this.form.origin_city_id = this.cityId;
+      this.form.dest_city_id = this.cityId;
+    } else {
+      if (this.form.origin_city_id == null) {
+        this.form.origin_city_id = this.cityId;
+      }
+      if (this.form.dest_city_id == null || this.form.dest_city_id === this.form.origin_city_id) {
+        const other = this.cities.find((c) => c.id !== this.form.origin_city_id);
+        this.form.dest_city_id = other ? other.id : null;
+      }
+    }
+    if (this.form.origin_city_id != null) {
+      this.centerMapOnCity(this.form.origin_city_id);
+    }
+  }
+
+  onOriginCityChange(): void {
+    if (this.form.origin_city_id != null) {
+      this.centerMapOnCity(this.form.origin_city_id);
+    }
+  }
+
+  onDestCityChange(): void {
+    if (this.form.dest_city_id != null && this.form.origin_city_id != null) {
+      this.centerMapBetweenCities(this.form.origin_city_id, this.form.dest_city_id);
+    }
+  }
+
+  centerMapOnCity(cityId: number): void {
+    if (!this.map || this.geocoder == null) return;
+    const name = this.getCityName(cityId);
+    if (!name) return;
+    this.geocoder.geocode({ address: name + ', India' }, (results, status) => {
+      if (status === 'OK' && results?.[0]?.geometry?.location && this.map) {
+        this.map.panTo(results[0].geometry.location);
+        this.map.setZoom(13);
+      }
+    });
+  }
+
+  centerMapBetweenCities(originCityId: number, destCityId: number): void {
+    if (!this.map || this.geocoder == null) return;
+    const origName = this.getCityName(originCityId);
+    const destName = this.getCityName(destCityId);
+    if (!origName || !destName) return;
+
+    this.geocoder.geocode({ address: origName + ', India' }, (res1, status1) => {
+      if (status1 === 'OK' && res1?.[0]?.geometry?.location) {
+        this.geocoder?.geocode({ address: destName + ', India' }, (res2, status2) => {
+          if (status2 === 'OK' && res2?.[0]?.geometry?.location && this.map) {
+            const bounds = new google.maps.LatLngBounds();
+            bounds.extend(res1[0].geometry.location);
+            bounds.extend(res2[0].geometry.location);
+            this.map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+          }
+        });
+      }
+    });
+  }
+
+  loadGroupsAndDrivers(): void {
+    if (this.cityId == null) { this.groups = []; this.cityDrivers = []; return; }
+    
+    // 1. Fetch Route Groups for this city
+    this.api.get<{ data: any[] }>(`/admin/cities/${this.cityId}/route-groups`).subscribe({
+      next: (res) => {
+        this.groups = (res?.data || []).map((g: any) => ({
+          id: g.id,
+          name: g.name,
+          vehicle_type_id: g.city_vehicle_type_id ?? g.vehicle_type_id,
+          route_ids: g.route_ids || [],
+          driver_user_ids: g.driver_user_ids || [],
+        }));
+      },
+      error: () => { this.groups = []; },
+    });
+
+    // 2. Fetch Drivers giving service in this city
+    this.api.get<{ data: any[] }>(`/admin/cities/${this.cityId}/route-group-drivers`).subscribe({
+      next: (res) => {
+        const list = res?.data || [];
+        if (list.length > 0) {
+          this.cityDrivers = list.map((d: any) => ({
+            id: d.id,
+            user_id: d.user_id ?? d.id,
+            name: d.name || `Driver #${d.user_id || d.id}`,
+            phone: d.phone || '',
+            city_vehicle_type_id: d.city_vehicle_type_id,
+            vehicle_model: d.vehicle_model || d.vehicle_reg_no || '',
+          }));
+        } else {
+          this.fetchDriversFallback();
+        }
+      },
+      error: () => {
+        this.fetchDriversFallback();
+      },
+    });
+  }
+
+  private fetchDriversFallback(): void {
+    if (this.cityId == null) return;
+    this.api.get<{ data: any[] }>(`/admin/drivers?city_id=${this.cityId}`).subscribe({
+      next: (res) => {
+        this.cityDrivers = (res?.data || []).map((d: any) => ({
+          id: d.id,
+          user_id: d.user_id ?? d.id,
+          name: d.name || d.user?.name || `Driver #${d.id}`,
+          phone: d.phone || d.user?.phone || '',
+          city_vehicle_type_id: d.city_vehicle_type_id,
+          vehicle_model: d.vehicle_model || d.vehicle_reg_no || '',
+        }));
+      },
+      error: () => { this.cityDrivers = []; },
+    });
+  }
+
+  onGroupSelected(groupId: number | 'new' | null): void {
+    if (typeof groupId === 'number') {
+      const g = this.groups.find((x) => x.id === groupId);
+      if (g) {
+        if (g.vehicle_type_id && !this.form.city_vehicle_type_id) {
+          this.form.city_vehicle_type_id = g.vehicle_type_id;
+        }
+        if (g.driver_user_ids?.length) {
+          this.form.assigned_driver_ids = Array.from(new Set([...this.form.assigned_driver_ids, ...g.driver_user_ids]));
+        }
+      }
+    }
+  }
+
+  get vehicleFilteredGroups(): Array<{ id: number; name: string; vehicle_type_id?: number | null; route_ids: number[]; driver_user_ids: number[] }> {
+    if (!this.form.city_vehicle_type_id) return [];
+    return this.groups.filter((g) => !g.vehicle_type_id || g.vehicle_type_id === this.form.city_vehicle_type_id);
+  }
+
+  get vehicleFilteredDrivers(): Array<{ id: number; user_id?: number; name: string; phone?: string; city_vehicle_type_id?: number | null; vehicle_model?: string }> {
+    if (!this.form.city_vehicle_type_id) return [];
+    const vId = this.form.city_vehicle_type_id;
+    const matching = this.cityDrivers.filter((d) => d.city_vehicle_type_id === vId);
+    return matching.length > 0 ? matching : this.cityDrivers;
+  }
+
+  onVehiclePicked(vehicleTypeId: number | null): void {
+    if (vehicleTypeId == null) return;
+    this.form.city_vehicle_type_id = vehicleTypeId;
+    this.loadingVehicleGroups = true;
+
+    const v = this.vehicleTypes.find((x) => x.id === vehicleTypeId);
+    if (v && v.luggage_capacity != null) {
+      this.form.max_luggage_per_vehicle = v.luggage_capacity;
+    }
+
+    if (typeof this.form.assigned_group_id === 'number') {
+      const g = this.groups.find((x) => x.id === this.form.assigned_group_id);
+      if (g && g.vehicle_type_id && g.vehicle_type_id !== vehicleTypeId) {
+        this.form.assigned_group_id = null;
+      }
+    }
+
+    setTimeout(() => {
+      this.loadingVehicleGroups = false;
+      const valid = this.vehicleFilteredGroups;
+      if (valid.length > 0 && !this.form.assigned_group_id) {
+        this.form.assigned_group_id = valid[0].id;
+        this.onGroupSelected(valid[0].id);
+      }
+    }, 350);
+  }
+
+  async geocodeAndSetLocation(query: string, which: 'origin' | 'dest'): Promise<void> {
+    const trimmed = query?.trim();
+    if (!trimmed || !this.geocoder) return;
+    if (which === 'origin') this.isSettingOrigin = true;
+    if (which === 'dest') this.isSettingDest = true;
+
+    return new Promise((resolve) => {
+      const cityScope = which === 'origin'
+        ? (this.getCityName(this.form.origin_city_id) || this.cityName)
+        : ((this.form.scope === 'outstation' ? this.getCityName(this.form.dest_city_id) : null) || this.cityName);
+      const searchAddress = `${trimmed}, ${cityScope}, India`;
+
+      this.geocoder?.geocode({ address: searchAddress }, async (results, status) => {
+        try {
+          if (status === 'OK' && results?.[0]?.geometry?.location && this.map) {
+            const loc = results[0].geometry.location;
+            const lat = loc.lat();
+            const lng = loc.lng();
+            const landmarkName = this.bestGeocodeStopName(results) || results[0].formatted_address.split(',')[0].trim() || trimmed;
+
+            if (which === 'origin') {
+              this.form.origin_name = landmarkName;
+              this.map.panTo(loc);
+              this.map.setZoom(16);
+              await this.setOrigin(lat, lng, false);
+              this.toast.success(`Start point placed at "${landmarkName}"`);
+            } else {
+              this.form.dest_name = landmarkName;
+              this.map.panTo(loc);
+              await this.setDest(lat, lng, false);
+              this.toast.success(`Destination placed at "${landmarkName}"`);
+            }
+          } else {
+            this.toast.error(`Could not locate "${trimmed}". Please tap on the map.`);
+          }
+        } finally {
+          if (which === 'origin') this.isSettingOrigin = false;
+          if (which === 'dest') this.isSettingDest = false;
+          resolve();
+        }
+      });
+    });
+  }
+
+  async onOriginSearchEnter(event?: Event): Promise<void> {
+    if (event) event.preventDefault();
+    const query = this.form.origin_name.trim();
+    if (!query) return;
+    await this.geocodeAndSetLocation(query, 'origin');
+  }
+
+  onOriginSearchBlur(): void {
+    const query = this.form.origin_name.trim();
+    if (!query || this.form.origin_lat != null || this.isSettingOrigin) return;
+    void this.geocodeAndSetLocation(query, 'origin');
+  }
+
+  async onDestSearchEnter(event?: Event): Promise<void> {
+    if (event) event.preventDefault();
+    const query = this.form.dest_name.trim();
+    if (!query) return;
+    await this.geocodeAndSetLocation(query, 'dest');
+  }
+
+  onDestSearchBlur(): void {
+    const query = this.form.dest_name.trim();
+    if (!query || this.form.dest_lat != null || this.isSettingDest) return;
+    void this.geocodeAndSetLocation(query, 'dest');
+  }
+
+  maybeAutoName(): void {
+    const orig = this.cleanStopName(this.form.origin_name) || this.form.origin_name.trim();
+    const dest = this.cleanStopName(this.form.dest_name) || this.form.dest_name.trim();
+    if (orig && dest) {
+      this.form.name = `${orig} → ${dest}`;
+    } else if (orig && !this.form.name.trim()) {
+      this.form.name = `${orig} Route`;
+    }
+  }
+
+  getVehicleDisplayName(id: number | null): string {
+    if (id == null) return 'Not assigned';
     const v = this.vehicleTypes.find((x) => x.id === id);
-    if (!v) return;
-    this.form.max_luggage_per_vehicle = v.luggage_capacity ?? this.form.max_luggage_per_vehicle;
+    return v ? `${v.display_name} (${v.max_people} seats)` : `#${id}`;
+  }
+
+  getGroupDisplayName(): string {
+    if (this.form.assigned_group_id === 'new') {
+      return `New Group: "${this.form.new_group_name.trim() || 'Untitled'}"`;
+    }
+    if (typeof this.form.assigned_group_id === 'number') {
+      const g = this.groups.find((x) => x.id === this.form.assigned_group_id);
+      return g ? g.name : `#${this.form.assigned_group_id}`;
+    }
+    return 'Ungrouped (Independent Route)';
+  }
+
+  toggleDriverAssignment(driverId: number): void {
+    const idx = this.form.assigned_driver_ids.indexOf(driverId);
+    if (idx >= 0) {
+      this.form.assigned_driver_ids.splice(idx, 1);
+    } else {
+      this.form.assigned_driver_ids.push(driverId);
+    }
+  }
+
+  toggleSelectAllDrivers(): void {
+    if (this.form.assigned_driver_ids.length === this.cityDrivers.length) {
+      this.form.assigned_driver_ids = [];
+    } else {
+      this.form.assigned_driver_ids = this.cityDrivers.map((d) => d.user_id || d.id);
+    }
+  }
+
+  isStopAlreadyAdded(name: string): boolean {
+    const norm = this.cleanStopName(name).toLowerCase();
+    return this.form.stops.some((s) => this.cleanStopName(s.name).toLowerCase() === norm);
+  }
+
+  addSuggestedStop(suggested: SuggestedStop): void {
+    if (this.isStopAlreadyAdded(suggested.name)) {
+      this.toast.error(`Stop "${suggested.name}" is already in your stops list.`);
+      return;
+    }
+    const stop: RouteStopRow = {
+      name: suggested.name,
+      lat: suggested.lat,
+      lng: suggested.lng,
+      is_pickup: true,
+      is_drop: true,
+      is_active: true,
+      is_temporarily_unavailable: false,
+      unavailable_reason: null,
+    };
+    this.insertStopInRouteOrder(stop);
+    suggested.added = true;
+    this.toast.success(`Added stop "${suggested.name}" (${suggested.distanceFromStartKm} km from start)`);
+  }
+
+  insertStopInRouteOrder(stop: RouteStopRow): void {
+    if (stop.lat == null || stop.lng == null) {
+      this.form.stops.push(stop);
+      this.redrawStops();
+      return;
+    }
+    const distKm = this.calculateDistanceFromOriginKm({ lat: stop.lat, lng: stop.lng });
+    let inserted = false;
+    for (let i = 0; i < this.form.stops.length; i++) {
+      const s = this.form.stops[i];
+      if (s.lat != null && s.lng != null) {
+        const sDist = this.calculateDistanceFromOriginKm({ lat: s.lat, lng: s.lng });
+        if (distKm < sDist) {
+          this.form.stops.splice(i, 0, stop);
+          inserted = true;
+          break;
+        }
+      }
+    }
+    if (!inserted) {
+      this.form.stops.push(stop);
+    }
+    this.redrawStops();
+  }
+
+  onStopSearchFocus(): void {
+    if (this.stopSearchResults.length > 0) {
+      this.isStopSearchDropdownOpen = true;
+    }
+  }
+
+  onStopSearchBlur(): void {
+    setTimeout(() => {
+      this.isStopSearchDropdownOpen = false;
+    }, 250);
+  }
+
+  clearStopSearch(): void {
+    this.stopSearchQuery = '';
+    this.stopSearchResults = [];
+    this.isStopSearchDropdownOpen = false;
+    this.isSearchingStops = false;
+  }
+
+  onStopSearchInput(query: string): void {
+    if (this.stopSearchDebounceTimer) {
+      clearTimeout(this.stopSearchDebounceTimer);
+    }
+
+    const trimmed = (query || '').trim();
+    if (!trimmed || trimmed.length < 2) {
+      this.stopSearchResults = [];
+      this.isStopSearchDropdownOpen = false;
+      this.isSearchingStops = false;
+      return;
+    }
+
+    this.stopSearchDebounceTimer = setTimeout(() => {
+      this.fetchStopPredictions(trimmed);
+    }, 200);
+  }
+
+  private fetchStopPredictions(query: string): void {
+    if (!this.autocompleteSvc && typeof google !== 'undefined' && google.maps?.places) {
+      this.autocompleteSvc = new google.maps.places.AutocompleteService();
+    }
+    if (!this.autocompleteSvc) return;
+
+    this.isSearchingStops = true;
+    const bounds = this.map ? this.map.getBounds() : undefined;
+
+    this.autocompleteSvc.getPlacePredictions(
+      {
+        input: query,
+        bounds: bounds || undefined,
+        componentRestrictions: { country: 'in' },
+      },
+      (predictions, status) => {
+        this.isSearchingStops = false;
+        if (status === google.maps.places.PlacesServiceStatus.OK && predictions?.length) {
+          this.stopSearchResults = predictions
+            .map((p) => ({
+              place_id: p.place_id,
+              main_text: p.structured_formatting?.main_text || p.description.split(',')[0],
+              secondary_text: p.structured_formatting?.secondary_text || p.description.split(',').slice(1).join(','),
+              description: p.description,
+            }))
+            .filter((p) => !this.isBadStopName(p.main_text));
+
+          this.isStopSearchDropdownOpen = this.stopSearchResults.length > 0;
+        } else {
+          this.fallbackPlacesSearch(query);
+        }
+      }
+    );
+  }
+
+  private fallbackPlacesSearch(query: string): void {
+    if (!this.placesSvc || !this.map) {
+      this.stopSearchResults = [];
+      this.isStopSearchDropdownOpen = false;
+      return;
+    }
+
+    this.placesSvc.textSearch(
+      {
+        query,
+        bounds: this.map.getBounds() || undefined,
+      },
+      (results, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results?.length) {
+          this.stopSearchResults = results
+            .filter((r) => !this.isCommercialRetailPlace(r))
+            .slice(0, 6)
+            .map((r) => ({
+              place_id: r.place_id || '',
+              main_text: this.extractLegitimateLocationName(r),
+              secondary_text: (r.formatted_address || '').split(',').slice(1, 3).join(','),
+              description: r.formatted_address || r.name || '',
+            }))
+            .filter((p) => p.main_text && !this.isBadStopName(p.main_text));
+
+          this.isStopSearchDropdownOpen = this.stopSearchResults.length > 0;
+        } else {
+          this.stopSearchResults = [];
+          this.isStopSearchDropdownOpen = false;
+        }
+      }
+    );
+  }
+
+  selectStopSearchResult(item: { place_id: string; main_text: string; secondary_text: string; description: string }): void {
+    if (!item.place_id && item.main_text) {
+      this.addStopByNameAndQuery(item.main_text);
+      this.clearStopSearch();
+      return;
+    }
+
+    if (!this.placesSvc) return;
+
+    this.placesSvc.getDetails(
+      {
+        placeId: item.place_id,
+        fields: ['geometry', 'name', 'formatted_address', 'address_components', 'types'],
+      },
+      (place, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          const locationName = this.extractLegitimateLocationName(place);
+          const roadPoint = this.snapToRoutePath({ lat, lng });
+
+          const stop: RouteStopRow = {
+            name: locationName,
+            lat: roadPoint.lat,
+            lng: roadPoint.lng,
+            is_pickup: true,
+            is_drop: true,
+            is_active: true,
+            is_temporarily_unavailable: false,
+            unavailable_reason: null,
+          };
+
+          this.insertStopInRouteOrder(stop);
+          this.clearStopSearch();
+          this.toast.success(`Added stop "${locationName}"`);
+        } else {
+          this.addStopByNameAndQuery(item.main_text);
+          this.clearStopSearch();
+        }
+      }
+    );
+  }
+
+  onStopSearchEnter(): void {
+    if (this.stopSearchResults.length > 0) {
+      this.selectStopSearchResult(this.stopSearchResults[0]);
+    } else if (this.stopSearchQuery.trim()) {
+      this.addStopByNameAndQuery(this.stopSearchQuery.trim());
+      this.clearStopSearch();
+    }
+  }
+
+  private addStopByNameAndQuery(query: string): void {
+    if (!this.geocoder) return;
+    this.geocoder.geocode(
+      { address: query, bounds: this.map?.getBounds() || undefined, componentRestrictions: { country: 'in' } },
+      (results, status) => {
+        if (status === 'OK' && results && results[0]?.geometry?.location) {
+          const loc = results[0].geometry.location;
+          const name = this.bestGeocodeStopName(results) || this.cleanStopName(query);
+          const roadPt = this.snapToRoutePath({ lat: loc.lat(), lng: loc.lng() });
+          const stop: RouteStopRow = {
+            name,
+            lat: roadPt.lat,
+            lng: roadPt.lng,
+            is_pickup: true,
+            is_drop: true,
+            is_active: true,
+            is_temporarily_unavailable: false,
+            unavailable_reason: null,
+          };
+          this.insertStopInRouteOrder(stop);
+          this.toast.success(`Added stop "${name}"`);
+        } else {
+          this.toast.error(`Could not locate "${query}". Try picking a suggested stop or clicking the map.`);
+        }
+      }
+    );
+  }
+
+  calculateDistanceFromOriginKm(point: LatLng): number {
+    if (this.form.origin_lat == null || this.form.origin_lng == null) return 0;
+    if (!this.roadPath || !this.roadPath.length) {
+      return Number((this.distanceMeters(this.form.origin_lat, this.form.origin_lng, point.lat, point.lng) / 1000).toFixed(1));
+    }
+    let bestIdx = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < this.roadPath.length; i++) {
+      const d = this.distanceMeters(point.lat, point.lng, this.roadPath[i].lat, this.roadPath[i].lng);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    let sumM = 0;
+    for (let i = 1; i <= bestIdx; i++) {
+      sumM += this.distanceMeters(this.roadPath[i - 1].lat, this.roadPath[i - 1].lng, this.roadPath[i].lat, this.roadPath[i].lng);
+    }
+    return Number((sumM / 1000).toFixed(1));
+  }
+
+  detectSuggestedStops(): void {
+    if (!this.roadPath || this.roadPath.length < 2 || !this.map) return;
+    this.loadingSuggestedStops = true;
+    this.suggestedStops = [];
+
+    const totalLength = this.roadPath.length;
+    const sampleCount = Math.min(12, Math.max(3, Math.floor(totalLength / 25)));
+    const step = Math.max(1, Math.floor(totalLength / (sampleCount + 1)));
+
+    const samplePoints: LatLng[] = [];
+    for (let i = step; i < totalLength - 1; i += step) {
+      samplePoints.push(this.roadPath[i]);
+    }
+
+    const collected: SuggestedStop[] = [];
+    const seenNames = new Set<string>();
+
+    if (this.form.origin_name) seenNames.add(this.cleanStopName(this.form.origin_name).toLowerCase());
+    if (this.form.dest_name) seenNames.add(this.cleanStopName(this.form.dest_name).toLowerCase());
+    this.form.stops.forEach((s) => {
+      if (s.name) seenNames.add(this.cleanStopName(s.name).toLowerCase());
+    });
+
+    let pending = samplePoints.length;
+    if (pending === 0) {
+      this.loadingSuggestedStops = false;
+      return;
+    }
+
+    const finish = () => {
+      pending--;
+      if (pending <= 0) {
+        this.loadingSuggestedStops = false;
+        this.suggestedStops = collected.sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm);
+      }
+    };
+
+    samplePoints.forEach((pt) => {
+      if (this.placesSvc && typeof google !== 'undefined' && google.maps?.places) {
+        this.placesSvc.nearbySearch(
+          {
+            location: new google.maps.LatLng(pt.lat, pt.lng),
+            radius: 350,
+            type: 'transit_station' as any,
+          },
+          (places, status) => {
+            let foundTransit = false;
+            if (status === google.maps.places.PlacesServiceStatus.OK && places?.length) {
+              for (const p of places) {
+                const name = this.cleanStopName(p.name || '');
+                const norm = name.toLowerCase();
+                if (name && !this.isBadStopName(name) && !seenNames.has(norm) && p.geometry?.location) {
+                  seenNames.add(norm);
+                  const loc = p.geometry.location;
+                  const roadPt = this.snapToRoutePath({ lat: loc.lat(), lng: loc.lng() });
+                  const distKm = this.calculateDistanceFromOriginKm(roadPt);
+                  collected.push({
+                    name,
+                    lat: roadPt.lat,
+                    lng: roadPt.lng,
+                    distanceFromStartKm: distKm,
+                    type: 'transit',
+                    added: this.form.stops.some((s) => this.cleanStopName(s.name).toLowerCase() === norm),
+                  });
+                  foundTransit = true;
+                  break;
+                }
+              }
+            }
+
+            if (!foundTransit) {
+              this.geocoder?.geocode({ location: { lat: pt.lat, lng: pt.lng } }, (results, gStatus) => {
+                if (gStatus === 'OK' && results?.length) {
+                  const stopName = this.bestGeocodeStopName(results);
+                  const norm = stopName.toLowerCase();
+                  if (stopName && !this.isBadStopName(stopName) && !seenNames.has(norm)) {
+                    seenNames.add(norm);
+                    const roadPt = this.snapToRoutePath(pt);
+                    const distKm = this.calculateDistanceFromOriginKm(roadPt);
+                    collected.push({
+                      name: stopName,
+                      lat: roadPt.lat,
+                      lng: roadPt.lng,
+                      distanceFromStartKm: distKm,
+                      type: 'junction',
+                      added: this.form.stops.some((s) => this.cleanStopName(s.name).toLowerCase() === norm),
+                    });
+                  }
+                }
+                finish();
+              });
+            } else {
+              finish();
+            }
+          }
+        );
+      } else {
+        finish();
+      }
+    });
+  }
+
+  private isCommercialRetailPlace(place: google.maps.places.PlaceResult | any): boolean {
+    if (!place) return false;
+    const types: string[] = place.types || [];
+
+    // Transit, Civic & Landmark types that are genuine stop points:
+    const allowedCivicTypes = [
+      'transit_station', 'bus_station', 'train_station', 'subway_station', 'light_rail_station', 'airport',
+      'intersection', 'neighborhood', 'sublocality', 'sublocality_level_1', 'sublocality_level_2',
+      'locality', 'administrative_area_level_2', 'administrative_area_level_1', 'route',
+      'colloquial_area', 'natural_feature', 'park', 'hospital', 'university', 'school',
+      'local_government_office', 'city_hall', 'courthouse', 'police'
+    ];
+    if (types.some((t) => allowedCivicTypes.includes(t))) return false;
+
+    // Commercial Retail & Business types that must be stripped:
+    const retailTypes = [
+      'store', 'clothing_store', 'convenience_store', 'department_store', 'electronics_store',
+      'furniture_store', 'hardware_store', 'home_goods_store', 'jewelry_store', 'liquor_store',
+      'pet_store', 'shoe_store', 'shopping_mall', 'supermarket', 'bakery', 'cafe', 'restaurant',
+      'food', 'meal_takeaway', 'meal_delivery', 'bar', 'night_club', 'beauty_salon', 'hair_care',
+      'spa', 'car_dealer', 'car_repair', 'car_wash', 'gas_station', 'bank', 'atm', 'finance',
+      'insurance_agency', 'real_estate_agency', 'travel_agency', 'accounting', 'dentist', 'doctor',
+      'pharmacy', 'health', 'physiotherapist', 'gym', 'lodging', 'laundry', 'veterinary_care',
+      'establishment', 'point_of_interest'
+    ];
+
+    if (types.some((t) => retailTypes.includes(t))) {
+      return true;
+    }
+
+    if (place.name && this.isBadStopName(place.name)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  extractLegitimateLocationName(place: google.maps.places.PlaceResult | any): string {
+    if (!place) return 'Route Stop';
+    const isCommercial = this.isCommercialRetailPlace(place);
+    const rawName = place.name ? this.cleanStopName(place.name) : '';
+
+    // If it is NOT a commercial retail store and passes the stop name quality filter:
+    if (!isCommercial && rawName && !this.isBadStopName(rawName)) {
+      return rawName;
+    }
+
+    // Otherwise (if it IS a commercial shop/retail), ALWAYS extract the true sublocality, chowk, junction, or town:
+    if (place.address_components && Array.isArray(place.address_components)) {
+      // 1. Sublocality / Neighborhood (e.g., "Batamaloo", "Nowgam", "Sangrama", "Narbal", "Mirgund")
+      const subloc = place.address_components.find((c: any) =>
+        c.types.includes('sublocality_level_1') || c.types.includes('sublocality') || c.types.includes('neighborhood')
+      );
+      if (subloc?.long_name && !this.isBadStopName(subloc.long_name)) {
+        return this.cleanStopName(subloc.long_name);
+      }
+
+      // 2. Intersection or Route / Chowk
+      const routeComp = place.address_components.find((c: any) => c.types.includes('intersection') || c.types.includes('route'));
+      if (routeComp?.long_name && !this.isBadStopName(routeComp.long_name)) {
+        return this.cleanStopName(routeComp.long_name);
+      }
+
+      // 3. Locality / Town (e.g., "Sopore", "Pattan", "Baramulla", "Srinagar")
+      const loc = place.address_components.find((c: any) => c.types.includes('locality'));
+      if (loc?.long_name && !this.isBadStopName(loc.long_name)) {
+        return this.cleanStopName(loc.long_name);
+      }
+    }
+
+    // Fallback: Parse formatted_address parts to find the first non-commercial civic location
+    if (place.formatted_address) {
+      const parts = place.formatted_address
+        .split(',')
+        .map((p: string) => this.cleanStopName(p))
+        .filter((p: string) => p && !this.isBadStopName(p) && !/^\d{5,6}$/.test(p) && !/^india$/i.test(p));
+      if (parts.length > 0) {
+        return parts[0];
+      }
+    }
+
+    return rawName && !this.isBadStopName(rawName) ? rawName : 'Corridor Stop';
+  }
+
+  goToStep(step: 1 | 2 | 3 | 4 | 5 | 6): void {
+    if (step === 2) {
+      if (this.form.scope === 'outstation' && !this.form.dest_city_id) {
+        this.toast.error('Please select a destination city for this outstation route.');
+        return;
+      }
+      if (!this.form.origin_lat) {
+        this.toast.error('Please set an origin location first.');
+        return;
+      }
+    }
+    if (step === 3 && !this.form.dest_lat) {
+      this.toast.error('Please set a destination location first.');
+      return;
+    }
+    if (step === 5 && (!this.form.name.trim() || this.form.seat_fare == null)) {
+      this.toast.error('Please fill in route name and fare.');
+      return;
+    }
+    if (step === 6) {
+      if (!this.form.city_vehicle_type_id) {
+        this.toast.error('Please select a vehicle model.');
+        return;
+      }
+      if (this.form.assigned_group_id == null || (this.form.assigned_group_id === 'new' && !this.form.new_group_name.trim())) {
+        this.toast.error('Please select a route group or create a new group.');
+        return;
+      }
+    }
+    this.wizardStep = step;
+    if (step === 1) {
+      this.setTool('origin');
+      setTimeout(() => this.fitOriginView(), 60);
+    } else if (step === 2) {
+      this.setTool('dest');
+      if (this.form.origin_lat != null && this.form.dest_lat != null) {
+        setTimeout(() => this.fitRouteViewport(), 80);
+      } else {
+        setTimeout(() => this.fitOriginView(), 60);
+      }
+    } else if (step === 3) {
+      this.setTool('stop');
+      this.clearStopSearch();
+      if (!this.suggestedStops.length) {
+        this.detectSuggestedStops();
+      }
+      setTimeout(() => this.fitRouteViewport(), 80);
+    } else if (step === 4 || step === 5 || step === 6) {
+      if (step === 6) this.tool = 'path';
+      setTimeout(() => this.fitRouteViewport(), 80);
+    }
+    setTimeout(() => this.setupWizardAutocompletes(), 120);
+  }
+
+  nextStep(): void {
+    if (this.wizardStep < 6) {
+      this.goToStep((this.wizardStep + 1) as any);
+    }
+  }
+
+  prevStep(): void {
+    if (this.wizardStep > 1) {
+      this.goToStep((this.wizardStep - 1) as any);
+    }
+  }
+
+  promptCloseEditor(): void {
+    if (this.hasRouteDraftData) {
+      this.discardConfirmOpen = true;
+    } else {
+      this.forceCloseEditor();
+    }
+  }
+
+  forceCloseEditor(): void {
+    this.discardConfirmOpen = false;
+    this.saveConfirmOpen = false;
+    this.closeEditor();
+  }
+
+  promptSave(): void {
+    if (!this.formValid) {
+      this.toast.error('Please complete all required fields before saving.');
+      return;
+    }
+    this.saveConfirmOpen = true;
+  }
+
+  confirmSave(): void {
+    this.saveConfirmOpen = false;
+    this.submit();
+  }
+
+  fitOverviewMap(): void {
+    if (!this.map || typeof google === 'undefined' || !google.maps) return;
+    const bounds = new google.maps.LatLngBounds();
+    let count = 0;
+    if (this.form.origin_lat != null && this.form.origin_lng != null) {
+      bounds.extend({ lat: this.form.origin_lat, lng: this.form.origin_lng });
+      count++;
+    }
+    if (this.form.dest_lat != null && this.form.dest_lng != null) {
+      bounds.extend({ lat: this.form.dest_lat, lng: this.form.dest_lng });
+      count++;
+    }
+    for (const s of this.form.stops) {
+      if (s.lat != null && s.lng != null) {
+        bounds.extend({ lat: s.lat, lng: s.lng });
+        count++;
+      }
+    }
+    if (count > 0) {
+      this.map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+    }
   }
 
   loadCityMeta(): void {
@@ -953,14 +2377,22 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.selectedRemovedStopIndexes.clear();
     this.restoredStopIds.clear();
     this.removedStopsModalOpen = false;
+    this.discardConfirmOpen = false;
+    this.saveConfirmOpen = false;
     this.form = this.blankForm();
     this.roadPath = [];
     this.pathLocked = false;
     this.pathMode = 'road';
     this.clearAlternatives();
     this.directionsDisabled = false;
+    this.estimatedDistanceText = '';
+    this.estimatedDurationText = '';
+    this.estimatedDistanceKm = 0;
+    this.generatingStops = false;
+    this.wizardStep = 1;
     this.tool = 'origin';
     this.open = true;
+    this.loadGroupsAndDrivers();
     this.scheduleMapInit();
   }
 
@@ -975,6 +2407,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.selectedRemovedStopIndexes.clear();
     this.restoredStopIds.clear();
     this.removedStopsModalOpen = false;
+    this.discardConfirmOpen = false;
+    this.saveConfirmOpen = false;
     this.originalStopBookable = new Map((r.stops || []).map((stop) => [Number(stop.id), this.isStopBookable(stop)]));
     const fc = r.fare_config || ({ seat_fare: null, commission_percent: null, fixed_commission: null } as FareConfig);
     const ns = r.fixed_settings_json || {};
@@ -1010,20 +2444,28 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       sort_order: r.sort_order,
       path: [],
       stops: (r.stops || []).slice(1, -1).filter((s) => !this.isRemovedStop(s)).map((s) => ({ ...s })),
+      assigned_group_id: null,
+      new_group_name: '',
+      assigned_driver_ids: [],
     };
     this.removedStops = (r.stops || []).slice(1, -1).filter((s) => this.isRemovedStop(s)).map((s) => ({ ...s }));
     this.roadPath = (r.path_polyline || []).map((p) => ({ lat: p[0], lng: p[1] }));
+    this.computePathDistance();
     this.pathLocked = this.roadPath.length > 0;
     this.pathMode = 'road';
     this.clearAlternatives();
     this.directionsDisabled = false;
+    this.wizardStep = 6;
     this.tool = 'path';
     this.open = true;
+    this.loadGroupsAndDrivers();
     this.scheduleMapInit();
   }
 
   closeEditor(): void {
     this.open = false;
+    this.discardConfirmOpen = false;
+    this.saveConfirmOpen = false;
     this.removedStopsModalOpen = false;
     this.selectedRemovedStopIndexes.clear();
     this.teardownMap();
@@ -1097,6 +2539,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       is_temporarily_unavailable: false, unavailable_reason: null,
     }));
     this.roadPath = (draft.path || []).map((p) => ({ lat: p[0], lng: p[1] }));
+    this.computePathDistance();
     this.pathLocked = this.roadPath.length > 0;
     this.pathMode = 'road';
     this.clearAlternatives();
@@ -1296,7 +2739,163 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.selectedAltIdx = i;
     this.roadPath = alt.path.slice();
     this.pathLocked = true;
+    this.estimatedDistanceText = alt.distanceText || '';
+    this.estimatedDurationText = alt.durationText || '';
+    const distMatch = (alt.distanceText || '').match(/([\d,.]+)\s*(km|m)/i);
+    if (distMatch) {
+      const val = parseFloat(distMatch[1].replace(/,/g, ''));
+      this.estimatedDistanceKm = distMatch[2].toLowerCase() === 'm' ? val / 1000 : val;
+    } else {
+      this.computePathDistance();
+    }
+    if (!this.form.seat_fare && this.estimatedDistanceKm > 0) {
+      this.form.seat_fare = Math.max(30, Math.round(this.estimatedDistanceKm * 10 / 10) * 10);
+    }
     this.redrawPath();
+    this.detectSuggestedStops();
+    this.fitRouteViewport();
+  }
+
+  applyKmRate(rate: number): void {
+    if (this.estimatedDistanceKm > 0) {
+      this.form.seat_fare = Math.max(30, Math.round((this.estimatedDistanceKm * rate) / 10) * 10);
+    }
+  }
+
+  roundFare(amount: number): number {
+    return Math.max(30, Math.round(amount / 10) * 10);
+  }
+
+  computePathDistance(): void {
+    if (!this.roadPath.length || this.roadPath.length < 2) {
+      this.estimatedDistanceText = '';
+      this.estimatedDurationText = '';
+      this.estimatedDistanceKm = 0;
+      return;
+    }
+    let meters = 0;
+    for (let i = 0; i < this.roadPath.length - 1; i++) {
+      meters += this.distanceMeters(this.roadPath[i].lat, this.roadPath[i].lng, this.roadPath[i + 1].lat, this.roadPath[i + 1].lng);
+    }
+    const km = meters / 1000;
+    this.estimatedDistanceKm = Math.round(km * 10) / 10;
+    this.estimatedDistanceText = `${this.estimatedDistanceKm} km`;
+    const minutes = Math.round((km / 35) * 60);
+    this.estimatedDurationText = minutes >= 60 ? `~${Math.floor(minutes / 60)}h ${minutes % 60}m` : `~${minutes} mins`;
+  }
+
+  async autoGenerateStops(): Promise<void> {
+    if (!this.roadPath.length || this.roadPath.length < 5) {
+      this.toast.error('Draw or select a valid road route first.');
+      return;
+    }
+    if (this.generatingStops) return;
+    this.generatingStops = true;
+
+    try {
+      const numStops = Math.min(8, Math.max(3, Math.floor(this.roadPath.length / 25)));
+      const step = Math.floor(this.roadPath.length / (numStops + 1));
+      const sampledPoints: LatLng[] = [];
+      for (let i = 1; i <= numStops; i++) {
+        const pt = this.roadPath[i * step];
+        if (pt) sampledPoints.push(pt);
+      }
+
+      const newStops: RouteStopRow[] = [];
+      for (let i = 0; i < sampledPoints.length; i++) {
+        const pt = sampledPoints[i];
+        const name = await this.fetchPointStopName(pt.lat, pt.lng);
+        newStops.push({
+          name: name || `Stop ${this.form.stops.length + i + 1}`,
+          lat: pt.lat,
+          lng: pt.lng,
+          is_pickup: true,
+          is_drop: true,
+          is_active: true,
+          is_temporarily_unavailable: false,
+          unavailable_reason: null,
+        });
+      }
+
+      this.form.stops = [...this.form.stops, ...newStops];
+      this.redrawStops();
+      this.toast.success(`Generated ${newStops.length} stops from landmarks along the route.`);
+    } catch {
+      this.toast.error('Could not auto-generate stops.');
+    } finally {
+      this.generatingStops = false;
+    }
+  }
+
+  private fetchPointStopName(lat: number, lng: number): Promise<string> {
+    return new Promise((resolve) => {
+      if (!this.placesSvc || typeof google === 'undefined' || !google.maps?.places) {
+        this.geocoder?.geocode({ location: { lat, lng } }, (results, status) => {
+          if (status === 'OK' && results && results[0]) {
+            resolve(this.bestGeocodeStopName(results));
+          } else {
+            resolve('');
+          }
+        });
+        return;
+      }
+
+      this.placesSvc.nearbySearch({ location: new google.maps.LatLng(lat, lng), radius: 250 }, (places, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && places?.length) {
+          const name = this.bestNearbyStopName(places, lat, lng);
+          if (name) { resolve(name); return; }
+        }
+        this.geocoder?.geocode({ location: { lat, lng } }, (results, gStatus) => {
+          if (gStatus === 'OK' && results && results[0]) {
+            resolve(this.bestGeocodeStopName(results));
+          } else {
+            resolve('');
+          }
+        });
+      });
+    });
+  }
+
+  reverseRoute(): void {
+    if (!this.endpointsSet) return;
+    const oldOriginName = this.form.origin_name;
+    const oldOriginLat = this.form.origin_lat;
+    const oldOriginLng = this.form.origin_lng;
+    const oldOriginStopId = this.form.origin_stop_id;
+
+    this.form.origin_name = this.form.dest_name;
+    this.form.origin_lat = this.form.dest_lat;
+    this.form.origin_lng = this.form.dest_lng;
+    this.form.origin_stop_id = this.form.dest_stop_id;
+
+    this.form.dest_name = oldOriginName;
+    this.form.dest_lat = oldOriginLat;
+    this.form.dest_lng = oldOriginLng;
+    this.form.dest_stop_id = oldOriginStopId;
+
+    if (this.roadPath.length) {
+      this.roadPath = [...this.roadPath].reverse();
+    }
+    if (this.form.path.length) {
+      this.form.path = [...this.form.path].reverse();
+    }
+    if (this.form.stops.length) {
+      this.form.stops = [...this.form.stops].reverse();
+    }
+
+    if (this.form.scope === 'outstation') {
+      const origCity = this.form.origin_city_id;
+      this.form.origin_city_id = this.form.dest_city_id;
+      this.form.dest_city_id = origCity;
+    }
+
+    this.form.name = `${this.form.origin_name} → ${this.form.dest_name}`;
+
+    this.redrawOrigin();
+    this.redrawDest();
+    this.redrawPath();
+    this.redrawStops();
+    this.toast.success('Route reversed (Start & Destination swapped).');
   }
 
   selectAlternative(i: number): void {
@@ -1394,6 +2993,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.geocoder = new google.maps.Geocoder();
     this.directionsSvc = new google.maps.DirectionsService();
     this.placesSvc = new google.maps.places.PlacesService(this.map);
+    this.autocompleteSvc = new google.maps.places.AutocompleteService();
 
     this.mapListeners.push(this.map.addListener('click', (e: google.maps.MapMouseEvent) => {
       if (e.latLng) void this.onMapClick(e.latLng.lat(), e.latLng.lng());
@@ -1405,7 +3005,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.redrawDest();
     this.redrawPath();
     this.redrawStops();
-    this.fitToContent();
+    if (this.wizardStep === 1) {
+      this.fitOriginView();
+    } else {
+      this.fitRouteViewport();
+    }
   }
 
   private setupSearch(): void {
@@ -1414,7 +3018,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     // 1. Top Map Search Box
     const mapSearchInput = document.querySelector('.rt-search input') as HTMLInputElement | null;
     if (mapSearchInput) {
-      const ac = new google.maps.places.Autocomplete(mapSearchInput, { fields: ['geometry', 'name', 'formatted_address'] });
+      const ac = new google.maps.places.Autocomplete(mapSearchInput, {
+        fields: ['geometry', 'name', 'formatted_address', 'address_components', 'types'],
+      });
       this.autocomplete = ac;
       ac.bindTo('bounds', this.map);
       this.mapListeners.push(ac.addListener('place_changed', () => {
@@ -1423,7 +3029,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
         const lat = place.geometry.location.lat();
         const lng = place.geometry.location.lng();
-        const placeName = place.name || place.formatted_address || 'Selected location';
+        const placeName = this.extractLegitimateLocationName(place);
 
         this.map.panTo(place.geometry.location);
         this.map.setZoom(16);
@@ -1448,46 +3054,66 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       }));
     }
 
-    // 2. Start Name Input in Drawer Form
-    const originEl = document.querySelector('.endpoint input[placeholder*="Start"]') as HTMLInputElement | null;
+    this.setupWizardAutocompletes();
+  }
+
+  setupWizardAutocompletes(): void {
+    if (!this.map || typeof google === 'undefined' || !google.maps?.places) return;
+
+    // 2. Wizard Origin Search Input
+    const originEl = document.getElementById('wizard-origin-search') as HTMLInputElement | null;
     if (originEl) {
-      this.originAutocomplete = new google.maps.places.Autocomplete(originEl, { fields: ['geometry', 'name', 'formatted_address'] });
-      this.originAutocomplete.bindTo('bounds', this.map);
-      this.mapListeners.push(this.originAutocomplete.addListener('place_changed', () => {
-        const place = this.originAutocomplete?.getPlace();
-        if (place?.geometry?.location && this.map) {
-          const lat = place.geometry.location.lat();
-          const lng = place.geometry.location.lng();
-          const name = place.name || place.formatted_address || '';
-          this.form.origin_name = name;
-          this.map.panTo(place.geometry.location);
-          this.map.setZoom(16);
-          void this.setOrigin(lat, lng, false);
-          this.clearSearchMarker();
-          this.toast.success(`Start point placed at "${name}"`);
-        }
-      }));
+      if (this.boundOriginEl !== originEl) {
+        this.boundOriginEl = originEl;
+        this.originAutocomplete = new google.maps.places.Autocomplete(originEl, {
+          fields: ['geometry', 'name', 'formatted_address', 'address_components', 'types'],
+        });
+        this.originAutocomplete.bindTo('bounds', this.map);
+        this.mapListeners.push(this.originAutocomplete.addListener('place_changed', () => {
+          const place = this.originAutocomplete?.getPlace();
+          if (place?.geometry?.location && this.map) {
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            const name = this.extractLegitimateLocationName(place);
+            this.form.origin_name = name;
+            this.map.panTo(place.geometry.location);
+            this.map.setZoom(16);
+            void this.setOrigin(lat, lng, false);
+            this.clearSearchMarker();
+            this.toast.success(`Start point placed at "${name}"`);
+          }
+        }));
+      }
+    } else {
+      this.boundOriginEl = null;
     }
 
-    // 3. Destination Name Input in Drawer Form
-    const destEl = document.querySelector('.endpoint input[placeholder*="Destination"]') as HTMLInputElement | null;
+    // 3. Wizard Destination Search Input
+    const destEl = document.getElementById('wizard-dest-search') as HTMLInputElement | null;
     if (destEl) {
-      this.destAutocomplete = new google.maps.places.Autocomplete(destEl, { fields: ['geometry', 'name', 'formatted_address'] });
-      this.destAutocomplete.bindTo('bounds', this.map);
-      this.mapListeners.push(this.destAutocomplete.addListener('place_changed', () => {
-        const place = this.destAutocomplete?.getPlace();
-        if (place?.geometry?.location && this.map) {
-          const lat = place.geometry.location.lat();
-          const lng = place.geometry.location.lng();
-          const name = place.name || place.formatted_address || '';
-          this.form.dest_name = name;
-          this.map.panTo(place.geometry.location);
-          this.map.setZoom(16);
-          void this.setDest(lat, lng, false);
-          this.clearSearchMarker();
-          this.toast.success(`Destination placed at "${name}"`);
-        }
-      }));
+      if (this.boundDestEl !== destEl) {
+        this.boundDestEl = destEl;
+        this.destAutocomplete = new google.maps.places.Autocomplete(destEl, {
+          fields: ['geometry', 'name', 'formatted_address', 'address_components', 'types'],
+        });
+        this.destAutocomplete.bindTo('bounds', this.map);
+        this.mapListeners.push(this.destAutocomplete.addListener('place_changed', () => {
+          const place = this.destAutocomplete?.getPlace();
+          if (place?.geometry?.location && this.map) {
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            const name = this.extractLegitimateLocationName(place);
+            this.form.dest_name = name;
+            this.map.panTo(place.geometry.location);
+            this.map.setZoom(16);
+            void this.setDest(lat, lng, false);
+            this.clearSearchMarker();
+            this.toast.success(`Destination placed at "${name}"`);
+          }
+        }));
+      }
+    } else {
+      this.boundDestEl = null;
     }
   }
 
@@ -1600,29 +3226,53 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   private async setOrigin(lat: number, lng: number, fromClick = false): Promise<void> {
-    const seq = ++this.snapSeqOrigin;
-    const p = fromClick ? await this.snapPoint({ lat, lng }) : { lat, lng };
-    if (seq !== this.snapSeqOrigin || !this.open) return;
-    const v = this.validatePlacement(p.lat, p.lng, 'origin');
-    if (!v.ok) { this.toast.error(v.msg!); return; }
-    this.form.origin_lat = p.lat; this.form.origin_lng = p.lng;
-    this.redrawOrigin();
-    if (!this.form.origin_name.trim()) this.reverseGeocode(p.lat, p.lng, 'origin');
-    this.recomputeRoadPath();
-    if (this.form.dest_lat == null) this.tool = 'dest';
+    this.isSettingOrigin = true;
+    try {
+      const seq = ++this.snapSeqOrigin;
+      const p = fromClick ? await this.snapPoint({ lat, lng }) : { lat, lng };
+      if (seq !== this.snapSeqOrigin || !this.open) return;
+      const v = this.validatePlacement(p.lat, p.lng, 'origin');
+      if (!v.ok) { this.toast.error(v.msg!); return; }
+      this.form.origin_lat = p.lat; this.form.origin_lng = p.lng;
+      this.redrawOrigin();
+      if (!this.form.origin_name.trim()) this.reverseGeocode(p.lat, p.lng, 'origin');
+      else this.maybeAutoName();
+      this.recomputeRoadPath();
+
+      if (this.wizardStep === 1) {
+        this.fitOriginView();
+      } else {
+        this.fitRouteViewport();
+      }
+
+      if (this.form.dest_lat == null) {
+        this.tool = 'dest';
+      } else {
+        this.tool = 'stop';
+      }
+    } finally {
+      setTimeout(() => { this.isSettingOrigin = false; }, 300);
+    }
   }
 
   private async setDest(lat: number, lng: number, fromClick = false): Promise<void> {
-    const seq = ++this.snapSeqDest;
-    const p = fromClick ? await this.snapPoint({ lat, lng }) : { lat, lng };
-    if (seq !== this.snapSeqDest || !this.open) return;
-    const v = this.validatePlacement(p.lat, p.lng, 'dest');
-    if (!v.ok) { this.toast.error(v.msg!); return; }
-    this.form.dest_lat = p.lat; this.form.dest_lng = p.lng;
-    this.redrawDest();
-    if (!this.form.dest_name.trim()) this.reverseGeocode(p.lat, p.lng, 'dest');
-    this.recomputeRoadPath();
-    this.tool = 'path';
+    this.isSettingDest = true;
+    try {
+      const seq = ++this.snapSeqDest;
+      const p = fromClick ? await this.snapPoint({ lat, lng }) : { lat, lng };
+      if (seq !== this.snapSeqDest || !this.open) return;
+      const v = this.validatePlacement(p.lat, p.lng, 'dest');
+      if (!v.ok) { this.toast.error(v.msg!); return; }
+      this.form.dest_lat = p.lat; this.form.dest_lng = p.lng;
+      this.redrawDest();
+      if (!this.form.dest_name.trim()) this.reverseGeocode(p.lat, p.lng, 'dest');
+      else this.maybeAutoName();
+      this.recomputeRoadPath();
+      this.tool = 'stop';
+      setTimeout(() => this.fitRouteViewport(), 100);
+    } finally {
+      setTimeout(() => { this.isSettingDest = false; }, 300);
+    }
   }
 
   private snapPoint(p: LatLng): Promise<LatLng> {
@@ -1659,6 +3309,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (pts.length < 2 || !this.directionsSvc || this.directionsDisabled) {
       this.roadPath = pts.slice();
       this.redrawPath();
+      if (this.wizardStep >= 2) this.fitRouteViewport();
       return;
     }
     const origin = pts[0];
@@ -1678,6 +3329,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
           this.roadPath = pts.slice();
         }
         this.redrawPath();
+        if (this.wizardStep >= 2) {
+          this.fitRouteViewport();
+        }
       },
     );
   }
@@ -1708,8 +3362,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     const seq = this.geocodeSeq;
     this.geocoder?.geocode({ location: { lat, lng } }, (results, statusStr) => {
       if (seq !== this.geocodeSeq || !this.map || !this.open) return;
-      if (statusStr === 'OK' && results && results[0]) {
-        const name = results[0].formatted_address.split(',').slice(0, 2).join(',').trim();
+      if (statusStr === 'OK' && results && results.length) {
+        const name = this.bestGeocodeStopName(results) || results[0].formatted_address.split(',')[0].trim();
         if (which === 'origin' && !this.form.origin_name.trim()) this.form.origin_name = name;
         if (which === 'dest' && !this.form.dest_name.trim()) this.form.dest_name = name;
         this.maybeAutoName();
@@ -1753,27 +3407,52 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   }
 
   private bestNearbyStopName(places: google.maps.places.PlaceResult[], lat: number, lng: number): string {
-    const ranked = places
+    const valid = places
       .map((place) => {
-        const name = this.cleanStopName(place.name || "");
+        const name = this.extractLegitimateLocationName(place);
         const loc = place.geometry?.location;
         const distance = loc ? this.distanceMeters(lat, lng, loc.lat(), loc.lng()) : Number.POSITIVE_INFINITY;
-        return { name, distance };
+        return { name, distance, isCommercial: this.isCommercialRetailPlace(place) };
       })
-      .filter((item) => item.name && !this.isBadStopName(item.name) && item.distance <= 100)
-      .sort((a, b) => a.distance - b.distance);
-    return ranked[0]?.name || "";
+      .filter((item) => item.name && !this.isBadStopName(item.name) && item.distance <= 150)
+      .sort((a, b) => {
+        if (a.isCommercial !== b.isCommercial) return a.isCommercial ? 1 : -1;
+        return a.distance - b.distance;
+      });
+    return valid[0]?.name || '';
   }
 
   private bestGeocodeStopName(results: google.maps.GeocoderResult[]): string {
     for (const result of results) {
-      const parts = (result.formatted_address || "")
-        .split(",")
+      if (result.address_components) {
+        // Priority 1: sublocality / neighborhood
+        const subloc = result.address_components.find((c) =>
+          c.types.includes('sublocality_level_1') || c.types.includes('sublocality') || c.types.includes('neighborhood')
+        );
+        if (subloc?.long_name && !this.isBadStopName(subloc.long_name)) {
+          return this.cleanStopName(subloc.long_name);
+        }
+
+        // Priority 2: intersection / route
+        const routeComp = result.address_components.find((c) => c.types.includes('intersection') || c.types.includes('route'));
+        if (routeComp?.long_name && !this.isBadStopName(routeComp.long_name)) {
+          return this.cleanStopName(routeComp.long_name);
+        }
+
+        // Priority 3: locality
+        const loc = result.address_components.find((c) => c.types.includes('locality'));
+        if (loc?.long_name && !this.isBadStopName(loc.long_name)) {
+          return this.cleanStopName(loc.long_name);
+        }
+      }
+
+      const parts = (result.formatted_address || '')
+        .split(',')
         .map((part) => this.cleanStopName(part))
-        .filter((part) => part && !this.isBadStopName(part));
-      if (parts.length) return parts.slice(0, 2).join(", ");
+        .filter((part) => part && !this.isBadStopName(part) && !/^\d{5,6}$/.test(part) && !/^india$/i.test(part));
+      if (parts.length) return parts[0];
     }
-    return "";
+    return '';
   }
 
   private cleanStopName(name: string): string {
@@ -1786,11 +3465,22 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
 
   private isBadStopName(name: string): boolean {
     const value = this.cleanStopName(name);
-    if (!value) return true;
+    if (!value || value.length < 2) return true;
     if (/^stop\s*\d*$/i.test(value)) return true;
     if (/^unnamed/i.test(value)) return true;
     if (/^-?\d{1,2}\.\d+,\s*-?\d{1,3}\.\d+$/.test(value)) return true;
     if (/\b[A-Z0-9]{4,}\+[A-Z0-9]{2,}\b/i.test(name)) return true;
+
+    // Filter out petty commercial shops, retail outlets, and market stalls:
+    const commercialShopPattern = /\b(shop|store|mart|supermarket|kirana|general store|cloth house|clothing|garments|tailor|tailoring|boutique|bakery|bakers|sweets|confectionery|restaurant|dhaba|cafe|tea stall|saloon|salon|beauty parlour|barber|auto works|service station|tyre|puncture|hardware|sanitary|jeweller|jewellers|jewellery|footwear|shoes|shoe house|mobile care|mobile shop|telecom|electronics|electricals|optical|opticals|medical hall|medicos|pharmacy|chemist|clinic|dental|snack bar|point|centre|center|enterprise|enterprises|traders|agency|agencies|dealers|distributors|wholesaler|dry cleaners|laundry)\b/i;
+
+    // Transit, civic, and community landmark exceptions:
+    const transitCivicExceptions = /\b(bus stand|bus stop|railway station|train station|airport|terminal|chowk|crossing|junction|bypass|flyover|bridge|pul|morh|gate|stand|hospital|medical college|college|university|school|institute|court|secretariat|police station|cantonment|sector|phase|colony|nagar|puram|town|village|mohalla|bazar chowk|market gate)\b/i;
+
+    if (commercialShopPattern.test(value) && !transitCivicExceptions.test(value)) {
+      return true;
+    }
+
     return false;
   }
 
@@ -1827,12 +3517,6 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     const a = Math.sin(dLat / 2) ** 2
       + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
     return earthM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
-
-  private maybeAutoName(): void {
-    if (!this.form.name.trim() && this.form.origin_name.trim() && this.form.dest_name.trim()) {
-      this.form.name = `${this.form.origin_name} → ${this.form.dest_name}`;
-    }
   }
 
   private endpointMarker(pos: LatLng, color: string, label: string): google.maps.Marker {
@@ -1956,7 +3640,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     });
   }
 
-  private snapToRoutePath(point: LatLng): LatLng | null {
+  private snapToRoutePath(point: LatLng): LatLng {
     const path = this.currentRoutePath();
     if (path.length < 2) return point;
     let best: { point: LatLng; distance: number } | null = null;
@@ -1964,8 +3648,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       const candidate = this.projectPointToSegment(point, path[i], path[i + 1]);
       if (!best || candidate.distance < best.distance) best = candidate;
     }
-    if (!best) return null;
-    return best.distance <= 150 ? best.point : null;
+    return best ? best.point : point;
   }
 
   private currentRoutePath(): LatLng[] {
@@ -2006,6 +3689,11 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       stop.unavailable_reason = 'Removed from active route by admin.';
       this.removedStops = [...this.removedStops, stop];
     }
+    if (stop?.name) {
+      const norm = this.cleanStopName(stop.name).toLowerCase();
+      const found = this.suggestedStops.find((s) => this.cleanStopName(s.name).toLowerCase() === norm);
+      if (found) found.added = false;
+    }
     this.redrawStops();
   }
 
@@ -2037,20 +3725,47 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.redrawStops();
   }
 
-  private fitToContent(): void {
+  fitOriginView(): void {
+    if (!this.map) return;
+    if (this.form.origin_lat != null && this.form.origin_lng != null) {
+      this.map.panTo({ lat: this.form.origin_lat, lng: this.form.origin_lng });
+      this.map.setZoom(16);
+    } else if (this.cityCenter) {
+      this.map.panTo(this.cityCenter);
+      this.map.setZoom(14);
+    }
+  }
+
+  fitRouteViewport(padding = 70): void {
     if (!this.map) return;
     const pts: LatLng[] = [];
-    if (this.form.origin_lat != null) pts.push({ lat: this.form.origin_lat, lng: this.form.origin_lng as number });
-    if (this.form.dest_lat != null) pts.push({ lat: this.form.dest_lat, lng: this.form.dest_lng as number });
-    pts.push(...this.roadPath, ...this.form.path);
-    this.form.stops.forEach((s) => { if (s.lat != null && s.lng != null) pts.push({ lat: s.lat, lng: s.lng }); });
-    if (pts.length < 2) return;
+    if (this.form.origin_lat != null && this.form.origin_lng != null) {
+      pts.push({ lat: this.form.origin_lat, lng: this.form.origin_lng });
+    }
+    if (this.form.dest_lat != null && this.form.dest_lng != null) {
+      pts.push({ lat: this.form.dest_lat, lng: this.form.dest_lng });
+    }
+    if (this.roadPath.length) {
+      pts.push(...this.roadPath);
+    } else if (this.form.path.length) {
+      pts.push(...this.form.path);
+    }
+    this.form.stops.forEach((s) => {
+      if (s.lat != null && s.lng != null) pts.push({ lat: s.lat, lng: s.lng });
+    });
+
+    if (pts.length < 2) {
+      this.fitOriginView();
+      return;
+    }
+
     const b = new google.maps.LatLngBounds();
     pts.forEach((p) => b.extend(p));
-    this.map.fitBounds(b, 80);
-    google.maps.event.addListenerOnce(this.map, 'idle', () => {
-      if (this.map && (this.map.getZoom() ?? 0) > 16) this.map.setZoom(16);
-    });
+    this.map.fitBounds(b, padding);
+  }
+
+  private fitToContent(padding = 70): void {
+    this.fitRouteViewport(padding);
   }
 
   private teardownMap(): void {
@@ -2219,9 +3934,83 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     const req = this.editingId
       ? this.api.patch<{ route: FixedRouteRow }>(`${base}/${this.editingId}`, body)
       : this.api.post<{ route: FixedRouteRow }>(base, body);
+
     req.subscribe({
-      next: () => { this.saving = false; this.closeEditor(); this.toast.success(this.editingId ? 'Fixed route updated' : 'Fixed route created'); this.fetchRoutes(); },
-      error: (err) => { this.saving = false; this.toast.error(err?.error?.message || 'Save failed'); },
+      next: async (res) => {
+        const createdRoute = res?.route ?? (res as any)?.data;
+        const routeId = this.editingId || createdRoute?.id;
+
+        if (routeId && this.cityId != null) {
+          if (this.form.assigned_group_id === 'new' && this.form.new_group_name.trim()) {
+            try {
+              const groupRes = await firstValueFrom(
+                this.api.post<{ route_group?: any; data?: any }>(`/admin/cities/${this.cityId}/route-groups`, {
+                  name: this.form.new_group_name.trim(),
+                  city_vehicle_type_id: this.form.city_vehicle_type_id,
+                  route_ids: [routeId],
+                })
+              );
+              const newGroupId = groupRes?.route_group?.id ?? groupRes?.data?.id;
+              if (newGroupId && this.form.assigned_driver_ids.length > 0) {
+                await firstValueFrom(
+                  this.api.put(`/admin/cities/${this.cityId}/route-groups/${newGroupId}/drivers`, {
+                    driver_user_ids: this.form.assigned_driver_ids,
+                  })
+                );
+              }
+            } catch {}
+          } else if (typeof this.form.assigned_group_id === 'number') {
+            const existingGroup = this.groups.find((g) => g.id === this.form.assigned_group_id);
+            if (existingGroup) {
+              const updatedRouteIds = Array.from(new Set([...existingGroup.route_ids, routeId]));
+              try {
+                await firstValueFrom(
+                  this.api.patch(`/admin/cities/${this.cityId}/route-groups/${existingGroup.id}`, {
+                    name: existingGroup.name,
+                    city_vehicle_type_id: existingGroup.vehicle_type_id ?? this.form.city_vehicle_type_id,
+                    route_ids: updatedRouteIds,
+                  })
+                );
+                if (this.form.assigned_driver_ids.length > 0) {
+                  const updatedDriverIds = Array.from(new Set([...(existingGroup.driver_user_ids || []), ...this.form.assigned_driver_ids]));
+                  await firstValueFrom(
+                    this.api.put(`/admin/cities/${this.cityId}/route-groups/${existingGroup.id}/drivers`, {
+                      driver_user_ids: updatedDriverIds,
+                    })
+                  );
+                }
+              } catch {}
+            }
+          }
+
+          // Clean up this route from any other group it might have previously belonged to
+          for (const otherG of this.groups) {
+            if (otherG.id !== this.form.assigned_group_id && otherG.route_ids?.includes(routeId)) {
+              const remRouteIds = otherG.route_ids.filter((id) => id !== routeId);
+              try {
+                await firstValueFrom(
+                  this.api.patch(`/admin/cities/${this.cityId}/route-groups/${otherG.id}`, {
+                    name: otherG.name,
+                    city_vehicle_type_id: otherG.vehicle_type_id,
+                    route_ids: remRouteIds,
+                  })
+                );
+              } catch {}
+            }
+          }
+        }
+
+        this.saving = false;
+        this.closeEditor();
+        this.toast.success(this.editingId ? 'Fixed route updated successfully' : 'Fixed route created and published');
+        this.loadGroupsAndDrivers();
+        this.fetchRoutes();
+        this.routesChanged.emit();
+      },
+      error: (err) => {
+        this.saving = false;
+        this.toast.error(err?.error?.message || 'Save failed');
+      },
     });
   }
 }

@@ -170,63 +170,7 @@ export class FixedRouteMapPage {
     if (!this.map) return;
     for (const pl of this.routePolylines) pl.setMap?.(null);
     this.routePolylines = [];
-
-    try {
-      const { Route } = await (google.maps as any).importLibrary('routes');
-      const { routes } = await Route.computeRoutes({
-        origin,
-        destination,
-        travelMode: google.maps.TravelMode.DRIVING,
-        fields: ['path'],
-      });
-      const polylines: any[] = routes?.[0]?.createPolylines?.() ?? [];
-      let drew = false;
-      for (const pl of polylines) {
-        if (pl?.setMap) {
-          pl.setOptions?.({ strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95 });
-          pl.setMap(this.map);
-          drew = true;
-        }
-      }
-      if (drew) {
-        this.routePolylines = polylines;
-        return;
-      }
-    } catch {
-      // Fall back to DirectionsService.
-    }
-
-    try {
-      const svc = new google.maps.DirectionsService();
-      const res: any = await svc.route({
-        origin,
-        destination,
-        travelMode: google.maps.TravelMode.DRIVING,
-      });
-      const route = res?.routes?.[0];
-      if (route?.overview_path?.length) {
-        const pl = new google.maps.Polyline({
-          path: route.overview_path,
-          strokeColor: '#0D1B2A',
-          strokeWeight: 5,
-          strokeOpacity: 0.95,
-          map: this.map,
-        });
-        this.routePolylines = [pl];
-        return;
-      }
-    } catch {
-      // Fall back to a straight line.
-    }
-
-    const straight = new google.maps.Polyline({
-      path: [origin, destination],
-      strokeColor: '#0D1B2A',
-      strokeWeight: 5,
-      strokeOpacity: 0.95,
-      map: this.map,
-    });
-    this.routePolylines = [straight];
+    // Route line eliminated as requested: customer sees only pickup/drop pins and driver live marker
   }
 
   private frame(a: { lat: number; lng: number }, b: { lat: number; lng: number }): void {

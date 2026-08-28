@@ -455,15 +455,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const path = this.routeMapPath(route);
     if (path.length < 2) return;
 
-    this.fixedRouteLine = new google.maps.Polyline({
-      path,
-      map: this.fixedMap,
-      geodesic: true,
-      strokeColor: '#1e6cf0',
-      strokeOpacity: 0.96,
-      strokeWeight: 5,
-    });
-
+    // Route line eliminated as requested: customer sees only pickup/drop pins and stops
     const bounds = new google.maps.LatLngBounds();
     path.forEach((point) => bounds.extend(point));
     this.fixedMap.fitBounds(bounds, this.routeFitPadding());
@@ -538,36 +530,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   private drawSelectedStopSegments(): void {
     if (!this.fixedMap || !this.selectedRoute || typeof google === 'undefined') return;
-
     this.clearSelectionLines();
-    const board = this.stopById(this.boardStopId);
-    const drop = this.stopById(this.dropStopId);
-
-    if (board) {
-      const boardPath = this.segmentPathToStop(board);
-      if (boardPath.length >= 2) this.fixedSelectionLines.push(new google.maps.Polyline({
-        path: boardPath,
-        map: this.fixedMap,
-        geodesic: true,
-        strokeColor: '#12B35B',
-        strokeOpacity: 0.98,
-        strokeWeight: 6,
-        zIndex: 4,
-      }));
-    }
-
-    if (drop) {
-      const dropPath = board ? this.segmentPathBetweenStops(board, drop) : this.segmentPathToStop(drop);
-      if (dropPath.length >= 2) this.fixedSelectionLines.push(new google.maps.Polyline({
-        path: dropPath,
-        map: this.fixedMap,
-        geodesic: true,
-        strokeColor: '#F59E0B',
-        strokeOpacity: 0.98,
-        strokeWeight: 6,
-        zIndex: 5,
-      }));
-    }
+    // Segment polylines eliminated: only stop pins and markers are displayed
   }
 
   private refreshStopMapSelection(): void {

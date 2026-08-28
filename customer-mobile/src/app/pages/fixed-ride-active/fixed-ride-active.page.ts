@@ -408,45 +408,7 @@ export class FixedRideActivePage implements OnDestroy {
       poly.setMap(null);
     }
     this.routePolylines = [];
-
-    const pathCoords: Array<{ lat: number; lng: number }> = [];
-
-    if (this.booking?.stops && this.booking.stops.length >= 2) {
-      for (const s of this.booking.stops) {
-        if (s.lat != null && s.lng != null) {
-          pathCoords.push({ lat: Number(s.lat), lng: Number(s.lng) });
-        }
-      }
-    } else {
-      if (this.booking?.board_lat != null && this.booking?.board_lng != null) {
-        pathCoords.push({ lat: Number(this.booking.board_lat), lng: Number(this.booking.board_lng) });
-      }
-      if (this.booking?.drop_lat != null && this.booking?.drop_lng != null) {
-        pathCoords.push({ lat: Number(this.booking.drop_lat), lng: Number(this.booking.drop_lng) });
-      }
-    }
-
-    if (pathCoords.length >= 2) {
-      // Glow Outer Line
-      const glowPoly = new google.maps.Polyline({
-        path: pathCoords,
-        geodesic: true,
-        strokeColor: '#B2EBD0',
-        strokeOpacity: 0.6,
-        strokeWeight: 7,
-        map: this.map,
-      });
-      // Main Solid Green Line
-      const mainPoly = new google.maps.Polyline({
-        path: pathCoords,
-        geodesic: true,
-        strokeColor: '#12B35B',
-        strokeOpacity: 0.95,
-        strokeWeight: 4,
-        map: this.map,
-      });
-      this.routePolylines.push(glowPoly, mainPoly);
-    }
+    // Route polylines eliminated: customer sees only pickup/drop pins and driver live vehicle marker
   }
 
   private buildPinMarkerElement(kind: 'pickup' | 'drop', label: string): HTMLElement {
