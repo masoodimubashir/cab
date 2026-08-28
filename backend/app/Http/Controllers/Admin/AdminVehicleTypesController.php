@@ -495,6 +495,8 @@ class AdminVehicleTypesController
             'city_id' => $v->city_id,
             'ride_type_id' => $v->ride_type_id,
             'ride_type_name' => $v->rideType?->name,
+            'ride_type_mode' => $v->rideType?->resolvedMode(),
+            'is_fixed' => (bool) ($v->rideType?->isFixed() || $v->rideType?->isShuttle()),
             'is_outstation' => (bool) $v->rideType?->isOutstation(),
             'vehicle_type_id' => $v->vehicle_type_id,
             'vehicle_type_name' => $v->vehicleType?->name,

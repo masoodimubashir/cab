@@ -291,13 +291,7 @@ export class FixedDriverMapPage implements OnDestroy {
       return;
     }
 
-    this.routeLine = new google.maps.Polyline({
-      path: routeStops.map((stop) => this.stopPosition(stop)),
-      map: this.map,
-      strokeColor: '#12B35B',
-      strokeOpacity: 0.9,
-      strokeWeight: 5,
-    });
+    // Route line eliminated as requested: driver sees stop points and passenger markers only
 
     this.stopMarkers = routeStops.map((stop) => {
       const marker = new google.maps.marker.AdvancedMarkerElement({

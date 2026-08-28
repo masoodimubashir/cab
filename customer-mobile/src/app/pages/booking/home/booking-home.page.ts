@@ -576,43 +576,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
       poly.setMap(null);
     }
     this.fixedRoutePolylines = [];
-
-    const pathCoords: Array<{ lat: number; lng: number }> = [];
-
-    if (this.activeFixedRide?.stops && this.activeFixedRide.stops.length >= 2) {
-      for (const s of this.activeFixedRide.stops) {
-        if (s.lat != null && s.lng != null) {
-          pathCoords.push({ lat: Number(s.lat), lng: Number(s.lng) });
-        }
-      }
-    } else {
-      if (this.activeFixedRide?.board_lat != null && this.activeFixedRide?.board_lng != null) {
-        pathCoords.push({ lat: Number(this.activeFixedRide.board_lat), lng: Number(this.activeFixedRide.board_lng) });
-      }
-      if (this.activeFixedRide?.drop_lat != null && this.activeFixedRide?.drop_lng != null) {
-        pathCoords.push({ lat: Number(this.activeFixedRide.drop_lat), lng: Number(this.activeFixedRide.drop_lng) });
-      }
-    }
-
-    if (pathCoords.length >= 2) {
-      const glowPoly = new google.maps.Polyline({
-        path: pathCoords,
-        geodesic: true,
-        strokeColor: '#A7F3D0',
-        strokeOpacity: 0.65,
-        strokeWeight: 7,
-        map: this.map,
-      });
-      const mainPoly = new google.maps.Polyline({
-        path: pathCoords,
-        geodesic: true,
-        strokeColor: '#10B981',
-        strokeOpacity: 0.95,
-        strokeWeight: 4,
-        map: this.map,
-      });
-      this.fixedRoutePolylines.push(glowPoly, mainPoly);
-    }
+    // Route polylines eliminated: customer sees only pickup/drop pins and driver live vehicle marker
   }
 
   private fitActiveRideBounds(force = false): void {
