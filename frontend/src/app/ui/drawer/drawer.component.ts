@@ -43,7 +43,7 @@ import { IconComponent } from '../icon/icon.component';
     >
       <div
         class="tm-drawer__panel"
-        [style.width.px]="width"
+        [style.width]="panelWidth"
         (click)="$event.stopPropagation()"
       >
         <header class="tm-drawer__head" *ngIf="title || showClose">
@@ -191,6 +191,8 @@ export class DrawerComponent implements OnChanges {
   @Input() subtitle?: string;
   /** Panel width in px on desktop. */
   @Input() width = 460;
+  /** Panel width as a viewport-width percentage (e.g. 90 → 90vw). Takes priority over `width`. */
+  @Input() widthPercent?: number;
   /** Show the × close button in the header. */
   @Input() showClose = true;
   /** Click on the backdrop closes the drawer. */
@@ -199,6 +201,11 @@ export class DrawerComponent implements OnChanges {
   @Input() lockScroll = true;
 
   @Output() closed = new EventEmitter<void>();
+
+  /** Computed inline width for the panel. */
+  get panelWidth(): string {
+    return this.widthPercent != null ? `${this.widthPercent}vw` : `${this.width}px`;
+  }
 
   /** DOM-mounted (true during open AND closing animation). */
   mounted = false;
