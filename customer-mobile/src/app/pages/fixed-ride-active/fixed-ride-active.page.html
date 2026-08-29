@@ -167,15 +167,6 @@
           <p *ngIf="ride.rating_comment">"{{ ride.rating_comment }}"</p>
         </div>
 
-        <!-- Cancel Ride Action Button -->
-        <div class="dc-actions-row" *ngIf="canCancel(ride)">
-          <button type="button" class="dc-btn dc-btn--danger dc-press" (click)="cancelRide()" [disabled]="cancelling">
-            <ion-spinner *ngIf="cancelling" name="crescent"></ion-spinner>
-            <ion-icon *ngIf="!cancelling" name="close-circle-outline"></ion-icon>
-            <span>{{ cancelling ? 'Cancelling...' : 'Cancel Fixed Ride' }}</span>
-          </button>
-        </div>
-
       </div>
     </div>
   </div>

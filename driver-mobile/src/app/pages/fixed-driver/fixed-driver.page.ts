@@ -30,6 +30,11 @@ interface FixedRoute {
   scope: 'local' | 'outstation';
   origin_name: string;
   dest_name: string;
+  origin_lat?: number | null;
+  origin_lng?: number | null;
+  dest_lat?: number | null;
+  dest_lng?: number | null;
+  path_polyline?: Array<{ lat: number; lng: number }> | string | null;
   flat_fare: number | null;
   max_luggage_per_vehicle: number;
   stops?: FixedStop[];
@@ -249,6 +254,13 @@ export class FixedDriverPage implements OnDestroy {
   seatMapLoading = false;
   seatActionBusy = false;
 
+  // Route details preview map (Step 2: Detail View Before Start Ride)
+  previewMap: any = null;
+  previewStopMarkers: any[] = [];
+  selectedPreviewStop: FixedStop | null = null;
+  previewMapLoading = false;
+  previewMapFullscreen = false;
+
   openDetailsModal(tab: 'passengers' | 'stops' | 'seats' = 'passengers'): void {
     this.sheetTab = tab;
     this.detailsModalOpen = true;
@@ -349,11 +361,13 @@ export class FixedDriverPage implements OnDestroy {
     void this.stopFixedTripLocationStreaming();
     void this.stopDriverWatch();
     this.resetEmbeddedMap();
+    this.destroyRoutePreviewMap();
   }
 
   ngOnDestroy(): void {
     void this.stopDriverWatch();
     this.resetEmbeddedMap();
+    this.destroyRoutePreviewMap();
   }
 
   private subscribeFixedCatalog(): void {
@@ -392,9 +406,14 @@ export class FixedDriverPage implements OnDestroy {
 
         if (this.selectedRouteId && !this.routes.some(r => r.id === this.selectedRouteId)) {
           this.selectedRouteId = null;
+          this.destroyRoutePreviewMap();
         }
-        if (this.selectedRouteId) {
+        if (this.selectedRouteId && !this.activeVehicle) {
           this.syncCapacity();
+          const r = this.routes.find((item) => item.id === Number(this.selectedRouteId));
+          if (r) {
+            this.ensureRoutePreviewMap(r);
+          }
         }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed routes.',
@@ -406,6 +425,7 @@ export class FixedDriverPage implements OnDestroy {
         this.vehicles = res.data ?? [];
         this.activeVehicle = this.pickActiveVehicle();
         if (this.activeVehicle) {
+          this.destroyRoutePreviewMap();
           this.loadManifest(this.activeVehicle.id, false, forceMap);
           this.startManifestPolling();
           void this.syncFixedTripLocationStreaming();
@@ -413,6 +433,12 @@ export class FixedDriverPage implements OnDestroy {
           this.stopManifestPolling();
           void this.stopFixedTripLocationStreaming();
           this.resetEmbeddedMap();
+          if (this.selectedRouteId) {
+            const r = this.routes.find((item) => item.id === Number(this.selectedRouteId));
+            if (r) {
+              this.ensureRoutePreviewMap(r);
+            }
+          }
         }
       },
       error: (err) => this.error = err?.error?.message || 'Could not load fixed vehicles.',
@@ -423,12 +449,16 @@ export class FixedDriverPage implements OnDestroy {
   selectRoute(route: FixedRoute): void {
     this.selectedRouteId = route.id;
     this.syncCapacity();
+    this.selectedPreviewStop = null;
+    this.ensureRoutePreviewMap(route);
   }
 
   clearSelectedRoute(): void {
     this.selectedRouteId = null;
     this.layouts = [];
     this.selectedLayoutId = null;
+    this.selectedPreviewStop = null;
+    this.destroyRoutePreviewMap();
   }
 
   /**
@@ -940,7 +970,7 @@ export class FixedDriverPage implements OnDestroy {
   private executeCancelPassenger(passenger: FixedPassenger, reason?: string): void {
     this.busy = true;
     this.error = null;
-    this.api.post<{ message: string }>(`/fixed/bookings/${passenger.id}/cancel`, { reason: reason || 'Driver cancelled' })
+    this.api.post<{ message: string }>(`/fixed/driver/bookings/${passenger.id}/cancel`, { reason: reason || 'Driver cancelled' })
       .pipe(finalize(() => this.busy = false))
       .subscribe({
         next: async (res) => {
@@ -1928,5 +1958,282 @@ export class FixedDriverPage implements OnDestroy {
       bearing,
       label: 'You (Car)',
     });
+  }
+
+  /* ─── Route Preview Map Methods (Step 2: Detail View Before Start Ride) ─── */
+  ensureRoutePreviewMap(route?: FixedRoute | null, attempt = 1): void {
+    const targetRoute = route || this.selectedRoute;
+    if (!targetRoute) return;
+
+    if (this.previewMap && this.selectedRouteId === targetRoute.id) {
+      if (typeof google !== 'undefined' && google.maps?.event) {
+        google.maps.event.trigger(this.previewMap, 'resize');
+      }
+      this.fitRoutePreviewMap(targetRoute);
+      this.previewMapLoading = false;
+      return;
+    }
+
+    this.previewMapLoading = true;
+
+    const tryInit = async () => {
+      if (this.selectedRouteId !== targetRoute.id) return;
+      const div = document.getElementById('fixed-route-preview-map');
+      if (!div) {
+        if (attempt < 20) {
+          setTimeout(() => this.ensureRoutePreviewMap(targetRoute, attempt + 1), 60);
+        } else {
+          this.previewMapLoading = false;
+        }
+        return;
+      }
+      await this.initRoutePreviewMap(targetRoute, div);
+    };
+
+    setTimeout(() => {
+      void tryInit();
+    }, attempt === 1 ? 50 : 0);
+  }
+
+  private async initRoutePreviewMap(route: FixedRoute, div: HTMLElement): Promise<void> {
+    try {
+      await this.places.ensureLoaded();
+      if (typeof google === 'undefined' || !google.maps) {
+        this.previewMapLoading = false;
+        return;
+      }
+
+      this.destroyRoutePreviewMap(false);
+
+      const validStops = (route.stops || []).filter((s) => this.hasStopCoords(s));
+      const originCoord = route.origin_lat != null && route.origin_lng != null
+        ? { lat: Number(route.origin_lat), lng: Number(route.origin_lng) }
+        : validStops.length > 0 ? this.stopPosition(validStops[0]) : null;
+
+      const defaultCenter = originCoord || { lat: 28.6139, lng: 77.209 };
+
+      this.previewMap = new google.maps.Map(div, {
+        center: defaultCenter,
+        zoom: 13,
+        disableDefaultUI: true,
+        zoomControl: false,
+        clickableIcons: false,
+        gestureHandling: 'greedy',
+        mapId: 'DEMO_MAP_ID',
+      });
+
+      this.renderRoutePreviewElements(route);
+      this.previewMapLoading = false;
+
+      setTimeout(() => {
+        if (this.previewMap && typeof google !== 'undefined' && google.maps?.event) {
+          google.maps.event.trigger(this.previewMap, 'resize');
+          this.fitRoutePreviewMap(route);
+        }
+      }, 100);
+
+      setTimeout(() => {
+        if (this.previewMap && typeof google !== 'undefined' && google.maps?.event) {
+          google.maps.event.trigger(this.previewMap, 'resize');
+          this.fitRoutePreviewMap(route);
+        }
+      }, 350);
+    } catch (e) {
+      console.error('[fixed-driver] Failed to init preview map:', e);
+      this.previewMapLoading = false;
+    }
+  }
+
+  private renderRoutePreviewElements(route: FixedRoute): void {
+    if (!this.previewMap) return;
+
+    const stops = route.stops || [];
+    const validStops = stops.filter((s) => this.hasStopCoords(s));
+
+    this.previewStopMarkers = validStops.map((stop, index) => {
+      const isOrigin = index === 0;
+      const isDest = index === validStops.length - 1;
+      const pos = this.stopPosition(stop);
+
+      try {
+        if (typeof google !== 'undefined' && google.maps?.marker?.AdvancedMarkerElement) {
+          const marker = new google.maps.marker.AdvancedMarkerElement({
+            position: pos,
+            map: this.previewMap,
+            title: `Stop ${stop.seq}: ${stop.name}`,
+            content: this.buildRoutePreviewStopMarker(stop),
+            zIndex: isOrigin ? 200 : isDest ? 190 : 100 + Number(stop.seq || 0),
+          });
+
+          marker.addListener('click', () => {
+            this.onPreviewStopTap(stop);
+          });
+
+          return marker;
+        }
+      } catch (err) {
+        console.warn('AdvancedMarkerElement failed, fallback to standard Marker', err);
+      }
+
+      // Fallback standard Marker
+      const fallbackMarker = new google.maps.Marker({
+        position: pos,
+        map: this.previewMap,
+        title: `Stop ${stop.seq}: ${stop.name}`,
+      });
+      fallbackMarker.addListener('click', () => {
+        this.onPreviewStopTap(stop);
+      });
+      return fallbackMarker;
+    });
+
+    void this.fitRoutePreviewMap(route);
+  }
+
+  togglePreviewFullscreen(): void {
+    this.previewMapFullscreen = !this.previewMapFullscreen;
+    const triggerResize = () => {
+      if (this.previewMap && typeof google !== 'undefined' && google.maps?.event) {
+        google.maps.event.trigger(this.previewMap, 'resize');
+        if (this.selectedRoute) {
+          this.fitRoutePreviewMap(this.selectedRoute);
+        }
+      }
+    };
+    setTimeout(triggerResize, 60);
+    setTimeout(triggerResize, 200);
+    setTimeout(triggerResize, 450);
+  }
+
+  closePreviewFullscreen(): void {
+    if (this.previewMapFullscreen) {
+      this.previewMapFullscreen = false;
+      const triggerResize = () => {
+        if (this.previewMap && typeof google !== 'undefined' && google.maps?.event) {
+          google.maps.event.trigger(this.previewMap, 'resize');
+          if (this.selectedRoute) {
+            this.fitRoutePreviewMap(this.selectedRoute);
+          }
+        }
+      };
+      setTimeout(triggerResize, 60);
+      setTimeout(triggerResize, 200);
+      setTimeout(triggerResize, 450);
+    }
+  }
+
+  onPreviewStopTap(stop: FixedStop): void {
+    if (this.selectedPreviewStop?.id === stop.id) {
+      this.clearSelectedPreviewStop();
+      return;
+    }
+
+    this.selectedPreviewStop = stop;
+    this.updatePreviewMarkersSelection(stop.id);
+
+    if (this.previewMap && this.hasStopCoords(stop)) {
+      this.previewMap.panTo(this.stopPosition(stop));
+      this.previewMap.setZoom(15);
+    }
+  }
+
+  clearSelectedPreviewStop(): void {
+    this.selectedPreviewStop = null;
+    this.updatePreviewMarkersSelection(null);
+  }
+
+  private updatePreviewMarkersSelection(selectedStopId: number | null): void {
+    for (const marker of this.previewStopMarkers) {
+      const content = marker.content as HTMLElement;
+      if (!content) continue;
+      const idAttr = content.getAttribute('data-stop-id');
+      if (selectedStopId != null && idAttr && Number(idAttr) === Number(selectedStopId)) {
+        content.classList.add('is-selected');
+        marker.zIndex = 9999;
+      } else {
+        content.classList.remove('is-selected');
+        marker.zIndex = 100;
+      }
+    }
+  }
+
+  recenterPreviewMap(): void {
+    this.clearSelectedPreviewStop();
+    if (this.selectedRoute) {
+      this.fitRoutePreviewMap(this.selectedRoute);
+    }
+  }
+
+  private fitRoutePreviewMap(route: FixedRoute): void {
+    if (!this.previewMap) return;
+    const bounds = new google.maps.LatLngBounds();
+    let hasCoords = false;
+
+    if (route.origin_lat != null && route.origin_lng != null) {
+      bounds.extend({ lat: Number(route.origin_lat), lng: Number(route.origin_lng) });
+      hasCoords = true;
+    }
+
+    if (route.dest_lat != null && route.dest_lng != null) {
+      bounds.extend({ lat: Number(route.dest_lat), lng: Number(route.dest_lng) });
+      hasCoords = true;
+    }
+
+    for (const marker of this.previewStopMarkers) {
+      if (marker?.position) {
+        bounds.extend(marker.position as any);
+        hasCoords = true;
+      }
+    }
+
+    if (hasCoords) {
+      const padding = this.previewMapFullscreen
+        ? { top: 80, right: 45, bottom: 80, left: 45 }
+        : { top: 40, right: 30, bottom: 40, left: 30 };
+      this.previewMap.fitBounds(bounds, padding);
+    }
+  }
+
+  private buildRoutePreviewStopMarker(stop: FixedStop): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'fixed-preview-stop-marker';
+    el.setAttribute('data-stop-id', String(stop.id));
+
+    el.innerHTML = `
+      <div class="preview-stop-name-tag">
+        <span class="tag-badge">Stop ${stop.seq}</span>
+        <span class="tag-name">${this.escapeHtml(stop.name)}</span>
+      </div>
+      <div class="preview-stop-pin" style="--pin-color: #12B35B">
+        <span class="preview-stop-seq">${stop.seq}</span>
+      </div>
+    `;
+    return el;
+  }
+
+  private escapeHtml(str: string): string {
+    return (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  private destroyRoutePreviewMap(resetFullscreen = true): void {
+    if (resetFullscreen) {
+      this.previewMapFullscreen = false;
+    }
+    for (const m of this.previewStopMarkers) {
+      if (m) {
+        if (typeof m.setMap === 'function') {
+          m.setMap(null);
+        } else {
+          m.map = null;
+        }
+      }
+    }
+    this.previewStopMarkers = [];
+    this.previewMap = null;
+    this.selectedPreviewStop = null;
   }
 }
