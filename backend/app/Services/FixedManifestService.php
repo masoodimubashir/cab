@@ -108,6 +108,10 @@ class FixedManifestService
                     ->count(),
                 'reservation_count' => SeatReservation::query()
                     ->where('route_departure_id', $departure->id)
+                    ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
+                    ->count(),
+                'total_reservation_count' => SeatReservation::query()
+                    ->where('route_departure_id', $departure->id)
                     ->count(),
                 'seats_remaining' => $this->availability->seatsRemaining($departure),
                 'fixed_last_reached_stop_seq' => $departure->fixed_last_reached_stop_seq,
