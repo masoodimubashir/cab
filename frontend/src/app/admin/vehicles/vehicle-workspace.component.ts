@@ -2,7 +2,7 @@ import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild } fro
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription, forkJoin, firstValueFrom } from 'rxjs';
+import { Subscription, forkJoin, firstValueFrom, Observable } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CityContextService, CityOption } from '../../core/city-context.service';
 import { ToastService } from '../../core/toast.service';
@@ -122,9 +122,36 @@ interface TabDef { key: string; label: string; count?: number; }
       <app-return-to-setup></app-return-to-setup>
 
       <header class="ws__head">
-        <tm-button variant="green" size="sm" icon="plus" [disabled]="cityId == null" (clicked)="addNewRouteFromTop()">Add route</tm-button>
-        <tm-button variant="outline" size="sm" icon="grid" [disabled]="cityId == null" (clicked)="openUnifiedGroupDrawerFromTop()">Manage Routes & Groups</tm-button>
-        <tm-button variant="outline" size="sm" icon="upload" [disabled]="cityId == null || importingKml" (clicked)="triggerKmlImportFromTop()">{{ importingKml ? 'Reading…' : 'Import from My Maps' }}</tm-button>
+        <tm-button
+          variant="green"
+          size="sm"
+          icon="plus"
+          [disabled]="!canManageSingleVehicle"
+          [title]="!canManageSingleVehicle ? (selectedIds.size > 1 ? 'Disabled when multiple vehicles are selected' : 'Click a vehicle in the table to add a route') : ('Add route for ' + singleSelectedVehicle?.display_name)"
+          (clicked)="addNewRouteFromTop()"
+        >
+          Add route
+        </tm-button>
+        <tm-button
+          variant="outline"
+          size="sm"
+          icon="grid"
+          [disabled]="!canManageSingleVehicle"
+          [title]="!canManageSingleVehicle ? (selectedIds.size > 1 ? 'Disabled when multiple vehicles are selected' : 'Click a vehicle in the table to manage its groups and routes') : ('Manage groups for ' + singleSelectedVehicle?.display_name)"
+          (clicked)="openUnifiedGroupDrawerFromTop()"
+        >
+          Manage Routes & Groups {{ singleSelectedVehicle ? ('(' + singleSelectedVehicle.display_name + ')') : '' }}
+        </tm-button>
+        <tm-button
+          variant="outline"
+          size="sm"
+          icon="upload"
+          [disabled]="!canManageSingleVehicle || importingKml"
+          [title]="!canManageSingleVehicle ? (selectedIds.size > 1 ? 'Disabled when multiple vehicles are selected' : 'Click a vehicle to import routes') : ('Import routes for ' + singleSelectedVehicle?.display_name)"
+          (clicked)="triggerKmlImportFromTop()"
+        >
+          {{ importingKml ? 'Reading…' : 'Import from My Maps' }}
+        </tm-button>
         <span class="ws__grow"></span>
         <tm-button variant="outline" size="sm" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
         <tm-button variant="outline" size="sm" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
@@ -218,7 +245,14 @@ interface TabDef { key: string; label: string; count?: number; }
             </thead>
             <tbody>
               <ng-container *ngFor="let v of visible; let i = index; trackBy: trackVehicle">
-                <tr class="srow" [class.sel]="isSel(v)" [class.off]="!v.is_active" [attr.aria-current]="v.id === selectedId">
+                <tr
+                  class="srow"
+                  [class.sel]="isSel(v)"
+                  [class.is-active-row]="singleSelectedVehicle?.id === v.id"
+                  [class.off]="!v.is_active"
+                  [attr.aria-current]="v.id === selectedId"
+                  (click)="onRowClick(v, $event)"
+                >
                   <td class="col-gut">
                     <span class="chk" [class.on]="isSel(v)" (click)="toggleSel(v, $event)">
                       <tm-icon *ngIf="isSel(v)" name="check" [size]="11" />
@@ -227,8 +261,7 @@ interface TabDef { key: string; label: string; count?: number; }
                   </td>
                   <td class="col-veh">
                     <div class="veh">
-                      <button type="button" class="expcaret" [class.open]="isExpanded(v)" title="Fixed-route groups" (click)="toggleExpand(v, $event)"><tm-icon name="chevron-right" [size]="14" /></button>
-                      <span class="veh-ic"><tm-icon name="car" [size]="15" /></span>
+                      <span class="veh-ic" (click)="openOperationsDrawer(v, 'groups', $event)" style="cursor: pointer;"><tm-icon name="car" [size]="15" /></span>
                       <span *ngIf="!isEditing(v, 'name')" class="veh-name ecell" (click)="startCellEdit(v, 'name', $event)">{{ v.display_name }}</span>
                       <input *ngIf="isEditing(v, 'name')" class="cin" [(ngModel)]="editValue" (keydown.enter)="commitCellEdit(v)" (keydown.escape)="cancelCellEdit()" (blur)="commitCellEdit(v)" />
                     </div>
@@ -245,10 +278,10 @@ interface TabDef { key: string; label: string; count?: number; }
                   <td class="center" *ngFor="let rt of fareRideTypes"><button type="button" class="farelink" [class.set]="fareConfigured(v, rt)" (click)="openFareDrawer(v, rt, $event)">{{ fareConfigured(v, rt) ? 'Edit' : 'Set up' }}</button></td>
                   <td>
                     <span class="gchips" *ngIf="groupsForVehicle(v).length; else noGrp">
-                      <button type="button" class="gchip" *ngFor="let g of groupsForVehicle(v).slice(0, 2)" (click)="toggleExpand(v, $event)">{{ g.name }}</button>
-                      <button type="button" class="gchip more" *ngIf="groupsForVehicle(v).length > 2" (click)="toggleExpand(v, $event)">+{{ groupsForVehicle(v).length - 2 }}</button>
+                      <button type="button" class="gchip" *ngFor="let g of groupsForVehicle(v).slice(0, 2)" (click)="openOperationsDrawer(v, 'groups', $event)">{{ g.name }}</button>
+                      <button type="button" class="gchip more" *ngIf="groupsForVehicle(v).length > 2" (click)="openOperationsDrawer(v, 'groups', $event)">+{{ groupsForVehicle(v).length - 2 }}</button>
                     </span>
-                    <ng-template #noGrp><button type="button" class="addlink" (click)="toggleExpand(v, $event)">+ Group</button></ng-template>
+                    <ng-template #noGrp><button type="button" class="addlink" (click)="openOperationsDrawer(v, 'groups', $event)">+ Group</button></ng-template>
                   </td>
                   <td>
                     <button type="button" class="linkcell" (click)="openLayoutsList(v, $event)">
@@ -257,105 +290,21 @@ interface TabDef { key: string; label: string; count?: number; }
                     </button>
                   </td>
                   <td>
-                    <span class="avstack" [title]="driversFor(v).length + ' drivers'" *ngIf="driversFor(v).length; else noDrv">
-                      <span class="av2" *ngFor="let d of driversFor(v).slice(0, 3)">{{ initials(d.name) }}</span>
-                      <span class="av2 more" *ngIf="driversFor(v).length > 3">+{{ driversFor(v).length - 3 }}</span>
-                    </span>
-                    <ng-template #noDrv><span class="muted-link">None</span></ng-template>
+                    <button type="button" class="drv-cell-btn" (click)="openOperationsDrawer(v, 'drivers', $event)">
+                      <div class="avstack" *ngIf="driversForVehicle(v).length; else noDrv">
+                        <span class="av2" *ngFor="let d of driversForVehicle(v).slice(0, 3)">{{ initials(d.name) }}</span>
+                        <span class="av2 more" *ngIf="driversForVehicle(v).length > 3">+{{ driversForVehicle(v).length - 3 }}</span>
+                        <span class="drv-count-badge" [class.badge-has-active]="assignedDriverCountFor(v) > 0">
+                          {{ assignedDriverCountFor(v) }}/{{ driversForVehicle(v).length }} assigned
+                        </span>
+                      </div>
+                      <ng-template #noDrv>
+                        <span class="addlink">+ Assign Drivers</span>
+                      </ng-template>
+                    </button>
                   </td>
                   <td class="center"><button type="button" class="pill" [class.success]="v.is_active" [class.neutral]="!v.is_active" (click)="toggleActiveFor(v, $event)"><span class="led"></span>{{ v.is_active ? 'Enabled' : 'Disabled' }}</button></td>
                   <td class="center"><button type="button" class="kebab" (click)="openRowMenu(v, $event)"><tm-icon name="more-horizontal" [size]="16" /></button></td>
-                </tr>
-
-                <tr class="detailrow" *ngIf="isExpanded(v)">
-                  <td class="col-gut"></td>
-                  <td [attr.colspan]="detailColspan">
-                    <div class="detailwrap">
-                      <div class="detailhead">
-                        <span class="ovl">Fixed-route groups · {{ v.display_name }}</span>
-                      </div>
-
-                      <div class="gline" *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup">
-                        <div class="gline__head">
-                          <span class="gname">{{ g.name }}</span>
-                          <span class="gmeta">{{ g.route_ids.length }} {{ g.route_ids.length === 1 ? 'route' : 'routes' }} · {{ g.driver_user_ids.length }} {{ g.driver_user_ids.length === 1 ? 'driver' : 'drivers' }}</span>
-                          <span class="gline__acts">
-                            <button type="button" class="mini-btn mini-btn--go" (click)="openUnifiedGroupDrawer(v, g)"><tm-icon name="edit" [size]="12" /> Edit group</button>
-                            <button type="button" class="mini-btn mini-btn--danger" (click)="deleteGroup(g)">Delete</button>
-                          </span>
-                        </div>
-                        <div class="gcol">
-                          <span class="gcol__lbl">Routes</span>
-                          <div class="gcol__body">
-                            <span class="rchip2" *ngFor="let r of routesIn(g)" title="Locked while in a group — remove it from the group to edit the route">
-                              <tm-icon name="lock" [size]="11" />
-                              <b>{{ r.name }}</b>
-                              <button type="button" class="rx" title="Remove route" (click)="ungroupRoute(g, r.id)">×</button>
-                            </span>
-                            <span class="gcol__empty" *ngIf="!routesIn(g).length">No routes in this group yet.</span>
-                          </div>
-                        </div>
-                        <div class="gcol">
-                          <span class="gcol__lbl">Drivers</span>
-                          <div class="gcol__body">
-                            <span class="dpill" *ngFor="let d of driversIn(g)">
-                              <span class="av">{{ initials(d.name) }}</span>
-                              {{ d.name }}
-                              <button type="button" class="rx" title="Remove driver" (click)="removeDriverFromGroup(g, d.user_id)">×</button>
-                            </span>
-                            <span class="gcol__empty" *ngIf="!driversIn(g).length">No drivers assigned to this group yet.</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="gline gline--orphan" *ngIf="ungroupedForVehicle(v).length">
-                        <div class="gline__head">
-                          <span class="gname">Ungrouped routes</span>
-                          <span class="gmeta">{{ ungroupedForVehicle(v).length }} not in any group · editable</span>
-                        </div>
-                        <div class="gcol">
-                          <span class="gcol__lbl">Routes</span>
-                          <div class="gcol__body">
-                            <span class="rchip2 rchip2--edit" [class.rchip2--nopr]="r.flat_fare == null" *ngFor="let r of ungroupedForVehicle(v)">
-                              <button type="button" class="rchip2__edit" [title]="r.flat_fare == null ? 'Add a price to finish this route' : 'Edit this route on the map'" (click)="editRouteFor(v, r.id)">
-                                <tm-icon name="edit" [size]="11" />
-                                <b>{{ r.name }}</b>
-                                <span class="npbadge" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
-                              </button>
-                              <button type="button" class="rx" title="Set route inactive" (click)="toggleRouteActive(r, false, $event)">
-                                <tm-icon name="x" [size]="11" />
-                              </button>
-                              <button type="button" class="rx add" [title]="r.flat_fare == null ? 'Add a price before grouping this route' : 'Add to a group'" (click)="openAssignDrawer(r)">+</button>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="gline gline--inactive" *ngIf="inactiveRoutesForVehicle(v).length">
-                        <div class="gline__head">
-                          <span class="gname">Inactive routes</span>
-                          <span class="gmeta">{{ inactiveRoutesForVehicle(v).length }} inactive · not visible to drivers</span>
-                        </div>
-                        <div class="gcol">
-                          <span class="gcol__lbl">Routes</span>
-                          <div class="gcol__body">
-                            <span class="rchip2 rchip2--inactive" *ngFor="let r of inactiveRoutesForVehicle(v)">
-                              <button type="button" class="rchip2__edit" title="Click to edit or reactivate this route" (click)="editRouteFor(v, r.id)">
-                                <tm-icon name="edit" [size]="11" />
-                                <b>{{ r.name }}</b>
-                                <span class="npbadge npbadge--off">Inactive</span>
-                              </button>
-                              <button type="button" class="rx act" title="Enable route" (click)="toggleRouteActive(r, true, $event)">
-                                <tm-icon name="check" [size]="11" />
-                              </button>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="emptybox" *ngIf="!groupsForVehicle(v).length && !ungroupedForVehicle(v).length && !inactiveRoutesForVehicle(v).length">No route groups yet. Click Manage Routes & Groups to create a group and assign routes and drivers all at once.</div>
-                    </div>
-                  </td>
                 </tr>
               </ng-container>
             </tbody>
@@ -454,185 +403,346 @@ interface TabDef { key: string; label: string; count?: number; }
       <div slot="footer"><tm-button variant="ghost" (clicked)="typesOpen = false">Done</tm-button></div>
     </tm-drawer>
 
-    <!-- Unified Multi-Group, Multi-Route, Multi-Driver Drawer -->
+
+
+    <!-- ─────────────── Dedicated Vehicle Operations & Route Hub Drawer ─────────────── -->
     <tm-drawer
-      [open]="unifiedDrawerOpen"
-      [title]="editingGroup ? ('Edit group · ' + editingGroup.name) : 'Manage Route Groups & Permissions'"
-      subtitle="Assign routes and drivers to multiple groups at once"
-      [width]="580"
-      (closed)="unifiedDrawerOpen = false"
+      [open]="operationsDrawerOpen"
+      [widthPercent]="90"
+      [title]="(operationsDrawerVehicle?.display_name || 'Vehicle') + ' — Fleet & Route Operations'"
+      [subtitle]="(operationsDrawerVehicle?.vehicle_type_name || 'Fleet') + ' • ' + (operationsDrawerVehicle?.max_people || 1) + ' passenger seats • ' + (operationsDrawerVehicle?.luggage_capacity || 0) + ' luggage capacity'"
+      (closed)="closeOperationsDrawer()"
     >
-      <div slot="body" class="form">
-        <!-- Rename Group Input Field (shown when editing a group) -->
-        <label class="f" *ngIf="editingGroup">
-          <span>Rename Group <i>*</i></span>
-          <input type="text" [(ngModel)]="unifiedForm.edit_group_name" placeholder="Group name" />
-        </label>
+      <div
+        slot="body"
+        class="kb-wrapper"
+        [class.is-dragging-active]="draggingRouteId != null"
+        *ngIf="operationsDrawerVehicle as v"
+        (click)="openDriverDropdownGroupId = null"
+      >
 
-        <!-- 1. Groups Selection (shown when batch-managing via top button, hidden when editing a specific group) -->
-        <div class="f" *ngIf="!editingGroup">
-          <div class="f__head-row">
-            <span>Select Target Group(s)</span>
-            <button
-              type="button"
-              class="mini-btn mini-btn--go"
-              (click)="unifiedForm.is_creating_group = !unifiedForm.is_creating_group"
-            >
-              <tm-icon [name]="unifiedForm.is_creating_group ? 'x' : 'plus'" [size]="12" />
-              {{ unifiedForm.is_creating_group ? 'Cancel New Group' : 'New Group' }}
-            </button>
+        <!-- Top Controls & Actions Bar -->
+        <div class="kb-top-bar">
+          <div class="kb-top-left">
+            <div class="kb-veh-tag">
+              <span class="kb-veh-icon-box"><tm-icon name="car" [size]="16" /></span>
+              <div class="kb-veh-info">
+                <span class="kb-veh-name">{{ v.display_name }}</span>
+                <span class="kb-veh-spec">{{ v.vehicle_type_name || 'Fleet' }} • {{ v.max_people }} seats • {{ v.luggage_capacity }} bags</span>
+              </div>
+            </div>
+
+            <div class="kb-search">
+              <tm-icon name="search" [size]="13" />
+              <input
+                type="text"
+                [(ngModel)]="kanbanSearch"
+                placeholder="Search routes or stops..."
+              />
+            </div>
           </div>
 
-          <label class="f" *ngIf="unifiedForm.is_creating_group" style="margin-top: 6px;">
-            <span>New Group Name <i>*</i></span>
-            <input type="text" [(ngModel)]="unifiedForm.new_group_name" placeholder="e.g. Sopore Morning Express" />
-          </label>
+          <div class="kb-top-actions">
+            <!-- Inline Quick Group Creator -->
+            <div class="kb-quick-add-group">
+              <input
+                type="text"
+                class="kb-quick-grp-input"
+                placeholder="+ New group name..."
+                [(ngModel)]="inlineNewGroupName[v.id]"
+                (keydown.enter)="quickCreateInlineGroup(v)"
+              />
+              <button
+                type="button"
+                class="btn-kb-quick-add"
+                [disabled]="!canCreateInlineGroup(v.id) || isCreatingInlineGroup"
+                (click)="quickCreateInlineGroup(v)"
+              >
+                {{ isCreatingInlineGroup ? 'Creating...' : '+ Create Group' }}
+              </button>
+            </div>
 
-          <div class="chip-grid" *ngIf="availableGroupsForUnifiedDrawer.length; else noUnifiedGroups">
-            <button
-              *ngFor="let g of availableGroupsForUnifiedDrawer"
-              type="button"
-              class="multi-chip"
-              [class.is-selected]="unifiedForm.group_ids.includes(g.id)"
-              (click)="toggleUnifiedGroup(g.id)"
-            >
-              <tm-icon [name]="unifiedForm.group_ids.includes(g.id) ? 'check' : 'plus'" [size]="12" />
-              <span>{{ g.name }}</span>
+            <button type="button" class="btn-kb-primary" (click)="newRouteFor(v)">
+              <tm-icon name="plus" [size]="13" />
+              <span>Add Route on Map</span>
+            </button>
+            <button type="button" class="btn-kb-outline" (click)="triggerKmlImportFor(v)">
+              <tm-icon name="upload" [size]="13" />
+              <span>Import KML</span>
             </button>
           </div>
-          <ng-template #noUnifiedGroups>
-            <p class="meta" *ngIf="!unifiedForm.is_creating_group">No groups created yet. Click <b>+ New Group</b> above to create one.</p>
-          </ng-template>
         </div>
 
-        <!-- 2. Routes Selection (Chips) -->
-        <div class="f">
-          <span>Assign Routes</span>
-          <div class="chip-grid" *ngIf="availableRoutesForUnifiedDrawer.length; else noUnifiedRoutes">
-            <button
-              *ngFor="let r of availableRoutesForUnifiedDrawer"
-              type="button"
-              class="multi-chip"
-              [class.is-selected]="unifiedForm.route_ids.includes(r.id)"
-              [class.multi-chip--nopr]="r.flat_fare == null"
-              [title]="r.flat_fare == null ? 'Add a price before grouping this route' : ''"
-              (click)="toggleUnifiedRoute(r.id)"
-            >
-              <tm-icon [name]="unifiedForm.route_ids.includes(r.id) ? 'check' : 'plus'" [size]="12" />
-              <span>{{ r.name }}</span>
-              <span class="npbadge npbadge--xs" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
-            </button>
+        <!-- Kanban Board Columns Area -->
+        <div class="kb-columns-container">
+
+          <!-- COLUMN 0: UNGROUPED / UNASSIGNED ROUTES -->
+          <div
+            class="kb-column kb-column--unassigned"
+            [class.is-drop-target]="dragOverColumnId === 'ungrouped'"
+            (dragover)="onColDragOver($event, 'ungrouped')"
+            (dragleave)="onColDragLeave('ungrouped')"
+            (drop)="onColDrop($event, null)"
+          >
+            <div class="kb-col-header">
+              <div class="kb-col-title-line">
+                <div class="kb-col-title">
+                  <span class="kb-col-dot kb-col-dot--sky"></span>
+                  <span class="kb-col-heading">Available Ungrouped</span>
+                </div>
+                <span class="kb-count-pill kb-count-pill--sky">
+                  {{ filterKanbanRoutes(ungroupedForVehicle(v)).length }}
+                </span>
+              </div>
+              <p class="kb-col-desc">Unassigned routes ready for map edits or grouping</p>
+            </div>
+
+            <div class="kb-cards-scroll">
+              <div
+                class="kb-card kb-card--unassigned"
+                [class.is-dragging]="draggingRouteId === r.id"
+                draggable="true"
+                (dragstart)="onCardDragStart($event, r, null)"
+                (dragend)="onCardDragEnd()"
+                *ngFor="let r of filterKanbanRoutes(ungroupedForVehicle(v))"
+              >
+                <div class="kb-card-head">
+                  <div class="kb-card-title-group">
+                    <span class="kb-drag-handle" title="Drag route into a group column">
+                      <tm-icon name="menu" [size]="12" />
+                    </span>
+                    <span class="kb-card-name" [title]="r.name">{{ r.name }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="pill pill--sm"
+                    [class.success]="r.is_active"
+                    [class.neutral]="!r.is_active"
+                    [title]="r.is_active ? 'Route Active — click to disable' : 'Route Inactive — click to enable'"
+                    (click)="toggleRouteActive(r, $event)"
+                  >
+                    <span class="led"></span>{{ r.is_active ? 'Active' : 'Off' }}
+                  </button>
+                </div>
+
+                <div class="kb-card-path">
+                  <span [title]="r.origin_name + ' → ' + r.dest_name">{{ r.origin_name }} → {{ r.dest_name }}</span>
+                </div>
+
+                <div class="kb-card-meta-row">
+                  <span class="kb-fare-pill" *ngIf="r.flat_fare != null">₹{{ r.flat_fare }}</span>
+                  <span class="kb-fare-pill kb-fare-pill--warn" *ngIf="r.flat_fare == null">
+                    <tm-icon name="alert-triangle" [size]="10" /> No fare
+                  </span>
+                  <span class="kb-stops-pill" *ngIf="r.stops?.length">
+                    <tm-icon name="map-marker" [size]="10" /> {{ r.stops?.length }} stops
+                  </span>
+                </div>
+
+                <div class="kb-card-footer">
+                  <button
+                    type="button"
+                    class="kb-action-btn kb-action-btn--edit"
+                    (click)="editRouteFor(v, r.id)"
+                    title="Edit route path and stops on map"
+                  >
+                    <tm-icon name="edit" [size]="11" />
+                    <span>Edit Map</span>
+                  </button>
+
+                  <div class="kb-move-dropdown" *ngIf="groupsForVehicle(v).length">
+                    <select class="kb-select-input" (change)="onMoveSelectChange(null, $event, r.id)">
+                      <option value="" disabled selected>Move to group ▾</option>
+                      <option *ngFor="let targetG of groupsForVehicle(v)" [value]="targetG.id">{{ targetG.name }}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Drop Target Indicator Placeholder -->
+              <div class="kb-drop-placeholder" *ngIf="dragOverColumnId === 'ungrouped' && draggingRouteId">
+                <tm-icon name="arrow-right" [size]="14" />
+                <span>Drop here to unassign route</span>
+              </div>
+
+              <div class="kb-empty-col" *ngIf="!filterKanbanRoutes(ungroupedForVehicle(v)).length && dragOverColumnId !== 'ungrouped'">
+                <tm-icon name="check" [size]="20" />
+                <span>All routes are assigned to groups</span>
+              </div>
+            </div>
           </div>
-          <ng-template #noUnifiedRoutes>
-            <p class="meta">No pre-existing routes created for this vehicle yet.</p>
-          </ng-template>
+
+          <!-- COLUMNS 1..N: GROUP COLUMNS -->
+          <div
+            class="kb-column kb-column--group"
+            [class.is-drop-target]="dragOverColumnId === g.id"
+            (dragover)="onColDragOver($event, g.id)"
+            (dragleave)="onColDragLeave(g.id)"
+            (drop)="onColDrop($event, g)"
+            *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup"
+          >
+            <div class="kb-col-header">
+              <div class="kb-col-title-line">
+                <div class="kb-col-title" *ngIf="renamingGroupId !== g.id">
+                  <span class="kb-col-dot kb-col-dot--green"></span>
+                  <span class="kb-grp-name" [title]="g.name">{{ g.name }}</span>
+                </div>
+                <input
+                  *ngIf="renamingGroupId === g.id"
+                  class="kb-rename-input"
+                  [(ngModel)]="renameValue"
+                  (keydown.enter)="saveInlineRename(g)"
+                  (keydown.escape)="renamingGroupId = null"
+                  (blur)="saveInlineRename(g)"
+                  autofocus
+                />
+
+                <div class="kb-grp-acts">
+                  <span class="kb-count-pill">{{ filterKanbanRoutes(routesIn(g)).length }}</span>
+                  <button type="button" class="kb-icon-btn" title="Rename group" (click)="startInlineRename(g)">
+                    <tm-icon name="edit" [size]="11" />
+                  </button>
+                  <button type="button" class="kb-icon-btn kb-icon-btn--danger" title="Delete group" (click)="deleteGroup(g)">
+                    <tm-icon name="trash" [size]="11" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Driver Assignment Row in Header -->
+              <div class="kb-driver-assign-section" (click)="$event.stopPropagation()">
+                <div class="kb-drv-head-row">
+                  <div class="kb-drv-chips-container" *ngIf="driversIn(g).length; else noDriversYet">
+                    <span class="kb-drv-chip" *ngFor="let d of driversIn(g)" [title]="d.name + ' (' + (d.phone || 'No phone') + ')'">
+                      <span class="kb-chip-avatar">{{ initials(d.name) }}</span>
+                      <span class="kb-chip-name">{{ d.name }}</span>
+                      <button type="button" class="kb-chip-remove" (click)="toggleDriverGroup(d, g, v)" title="Remove driver">×</button>
+                    </span>
+                  </div>
+                  <ng-template #noDriversYet>
+                    <span class="kb-no-drv-hint">No drivers assigned</span>
+                  </ng-template>
+
+                  <button
+                    type="button"
+                    class="kb-btn-manage-drv"
+                    (click)="toggleGroupDriverDropdown(g.id, $event)"
+                    title="Manage assigned drivers"
+                  >
+                    <span>+ Drivers</span>
+                    <tm-icon name="chevron-down" [size]="10" />
+                  </button>
+                </div>
+
+                <!-- Driver Popover Picker -->
+                <div class="kb-drv-popover" *ngIf="openDriverDropdownGroupId === g.id">
+                  <div class="kb-popover-head">
+                    <b>Assign Drivers to {{ g.name }}</b>
+                    <button type="button" class="kb-popover-x" (click)="openDriverDropdownGroupId = null">×</button>
+                  </div>
+                  <div class="kb-popover-list" *ngIf="driversForVehicle(v).length; else noDriversRegistered">
+                    <label class="kb-popover-item" *ngFor="let d of driversForVehicle(v)">
+                      <input
+                        type="checkbox"
+                        [checked]="isDriverInGroup(d.user_id, g.id)"
+                        [disabled]="syncingDriverId === d.user_id"
+                        (change)="toggleDriverGroup(d, g, v)"
+                      />
+                      <div class="kb-popover-item-info">
+                        <span class="kb-pop-dname">{{ d.name }}</span>
+                        <span class="kb-pop-dreg">{{ d.vehicle_reg_no || d.vehicle_model || v.display_name }}</span>
+                      </div>
+                    </label>
+                  </div>
+                  <ng-template #noDriversRegistered>
+                    <div class="kb-pop-empty">No drivers registered for this vehicle.</div>
+                  </ng-template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group Routes Cards -->
+            <div class="kb-cards-scroll">
+              <div
+                class="kb-card kb-card--assigned"
+                [class.is-dragging]="draggingRouteId === r.id"
+                draggable="true"
+                (dragstart)="onCardDragStart($event, r, g)"
+                (dragend)="onCardDragEnd()"
+                *ngFor="let r of filterKanbanRoutes(routesIn(g))"
+              >
+                <div class="kb-card-head">
+                  <div class="kb-card-title-group">
+                    <span class="kb-drag-handle" title="Drag route to another group">
+                      <tm-icon name="menu" [size]="12" />
+                    </span>
+                    <span class="kb-card-name" [title]="r.name">{{ r.name }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="pill pill--sm"
+                    [class.success]="r.is_active"
+                    [class.neutral]="!r.is_active"
+                    [title]="r.is_active ? 'Route Active — click to disable' : 'Route Inactive — click to enable'"
+                    (click)="toggleRouteActive(r, $event)"
+                  >
+                    <span class="led"></span>{{ r.is_active ? 'Active' : 'Off' }}
+                  </button>
+                </div>
+
+                <div class="kb-card-path">
+                  <span [title]="r.origin_name + ' → ' + r.dest_name">{{ r.origin_name }} → {{ r.dest_name }}</span>
+                </div>
+
+                <div class="kb-card-meta-row">
+                  <span class="kb-fare-pill" *ngIf="r.flat_fare != null">₹{{ r.flat_fare }}</span>
+                  <span class="kb-fare-pill kb-fare-pill--warn" *ngIf="r.flat_fare == null">
+                    <tm-icon name="alert-triangle" [size]="10" /> No fare
+                  </span>
+                  <span class="kb-stops-pill" *ngIf="r.stops?.length">
+                    <tm-icon name="map-marker" [size]="10" /> {{ r.stops?.length }} stops
+                  </span>
+                </div>
+
+                <div class="kb-card-footer">
+                  <div class="kb-move-dropdown">
+                    <select class="kb-select-input" (change)="onMoveSelectChange(g, $event, r.id)">
+                      <option value="" disabled selected>Move to ▾</option>
+                      <option value="ungrouped">Available Ungrouped</option>
+                      <option *ngFor="let otherG of getOtherGroups(v, g.id)" [value]="otherG.id">{{ otherG.name }}</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="kb-action-btn kb-action-btn--remove"
+                    (click)="ungroupRoute(g, r.id)"
+                    title="Remove route from this group"
+                  >
+                    <tm-icon name="x" [size]="11" />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Drop Target Indicator Placeholder -->
+              <div class="kb-drop-placeholder" *ngIf="dragOverColumnId === g.id && draggingRouteId">
+                <tm-icon name="plus" [size]="14" />
+                <span>Drop to move into {{ g.name }}</span>
+              </div>
+
+              <div class="kb-empty-col" *ngIf="!filterKanbanRoutes(routesIn(g)).length && dragOverColumnId !== g.id">
+                <tm-icon name="road" [size]="20" />
+                <span>No routes in this group. Drag routes here from Ungrouped.</span>
+              </div>
+            </div>
+          </div>
+
         </div>
 
-        <!-- 3. Drivers Selection (Chips) -->
-        <div class="f">
-          <span>Assign Drivers</span>
-          <div class="chip-grid" *ngIf="availableDriversForUnifiedDrawer.length; else noUnifiedDrivers">
-            <button
-              *ngFor="let d of availableDriversForUnifiedDrawer"
-              type="button"
-              class="multi-chip"
-              [class.is-selected]="unifiedForm.driver_user_ids.includes(d.user_id)"
-              (click)="toggleUnifiedDriver(d.user_id)"
-            >
-              <tm-icon [name]="unifiedForm.driver_user_ids.includes(d.user_id) ? 'check' : 'plus'" [size]="12" />
-              <span class="av-mini">{{ initials(d.name) }}</span>
-              <span>{{ d.name }}</span>
-            </button>
-          </div>
-          <ng-template #noUnifiedDrivers>
-            <p class="meta">No pre-existing drivers registered for this vehicle type.</p>
-          </ng-template>
-        </div>
       </div>
 
       <div slot="footer">
-        <tm-button variant="ghost" (clicked)="unifiedDrawerOpen = false">Cancel</tm-button>
-        <tm-button
-          variant="green"
-          [disabled]="(!unifiedForm.group_ids.length && (!unifiedForm.is_creating_group || !unifiedForm.new_group_name.trim())) || savingUnifiedGroup"
-          (clicked)="saveUnifiedGroup()"
-        >
-          {{ savingUnifiedGroup ? 'Saving…' : 'Save Assignments' }}
-        </tm-button>
-      </div>
-    </tm-drawer>
-
-    <tm-drawer [open]="groupOpen" title="New route group" [width]="480" (closed)="groupOpen = false">
-      <div slot="body" class="form">
-        <label class="f"><span>Group name <i>*</i></span><input type="text" [(ngModel)]="groupName" placeholder="e.g. Sopore town" /></label>
-        <p class="meta">Groups grant drivers permission to run the routes inside them. Add routes and drivers after creating it.</p>
-      </div>
-      <div slot="footer">
-        <tm-button variant="ghost" (clicked)="groupOpen = false">Cancel</tm-button>
-        <tm-button variant="green" [disabled]="!groupName.trim() || groupSaving" (clicked)="createGroup()">{{ groupSaving ? 'Creating...' : 'Create group' }}</tm-button>
-      </div>
-    </tm-drawer>
-
-    <!-- Assign an ungrouped route into a group. -->
-    <tm-drawer [open]="!!assignDrawerRoute" title="Assign route to a group" [subtitle]="assignDrawerRoute?.name || ''" [width]="480" (closed)="assignDrawerRouteId = null">
-      <div slot="body" class="form" *ngIf="assignDrawerRoute as r">
-        <p class="meta">Adding this route to a group lets that group's drivers run it.</p>
-        <button type="button" class="pick pick--bd" *ngFor="let g of groups" (click)="assignRouteToGroup(r.id, g)">
-          <span class="pick__main">
-            <b>{{ g.name }}</b>
-            <span class="pick__row">
-              <span class="pick__lbl">Routes</span>
-              <span class="chip" *ngFor="let rt of routesIn(g)">{{ rt.name }}</span>
-              <span class="meta" *ngIf="!routesIn(g).length">None yet</span>
-            </span>
-            <span class="pick__row">
-              <span class="pick__lbl">Drivers</span>
-              <span class="drv drv--xs" *ngFor="let d of driversIn(g)"><span class="av">{{ initials(d.name) }}</span>{{ d.name }}</span>
-              <span class="meta" *ngIf="!driversIn(g).length">None yet</span>
-            </span>
-          </span>
-          <span class="mini-btn">Add here</span>
-        </button>
-        <p class="meta" *ngIf="!groups.length">No groups yet — create one below to assign this route.</p>
-      </div>
-      <div slot="footer">
-        <tm-button variant="ghost" (clicked)="assignDrawerRouteId = null">Cancel</tm-button>
-        <tm-button variant="green" icon="plus" (clicked)="assignDrawerRouteId = null; openGroupDrawer()">New group</tm-button>
-      </div>
-    </tm-drawer>
-
-    <!-- Add an existing route into this group. -->
-    <tm-drawer [open]="!!routeDrawerGroup" title="Add a route to this group" [subtitle]="routeDrawerGroup?.name || ''" [width]="480" (closed)="routeDrawerId = null">
-      <div slot="body" class="form" *ngIf="routeDrawerGroup as g">
-        <button type="button" class="pick pick--bd" [class.pick--nopr]="r.flat_fare == null" *ngFor="let r of routesForRouteDrawer" (click)="addRouteToGroup(g, r.id)">
-          <span class="pick__main"><b>{{ r.name }}</b><small>{{ r.origin_name }} → {{ r.dest_name }}</small></span>
-          <span class="npbadge npbadge--xs" *ngIf="r.flat_fare == null">⚠ Needs pricing</span>
-          <span class="mini-btn" *ngIf="r.flat_fare != null">Add here</span>
-        </button>
-        <p class="meta" *ngIf="!routesForRouteDrawer.length">All vehicle routes are already in this group.</p>
-      </div>
-      <div slot="footer">
-        <tm-button variant="ghost" (clicked)="routeDrawerId = null">Done</tm-button>
-        <tm-button variant="green" icon="plus" (clicked)="routeDrawerId = null; newRoute()">New route</tm-button>
-      </div>
-    </tm-drawer>
-
-    <!-- Add drivers to this group — pick several, then Save once. -->
-    <tm-drawer [open]="!!driverDrawerGroup" title="Group drivers" [subtitle]="driverDrawerGroup?.name || ''" [width]="480" (closed)="driverDrawerId = null">
-      <div slot="body" class="form" *ngIf="driverDrawerGroup">
-        <p class="meta">Tick the drivers who can run every route in this group, then Save.</p>
-        <label class="pickrow" *ngFor="let d of cityDrivers" [class.is-on]="pendingDriverIds.includes(d.user_id)">
-          <input type="checkbox" [checked]="pendingDriverIds.includes(d.user_id)" (change)="togglePendingDriver(d.user_id)" />
-          <span class="av">{{ initials(d.name) }}</span>
-          <span class="pick__main"><b>{{ d.name }}</b><small>{{ d.phone || 'No phone' }}</small></span>
-        </label>
-        <p class="meta" *ngIf="!cityDrivers.length">No drivers in this city yet.</p>
-      </div>
-      <div slot="footer">
-        <span class="drawer-count">{{ pendingDriverIds.length }} selected</span>
-        <span class="ws__grow"></span>
-        <tm-button variant="ghost" (clicked)="driverDrawerId = null">Cancel</tm-button>
-        <tm-button variant="green" icon="check" [disabled]="savingGroupDrivers" (clicked)="commitDrawerDrivers()">{{ savingGroupDrivers ? 'Saving...' : 'Save' }}</tm-button>
+        <tm-button variant="ghost" (clicked)="closeOperationsDrawer()">Close</tm-button>
       </div>
     </tm-drawer>
 
@@ -997,6 +1107,240 @@ interface TabDef { key: string; label: string; count?: number; }
     .note { margin: 0; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: 9px; background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; }
     .note b { color: var(--tm-text); }
 
+    /* ── Route Groups & Fleet Control Center Drawer ── */
+    .ctrl-body { display: flex; flex-direction: column; gap: 16px; padding: 2px 0; }
+    
+    .ctrl-veh-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      padding: 14px 18px; border-radius: 14px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #fff; box-shadow: 0 4px 16px rgba(15,23,42,0.12);
+    }
+    .ctrl-veh-left { display: flex; align-items: center; gap: 14px; }
+    .ctrl-veh-icon { font-size: 28px; background: rgba(255,255,255,0.1); width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; }
+    .ctrl-veh-text { display: flex; flex-direction: column; gap: 2px; }
+    .ctrl-veh-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #38bdf8; }
+    .ctrl-veh-title { margin: 0; font-size: 16px; font-weight: 800; color: #fff; }
+    .ctrl-veh-specs { font-size: 12px; color: #94a3b8; }
+    .ctrl-veh-stats { display: flex; align-items: center; gap: 10px; }
+    .ctrl-stat-pill {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 6px 14px; border-radius: 10px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12); min-width: 60px;
+    }
+    .ctrl-stat-pill b { font-size: 16px; font-weight: 800; color: #38df88; }
+    .ctrl-stat-pill span { font-size: 10px; font-weight: 600; color: #cbd5e1; text-transform: uppercase; }
+
+    .ctrl-section {
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 14px; border: 1px solid var(--tm-line); border-radius: 12px;
+      background: var(--tm-surface);
+    }
+    .ctrl-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .ctrl-section-title { display: flex; flex-direction: column; gap: 2px; }
+    .ctrl-section-title b { font-size: 13.5px; font-weight: 800; color: var(--tm-text); }
+    
+    .ctrl-new-group-box {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 12px; border-radius: 10px; background: var(--tm-canvas);
+      border: 1.5px dashed var(--tm-green, #16a34a); animation: fadeIn 0.15s ease-out;
+    }
+    .new-group-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
+    .btn-text-sm { border: 0; background: transparent; color: var(--tm-text-muted); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .btn-text-sm:hover { color: #dc2626; }
+    .new-group-row { display: flex; gap: 8px; }
+    .new-grp-input {
+      flex: 1; height: 36px; padding: 0 12px; border: 1px solid var(--tm-line);
+      border-radius: 8px; background: var(--tm-surface); font-size: 13px; font-weight: 600; color: var(--tm-text); outline: none;
+    }
+    .new-grp-input:focus { border-color: var(--tm-green, #16a34a); }
+    .btn-create-grp {
+      padding: 0 16px; height: 36px; border: 0; border-radius: 8px;
+      background: var(--tm-green, #16a34a); color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .btn-create-grp:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .ctrl-groups-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
+    }
+    .ctrl-grp-card {
+      display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
+      padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--tm-line);
+      background: var(--tm-canvas); cursor: pointer; transition: all .15s ease;
+    }
+    .ctrl-grp-card:hover { border-color: var(--tm-text-muted); transform: translateY(-1px); }
+    .ctrl-grp-card.is-selected {
+      border-color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5);
+      box-shadow: 0 2px 8px rgba(22,163,74,0.12);
+    }
+    .grp-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .grp-card-icon { font-size: 16px; flex: none; }
+    .grp-card-name { font-size: 13px; font-weight: 800; color: var(--tm-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .grp-card-check { color: var(--tm-green, #16a34a); flex: none; display: flex; }
+    .grp-card-bottom { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--tm-text-muted); font-weight: 600; }
+    .grp-meta-item { display: inline-flex; align-items: center; gap: 3px; }
+
+    .ctrl-active-grp-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 14px; border-radius: 10px; background: var(--tm-canvas-2, #f1f5f9);
+      border: 1px solid var(--tm-line);
+    }
+    .active-grp-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .active-grp-name { margin: 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
+    .active-grp-rename-input {
+      flex: 1; max-width: 320px; height: 32px; padding: 0 10px;
+      border: 1.5px solid var(--tm-green, #16a34a); border-radius: 6px;
+      background: #fff; font-size: 13px; font-weight: 700; color: var(--tm-text); outline: none;
+    }
+    .active-grp-actions { display: flex; align-items: center; gap: 6px; }
+    .btn-tool {
+      padding: 5px 10px; border: 1px solid var(--tm-line); border-radius: 7px;
+      background: #fff; font-size: 11.5px; font-weight: 700; color: var(--tm-text); cursor: pointer;
+    }
+    .btn-tool:hover { background: var(--tm-canvas); border-color: var(--tm-text-muted); }
+    .btn-tool--danger { color: #dc2626; }
+    .btn-tool--danger:hover { background: #fef2f2; border-color: #fca5a5; }
+
+    .ctrl-routes-list { display: flex; flex-direction: column; gap: 6px; }
+    .ctrl-route-row {
+      display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+      border-radius: 9px; border: 1px solid var(--tm-line); background: var(--tm-canvas);
+      transition: all .12s ease;
+    }
+    .ctrl-route-row.is-assigned { background: #fff; border-color: #bbf7d0; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .route-icon { font-size: 16px; flex: none; }
+    .route-icon.muted-ic { opacity: 0.6; }
+    .route-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+    .route-title { font-size: 13px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .route-legs { font-size: 11px; color: var(--tm-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .route-fare-badge { font-size: 12px; font-weight: 800; color: var(--tm-green-deep, #15803d); padding: 2px 7px; background: #dcfce7; border-radius: 6px; }
+    .route-stops-chip { font-size: 11px; color: var(--tm-text-muted); font-weight: 600; }
+    .btn-route-action {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 5px 10px; border-radius: 7px; font-size: 11.5px; font-weight: 700;
+      cursor: pointer; transition: all .12s ease; border: 1px solid transparent;
+    }
+    .btn-route-action.remove { background: #fee2e2; color: #b91c1c; }
+    .btn-route-action.remove:hover { background: #fecaca; }
+    .btn-route-action.add { background: var(--tm-green, #16a34a); color: #fff; }
+    .btn-route-action.add:hover { filter: brightness(0.92); }
+    .btn-route-action[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+    .ctrl-available-routes-box {
+      margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--tm-line);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .avail-routes-head { font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
+
+    .ctrl-drivers-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;
+    }
+    .ctrl-driver-card {
+      display: flex; align-items: center; gap: 11px; padding: 11px 13px;
+      border-radius: 12px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas);
+      cursor: pointer; transition: all .15s ease; user-select: none;
+    }
+    .ctrl-driver-card:hover { border-color: var(--tm-text-muted); transform: translateY(-1px); }
+    .ctrl-driver-card.is-assigned {
+      border-color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5);
+      box-shadow: 0 2px 6px rgba(22,163,74,0.08);
+    }
+    .driver-card-avatar { flex: none; }
+    .av-circle {
+      display: grid; place-items: center; width: 36px; height: 36px;
+      border-radius: 50%; background: #e2e8f0; color: #334155; font-size: 13px; font-weight: 800;
+    }
+    .ctrl-driver-card.is-assigned .av-circle { background: var(--tm-green, #16a34a); color: #fff; }
+    .driver-card-content { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .driver-name-line { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .driver-name { font-size: 13px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .driver-badge { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: var(--tm-text-muted); padding: 1px 6px; border-radius: 4px; background: var(--tm-canvas-2, #e2e8f0); }
+    .driver-badge.badge-active { background: #bbf7d0; color: #166534; }
+    .driver-car-line { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 11px; }
+    .car-pill { font-weight: 700; color: var(--tm-text-muted); }
+    .reg-pill { font-weight: 800; color: #475569; padding: 0 4px; background: rgba(0,0,0,0.05); border-radius: 4px; }
+    .driver-contact-line { font-size: 11px; color: var(--tm-text-muted); font-weight: 600; }
+    .driver-check-btn {
+      width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+      background: #e2e8f0; color: #64748b; flex: none;
+    }
+    .ctrl-driver-card.is-assigned .driver-check-btn { background: var(--tm-green, #16a34a); color: #fff; }
+
+    .ctrl-empty-notice { padding: 16px; text-align: center; font-size: 12.5px; color: var(--tm-text-muted); border: 1px dashed var(--tm-line); border-radius: 10px; }
+    .ctrl-empty-box { padding: 12px; text-align: center; font-size: 12px; color: var(--tm-text-muted); background: var(--tm-canvas); border-radius: 8px; }
+    .btn-link-sm { border: 0; background: transparent; color: var(--tm-green, #16a34a); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .btn-link-sm:hover { text-decoration: underline; }
+
+    /* Driver Fleet Manager Drawer */
+    .df-body { display: flex; flex-direction: column; gap: 14px; }
+    .df-search-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .df-no-groups-banner {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      border-radius: 10px; background: #fffbeb; border: 1px solid #fef3c7; color: #92400e; font-size: 12.5px;
+    }
+    .btn-create-grp-inline {
+      margin-left: auto; padding: 4px 10px; border: 1px solid #f59e0b; border-radius: 6px;
+      background: #fff; color: #b45309; font-size: 11.5px; font-weight: 700; cursor: pointer;
+    }
+    .df-drivers-list { display: flex; flex-direction: column; gap: 10px; }
+    .df-driver-item {
+      display: flex; flex-direction: column; gap: 10px; padding: 12px 14px;
+      border-radius: 12px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas);
+      transition: all .15s ease;
+    }
+    .df-driver-item:hover { border-color: var(--tm-text-muted); }
+    .df-driver-item.is-assigned { border-color: #86efac; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+    .df-driver-top { display: flex; align-items: center; gap: 12px; }
+    .df-driver-avatar { flex: none; }
+    .df-driver-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+    .df-driver-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .df-name { font-size: 13.5px; font-weight: 800; color: var(--tm-text); }
+    .df-driver-details { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+    .phone-pill { color: var(--tm-text-muted); font-weight: 600; }
+    .df-driver-assign-bar {
+      display: flex; flex-direction: column; gap: 6px;
+      padding-top: 9px; border-top: 1px dashed var(--tm-line); font-size: 12px;
+    }
+    .assign-label-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+    }
+    .assign-label { font-weight: 700; color: var(--tm-text-muted); }
+    .assign-quick-btns { display: flex; align-items: center; gap: 6px; }
+    .btn-text-xs {
+      border: 0; background: transparent; color: var(--tm-green, #16a34a); font-size: 11px; font-weight: 700; cursor: pointer; padding: 2px 5px; border-radius: 4px;
+    }
+    .btn-text-xs:hover:not([disabled]) { background: var(--tm-green-tint, #ecfdf5); }
+    .btn-text-xs--danger { color: #dc2626; }
+    .btn-text-xs--danger:hover:not([disabled]) { background: #fef2f2; }
+    .btn-text-xs[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+    .df-grp-chips-grid {
+      display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin-top: 2px;
+    }
+    .df-grp-chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+      border-radius: 20px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas-2, #f1f5f9);
+      color: var(--tm-text); font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .14s ease;
+    }
+    .df-grp-chip:hover:not([disabled]) { border-color: var(--tm-text-muted); transform: translateY(-0.5px); }
+    .df-grp-chip.is-assigned {
+      border-color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5);
+      color: var(--tm-green-deep, #15803d); font-weight: 700; box-shadow: 0 1px 4px rgba(22,163,74,0.1);
+    }
+    .df-grp-chip[disabled] { opacity: 0.6; cursor: wait; }
+    .grp-chip-name { min-width: 0; }
+    .grp-chip-count { font-size: 10px; opacity: 0.75; }
+
+    .drv-cell-btn {
+      display: inline-flex; align-items: center; background: transparent; border: 0; padding: 0; cursor: pointer; font: inherit; text-align: left;
+    }
+    .drv-count-badge {
+      margin-left: 6px; font-size: 11px; font-weight: 700; color: var(--tm-text-muted); background: var(--tm-canvas-2, #eaeef4); padding: 2px 6px; border-radius: 6px;
+    }
+    .drv-count-badge.badge-has-active {
+      background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green-deep, #15803d);
+    }
+
     .chip-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
     .multi-chip {
       display: inline-flex; align-items: center; gap: 6px;
@@ -1164,7 +1508,10 @@ interface TabDef { key: string; label: string; count?: number; }
     .col-gut { position: sticky; left: 0; z-index: 7; width: var(--frz1); min-width: var(--frz1); text-align: center; padding: 0; }
     .col-veh { position: sticky; left: var(--frz1); z-index: 7; width: calc(var(--frz2) - var(--frz1)); min-width: calc(var(--frz2) - var(--frz1)); box-shadow: 6px 0 12px -10px rgba(15,20,25,.18); }
     .sheet thead .col-gut, .sheet thead .col-veh { z-index: 9; }
+    .sheet tbody tr.srow { cursor: pointer; }
     .sheet tbody tr.srow:hover td { background: var(--tm-canvas); }
+    .sheet tbody tr.srow.is-active-row td { background: var(--tm-green-tint, #ecfdf5); }
+    .sheet tbody tr.srow.is-active-row td.col-veh .veh-name { color: var(--tm-green-deep, #15803d); font-weight: 800; }
     .sheet tbody tr.srow.sel td { background: var(--tm-green-tint, #ecfdf5); }
     .sheet tbody tr.srow.off .veh-name { color: var(--tm-text-muted); }
 
@@ -1220,45 +1567,561 @@ interface TabDef { key: string; label: string; count?: number; }
     .addbtn:hover:not(:disabled) { background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); }
     .addbtn:disabled { opacity: .5; cursor: default; }
 
-    /* detail row */
-    .detailrow td { background: var(--tm-canvas) !important; padding: 0; }
-    .detailwrap { position: sticky; left: var(--frz1); width: calc(100vw - var(--tm-sidebar-w, 264px) - 120px); max-width: 1160px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
-    .detailhead { display: flex; align-items: center; gap: 8px; }
-    .ovl { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--tm-text-soft, #94a0ad); }
-    .gline { display: grid; grid-template-columns: 210px 1fr; gap: 8px 18px; align-items: start; padding: 14px 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: 12px; }
-    .gline--orphan { border-color: #fce4a6; }
-    .gline--inactive { border-color: #e2e8f0; background: #fafbfd; }
-    .gline--inactive .gname { color: #64748b; }
-    .gline__head { grid-column: 1; grid-row: 1 / span 2; display: flex; flex-direction: column; gap: 4px; padding-right: 16px; border-right: 1px solid var(--tm-line); }
-    .gline__acts { display: flex; gap: 6px; margin-top: 4px; }
-    .gname { font-size: 14px; font-weight: 800; color: var(--tm-text); }
-    .gmeta { font-size: 11px; color: var(--tm-text-muted); font-weight: 600; }
-    .gmeta.warn { color: #9a6a11; }
-    .gcol { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-    .gcol__lbl { flex: none; width: 52px; padding-top: 5px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--tm-text-soft, #94a0ad); }
-    .gcol__body { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
-    .rchip2 { display: inline-flex; align-items: center; gap: 5px; padding: 4px 5px 4px 9px; border-radius: 8px; background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green, #16a34a); font-size: 12px; font-weight: 700; }
-    .rchip2 b { font-weight: 700; }
-    .rchip2.warn { background: #fef3c7; color: #b45309; padding: 4px 8px; }
-    .rchip2 .rx { width: 16px; height: 16px; border: 0; border-radius: 5px; display: grid; place-items: center; background: transparent; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; opacity: .55; }
-    .rchip2 .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
-    .rchip2 .rx.add { font-size: 15px; }
-    .rchip2 .rx.act { font-size: 11px; opacity: .7; }
-    .rchip2 .rx.act:hover { opacity: 1; color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5); }
-    .rchip2--edit { padding-left: 4px; background: var(--tm-canvas-2, #eef1f5); color: var(--tm-text); }
-    .rchip2--inactive { padding-left: 4px; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
-    .rchip2--inactive .rchip2__edit { color: #64748b; }
-    .rchip2--inactive .rchip2__edit:hover { color: var(--tm-text); background: rgba(0,0,0,.04); }
-    .rchip2__edit { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: 700; padding: 2px 5px; border-radius: 6px; cursor: pointer; }
-    .rchip2__edit b { font-weight: 700; }
-    .rchip2__edit:hover { background: rgba(0,0,0,.06); color: var(--tm-green, #16a34a); }
-    .npbadge--off { margin-left: 6px; font-size: 10px; font-weight: 700; color: #64748b; background: #e2e8f0; padding: 1px 5px; border-radius: 4px; }
-    .dpill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 3px; border-radius: 999px; background: var(--tm-canvas-2, #eaeef4); font-size: 12px; font-weight: 700; color: var(--tm-text); }
-    .dpill .rx { width: 15px; height: 15px; border: 0; border-radius: 5px; background: transparent; color: var(--tm-text-muted); font-size: 13px; line-height: 1; cursor: pointer; opacity: .6; }
-    .dpill .rx:hover { opacity: 1; background: rgba(0,0,0,.08); }
-    .addroutebtn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border: 1px dashed var(--tm-line-2, #e2e6ec); border-radius: 8px; background: var(--tm-surface); color: var(--tm-text-muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .addroutebtn:hover { border-color: var(--tm-green, #16a34a); color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5); border-style: solid; }
-    .emptybox { padding: 16px; border: 1px dashed var(--tm-line-2, #e2e6ec); border-radius: 12px; background: var(--tm-surface); color: var(--tm-text-muted); font-size: 12.5px; text-align: center; }
+    /* ── Live Fleet Operations Deck (Under-table Command Center) ── */
+    .detailrow td { background: var(--tm-canvas, #f8fafc) !important; padding: 0 !important; }
+    .deck-wrap {
+      position: sticky; left: var(--frz1, 44px);
+      width: calc(100vw - var(--tm-sidebar-w, 264px) - 80px); max-width: 1240px;
+      padding: 16px 20px 22px; display: flex; flex-direction: column; gap: 14px;
+    }
+
+    .deck-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+      padding: 12px 18px; border-radius: 12px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #fff; box-shadow: 0 4px 16px rgba(15,23,42,0.14);
+    }
+    .deck-title-box { display: flex; align-items: center; gap: 12px; }
+    .deck-veh-icon {
+      width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.12);
+      display: grid; place-items: center; color: #38bdf8;
+    }
+    .deck-veh-text { display: flex; flex-direction: column; gap: 2px; }
+    .deck-veh-badge { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #38bdf8; }
+    .deck-veh-title { margin: 0; font-size: 15px; font-weight: 800; color: #fff; }
+
+    .deck-head-stats { display: flex; align-items: center; gap: 8px; }
+    .deck-stat-chip {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 4px 12px; border-radius: 8px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12); min-width: 60px;
+    }
+    .deck-stat-chip .stat-num { font-size: 13.5px; font-weight: 800; color: #38df88; }
+    .deck-stat-chip .stat-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #94a3b8; }
+
+    .deck-head-actions { display: flex; align-items: center; gap: 8px; }
+    .deck-btn-action {
+      display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px;
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; background: rgba(255,255,255,0.1);
+      color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s ease;
+    }
+    .deck-btn-action:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4); }
+    .deck-btn-close {
+      width: 32px; height: 32px; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+      background: rgba(255,255,255,0.1); color: #fff; display: grid; place-items: center; cursor: pointer;
+    }
+    .deck-btn-close:hover { background: rgba(255,255,255,0.2); }
+
+    /* 3-Panel Deck Grid */
+    .deck-grid {
+      display: grid; grid-template-columns: 290px 1.2fr 1fr; gap: 14px; align-items: stretch;
+    }
+    @media (max-width: 1100px) {
+      .deck-grid { grid-template-columns: 1fr; }
+    }
+
+    .deck-panel {
+      display: flex; flex-direction: column; gap: 12px;
+      padding: 16px; border-radius: 14px; border: 1.5px solid var(--tm-line, #e2e8f0);
+      background: var(--tm-surface, #fff); box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+    .deck-panel-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--tm-line, #e2e8f0);
+    }
+    .deck-panel-title {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: var(--tm-text);
+    }
+    .deck-active-tag {
+      font-size: 11px; color: var(--tm-text-muted); font-weight: 600;
+    }
+    .deck-active-tag b { color: var(--tm-green, #16a34a); }
+
+    /* Panel 1: Groups */
+    .deck-add-group-box {
+      display: flex; gap: 6px;
+    }
+    .deck-add-grp-input {
+      flex: 1; height: 34px; padding: 0 10px; border-radius: 8px;
+      border: 1.5px solid var(--tm-line); background: var(--tm-canvas);
+      font-size: 12px; font-weight: 600; color: var(--tm-text); outline: none;
+    }
+    .deck-add-grp-input:focus { border-color: var(--tm-green, #16a34a); }
+    .deck-add-grp-btn {
+      padding: 0 12px; height: 34px; border: 0; border-radius: 8px;
+      background: var(--tm-green, #16a34a); color: #fff; font-size: 11.5px; font-weight: 700; cursor: pointer;
+    }
+    .deck-add-grp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .deck-list--groups { display: flex; flex-direction: column; gap: 8px; }
+    .deck-grp-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--tm-line);
+      background: var(--tm-canvas); cursor: pointer; transition: all .14s ease;
+    }
+    .deck-grp-card:hover { border-color: var(--tm-text-muted); }
+    .deck-grp-card.is-active {
+      border-color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5);
+      box-shadow: 0 2px 6px rgba(22,163,74,0.12);
+    }
+    .deck-grp-card-body { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .deck-grp-radio-dot {
+      width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--tm-line-2, #cbd5e1); flex: none;
+    }
+    .deck-grp-radio-dot.is-on {
+      border-color: var(--tm-green, #16a34a); background: var(--tm-green, #16a34a);
+    }
+    .deck-grp-card-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .deck-grp-card-name { font-size: 13px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .deck-grp-rename-box {
+      height: 24px; padding: 0 6px; font-size: 12px; font-weight: 700; border: 1px solid var(--tm-green); border-radius: 4px; outline: none;
+    }
+    .deck-grp-card-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+    .deck-pill-meta { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; color: var(--tm-text-muted); }
+    .deck-grp-card-actions { display: flex; align-items: center; gap: 4px; }
+    .deck-icon-act {
+      width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent;
+      color: var(--tm-text-muted); display: grid; place-items: center; cursor: pointer; transition: all .12s ease;
+    }
+    .deck-icon-act:hover { background: rgba(0,0,0,0.06); color: var(--tm-text); }
+    .deck-icon-act--active { color: var(--tm-green, #16a34a) !important; background: var(--tm-green-tint, #ecfdf5) !important; }
+    .deck-icon-act--active:hover { background: #bbf7d0 !important; color: #166534 !important; }
+    .deck-icon-act--danger:hover { background: #fee2e2; color: #dc2626; }
+
+    /* Panel 2: Routes */
+    .deck-routes-container { display: flex; flex-direction: column; gap: 12px; }
+    .deck-routes-subhead {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      font-size: 12px; font-weight: 800; color: var(--tm-text);
+    }
+    .deck-routes-subhead.unassigned { color: #0284c7; margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--tm-line); }
+    .deck-count-badge {
+      font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+      background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green-deep, #15803d);
+    }
+    .deck-count-badge.unassigned { background: #e0f2fe; color: #0369a1; }
+    .deck-routes-list { display: flex; flex-direction: column; gap: 6px; }
+    .deck-route-row {
+      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      border-radius: 8px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas);
+      transition: all .12s ease;
+    }
+    .deck-route-row.is-assigned { border-color: #86efac; background: #fff; }
+    .deck-route-row.is-unassigned { border-color: #bae6fd; background: #f8fafc; }
+    .deck-route-bullet { display: inline-flex; align-items: center; flex: none; color: var(--tm-text-muted); }
+    .deck-route-details { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+    .deck-route-title-line { display: flex; align-items: center; gap: 8px; }
+    .deck-route-name { font-size: 12.5px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .deck-fare-tag { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 800; color: #0f766e; background: #ccfbf1; padding: 0 5px; border-radius: 4px; }
+    .deck-warning-tag { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 800; color: #b45309; background: #fef3c7; padding: 0 5px; border-radius: 4px; }
+    .deck-route-path { font-size: 11px; color: var(--tm-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .deck-route-btn {
+      display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px;
+      border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; border: 0; white-space: nowrap;
+    }
+    .deck-route-btn.remove { background: #fee2e2; color: #b91c1c; }
+    .deck-route-btn.remove:hover { background: #fca5a5; }
+    .deck-route-btn.add { background: var(--tm-green, #16a34a); color: #fff; }
+    .deck-stops-tag { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 800; color: #4338ca; background: #e0e7ff; padding: 0 5px; border-radius: 4px; }
+    .deck-route-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .deck-route-btn.edit { background: var(--tm-canvas-2, #e2e8f0); color: var(--tm-text); }
+    .deck-route-btn.edit:hover { background: #cbd5e1; color: #0f172a; }
+
+    /* Panel 3: Drivers */
+    .deck-drivers-container { display: flex; flex-direction: column; gap: 8px; }
+    .deck-driver-card {
+      display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+      border-radius: 10px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas);
+    }
+    .deck-driver-top { display: flex; align-items: center; gap: 10px; }
+    .deck-driver-avatar {
+      width: 28px; height: 28px; border-radius: 50%; background: var(--tm-green, #16a34a);
+      color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; flex: none;
+    }
+    .deck-driver-meta { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .deck-driver-name-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .deck-driver-name { font-size: 12.5px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .deck-driver-status-pill {
+      font-size: 9.5px; font-weight: 800; text-transform: uppercase; padding: 1px 6px;
+      border-radius: 4px; background: var(--tm-canvas-2, #e2e8f0); color: var(--tm-text-muted);
+    }
+    .deck-driver-status-pill.is-active { background: #bbf7d0; color: #166534; }
+    .deck-driver-sub-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 10.5px; }
+    .deck-car-tag { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--tm-text-muted); }
+    .deck-reg-tag { font-weight: 800; color: #475569; padding: 0 4px; background: rgba(0,0,0,0.05); border-radius: 3px; }
+    .deck-phone-tag { display: inline-flex; align-items: center; gap: 3px; color: var(--tm-text-muted); font-weight: 600; }
+
+    .deck-driver-chips-bar {
+      display: flex; flex-direction: column; gap: 4px;
+      padding-top: 6px; border-top: 1px dashed var(--tm-line);
+    }
+    .deck-chips-label-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .deck-chips-lbl { font-size: 10.5px; font-weight: 700; color: var(--tm-text-muted); }
+    .deck-chips-actions { display: flex; align-items: center; gap: 4px; }
+    .deck-text-btn {
+      border: 0; background: transparent; color: var(--tm-green, #16a34a); font-size: 10.5px; font-weight: 700; cursor: pointer; padding: 1px 4px; border-radius: 4px;
+    }
+    .deck-text-btn:hover:not([disabled]) { background: var(--tm-green-tint, #ecfdf5); }
+    .deck-text-btn--danger { color: #dc2626; }
+    .deck-text-btn--danger:hover:not([disabled]) { background: #fef2f2; }
+    .deck-text-btn[disabled] { opacity: 0.35; cursor: not-allowed; }
+
+    .deck-chips-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+    .deck-group-chip {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
+      border-radius: 999px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas-2, #f1f5f9);
+      color: var(--tm-text); font-size: 11px; font-weight: 600; cursor: pointer; transition: all .12s ease;
+    }
+    .deck-group-chip:hover:not([disabled]) { border-color: var(--tm-text-muted); }
+    .deck-group-chip.is-assigned {
+      border-color: var(--tm-green, #16a34a); background: var(--tm-green-tint, #ecfdf5);
+      color: var(--tm-green-deep, #15803d); font-weight: 700;
+    }
+    .deck-group-chip[disabled] { opacity: 0.6; cursor: wait; }
+
+    .deck-empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      padding: 24px 16px; text-align: center; font-size: 12px; color: var(--tm-text-muted);
+      border: 1px dashed var(--tm-line); border-radius: 10px;
+    }
+    .deck-empty-inline {
+      padding: 10px; text-align: center; font-size: 11.5px; color: var(--tm-text-muted);
+      background: var(--tm-canvas); border-radius: 8px;
+    }
+    .deck-muted-note { font-size: 11px; color: var(--tm-text-muted); font-style: italic; }
+
+    /* View Switcher in Deck Header */
+    .deck-view-switcher {
+      display: inline-flex; align-items: center; gap: 4px; padding: 3px;
+      background: rgba(0,0,0,0.25); border-radius: 9px; border: 1px solid rgba(255,255,255,0.12);
+    }
+    .deck-tab-btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+      border-radius: 7px; border: 0; background: transparent; color: #cbd5e1;
+      font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s ease;
+    }
+    .deck-tab-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+    .deck-tab-btn.is-active { background: #fff; color: #0f172a; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+
+    /* All Routes Flat Table Mode */
+    .deck-all-routes-wrap {
+      display: flex; flex-direction: column; gap: 10px; padding: 16px;
+      border-radius: 12px; border: 1.5px solid var(--tm-line, #e2e8f0);
+      background: var(--tm-surface, #fff); box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+    .deck-all-routes-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    }
+    .deck-all-routes-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--tm-text); }
+    .deck-all-table-box { overflow-x: auto; border: 1px solid var(--tm-line); border-radius: 8px; }
+    .deck-flat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .deck-flat-table th {
+      background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 10.5px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .05em; padding: 8px 12px; text-align: left;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .deck-flat-table td {
+      padding: 10px 12px; border-bottom: 1px solid var(--tm-line); vertical-align: middle; background: var(--tm-surface);
+    }
+    .deck-flat-table tr:last-child td { border-bottom: 0; }
+    .deck-flat-table tr:hover td { background: var(--tm-canvas); }
+    .deck-tbl-route-main { display: flex; align-items: center; gap: 10px; }
+    .deck-tbl-ic { font-size: 16px; }
+    .deck-tbl-txt { display: flex; flex-direction: column; gap: 1px; }
+    .deck-tbl-name { font-size: 12.5px; font-weight: 800; color: var(--tm-text); }
+    .deck-tbl-path { font-size: 11px; color: var(--tm-text-muted); }
+    .deck-tbl-grp-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #e0e7ff; color: #3730a3; font-size: 11px; font-weight: 700; }
+    .deck-tbl-ungrp-pill { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 600; }
+    .deck-tbl-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+
+    /* Dedicated Vehicle Operations Hub Drawer */
+    .op-drawer-body { display: flex; flex-direction: column; gap: 20px; }
+    .op-hero-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      padding: 16px 20px; border-radius: 14px; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #fff; box-shadow: 0 4px 14px rgba(15,23,42,0.15);
+    }
+    .op-hero-left { display: flex; align-items: center; gap: 14px; }
+    .op-hero-icon {
+      width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.18); display: grid; place-items: center; color: #fff; flex: none;
+    }
+    .op-hero-details { display: flex; flex-direction: column; gap: 2px; }
+    .op-hero-badge {
+      font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+      color: #86efac;
+    }
+    .op-hero-title { margin: 0; font-size: 19px; font-weight: 800; color: #fff; letter-spacing: -0.01em; }
+    .op-hero-sub { font-size: 12px; color: #94a3b8; font-weight: 500; }
+    .op-hero-stats { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .op-stat-box {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 6px 14px; border-radius: 10px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12); min-width: 76px;
+    }
+    .op-stat-num { font-size: 16px; font-weight: 800; color: #fff; line-height: 1.2; }
+    .op-stat-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #94a3b8; }
+
+    .op-tabs-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding-bottom: 12px; border-bottom: 1.5px solid var(--tm-line);
+    }
+    .op-tabs-nav { display: flex; align-items: center; gap: 6px; }
+    .op-tab-btn {
+      display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px;
+      border-radius: 9px; border: 1.5px solid var(--tm-line); background: var(--tm-canvas);
+      color: var(--tm-text-muted); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all .15s ease;
+    }
+    .op-tab-btn:hover { border-color: var(--tm-text-muted); color: var(--tm-text); }
+    .op-tab-btn.is-active {
+      border-color: #0f172a; background: #0f172a; color: #fff; box-shadow: 0 2px 8px rgba(15,23,42,0.15);
+    }
+    .op-tabs-quick-acts { display: flex; align-items: center; gap: 8px; }
+    .btn-op-primary {
+      display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px;
+      border-radius: 8px; border: 0; background: var(--tm-green, #16a34a); color: #fff;
+      font-size: 12px; font-weight: 700; cursor: pointer; transition: all .14s ease;
+    }
+    .btn-op-primary:hover { filter: brightness(.93); }
+    .btn-op-outline {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+      border-radius: 8px; border: 1.5px solid var(--tm-line); background: var(--tm-surface);
+      color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .14s ease;
+    }
+    .btn-op-outline:hover { background: var(--tm-canvas); }
+    /* ── Visual Kanban Board Styles (Pro Balanced Architecture) ── */
+    .kb-wrapper {
+      display: flex; flex-direction: column; gap: 14px;
+      min-height: 0; flex: 1;
+    }
+    .kb-top-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 10px 16px; border-radius: 12px; background: var(--tm-canvas); border: 1.5px solid var(--tm-line);
+      flex-shrink: 0;
+    }
+    .kb-top-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex: 1; }
+    .kb-veh-tag { display: flex; align-items: center; gap: 10px; }
+    .kb-veh-icon-box {
+      width: 32px; height: 32px; border-radius: 8px; background: var(--tm-green-tint, #ecfdf5);
+      border: 1px solid #86efac; display: grid; place-items: center; color: var(--tm-green, #16a34a);
+    }
+    .kb-veh-info { display: flex; flex-direction: column; gap: 1px; }
+    .kb-veh-name { font-weight: 800; font-size: 14px; color: var(--tm-text); }
+    .kb-veh-spec { font-size: 11px; color: var(--tm-text-muted); font-weight: 600; }
+    .kb-search {
+      display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 34px;
+      border-radius: 8px; border: 1px solid var(--tm-line); background: var(--tm-surface);
+      width: 220px; color: var(--tm-text-muted);
+    }
+    .kb-search input { border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--tm-text); outline: none; width: 100%; }
+    
+    .kb-top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .kb-quick-add-group { display: flex; align-items: center; gap: 4px; }
+    .kb-quick-grp-input {
+      height: 34px; width: 160px; padding: 0 10px; border-radius: 8px; border: 1.5px solid var(--tm-line);
+      background: var(--tm-surface); font-size: 12px; color: var(--tm-text); outline: none; font-weight: 600;
+    }
+    .kb-quick-grp-input:focus { border-color: var(--tm-green, #16a34a); }
+    .btn-kb-quick-add {
+      height: 34px; padding: 0 12px; border-radius: 8px; border: 0; background: #0f172a; color: #fff;
+      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity .12s;
+    }
+    .btn-kb-quick-add:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-kb-primary {
+      display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px;
+      border-radius: 8px; border: 0; background: var(--tm-green, #16a34a); color: #fff;
+      font-size: 12px; font-weight: 700; cursor: pointer; transition: all .12s ease; white-space: nowrap;
+    }
+    .btn-kb-primary:hover { filter: brightness(.92); }
+    .btn-kb-outline {
+      display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+      border-radius: 8px; border: 1.5px solid var(--tm-line); background: var(--tm-surface);
+      color: var(--tm-text); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .12s ease; white-space: nowrap;
+    }
+    .btn-kb-outline:hover { background: var(--tm-canvas); }
+
+    /* Columns container: Responsive auto-fit or flex scroll */
+    .kb-columns-container {
+      display: flex; gap: 14px; overflow-x: auto;
+      padding-bottom: 10px; align-items: stretch; min-height: 480px; flex: 1;
+      scrollbar-width: thin; scrollbar-color: var(--tm-line-2, #cbd5e1) transparent;
+      scroll-behavior: smooth;
+    }
+    .kb-column {
+      flex: 1 1 300px; min-width: 280px; max-width: 380px;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 14px 12px; border-radius: 14px; border: 1.5px solid var(--tm-line);
+      background: var(--tm-canvas); max-height: calc(100vh - 220px);
+      transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .kb-column--unassigned { border-color: #bae6fd; background: #f8fafc; }
+    .kb-column--group { border-color: var(--tm-line); background: var(--tm-canvas); }
+
+    .kb-col-header { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+    .kb-col-title-line { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .kb-col-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 800; color: var(--tm-text); }
+    .kb-col-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .kb-col-dot--sky { background: #0284c7; }
+    .kb-col-dot--green { background: #16a34a; }
+    .kb-col-heading { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kb-grp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 155px; }
+    .kb-rename-input { flex: 1; height: 26px; font-size: 12px; font-weight: 700; border: 1.5px solid var(--tm-green, #16a34a); border-radius: 6px; padding: 0 6px; outline: none; }
+    .kb-col-desc { margin: 0; font-size: 11px; color: var(--tm-text-muted); line-height: 1.25; }
+
+    .kb-count-pill {
+      font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+      background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green-deep, #15803d);
+    }
+    .kb-count-pill--sky { background: #e0f2fe; color: #0369a1; }
+    .kb-grp-acts { display: flex; align-items: center; gap: 3px; }
+    .kb-icon-btn {
+      width: 22px; height: 22px; border: 0; border-radius: 5px; background: transparent;
+      color: var(--tm-text-muted); display: grid; place-items: center; cursor: pointer;
+    }
+    .kb-icon-btn:hover { background: rgba(0,0,0,0.06); color: var(--tm-text); }
+    .kb-icon-btn--danger:hover { background: #fee2e2; color: #dc2626; }
+
+    /* Driver Section in Group Column Header */
+    .kb-driver-assign-section {
+      position: relative; display: flex; flex-direction: column; gap: 6px;
+      padding: 6px 8px; border-radius: 8px; background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+    }
+    .kb-drv-head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .kb-drv-chips-container { display: flex; flex-wrap: wrap; gap: 4px; max-height: 54px; overflow-y: auto; flex: 1; }
+    .kb-drv-chip {
+      display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px;
+      border-radius: 999px; background: var(--tm-green-tint, #ecfdf5);
+      border: 1px solid #86efac; font-size: 9.5px; font-weight: 700; color: #166534;
+    }
+    .kb-chip-avatar {
+      width: 14px; height: 14px; border-radius: 50%; background: var(--tm-green, #16a34a); color: #fff;
+      font-size: 8px; display: grid; place-items: center;
+    }
+    .kb-chip-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kb-chip-remove { border: 0; background: transparent; color: #166534; font-size: 12px; cursor: pointer; line-height: 1; padding: 0 1px; }
+    .kb-chip-remove:hover { color: #dc2626; }
+    .kb-no-drv-hint { font-size: 10px; color: var(--tm-text-muted); font-style: italic; }
+    .kb-btn-manage-drv {
+      display: inline-flex; align-items: center; gap: 2px; border: 0; background: transparent;
+      color: var(--tm-green, #16a34a); font-size: 10px; font-weight: 700; cursor: pointer; padding: 2px 4px; border-radius: 4px; white-space: nowrap;
+    }
+    .kb-btn-manage-drv:hover { background: var(--tm-green-tint, #ecfdf5); }
+
+    /* Driver Popover */
+    .kb-drv-popover {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 80;
+      background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: 10px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15); padding: 8px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .kb-popover-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; border-bottom: 1px solid var(--tm-line); padding-bottom: 4px; }
+    .kb-popover-x { border: 0; background: transparent; cursor: pointer; font-size: 13px; color: var(--tm-text-muted); }
+    .kb-popover-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    .kb-popover-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+    .kb-popover-item:hover { background: var(--tm-canvas); }
+    .kb-popover-item-info { display: flex; flex-direction: column; gap: 1px; }
+    .kb-pop-dname { font-weight: 700; color: var(--tm-text); }
+    .kb-pop-dreg { font-size: 9.5px; color: var(--tm-text-muted); }
+    .kb-pop-empty { font-size: 11px; color: var(--tm-text-muted); text-align: center; padding: 8px; }
+
+    .kb-column.is-drop-target {
+      border-color: var(--tm-green, #16a34a) !important;
+      background: var(--tm-green-tint, #ecfdf5) !important;
+      box-shadow: 0 0 0 2px var(--tm-green, #16a34a), 0 8px 24px rgba(22,163,74,0.15);
+      transform: translateY(-2px);
+    }
+
+    /* Anti-flicker drag state */
+    .kb-wrapper.is-dragging-active .kb-col-header,
+    .kb-wrapper.is-dragging-active .kb-card * {
+      pointer-events: none;
+    }
+
+    /* Cards Scroll Area */
+    .kb-cards-scroll {
+      display: flex; flex-direction: column; gap: 7px; overflow-y: auto;
+      padding-right: 2px; flex: 1; min-height: 100px;
+      scrollbar-width: thin; scrollbar-color: var(--tm-line, #e2e8f0) transparent;
+      scroll-behavior: smooth;
+    }
+
+    /* Card Styling */
+    .kb-card {
+      display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+      border-radius: 10px; border: 1.5px solid var(--tm-line); background: var(--tm-surface);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+      cursor: grab; user-select: none;
+      transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+      animation: kbCardPopIn .18s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes kbCardPopIn {
+      from { opacity: 0.3; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .kb-card:hover { border-color: var(--tm-text-muted); transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.06); }
+    .kb-card:active { cursor: grabbing; }
+    .kb-card.is-dragging {
+      opacity: 0.4; transform: rotate(1.5deg) scale(0.97);
+      border: 1.5px dashed var(--tm-green, #16a34a);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.15);
+    }
+
+    .kb-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .kb-card-title-group { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+    .kb-drag-handle {
+      display: inline-flex; align-items: center; color: var(--tm-text-muted); opacity: 0.45;
+      cursor: grab; flex-shrink: 0; padding: 1px 0;
+    }
+    .kb-card:hover .kb-drag-handle { opacity: 1; color: var(--tm-text); }
+    .kb-card-name { font-size: 12.5px; font-weight: 800; color: var(--tm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .pill--sm { padding: 2px 7px; font-size: 9.5px; }
+
+    .kb-card-path { font-size: 11px; color: var(--tm-text-muted); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kb-card-meta-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .kb-fare-pill { font-size: 10.5px; font-weight: 800; color: #0f766e; background: #ccfbf1; padding: 1px 6px; border-radius: 4px; }
+    .kb-fare-pill--warn { color: #b45309; background: #fef3c7; display: inline-flex; align-items: center; gap: 2px; }
+    .kb-stops-pill { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 800; color: #4338ca; background: #e0e7ff; padding: 1px 6px; border-radius: 4px; }
+
+    .kb-card-footer {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      padding-top: 6px; border-top: 1px dashed var(--tm-line);
+    }
+    .kb-action-btn {
+      display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px;
+      border-radius: 6px; font-size: 10.5px; font-weight: 700; cursor: pointer; border: 0;
+    }
+    .kb-action-btn--edit { background: var(--tm-canvas-2, #e2e8f0); color: var(--tm-text); }
+    .kb-action-btn--edit:hover { background: #cbd5e1; color: #0f172a; }
+    .kb-action-btn--remove { background: #fee2e2; color: #b91c1c; }
+    .kb-action-btn--remove:hover { background: #fca5a5; }
+
+    .kb-move-dropdown { flex: 1; min-width: 0; }
+    .kb-select-input {
+      width: 100%; height: 24px; font-size: 10.5px; font-weight: 700; color: var(--tm-text-muted);
+      border: 1px solid var(--tm-line); border-radius: 6px; background: var(--tm-canvas); outline: none; cursor: pointer;
+    }
+    .kb-select-input:hover { border-color: var(--tm-green, #16a34a); color: var(--tm-text); }
+
+    /* Drop Target Indicator */
+    .kb-drop-placeholder {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 14px 10px; border-radius: 10px; border: 2px dashed var(--tm-green, #16a34a);
+      background: var(--tm-green-tint, #ecfdf5); color: var(--tm-green-deep, #15803d);
+      font-size: 11.5px; font-weight: 800; animation: kbPulse 1.2s infinite ease-in-out;
+      margin-top: 2px;
+    }
+    @keyframes kbPulse {
+      0%, 100% { opacity: 0.85; transform: scale(0.99); }
+      50% { opacity: 1; transform: scale(1.01); background: #dcfce7; }
+    }
+
+    .kb-empty-col {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      padding: 26px 12px; text-align: center; font-size: 11px; color: var(--tm-text-muted);
+      border: 1.5px dashed var(--tm-line); border-radius: 10px; margin: auto 0;
+    }
 
     /* row kebab menu */
     .menu-scrim { position: fixed; inset: 0; z-index: 70; }
@@ -1434,213 +2297,471 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   renamingId: number | null = null;
   renameValue = '';
 
-  // ── Unified Group Drawer state & methods ──────────────────────────
-  unifiedDrawerOpen = false;
-  editingGroup: GroupRow | null = null;
-  targetVehicleForGroup: CityVehicleRow | null = null;
-  unifiedForm: {
-    group_ids: number[];
-    edit_group_name: string;
-    new_group_name: string;
-    is_creating_group: boolean;
-    route_ids: number[];
-    driver_user_ids: number[];
-  } = {
-    group_ids: [],
-    edit_group_name: '',
-    new_group_name: '',
-    is_creating_group: false,
-    route_ids: [],
-    driver_user_ids: [],
-  };
-  savingUnifiedGroup = false;
+  // ── Executive Operations Deck (Under-table Commander) state & methods ──
+  inlineNewGroupName: Record<number, string> = {};
+  canCreateInlineGroup(vId: number): boolean {
+    const val = this.inlineNewGroupName[vId];
+    return typeof val === 'string' && val.trim().length > 0;
+  }
+  activeDeckGroupId: Record<number, number> = {};
+  isCreatingInlineGroup = false;
+  renamingGroupId: number | null = null;
 
-  openUnifiedGroupDrawer(v: CityVehicleRow, g?: GroupRow): void {
-    this.targetVehicleForGroup = v;
-    this.editingGroup = g ?? null;
-    const vGroups = this.groupsForVehicle(v);
-
-    if (g) {
-      this.unifiedForm = {
-        group_ids: [g.id],
-        edit_group_name: g.name,
-        new_group_name: '',
-        is_creating_group: false,
-        route_ids: [...g.route_ids],
-        driver_user_ids: [...g.driver_user_ids],
-      };
-    } else {
-      const allGroupIds = vGroups.map((x) => x.id);
-      const allRouteIds = Array.from(new Set(vGroups.flatMap((x) => x.route_ids)));
-      const allDriverIds = Array.from(new Set(vGroups.flatMap((x) => x.driver_user_ids)));
-      this.unifiedForm = {
-        group_ids: allGroupIds,
-        edit_group_name: '',
-        new_group_name: '',
-        is_creating_group: !vGroups.length,
-        route_ids: allRouteIds,
-        driver_user_ids: allDriverIds,
-      };
+  getActiveDeckGroupId(v: CityVehicleRow): number | null {
+    if (this.activeDeckGroupId[v.id] != null) {
+      const exists = this.groupsForVehicle(v).some((g) => g.id === this.activeDeckGroupId[v.id]);
+      if (exists) return this.activeDeckGroupId[v.id];
     }
-    this.unifiedDrawerOpen = true;
+    const first = this.groupsForVehicle(v)[0];
+    if (first) {
+      this.activeDeckGroupId[v.id] = first.id;
+      return first.id;
+    }
+    return null;
   }
 
-  toggleUnifiedGroup(groupId: number): void {
-    const idx = this.unifiedForm.group_ids.indexOf(groupId);
-    if (idx >= 0) {
-      this.unifiedForm.group_ids.splice(idx, 1);
-    } else {
-      this.unifiedForm.group_ids.push(groupId);
-    }
-    const selectedGroups = this.groups.filter((g) => this.unifiedForm.group_ids.includes(g.id));
-    if (selectedGroups.length > 0) {
-      this.unifiedForm.route_ids = Array.from(new Set(selectedGroups.flatMap((g) => g.route_ids)));
-      this.unifiedForm.driver_user_ids = Array.from(new Set(selectedGroups.flatMap((g) => g.driver_user_ids)));
-    }
+  kanbanSearch = '';
+  openDriverDropdownGroupId: number | null = null;
+
+  toggleGroupDriverDropdown(gId: number, ev?: Event): void {
+    ev?.stopPropagation();
+    this.openDriverDropdownGroupId = this.openDriverDropdownGroupId === gId ? null : gId;
   }
 
-  toggleUnifiedRoute(routeId: number): void {
-    const idx = this.unifiedForm.route_ids.indexOf(routeId);
-    if (idx >= 0) {
-      this.unifiedForm.route_ids.splice(idx, 1); // removing is always allowed
-    } else {
-      if (!this.routeIsGroupable(routeId)) return;
-      this.unifiedForm.route_ids.push(routeId);
-    }
-  }
-
-  toggleUnifiedDriver(userId: number): void {
-    const idx = this.unifiedForm.driver_user_ids.indexOf(userId);
-    if (idx >= 0) {
-      this.unifiedForm.driver_user_ids.splice(idx, 1);
-    } else {
-      this.unifiedForm.driver_user_ids.push(userId);
-    }
-  }
-
-  get availableGroupsForUnifiedDrawer(): GroupRow[] {
-    const v = this.targetVehicleForGroup;
-    if (!v) return [];
-    const forVehicle = this.groupsForVehicle(v);
-    // Also surface stray legacy groups (unbound + route-less) so they stay
-    // reachable to rebind or delete — saving here binds them to this vehicle.
-    const seen = new Set(forVehicle.map((g) => g.id));
-    const strays = this.groups.filter(
-      (g) => g.city_vehicle_type_id == null && !g.route_ids.length && !seen.has(g.id),
+  filterKanbanRoutes(routes: RouteLite[]): RouteLite[] {
+    const q = this.kanbanSearch.trim().toLowerCase();
+    if (!q) return routes;
+    return routes.filter((r) =>
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.origin_name || '').toLowerCase().includes(q) ||
+      (r.dest_name || '').toLowerCase().includes(q)
     );
-    return [...forVehicle, ...strays];
   }
 
-  get availableRoutesForUnifiedDrawer(): RouteLite[] {
-    const v = this.targetVehicleForGroup;
-    if (!v) return this.routes;
-    return this.routesForVehicle(v);
+  getOtherGroups(v: CityVehicleRow, currentGroupId: number): GroupRow[] {
+    return this.groupsForVehicle(v).filter((g) => g.id !== currentGroupId);
   }
 
-  get availableDriversForUnifiedDrawer(): DriverOpt[] {
-    const v = this.targetVehicleForGroup;
-    if (!v) return this.cityDrivers;
-    // Match by the car's vehicle TYPE, not the exact per-service row. One physical
-    // car (e.g. Swift Dzire) is stored as separate Private/Shuttle/Fixed rows, so a
-    // driver bound to any of them must still be assignable to this car's route
-    // groups — otherwise a Fixed driver bound to the Private row is invisible here.
-    return this.cityDrivers.filter((d) =>
-      d.city_vehicle_type_id === v.id ||
-      (d.vehicle_type_id != null && d.vehicle_type_id === v.vehicle_type_id));
-  }
+  onMoveSelectChange(fromGroup: GroupRow | null, ev: Event, routeId: number): void {
+    const select = ev.target as HTMLSelectElement;
+    const targetVal = select.value;
+    select.value = '';
 
-  saveUnifiedGroup(): void {
-    if (this.cityId == null || this.savingUnifiedGroup) return;
+    if (!targetVal || this.cityId == null) return;
 
-    const targetGroupIds = [...this.unifiedForm.group_ids];
-    const newName = this.unifiedForm.new_group_name.trim();
-
-    if (!targetGroupIds.length && (!this.unifiedForm.is_creating_group || !newName)) {
-      this.toast.error('Select at least one group or enter a new group name');
+    if (targetVal === 'ungrouped') {
+      if (fromGroup) {
+        this.ungroupRoute(fromGroup, routeId);
+      }
       return;
     }
 
-    this.savingUnifiedGroup = true;
+    const targetGroupId = Number(targetVal);
+    const targetGroup = this.groups.find((g) => g.id === targetGroupId);
+    if (!targetGroup) return;
 
-    const syncGroups = (gIds: number[]) => {
-      if (!gIds.length) {
-        this.savingUnifiedGroup = false;
-        this.unifiedDrawerOpen = false;
-        this.toast.success('Saved successfully');
-        this.loadGroups();
-        return;
-      }
-
-      let done = 0;
-      gIds.forEach((id) => {
-        const existingGroup = this.groups.find((g) => g.id === id);
-        let name = existingGroup ? existingGroup.name : newName;
-        if (this.editingGroup && this.editingGroup.id === id && this.unifiedForm.edit_group_name.trim()) {
-          name = this.unifiedForm.edit_group_name.trim();
-        }
-        this.api.patch(`/admin/cities/${this.cityId}/route-groups/${id}`, {
-          name,
-          route_ids: this.unifiedForm.route_ids,
-          // Managing a group under a vehicle binds it to that vehicle — this also
-          // rescues stray/legacy unbound groups the moment they're saved here.
-          city_vehicle_type_id: this.targetVehicleForGroup?.id ?? null,
-        }).subscribe({
-          next: () => {
-            this.api.put(`/admin/cities/${this.cityId}/route-groups/${id}/drivers`, {
-              driver_user_ids: this.unifiedForm.driver_user_ids,
-            }).subscribe({
-              next: () => {
-                done++;
-                if (done === gIds.length) {
-                  this.savingUnifiedGroup = false;
-                  this.unifiedDrawerOpen = false;
-                  this.toast.success('Assignments saved');
-                  this.loadGroups();
-                }
-              },
-              error: () => {
-                done++;
-                if (done === gIds.length) {
-                  this.savingUnifiedGroup = false;
-                  this.unifiedDrawerOpen = false;
-                  this.loadGroups();
-                }
-              },
-            });
-          },
-          error: () => {
-            done++;
-            if (done === gIds.length) {
-              this.savingUnifiedGroup = false;
-              this.unifiedDrawerOpen = false;
-              this.loadGroups();
-            }
-          },
-        });
-      });
-    };
-
-    if (this.unifiedForm.is_creating_group && newName) {
-      this.api.post<{ route_group: GroupRow }>(`/admin/cities/${this.cityId}/route-groups`, {
-        name: newName,
-        route_ids: this.unifiedForm.route_ids,
-        city_vehicle_type_id: this.targetVehicleForGroup?.id ?? null,
-      }).subscribe({
-        next: (res) => {
-          const newId = res?.route_group?.id;
-          if (newId) {
-            targetGroupIds.push(newId);
-          }
-          syncGroups(targetGroupIds);
+    if (fromGroup) {
+      const newOldIds = fromGroup.route_ids.filter((id) => id !== routeId);
+      const newTargetIds = [...targetGroup.route_ids.filter((id) => id !== routeId), routeId];
+      
+      this.api.patch(`/admin/cities/${this.cityId}/route-groups/${fromGroup.id}`, { name: fromGroup.name, route_ids: newOldIds }).subscribe({
+        next: () => {
+          fromGroup.route_ids = newOldIds;
+          this.api.patch(`/admin/cities/${this.cityId}/route-groups/${targetGroup.id}`, { name: targetGroup.name, route_ids: newTargetIds }).subscribe({
+            next: () => {
+              targetGroup.route_ids = newTargetIds;
+              this.toast.success(`Moved route to "${targetGroup.name}"`);
+              this.onRouteMutation();
+            },
+            error: (err) => this.toast.error(err?.error?.message || 'Could not move route'),
+          });
         },
-        error: (err) => {
-          this.savingUnifiedGroup = false;
-          this.toast.error(err?.error?.message || 'Could not create new group');
-        },
+        error: (err) => this.toast.error(err?.error?.message || 'Could not move route'),
       });
     } else {
-      syncGroups(targetGroupIds);
+      this.addRouteToGroup(targetGroup, routeId);
     }
+  }
+
+  draggingRouteId: number | null = null;
+  draggingFromGroupId: number | null = null;
+  dragOverColumnId: number | 'ungrouped' | null = null;
+
+  onCardDragStart(ev: DragEvent, r: RouteLite, fromGroup: GroupRow | null): void {
+    this.draggingRouteId = r.id;
+    this.draggingFromGroupId = fromGroup ? fromGroup.id : null;
+    if (ev.dataTransfer) {
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', String(r.id));
+    }
+  }
+
+  onCardDragEnd(): void {
+    this.draggingRouteId = null;
+    this.draggingFromGroupId = null;
+    this.dragOverColumnId = null;
+  }
+
+  onColDragOver(ev: DragEvent, colId: number | 'ungrouped'): void {
+    ev.preventDefault();
+    if (ev.dataTransfer) {
+      ev.dataTransfer.dropEffect = 'move';
+    }
+    this.dragOverColumnId = colId;
+  }
+
+  onColDragLeave(colId: number | 'ungrouped'): void {
+    if (this.dragOverColumnId === colId) {
+      this.dragOverColumnId = null;
+    }
+  }
+
+  onColDrop(ev: DragEvent, targetGroup: GroupRow | null): void {
+    ev.preventDefault();
+    this.dragOverColumnId = null;
+
+    const routeId = this.draggingRouteId;
+    const fromGroupId = this.draggingFromGroupId;
+    this.draggingRouteId = null;
+    this.draggingFromGroupId = null;
+
+    if (routeId == null || this.cityId == null) return;
+
+    const fromGroup = fromGroupId != null ? (this.groups.find((g) => g.id === fromGroupId) ?? null) : null;
+
+    // Dropped into the same group — do nothing
+    if ((fromGroup?.id ?? null) === (targetGroup?.id ?? null)) {
+      return;
+    }
+
+    if (fromGroup && targetGroup) {
+      // 1. Moving between two groups (Optimistic 0ms update)
+      const originalFromIds = [...fromGroup.route_ids];
+      const originalTargetIds = [...targetGroup.route_ids];
+      const newOldIds = fromGroup.route_ids.filter((id) => id !== routeId);
+      const newTargetIds = [...targetGroup.route_ids.filter((id) => id !== routeId), routeId];
+
+      fromGroup.route_ids = newOldIds;
+      targetGroup.route_ids = newTargetIds;
+
+      this.api.patch(`/admin/cities/${this.cityId}/route-groups/${fromGroup.id}`, { name: fromGroup.name, route_ids: newOldIds }).subscribe({
+        next: () => {
+          this.api.patch(`/admin/cities/${this.cityId}/route-groups/${targetGroup.id}`, { name: targetGroup.name, route_ids: newTargetIds }).subscribe({
+            next: () => {
+              this.toast.success(`Moved route to "${targetGroup.name}"`);
+              this.onRouteMutation();
+            },
+            error: (err) => {
+              fromGroup.route_ids = originalFromIds;
+              targetGroup.route_ids = originalTargetIds;
+              this.toast.error(err?.error?.message || 'Could not move route');
+            },
+          });
+        },
+        error: (err) => {
+          fromGroup.route_ids = originalFromIds;
+          targetGroup.route_ids = originalTargetIds;
+          this.toast.error(err?.error?.message || 'Could not move route');
+        },
+      });
+    } else if (fromGroup && !targetGroup) {
+      // 2. Ungrouping (Optimistic 0ms update)
+      const originalFromIds = [...fromGroup.route_ids];
+      const newOldIds = fromGroup.route_ids.filter((id) => id !== routeId);
+      fromGroup.route_ids = newOldIds;
+
+      this.api.patch(`/admin/cities/${this.cityId}/route-groups/${fromGroup.id}`, { name: fromGroup.name, route_ids: newOldIds }).subscribe({
+        next: () => {
+          this.toast.success('Route removed from group');
+          this.onRouteMutation();
+        },
+        error: (err) => {
+          fromGroup.route_ids = originalFromIds;
+          this.toast.error(err?.error?.message || 'Could not remove route');
+        },
+      });
+    } else if (!fromGroup && targetGroup) {
+      // 3. Adding from Ungrouped to Group (Optimistic 0ms update)
+      const originalTargetIds = [...targetGroup.route_ids];
+      const newTargetIds = [...targetGroup.route_ids.filter((id) => id !== routeId), routeId];
+      targetGroup.route_ids = newTargetIds;
+
+      this.api.patch(`/admin/cities/${this.cityId}/route-groups/${targetGroup.id}`, { name: targetGroup.name, route_ids: newTargetIds }).subscribe({
+        next: () => {
+          this.toast.success(`Route added to "${targetGroup.name}"`);
+          this.onRouteMutation();
+        },
+        error: (err) => {
+          targetGroup.route_ids = originalTargetIds;
+          this.toast.error(err?.error?.message || 'Could not add route to group');
+        },
+      });
+    }
+  }
+
+  deckViewMode: Record<number, 'commander' | 'all-routes'> = {};
+
+  getDeckViewMode(v: CityVehicleRow): 'commander' | 'all-routes' {
+    return this.deckViewMode[v.id] || 'commander';
+  }
+
+  setDeckViewMode(v: CityVehicleRow, mode: 'commander' | 'all-routes'): void {
+    this.deckViewMode[v.id] = mode;
+  }
+
+  groupForRoute(r: RouteLite): GroupRow | null {
+    return this.groups.find((g) => (g.route_ids || []).includes(r.id)) ?? null;
+  }
+
+  getActiveDeckGroup(v: CityVehicleRow): GroupRow | null {
+    const gId = this.getActiveDeckGroupId(v);
+    if (gId == null) return null;
+    return this.groups.find((g) => g.id === gId) ?? null;
+  }
+
+  setActiveDeckGroup(v: CityVehicleRow, gId: number): void {
+    this.activeDeckGroupId[v.id] = gId;
+  }
+
+  startInlineRename(g: GroupRow): void {
+    this.renamingGroupId = g.id;
+    this.renameValue = g.name;
+  }
+
+  saveInlineRename(g: GroupRow): void {
+    const name = this.renameValue.trim();
+    if (!name || this.cityId == null) {
+      this.renamingGroupId = null;
+      return;
+    }
+    this.api.patch(`/admin/cities/${this.cityId}/route-groups/${g.id}`, { name, route_ids: g.route_ids }).subscribe({
+      next: () => {
+        g.name = name;
+        this.renamingGroupId = null;
+        this.toast.success(`Group renamed to "${name}"`);
+        this.onRouteMutation();
+      },
+      error: (err) => {
+        this.renamingGroupId = null;
+        this.toast.error(err?.error?.message || 'Could not rename group');
+      },
+    });
+  }
+
+  quickCreateInlineGroup(v: CityVehicleRow): void {
+    const name = (this.inlineNewGroupName[v.id] || '').trim();
+    if (!name || this.cityId == null || this.isCreatingInlineGroup) return;
+
+    this.isCreatingInlineGroup = true;
+    this.api.post<{ group: GroupRow }>(`/admin/cities/${this.cityId}/route-groups`, {
+      name,
+      city_vehicle_type_id: v.id,
+    }).subscribe({
+      next: (res) => {
+        this.isCreatingInlineGroup = false;
+        this.inlineNewGroupName[v.id] = '';
+        this.toast.success(`Group "${name}" created`);
+        if (res?.group?.id) {
+          this.activeDeckGroupId[v.id] = res.group.id;
+        }
+        this.onRouteMutation();
+      },
+      error: (err) => {
+        this.isCreatingInlineGroup = false;
+        this.toast.error(err?.error?.message || 'Could not create group');
+      },
+    });
+  }
+
+  triggerKmlImportFor(v: CityVehicleRow): void {
+    this.select(v);
+    this.triggerKmlImportFromTop();
+  }
+
+
+
+
+
+
+
+  syncingDriverId: number | null = null;
+  driverFleetSearch = '';
+  driverFleetFilter: 'all' | 'assigned' | 'unassigned' = 'all';
+
+  operationsDrawerOpen = false;
+  operationsDrawerVehicle: CityVehicleRow | null = null;
+  activeDrawerTab: 'groups' | 'all-routes' | 'drivers' = 'groups';
+
+  openOperationsDrawer(v: CityVehicleRow, tab: 'groups' | 'all-routes' | 'drivers' = 'groups', ev?: Event): void {
+    ev?.stopPropagation();
+    this.select(v);
+    this.operationsDrawerVehicle = v;
+    this.activeDrawerTab = tab;
+    this.operationsDrawerOpen = true;
+  }
+
+  closeOperationsDrawer(): void {
+    this.operationsDrawerOpen = false;
+  }
+
+  onRowClick(v: CityVehicleRow, ev: MouseEvent): void {
+    const target = ev.target as HTMLElement;
+    if (target.closest('.chk') || target.closest('.kebab') || target.closest('.farelink') || target.closest('.linkcell') || target.closest('.cin') || target.closest('.pill') || target.closest('.gchip') || target.closest('.drv-cell-btn')) {
+      return;
+    }
+    this.openOperationsDrawer(v, 'groups', ev);
+  }
+
+  openUnifiedGroupDrawer(v: CityVehicleRow, g?: GroupRow): void {
+    this.select(v);
+    this.operationsDrawerVehicle = v;
+    this.activeDrawerTab = 'groups';
+    if (g) {
+      this.activeDeckGroupId[v.id] = g.id;
+    }
+    this.operationsDrawerOpen = true;
+  }
+
+  openDriverFleetDrawer(v: CityVehicleRow, ev?: Event): void {
+    ev?.stopPropagation();
+    this.select(v);
+    this.operationsDrawerVehicle = v;
+    this.activeDrawerTab = 'drivers';
+    this.operationsDrawerOpen = true;
+  }
+
+  driversForVehicle(v: CityVehicleRow): DriverOpt[] {
+    const vId = Number(v.id);
+    return this.cityDrivers.filter((d) =>
+      d.city_vehicle_type_id === vId ||
+      (d.vehicle_type_id != null && d.vehicle_type_id === v.vehicle_type_id)
+    );
+  }
+
+  isDriverInGroup(userId: number, groupId: number): boolean {
+    const g = this.groups.find((x) => x.id === groupId);
+    return !!g?.driver_user_ids?.includes(userId);
+  }
+
+  getDriverAssignedGroups(userId: number, v: CityVehicleRow): GroupRow[] {
+    const vGroups = this.groupsForVehicle(v);
+    return vGroups.filter((g) => (g.driver_user_ids ?? []).includes(userId));
+  }
+
+  assignedDriversForVehicle(v: CityVehicleRow): DriverOpt[] {
+    const vGroups = this.groupsForVehicle(v);
+    const assignedUserIds = new Set(vGroups.flatMap((g) => g.driver_user_ids ?? []));
+    return this.driversForVehicle(v).filter((d) => assignedUserIds.has(d.user_id));
+  }
+
+  assignedDriverCountFor(v: CityVehicleRow): number {
+    return this.assignedDriversForVehicle(v).length;
+  }
+
+  filteredFleetDrivers(v: CityVehicleRow): DriverOpt[] {
+    const q = this.driverFleetSearch.trim().toLowerCase();
+    let list = this.driversForVehicle(v);
+    if (this.driverFleetFilter === 'assigned') {
+      list = list.filter((d) => this.getDriverAssignedGroups(d.user_id, v).length > 0);
+    } else if (this.driverFleetFilter === 'unassigned') {
+      list = list.filter((d) => this.getDriverAssignedGroups(d.user_id, v).length === 0);
+    }
+    if (!q) return list;
+    return list.filter((d) =>
+      (d.name || '').toLowerCase().includes(q) ||
+      (d.phone || '').toLowerCase().includes(q) ||
+      (d.vehicle_reg_no || '').toLowerCase().includes(q)
+    );
+  }
+
+  toggleDriverGroup(d: DriverOpt, g: GroupRow, v: CityVehicleRow): void {
+    if (this.cityId == null || this.syncingDriverId === d.user_id) return;
+    this.syncingDriverId = d.user_id;
+
+    const currentIds = g.driver_user_ids ?? [];
+    const isCurrentlyIn = currentIds.includes(d.user_id);
+    const updatedIds = isCurrentlyIn
+      ? currentIds.filter((id) => id !== d.user_id)
+      : [...currentIds, d.user_id];
+
+    g.driver_user_ids = updatedIds;
+
+    this.api.put(`/admin/cities/${this.cityId}/route-groups/${g.id}/drivers`, {
+      driver_user_ids: updatedIds,
+    }).subscribe({
+      next: () => {
+        this.syncingDriverId = null;
+        if (isCurrentlyIn) {
+          this.toast.success(`Removed "${d.name}" from "${g.name}"`);
+        } else {
+          this.toast.success(`Assigned "${d.name}" to "${g.name}"`);
+        }
+        this.onRouteMutation();
+      },
+      error: (err) => {
+        this.syncingDriverId = null;
+        this.toast.error(err?.error?.message || 'Failed to update group drivers');
+        this.onRouteMutation();
+      },
+    });
+  }
+
+  assignDriverToAllGroups(d: DriverOpt, v: CityVehicleRow): void {
+    if (this.cityId == null || this.syncingDriverId === d.user_id) return;
+    const vGroups = this.groupsForVehicle(v);
+    const needed = vGroups.filter((g) => !(g.driver_user_ids ?? []).includes(d.user_id));
+    if (!needed.length) return;
+
+    this.syncingDriverId = d.user_id;
+    const requests = needed.map((g) => {
+      const updatedIds = Array.from(new Set([...(g.driver_user_ids ?? []), d.user_id]));
+      g.driver_user_ids = updatedIds;
+      return this.api.put(`/admin/cities/${this.cityId}/route-groups/${g.id}/drivers`, {
+        driver_user_ids: updatedIds,
+      });
+    });
+
+    forkJoin(requests).subscribe({
+      next: () => {
+        this.syncingDriverId = null;
+        this.toast.success(`Assigned "${d.name}" to all groups`);
+        this.onRouteMutation();
+      },
+      error: (err) => {
+        this.syncingDriverId = null;
+        this.toast.error(err?.error?.message || 'Failed to assign driver to all groups');
+        this.onRouteMutation();
+      },
+    });
+  }
+
+  unassignDriverFromAllGroups(d: DriverOpt, v: CityVehicleRow): void {
+    if (this.cityId == null || this.syncingDriverId === d.user_id) return;
+    const vGroups = this.groupsForVehicle(v);
+    const assigned = vGroups.filter((g) => (g.driver_user_ids ?? []).includes(d.user_id));
+    if (!assigned.length) return;
+
+    this.syncingDriverId = d.user_id;
+    const requests = assigned.map((g) => {
+      const updatedIds = (g.driver_user_ids ?? []).filter((id) => id !== d.user_id);
+      g.driver_user_ids = updatedIds;
+      return this.api.put(`/admin/cities/${this.cityId}/route-groups/${g.id}/drivers`, {
+        driver_user_ids: updatedIds,
+      });
+    });
+
+    forkJoin(requests).subscribe({
+      next: () => {
+        this.syncingDriverId = null;
+        this.toast.success(`Removed "${d.name}" from all groups`);
+        this.onRouteMutation();
+      },
+      error: (err) => {
+        this.syncingDriverId = null;
+        this.toast.error(err?.error?.message || 'Failed to unassign driver');
+        this.onRouteMutation();
+      },
+    });
   }
 
   quickAssignRoute(routeId: number, event: Event): void {
@@ -1841,9 +2962,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       return `${v.display_name} ${v.vehicle_type_name ?? ''} ${this.fareModesLabel(v)}`.toLowerCase().includes(q);
     });
 
-    if (this.selectedId == null || !this.vehicles.some((v) => v.id === this.selectedId)) {
-      this.selectedId = (this.visible[0] ?? this.vehicles[0])?.id ?? null;
-      this.loadSelectedForms();
+    if (this.selectedId != null && !this.vehicles.some((v) => v.id === this.selectedId)) {
+      this.selectedId = null;
     }
     this.recompute();
   }
@@ -2409,10 +3529,35 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   // selection + bulk
+  get singleSelectedVehicle(): CityVehicleRow | null {
+    if (this.selectedIds.size > 1) return null;
+    if (this.selectedIds.size === 1) {
+      const id = Array.from(this.selectedIds)[0];
+      return this.vehicles.find((v) => v.id === id) ?? null;
+    }
+    if (this.selectedId != null) {
+      return this.vehicles.find((v) => v.id === this.selectedId) ?? null;
+    }
+    return null;
+  }
+
+  get canManageSingleVehicle(): boolean {
+    return this.cityId != null && this.singleSelectedVehicle != null && this.selectedIds.size <= 1;
+  }
+
+
+
   isSel(v: CityVehicleRow): boolean { return this.selectedIds.has(v.id); }
   toggleSel(v: CityVehicleRow, ev?: Event): void {
     ev?.stopPropagation();
-    if (this.selectedIds.has(v.id)) this.selectedIds.delete(v.id); else this.selectedIds.add(v.id);
+    if (this.selectedIds.has(v.id)) {
+      this.selectedIds.delete(v.id);
+    } else {
+      this.selectedIds.add(v.id);
+      if (this.selectedIds.size === 1) {
+        this.select(v);
+      }
+    }
   }
   get allSelected(): boolean { return this.visible.length > 0 && this.visible.every((v) => this.selectedIds.has(v.id)); }
   toggleSelectAll(): void {
@@ -2514,21 +3659,23 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     return this.routesForVehicle(v).filter((r) => !r.is_active || (r.is_active as any) === 0 || (r.is_active as any) === '0' || (r.is_active as any) === false);
   }
 
-  toggleRouteActive(r: RouteLite, active: boolean, ev?: Event): void {
+  toggleRouteActive(r: RouteLite, ev?: Event): void {
     ev?.stopPropagation();
     if (this.cityId == null) return;
-    this.api.patch(`/admin/cities/${this.cityId}/fixed-routes/${r.id}`, { is_active: active }).subscribe({
+    const next = !r.is_active;
+    this.api.patch(`/admin/cities/${this.cityId}/fixed-routes/${r.id}`, { is_active: next }).subscribe({
       next: () => {
-        r.is_active = active;
+        r.is_active = next;
         this.loadRoutes();
-        this.toast.success(active ? `Route "${r.name}" enabled` : `Route "${r.name}" disabled`);
+        this.toast.success(next ? `Route "${r.name}" enabled` : `Route "${r.name}" disabled`);
+        this.onRouteMutation();
       },
       error: (err) => {
         this.toast.error(err?.error?.message || 'Could not update route status');
       },
     });
   }
-  driversFor(v: CityVehicleRow): DriverOpt[] { return this.cityDrivers.filter((d) => d.city_vehicle_type_id === v.id); }
+  driversFor(v: CityVehicleRow): DriverOpt[] { return this.driversForVehicle(v); }
   layoutCountFor(v: CityVehicleRow): number { return v.vehicle_type_id == null ? 0 : this.layouts.filter((l) => l.vehicle_type_id === v.vehicle_type_id).length; }
 
   /** Setup completeness: type, a fare mode, routes, a group, drivers, a layout. */
@@ -2782,30 +3929,36 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   openGroupDrawerFor(v: CityVehicleRow): void { this.select(v); this.openGroupDrawer(); }
 
   openUnifiedGroupDrawerFromTop(): void {
-    const v = this.selected ?? this.vehicles[0];
+    const v = this.singleSelectedVehicle;
     if (v) {
       this.openUnifiedGroupDrawer(v);
+    } else if (this.selectedIds.size > 1) {
+      this.toast.error('Please select only one vehicle to manage its route groups.');
     } else {
-      this.toast.error('Please create or select a vehicle first.');
+      this.toast.error('Please select a vehicle first.');
     }
   }
 
   triggerKmlImportFromTop(): void {
-    const v = this.selected ?? this.vehicles[0];
+    const v = this.singleSelectedVehicle;
     if (v) {
       this.openImportChoice(v);
+    } else if (this.selectedIds.size > 1) {
+      this.toast.error('Please select only one vehicle to import routes.');
     } else {
-      this.toast.error('Please create or select a vehicle first.');
+      this.toast.error('Please select a vehicle first.');
     }
   }
 
   addNewRouteFromTop(): void {
-    const v = this.selected ?? this.vehicles[0];
+    const v = this.singleSelectedVehicle;
     if (v) {
       this.select(v);
       setTimeout(() => this.newRoute());
+    } else if (this.selectedIds.size > 1) {
+      this.toast.error('Please select only one vehicle to add a route.');
     } else {
-      this.fixedRoutes?.openCreate();
+      this.toast.error('Please select a vehicle first.');
     }
   }
 
