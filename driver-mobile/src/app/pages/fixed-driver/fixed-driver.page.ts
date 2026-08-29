@@ -633,10 +633,33 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   async completeRide(): Promise<void> {
-    if (!this.activeVehicle || !this.canComplete(this.activeVehicle)) return;
+    if (!this.activeVehicle) return;
+
+    if (!this.canComplete(this.activeVehicle)) {
+      const active = this.passengers.filter((p) =>
+        ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((p.status || '').toUpperCase())
+      );
+      if (active.length > 0) {
+        const boardCount = active.filter((p) => ['BOOKED', 'CONFIRMED'].includes((p.status || '').toUpperCase())).length;
+        const dropCount = active.filter((p) => (p.status || '').toUpperCase() === 'BOARDED').length;
+        let details = `You have ${active.length} active passenger(s) remaining:`;
+        if (boardCount > 0) details += `\n• ${boardCount} passenger(s) waiting to board`;
+        if (dropCount > 0) details += `\n• ${dropCount} passenger(s) on-board needing drop-off`;
+        details += '\n\nPlease board/drop, cancel, or mark no-show for all passengers before completing the ride.';
+
+        const alert = await this.alerts.create({
+          header: 'Passengers Incomplete',
+          message: details,
+          buttons: [{ text: 'OK', role: 'cancel' }],
+        });
+        await alert.present();
+        return;
+      }
+    }
+
     const alert = await this.alerts.create({
       header: 'Complete fixed ride?',
-      message: 'This closes the vehicle and stops new fixed bookings. All active passengers must already be dropped, cancelled or no-show.',
+      message: 'This will finish the route, complete the ride for all stops, and close the vehicle.',
       buttons: [
         { text: 'Keep open', role: 'cancel' },
         { text: 'Complete ride', role: 'confirm' },
@@ -656,6 +679,7 @@ export class FixedDriverPage implements OnDestroy {
           this.stopManifestPolling();
           await this.stopFixedTripLocationStreaming();
           await this.showToast(res.message || 'Fixed ride completed.');
+          this.detailsModalOpen = false;
           this.refresh();
         },
         error: (err) => this.error = err?.error?.message || 'Could not complete fixed ride.',
