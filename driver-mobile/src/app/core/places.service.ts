@@ -31,7 +31,7 @@ export class PlacesService {
   private sessionToken: any | null = null;
 
   async ensureLoaded(): Promise<void> {
-    if ((window as any).google?.maps?.places) return;
+    if ((window as any).google?.maps) return;
     if (this.scriptPromise) return this.scriptPromise;
 
     const apiKey = environment.googleMapsApiKey;
@@ -39,9 +39,9 @@ export class PlacesService {
 
     this.scriptPromise = new Promise<void>((resolve, reject) => {
       const cbName = '__driverInitGoogleMapsPlaces';
-      const existing = document.getElementById('driver-google-maps-places-script');
+      const existing = document.getElementById('driver-google-maps-places-script') || document.getElementById('driver-google-maps-script');
       if (existing) {
-        const tick = () => ((window as any).google?.maps?.places ? resolve() : setTimeout(tick, 50));
+        const tick = () => ((window as any).google?.maps ? resolve() : setTimeout(tick, 50));
         tick();
         return;
       }

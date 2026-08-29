@@ -7,6 +7,34 @@
   --fixed-muted: #6C757D;
 }
 
+/* ---------------- Header Toolbar ---------------- */
+.pg-toolbar {
+  --background: #0D1B2A;
+  --color: #FFFFFF;
+  --border-color: transparent;
+  color: #FFFFFF;
+
+  .header-nav-btn {
+    background: transparent;
+    border: none;
+    color: #FFFFFF;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+  }
+
+  .pg-header-title {
+    font-size: 16.5px;
+    font-weight: 850;
+    color: #FFFFFF;
+    letter-spacing: -0.2px;
+  }
+}
+
 /* ---------------- Alerts & Loading ---------------- */
 .fixed-loading {
   display: flex;
@@ -607,6 +635,378 @@
         color: #60A5FA;
       }
     }
+  }
+}
+
+/* ─── Fullscreen Map Page Overrides ─── */
+ion-content.is-map-fullscreen {
+  --padding-top: 0px !important;
+  --padding-bottom: 0px !important;
+  --padding-start: 0px !important;
+  --padding-end: 0px !important;
+  --offset-top: 0px !important;
+  --offset-bottom: 0px !important;
+  --overflow: hidden !important;
+  overflow: hidden !important;
+
+  .pg-body {
+    padding: 0 !important;
+    margin: 0 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .selected-route-details-section,
+  .route-detail-flow {
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+  }
+
+  .route-fare-hero,
+  .detail-path-flow,
+  .specs-grid,
+  .route-confirm-box,
+  .fd-field,
+  .layout-warn-box {
+    display: none !important;
+  }
+
+  .route-preview-map-card {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .preview-map-header {
+    display: none !important;
+  }
+
+  .preview-map-wrapper {
+    height: 100vh !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+  }
+}
+
+/* ─── Route Preview Map Card ─── */
+.route-preview-map-card {
+  background: #FFFFFF;
+  border: 1px solid var(--fixed-border);
+  border-radius: 20px;
+  padding: 14px;
+  box-shadow: 0 4px 18px rgba(13, 27, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .preview-map-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .preview-map-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--fixed-dark);
+      font-size: 15px;
+
+      ion-icon {
+        color: var(--fixed-green);
+        font-size: 18px;
+      }
+
+      strong {
+        font-weight: 850;
+      }
+    }
+
+    .preview-map-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .preview-map-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 10px;
+        border-radius: 100px;
+        font-size: 11px;
+        font-weight: 800;
+        background: #E7F8EF;
+        color: var(--fixed-green);
+      }
+
+      .btn-expand-map {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 11px;
+        border-radius: 100px;
+        background: #F1F5F9;
+        border: 1px solid #E2E8F0;
+        color: var(--fixed-dark);
+        font-size: 11.5px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        ion-icon {
+          font-size: 14px;
+          color: var(--fixed-green);
+        }
+
+        &:active {
+          transform: scale(0.96);
+          background: #E2E8F0;
+        }
+      }
+    }
+  }
+
+  .preview-map-wrapper {
+    position: relative;
+    width: 100%;
+    height: 270px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #E2E8F0;
+    background: #EBF0F5;
+    transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &.is-fullscreen {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      height: 100dvh !important;
+      border-radius: 0 !important;
+      border: none !important;
+      z-index: 999999 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+
+      .route-preview-map-canvas {
+        width: 100vw !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        min-height: 100vh;
+        border-radius: 0 !important;
+      }
+    }
+
+    .route-preview-map-canvas {
+      width: 100%;
+      height: 100%;
+      min-height: 270px;
+      display: block;
+      border-radius: 14px;
+    }
+
+    .preview-map-loading {
+      position: absolute;
+      inset: 0;
+      background: rgba(248, 250, 252, 0.85);
+      backdrop-filter: blur(2px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--fixed-muted);
+      font-size: 12px;
+      font-weight: 700;
+      z-index: 10;
+
+      ion-spinner {
+        --color: var(--fixed-green);
+        width: 28px;
+        height: 28px;
+      }
+    }
+
+    /* Clean Floating Fullscreen FABs */
+    .preview-fs-fab {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: rgba(13, 27, 42, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1.5px solid rgba(255, 255, 255, 0.2);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      cursor: pointer;
+      z-index: 999;
+      transition: transform 0.15s ease, background 0.15s ease;
+
+      ion-icon {
+        font-size: 22px;
+      }
+
+      &--back {
+        left: 16px;
+      }
+
+      &--recenter {
+        right: 16px;
+        color: var(--fixed-green);
+      }
+
+      &:active {
+        transform: scale(0.92);
+        background: #0D1B2A;
+      }
+    }
+
+    /* Floating Action Buttons (Inline Mode) */
+    .preview-map-float-actions {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 5;
+
+      .preview-map-float-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        color: var(--fixed-dark);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        cursor: pointer;
+        transition: transform 0.15s ease, background 0.15s ease;
+
+        ion-icon {
+          font-size: 18px;
+          color: var(--fixed-dark);
+        }
+
+        &:active {
+          transform: scale(0.92);
+          background: #F1F5F9;
+        }
+      }
+    }
+  }
+
+  /* Inline Stops Strip */
+  .preview-stops-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    .strip-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--fixed-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .strip-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      -webkit-overflow-scrolling: touch;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      .strip-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
+        color: var(--fixed-dark);
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: all 0.15s ease;
+
+        .chip-seq {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #64748B;
+          color: #FFFFFF;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 10px;
+          font-weight: 900;
+
+          &--origin { background: var(--fixed-green); }
+          &--dest { background: #EF4444; }
+        }
+
+        .chip-name {
+          font-size: 12px;
+          font-weight: 750;
+          white-space: nowrap;
+        }
+
+        &.is-selected {
+          background: #E7F8EF;
+          border-color: var(--fixed-green);
+          color: var(--fixed-green);
+
+          .chip-seq {
+            background: var(--fixed-green);
+          }
+        }
+
+        &:active {
+          transform: scale(0.96);
+        }
+      }
+    }
+  }
+}
+
+@keyframes previewSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes previewSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -2410,6 +2810,120 @@
 }
 
 /* ─── Map Custom Markers ─── */
+:host ::ng-deep .fixed-preview-stop-marker {
+  width: 0 !important;
+  height: 0 !important;
+  position: relative !important;
+  overflow: visible !important;
+  cursor: pointer;
+  user-select: none;
+
+  .preview-stop-pin {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--pin-color, #12B35B);
+    border: 2px solid #FFFFFF;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+
+    .preview-stop-seq {
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+    }
+  }
+
+  /* Default state: only number pin is visible, name tag is hidden */
+  .preview-stop-name-tag {
+    display: none;
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    background: #0D1B2A;
+    color: #FFFFFF;
+    font-size: 10.5px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 8px;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    pointer-events: none;
+    max-width: 190px;
+    align-items: center;
+    gap: 5px;
+    z-index: 25;
+    animation: tagPop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px 5px 0;
+      border-style: solid;
+      border-color: #0D1B2A transparent transparent;
+      display: block;
+      width: 0;
+    }
+
+    .tag-badge {
+      font-size: 8.5px;
+      font-weight: 900;
+      color: #38BDF8;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .tag-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  /* When tapped / selected: reveal top name tag and highlight pin with halo */
+  &.is-selected {
+    z-index: 9999 !important;
+
+    .preview-stop-pin {
+      transform: translate(-50%, -50%) scale(1.22);
+      box-shadow: 0 0 0 4px rgba(18, 179, 91, 0.35), 0 4px 14px rgba(15, 23, 42, 0.45);
+    }
+
+    .preview-stop-name-tag {
+      display: flex !important;
+    }
+  }
+
+  &:hover .preview-stop-pin,
+  &:active .preview-stop-pin {
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+@keyframes tagPop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
 :host ::ng-deep .fixed-driver-stop-marker {
   width: 0 !important;
   height: 0 !important;

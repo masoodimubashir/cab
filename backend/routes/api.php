@@ -567,7 +567,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/bookings/{reservation}/board', [FixedDriverController::class, 'board']);
     Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
-    Route::post('/fixed/bookings/{reservation}/cancel', [FixedDriverController::class, 'cancelPassenger'])->middleware('throttle:booking');
+    Route::post('/fixed/driver/bookings/{reservation}/cancel', [FixedDriverController::class, 'cancelPassenger'])->middleware('throttle:booking');
 
     // Shuttle pool — driver's multi-passenger manifest + per-rider board/drop.
     Route::get('/shuttle/journeys/{journey}/manifest', [ShuttleDriverController::class, 'manifest']);
