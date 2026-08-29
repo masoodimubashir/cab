@@ -245,11 +245,17 @@ export class FixedRideActivePage implements OnDestroy {
   private async initOrUpdateMap(): Promise<void> {
     if (!this.booking) return;
 
-    if (this.booking.latest_driver_location?.lat != null && this.booking.latest_driver_location?.lng != null) {
+    if (this.isActiveBooking(this.booking) && this.booking.latest_driver_location?.lat != null && this.booking.latest_driver_location?.lng != null) {
       this.driverPosition = {
         lat: Number(this.booking.latest_driver_location.lat),
         lng: Number(this.booking.latest_driver_location.lng),
       };
+    } else if (!this.isActiveBooking(this.booking)) {
+      this.driverPosition = null;
+      if (this.driverMarker) {
+        this.driverMarker.map = null;
+        this.driverMarker = null;
+      }
     }
 
     if (!this.map) {
@@ -359,8 +365,8 @@ export class FixedRideActivePage implements OnDestroy {
       }
     }
 
-    // 5. Driver Vehicle Live Marker
-    if (this.driverPosition) {
+    // 5. Driver Vehicle Live Marker (active booking only)
+    if (this.driverPosition && this.isActiveBooking(b)) {
       if (!this.driverMarker) {
         this.driverMarker = new google.maps.marker.AdvancedMarkerElement({
           position: this.driverPosition,
@@ -550,7 +556,16 @@ export class FixedRideActivePage implements OnDestroy {
       .subscribe({
         next: async (res) => {
           this.booking = res?.reservation || this.booking;
+          this.driverPosition = null;
+          if (this.driverMarker) {
+            this.driverMarker.map = null;
+            this.driverMarker = null;
+          }
+          this.stopRealtimeTracking();
+          void this.stopUserLocationWatch();
           this.syncFixedLocationStream();
+          this.updateMarkers();
+          this.fitMapBounds();
           await this.showToast(res?.message || 'Fixed booking cancelled.');
         },
         error: (err) => this.error = err?.error?.message || 'Could not cancel fixed booking.',
