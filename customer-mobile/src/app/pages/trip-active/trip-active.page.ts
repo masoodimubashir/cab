@@ -662,8 +662,7 @@ export class TripActivePage implements OnInit, OnDestroy {
   }
 
   /**
-   * Draw the road route between pickup and drop. Routes API (New) first, then
-   * the legacy DirectionsService, then a straight line as a last resort.
+   * Route polylines eliminated: customer sees only pickup/drop pins, driver vehicle, and self location.
    */
   private async drawRoute(
     origin: { lat: number; lng: number },
@@ -672,54 +671,7 @@ export class TripActivePage implements OnInit, OnDestroy {
     if (!this.map) return;
     for (const pl of this.routePolylines) pl.setMap?.(null);
     this.routePolylines = [];
-
-    try {
-      const { Route } = await (google.maps as any).importLibrary('routes');
-      const { routes } = await Route.computeRoutes({
-        origin,
-        destination,
-        travelMode: google.maps.TravelMode.DRIVING,
-        fields: ['path'],
-      });
-      const polylines: any[] = routes?.[0]?.createPolylines?.() ?? [];
-      let drew = false;
-      for (const pl of polylines) {
-        if (pl?.setMap) {
-          pl.setOptions?.({ strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95 });
-          pl.setMap(this.map);
-          drew = true;
-        }
-      }
-      if (drew) { this.routePolylines = polylines; this.fitMap(); this.fadeInRoute(); return; }
-    } catch {
-      // fall through
-    }
-
-    try {
-      const svc = new google.maps.DirectionsService();
-      const res: any = await svc.route({
-        origin, destination, travelMode: google.maps.TravelMode.DRIVING,
-      });
-      const r = res?.routes?.[0];
-      if (r?.overview_path?.length) {
-        const pl = new google.maps.Polyline({
-          path: r.overview_path, strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
-        });
-        this.routePolylines = [pl];
-        this.fitMap();
-        this.fadeInRoute();
-        return;
-      }
-    } catch {
-      // fall through
-    }
-
-    const straight = new google.maps.Polyline({
-      path: [origin, destination], strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
-    });
-    this.routePolylines = [straight];
     this.fitMap();
-    this.fadeInRoute();
   }
 
   private fitMap(): void {

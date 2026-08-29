@@ -381,7 +381,7 @@
             class="dc-float-cta dc-float-cta--complete dc-press" 
             *ngIf="rideStarted" 
             (click)="completeRide()" 
-            [disabled]="busy || !canComplete(vehicle)"
+            [disabled]="busy"
           >
             <ion-icon name="checkmark-done-circle"></ion-icon>
             <span>Complete Ride</span>
@@ -490,7 +490,7 @@
                 </button>
 
                 <!-- 2. COMPLETE RIDE (Only shown once the ride has started) -->
-                <button class="dc-modal-action-cta dc-modal-action-cta--complete dc-press" *ngIf="rideStarted" (click)="completeRide()" [disabled]="busy || !canComplete(vehicle)">
+                <button class="dc-modal-action-cta dc-modal-action-cta--complete dc-press" *ngIf="rideStarted" (click)="completeRide()" [disabled]="busy">
                   <ion-icon name="checkmark-done-circle"></ion-icon>
                   <span>Complete Fixed Ride</span>
                 </button>

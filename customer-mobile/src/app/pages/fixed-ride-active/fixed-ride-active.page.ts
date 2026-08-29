@@ -339,24 +339,9 @@ export class FixedRideActivePage implements OnDestroy {
       }
     }
 
-    // 3. Intermediate Stops
-    if (b.stops && b.stops.length > 0) {
-      const reachedSeq = Number(b.fixed_last_reached_stop_seq || 0);
-      if (this.stopMarkers.length === 0) {
-        this.stopMarkers = b.stops
-          .filter((s) => s.lat != null && s.lng != null)
-          .map((stop) => new google.maps.marker.AdvancedMarkerElement({
-            position: { lat: Number(stop.lat), lng: Number(stop.lng) },
-            map: this.map,
-            title: `#${stop.seq} ${stop.name}`,
-            content: buildStopMarkerElement({
-              seq: stop.seq,
-              isReached: Number(stop.seq) <= reachedSeq,
-            }),
-            zIndex: 800 + Number(stop.seq || 0),
-          }));
-      }
-    }
+    // 3. Intermediate Stops eliminated: customer sees only their own pickup & drop pins
+    for (const m of this.stopMarkers) m.map = null;
+    this.stopMarkers = [];
 
     // 4. Customer Device Actual Live Location (Person Avatar)
     if (this.userPosition) {

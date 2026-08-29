@@ -327,6 +327,7 @@ export class TripDetailsPage {
   /**
    * Draw the road route between two points. Tries the new Routes API first,
    * falls back to the legacy DirectionsService, then to a straight line.
+   * Route polylines eliminated: customer sees only pickup and drop pins.
    */
   private async drawRoute(
     origin: { lat: number; lng: number },
@@ -335,53 +336,6 @@ export class TripDetailsPage {
     if (!this.map) return;
     for (const pl of this.routePolylines) pl.setMap?.(null);
     this.routePolylines = [];
-
-    // 1) Routes API (New) — exact road geometry.
-    try {
-      const { Route } = await (google.maps as any).importLibrary('routes');
-      const { routes } = await Route.computeRoutes({
-        origin,
-        destination,
-        travelMode: google.maps.TravelMode.DRIVING,
-        fields: ['path'],
-      });
-      const polylines: any[] = routes?.[0]?.createPolylines?.() ?? [];
-      let drew = false;
-      for (const pl of polylines) {
-        if (pl?.setMap) {
-          pl.setOptions?.({ strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95 });
-          pl.setMap(this.map);
-          drew = true;
-        }
-      }
-      if (drew) { this.routePolylines = polylines; return; }
-    } catch {
-      // fall through
-    }
-
-    // 2) Legacy DirectionsService.
-    try {
-      const svc = new google.maps.DirectionsService();
-      const res: any = await svc.route({
-        origin, destination, travelMode: google.maps.TravelMode.DRIVING,
-      });
-      const r = res?.routes?.[0];
-      if (r?.overview_path?.length) {
-        const pl = new google.maps.Polyline({
-          path: r.overview_path, strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
-        });
-        this.routePolylines = [pl];
-        return;
-      }
-    } catch {
-      // fall through
-    }
-
-    // 3) Straight line.
-    const straight = new google.maps.Polyline({
-      path: [origin, destination], strokeColor: '#0D1B2A', strokeWeight: 5, strokeOpacity: 0.95, map: this.map,
-    });
-    this.routePolylines = [straight];
   }
 
   /** Fit the map so the whole pickup → drop route is visible. */

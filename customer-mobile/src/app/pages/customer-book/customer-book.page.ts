@@ -1640,7 +1640,7 @@ export class CustomerBookPage implements OnDestroy {
       content: this.buildPin('B', '#c0392b'),
     });
 
-    // Clear any polylines from a previous destination before drawing the new one.
+    // Clear any polylines from a previous destination
     for (const pl of this.routePolylines) pl.setMap?.(null);
     this.routePolylines = [];
     this.routeDistanceKm = null;
@@ -1667,23 +1667,13 @@ export class CustomerBookPage implements OnDestroy {
         routeModifiers: { vehicleInfo: { emissionType: 'GASOLINE' } },
       });
       const route = routes?.[0];
-      const polylines: any[] = route?.createPolylines?.() ?? [];
-      let drew = false;
-      for (const pl of polylines) {
-        if (pl?.setMap) {
-          pl.setOptions?.({ strokeColor: '#000', strokeWeight: 6, strokeOpacity: 0.95 });
-          pl.setMap(this.map);
-          drew = true;
-        }
-      }
-      if (drew) {
-        this.routePolylines = polylines;
+      if (route) {
         const distMeters = route.distanceMeters ?? route.legs?.[0]?.distanceMeters;
         this.routeDistanceKm = typeof distMeters === 'number' ? distMeters / 1000 : null;
         const ms = route.durationMillis ?? route.legs?.[0]?.durationMillis;
         this.routeTimeMin = typeof ms === 'number' ? ms / 60000 : null;
         this.tollAmount = this.readGoogleToll(route);
-        console.log('[route] drawn via Routes API — km=', this.routeDistanceKm, 'toll=', this.tollAmount);
+        console.log('[route] computed via Routes API (no polyline rendered) — km=', this.routeDistanceKm, 'toll=', this.tollAmount);
         this.frameRoute(origin, destination);
         return;
       }
@@ -1700,36 +1690,19 @@ export class CustomerBookPage implements OnDestroy {
         travelMode: google.maps.TravelMode.DRIVING,
       });
       const r = res?.routes?.[0];
-      if (r?.overview_path?.length) {
-        const pl = new google.maps.Polyline({
-          path: r.overview_path,
-          strokeColor: '#000',
-          strokeWeight: 6,
-          strokeOpacity: 0.95,
-          map: this.map,
-        });
-        this.routePolylines = [pl];
+      if (r) {
         const leg = r.legs?.[0];
         this.routeDistanceKm = leg?.distance?.value != null ? leg.distance.value / 1000 : null;
         this.routeTimeMin = leg?.duration?.value != null ? leg.duration.value / 60 : null;
-        console.log('[route] drawn via DirectionsService — km=', this.routeDistanceKm);
+        console.log('[route] computed via DirectionsService (no polyline rendered) — km=', this.routeDistanceKm);
         this.frameRoute(origin, destination);
         return;
       }
     } catch (e) {
-      console.warn('[route] DirectionsService unavailable — drawing straight line', e);
+      console.warn('[route] DirectionsService unavailable — framing without polyline', e);
     }
 
-    // 3) Last resort — straight line. routeDistanceKm stays null, so the
-    //    backend prices off its haversine fallback.
-    const straight = new google.maps.Polyline({
-      path: [origin, destination],
-      strokeColor: '#000',
-      strokeWeight: 6,
-      strokeOpacity: 0.95,
-      map: this.map,
-    });
-    this.routePolylines = [straight];
+    // 3) Fallback — frame route without drawing polyline
     this.frameRoute(origin, destination);
   }
 
