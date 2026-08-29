@@ -440,15 +440,18 @@ class FixedDriverController extends Controller
                 abort(422, 'This fixed vehicle can only be closed before the ride starts.');
             }
 
-            $reservationCount = SeatReservation::query()->where('route_departure_id', $dep->id)->count();
+            $activeReservationCount = SeatReservation::query()
+                ->where('route_departure_id', $dep->id)
+                ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
+                ->count();
             $activeHoldCount = FixedSeatHold::query()
                 ->where('route_departure_id', $dep->id)
                 ->where('status', 'HELD')
                 ->where('expires_at', '>', now())
                 ->count();
 
-            if ($reservationCount > 0 || $activeHoldCount > 0) {
-                abort(422, 'A customer has already booked or is holding seats. This vehicle cannot be removed.');
+            if ($activeReservationCount > 0 || $activeHoldCount > 0 || ($dep->seats_taken ?? 0) > 0) {
+                abort(422, 'A customer has active booked seats or holds. This vehicle cannot be removed.');
             }
 
             $routeId = (int) $dep->route_id;

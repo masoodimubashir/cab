@@ -1202,12 +1202,15 @@ export class FixedDriverPage implements OnDestroy {
   canCloseVehicle(vehicle: FixedVehicle | null): boolean {
     if (!vehicle) return false;
     const status = (vehicle.status || '').toUpperCase();
-    return status === 'FORMING'
-      && !this.rideStarted
-      && (vehicle.seats_taken || 0) <= 0
-      && (vehicle.active_hold_count || 0) <= 0
-      && (vehicle.reservation_count || 0) <= 0
-      && !this.passengers.some((p) => !['CANCELLED', 'NO_SHOW'].includes((p.status || '').toUpperCase()));
+    if (status !== 'FORMING' || this.rideStarted) return false;
+
+    const hasActiveSeats = (vehicle.seats_taken || 0) > 0;
+    const hasActiveHolds = (vehicle.active_hold_count || 0) > 0;
+    const hasActivePassengers = this.passengers.some(
+      (p) => !['CANCELLED', 'NO_SHOW'].includes((p.status || '').toUpperCase())
+    );
+
+    return !hasActiveSeats && !hasActiveHolds && !hasActivePassengers;
   }
 
   /** The ride is under way — the backend only boards/drops on a started vehicle. */

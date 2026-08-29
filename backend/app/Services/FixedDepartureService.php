@@ -275,6 +275,10 @@ class FixedDepartureService
                 ->count(),
             'reservation_count' => SeatReservation::query()
                 ->where('route_departure_id', $departure->id)
+                ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
+                ->count(),
+            'total_reservation_count' => SeatReservation::query()
+                ->where('route_departure_id', $departure->id)
                 ->count(),
             'seats_remaining' => $this->availability->seatsRemaining($departure),
             'first_bookable_stop_seq' => $this->availability->firstBookableStopSeq($departure),
@@ -354,6 +358,10 @@ class FixedDepartureService
                 ->where('expires_at', '>', now())
                 ->count(),
             'reservation_count' => SeatReservation::query()
+                ->where('route_departure_id', $departure->id)
+                ->whereNotIn('status', ['CANCELLED', 'NO_SHOW'])
+                ->count(),
+            'total_reservation_count' => SeatReservation::query()
                 ->where('route_departure_id', $departure->id)
                 ->count(),
             'seats_remaining' => $this->availability->seatsRemaining($departure),
