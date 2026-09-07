@@ -1,0 +1,295 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start">
+      <ion-button (click)="goBack()" class="dc-press" aria-label="Go Back">
+        <ion-icon name="arrow-back" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title class="pg-brandtitle">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+      <span class="legal-title-tag">LEGAL</span>
+    </ion-title>
+  </ion-toolbar>
+
+  <div class="pg-hero legal-hero">
+    <div class="legal-hero__badge">
+      <span>Master User Agreement</span>
+    </div>
+    <h1 class="pg-title">Terms &amp; Conditions</h1>
+    <p class="pg-subtitle">
+      Terms of service, passenger rights, ride rules, fare transparency, and refund policies for DreamCabs users.
+    </p>
+    <div class="legal-meta-row">
+      <span class="legal-version-chip">Last Updated: {{ lastUpdated }}</span>
+      <span class="legal-version-chip">Entity: DreamCabs KMR Pvt. Ltd.</span>
+    </div>
+  </div>
+</ion-header>
+
+<ion-content class="pg-content legal-content">
+  <div class="pg-body legal-body">
+
+    <!-- Compliance Banner -->
+    <div class="compliance-card">
+      <div class="compliance-card__text">
+        <strong>Statutory Compliance Notice</strong>
+        <p>
+          Governed under the <em>Information Technology Act, 2000 (Section 79)</em>, <em>Consumer Protection (E-Commerce) Rules, 2020</em>, and <em>Motor Vehicle Aggregator Guidelines (MoRTH 2020)</em>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 1: Acceptance & Intermediary Role -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">01</span>
+        <div>
+          <h3>Acceptance of Terms &amp; Platform Nature</h3>
+          <small>Contractual Relationship &amp; Technology Aggregator</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          1.1. These Terms &amp; Conditions (&quot;Terms&quot;, &quot;Agreement&quot;) constitute a legally binding contract between <strong>DreamCabs KMR Private Limited</strong> (&quot;DreamCabs&quot;, &quot;we&quot;, &quot;us&quot;, &quot;our&quot;) and the passenger or user (&quot;Passenger&quot;, &quot;Rider&quot;, &quot;you&quot;, &quot;your&quot;).
+        </p>
+        <p>
+          1.2. <strong>Technology Intermediary Status:</strong> DreamCabs is an AI-powered technology platform that connects passengers with independent third-party commercial vehicle operators (&quot;Driver-Partners&quot;). DreamCabs acts as a digital intermediary under Section 79 of the Information Technology Act, 2000. DreamCabs does not provide transportation services, does not operate as a common carrier, and does not own the transport vehicles operated by Drivers.
+        </p>
+        <p>
+          1.3. <strong>Contract of Carriage:</strong> When you book a ride and a Driver accepts your request, a direct contract for transportation services is created between you and the independent Driver-Partner.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 2: User Eligibility & Account Security -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">02</span>
+        <div>
+          <h3>User Eligibility &amp; Account Security</h3>
+          <small>Age Requirements, Mobile OTP &amp; Account Responsibility</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <ul class="legal-list">
+          <li><strong>Age of Majority:</strong> You must be at least 18 years of age and possess full legal capacity to enter into binding agreements under the Indian Contract Act, 1872.</li>
+          <li><strong>Minors:</strong> Individuals under 18 years may travel only when accompanied by a parent, legal guardian, or an authorized adult User who has booked the ride on their behalf.</li>
+          <li><strong>Mobile Number Verification:</strong> Registration requires a valid mobile number verified through One-Time Password (OTP). You are responsible for all bookings made through your authenticated account.</li>
+          <li><strong>Accurate Information:</strong> You warrant that all profile details (name, emergency contacts, payment details) provided are authentic, accurate, and kept up to date.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 3: Passenger Responsibilities & Code of Conduct -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">03</span>
+        <div>
+          <h3>Passenger Code of Conduct &amp; Safety</h3>
+          <small>Mutual Respect, Vehicle Hygiene &amp; Mandatory Seatbelts</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>To ensure a safe, comfortable, and reliable transit experience for all passengers and drivers, you agree to:</p>
+        <ul class="legal-list">
+          <li><strong>Punctuality:</strong> Arrive at the designated pickup point, stop stage, or taxi stand on time before the vehicle departs.</li>
+          <li><strong>Seatbelt Compliance:</strong> Wear seatbelts at all times during the trip as mandated by the Motor Vehicles Act, 1988.</li>
+          <li><strong>Zero Tolerance for Harassment:</strong> Treat Driver-Partners and fellow co-passengers with respect. Verbal abuse, threats, discriminatory remarks, hate speech, or physical aggression result in immediate account ban and law enforcement referral.</li>
+          <li><strong>Prohibited Items:</strong> Do not carry hazardous substances, inflammable materials, weapons, contraband, narcotics, or unpackaged offensive goods.</li>
+          <li><strong>Smoking &amp; Alcohol Ban:</strong> Smoking, vaping, and consumption of alcohol or illicit substances inside the vehicle are strictly prohibited.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 4: Booking Modes & Shared Mobility Corridors -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">04</span>
+        <div>
+          <h3>Booking Modes &amp; Shared Transit</h3>
+          <small>Fixed Routes, Shared Shuttles, Private Cabs &amp; Voice Booking</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          4.1. <strong>Fixed-Route Shared Mobility:</strong> Vehicles operate along predetermined corridor routes with designated stop stages and taxi stands. In shared mode, intermediate passenger boardings and deboardings occur along the designated line.
+        </p>
+        <p>
+          4.2. <strong>Private Cab Booking:</strong> Provides exclusive point-to-point non-shared transportation between your specified pickup and drop-off coordinates.
+        </p>
+        <p>
+          4.3. <strong>Voice Booking Assistant:</strong> Allows searching routes and booking seats using natural speech-to-text. Voice audio snippets are transcribed instantaneously and auto-deleted within 24 hours.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 5: Fare Transparency, Tolls & Payments -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">05</span>
+        <div>
+          <h3>Fares, Taxes, Tolls &amp; Payments</h3>
+          <small>Dynamic Pricing Caps, Digital UPI/Cards &amp; Cash Settlements</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          5.1. <strong>Fare Estimates:</strong> Upfront fare estimates displayed prior to booking include base fare, per-kilometer/corridor rates, and applicable GST.
+        </p>
+        <p>
+          5.2. <strong>Tolls &amp; Parking Fees:</strong> Statutory highway tolls, bridge taxes, and parking fees incurred during the ride are payable in addition to the base ride fare.
+        </p>
+        <p>
+          5.3. <strong>Payment Options:</strong> DreamCabs supports secure PCI-DSS Level 1 digital payments (UPI, Credit/Debit Cards, Net Banking, In-App Wallet) as well as direct cash payment to the driver upon ride completion.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 6: Cancellation, Waiting Time & Refund Policy -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">06</span>
+        <div>
+          <h3>Cancellation, Waiting Time &amp; Refunds</h3>
+          <small>Free Grace Window, No-Show Rules &amp; Guaranteed Refund Timelines</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="policy-table-wrapper">
+          <table class="policy-table">
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Window / Condition</th>
+                <th>Fee / Policy</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Free Cancellation</strong></td>
+                <td>Within 3 mins of booking confirmation</td>
+                <td><span class="badge-free">₹0 (100% Free)</span></td>
+              </tr>
+              <tr>
+                <td><strong>Late Cancellation</strong></td>
+                <td>After 3 mins or driver arrived at pickup</td>
+                <td><span class="badge-fee">₹30 – ₹50 dispatch fee</span></td>
+              </tr>
+              <tr>
+                <td><strong>Pickup Waiting Grace</strong></td>
+                <td>First 5 mins after driver arrival</td>
+                <td><span class="badge-free">Included Free</span></td>
+              </tr>
+              <tr>
+                <td><strong>Extra Waiting Charges</strong></td>
+                <td>Beyond 5 mins (Private cabs only)</td>
+                <td><span class="badge-fee">₹1.50 – ₹2.00 / min</span></td>
+              </tr>
+              <tr>
+                <td><strong>Passenger No-Show</strong></td>
+                <td>No arrival within 5 mins grace</td>
+                <td><span class="badge-action">Driver departs · Fee applies</span></td>
+              </tr>
+              <tr>
+                <td><strong>Driver Cancellation / Failure</strong></td>
+                <td>Driver fails to arrive or cancels trip</td>
+                <td><span class="badge-free">100% Automatic Refund</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p><strong>Refund Settlement Timelines:</strong></p>
+        <ul class="legal-list">
+          <li><strong>In-App Wallet:</strong> Instant credit within 1 to 2 hours of approval.</li>
+          <li><strong>UPI &amp; Net Banking:</strong> 2 to 4 business days.</li>
+          <li><strong>Credit / Debit Cards:</strong> 5 to 7 business days, depending on your card issuer.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 7: Emergency SOS & Safety Protocols -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">07</span>
+        <div>
+          <h3>Safety, Live Tracking &amp; Emergency SOS</h3>
+          <small>Real-time Trip Monitoring &amp; Police Control Room Integration</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          7.1. <strong>In-App SOS Trigger:</strong> In an emergency, tapping the SOS button immediately broadcasts your live vehicle coordinates, route details, and driver information to your pre-saved emergency contacts and local Police dispatch authorities.
+        </p>
+        <p>
+          7.2. <strong>Trip Sharing:</strong> Passengers can share live GPS ride tracking links with friends or family via SMS/WhatsApp with a single tap.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 8: In-App Account Deletion & Data Rights -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">08</span>
+        <div>
+          <h3>Account Deletion &amp; Data Rights</h3>
+          <small>DPDP Act 2023 Autonomy &amp; Permanent Account Removal</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          Under the <em>Digital Personal Data Protection Act, 2023</em> and Apple/Google store directives, you have the right to delete your account and personal data at any time:
+        </p>
+        <ul class="legal-list">
+          <li><strong>In-App Deletion:</strong> Go to <strong>Settings &gt; Profile &gt; Delete Account</strong> and confirm with your mobile OTP.</li>
+          <li><strong>Email Request:</strong> Send an email to <a href="mailto:dreamcabs2025@gmail.com" class="gr-link">dreamcabs2025@gmail.com</a> with subject <em>&quot;Passenger Account Deletion Request&quot;</em>.</li>
+        </ul>
+        <p>
+          Upon deletion, your account is immediately deactivated and personal identifiers are permanently purged or anonymized within 30 days.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 9: Statutory Grievance Redressal -->
+    <div class="legal-card grievance-card">
+      <div class="legal-card__header">
+        <span class="legal-num">09</span>
+        <div>
+          <h3>Statutory Grievance Redressal Officer</h3>
+          <small>IT Intermediary Rules &amp; Compliance Cell Contact</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="grievance-box">
+          <div class="grievance-row">
+            <span class="gr-label">Company:</span>
+            <strong class="gr-val">DreamCabs KMR Private Limited</strong>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Officer:</span>
+            <strong class="gr-val">Legal &amp; Compliance Cell / Grievance Officer</strong>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Headquarters:</span>
+            <span class="gr-val">Kupwara Main Market / Transport Yard, Kupwara, Jammu &amp; Kashmir, India - 193222</span>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Email:</span>
+            <a href="mailto:dreamcabs2025@gmail.com" class="gr-link">dreamcabs2025@gmail.com</a>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Timelines:</span>
+            <span class="gr-val">Acknowledgment within 24 hours · Final Resolution within 15 days</span>
+          </div>
+        </div>
+
+        <div class="grievance-actions">
+          <button class="dc-cta dc-cta--dark dc-press" (click)="openEmail()">
+            <span>Contact Grievance Officer</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</ion-content>

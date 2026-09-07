@@ -1252,3 +1252,165 @@ footer .foot-bot a:hover{color:var(--lime)}
   .lead-row{grid-template-columns:1fr}
   .lead-card{padding:20px 18px}
 }
+
+/* ============================================================
+   LEGAL & POLICY DOCUMENTS (Terms & Conditions, Privacy Policy)
+   ============================================================ */
+.doc-callout{
+  border-radius:14px;
+  padding:16px 20px;
+  margin:20px 0 24px;
+  font-size:14.5px;
+  line-height:1.6;
+}
+.doc-callout strong{display:block;margin-bottom:4px;font-family:'Sora',sans-serif;font-size:15px}
+.doc-callout--primary{
+  background:#ebfbf2;
+  border:1px solid #b8eed0;
+  color:#155724;
+}
+.doc-callout--primary strong{color:#0e773d}
+.doc-callout--warn{
+  background:#fff9e6;
+  border:1px solid #ffe499;
+  color:#7a5b04;
+}
+.doc-callout--warn strong{color:#8a5a00}
+.doc-callout--danger{
+  background:#fff1f0;
+  border:1px solid #ffccc7;
+  color:#a8071a;
+}
+.doc-callout--danger strong{color:#cf1322}
+
+/* Tables */
+.doc-table-wrap{
+  overflow-x:auto;
+  border:1px solid var(--stroke);
+  border-radius:14px;
+  margin:22px 0 28px;
+  background:#fff;
+  box-shadow:0 2px 8px rgba(12,22,34,.03);
+}
+.doc-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:14px;
+  text-align:left;
+  min-width:540px;
+}
+.doc-table th{
+  background:#f8fafc;
+  color:var(--ink);
+  font-family:'Sora',sans-serif;
+  font-weight:700;
+  padding:12px 16px;
+  border-bottom:1px solid var(--stroke);
+  font-size:13.5px;
+}
+.doc-table td{
+  padding:12px 16px;
+  border-bottom:1px solid #f1f5f9;
+  color:var(--muted);
+  vertical-align:middle;
+}
+.doc-table tr:last-child td{border-bottom:none}
+.doc-table td strong{color:var(--ink)}
+
+/* Table Badges */
+.doc-badge{
+  display:inline-block;
+  font-size:12px;
+  font-weight:700;
+  padding:3px 9px;
+  border-radius:6px;
+  white-space:nowrap;
+}
+.doc-badge--free{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0}
+.doc-badge--fee{background:#eff6ff;color:#1d4ed8;border:1px solid #dbeafe}
+.doc-badge--action{background:#fef3c7;color:#b45309;border:1px solid #fde68a}
+.doc-badge--warn{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca}
+
+/* Mobile Permissions Matrix Cards */
+.doc-perm-grid{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  margin:22px 0 28px;
+}
+.doc-perm-card{
+  background:#fff;
+  border:1px solid var(--stroke);
+  border-radius:14px;
+  padding:16px 20px;
+  box-shadow:0 2px 8px rgba(12,22,34,.02);
+  transition:border-color .25s;
+}
+.doc-perm-card:hover{border-color:var(--stroke-2)}
+.doc-perm-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:8px;
+}
+.doc-perm-head strong{
+  font-family:'Sora',sans-serif;
+  font-size:15.5px;
+  color:var(--ink);
+}
+.doc-perm-card p{
+  margin:0 0 10px;
+  font-size:14px;
+  color:var(--muted);
+  line-height:1.55;
+}
+.doc-perm-apis{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.doc-perm-apis code{
+  background:#edf2f7;
+  color:#334155;
+  padding:3px 7px;
+  border-radius:5px;
+  font-size:12px;
+  font-family:monospace;
+  border:1px solid #e2e8f0;
+}
+
+/* Grievance & Office Box */
+.doc-grievance-box{
+  background:#f8fafc;
+  border:1px solid var(--stroke);
+  border-radius:16px;
+  padding:20px 24px;
+  margin:20px 0 28px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.doc-gr-row{
+  font-size:14.5px;
+  line-height:1.5;
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 12px;
+}
+.doc-gr-label{
+  color:var(--muted);
+  font-weight:600;
+  min-width:110px;
+}
+.doc-gr-val{
+  color:var(--ink);
+  font-weight:500;
+}
+.doc-gr-val a{
+  color:var(--green);
+  font-weight:700;
+  text-decoration:underline;
+}
+

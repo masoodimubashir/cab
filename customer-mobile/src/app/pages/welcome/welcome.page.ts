@@ -41,11 +41,11 @@ export class WelcomePage implements OnInit, ViewWillEnter {
   }
 
   goToTerms() {
-    console.log('Navigate to Terms');
+    void this.navCtrl.navigateForward('/terms');
   }
 
   goToPrivacy() {
-    console.log('Navigate to Privacy');
+    void this.navCtrl.navigateForward('/privacy');
   }
 }
 

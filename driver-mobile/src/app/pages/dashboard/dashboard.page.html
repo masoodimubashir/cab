@@ -260,10 +260,10 @@
       <ng-container *ngFor="let g of navGroups">
         <p class="drawer__group">{{ g.title }}</p>
         <button class="dc-row nav-row dc-press" *ngFor="let item of g.items" (click)="navTo(item.path)">
-          <span class="dc-row__icon">
+          <span class="dc-row__icon" *ngIf="item.icon">
             <ion-icon [name]="item.icon"></ion-icon>
           </span>
-          <span class="dc-row__text">
+          <span class="dc-row__text" [style.paddingLeft]="item.icon ? null : '4px'">
             <strong>{{ item.label }}</strong>
             <small>{{ item.sub }}</small>
           </span>

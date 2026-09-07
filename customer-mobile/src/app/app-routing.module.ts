@@ -57,6 +57,18 @@ const routes: Routes = [
     canActivate: [AuthGuard],
   },
   {
+    path: 'terms',
+    loadChildren: () => import('./pages/terms/terms.module').then((m) => m.TermsPageModule),
+  },
+  {
+    path: 'privacy',
+    loadChildren: () => import('./pages/privacy/privacy.module').then((m) => m.PrivacyPageModule),
+  },
+  {
+    path: 'splash',
+    loadChildren: () => import('./pages/splash/splash.module').then( m => m.SplashPageModule)
+  },
+  {
     path: '',
     redirectTo: 'splash',
     pathMatch: 'full',
@@ -64,10 +76,6 @@ const routes: Routes = [
   {
     path: '**',
     redirectTo: 'splash',
-  },
-  {
-    path: 'splash',
-    loadChildren: () => import('./pages/splash/splash.module').then( m => m.SplashPageModule)
   }
 ];
 

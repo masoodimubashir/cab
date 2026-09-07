@@ -518,6 +518,22 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     }
   }
 
+  openTerms(event?: Event): void {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    void this.navCtrl.navigateForward('/terms');
+  }
+
+  openPrivacy(event?: Event): void {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    void this.navCtrl.navigateForward('/privacy');
+  }
+
   backToPhone(): void {
     this.step = 'phone';
     this.otp = '';
