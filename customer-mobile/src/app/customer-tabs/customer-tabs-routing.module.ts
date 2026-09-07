@@ -95,8 +95,14 @@ const routes: Routes = [
           import('../pages/trip-details/trip-details.module').then((m) => m.TripDetailsPageModule),
       },
       {
-        path: 'negotiation/:tripId',
-        redirectTo: 'trip/:tripId',
+        path: 'terms',
+        loadChildren: () =>
+          import('../pages/terms/terms.module').then((m) => m.TermsPageModule),
+      },
+      {
+        path: 'privacy',
+        loadChildren: () =>
+          import('../pages/privacy/privacy.module').then((m) => m.PrivacyPageModule),
       },
       {
         path: '',

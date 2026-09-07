@@ -307,7 +307,7 @@
 
       <p class="terms-text" *ngIf="step === 'phone' || step === 'otp'">
         By continuing you agree that you have read and accept our <br>
-        <a>Term & Conditions</a> and <a>Privacy Policy</a>
+        <a class="dc-press" (click)="openTerms($event)">Terms &amp; Conditions</a> and <a class="dc-press" (click)="openPrivacy($event)">Privacy Policy</a>
       </p>
 
     </div>

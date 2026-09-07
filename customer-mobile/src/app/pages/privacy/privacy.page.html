@@ -1,0 +1,351 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start">
+      <ion-button (click)="goBack()" class="dc-press" aria-label="Go Back">
+        <ion-icon name="arrow-back" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title class="pg-brandtitle">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+      <span class="legal-title-tag">PRIVACY</span>
+    </ion-title>
+  </ion-toolbar>
+
+  <div class="pg-hero legal-hero">
+    <div class="legal-hero__badge">
+      <span>DPDP Act 2023 · Data Protection</span>
+    </div>
+    <h1 class="pg-title">Privacy Policy</h1>
+    <p class="pg-subtitle">
+      How DreamCabs collects, safeguards, and processes passenger data, pickup locations, voice bookings, and emergency SOS.
+    </p>
+    <div class="legal-meta-row">
+      <span class="legal-version-chip">Last Updated: {{ lastUpdated }}</span>
+      <span class="legal-version-chip">Entity: DreamCabs KMR Pvt. Ltd.</span>
+    </div>
+  </div>
+</ion-header>
+
+<ion-content class="pg-content legal-content">
+  <div class="pg-body legal-body">
+
+    <!-- DPDP Trust Banner -->
+    <div class="compliance-card">
+      <div class="compliance-card__text">
+        <strong>Data Principal Protection &amp; Localization</strong>
+        <p>
+          Compliant with the <em>Digital Personal Data Protection Act, 2023 (DPDP Act)</em> and <em>CERT-In Cyber Security Guidelines</em>. All passenger data is securely stored on Indian servers.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 1: Introduction & Data Controller -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">01</span>
+        <div>
+          <h3>Introduction &amp; Privacy Commitment</h3>
+          <small>Transparency, Accountability &amp; Zero Data Selling</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          1.1. <strong>DreamCabs KMR Private Limited</strong> (&quot;DreamCabs&quot;, &quot;we&quot;, &quot;us&quot;, &quot;our&quot;) is committed to safeguarding the privacy and personal data of passengers using our mobility platforms (&quot;Passenger&quot;, &quot;Rider&quot;, &quot;you&quot;, &quot;your&quot;).
+        </p>
+        <p>
+          1.2. This Privacy Policy outlines our practices regarding data collection, storage, processing, and protection across the <strong>DreamCabs Customer Mobile Application</strong> (Android &amp; iOS) and web services.
+        </p>
+        <p>
+          1.3. <strong>Zero Data Selling Commitment:</strong> DreamCabs does not sell, rent, monetize, or trade your personal information, travel patterns, or location logs to third-party advertisers or data brokers.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 2: Foreground Location & Geolocation Usage -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">02</span>
+        <div>
+          <h3>Location Data &amp; Real-Time Tracking</h3>
+          <small>Accurate Pickup, Live ETA &amp; Emergency Dispatch</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="legal-callout legal-callout--primary">
+          <div>
+            <strong>Foreground Location Notice:</strong>
+            <span>The DreamCabs Customer App collects precise location data while the app is in use to detect nearby pickup stops, display available shared cabs, and provide real-time turn-by-turn ride tracking.</span>
+          </div>
+        </div>
+        <p><strong>Purposes of Location Processing:</strong></p>
+        <ul class="legal-list">
+          <li><strong>Pickup &amp; Drop Stage Selection:</strong> Automatically pinpoints your nearest corridor stop stage or taxi stand for faster booking.</li>
+          <li><strong>Live Driver Approaching View:</strong> Shows real-time vehicle movement and precise arrival countdown on the interactive map.</li>
+          <li><strong>Transparent Distance &amp; Fare Calculation:</strong> Verifies actual route mileage and corridor stop tariffs for transparent upfront billing.</li>
+          <li><strong>Emergency SOS Coordination:</strong> Immediately relays your real-time GPS coordinates to police authorities and emergency contacts upon SOS activation.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 3: Voice Booking & Audio Privacy -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">03</span>
+        <div>
+          <h3>Voice Booking Assistant &amp; Audio Processing</h3>
+          <small>Instant Speech-to-Text &amp; Automatic Audio Deletion</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          3.1. When you use the AI Voice Booking Assistant to search routes, query stop stages, or reserve cab seats, voice audio is streamed securely for instantaneous speech-to-text transcription.
+        </p>
+        <p>
+          3.2. <strong>Automated Audio Deletion:</strong> Raw audio recordings are automatically and permanently purged from server memory within <strong>24 hours</strong> of query completion.
+        </p>
+        <p>
+          3.3. Transcribed text is utilized strictly to formulate your ride search or booking and is never used for behavioral advertising or biometric profiling.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 4: Information We Collect -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">04</span>
+        <div>
+          <h3>Information We Collect</h3>
+          <small>Profile, Trip History, Payment &amp; Device Data</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <ul class="legal-list">
+          <li><strong>Identity &amp; Account Details:</strong> Full name, mobile phone number, email address (optional), profile avatar, and preferred language.</li>
+          <li><strong>Trip &amp; Corridor Records:</strong> Pickup points, destination stop stages, booking timestamps, vehicle category, seat reservations, and driver ratings.</li>
+          <li><strong>Financial &amp; Billing Data:</strong> Payment method token, digital transaction ID, GST invoice history, wallet balance, and refund records. (Card CVV and bank passwords are never stored on our servers).</li>
+          <li><strong>Emergency SOS Contacts:</strong> Contact names and phone numbers saved by you in your emergency safety circle.</li>
+          <li><strong>Device &amp; Telemetry:</strong> Device model, operating system version, unique device identifier (UUID), push notification token (FCM/APNs), network carrier, and crash analytics.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 5: Mobile Permissions Matrix -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">05</span>
+        <div>
+          <h3>Mobile Permissions Matrix</h3>
+          <small>Explicit Android &amp; iOS Purpose Justifications</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="perm-list">
+
+          <!-- Location (Foreground) -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Foreground Location</strong>
+              <span class="perm-badge perm-badge--req">Mandatory</span>
+            </div>
+            <p class="perm-card__desc">
+              Detects your nearest pickup point or corridor stop, displays available cabs nearby, and renders live driver arrival on the map while using the app.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>ACCESS_FINE_LOCATION</code></span>
+              <span class="perm-api"><code>NSLocationWhenInUse</code></span>
+            </div>
+          </div>
+
+          <!-- Microphone / Voice -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Microphone / Audio</strong>
+              <span class="perm-badge perm-badge--opt">Optional</span>
+            </div>
+            <p class="perm-card__desc">
+              Powers hands-free voice booking and AI route search. Audio is transcribed in real-time and auto-deleted within 24 hours.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>RECORD_AUDIO</code></span>
+              <span class="perm-api"><code>NSMicrophoneUsageDescription</code></span>
+            </div>
+          </div>
+
+          <!-- Contacts (Emergency SOS) -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Contacts (Emergency SOS)</strong>
+              <span class="perm-badge perm-badge--opt">Optional</span>
+            </div>
+            <p class="perm-card__desc">
+              Enables quick selection of trusted family and friends for your emergency SOS safety alerts. DreamCabs never uploads or stores your full address book.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>READ_CONTACTS</code></span>
+              <span class="perm-api"><code>NSContactsUsageDescription</code></span>
+            </div>
+          </div>
+
+          <!-- Photos / Storage -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Photos &amp; Storage</strong>
+              <span class="perm-badge perm-badge--opt">Optional</span>
+            </div>
+            <p class="perm-card__desc">
+              Allows selecting profile pictures, scanning payment QR codes, or attaching screenshots when raising support tickets.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>READ_MEDIA_IMAGES</code></span>
+              <span class="perm-api"><code>NSPhotoLibraryUsageDescription</code></span>
+            </div>
+          </div>
+
+          <!-- Push Notifications -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Push Notifications</strong>
+              <span class="perm-badge perm-badge--rec">Recommended</span>
+            </div>
+            <p class="perm-card__desc">
+              Delivers live ride status updates, driver arrival alerts, OTP verification codes, wallet receipts, and critical safety notifications.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>POST_NOTIFICATIONS</code></span>
+              <span class="perm-api"><code>APNs</code></span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 6: Third-Party Sharing & Safeguards -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">06</span>
+        <div>
+          <h3>Third-Party Sharing &amp; Safeguards</h3>
+          <small>Authorized Service Providers &amp; Lawful Disclosures</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>Your personal data is shared only under necessary operational and security parameters:</p>
+        <ul class="legal-list">
+          <li><strong>Assigned Driver-Partners:</strong> Drivers receive your first name, pickup location, drop stage, and masked phone number to complete the booked ride.</li>
+          <li><strong>Emergency Services &amp; Police:</strong> When SOS is triggered, live GPS telemetry and passenger details are transmitted to emergency responders and designated contacts.</li>
+          <li><strong>Payment Processors:</strong> Licensed PCI-DSS Level 1 payment gateways (Razorpay, Cashfree, UPI networks) process payments without sharing card numbers.</li>
+          <li><strong>Statutory Authorities:</strong> Data is disclosed only when strictly mandated under Indian law, court warrant, or official law enforcement inquiry.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 7: Data Security & Retention -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">07</span>
+        <div>
+          <h3>Security &amp; Data Retention</h3>
+          <small>TLS 1.3, AES-256 Encryption &amp; Statutory GST Retention</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          7.1. <strong>Enterprise-Grade Security:</strong> All data transmissions are encrypted using <strong>TLS 1.3</strong>. User profiles, authentication tokens, and trip histories are encrypted at rest with <strong>AES-256</strong>.
+        </p>
+        <p>
+          7.2. <strong>Financial &amp; Tax Records:</strong> Tax invoices, payment logs, and ride manifests are retained for <strong>7 years</strong> in compliance with Indian GST and transport aggregator regulations.
+        </p>
+        <p>
+          7.3. <strong>Account Deletion Purge:</strong> When you delete your account, personal identifiers are permanently purged or anonymized within <strong>30 days</strong>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 8: Passenger Rights under DPDP Act 2023 -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">08</span>
+        <div>
+          <h3>Your Legal Rights (India DPDP Act 2023)</h3>
+          <small>Data Principal Rights &amp; Autonomy</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>Under the Digital Personal Data Protection Act, 2023, you enjoy full data autonomy:</p>
+        <ul class="legal-list">
+          <li><strong>Right to Access:</strong> Review all personal information and ride history associated with your registered profile.</li>
+          <li><strong>Right to Correction:</strong> Update outdated profile details, emergency contacts, or email addresses instantly.</li>
+          <li><strong>Right to Erasure / Deletion:</strong> Permanently erase your account and associated personal data at any time.</li>
+          <li><strong>Right to Grievance Redressal:</strong> Direct unresolved data privacy concerns to our designated Grievance Officer.</li>
+          <li><strong>Right to Nominate:</strong> Designate a representative to manage your data rights in the event of unforeseen incapacity.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 9: In-App Account Deletion (Apple & Google Compliant) -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">09</span>
+        <div>
+          <h3>In-App Account &amp; Data Deletion</h3>
+          <small>Apple App Store Guideline 5.1.1 &amp; Google Play Data Safety Compliant</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          You have the right to permanently delete your passenger account and all associated personal data directly:
+        </p>
+        <ul class="legal-list">
+          <li><strong>In-App Self Service:</strong> Go to <strong>Settings &gt; Profile &gt; Delete Account</strong> and confirm with your mobile OTP.</li>
+          <li><strong>Email Request:</strong> Send an email from your registered address to <a href="mailto:dreamcabs2025@gmail.com" class="gr-link">dreamcabs2025@gmail.com</a> with subject <em>&quot;Passenger Account Deletion Request&quot;</em>.</li>
+        </ul>
+        <p>
+          Upon confirmation, your login session is revoked immediately and personal data is queued for complete permanent purge within 30 days.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 10: Grievance Redressal Officer -->
+    <div class="legal-card grievance-card">
+      <div class="legal-card__header">
+        <span class="legal-num">10</span>
+        <div>
+          <h3>Statutory Grievance &amp; Data Protection Officer</h3>
+          <small>IT Intermediary Rules &amp; DPDP Act Point of Contact</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="grievance-box">
+          <div class="grievance-row">
+            <span class="gr-label">Company:</span>
+            <strong class="gr-val">DreamCabs KMR Private Limited</strong>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Officer:</span>
+            <strong class="gr-val">Legal &amp; Compliance Cell / Grievance Officer</strong>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Headquarters:</span>
+            <span class="gr-val">Kupwara Main Market / Transport Yard, Kupwara, Jammu &amp; Kashmir, India - 193222</span>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Email:</span>
+            <a href="mailto:dreamcabs2025@gmail.com" class="gr-link">dreamcabs2025@gmail.com</a>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Timelines:</span>
+            <span class="gr-val">Acknowledgment within 24 hours · Final Resolution within 15 days</span>
+          </div>
+        </div>
+
+        <div class="grievance-actions">
+          <button class="dc-cta dc-cta--dark dc-press" (click)="openEmail()">
+            <span>Contact Grievance Officer</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</ion-content>

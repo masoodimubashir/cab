@@ -209,6 +209,13 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         { label: 'Help & Support', sub: 'Contact us, FAQ & report', icon: 'help-buoy-outline', path: '/support' },
       ],
     },
+    {
+      title: 'Legal & Policies',
+      items: [
+        { label: 'Terms & Conditions', sub: 'Driver terms, rules & agreements', icon: '', path: '/terms' },
+        { label: 'Privacy Policy', sub: 'Data protection & GPS disclosures', icon: '', path: '/privacy' },
+      ],
+    },
   ];
 
   private map: any | null = null;

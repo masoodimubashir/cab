@@ -1,0 +1,349 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar class="pg-toolbar">
+    <ion-buttons slot="start">
+      <ion-button (click)="goBack()" class="dc-press" aria-label="Go Back">
+        <ion-icon name="arrow-back" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title class="pg-brandtitle">
+      <span class="b-white">Dream</span><span class="b-green">Cabs</span>
+      <span class="legal-title-tag">PRIVACY</span>
+    </ion-title>
+  </ion-toolbar>
+
+  <div class="pg-hero legal-hero">
+    <div class="legal-hero__badge">
+      <span>DPDP Act 2023 · Data Protection</span>
+    </div>
+    <h1 class="pg-title">Privacy Policy</h1>
+    <p class="pg-subtitle">
+      How DreamCabs collects, safeguards, and processes driver data, background location, and KYC documents.
+    </p>
+    <div class="legal-meta-row">
+      <span class="legal-version-chip">Last Updated: {{ lastUpdated }}</span>
+      <span class="legal-version-chip">Entity: DreamCabs KMR Pvt. Ltd.</span>
+    </div>
+  </div>
+</ion-header>
+
+<ion-content class="pg-content legal-content">
+  <div class="pg-body legal-body">
+
+    <!-- DPDP Trust Banner -->
+    <div class="compliance-card">
+      <div class="compliance-card__text">
+        <strong>Data Principal Protection &amp; Localization</strong>
+        <p>
+          Compliant with the <em>Digital Personal Data Protection Act, 2023 (DPDP Act)</em> and <em>CERT-In Cyber Security Directions</em>. All driver data is stored securely in India.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 1: Introduction & Commitment -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">01</span>
+        <div>
+          <h3>Introduction &amp; Privacy Commitment</h3>
+          <small>Transparency, Accountability &amp; Zero Data Selling</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          1.1. <strong>DreamCabs KMR Private Limited</strong> (&quot;DreamCabs&quot;, &quot;we&quot;, &quot;us&quot;, &quot;our&quot;) is committed to protecting the privacy, confidentiality, and data autonomy of our registered Driver-Partners (&quot;Driver&quot;, &quot;you&quot;).
+        </p>
+        <p>
+          1.2. This Privacy Policy details how we collect, process, store, and safeguard your personal data when you use the <strong>DreamCabs Driver Mobile Application</strong> (Android &amp; iOS) and driver web dashboards.
+        </p>
+        <p>
+          1.3. <strong>We do not sell, rent, monetize, or trade your personal data or location records with third-party data brokers or advertisers.</strong>
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 2: Background & Real-Time Location (Prominent Disclosure) -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">02</span>
+        <div>
+          <h3>Background Location &amp; GPS Tracking</h3>
+          <small>Continuous Geolocation on Duty (Google Play &amp; Apple Disclosures)</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="legal-callout legal-callout--primary">
+          <div>
+            <strong>Prominent Background Location Disclosure:</strong>
+            <span>The DreamCabs Driver App collects continuous location data in the <strong>foreground AND background</strong> (even when the app is closed, minimized, or your device screen is locked) while you are on-duty / marked &quot;Online&quot;.</span>
+          </div>
+        </div>
+        <p><strong>Why Background Location is Required:</strong></p>
+        <ul class="legal-list">
+          <li><strong>Real-time Ride Dispatch:</strong> Matches you with passengers requesting rides near your current moving position along fixed corridors and taxi stands.</li>
+          <li><strong>Live Passenger ETAs &amp; Tracking:</strong> Displays your live moving vehicle location on the passenger&rsquo;s map while you are en route to pick them up and during active rides.</li>
+          <li><strong>Corridor Route Adherence:</strong> Verifies adherence to designated shared mobility stages and stop stops.</li>
+          <li><strong>Safety SOS Monitoring:</strong> Transmits accurate live coordinates to emergency services and police when an SOS trigger occurs.</li>
+          <li><strong>Accurate Fare Calculation:</strong> Calculates transparent distance, waiting times, and corridor stage tariffs.</li>
+        </ul>
+        <p>
+          <em>Note: Background location collection ceases immediately the moment you switch your status to <strong>&quot;Offline&quot;</strong> or log out of the application.</em>
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 3: Information We Collect -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">03</span>
+        <div>
+          <h3>Information We Collect</h3>
+          <small>KYC, Vehicle, Financial &amp; Telemetry Data</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <ul class="legal-list">
+          <li><strong>Driver Identity &amp; Contact:</strong> Full legal name, mobile phone number, email address, profile photograph, and language preference.</li>
+          <li><strong>Statutory Commercial KYC:</strong> Commercial Driving Licence (DL) number and scans, Vehicle Registration Certificate (RC), Vehicle Fitness Certificate, Commercial Insurance Policy, Pollution Under Control (PUC) certificate, and PAN / Aadhaar records.</li>
+          <li><strong>Vehicle Information:</strong> Vehicle make, model, year, fuel type, seating capacity, plate number, and assigned taxi stand / route scope.</li>
+          <li><strong>Trip &amp; Telemetry Logs:</strong> Pickup and drop coordinates, corridor route traversed, timestamps, vehicle speed, waiting duration, passenger manifest status, and customer ratings.</li>
+          <li><strong>Financial &amp; Payout Data:</strong> In-app wallet balance, digital trip earnings, commission dues, bank account number / IFSC code, and UPI virtual payment address (VPA) for settlements.</li>
+          <li><strong>Device &amp; Diagnostics:</strong> Device model, OS version, unique device identifier (UUID), push notification token (FCM/APNs), network carrier, IP address, and crash reports.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 4: Device Permissions Justification Table -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">04</span>
+        <div>
+          <h3>Mobile Permissions Matrix</h3>
+          <small>Explicit Android &amp; iOS Purpose Justifications</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="perm-list">
+
+          <!-- Background Location -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Background Location</strong>
+              <span class="perm-badge perm-badge--req">Mandatory on duty</span>
+            </div>
+            <p class="perm-card__desc">
+              Tracks your live vehicle position while marked &quot;Online&quot; to allocate nearby ride requests, verify route adherence, and transmit live arrival ETAs to passengers even if the app is closed or running in the background.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>ACCESS_BACKGROUND_LOCATION</code></span>
+              <span class="perm-api"><code>NSLocationAlways</code></span>
+            </div>
+          </div>
+
+          <!-- Foreground Location -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Foreground Location</strong>
+              <span class="perm-badge perm-badge--req">Mandatory</span>
+            </div>
+            <p class="perm-card__desc">
+              Enables turn-by-turn map navigation, pickup stop and taxi stand detection, accurate trip distance measurement, and live routing while the app is actively in use.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>ACCESS_FINE_LOCATION</code></span>
+              <span class="perm-api"><code>NSLocationWhenInUse</code></span>
+            </div>
+          </div>
+
+          <!-- Camera -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Camera</strong>
+              <span class="perm-badge perm-badge--kyc">Mandatory for KYC</span>
+            </div>
+            <p class="perm-card__desc">
+              Allows capturing your driver profile photo and taking live photos of mandatory verification documents including your Commercial Driving Licence, Vehicle RC, and Insurance.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>android.permission.CAMERA</code></span>
+              <span class="perm-api"><code>NSCameraUsageDescription</code></span>
+            </div>
+          </div>
+
+          <!-- Storage / Media -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Photo Library / Storage</strong>
+              <span class="perm-badge perm-badge--kyc">Mandatory for KYC</span>
+            </div>
+            <p class="perm-card__desc">
+              Allows selecting and uploading existing document scans, vehicle permits, and support attachments directly from your device storage.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>READ_MEDIA_IMAGES</code></span>
+              <span class="perm-api"><code>NSPhotoLibraryUsageDescription</code></span>
+            </div>
+          </div>
+
+          <!-- Contacts (SOS Only) -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Contacts (Emergency SOS)</strong>
+              <span class="perm-badge perm-badge--opt">Optional</span>
+            </div>
+            <p class="perm-card__desc">
+              Allows quick selection of trusted emergency contacts from your phonebook for instant SOS dispatch. DreamCabs never syncs, uploads, or stores your full address book.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>READ_CONTACTS</code></span>
+              <span class="perm-api"><code>NSContactsUsageDescription</code></span>
+            </div>
+          </div>
+
+          <!-- Push Notifications -->
+          <div class="perm-card">
+            <div class="perm-card__header">
+              <strong class="perm-card__title">Push Notifications</strong>
+              <span class="perm-badge perm-badge--rec">Recommended</span>
+            </div>
+            <p class="perm-card__desc">
+              Delivers time-critical ride dispatch requests, OTP verification codes, passenger arrival notices, wallet transaction receipts, and platform safety alerts.
+            </p>
+            <div class="perm-card__apis">
+              <span class="perm-api"><code>POST_NOTIFICATIONS</code></span>
+              <span class="perm-api"><code>APNs</code></span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 5: Data Sharing & Disclosures -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">05</span>
+        <div>
+          <h3>Third-Party Sharing &amp; Disclosures</h3>
+          <small>Need-to-Know Operational Disclosures</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>Personal and telemetry data is shared exclusively with authorized entities under strict confidentiality agreements:</p>
+        <ul class="legal-list">
+          <li><strong>Matched Passengers:</strong> When a ride is active, passengers see your name, photo, verified rating, vehicle model, and registration number.</li>
+          <li><strong>Emergency SOS Authorities:</strong> If the SOS button is triggered, live GPS tracking and vehicle details are shared with your designated contacts and local Police authorities.</li>
+          <li><strong>Payment Processors:</strong> Razorpay / Cashfree / UPI partners process payout disbursements under PCI-DSS Level 1 security.</li>
+          <li><strong>Transport Authorities &amp; Law Enforcement:</strong> Data is disclosed only when legally mandated by court order, statutory transport audits, or official law enforcement investigation.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 6: Data Security & Retention -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">06</span>
+        <div>
+          <h3>Security &amp; Data Retention</h3>
+          <small>TLS 1.3, AES-256 Encryption &amp; 7-Year Statutory Storage</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          6.1. <strong>Encryption &amp; Safeguards:</strong> All data transmitted between the Driver App and our servers is encrypted using modern <strong>TLS 1.3 / SSL</strong> protocols. Sensitive KYC and financial records are encrypted at rest with <strong>AES-256</strong>.
+        </p>
+        <p>
+          6.2. <strong>Financial &amp; Tax Retention:</strong> Trip transaction logs, tax invoices, and earnings records are retained for a statutory minimum of <strong>7 years</strong> in compliance with Indian GST, Income Tax, and Motor Vehicle Aggregator regulations.
+        </p>
+        <p>
+          6.3. <strong>Account Deletion Purge:</strong> When an account deletion is requested, all personal identifiers are permanently deleted or anonymized within <strong>30 days</strong>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 7: Driver Rights under DPDP Act 2023 -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">07</span>
+        <div>
+          <h3>Your Legal Rights (India DPDP Act 2023)</h3>
+          <small>Data Principal Rights &amp; Autonomy</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>As a Data Principal under the Digital Personal Data Protection Act, 2023, you have the following enforceable rights:</p>
+        <ul class="legal-list">
+          <li><strong>Right to Access:</strong> Request a summary of all personal data held and processed by DreamCabs.</li>
+          <li><strong>Right to Correction:</strong> Rectify inaccurate, outdated, or incomplete profile/KYC information directly via the app or support.</li>
+          <li><strong>Right to Erasure / Deletion:</strong> Permanently delete your driver account and associated data via the in-app deletion button.</li>
+          <li><strong>Right to Grievance Redressal:</strong> Submit data concerns to our Grievance Officer and escalate to the Data Protection Board of India if unresolved.</li>
+          <li><strong>Right to Nominate:</strong> Nominate an authorized representative to exercise data rights in the event of death or incapacity.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 8: In-App Account Deletion (Apple & Google Compliant) -->
+    <div class="legal-card">
+      <div class="legal-card__header">
+        <span class="legal-num">08</span>
+        <div>
+          <h3>In-App Account &amp; Data Deletion</h3>
+          <small>Apple App Store Guideline 5.1.1 &amp; Google Play Data Safety Compliant</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <p>
+          You have the absolute right to delete your driver account and purge your personal data at any time:
+        </p>
+        <ul class="legal-list">
+          <li><strong>In-App Deletion:</strong> Navigate to <strong>Settings &gt; Profile &gt; Delete Account</strong> and confirm the deletion request via OTP.</li>
+          <li><strong>Email Request:</strong> Send an email from your registered email address to <a href="mailto:dreamcabs2025@gmail.com" class="gr-link">dreamcabs2025@gmail.com</a> with subject <em>&quot;Driver Account Deletion Request&quot;</em>.</li>
+        </ul>
+        <p>
+          Upon confirmation, your active sessions are terminated immediately and your personal data is queued for complete erasure within 30 days.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 9: Data Protection & Grievance Officer -->
+    <div class="legal-card grievance-card">
+      <div class="legal-card__header">
+        <span class="legal-num">09</span>
+        <div>
+          <h3>Data Protection &amp; Grievance Redressal Officer</h3>
+          <small>Statutory DPDP Act &amp; IT Rules Point of Contact</small>
+        </div>
+      </div>
+      <div class="legal-card__content">
+        <div class="grievance-box">
+          <div class="grievance-row">
+            <span class="gr-label">Company:</span>
+            <strong class="gr-val">DreamCabs KMR Private Limited</strong>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Officer:</span>
+            <strong class="gr-val">Legal &amp; Compliance Cell / Data Protection Officer</strong>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Address:</span>
+            <span class="gr-val">Kupwara Main Market / Transport Yard, Kupwara, Jammu &amp; Kashmir, India - 193222</span>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Email:</span>
+            <a href="mailto:dreamcabs2025@gmail.com" class="gr-link">dreamcabs2025@gmail.com</a>
+          </div>
+          <div class="grievance-row">
+            <span class="gr-label">Response:</span>
+            <span class="gr-val">Acknowledgment within 24 hours · Final Resolution within 15 days</span>
+          </div>
+        </div>
+
+        <div class="grievance-actions">
+          <button class="dc-cta dc-cta--dark dc-press" (click)="openEmail()">
+            <span>Contact Data Protection Officer</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</ion-content>

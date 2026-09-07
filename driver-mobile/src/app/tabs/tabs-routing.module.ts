@@ -47,6 +47,14 @@ const routes: Routes = [
         loadChildren: () => import('../pages/more/more.module').then((m) => m.MorePageModule),
       },
       {
+        path: 'terms',
+        loadChildren: () => import('../pages/terms/terms.module').then((m) => m.TermsPageModule),
+      },
+      {
+        path: 'privacy',
+        loadChildren: () => import('../pages/privacy/privacy.module').then((m) => m.PrivacyPageModule),
+      },
+      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full',
