@@ -84,254 +84,49 @@
     <div class="crumb"><a href="index.html">Home</a><svg class="i xs"><use href="#i-chev"/></svg><span>Privacy Policy</span></div>
     <span class="eyebrow on-dark">Data Protection</span>
     <h1>Privacy Policy</h1>
-    <p>How DreamCabs collects, safeguards, and processes personal data, continuous location tracking, KYC records, and voice bookings under the DPDP Act 2023.</p>
+    <p>How your information is used and how to manage your privacy.</p>
   </div>
 </section>
 
 <div class="wrap">
   <div class="doc">
-    <aside class="doc-nav">
-      <h5>On this page</h5>
-      <a href="#intro">1. Introduction &amp; Commitment</a>
-      <a href="#location">2. Geolocation &amp; Tracking</a>
-      <a href="#voice">3. Voice Assistant Privacy</a>
-      <a href="#collect">4. Information We Collect</a>
-      <a href="#permissions">5. Permissions Matrix</a>
-      <a href="#sharing">6. Third-Party Sharing</a>
-      <a href="#security">7. Security &amp; Retention</a>
-      <a href="#rights">8. Legal Rights (DPDP Act)</a>
-      <a href="#deletion">9. In-App Account Deletion</a>
-      <a href="#children">10. Children's Privacy</a>
-      <a href="#officer">11. Grievance &amp; DPO Contact</a>
-    </aside>
-
-    <div class="doc-body">
-      <span class="updated">Last updated &middot; March 2025 (DPDP Act 2023 &amp; Apple/Google Data Safety Compliant)</span>
-
-      <!-- DPDP Trust Banner -->
-      <div class="doc-callout doc-callout--primary">
-        <strong>Data Principal Protection &amp; Data Localization Notice</strong>
-        <p>DreamCabs complies strictly with the <em>Digital Personal Data Protection Act, 2023 (DPDP Act)</em>, the <em>Information Technology Act, 2000</em>, and <em>CERT-In Cyber Security Directions</em>. All personal data is encrypted and stored exclusively on secure cloud servers located within the territory of India.</p>
-      </div>
-
-      <!-- 1. Introduction & Commitment -->
-      <section class="doc-sec">
-        <h2 id="intro">1. Introduction &amp; Zero Data Selling Commitment</h2>
-        <p>1.1. <strong>DreamCabs KMR Private Limited</strong> (&quot;DreamCabs&quot;, &quot;we&quot;, &quot;us&quot;, &quot;our&quot;) values your trust and is deeply committed to protecting the privacy, confidentiality, and autonomy of our Passengers and Driver-Partners.</p>
-        <p>1.2. This Privacy Policy governs all personal data collected through the <strong>DreamCabs Customer Mobile App</strong>, <strong>DreamCabs Driver App</strong>, website, and related technology APIs.</p>
-        <p>1.3. <strong>Zero Data Selling Guarantee:</strong> We do not sell, rent, monetize, or trade your personal data, travel history, or location telemetry to third-party data brokers, marketers, or advertisers under any circumstances.</p>
-      </section>
-
-      <!-- 2. Geolocation & Tracking -->
-      <section class="doc-sec">
-        <h2 id="location">2. Location Data &amp; Real-Time Tracking</h2>
-        <p>Location information is essential to power shared mobility, calculate accurate stage tariffs, and provide emergency SOS safety.</p>
-
-        <h3>Passenger Foreground Geolocation</h3>
-        <p>The Customer App collects location data only while the app is actively in use (foreground) to detect your nearest stop stage or taxi stand, render live moving cabs, and display real-time driver arrival countdowns.</p>
-
-        <h3>Driver Background Geolocation (Prominent Disclosure)</h3>
-        <div class="doc-callout doc-callout--warn">
-          <strong>Prominent Background Location Notice (Driver App):</strong>
-          <p>The DreamCabs Driver App collects continuous location data in the <strong>foreground AND background</strong> (even when the app is closed or the device screen is locked) while the driver is on-duty and marked &quot;Online&quot;.</p>
-        </div>
-        <p>Background tracking is required strictly for:</p>
-        <ul>
-          <li>Real-time automated ride dispatch along fixed corridors and stands.</li>
-          <li>Transmitting live vehicle tracking and accurate arrival countdowns to waiting passengers.</li>
-          <li>Corridor route adherence verification and stage tariff computation.</li>
-          <li>Emergency SOS safety tracking with local police dispatch.</li>
-        </ul>
-        <p><em>Background tracking terminates immediately the moment the driver toggles to &quot;Offline&quot; or logs out.</em></p>
-      </section>
-
-      <!-- 3. Voice Assistant Privacy -->
-      <section class="doc-sec">
-        <h2 id="voice">3. AI Voice Assistant &amp; Audio Processing</h2>
-        <p>3.1. When passengers use the AI Voice Assistant to search routes, query stop stages, or book seats, voice audio is streamed securely for instantaneous speech-to-text processing.</p>
-        <p>3.2. <strong>24-Hour Automatic Deletion:</strong> Raw voice audio files are automatically and permanently deleted from server memory within <strong>24 hours</strong> of query fulfillment.</p>
-        <p>3.3. Transcriptions are used exclusively to process your requested booking query and are never utilized for biometric profiling or commercial advertising.</p>
-      </section>
-
-      <!-- 4. Information We Collect -->
-      <section class="doc-sec">
-        <h2 id="collect">4. Information We Collect</h2>
-        <ul>
-          <li><strong>Identity &amp; Profile:</strong> Full name, verified mobile phone number, optional email address, profile photo, and language preference.</li>
-          <li><strong>Driver Statutory KYC:</strong> Commercial Driving Licence (DL), Vehicle Registration Certificate (RC), Vehicle Fitness, Commercial Insurance Policy, PUC Certificate, and PAN/Aadhaar details.</li>
-          <li><strong>Trip &amp; Telemetry Logs:</strong> Pickup/drop stop stages, GPS route traversed, timestamps, distance, speed, vehicle category, seat occupancy, and ratings.</li>
-          <li><strong>Financial &amp; Invoicing Data:</strong> Payment gateway transaction tokens, GST tax invoices, wallet balances, refund records, and driver bank account/UPI IDs for payouts. (Full card details and CVVs are never stored on our servers).</li>
-          <li><strong>Device &amp; Diagnostics:</strong> Device model, OS version, UUID, push notification tokens (FCM/APNs), network carrier, and crash logs.</li>
-        </ul>
-      </section>
-
-      <!-- 5. Permissions Matrix -->
-      <section class="doc-sec">
-        <h2 id="permissions">5. Mobile Permissions Matrix</h2>
-        <p>Explicit purpose justifications for device permissions requested by our mobile applications:</p>
-
-        <div class="doc-perm-grid">
-          <!-- Foreground Location -->
-          <div class="doc-perm-card">
-            <div class="doc-perm-head">
-              <strong>Foreground Location (Passengers &amp; Drivers)</strong>
-              <span class="doc-badge doc-badge--free">Mandatory</span>
-            </div>
-            <p>Pinpoints your nearest stop stage, taxi stand, enables map navigation, and displays live ride progression.</p>
-            <div class="doc-perm-apis">
-              <code>ACCESS_FINE_LOCATION</code>
-              <code>NSLocationWhenInUse</code>
-            </div>
-          </div>
-
-          <!-- Background Location -->
-          <div class="doc-perm-card">
-            <div class="doc-perm-head">
-              <strong>Background Location (Driver App Only)</strong>
-              <span class="doc-badge doc-badge--action">Mandatory On-Duty</span>
-            </div>
-            <p>Allocates nearby corridor ride requests and feeds live tracking to passengers even when the screen is locked or app is minimized.</p>
-            <div class="doc-perm-apis">
-              <code>ACCESS_BACKGROUND_LOCATION</code>
-              <code>NSLocationAlways</code>
-            </div>
-          </div>
-
-          <!-- Microphone / Voice -->
-          <div class="doc-perm-card">
-            <div class="doc-perm-head">
-              <strong>Microphone / Audio (Customer App)</strong>
-              <span class="doc-badge doc-badge--fee">Optional</span>
-            </div>
-            <p>Powers hands-free AI voice booking and route queries. Audio auto-deleted within 24 hours.</p>
-            <div class="doc-perm-apis">
-              <code>RECORD_AUDIO</code>
-              <code>NSMicrophoneUsageDescription</code>
-            </div>
-          </div>
-
-          <!-- Emergency Contacts -->
-          <div class="doc-perm-card">
-            <div class="doc-perm-head">
-              <strong>Contacts (Emergency SOS)</strong>
-              <span class="doc-badge doc-badge--fee">Optional</span>
-            </div>
-            <p>Enables quick selection of trusted family members for emergency SOS broadcasts. Address book is never uploaded in bulk.</p>
-            <div class="doc-perm-apis">
-              <code>READ_CONTACTS</code>
-              <code>NSContactsUsageDescription</code>
-            </div>
-          </div>
-
-          <!-- Camera & Photo Library -->
-          <div class="doc-perm-card">
-            <div class="doc-perm-head">
-              <strong>Camera &amp; Photo Storage</strong>
-              <span class="doc-badge doc-badge--action">KYC / Optional</span>
-            </div>
-            <p>Enables uploading driver verification documents (DL/RC/Insurance), customer avatars, and support attachments.</p>
-            <div class="doc-perm-apis">
-              <code>CAMERA</code>
-              <code>READ_MEDIA_IMAGES</code>
-            </div>
-          </div>
-
-          <!-- Push Notifications -->
-          <div class="doc-perm-card">
-            <div class="doc-perm-head">
-              <strong>Push Notifications</strong>
-              <span class="doc-badge doc-badge--fee">Recommended</span>
-            </div>
-            <p>Delivers live ride confirmations, driver arrival countdowns, OTP security codes, and emergency safety alerts.</p>
-            <div class="doc-perm-apis">
-              <code>POST_NOTIFICATIONS</code>
-              <code>APNs / FCM</code>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 6. Third-Party Sharing -->
-      <section class="doc-sec">
-        <h2 id="sharing">6. Third-Party Sharing &amp; Safeguards</h2>
-        <p>Personal and telemetry data is shared strictly on a need-to-know basis:</p>
-        <ul>
-          <li><strong>Matched Passengers &amp; Drivers:</strong> During an active booking, riders and drivers see essential trip coordinates, first names, and vehicle registration numbers.</li>
-          <li><strong>Emergency SOS Authorities:</strong> Upon SOS activation, real-time GPS telemetry and vehicle details are shared directly with local Police Control Rooms and saved contacts.</li>
-          <li><strong>PCI-DSS Payment Gateways:</strong> Licensed payment partners (Razorpay, Cashfree, UPI networks) process payments under PCI-DSS Level 1 compliance.</li>
-          <li><strong>Statutory Compliance:</strong> Data is disclosed only when legally mandated by court order or statutory transport regulatory authorities.</li>
-        </ul>
-      </section>
-
-      <!-- 7. Security & Retention -->
-      <section class="doc-sec">
-        <h2 id="security">7. Data Security &amp; Retention Timelines</h2>
-        <p>7.1. <strong>Encryption:</strong> All data transmissions are encrypted using <strong>TLS 1.3</strong>. Sensitive KYC documents, authentication secrets, and financial logs are encrypted at rest with <strong>AES-256</strong>.</p>
-        <p>7.2. <strong>Financial &amp; GST Retention:</strong> In accordance with Indian GST, Income Tax, and Motor Vehicle Aggregator regulations, ride invoices and payment manifests are retained for a statutory minimum of <strong>7 years</strong>.</p>
-        <p>7.3. <strong>Account Deletion Purge:</strong> When an account deletion is requested, all personal identifiers are permanently purged or anonymized within <strong>30 days</strong>.</p>
-      </section>
-
-      <!-- 8. Legal Rights (DPDP Act) -->
-      <section class="doc-sec">
-        <h2 id="rights">8. Your Legal Rights (India DPDP Act 2023)</h2>
-        <p>As a Data Principal under the Digital Personal Data Protection Act, 2023, you have the following statutory rights:</p>
-        <ul>
-          <li><strong>Right to Access:</strong> Request a summary of all personal data held and processed by DreamCabs.</li>
-          <li><strong>Right to Correction:</strong> Update inaccurate, outdated, or incomplete profile and KYC records.</li>
-          <li><strong>Right to Erasure / Deletion:</strong> Permanently erase your account and personal data.</li>
-          <li><strong>Right to Grievance Redressal:</strong> Direct unresolved data privacy concerns to our Grievance Officer and escalate to the Data Protection Board of India if unresolved.</li>
-          <li><strong>Right to Nominate:</strong> Nominate an authorized representative to exercise data rights in case of death or incapacity.</li>
-        </ul>
-      </section>
-
-      <!-- 9. In-App Account Deletion -->
-      <section class="doc-sec">
-        <h2 id="deletion">9. In-App Account &amp; Data Deletion (Apple &amp; Google Compliant)</h2>
-        <p>Users have the unconditional right to delete their account and personal data at any time:</p>
-        <ul>
-          <li><strong>In-App Self Service:</strong> Go to <strong>Settings &gt; Profile &gt; Delete Account</strong> and confirm with your mobile OTP.</li>
-          <li><strong>Email Request:</strong> Send an email from your registered address to <a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a> with subject <em>&quot;Account Deletion Request&quot;</em>.</li>
-        </ul>
-        <p>Upon confirmation, your active sessions are revoked immediately and personal data is queued for complete permanent purge within <strong>30 days</strong>.</p>
-      </section>
-
-      <!-- 10. Children's Privacy -->
-      <section class="doc-sec">
-        <h2 id="children">10. Children's Privacy</h2>
-        <p>Our platform is not directed to individuals under 18 years of age without adult accompaniment. We do not knowingly collect personal information from minors. If you believe a minor has registered without consent, please contact us for immediate profile removal.</p>
-      </section>
-
-      <!-- 11. Grievance & DPO Contact -->
-      <section class="doc-sec">
-        <h2 id="officer">11. Data Protection &amp; Grievance Redressal Officer</h2>
-        <p>For questions regarding this Privacy Policy, your DPDP Act 2023 rights, or data protection practices, please reach out to our designated officer:</p>
-
-        <div class="doc-grievance-box">
-          <div class="doc-gr-row">
-            <span class="doc-gr-label">Company:</span>
-            <strong class="doc-gr-val">DreamCabs KMR Private Limited</strong>
-          </div>
-          <div class="doc-gr-row">
-            <span class="doc-gr-label">Officer:</span>
-            <strong class="doc-gr-val">Legal &amp; Compliance Cell / Data Protection Officer</strong>
-          </div>
-          <div class="doc-gr-row">
-            <span class="doc-gr-label">Headquarters:</span>
-            <span class="doc-gr-val">Kupwara Main Market / Transport Yard, Kupwara, Jammu &amp; Kashmir, India - 193222</span>
-          </div>
-          <div class="doc-gr-row">
-            <span class="doc-gr-label">Email:</span>
-            <span class="doc-gr-val"><a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a></span>
-          </div>
-          <div class="doc-gr-row">
-            <span class="doc-gr-label">Timelines:</span>
-            <span class="doc-gr-val">Acknowledgment within 24 hours &middot; Final Resolution within 15 days</span>
-          </div>
-        </div>
-      </section>
-
-    </div>
-  </div>
+<!-- Generated by scripts/generate-legal.mjs. -->
+<aside class="doc-nav"><h5>On this page</h5><a href="#intro">1. Who we are</a>
+<a href="#collect">2. Information we collect and why</a>
+<a href="#location">3. Location and trip tracking</a>
+<a href="#permissions">4. Your permission choices</a>
+<a href="#sharing">5. Who receives information</a>
+<a href="#security">6. Security and retention</a>
+<a href="#deletion">7. Delete your account or request data help</a>
+<a href="#children">8. Eligibility and children</a>
+<a href="#officer">9. Contact and policy updates</a></aside>
+<div class="doc-body"><span class="updated">Last updated · 8 September 2026</span>
+<section class="doc-sec"><h2 id="intro">1. Who we are</h2><p>DreamCabs KMR Private Limited provides the DreamCabs Customer app, DreamCabs Driver app and related booking services. This policy explains how we use personal data across these services. Contact <a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a> for privacy questions or requests.</p>
+<p>We do not sell personal data or location records to advertisers or data brokers.</p></section>
+<section class="doc-sec"><h2 id="collect">2. Information we collect and why</h2><p>Account information includes your name, verified phone number, account identifier and any email address, profile photo, birth date or address you provide. We use it to maintain your account, check eligibility, communicate with you and provide rides. An email address and a saved account address are optional in customer profile completion.</p>
+<p>Booking records include pickup and destination, route, trip times, seats, passenger details, ratings, payment method, transaction references, deposits, refunds and invoices. If you book for another person, we also receive the name and phone number you enter for that passenger. Give that person this privacy notice and obtain their permission before submitting their details.</p>
+<p>Driver information includes vehicle and registration details, verification documents and their entered fields, approval status, earnings, wallet and subscription records. Where payout setup is used, we receive bank or UPI details and identity information such as PAN. These support verification, operation and settlement.</p>
+<p>We receive emergency contact names and numbers that you choose to save, and information you send to support. Device model, operating system, app version, device identifiers and push tokens may be collected for login, account security, troubleshooting and notification delivery. Notification permission is separate from basic device information.</p></section>
+<section class="doc-sec"><h2 id="location">3. Location and trip tracking</h2><p>Customer app: with permission, we use location while the app is in use to help select pickups, find rides and check pickup status. Fixed-route pickup checks use foreground location. Keep the pickup screen open for fresh updates. You can enter or select a pickup manually; denying location may limit automatic pickup checks.</p>
+<p>Driver app: after the in-app disclosure and your permission, DreamCabs collects and sends precise location while you are online or working on a ride, including in the background when the app is minimized or the screen is locked. We use it for nearby ride requests, pickup checks and live trip tracking visible to your passengers and DreamCabs administrators. Going offline stops dispatch tracking; an active ride can have its own tracking until it ends. Signing out stops all app location watchers.</p>
+<p>Location records can include coordinates, timestamps, accuracy, speed and direction. You can revoke location permission in your device settings. Device settings, connectivity and battery restrictions can affect tracking; location and arrival estimates are not guarantees.</p></section>
+<section class="doc-sec"><h2 id="permissions">4. Your permission choices</h2><p>You can sign in without granting contacts, camera, photo-library or notification permission. We request location when a location feature needs it. Camera access is for taking photos; system file or photo pickers let you choose an existing image for upload. We do not need access to your entire photo library.</p>
+<p>Contact selection is optional and helps you save an emergency contact; manual entry is available. We do not upload your entire address book. Push notifications provide ride and account updates. You can change these permissions in device settings. This release does not provide a voice-booking or audio-recording service.</p></section>
+<section class="doc-sec"><h2 id="sharing">5. Who receives information</h2><p>Ride participants receive the information needed to coordinate a booking: names, contact phone numbers, pickup and destination details, and driver/vehicle information. Phone calls use the provided number; we do not promise call masking. If you share a trip link, anyone who receives the link may access the trip information it exposes until it expires or is revoked. Share links only with people you trust.</p>
+<p>We use service providers for hosting, communications, mapping and payments. These include Google Maps/Places for map and place queries, MSG91 for SMS verification, Firebase Authentication where that login method is used, Firebase Cloud Messaging for push delivery and Razorpay for payment processing. Map providers receive relevant map/place requests; verification providers receive the details needed to verify a phone or account; messaging providers receive delivery tokens and notification content; payment providers receive the details needed to process payments. Our Reverb service carries live updates; using a Pusher-compatible client does not mean Pusher hosts those updates.</p>
+<p>Providers may process information on infrastructure in India or other countries under their service arrangements. We require providers handling data for us to protect it consistently with this policy and use it for the contracted service. We may disclose relevant information when required by law, to resolve a dispute or to protect users from fraud or harm.</p>
+<p>The in-app SOS sends an alert and available location/trip details to DreamCabs administrators. It does not automatically notify police or saved emergency contacts, and does not guarantee a response. Contact local emergency services directly for urgent assistance.</p></section>
+<section class="doc-sec"><h2 id="security">6. Security and retention</h2><p>Our production API and live-update connections use HTTPS/TLS. Access to account and verification data is restricted through authentication and permissions; selected payout identity and account fields are encrypted by the backend. No service can guarantee absolute security.</p>
+<p>Account, saved-contact, booking and location information is used while your account and service relationship remain active. Account deletion removes the account and its associated operational records and uploads through our deletion flow. Independent accounting and settlement records, payment-provider records and data needed for a legal obligation or unresolved dispute may be retained for the applicable required period. They are not used to reactivate your account. Contact us for the categories and retention requirements applicable to your request.</p>
+<p>Deletion of a DreamCabs account does not recall messages already delivered to another person or erase records a payment provider must keep for its own obligations. Contact us to coordinate related provider-data requests and to understand any backup, financial or legal retention exception. We do not promise that every record is stored only in India or that all record types use one encryption algorithm.</p></section>
+<section class="doc-sec"><h2 id="deletion">7. Delete your account or request data help</h2><p>In either app, open More and choose Delete account. Review the explanation and confirm. This deletes the DreamCabs account for that phone number, including both customer and driver access if they share the account. All account sessions are revoked. This cannot be undone; creating a new account does not restore deleted information. Account deletion does not itself request a ride refund or settle outstanding money; contact support about unresolved payments.</p>
+<p>The app confirms success only after account deletion and the required upload/identity cleanup complete. If cleanup fails, it shows an error so you can retry or contact support. We do not use a separate deletion OTP or promise a scheduled 30-day purge in this flow.</p>
+<p>You can also request deletion without installing or signing into the app: email <a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a> with the subject Account Deletion Request, identify the customer/driver account and provide the registered phone number with country code. You do not need a registered email address. We will verify ownership through an accessible method before acting. Never send your password or an OTP by email. If you cannot access the registered number, tell support so an alternative verification method can be arranged.</p>
+<p>Use the same contact to request access, correction, an explanation of retention, withdrawal of optional consent or help exercising applicable privacy rights. You can edit available profile fields and saved contacts in the app. For information that cannot be changed there, contact support. Requests requiring manual processing will receive an explanation of the next steps and expected completion time.</p></section>
+<section class="doc-sec"><h2 id="children">8. Eligibility and children</h2><p>Accounts are intended for people aged 18 or older. A parent or authorized adult may book for an accompanied minor and is responsible for that booking. We do not offer independent child accounts. If you believe a child has registered, contact us to request review and removal of the account.</p></section>
+<section class="doc-sec"><h2 id="officer">9. Contact and policy updates</h2><p>Privacy and grievance contact: DreamCabs KMR Private Limited, Legal &amp; Compliance Cell, Kupwara Main Market / Transport Yard, Kupwara, Jammu &amp; Kashmir, India 193222. Email: <a href="mailto:dreamcabs2025@gmail.com">dreamcabs2025@gmail.com</a>.</p>
+<p>The version date identifies this notice. We will publish changes here and provide additional notice or request new consent where required. The same current policy is available on our website and within the apps.</p></section></div>
+</div>
 </div>
 
 <footer>

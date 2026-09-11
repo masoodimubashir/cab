@@ -1,0 +1,45 @@
+// Applied by each Android app. Passwords belong in its ignored
+// android/keystore.properties file, never in source control.
+def signingProperties = new Properties()
+def signingFile = rootProject.file('keystore.properties')
+if (signingFile.exists()) {
+    signingFile.withInputStream { signingProperties.load(it) }
+}
+def uploadStore = signingProperties.getProperty('storeFile') ?: new File(
+    System.getProperty('user.home'), project.ext.uploadKeystoreRelativePath).absolutePath
+def uploadPassword = signingProperties.getProperty('storePassword')
+def uploadKeyPassword = signingProperties.getProperty('keyPassword') ?: uploadPassword
+def uploadAlias = signingProperties.getProperty('keyAlias') ?: 'upload'
+
+android {
+    signingConfigs {
+        release {
+            storeFile file(uploadStore)
+            storePassword uploadPassword
+            keyAlias uploadAlias
+            keyPassword uploadKeyPassword
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+
+// Stop before packaging when credentials are missing; never fall back to debug signing.
+def validateUploadCredentials = tasks.register('validateUploadCredentials') {
+    doLast {
+        if (!file(uploadStore).isFile()) {
+            throw new GradleException('Upload keystore missing: ' + uploadStore)
+        }
+        if (!uploadPassword || !uploadKeyPassword) {
+            throw new GradleException('Set storePassword in android/keystore.properties. See docs/Google-Play-Release-Setup.md.')
+        }
+    }
+}
+tasks.configureEach {
+    if (name == 'preReleaseBuild' || name == 'validateSigningRelease') {
+        dependsOn(validateUploadCredentials)
+    }
+}

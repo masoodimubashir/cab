@@ -4,6 +4,7 @@ import { AlertController, ModalController } from '@ionic/angular';
 import { firstValueFrom, interval, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, AuthUser } from '../../core/auth.service';
+import { LocationConsentService } from '../../core/location-consent.service';
 import { DriverPresenceService, PresenceFix } from '../../core/driver-presence.service';
 import { GeolocationService } from '../../core/geolocation.service';
 import { MapsLoaderService } from '../../core/maps-loader.service';
@@ -234,6 +235,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private readonly defaultCentre = { lat: 19.0760, lng: 72.8777 };
 
   constructor(
+    private locationConsent: LocationConsentService,
     private api: ApiService,
     public auth: AuthService,
     private presence: DriverPresenceService,
@@ -936,8 +938,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     });
   }
 
-  private finishSignOut(): void {
-    this.auth.logout();
+  private async finishSignOut(): Promise<void> {
+    await this.auth.logout();
     this.router.navigateByUrl('/auth/login', { replaceUrl: true });
   }
 
@@ -1273,6 +1275,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   // ------------------------------------------------------------ online flip ---
 
   async goOnline(silent = false): Promise<void> {
+    if (!(await this.locationConsent.ensure())) return;
     if (this.toggling) return;
     if (this.isWalletBelowLimit) {
       if (!silent) void this.showWalletLowAlert();

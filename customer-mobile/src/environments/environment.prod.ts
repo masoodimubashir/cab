@@ -24,7 +24,7 @@ export const environment = {
   apiUrl: 'https://dreamcabs.in/api',
   /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
   useServerOtp: true,
-  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
+  googleMapsApiKey: 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw',
   // Reverb websockets. Port 8080 is exposed directly by the server stack
   // (see backend deploy). With HTTPS you'd typically proxy this to 443.
   reverbAppKey: '4jsb8ggrbvcriyaskojh',

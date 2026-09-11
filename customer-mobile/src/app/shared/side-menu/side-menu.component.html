@@ -95,7 +95,7 @@
         <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
       </button>
       <button class="dc-row nav-row dc-press" (click)="go('/customer-tabs/privacy')">
-        <span class="dc-row__text" style="padding-left: 4px;"><strong>Privacy Policy</strong><small>Data protection &amp; DPDP rights</small></span>
+        <span class="dc-row__text" style="padding-left: 4px;"><strong>Privacy Policy</strong><small>Data protection, GPS &amp; device permissions</small></span>
         <ion-icon class="dc-row__chev" name="chevron-forward-outline"></ion-icon>
       </button>
     </nav>
@@ -104,6 +104,10 @@
       <button class="dc-row nav-row nav-row--danger dc-press" (click)="signOut()">
         <span class="dc-row__icon dc-row__icon--danger"><ion-icon name="log-out-outline"></ion-icon></span>
         <span class="dc-row__text"><strong>Sign out</strong></span>
+      </button>
+      <button class="dc-row nav-row nav-row--danger dc-press" (click)="confirmDeleteAccount()">
+        <span class="dc-row__icon dc-row__icon--danger"><ion-icon name="trash-outline"></ion-icon></span>
+        <span class="dc-row__text"><strong>Delete account</strong></span>
       </button>
     </div>
   </ion-content>

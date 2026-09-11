@@ -16,6 +16,9 @@ class ProfileController extends Controller
     public function update(Request $request)
     {
         $user = $request->user();
+        $adultCutoff = now()->subYearsNoOverflow(18)->toDateString();
+        $needsCustomerDob = $user->hasRole('customer')
+            && (!$user->dob || $user->dob->toDateString() > $adultCutoff);
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
@@ -25,7 +28,7 @@ class ProfileController extends Controller
                 Rule::unique('users', 'email')->ignore($user->id),
             ],
             'photo' => ['nullable', 'file', 'image', 'max:4096'],
-            'dob' => ['nullable', 'date', 'before:today'],
+            'dob' => [Rule::requiredIf($needsCustomerDob), 'bail', 'nullable', 'date_format:Y-m-d', 'before_or_equal:'.$adultCutoff],
             'address' => ['nullable', 'string', 'max:255'],
             // Column widths: app_version varchar(32), os_version varchar(32),
             // device_type varchar(64). Validator caps match the schema so a
@@ -33,6 +36,10 @@ class ProfileController extends Controller
             'app_version' => ['nullable', 'string', 'max:32'],
             'os_version' => ['nullable', 'string', 'max:32'],
             'device_type' => ['nullable', 'string', 'max:64'],
+        ], [
+            'dob.required' => 'Please enter your date of birth. You must be at least 18 years old to have a DreamCabs account.',
+            'dob.date_format' => 'Please enter a valid date of birth.',
+            'dob.before_or_equal' => 'You must be at least 18 years old to have a DreamCabs account.',
         ]);
 
         if ($request->hasFile('photo')) {

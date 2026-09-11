@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">DreamCabs</string>
-    <string name="title_activity_main">DreamCabs</string>
-    <string name="package_name">com.dreamcabs.customer</string>
-    <string name="custom_url_scheme">com.dreamcabs.customer</string>
+    <string name="app_name">DREAMCABS</string>
+    <string name="title_activity_main">DREAMCABS</string>
+    <string name="package_name">product.customer.dreamcab</string>
+    <string name="custom_url_scheme">product.customer.dreamcab</string>
 </resources>

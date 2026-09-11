@@ -14,7 +14,8 @@
     "dev:device": "node ../scripts/dev-device.mjs 8100",
     "go:wireless": "node ../scripts/go-wireless.mjs",
     "apk:debug": "ng build && cap sync android && cd android && ./gradlew assembleDebug",
-    "apk:release": "ng build --configuration production && cap sync android && cd android && ./gradlew assembleRelease"
+    "apk:release": "ng build --configuration production && cap sync android && node ../scripts/run-android-gradle.mjs assembleRelease",
+    "aab:release": "ng build --configuration production && cap sync android && node ../scripts/run-android-gradle.mjs bundleRelease"
   },
   "private": true,
   "dependencies": {

@@ -4,11 +4,11 @@ android {
     namespace = "com.dreamcabs.customer"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.dreamcabs.customer"
+        applicationId "product.customer.dreamcab"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 567
+        versionName "5.6.7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -18,7 +18,6 @@ android {
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -43,6 +42,9 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
     implementation 'com.google.android.gms:play-services-auth-api-phone:18.1.0'
 }
+
+ext.uploadKeystoreRelativePath = 'DreamcabsSigning/dreamcabs-upload.jks'
+apply from: '../../../scripts/android-release-signing.gradle'
 
 apply from: 'capacitor.build.gradle'
 

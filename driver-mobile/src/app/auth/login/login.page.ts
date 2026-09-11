@@ -275,12 +275,12 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     if (!this.assertFirebaseReady()) {
       return;
     }
-    this.step = 'perms';
+    void this.allowPermsAndSendOtp();
   }
 
   // Permissions step: Deny sends the user back to phone entry.
   denyPerms(): void {
-    this.step = 'phone';
+    void this.allowPermsAndSendOtp();
   }
 
   // Permissions step: Allow grants what we can request, then sends the OTP.
@@ -289,8 +289,6 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     this.error = null;
     this.loading = true;
     try {
-      await this.requestAllPermissions();
-      localStorage.setItem('dreamcabs_permissions_granted', '1');
       await this.sendOtp();
     } finally {
       this.loading = false;
@@ -300,32 +298,6 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   // Sequentially prompts for every permission surfaced on the disclosure cards.
   // Native-only plugins are wrapped so they silently no-op on the web build, and
   // each request is isolated so one denial never blocks the next or the OTP.
-  private async requestAllPermissions(): Promise<void> {
-    // Location — "Receive nearby trips".
-    // We hit the Geolocation plugin DIRECTLY (not GeolocationService) on purpose:
-    // that service returns a mocked "granted" in non-production builds, which
-    // would suppress the real OS prompt during onboarding. requestPermissions()
-    // throws when the device's location toggle is OFF (it can't prompt then), so
-    // we surface that as a warning rather than swallowing it silently.
-    try {
-      await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
-    } catch (e) {
-      console.warn('[perms] location request skipped (is the device location/GPS toggle on?)', e);
-    }
-
-    // Phone / Notifications — "Verify your identity" (Android 13+ shows a prompt;
-    // older Android auto-grants POST_NOTIFICATIONS with no dialog).
-    try { await FirebaseMessaging.requestPermissions(); } catch (e) { console.warn('[perms] notifications', e); }
-
-    // Contacts — "Reach your riders".
-    try { await Contacts.requestPermissions(); } catch (e) { console.warn('[perms] contacts', e); }
-
-    // Storage / Camera — "Upload your documents" (license, RC, insurance, ID).
-    // The Android Photo Picker itself is permission-less; this grants the camera
-    // capture path used when adding documents.
-    try { await Camera.requestPermissions({ permissions: ['camera', 'photos'] }); } catch (e) { console.warn('[perms] camera', e); }
-  }
-
   private async sendOtp(): Promise<void> {
     const normalized = normalizePhoneToE164(this.phone, this.country.code);
     if (!normalized) return;

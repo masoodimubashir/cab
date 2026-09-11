@@ -1,7 +1,10 @@
+import { locationWatchers } from './location-watcher-registry';
 import { Injectable } from '@angular/core';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ApiService } from './api.service';
 import { GeoFix, GeolocationService } from './geolocation.service';
+import { AuthService } from './auth.service';
+import { LocationConsentService } from './location-consent.service';
 
 export type PresenceError =
   | { code: 'permission_denied'; message: string }
@@ -64,7 +67,11 @@ export class DriverPresenceService {
   private lastNotifiedErrorCode: PresenceError['code'] | null = null;
   private consecutiveTimeouts = 0;
 
-  constructor(private api: ApiService, private geo: GeolocationService) {}
+  private generation = 0;
+  constructor(private api: ApiService, private geo: GeolocationService,
+    private auth: AuthService, private consent: LocationConsentService) {
+    auth.registerSessionCleanup(() => this.stop());
+  }
 
   isStreaming(): boolean {
     return this.watchId != null;
@@ -80,11 +87,14 @@ export class DriverPresenceService {
 
   async start(): Promise<void> {
     if (this.watchId) return;
+    const generation = ++this.generation;
+    if (!(await this.consent.ensure()) || generation !== this.generation) return;
     this.highAccuracy = true;
     this.consecutiveTimeouts = 0;
     this.lastNotifiedErrorCode = null;
 
     await this.geo.requestPermissions();
+    if (generation !== this.generation || !this.auth.getToken()) return;
 
     try {
       const fix = await this.geo.getCurrentPosition({
@@ -92,7 +102,7 @@ export class DriverPresenceService {
         maximumAge: 0,
         timeout: 20000,
       });
-      if (fix) {
+      if (fix && generation === this.generation && this.auth.getToken()) {
         this.notifyLocated(fix);
         this.postLocation(fix);
       }
@@ -100,17 +110,14 @@ export class DriverPresenceService {
       this.handlePositionError(err, 'initial');
     }
 
-    await this.attachWatcher();
+    if (generation === this.generation && this.auth.getToken()) await this.attachWatcher();
   }
 
   async stop(): Promise<void> {
+    ++this.generation;
     if (!this.watchId) return;
     if (this.nativeBackgroundWatch) {
-      try {
-        await BackgroundGeolocation.removeWatcher({ id: this.watchId });
-      } catch {
-        /* ignore */
-      }
+      await locationWatchers.remove('background', this.watchId);
     } else {
       await this.geo.clearWatch(this.watchId);
     }
@@ -122,9 +129,11 @@ export class DriverPresenceService {
   }
 
   private async attachWatcher(): Promise<void> {
+    const generation = this.generation;
+    if (!this.auth.getToken()) return;
     if (Capacitor.isNativePlatform()) {
       this.nativeBackgroundWatch = true;
-      this.watchId = await BackgroundGeolocation.addWatcher(
+      const id = await locationWatchers.add('background', () => BackgroundGeolocation.addWatcher(
         {
           backgroundTitle: 'DreamCabs is using your location',
           backgroundMessage: 'Your location is shared while you are online or working on an active ride.',
@@ -133,11 +142,12 @@ export class DriverPresenceService {
           distanceFilter: 10,
         },
         (location, err) => {
+          if (generation !== this.generation || !this.auth.getToken()) return;
           if (err) {
             this.handlePositionError(err, 'watch');
             return;
           }
-          if (!location) return;
+          if (!location || generation !== this.generation || !this.auth.getToken()) return;
           const fix: GeoFix = {
             lat: location.latitude,
             lng: location.longitude,
@@ -149,24 +159,35 @@ export class DriverPresenceService {
           this.notifyLocated(fix);
           this.postLocation(fix);
         },
-      );
+      ), id => BackgroundGeolocation.removeWatcher({ id }));
+      if (generation !== this.generation || !this.auth.getToken()) {
+        await locationWatchers.remove('background', id);
+        return;
+      }
+      this.watchId = id;
       return;
     }
 
     this.nativeBackgroundWatch = false;
-    this.watchId = await this.geo.watchPosition(
+    const id = await this.geo.watchPosition(
       { enableHighAccuracy: this.highAccuracy, maximumAge: 4000, timeout: 30000 },
       (fix, err) => {
+        if (generation !== this.generation || !this.auth.getToken()) return;
         if (err) {
           this.handlePositionError(err, 'watch');
           return;
         }
-        if (fix) {
+        if (fix && generation === this.generation && this.auth.getToken()) {
           this.notifyLocated(fix);
           this.postLocation(fix);
         }
       },
     );
+    if (generation !== this.generation || !this.auth.getToken()) {
+      await this.geo.clearWatch(id);
+      return;
+    }
+    this.watchId = id;
   }
 
   private notifyLocated(fix: GeoFix): void {
@@ -216,20 +237,17 @@ export class DriverPresenceService {
   }
 
   private async restartWatcher(): Promise<void> {
+    const generation = this.generation;
     if (this.watchId) {
       if (this.nativeBackgroundWatch) {
-        try {
-          await BackgroundGeolocation.removeWatcher({ id: this.watchId });
-        } catch {
-          /* ignore */
-        }
+        await locationWatchers.remove('background', this.watchId);
       } else {
         await this.geo.clearWatch(this.watchId);
       }
       this.watchId = null;
       this.nativeBackgroundWatch = false;
     }
-    await this.attachWatcher();
+    if (generation === this.generation && this.auth.getToken()) await this.attachWatcher();
   }
 
   private decodeGeoError(err: unknown): PresenceError {
@@ -242,6 +260,7 @@ export class DriverPresenceService {
   }
 
   private postLocation(fix: GeoFix): void {
+    if (!this.auth.getToken()) return;
     const now = Date.now();
     if (now - this.lastSentAt < this.minIntervalMs) return;
     this.lastSentAt = now;
@@ -265,6 +284,10 @@ export class DriverPresenceService {
           this.lastNotifiedErrorCode = null;
         },
         error: (err: any) => {
+          if ([401, 403].includes(err?.status)) {
+            void this.stop();
+            return;
+          }
           if (err?.status !== 429) {
             console.warn('DriverPresence ping failed', err?.status, err?.error);
           }

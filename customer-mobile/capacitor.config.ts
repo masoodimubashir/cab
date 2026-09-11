@@ -2,8 +2,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
 import { KeyboardResize } from '@capacitor/keyboard';
 
 const config: CapacitorConfig = {
-  appId: 'com.dreamcabs.customer',
-  appName: 'DreamCabs',
+  appId: 'product.customer.dreamcab',
+  appName: 'DREAMCABS',
   webDir: 'www',
   // Allow plain-HTTP (cleartext) requests. Needed for: (a) live-reload to the
   // laptop's http://<LAN-IP>:8100 dev server, and (b) talking to the

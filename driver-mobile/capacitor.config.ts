@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.dreamcabs.driver',
-  appName: 'DreamCabs Driver',
+  appId: 'product.driver.dreamcab',
+  appName: 'CABBIES',
   webDir: 'www',
   // Allow plain-HTTP (cleartext) requests. Needed for: (a) live-reload to the
   // laptop's http://<LAN-IP>:8200 dev server, and (b) talking to the

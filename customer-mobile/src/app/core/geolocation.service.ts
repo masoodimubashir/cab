@@ -1,7 +1,9 @@
+import { locationWatchers } from './location-watcher-registry';
 import { Injectable } from '@angular/core';
 import { Geolocation, PermissionStatus } from '@capacitor/geolocation';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
+import { App } from '@capacitor/app';
 
 export type LatLng = { lat: number; lng: number };
 
@@ -27,13 +29,36 @@ interface WatchOptions {
 @Injectable({ providedIn: 'root' })
 export class GeolocationService {
   private lastLocationPingAt = 0;
+  private active = document.visibilityState !== 'hidden';
+  private watchSequence = 0;
+  private watches = new Map<string, { options: WatchOptions; callback: WatchCallback; nativeId?: string; revision: number }>();
 
   constructor(
     private api: ApiService,
     private auth: AuthService,
-  ) {}
+  ) {
+    document.addEventListener('visibilitychange', () => this.setActive(document.visibilityState !== 'hidden'));
+    void App.addListener('appStateChange', state => this.setActive(state.isActive));
+    auth.registerSessionCleanup(async () => {
+      await Promise.all([...this.watches.keys()].map(id => this.clearWatch(id)));
+    });
+  }
+
+  private setActive(active: boolean): void {
+    if (this.active === active) return;
+    this.active = active;
+    for (const [id, watch] of this.watches) {
+      ++watch.revision;
+      if (watch.nativeId) {
+        void locationWatchers.remove('foreground', watch.nativeId);
+        watch.nativeId = undefined;
+      }
+      if (active) void this.startWatch(id);
+    }
+  }
 
   private syncUserLocation(lat: number, lng: number): void {
+    if (!this.active) return;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     const now = Date.now();
     if (now - this.lastLocationPingAt < 3000) return;
@@ -54,6 +79,7 @@ export class GeolocationService {
 
   /** Convenience used widely by the customer-book and trip-active screens. */
   async getCurrentPosition(): Promise<LatLng | null> {
+    if (!this.active) return null;
     try {
       const perm = await Geolocation.checkPermissions();
       if (perm.location !== 'granted') {
@@ -74,6 +100,7 @@ export class GeolocationService {
 
   /** Long-form fix (used by trip-active so it can render a heading-aware marker). */
   async getCurrentFix(): Promise<GeoFix | null> {
+    if (!this.active) return null;
     try {
       const pos = await Geolocation.getCurrentPosition({
         enableHighAccuracy: true,
@@ -95,13 +122,26 @@ export class GeolocationService {
   }
 
   async watchPosition(options: WatchOptions, callback: WatchCallback): Promise<string> {
-    return Geolocation.watchPosition(
+    const id = `foreground-${++this.watchSequence}`;
+    this.watches.set(id, { options, callback, revision: 0 });
+    if (this.active) await this.startWatch(id);
+    return id;
+  }
+
+  private async startWatch(id: string): Promise<void> {
+    const watch = this.watches.get(id);
+    if (!watch || !this.active) return;
+    const { options, callback } = watch;
+    const revision = ++watch.revision;
+    try {
+    const nativeId = await locationWatchers.add('foreground', () => Geolocation.watchPosition(
       {
         enableHighAccuracy: options.enableHighAccuracy ?? true,
         timeout: options.timeout ?? 30000,
         maximumAge: options.maximumAge ?? 4000,
       },
       (pos, err) => {
+        if (!this.active || this.watches.get(id) !== watch || watch.revision !== revision) return;
         if (err) {
           callback(null, err);
           return;
@@ -119,15 +159,22 @@ export class GeolocationService {
           callback(fix, null);
         }
       },
-    );
+    ), id => Geolocation.clearWatch({ id }));
+    if (!this.active || this.watches.get(id) !== watch || watch.revision !== revision) {
+      await locationWatchers.remove('foreground', nativeId);
+      return;
+    }
+    watch.nativeId = nativeId;
+    } catch (error) {
+      if (this.watches.get(id) === watch && watch.revision === revision) callback(null, error);
+    }
   }
 
   async clearWatch(id: string): Promise<void> {
-    try {
-      await Geolocation.clearWatch({ id });
-    } catch {
-      /* ignore */
-    }
+    const watch = this.watches.get(id);
+    this.watches.delete(id);
+    if (!watch?.nativeId) return;
+    await locationWatchers.remove('foreground', watch.nativeId);
   }
 
   private browserFallback(): Promise<LatLng | null> {

@@ -214,24 +214,30 @@
             </div>
 
             <div class="input-container phone-container ion-margin-top">
-              <label>Email Address</label>
-              <ion-input type="email" [(ngModel)]="infoEmail" [disabled]="loading" autocomplete="email" required class="custom-phone-input"></ion-input>
+              <label>Email Address (optional)</label>
+              <ion-input type="email" [(ngModel)]="infoEmail" [disabled]="loading" autocomplete="email" class="custom-phone-input"></ion-input>
             </div>
 
             <div class="input-container phone-container ion-margin-top">
-              <label>Date of Birth</label>
+              <label for="signup-dob">Date of birth</label>
               <input
                 type="date"
                 [(ngModel)]="infoDob"
+                (ngModelChange)="validateDob()"
+                id="signup-dob"
+                aria-describedby="signup-dob-help signup-dob-error"
+                [attr.aria-invalid]="dobError ? true : null"
                 [disabled]="loading"
                 [max]="maxDob"
                 class="custom-phone-input native-date"
                 required
               />
+              <p id="signup-dob-help" class="age-help">You must be at least 18 years old to have a DreamCabs account.</p>
+              <p id="signup-dob-error" class="field-error" *ngIf="dobError" role="alert">{{ dobError }}</p>
             </div>
 
             <div class="input-container phone-container ion-margin-top address-field" #addressFieldWrap>
-              <label>Address</label>
+              <label>Address (optional)</label>
               <div class="address-input-row">
                 <ion-input
                   type="text"
@@ -241,7 +247,6 @@
                   [disabled]="loading"
                   autocomplete="street-address"
                   placeholder="Search your address"
-                  required
                   class="custom-phone-input"
                 ></ion-input>
                 <button

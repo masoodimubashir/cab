@@ -76,6 +76,15 @@
       <ion-icon *ngIf="!loading" name="lock-open-outline" slot="start" aria-hidden="true"></ion-icon>
       {{ loading ? 'Requesting…' : 'Grant Permissions' }}
     </ion-button>
+    <ion-button
+      fill="clear"
+      expand="block"
+      size="default"
+      (click)="skip()"
+      [disabled]="loading"
+    >
+      Not now
+    </ion-button>
     <p class="muted small">
       You can change or revoke permissions later from your phone settings.
     </p>

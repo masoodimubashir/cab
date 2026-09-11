@@ -37,7 +37,7 @@ export const environment = {
   /** FCM Web Push VAPID key — Firebase Console → Cloud Messaging → Web Push certificates. */
   fcmVapidKey: '',
   /** Google Maps JavaScript API key — used for the in-app live map (pickup + customer marker). */
-  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
+  googleMapsApiKey: 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw',
 };
 
 /*

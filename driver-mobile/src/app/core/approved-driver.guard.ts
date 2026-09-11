@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { CanActivate, Router, UrlTree } from '@angular/router';
-import { Observable, of } from 'rxjs';
+import { Observable, of, from } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
@@ -63,8 +63,7 @@ export class ApprovedDriverGuard implements CanActivate {
         }),
         catchError((err) => {
           if (err?.status === 401 || err?.status === 403) {
-            this.auth.logout();
-            return of(this.router.parseUrl('/welcome'));
+            return from(this.auth.logout()).pipe(map(() => this.router.parseUrl('/welcome')));
           }
           return of(true);
         }),

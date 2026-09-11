@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../environments/environment';
 
-const API_KEY = environment.googleMapsApiKey || 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q';
+const API_KEY = environment.googleMapsApiKey || 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw';
 const SCRIPT_ID = 'shared-google-maps-script';
 const CALLBACK_NAME = '__sharedInitGoogleMaps';
 

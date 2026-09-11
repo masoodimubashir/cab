@@ -1,1 +1,4 @@
 Photos/
+*.jks
+*.keystore
+**/keystore.properties

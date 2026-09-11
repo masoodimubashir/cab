@@ -69,14 +69,17 @@
         </div>
       </div>
 
-      <!-- Date of birth (read-only) -->
-      <div class="field-card readonly">
-        <label class="field-label">Date of birth</label>
+      <!-- Date of birth can be added or corrected. -->
+      <div class="field-card">
+        <label class="field-label" for="profile-dob">Date of birth</label>
         <div class="field-input-row">
           <span class="field-ico-box"><ion-icon name="calendar-outline"></ion-icon></span>
-          <span class="field-value">{{ dobDisplay || '—' }}</span>
-          <ion-icon name="lock-closed" class="lock-icon"></ion-icon>
+          <input id="profile-dob" type="date" [(ngModel)]="dob" (ngModelChange)="validateDob()"
+            [max]="maxDob" [disabled]="busy" required
+            aria-describedby="profile-dob-help profile-dob-error" [attr.aria-invalid]="dobError ? true : null" />
         </div>
+        <p id="profile-dob-help" class="age-help">You must be at least 18 years old to have a DreamCabs account.</p>
+        <p id="profile-dob-error" class="field-error" *ngIf="dobError" role="alert">{{ dobError }}</p>
       </div>
 
       <!-- Address (read-only) -->

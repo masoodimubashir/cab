@@ -23,7 +23,7 @@ export const environment = {
    *
    * If empty, the booking screen will fall back to manual lat/lng + external maps links.
    */
-  googleMapsApiKey: 'AIzaSyDlGsZl3dalGOAKXG5nspcI5fduHQjk3-Q',
+  googleMapsApiKey: 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw',
   /**
    * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
    * Leave reverbAppKey blank to fall back to polling-only.
