@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">DreamCabs Driver</string>
-    <string name="title_activity_main">DreamCabs Driver</string>
-    <string name="package_name">com.dreamcabs.driver</string>
-    <string name="custom_url_scheme">com.dreamcabs.driver</string>
+    <string name="app_name">CABBIES</string>
+    <string name="title_activity_main">CABBIES</string>
+    <string name="package_name">product.driver.dreamcab</string>
+    <string name="custom_url_scheme">product.driver.dreamcab</string>
 </resources>

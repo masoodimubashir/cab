@@ -29,14 +29,27 @@ export class IntroPage implements OnInit {
     this.error = null;
     this.loading = true;
     try {
-      await this.geo.requestPermissions();
-      try { await FirebaseMessaging.requestPermissions(); } catch { /* ignore */ }
+      try {
+        await this.geo.requestPermissions();
+      } catch {
+        /* ignore */
+      }
+      try {
+        await FirebaseMessaging.requestPermissions();
+      } catch {
+        /* ignore */
+      }
       localStorage.setItem('dreamcabs_permissions_intro_done', '1');
       await this.router.navigateByUrl('/auth/login', { replaceUrl: true });
     } catch (e) {
-      this.error = (e as Error)?.message || 'Could not request permissions.';
+      this.error = (e as Error)?.message || 'Could not proceed.';
     } finally {
       this.loading = false;
     }
+  }
+
+  async skip(): Promise<void> {
+    localStorage.setItem('dreamcabs_permissions_intro_done', '1');
+    await this.router.navigateByUrl('/auth/login', { replaceUrl: true });
   }
 }

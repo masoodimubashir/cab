@@ -1,7 +1,10 @@
+import { locationWatchers } from './location-watcher-registry';
 import { Injectable } from '@angular/core';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ApiService } from './api.service';
 import { GeolocationService } from './geolocation.service';
+import { AuthService } from './auth.service';
+import { LocationConsentService } from './location-consent.service';
 
 type Location = {
   latitude: number;
@@ -39,7 +42,11 @@ export class BackgroundLocationService {
   private lastSentAt = 0;
   private readonly minIntervalMs = 5000;
 
-  constructor(private api: ApiService, private geo: GeolocationService) {}
+  private generation = 0;
+  constructor(private api: ApiService, private geo: GeolocationService,
+    private auth: AuthService, private consent: LocationConsentService) {
+    auth.registerSessionCleanup(() => this.stop());
+  }
 
   isStreaming(): boolean {
     return this.watcherId != null || this.webIntervalHandle != null;
@@ -49,10 +56,13 @@ export class BackgroundLocationService {
     if (this.isStreaming() && this.currentTripId === tripId) return;
     if (this.isStreaming()) await this.stop();
 
+    const generation = ++this.generation;
+    if (!(await this.consent.ensure()) || generation !== this.generation) return;
+
     this.currentTripId = tripId;
 
     if (Capacitor.isNativePlatform()) {
-      this.watcherId = await BackgroundGeolocation.addWatcher(
+      const id = await locationWatchers.add('background', () => BackgroundGeolocation.addWatcher(
         {
           backgroundTitle: 'DreamCabs is sharing your location',
           backgroundMessage: 'Your location is being shared with the rider during this trip.',
@@ -65,16 +75,21 @@ export class BackgroundLocationService {
             console.warn('BackgroundLocation error', error);
             return;
           }
-          if (!location) return;
+          if (!location || generation !== this.generation || !this.auth.getToken()) return;
           this.postLocation(location);
         }
-      );
+      ), id => BackgroundGeolocation.removeWatcher({ id }));
+      if (generation !== this.generation || !this.auth.getToken()) {
+        await locationWatchers.remove('background', id);
+        return;
+      }
+      this.watcherId = id;
     } else {
       // Web fallback: foreground-only via GeolocationService (honours dev override).
       const id = await this.geo.watchPosition(
         { enableHighAccuracy: true, maximumAge: 4000, timeout: 8000 },
         (fix, err) => {
-          if (err || !fix) return;
+          if (err || !fix || generation !== this.generation || !this.auth.getToken()) return;
           this.postLocation({
             latitude: fix.lat,
             longitude: fix.lng,
@@ -85,17 +100,19 @@ export class BackgroundLocationService {
           });
         }
       );
+      if (generation !== this.generation || !this.auth.getToken()) {
+        await this.geo.clearWatch(id);
+        return;
+      }
       this.webIntervalHandle = id;
     }
   }
 
   async stop(): Promise<void> {
+    ++this.generation;
+    this.currentTripId = null;
     if (this.watcherId) {
-      try {
-        await BackgroundGeolocation.removeWatcher({ id: this.watcherId });
-      } catch {
-        /* ignore */
-      }
+      await locationWatchers.remove('background', this.watcherId);
       this.watcherId = null;
     }
     if (this.webIntervalHandle) {
@@ -107,7 +124,7 @@ export class BackgroundLocationService {
   }
 
   private postLocation(loc: Location): void {
-    if (!this.currentTripId) return;
+    if (!this.currentTripId || !this.auth.getToken()) return;
     const now = Date.now();
     if (now - this.lastSentAt < this.minIntervalMs) return;
 
@@ -128,7 +145,7 @@ export class BackgroundLocationService {
         error: (err: any) => {
           // 409 means the trip is no longer in an active driver state — customer
           // cancelled, trip completed, or the driver lost it. Stop streaming.
-          if (err?.status === 409) {
+          if ([401, 403, 409].includes(err?.status)) {
             void this.stop();
             return;
           }

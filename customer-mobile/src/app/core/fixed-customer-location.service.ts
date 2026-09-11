@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { AuthService } from './auth.service';
 import { ApiService } from './api.service';
 import { GeoFix, GeolocationService } from './geolocation.service';
 
@@ -13,33 +13,16 @@ type Location = {
   time?: number;
 };
 
-type WatcherOptions = {
-  backgroundMessage?: string;
-  backgroundTitle?: string;
-  requestPermissions?: boolean;
-  stale?: boolean;
-  distanceFilter?: number;
-};
-
 export type FixedLocationState = {
   streaming: boolean;
   degraded: boolean;
   message: string | null;
 };
 
-type BackgroundGeolocationPlugin = {
-  addWatcher(
-    options: WatcherOptions,
-    callback: (location: Location | null, error: any) => void,
-  ): Promise<string>;
-  removeWatcher(options: { id: string }): Promise<void>;
-};
-
-const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
 @Injectable({ providedIn: 'root' })
 export class FixedCustomerLocationService {
-  private watcherId: string | null = null;
+  private generation = 0;
   private webWatchId: string | null = null;
   private lastSentAt = 0;
   private startedAt = 0;
@@ -48,10 +31,12 @@ export class FixedCustomerLocationService {
   private readonly stateSubject = new BehaviorSubject<FixedLocationState>({ streaming: false, degraded: false, message: null });
   readonly state$ = this.stateSubject.asObservable();
 
-  constructor(private api: ApiService, private geo: GeolocationService) {}
+  constructor(private api: ApiService, private geo: GeolocationService, private auth: AuthService) {
+    auth.registerSessionCleanup(() => this.stop());
+  }
 
   isStreaming(): boolean {
-    return this.watcherId !== null || this.webWatchId !== null;
+    return this.webWatchId !== null;
   }
 
   async start(): Promise<void> {
@@ -59,45 +44,11 @@ export class FixedCustomerLocationService {
     this.startedAt = Date.now();
     this.publishState(false, null);
 
-    if (Capacitor.isNativePlatform()) {
-      try {
-        this.watcherId = await BackgroundGeolocation.addWatcher(
-          {
-            backgroundTitle: 'DreamCabs is checking pickup location',
-            backgroundMessage: 'Your location helps confirm fixed ride pickup status.',
-            requestPermissions: true,
-            stale: false,
-            distanceFilter: 2,
-          },
-          (location, error) => {
-            if (error) {
-              this.publishState(true, 'Background location is not available. Keep the app open near pickup for accurate fixed ride status.');
-              return;
-            }
-            if (!location) return;
-            this.postLocation(location);
-          },
-        );
-        this.publishState(false, null);
-        return;
-      } catch {
-        await this.startForegroundWatch('Background location permission is not available. Keep this screen open near pickup.');
-        return;
-      }
-    }
-
     await this.startForegroundWatch(null);
   }
 
   async stop(): Promise<void> {
-    if (this.watcherId) {
-      try {
-        await BackgroundGeolocation.removeWatcher({ id: this.watcherId });
-      } catch {
-        /* ignore */
-      }
-      this.watcherId = null;
-    }
+    ++this.generation;
     if (this.webWatchId) {
       await this.geo.clearWatch(this.webWatchId);
       this.webWatchId = null;
@@ -108,9 +59,10 @@ export class FixedCustomerLocationService {
   }
 
   private async startForegroundWatch(message: string | null): Promise<void> {
+    const generation = this.generation;
     try {
       await this.geo.requestPermissions();
-      this.webWatchId = await this.geo.watchPosition(
+      const id = await this.geo.watchPosition(
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
         (fix, err) => {
           if (err) {
@@ -120,6 +72,11 @@ export class FixedCustomerLocationService {
           if (fix) this.postFix(fix);
         },
       );
+      if (generation !== this.generation || !this.auth.getToken()) {
+        await this.geo.clearWatch(id);
+        return;
+      }
+      this.webWatchId = id;
       this.publishState(!!message, message);
     } catch {
       this.publishState(true, 'Location permission is denied. Fixed pickup/no-show checks may be less accurate.');
@@ -142,6 +99,7 @@ export class FixedCustomerLocationService {
   }
 
   private postLocation(location: Location): void {
+    if (!this.auth.getToken() || document.visibilityState === 'hidden') return;
     const now = Date.now();
     if (this.startedAt && now - this.startedAt > this.maxSessionMs) {
       void this.stop();

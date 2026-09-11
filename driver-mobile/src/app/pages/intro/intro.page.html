@@ -21,6 +21,9 @@
     <ion-button expand="block" size="large" (click)="grant()" [disabled]="loading">
       {{ loading ? 'Requesting…' : 'Grant Permissions' }}
     </ion-button>
+    <ion-button fill="clear" expand="block" (click)="skip()" [disabled]="loading">
+      Not now
+    </ion-button>
     <p class="muted small">
       You can change or revoke permissions later from your phone settings.
     </p>

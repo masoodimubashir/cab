@@ -12,6 +12,15 @@ class FirebaseAuthService
 {
     private Auth $auth;
 
+    public function deleteIdentity(string $uid): void
+    {
+        try {
+            $this->auth->deleteUser($uid);
+        } catch (\Kreait\Firebase\Exception\Auth\UserNotFound) {
+            // A retry after a partially completed deletion is already satisfied.
+        }
+    }
+
     /** @var array<string, mixed>|null */
     private static ?array $cachedServiceAccount = null;
 
@@ -176,4 +185,3 @@ class FirebaseAuthService
         return ['user' => $user, 'claims' => $claims];
     }
 }
-

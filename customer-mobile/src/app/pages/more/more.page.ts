@@ -35,6 +35,25 @@ export class CustomerMorePage {
   goEmergencyContacts(): void { this.router.navigateByUrl('/customer-tabs/emergency-contacts'); }
   goCoupons(): void { this.router.navigateByUrl('/customer-tabs/coupons'); }
   goRefunds(): void { this.router.navigateByUrl('/customer-tabs/refunds'); }
+  goSupport(): void { this.router.navigateByUrl('/customer-tabs/support'); }
+  goTerms(): void { this.router.navigateByUrl('/customer-tabs/terms'); }
+  goPrivacy(): void { this.router.navigateByUrl('/customer-tabs/privacy'); }
+
+  async confirmDeleteAccount(): Promise<void> {
+    const alert = await this.alertCtrl.create({
+      header: 'Delete account',
+      message: 'You are about to delete your DreamCabs account and associated personal data. This cannot be undone.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Continue',
+          role: 'destructive',
+          handler: () => this.router.navigateByUrl('/delete-account'),
+        },
+      ],
+    });
+    await alert.present();
+  }
 
   async signOut(): Promise<void> {
     const alert = await this.alertCtrl.create({
@@ -55,8 +74,8 @@ export class CustomerMorePage {
     });
   }
 
-  private finishSignOut(): void {
-    this.auth.logout();
+  private async finishSignOut(): Promise<void> {
+    await this.auth.logout();
     this.router.navigateByUrl('/auth/login', { replaceUrl: true });
   }
 }

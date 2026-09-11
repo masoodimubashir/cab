@@ -1,3 +1,4 @@
+import { dateOfBirthError, latestAdultBirthDate } from '../../core/date-of-birth';
 import { Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ViewWillEnter, ViewDidEnter, ViewWillLeave, NavController } from '@ionic/angular';
@@ -168,14 +169,9 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   // device + app metadata without asking the user.
   private deviceInfo: { app_version?: string; os_version?: string; device_type?: string; device_id?: string } = {};
 
-  // Yesterday in YYYY-MM-DD — feeds `[max]` on the DOB input. Server validator
-  // is `before:today` (strict), so picking today would 422. Yesterday is the
-  // latest the server will accept for a DOB.
-  readonly maxDob = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  })();
+  get maxDob(): string { return latestAdultBirthDate(); }
+  dobError: string | null = null;
+  validateDob(): void { this.dobError = dateOfBirthError(this.infoDob); }
 
   resendSecondsLeft = 0;
   private resendInterval: ReturnType<typeof setInterval> | null = null;
@@ -481,9 +477,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     if (this.step === 'info') {
       return (
         !this.infoName.trim() ||
-        !this.infoEmail.trim() ||
-        !this.infoDob ||
-        !this.infoAddress
+        !this.infoDob
       );
     }
     if (this.step === 'success') {
@@ -563,12 +557,12 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     if (!this.assertFirebaseReady()) {
       return;
     }
-    this.step = 'perms';
+    void this.allowPermsAndSendOtp();
   }
 
   // Permissions step: Deny sends the user back to phone entry.
   denyPerms(): void {
-    this.step = 'phone';
+    void this.allowPermsAndSendOtp();
   }
 
   // Permissions step: Allow grants what we can request, then sends the OTP.
@@ -577,8 +571,6 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
     this.error = null;
     this.loading = true;
     try {
-      await this.requestAllPermissions();
-      localStorage.setItem('dreamcabs_permissions_granted', '1');
       await this.sendOtp();
     } finally {
       this.loading = false;
@@ -588,34 +580,6 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   // Sequentially prompts for every permission surfaced on the disclosure cards.
   // Native-only plugins are wrapped so they silently no-op on the web build, and
   // each request is isolated so one denial never blocks the next or the OTP.
-  private async requestAllPermissions(): Promise<void> {
-    // Location — "Find rides near you".
-    // We hit the Geolocation plugin DIRECTLY (not GeolocationService) on purpose:
-    // that service returns a mocked "granted" in non-production builds, which
-    // would suppress the real OS prompt during onboarding. requestPermissions()
-    // throws when the device's location toggle is OFF (it can't prompt then), so
-    // we surface that as a warning rather than swallowing it silently.
-    try {
-      await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
-    } catch (e) {
-      console.warn('[perms] location request skipped (is the device location/GPS toggle on?)', e);
-    }
-
-    // Phone / Notifications — "Verify secure profile" (Android 13+ shows a prompt;
-    // older Android auto-grants POST_NOTIFICATIONS with no dialog).
-    try { await FirebaseMessaging.requestPermissions(); } catch (e) { console.warn('[perms] notifications', e); }
-
-    // Contacts — "Share trusted SOS".
-    try { await Contacts.requestPermissions(); } catch (e) { console.warn('[perms] contacts', e); }
-
-    // Device — "Keep account safe" (no OS prompt; capture identifier for security).
-    try { this.deviceInfo.device_id = (await Device.getId()).identifier?.slice(0, 128); } catch (e) { console.warn('[perms] device', e); }
-
-    // Storage / Camera — "Upload profile photo" (photo picking itself uses the
-    // permission-less Android Photo Picker; this grants the camera capture path).
-    try { await Camera.requestPermissions({ permissions: ['camera', 'photos'] }); } catch (e) { console.warn('[perms] camera', e); }
-  }
-
   private async sendOtp(): Promise<void> {
     const normalized = normalizePhoneToE164(this.phone, this.country.code);
     if (!normalized) return;
@@ -794,6 +758,8 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       if (this.userNeedsProfile(user)) {
         this.infoName = user.name && user.name !== 'User' ? user.name : '';
         this.infoEmail = this.isSyntheticEmail(user.email) ? '' : user.email ?? '';
+        this.infoDob = user.dob ?? '';
+        this.dobError = this.infoDob ? dateOfBirthError(this.infoDob) : null;
         this.step = 'info';
         this.stopResendTimer();
         // Warm the Places API loader in the background — by the time the user
@@ -831,22 +797,17 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
       this.error = 'Please enter your name.';
       return;
     }
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       this.error = 'Please enter a valid email address.';
       return;
     }
-    if (!this.infoDob) {
-      this.error = 'Please select your date of birth.';
-      return;
-    }
-    if (!this.infoAddress) {
-      this.error = 'Please pick your address from the suggestions.';
-      return;
-    }
+    this.validateDob();
+    if (this.dobError) { this.error = this.dobError; return; }
+
 
     const fd = new FormData();
     fd.append('name', name);
-    fd.append('email', email);
+    if (email) fd.append('email', email);
     // Only append non-empty values — Laravel's ConvertEmptyStringsToNull turns
     // '' into null which `nullable` skips, but belt-and-braces (and avoids
     // accidentally tripping `before:today` on a malformed string).
@@ -867,7 +828,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
             this.auth.updateUser(res.user);
             resolve();
           },
-          error: (err) => reject(new Error(err?.error?.message || 'Could not save profile.')),
+          error: (err) => reject(new Error(err?.error?.errors?.dob?.[0] || err?.error?.message || 'Could not save profile.')),
         });
       });
       this.step = 'success';
@@ -937,7 +898,7 @@ export class LoginPage implements ViewWillEnter, ViewDidEnter, ViewWillLeave, On
   }
 
   private userNeedsProfile(user: AuthUser): boolean {
-    return this.isSyntheticEmail(user.email) || !user.name || user.name === 'User';
+    return !user.name || user.name === 'User' || dateOfBirthError(user.dob ?? '') !== null;
   }
 
   private assertFirebaseReady(): boolean {

@@ -9,7 +9,7 @@ import { AuthService } from '../../core/auth.service';
   standalone: false,
 })
 export class TermsPage {
-  lastUpdated = 'March 2025 (v2.4 - DPDP & Aggregator Compliant)';
+  lastUpdated = '8 September 2026';
 
   constructor(
     private navCtrl: NavController,

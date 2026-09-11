@@ -9,7 +9,7 @@ import { AuthService } from '../../core/auth.service';
   standalone: false,
 })
 export class PrivacyPage {
-  lastUpdated = 'March 2025 (DPDP Act 2023 & Google/Apple Compliant)';
+  lastUpdated = '8 September 2026';
 
   constructor(
     private navCtrl: NavController,

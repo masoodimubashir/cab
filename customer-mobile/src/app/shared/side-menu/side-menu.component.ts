@@ -70,8 +70,8 @@ export class SideMenuComponent {
     });
   }
 
-  private finishSignOut(): void {
-    this.auth.logout();
+  private async finishSignOut(): Promise<void> {
+    await this.auth.logout();
     void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'back' });
   }
 

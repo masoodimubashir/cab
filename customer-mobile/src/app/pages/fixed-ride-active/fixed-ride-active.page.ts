@@ -144,10 +144,11 @@ export class FixedRideActivePage implements OnDestroy {
     this.backButtonSub = undefined;
     this.stopRealtimeTracking();
     void this.stopUserLocationWatch();
-    if (!this.booking || !this.isActiveBooking(this.booking)) void this.fixedLocation.stop();
+    void this.fixedLocation.stop();
   }
 
   ngOnDestroy(): void {
+    void this.fixedLocation.stop();
     this.clearMap();
     this.stopRealtimeTracking();
     void this.stopUserLocationWatch();

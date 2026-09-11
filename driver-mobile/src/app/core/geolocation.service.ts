@@ -1,3 +1,4 @@
+import { locationWatchers } from './location-watcher-registry';
 import { Injectable } from '@angular/core';
 import { Geolocation, PermissionStatus } from '@capacitor/geolocation';
 
@@ -55,7 +56,7 @@ export class GeolocationService {
   }
 
   async watchPosition(options: WatchOptions, callback: WatchCallback): Promise<string> {
-    return Geolocation.watchPosition(
+    return locationWatchers.add('foreground', () => Geolocation.watchPosition(
       {
         enableHighAccuracy: options.enableHighAccuracy ?? true,
         timeout: options.timeout ?? 30000,
@@ -80,14 +81,10 @@ export class GeolocationService {
           );
         }
       },
-    );
+    ), id => Geolocation.clearWatch({ id }));
   }
 
   async clearWatch(id: string): Promise<void> {
-    try {
-      await Geolocation.clearWatch({ id });
-    } catch {
-      /* ignore */
-    }
+    await locationWatchers.remove('foreground', id);
   }
 }

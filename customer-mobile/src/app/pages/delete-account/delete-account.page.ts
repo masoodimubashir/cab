@@ -29,7 +29,7 @@ export class DeleteAccountPage {
     const alert = await this.alertCtrl.create({
       header: 'Delete account?',
       message:
-        'This action is permanent. Your trips, profile and saved data tied to this account will be removed.',
+        'This permanently deletes your DreamCabs account, including BOTH customer and driver profiles if they share this account, uploaded verification documents and account access on all devices. Independent accounting records may be retained. Deletion does not settle outstanding payments or request a ride refund. Continue?',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
@@ -47,9 +47,9 @@ export class DeleteAccountPage {
   private async performDelete(): Promise<void> {
     if (this.loading) return;
     this.loading = true;
-    this.api.delete('/me/account', { role: 'customer' }).subscribe({
+    this.api.delete('/me/account', { role: 'customer', scope: 'all' }).subscribe({
       next: async () => {
-        this.auth.logout();
+        await this.auth.logout();
         const t = await this.toastCtrl.create({
           message: 'Your account has been deleted.',
           duration: 2500,

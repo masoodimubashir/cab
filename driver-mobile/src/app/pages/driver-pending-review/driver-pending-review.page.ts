@@ -70,8 +70,8 @@ export class DriverPendingReviewPage implements OnInit, OnDestroy {
     });
   }
 
-  logout(): void {
-    this.auth.logout();
+  async logout(): Promise<void> {
+    await this.auth.logout();
     ApprovedDriverGuard.clearCache();
     void this.navCtrl.navigateRoot('/welcome', { animationDirection: 'back' });
   }

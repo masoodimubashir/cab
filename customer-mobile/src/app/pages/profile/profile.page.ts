@@ -1,3 +1,4 @@
+import { dateOfBirthError, latestAdultBirthDate } from '../../core/date-of-birth';
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
@@ -19,7 +20,7 @@ export class CustomerProfilePage implements OnInit {
   name = '';
   email = '';
   phone = '';
-  /** Captured once at signup, surfaced read-only here. */
+  /** Date of birth can be corrected here and is validated by the server. */
   dob = '';
   address = '';
 
@@ -44,12 +45,9 @@ export class CustomerProfilePage implements OnInit {
     }
   }
 
-  get dobDisplay(): string {
-    if (!this.dob) return '';
-    const d = new Date(this.dob);
-    if (Number.isNaN(d.getTime())) return this.dob;
-    return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
-  }
+  get maxDob(): string { return latestAdultBirthDate(); }
+  dobError: string | null = null;
+  validateDob(): void { this.dobError = dateOfBirthError(this.dob); }
 
   onPhotoChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
@@ -66,7 +64,11 @@ export class CustomerProfilePage implements OnInit {
     const name = this.name.trim();
     if (!name) { this.error = 'Please enter your name.'; return; }
 
+    this.validateDob();
+    if (this.dobError) return;
+
     const fd = new FormData();
+    fd.append('dob', this.dob);
     fd.append('name', name);
     if (this.email.trim()) fd.append('email', this.email.trim());
     if (this.photoFile) fd.append('photo', this.photoFile);
@@ -79,7 +81,8 @@ export class CustomerProfilePage implements OnInit {
         this.router.navigateByUrl('/customer-tabs/go');
       },
       error: (err) => {
-        this.error = err?.error?.message || 'Could not save profile.';
+        this.dobError = err?.error?.errors?.dob?.[0] ?? null;
+        this.error = this.dobError ? null : err?.error?.message || 'Could not save profile.';
         this.busy = false;
       },
     });

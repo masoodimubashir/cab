@@ -59,9 +59,51 @@
       </ion-label>
     </ion-item>
 
-    <ion-item button detail="false" (click)="signOut()" lines="full">
+    <ion-list-header>
+      <ion-label>Help &amp; Support</ion-label>
+    </ion-list-header>
+    <ion-item button detail="true" (click)="goSupport()">
+      <ion-icon name="help-buoy-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>Help &amp; Support</h2>
+        <p>Contact us, FAQs &amp; report an issue</p>
+      </ion-label>
+    </ion-item>
+
+    <ion-list-header>
+      <ion-label>Legal &amp; Policies</ion-label>
+    </ion-list-header>
+    <ion-item button detail="true" (click)="goTerms()">
+      <ion-icon name="document-text-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>Terms &amp; Conditions</h2>
+        <p>User agreement, booking &amp; cancellation rules</p>
+      </ion-label>
+    </ion-item>
+    <ion-item button detail="true" (click)="goPrivacy()">
+      <ion-icon name="shield-checkmark-outline" slot="start" aria-hidden="true"></ion-icon>
+      <ion-label>
+        <h2>Privacy Policy</h2>
+        <p>Data protection, GPS &amp; device permissions</p>
+      </ion-label>
+    </ion-item>
+
+    <ion-list-header>
+      <ion-label>Account Actions</ion-label>
+    </ion-list-header>
+    <ion-item button detail="false" (click)="signOut()">
       <ion-icon name="log-out-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
-      <ion-label color="danger">Sign out</ion-label>
+      <ion-label color="danger">
+        <h2>Sign out</h2>
+        <p>Sign out of this device</p>
+      </ion-label>
+    </ion-item>
+    <ion-item button detail="false" (click)="confirmDeleteAccount()" lines="full">
+      <ion-icon name="trash-outline" slot="start" color="danger" aria-hidden="true"></ion-icon>
+      <ion-label color="danger">
+        <h2>Delete account</h2>
+        <p>Permanently remove your account and data</p>
+      </ion-label>
     </ion-item>
   </ion-list>
 </ion-content>
