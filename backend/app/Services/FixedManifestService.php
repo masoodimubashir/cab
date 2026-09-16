@@ -64,7 +64,7 @@ class FixedManifestService
                 'customer_lng' => $reservation->customer?->current_lng !== null ? (float) $reservation->customer->current_lng : null,
                 'customer_location_updated_at' => optional($reservation->customer?->current_location_updated_at)->toIso8601String(),
                 'seats' => (int) $reservation->seats,
-                'seat_labels' => $labelsByReservation->get($reservation->id, []),
+                'seat_labels' => !empty($reservation->seat_labels) ? (array) $reservation->seat_labels : $labelsByReservation->get($reservation->id, []),
                 'status' => $reservation->status,
                 'fixed_live_status' => $this->bookings->fixedLiveStatus($reservation),
                 'no_show_unlock_at' => optional(FixedNoShowPolicy::unlockAt($reservation, $departure, $waitMinutes))->toIso8601String(),
