@@ -1,9 +1,74 @@
 # Android release handoff
 
-Last checked: 9 September 2026, Asia/Calcutta. Saved at the user's request for
+## 13 September 2026 DREAMCABS approval notification
+
+- User-provided Console screenshot shows a DREAMCABS notification dated
+  11 September: the recent app update has been approved and is ready to publish.
+  This establishes reported approval, not publication. The version/track is not
+  visible, and Publishing overview was not inspected. No publication performed.
+- The same screenshot shows an account-wide registration reminder dated
+  9 September; it does not contradict the explicit Registered statuses shown
+  for both packages in the preceding screenshot.
+
+## 13 September 2026 package registration confirmed by screenshot
+
+- User-provided Play Console screenshot shows DREAMCABS
+  (`product.customer.dreamcab`) and CABBIES (`product.driver.dreamcab`) both
+  Registered, each with 1 key and a last-updated date of 5 March 2026.
+- Package registration for both Play apps is confirmed by user-provided Console
+  evidence, not direct account inspection. No registration change was performed.
+- The screenshot does not show certificate fingerprints or separately establish
+  identity-verification status. Any additional signing keys used to distribute
+  APKs outside Play remain unconfirmed; do not infer these are registered.
+- This supersedes the package-registration uncertainty in the checklist below.
+
+## 11 September 2026 DREAMCABS foreground-service cleanup
+
+- At the user's request, removed the unused `@capacitor-community/background-geolocation` dependency from DREAMCABS and regenerated Capacitor Android plugin wiring.
+- The customer app's location service pauses when the app is hidden; it does not implement background foreground-service tracking.
+- Local release build succeeded with version 5.7.0 / code 570 after Play reported code 569 already used. The merged release manifest contains ordinary location permissions but no `FOREGROUND_SERVICE_LOCATION`, `FOREGROUND_SERVICE_DATA_SYNC`, or foreground-service type. Signed AAB copied to `release-apks/dreamcabs-5.7.0-570-release.aab`.
+- AAB SHA-256: `3CFABF26EC117CDA58E32300B6E3C8B86F14C1611BB37513569840F9BC560002`.
+- `jarsigner -verify` returned `jar verified`. Play Console upload and policy re-evaluation remain external and unverified.
+
+Last checked: 11 September 2026, Asia/Calcutta. Saved at the user's request for
 future Codex sessions in this workspace. This is project-local memory.
 
 ## Apps and keys
+
+### 11 September 2026 signed AABs prepared
+
+- User explicitly requested preparation of both signed AABs. Both
+  `npm run aab:release` commands succeeded, including production Angular build,
+  Capacitor sync, Gradle release lint and signed bundle packaging. Running with
+  approved access outside the sandbox resolved the earlier sync failure.
+- DREAMCABS: `customer-mobile/android/app/build/outputs/bundle/release/app-release.aab`,
+  version 5.6.8 / code 568, 10,496,940 bytes. Copied to
+  `release-apks/dreamcabs-5.6.8-568-release.aab`.
+  File SHA-256: `B427B1752E5981E47CC05218DFE7E4B76A12CD698CC5A1B5C258B9B6B5D88DFE`.
+- CABBIES: `driver-mobile/android/app/build/outputs/bundle/release/app-release.aab`,
+  version 5.1.3 / code 513, 10,926,682 bytes. Copied to
+  `release-apks/cabbies-5.1.3-513-release.aab`.
+  File SHA-256: `158FBAC1E6EBBA4FD6B9E37754BC240BFFE9F83F566F0F56DA2A0A40D94C40D9`.
+- Both jarsigner checks returned `jar verified`. Java JarFile verification read
+  every payload entry (2,559 customer; 2,546 driver), verified signatures, and
+  confirmed every payload uses the expected upload certificate matched earlier
+  against user-provided Play Console fingerprints. jarsigner also reported
+  self-signed certificate/no timestamp and archive ordering/JarInputStream warnings;
+  no archive was modified to suppress warnings. Play acceptance remains untested.
+- Generated bundle-source manifests have expected package IDs and target API 36.
+  Both include foreground location/service, camera, contacts and notification
+  permissions; neither declares broad media/storage or ACCESS_BACKGROUND_LOCATION.
+  Both still permit cleartext traffic, as previously deferred. Firebase web config
+  reconciliation remains deferred. No new functional/device test was performed.
+- Both production environment files select `https://dreamcabs.in/api`.
+  Razorpay keys are supplied by the backend, not baked into these AABs.
+- User supplied VPS terminal output showing effective Laravel Razorpay mode TEST
+  and Secret present after editing the server environment and refresh guidance.
+  This is user-provided server configuration evidence, not an independently
+  verified server-originated payment or proof the server pair matches local keys.
+- No app source change, backend deployment, Play upload or publication was performed
+  during bundle preparation. These results supersede earlier pending local signing
+  and AAB-build items below. Remaining policy/Console checks are still separate.
 
 ### 11 September 2026 payment mode decision
 
@@ -69,8 +134,8 @@ future Codex sessions in this workspace. This is project-local memory.
 
 | App | Project | Package | Version code / name | Upload keystore |
 | --- | --- | --- | --- | --- |
-| DREAMCABS | customer-mobile | product.customer.dreamcab | 567 / 5.6.7 | C:/Users/masud/DreamcabsSigning/dreamcabs-upload.jks |
-| CABBIES | driver-mobile | product.driver.dreamcab | 512 / 5.1.2 | C:/Users/masud/CabbiesSigning/cabbies-upload.jks |
+| DREAMCABS | customer-mobile | product.customer.dreamcab | 568 / 5.6.8 | C:/Users/masud/DreamcabsSigning/dreamcabs-upload.jks |
+| CABBIES | driver-mobile | product.driver.dreamcab | 513 / 5.1.3 | C:/Users/masud/CabbiesSigning/cabbies-upload.jks |
 
 Both keystore files exist. Both apps apply `scripts/android-release-signing.gradle`
 and default to alias `upload`. File existence does not prove passwords, alias, or
@@ -122,32 +187,29 @@ activation, release packaging and deployment configuration remain separate items
 
 ## Confirmed local work remaining
 
-- [ ] Enter signing passwords: both ignored `android/keystore.properties` files
-  were created from their respective examples at the user's request. Alias is
-  upload, default keystore paths are already wired, and passwords were left blank
-  for the user to fill locally. Set storePassword; leave keyPassword blank if it
-  is the same password, or enter the separate key password if different.
-  Git ignore checks passed for both files. Credentials/build signing have not yet
-  been validated. Do not put secrets in chat or this document.
+- [x] Enter signing passwords and validate local signing: completed on 11 September 2026.
+  Both keystores unlocked, signed and verified test payloads, and matched user-provided
+  Console fingerprints.
 - [ ] Reconcile Firebase web configurations: both mobile environment files still
   reference `dreamcabs-1cd27`; both messaging service workers reference
   `dreamcabs-c851f`. Obtain the real new-project Web app configuration and check
   the active native/web authentication and messaging paths rather than merely
   changing project ID strings.
-- [ ] Build each signed production AAB using `npm run aab:release` inside the
-  corresponding mobile project. No AAB was found in either app's build outputs.
-  Existing release APKs are dated 31 August 2026 and predate the current changes.
+- [x] Build each signed production AAB using `npm run aab:release` inside the
+  corresponding mobile project: completed on 11 September 2026.
+  DREAMCABS v5.6.7 (567) and CABBIES v5.1.2 (512) signed bundles generated.
 
 ## External status / validation still unconfirmed
 
 These items might already have been completed outside this session. Check evidence
 before asking the user to repeat work or describing them as definitely incomplete.
 
-- [ ] Upload-key activation: NOT confirmed. User corrected the misunderstanding
-  and supplied a pending-reset notice for one unspecified app. Check both listings.
-- [ ] Validate local signing and matching upload-certificate fingerprints for both listings.
+- [x] Upload-key certificate match: locally computed SHA-256 matches user-provided
+  Console fingerprints for both listings.
 - [ ] Secure backups of both keystores and passwords.
-- [ ] Android developer identity verification and package registration for both apps.
+- [x] Package registration for both Play apps: user-provided screenshot on
+  13 September shows both Registered with one key each (see dated entry above).
+- [ ] Android developer identity verification status separately unconfirmed.
   Google guidance checked on 9 September states a 30 September 2026 deadline for
   Play packages. Register additional actual distribution signing keys if APKs
   are distributed outside Play under those keys.
