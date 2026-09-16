@@ -162,6 +162,16 @@ class SeatMapService
                     'seat_reservation_id' => $reservation->id,
                     'updated_at' => now(),
                 ]);
+
+            $labels = DepartureSeat::query()
+                ->whereIn('id', $seatIds)
+                ->orderBy('label')
+                ->pluck('label')
+                ->all();
+
+            if (!empty($labels)) {
+                $reservation->update(['seat_labels' => $labels]);
+            }
         });
     }
 
@@ -267,15 +277,22 @@ class SeatMapService
      */
     public function freeSeatsForReservation(SeatReservation $reservation): void
     {
-        $seatIds = DepartureSeat::query()
+        $seats = DepartureSeat::query()
             ->where('seat_reservation_id', $reservation->id)
-            ->pluck('id');
+            ->get(['id', 'label']);
 
-        if ($seatIds->isEmpty()) {
+        if ($seats->isEmpty()) {
             return;
         }
 
-        DB::transaction(function () use ($seatIds) {
+        $seatIds = $seats->pluck('id');
+        $labels = $seats->pluck('label')->filter()->values()->all();
+
+        DB::transaction(function () use ($reservation, $seatIds, $labels) {
+            if (!empty($labels) && empty($reservation->seat_labels)) {
+                $reservation->update(['seat_labels' => $labels]);
+            }
+
             FixedSeatHoldSeat::query()->whereIn('departure_seat_id', $seatIds)->delete();
             DepartureSeat::query()
                 ->whereIn('id', $seatIds)

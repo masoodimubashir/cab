@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DepartureSeat;
 use App\Models\FixedSeatHold;
 use App\Models\DriverLocation;
 use App\Models\Driver;
@@ -139,6 +140,13 @@ class FixedBookingService
             'depart_at' => optional($reservation->routeDeparture?->depart_at)->toIso8601String(),
             'announced_depart_at' => optional($reservation->routeDeparture?->announced_depart_at)->toIso8601String(),
             'seats' => (int) $reservation->seats,
+            'seat_labels' => !empty($reservation->seat_labels)
+                ? (array) $reservation->seat_labels
+                : DepartureSeat::query()
+                    ->where('seat_reservation_id', $reservation->id)
+                    ->orderBy('label')
+                    ->pluck('label')
+                    ->all(),
             'status' => $reservation->status,
             // The boarding code (cached by FixedBoardingOtpService, 10-min TTL)
             // is shown on the customer's own booking screen — this is the
