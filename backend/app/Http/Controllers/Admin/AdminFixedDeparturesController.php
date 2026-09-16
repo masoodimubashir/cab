@@ -11,6 +11,7 @@ use App\Services\FixedAvailabilityService;
 use App\Services\FixedBookingService;
 use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
+use App\Services\FixedManifestService;
 use App\Services\FixedRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,6 +24,7 @@ class AdminFixedDeparturesController
         private readonly FixedBookingService $bookings,
         private readonly FixedBookingEventService $events,
         private readonly FixedRefundService $refunds,
+        private readonly FixedManifestService $manifestService,
     ) {}
 
     public function index(Request $request, City $city)
@@ -205,6 +207,23 @@ class AdminFixedDeparturesController
         return response()->json([
             'departure' => $this->departures->shapeAdminDeparture($departure),
             'message' => 'Bookings closed for this vehicle. Existing passengers remain active.',
+        ]);
+    }
+
+    public function manifest(Request $request, City $city, RouteDeparture $departure)
+    {
+        $this->availability->assertFixedDeparture($departure);
+        if ($departure->route?->city_id !== $city->id) {
+            abort(404);
+        }
+
+        $manifest = $this->manifestService->manifest($departure);
+
+        return response()->json([
+            'departure' => $this->departures->shapeAdminDeparture($departure),
+            'passengers' => $manifest['passengers'] ?? [],
+            'stops' => $manifest['stops'] ?? [],
+            'trip_id' => $departure->trip_id,
         ]);
     }
 

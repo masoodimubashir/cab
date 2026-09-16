@@ -429,6 +429,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin/trips', [AdminTripsController::class, 'index'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}', [AdminTripsController::class, 'show'])->middleware('permission:rides');
     Route::get('/admin/trips/{trip}/latest-location', [AdminTripsController::class, 'latestLocation'])->middleware('permission:rides|live_operations');
+    Route::post('/admin/trips/{trip}/start', [AdminTripsController::class, 'start'])->middleware('permission:rides');
+    Route::post('/admin/trips/{trip}/cancel', [AdminTripsController::class, 'cancel'])->middleware('permission:rides');
+    Route::post('/admin/trips/{trip}/change-drop', [AdminTripsController::class, 'changeDrop'])->middleware('permission:rides');
+    Route::post('/admin/trips/{trip}/passengers/{passenger}/change-drop', [AdminTripsController::class, 'changePassengerDrop'])->middleware('permission:rides');
 
     Route::middleware('manager.city')->group(function () {
         // ── Promotions: coupons ─────────────────────────────────────────
@@ -616,6 +620,8 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/support-action', [AdminFixedDeparturesController::class, 'storeSupportAction']);
+    Route::get('/admin/cities/{city}/fixed-departures/{departure}/manifest', [AdminFixedDeparturesController::class, 'manifest']);
+    Route::get('/admin/cities/{city}/departures/{departure}/manifest', [AdminFixedDeparturesController::class, 'manifest']);
     Route::post('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-departures/{departure}', [AdminFixedDeparturesController::class, 'update']);
     Route::post('/admin/cities/{city}/fixed-departures/{departure}/close-bookings', [AdminFixedDeparturesController::class, 'closeBookings']);
