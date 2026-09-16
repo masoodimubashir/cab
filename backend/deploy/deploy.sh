@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # ===========================================================================
-# DreamCabs High-Performance Production Deploy
-# Detects changed files to deploy in seconds:
-#   - Skips Angular build if frontend is unchanged (~1m saved)
-#   - Skips npm install if package.json is unchanged (~30s saved)
-#   - Skips image rebuild if Dockerfile/dependencies are unchanged
-#   - Runs migrations only when new migration files exist
-#   - Refreshes Laravel caches only when config/routes/code change
-# Pass --force or --all to force a full rebuild of everything.
+# DreamCabs High-Performance Production Deploy Script
+#
+# Automatically handles:
+#   1. Frontend Angular Admin build (installs deps & compiles production bundle)
+#   2. Docker stack rebuild & restart (App, Reverb, Queue, Nginx)
+#   3. Automatic database migrations
+#   4. Cache warming (route:clear, config:clear, route:cache, config:cache)
+#   5. Queue & WebSocket worker reload
+#
+# Usage:
+#   ./deploy.sh          # Intelligent fast deploy (rebuilds changed services)
+#   ./deploy.sh --force  # Force rebuild of frontend, Docker images, and caches
 # ===========================================================================
 set -euo pipefail
 
@@ -23,18 +27,26 @@ else
 fi
 
 echo "==> Checking prerequisites..."
-command -v docker >/dev/null || { echo "Docker is not installed."; exit 1; }
-docker compose version >/dev/null 2>&1 || { echo "Docker Compose v2 is required."; exit 1; }
+USE_DOCKER=true
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+  echo "==> [NOTICE] Docker or Docker Compose v2 not found. Running in bare-metal mode."
+  USE_DOCKER=false
+fi
 
 cd "$ROOT_DIR/backend"
 if [ ! -f .env ]; then
-  echo "==> No .env found — creating from .env.production.example."
-  cp .env.production.example .env
-  echo "!!! Edit .env now (passwords, APP_URL, Reverb secret) then re-run this script."
-  exit 1
+  if [ -f .env.production.example ]; then
+    echo "==> No .env found — creating from .env.production.example."
+    cp .env.production.example .env
+    echo "!!! Edit .env now (passwords, APP_URL, Reverb secret) then re-run this script."
+    exit 1
+  else
+    echo "!!! No .env file found in backend directory. Please create one."
+    exit 1
+  fi
 fi
 
-if [ ! -f deploy/secrets/firebase.json ]; then
+if [ ! -f deploy/secrets/firebase.json ] && [ "$USE_DOCKER" = "true" ]; then
   echo "!!! Missing deploy/secrets/firebase.json (Firebase service-account key)."
   echo "    Push + phone-auth verification will fail until you add it. Continuing anyway…"
 fi
@@ -60,121 +72,136 @@ if [ -z "$PREV_COMMIT" ] && [ "$FORCE_BUILD" = "false" ]; then
   fi
 fi
 
-CURRENT_COMMIT="$(git rev-parse HEAD)"
+CURRENT_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo 'manual')"
 
-# --- 1. FRONTEND CHANGE DETECTION ------------------------------------------
+# --- 1. FRONTEND BUILD -----------------------------------------------------
 FRONTEND_CHANGED=false
 NPM_DEPS_CHANGED=false
 
-if [ "$FORCE_BUILD" = "true" ] || [ ! -d "$ROOT_DIR/frontend/dist/frontend/browser" ] || [ -z "$PREV_COMMIT" ]; then
+if [ "$FORCE_BUILD" = "true" ] || [ ! -d "$ROOT_DIR/frontend/dist/frontend" ] || [ -z "$PREV_COMMIT" ]; then
   FRONTEND_CHANGED=true
   NPM_DEPS_CHANGED=true
-elif git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend" | grep -q .; then
+elif git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend" 2>/dev/null | grep -q .; then
   FRONTEND_CHANGED=true
-  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/package-lock.json" | grep -q .; then
+  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/package-lock.json" 2>/dev/null | grep -q .; then
     NPM_DEPS_CHANGED=true
   fi
 fi
 
 if [ "$FRONTEND_CHANGED" = "true" ]; then
-  echo "==> Changes detected in frontend. Building Angular Admin Frontend..."
+  echo "==> Building Angular Admin Frontend..."
   cd "$ROOT_DIR/frontend"
   if command -v npm >/dev/null 2>&1; then
     if [ "$NPM_DEPS_CHANGED" = "true" ] || [ ! -d node_modules ]; then
-      echo "  -> Updating npm packages..."
+      echo "  -> Installing npm dependencies..."
       npm install --prefer-offline --no-audit
     fi
     echo "  -> Compiling production bundle..."
     npm run build -- --configuration production --base-href /admin/
-  else
-    echo "  -> Building via Node container..."
+  elif [ "$USE_DOCKER" = "true" ]; then
+    echo "  -> Building via Node Docker container..."
     docker run --rm \
       -v "$ROOT_DIR/frontend":/app \
       -v dreamcabs_npm_cache:/root/.npm \
       -w /app \
       node:20-alpine sh -c "if [ ! -d node_modules ] || [ '$NPM_DEPS_CHANGED' = 'true' ]; then npm install --prefer-offline --no-audit; fi && npm run build -- --configuration production --base-href /admin/"
+  else
+    echo "!!! npm not found and Docker not available. Unable to build frontend."
   fi
 else
   echo "==> [SKIP] No frontend changes detected. Angular build skipped."
 fi
 
-# --- 2. BACKEND & DOCKER CHANGE DETECTION ----------------------------------
-BACKEND_CODE_CHANGED=false
-DOCKER_IMAGE_CHANGED=false
-MIGRATIONS_CHANGED=false
-CONFIG_CHANGED=false
-
-if [ "$FORCE_BUILD" = "true" ] || [ -z "$PREV_COMMIT" ]; then
-  BACKEND_CODE_CHANGED=true
-  DOCKER_IMAGE_CHANGED=true
-  MIGRATIONS_CHANGED=true
-  CONFIG_CHANGED=true
-else
-  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend" | grep -q .; then
-    BACKEND_CODE_CHANGED=true
-  fi
-  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/Dockerfile" "$ROOT_DIR/backend/composer.json" "$ROOT_DIR/backend/composer.lock" "$ROOT_DIR/backend/deploy" | grep -q .; then
-    DOCKER_IMAGE_CHANGED=true
-  fi
-  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/database/migrations" | grep -q .; then
-    MIGRATIONS_CHANGED=true
-  fi
-  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/config" "$ROOT_DIR/backend/routes" "$ROOT_DIR/backend/app" "$ROOT_DIR/backend/.env" | grep -q .; then
-    CONFIG_CHANGED=true
-  fi
-fi
-
+# --- 2. BACKEND & DOCKER DEPLOYMENT ----------------------------------------
 cd "$ROOT_DIR/backend"
 
-# Check if containers are currently running
-CONTAINERS_RUNNING=true
-docker compose ps -q app >/dev/null 2>&1 || CONTAINERS_RUNNING=false
-if [ -z "$(docker compose ps -q app 2>/dev/null)" ]; then
-  CONTAINERS_RUNNING=false
-fi
+if [ "$USE_DOCKER" = "true" ]; then
+  BACKEND_CODE_CHANGED=false
+  DOCKER_IMAGE_CHANGED=false
+  MIGRATIONS_CHANGED=false
 
-if [ "$CONTAINERS_RUNNING" = "false" ] || [ "$DOCKER_IMAGE_CHANGED" = "true" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
-  echo "==> Rebuilding and starting Docker stack with fresh code..."
-  docker compose up -d --build
-elif [ "$FRONTEND_CHANGED" = "true" ]; then
-  echo "==> Reloading Nginx with new frontend assets..."
-  docker compose restart nginx
-else
-  echo "==> [SKIP] No Docker or Backend code changes detected."
-fi
+  if [ "$FORCE_BUILD" = "true" ] || [ -z "$PREV_COMMIT" ]; then
+    BACKEND_CODE_CHANGED=true
+    DOCKER_IMAGE_CHANGED=true
+    MIGRATIONS_CHANGED=true
+  else
+    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend" 2>/dev/null | grep -q .; then
+      BACKEND_CODE_CHANGED=true
+    fi
+    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/Dockerfile" "$ROOT_DIR/backend/composer.json" "$ROOT_DIR/backend/composer.lock" "$ROOT_DIR/backend/deploy" 2>/dev/null | grep -q .; then
+      DOCKER_IMAGE_CHANGED=true
+    fi
+    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/database/migrations" 2>/dev/null | grep -q .; then
+      MIGRATIONS_CHANGED=true
+    fi
+  fi
 
-# --- 3. DATABASE MIGRATIONS ------------------------------------------------
-if [ "$MIGRATIONS_CHANGED" = "true" ] || [ "$CONTAINERS_RUNNING" = "false" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
+  # Check if containers are currently running
+  CONTAINERS_RUNNING=true
+  if [ -z "$(docker compose ps -q app 2>/dev/null)" ]; then
+    CONTAINERS_RUNNING=false
+  fi
+
+  if [ "$CONTAINERS_RUNNING" = "false" ] || [ "$DOCKER_IMAGE_CHANGED" = "true" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
+    echo "==> Rebuilding and starting Docker stack with fresh code..."
+    docker compose up -d --build
+  elif [ "$FRONTEND_CHANGED" = "true" ]; then
+    echo "==> Reloading Nginx with new frontend assets..."
+    docker compose restart nginx
+  fi
+
+  # --- 3. DATABASE MIGRATIONS ----------------------------------------------
   echo "==> Checking and running database migrations..."
   docker compose exec -T app php artisan migrate --force --no-interaction || true
-else
-  echo "==> [SKIP] No new migration files. Database is up to date."
-fi
 
-# --- 4. LARAVEL CACHE OPTIMIZATION -----------------------------------------
-if [ "$CONFIG_CHANGED" = "true" ] || [ "$CONTAINERS_RUNNING" = "false" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
+  # --- 4. LARAVEL CACHE REFRESH (ALWAYS RUN TO AVOID STALE ROUTES) ----------
   echo "==> Refreshing route, config, and view caches..."
   docker compose exec -T app php artisan config:clear || true
   docker compose exec -T app php artisan route:clear || true
   docker compose exec -T app php artisan view:clear || true
   docker compose exec -T app php artisan config:cache || true
   docker compose exec -T app php artisan route:cache || true
+
+  # Restart worker processes to pick up updated code & routes
+  echo "==> Restarting queue and websocket workers..."
+  docker compose restart queue reverb || true
+
+  echo "==> Checking container health..."
+  docker compose ps
+
 else
-  echo "==> [SKIP] Config and routes are unchanged. Caches are fresh."
+  # --- BARE-METAL / DIRECT HOST EXECUTION ----------------------------------
+  echo "==> Running Composer autoloader & optimization..."
+  if command -v composer >/dev/null 2>&1; then
+    composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader || true
+  fi
+
+  echo "==> Running database migrations..."
+  php artisan migrate --force --no-interaction || true
+
+  echo "==> Clearing and warming Laravel caches..."
+  php artisan config:clear || true
+  php artisan route:clear || true
+  php artisan view:clear || true
+  php artisan config:cache || true
+  php artisan route:cache || true
+
+  if command -v supervisorctl >/dev/null 2>&1; then
+    echo "==> Restarting supervisor worker queues..."
+    supervisorctl restart all || true
+  fi
 fi
 
 # Record this commit as successfully deployed
-echo "$CURRENT_COMMIT" > "$LAST_COMMIT_FILE"
-
-echo "==> Checking container health..."
-docker compose ps
+if [ "$CURRENT_COMMIT" != "manual" ]; then
+  echo "$CURRENT_COMMIT" > "$LAST_COMMIT_FILE"
+fi
 
 echo ""
 echo "========================================================================="
-echo "✅ DreamCabs is LIVE!"
-echo "👉 Landing Website:    https://$(hostname -I | awk '{print $1}')/ (or https://dreamcabs.in/)"
-echo "👉 Admin Dashboard:    https://$(hostname -I | awk '{print $1}')/admin/ (or https://dreamcabs.in/admin/signin)"
-echo "👉 Backend API:        https://$(hostname -I | awk '{print $1}')/api"
-echo "👉 Reverb WebSockets:  ws://$(hostname -I | awk '{print $1}'):8080"
+echo "✅ DreamCabs is LIVE and updated!"
+echo "👉 Landing Website:    https://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')/ (or https://dreamcabs.in/)"
+echo "👉 Admin Dashboard:    https://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')/admin/ (or https://dreamcabs.in/admin/signin)"
+echo "👉 Backend API:        https://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')/api"
+echo "👉 Reverb WebSockets:  ws://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):8080"
 echo "========================================================================="
-
