@@ -107,7 +107,7 @@ class CatalogController extends Controller
         // car-rental-only catalog rows. Caller can override with ?category=…
         $rows = Document::query()
             ->with('labels')
-            ->where('category', 'driver_document')
+            ->forDrivers()
             ->orderBy('id')
             ->get()
             ->map(fn (Document $d) => [

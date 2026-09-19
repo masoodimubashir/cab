@@ -812,7 +812,11 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
         },
         error: (err) => {
           this.busyApproval = false;
-          this.toast.error(err?.error?.message || 'Approval update failed');
+          const missing: string[] = Array.isArray(err?.error?.missing)
+            ? err.error.missing.filter((item: unknown): item is string => typeof item === 'string')
+            : [];
+          const message = err?.error?.message || 'Approval update failed';
+          this.toast.error(missing.length ? `${message} Missing approvals: ${missing.join(', ')}.` : message);
           this.cdr.markForCheck();
         },
       });

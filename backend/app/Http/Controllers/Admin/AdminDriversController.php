@@ -113,6 +113,7 @@ class AdminDriversController
             // of its required image slots approved before the driver can move
             // to approved.
             $mandatoryDocs = \App\Models\Document::query()
+                ->forDrivers()
                 ->where('required', 'mandatory_register')
                 ->get(['id', 'name', 'no_of_images']);
 
@@ -144,6 +145,7 @@ class AdminDriversController
             // anymore — fresh drivers come through the new flow only.
             $legacyPending = DriverDocument::query()
                 ->where('driver_id', $driver->id)
+                ->whereNull('document_id')
                 ->whereNotNull('document_type')
                 ->where('status', '!=', 'approved')
                 ->pluck('document_type')

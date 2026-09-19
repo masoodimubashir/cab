@@ -871,6 +871,7 @@ class DriversController extends Controller
         // that exist and aren't approved still block — they don't gate
         // approval otherwise.
         $mandatoryDocIds = \App\Models\Document::query()
+            ->forDrivers()
             ->where('required', 'mandatory_register')
             ->pluck('id')
             ->all();
@@ -896,6 +897,7 @@ class DriversController extends Controller
 
         $legacyPending = DriverDocument::query()
             ->where('driver_id', $driver->id)
+            ->whereNull('document_id')
             ->whereNotNull('document_type')
             ->where('status', '!=', 'approved')
             ->pluck('document_type')
@@ -1049,4 +1051,3 @@ class DriversController extends Controller
         return response()->json(['location' => $location]);
     }
 }
-
