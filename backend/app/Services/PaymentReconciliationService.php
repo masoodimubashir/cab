@@ -382,6 +382,12 @@ class PaymentReconciliationService
                 'refund_id' => $refundId,
             ]);
 
+            // A failed in-flight refund becomes a manual refund due. Never undo
+            // a completed refund when a delayed failure event arrives.
+            SeatReservation::query()->whereKey($reservation->id)
+                ->where('refund_status', 'REQUESTED')
+                ->update(['refund_status' => 'APPROVED', 'refunded_at' => null]);
+
             return ['matched' => 'fixed', 'action' => 'refund_failed_logged'];
         }
 

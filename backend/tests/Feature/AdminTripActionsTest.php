@@ -305,4 +305,43 @@ class AdminTripActionsTest extends TestCase
 
         $res->assertStatus(409);
     }
+
+    public function test_admin_can_fetch_fixed_departure_manifest(): void
+    {
+        $this->asAdmin();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Route Manifest Test',
+            'origin_name' => 'Start',
+            'dest_name' => 'End',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 4,
+            'seats_taken' => 0,
+            'status' => 'FORMING',
+            'visible_to_customers' => true,
+        ]);
+
+        $res = $this->getJson("/api/admin/cities/{$this->city->id}/departures/{$dep->id}/manifest");
+        $res->assertOk();
+        $res->assertJsonStructure([
+            'departure',
+            'passengers',
+            'stops',
+        ]);
+    }
 }

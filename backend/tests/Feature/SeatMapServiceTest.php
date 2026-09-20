@@ -46,7 +46,6 @@ class SeatMapServiceTest extends TestCase
             'origin_name' => 'O', 'dest_name' => 'D',
             'origin_lat' => 34.0, 'origin_lng' => 74.0, 'dest_lat' => 34.1, 'dest_lng' => 74.1,
             'city_vehicle_type_id' => null,
-            'max_seats_per_booking' => 6, 'max_luggage_per_vehicle' => 2,
             'fare_config' => json_encode(['seat_fare' => 100, 'commission_type' => 'percent', 'commission_percent' => 10]),
             'is_active' => true,
             'created_at' => now(), 'updated_at' => now(),

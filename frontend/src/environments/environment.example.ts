@@ -8,6 +8,6 @@ export const environment = {
   reverbPort: 443,
   reverbScheme: 'https' as 'http' | 'https',
   /** Google Maps JavaScript API key */
-  googleMapsApiKey: 'REMOVED_GOOGLE_API_KEY',
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
 };
 

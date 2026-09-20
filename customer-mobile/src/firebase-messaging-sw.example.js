@@ -8,7 +8,7 @@ importScripts('https://www.gstatic.com/firebasejs/12.13.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/12.13.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'REMOVED_GOOGLE_API_KEY',
+  apiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
   authDomain: 'dreamcabs-c851f.firebaseapp.com',
   projectId: 'dreamcabs-c851f',
   storageBucket: 'dreamcabs-c851f.firebasestorage.app',

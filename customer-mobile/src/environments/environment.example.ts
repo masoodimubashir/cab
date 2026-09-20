@@ -23,7 +23,7 @@ export const environment = {
    *
    * If empty, the booking screen will fall back to manual lat/lng + external maps links.
    */
-  googleMapsApiKey: 'REMOVED_GOOGLE_API_KEY',
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
   /**
    * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
    * Leave reverbAppKey blank to fall back to polling-only.
@@ -38,7 +38,7 @@ export const environment = {
    * auth/configuration-not-found. Enable Phone sign-in; add `localhost` to Authorized domains.
    */
   firebase: {
-    apiKey: "REMOVED_GOOGLE_API_KEY",
+    apiKey: "REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY",
     authDomain: "dreamcabs-1cd27.firebaseapp.com",
     projectId: "dreamcabs-1cd27",
     storageBucket: "dreamcabs-1cd27.firebasestorage.app",

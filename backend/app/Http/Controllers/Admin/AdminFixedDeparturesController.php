@@ -128,7 +128,7 @@ class AdminFixedDeparturesController
             'data' => [
                 'booking' => $this->shapeSupportBooking($reservation),
                 'events' => $reservation->fixedEvents
-                    ->sortBy('created_at')
+                    ->sortBy('id')
                     ->map(fn ($event) => [
                         'id' => $event->id,
                         'event_type' => $event->event_type,
@@ -140,7 +140,7 @@ class AdminFixedDeparturesController
                     ])
                     ->values(),
                 'notes' => $reservation->fixedSupportNotes
-                    ->sortByDesc('created_at')
+                    ->sortByDesc('id')
                     ->map(fn ($note) => $this->shapeSupportNote($note))
                     ->values(),
             ],
@@ -271,86 +271,51 @@ class AdminFixedDeparturesController
     {
         $reservation = $this->cityScopedReservation($city, $reservation);
         $data = $request->validate([
-            'action' => ['required', 'in:refund_pending,refund_resolved_manual,payment_resolved_manual'],
-            'method' => ['nullable', 'string', 'max:80'],
-            'reference' => ['nullable', 'string', 'max:191'],
-            'amount' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'action' => ['required', 'in:refund_resolved_manual'],
+            'method' => ['required', 'in:' . implode(',', \App\Services\RefundRegisterService::METHODS)],
+            'reference' => ['required', 'string', 'max:191'],
+            'amount' => ['prohibited'],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $action = $data['action'];
-        $method = trim((string) ($data['method'] ?? ''));
-        $reference = trim((string) ($data['reference'] ?? ''));
-        $note = trim((string) ($data['note'] ?? ''));
-        $amount = array_key_exists('amount', $data) && $data['amount'] !== null ? (float) $data['amount'] : null;
+        $locked = SeatReservation::query()->findOrFail($reservation->id);
+        if ($locked->payment_status !== 'PAID' || (float) $locked->refund_amount <= 0) {
+            throw new \App\Exceptions\ReservationException('This booking has no unpaid refund amount to record.', 422);
+        }
 
-        $updates = [];
-        $title = 'Manual support action recorded';
-        $detail = 'Admin recorded a manual support action for this fixed booking.';
+        try {
+            app(\App\Services\RefundRegisterService::class)->markRefunded(
+                'fixed', $reservation->id, $request->user(), $data['method'], $data['reference'], null,
+            );
 
-        if ($action === 'refund_pending') {
-            $updates['refund_status'] = 'APPROVED';
-            $title = 'Refund marked pending';
-            $detail = 'Admin marked this booking refund as pending for manual follow-up. No automatic payment action was triggered.';
-        } elseif ($action === 'refund_resolved_manual') {
-            $updates['refund_status'] = 'REFUNDED';
-            $updates['payment_status'] = 'REFUNDED';
-            if ($reference !== '') {
-                $updates['refund_reference'] = $reference;
+            // Support notes stay internal; the register's public refund note is separate.
+            if (filled($data['note'] ?? null)) {
+                FixedBookingSupportNote::query()->create([
+                    'seat_reservation_id' => $reservation->id,
+                    'admin_id' => $request->user()->id,
+                    'note' => trim($data['note']),
+                ]);
             }
-            if ($amount !== null) {
-                $updates['refund_amount'] = $amount;
-            }
-            $title = 'Refund resolved manually';
-            $detail = 'Admin marked this refund as resolved manually. No automatic Razorpay refund was triggered.';
-        } elseif ($action === 'payment_resolved_manual') {
-            $updates['payment_status'] = 'PAID';
-            if ($reference !== '') {
-                $updates['payment_reference'] = $reference;
-            }
-            $title = 'Payment issue resolved manually';
-            $detail = 'Admin marked this payment issue as resolved manually. No automatic payment capture was triggered.';
-        }
 
-        if ($method !== '') {
-            $detail .= ' Method: ' . $method . '.';
-        }
-        if ($reference !== '') {
-            $detail .= ' Reference: ' . $reference . '.';
-        }
-        if ($note !== '') {
-            $detail .= ' Note: ' . $note;
-        }
+            $this->broadcastFixedUpdate($city, (int) $reservation->route_id, 'refund_recorded');
 
-        $reservation->forceFill($updates)->save();
-        $reservation = $this->cityScopedReservation($city, $reservation);
-
-        $this->events->record(
-            $reservation,
-            'admin_manual_support_action',
-            $title,
-            $detail,
-            [
-                'action' => $action,
-                'method' => $method ?: null,
-                'reference' => $reference ?: null,
-                'amount' => $amount,
-            ],
-            $request->user(),
-        );
-
-        if ($note !== '') {
-            FixedBookingSupportNote::query()->create([
-                'seat_reservation_id' => $reservation->id,
-                'admin_id' => $request->user()?->id,
-                'note' => $title . ': ' . $note,
+            return response()->json([
+                'booking' => $this->shapeSupportBooking($this->cityScopedReservation($city, $reservation->fresh())),
+                'message' => 'Refund recorded. No money was sent by this action.',
             ]);
+        } catch (\App\Exceptions\ReservationException $e) {
+            if ($e->status === 409 && str_contains($e->getMessage(), 'Razorpay')) {
+                if (filled($data['note'] ?? null)) {
+                    FixedBookingSupportNote::query()->create([
+                        'seat_reservation_id' => $reservation->id,
+                        'admin_id' => $request->user()->id,
+                        'note' => trim($data['note']),
+                    ]);
+                }
+                $this->broadcastFixedUpdate($city, (int) $reservation->route_id, 'refund_recorded');
+            }
+            throw $e;
         }
-
-        return response()->json([
-            'booking' => $this->shapeSupportBooking($reservation),
-            'message' => $title . '.',
-        ]);
     }
 
     private function validatePayload(Request $request): array
@@ -426,6 +391,7 @@ class AdminFixedDeparturesController
             'driver_name' => $reservation->routeDeparture?->driver?->name,
             'driver_phone' => $reservation->routeDeparture?->driver?->phone,
             'departure_status' => $reservation->routeDeparture?->status,
+            'boarded_at' => optional($reservation->boarded_at)->toIso8601String(),
             'fixed_last_reached_stop_seq' => $reservation->routeDeparture?->fixed_last_reached_stop_seq,
             'fixed_last_reached_stop_at' => optional($reservation->routeDeparture?->fixed_last_reached_stop_at)->toIso8601String(),
             'payment_reference' => $reservation->payment_reference,

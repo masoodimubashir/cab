@@ -11,13 +11,14 @@ export type IconName =
   | 'cog' | 'chart-bar' | 'chart-line' | 'shield' | 'sign-out'
   | 'search' | 'bell' | 'chevron-down' | 'chevron-right' | 'chevron-left'
   | 'chevron-up' | 'menu' | 'x' | 'plus' | 'check' | 'arrow-right'
-  | 'filter' | 'calendar' | 'pin' | 'phone' | 'star' | 'eye' | 'edit'
+  | 'filter' | 'calendar' | 'clock' | 'pin' | 'phone' | 'star' | 'eye' | 'edit'
   | 'trash' | 'download' | 'upload' | 'refresh' | 'more-horizontal' | 'copy'
   | 'road' | 'driver-helmet' | 'rupee' | 'handshake' | 'key'
   | 'expand' | 'compress' | 'grid' | 'lock' | 'alert-triangle';
 
 export const ICONS: Record<IconName, string> = {
   'alert-triangle': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  'clock': '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   'copy': '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   'home': '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/>',
   'map': '<path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3-6-3z"/><path d="M9 3v15"/><path d="M15 6v15"/>',

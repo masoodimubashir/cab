@@ -21,7 +21,7 @@ export const environment = {
    * auth/configuration-not-found. Enable Phone sign-in; add `localhost` to Authorized domains.
    */
   firebase: {
-    apiKey: "REMOVED_GOOGLE_API_KEY",
+    apiKey: "REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY",
     authDomain: "dreamcabs-1cd27.firebaseapp.com",
     projectId: "dreamcabs-1cd27",
     storageBucket: "dreamcabs-1cd27.firebasestorage.app",
@@ -37,7 +37,7 @@ export const environment = {
   /** FCM Web Push VAPID key — Firebase Console → Cloud Messaging → Web Push certificates. */
   fcmVapidKey: '',
   /** Google Maps JavaScript API key — used for the in-app live map (pickup + customer marker). */
-  googleMapsApiKey: 'REMOVED_GOOGLE_API_KEY',
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
 };
 
 /*

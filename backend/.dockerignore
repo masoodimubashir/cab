@@ -11,3 +11,7 @@ storage/framework/views/*
 tests
 deploy/secrets
 *.md
+storage/app
+bootstrap/cache/*.php
+.last_deployed_commit
+.deploy.lock

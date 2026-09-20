@@ -9,10 +9,12 @@ import {
   ViewChild,
 } from '@angular/core';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { ToastService } from '../../core/toast.service';
 import { GoogleMapsLoaderService } from '../../core/google-maps-loader.service';
-import { ButtonComponent, IconComponent } from '../../ui';
+import { ButtonComponent, IconComponent, ModalComponent } from '../../ui';
 
 interface Party {
   id: number;
@@ -47,6 +49,16 @@ interface Payment {
 }
 
 
+interface RouteStop {
+  id: number;
+  seq: number;
+  name: string;
+  lat?: number | null;
+  lng?: number | null;
+  is_pickup?: boolean;
+  is_drop?: boolean;
+}
+
 interface FixedManifestPassenger {
   id: number;
   customer_name?: string | null;
@@ -55,6 +67,8 @@ interface FixedManifestPassenger {
   status?: string | null;
   payment_status?: string | null;
   fare_amount?: number | null;
+  board_stop_id?: number | null;
+  drop_stop_id?: number | null;
   board?: string | null;
   board_lat?: number | null;
   board_lng?: number | null;
@@ -66,6 +80,7 @@ interface FixedManifestPassenger {
 interface FixedManifest {
   departure?: { route_name?: string | null; origin_name?: string | null; dest_name?: string | null } | null;
   passengers: FixedManifestPassenger[];
+  stops?: RouteStop[];
 }
 
 interface CityVehicleType {
@@ -80,6 +95,10 @@ interface CityVehicleType {
 interface Trip {
   id: number;
   status: string;
+  scope?: string | null;
+  is_for_other?: boolean | null;
+  booked_for_name?: string | null;
+  booked_for_phone?: string | null;
   pickup_address?: string | null;
   pickup_lat?: number | null;
   pickup_lng?: number | null;
@@ -110,6 +129,10 @@ interface Trip {
   ride_type?: { id: number; name?: string | null } | null;
   city_vehicle_type?: CityVehicleType | null;
   payment?: Payment | null;
+  route_id?: number | null;
+  route_departure_id?: number | null;
+  route?: { id: number; name?: string | null; stops?: RouteStop[] } | null;
+  route_departure?: { id: number; route?: { id: number; name?: string | null; stops?: RouteStop[] } | null } | null;
 }
 
 interface PathPoint {
@@ -142,14 +165,38 @@ interface ShowResponse {
 @Component({
   selector: 'app-ride-detail',
   standalone: true,
-  imports: [CommonModule, DatePipe, DecimalPipe, ButtonComponent, IconComponent],
+  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe, ButtonComponent, IconComponent, ModalComponent],
   template: `
     <div class="page" *ngIf="trip">
-      <!-- Slim breadcrumb bar -->
+      <!-- Slim breadcrumb bar with actions on same line -->
       <div class="crumb">
-        <tm-button variant="ghost" icon="chevron-left" (clicked)="back()">Rides</tm-button>
-        <span class="crumb__sep">/</span>
-        <span class="crumb__here">Trip #{{ trip.id }}</span>
+        <div class="crumb__left">
+          <tm-button variant="ghost" icon="chevron-left" (clicked)="back()">Rides</tm-button>
+          <span class="crumb__sep">/</span>
+          <span class="crumb__here">Trip #{{ trip.id }}</span>
+        </div>
+        <div class="crumb__actions" *ngIf="canTakeAction()">
+          <tm-button
+            *ngIf="canStartRide()"
+            variant="green"
+            size="sm"
+            icon="car"
+            (clicked)="startConfirmOpen = true"
+            [disabled]="submittingAction"
+          >
+            Start Ride
+          </tm-button>
+          <tm-button
+            *ngIf="canCancelRide()"
+            variant="danger"
+            size="sm"
+            icon="x"
+            (clicked)="openCancelModal()"
+            [disabled]="submittingAction"
+          >
+            Cancel Ride
+          </tm-button>
+        </div>
       </div>
 
       <div class="split">
@@ -168,49 +215,16 @@ interface ShowResponse {
         <!-- ============ RIGHT: Scrolling info ============ -->
         <div class="info">
 
-          <!-- Driver and vehicle -->
-          <section class="block">
-              <h3 class="block__title">Driver &amp; vehicle</h3>
-              <div *ngIf="trip.driver" class="party">
-                <div class="party__avatar">
-                  <img *ngIf="trip.driver.avatar_path" [src]="trip.driver.avatar_path" alt="" />
-                  <tm-icon *ngIf="!trip.driver.avatar_path" name="id-card" [size]="22" />
-                </div>
-                <div class="party__id">
-                  <span class="party__name">{{ trip.driver.name || ('Driver #' + trip.driver.id) }}</span>
-                  <span class="party__sub" *ngIf="trip.driver.phone">
-                    <tm-icon name="phone" [size]="12" /> {{ trip.driver.phone }}
-                  </span>
-                  <span class="party__sub" *ngIf="driverProfile?.rating_avg != null">
-                    ★ {{ driverProfile?.rating_avg }} ({{ driverProfile?.rating_count || 0 }} ratings)
-                  </span>
-                </div>
-              </div>
-              <p *ngIf="!trip.driver" class="muted">No driver assigned.</p>
-
-              <dl class="kv" *ngIf="driverProfile || trip.city_vehicle_type || trip.ride_type">
-                <ng-container *ngIf="vehicleHeadline()">
-                  <dt>Vehicle</dt><dd>{{ vehicleHeadline() }}</dd>
-                </ng-container>
-                <ng-container *ngIf="driverProfile?.vehicle_reg_no">
-                  <dt>Reg no.</dt><dd class="mono">{{ driverProfile?.vehicle_reg_no }}</dd>
-                </ng-container>
-                <ng-container *ngIf="trip.city_vehicle_type?.display_name">
-                  <dt>Listed as</dt><dd>{{ trip.city_vehicle_type?.display_name }}</dd>
-                </ng-container>
-                <ng-container *ngIf="trip.ride_type?.name">
-                  <dt>Ride type</dt><dd>{{ trip.ride_type?.name }}</dd>
-                </ng-container>
-              </dl>
-          </section>
-
-          <!-- Summary -->
+          <!-- 1. Summary -->
           <section class="block summary">
             <div class="summary__head">
-              <h1 class="summary__title">Trip #{{ trip.id }}</h1>
-              <div class="summary__badges">
-                <span class="badge" [attr.data-s]="statusBucket(trip.status)">{{ statusDisplay(trip.status) }}</span>
-                <span *ngIf="paymentBadge() as pb" class="badge" [attr.data-s]="pb.color">{{ pb.label }}</span>
+              <div class="summary__head-left">
+                <h1 class="summary__title">Trip #{{ trip.id }}</h1>
+                <div class="summary__badges">
+                  <span class="badge" [attr.data-s]="statusBucket(trip.status)">{{ statusDisplay(trip.status) }}</span>
+                  <span *ngIf="paymentBadge() as pb" class="badge" [attr.data-s]="pb.color">{{ pb.label }}</span>
+                  <span class="badge badge--scope" *ngIf="trip.scope">{{ trip.scope | uppercase }}</span>
+                </div>
               </div>
             </div>
             <p class="summary__when">{{ trip.created_at | date: 'EEE, dd MMM yyyy · HH:mm' }}</p>
@@ -238,41 +252,59 @@ interface ShowResponse {
             </div>
           </section>
 
-          <!-- Timeline -->
-          <section class="block" *ngIf="timeline().length">
-            <h3 class="block__title">Timeline</h3>
-            <ol class="tl">
-              <li *ngFor="let t of timeline()" class="tl__row">
-                <span class="tl__dot"></span>
-                <div class="tl__text">
-                  <span class="tl__label">{{ t.label }}</span>
-                  <span class="tl__time">{{ t.at | date: 'dd MMM, HH:mm' }}</span>
-                </div>
-              </li>
-            </ol>
-          </section>
+          <!-- 2. Customer (Single-rider trip) -->
+          <section class="block customer-card" *ngIf="!fixedManifest?.passengers?.length && trip.customer">
+            <div class="block__head">
+              <h3 class="block__title" style="margin: 0;">Customer</h3>
+            </div>
 
-          <!-- Route -->
-          <section class="block">
-            <h3 class="block__title">Route</h3>
-            <div class="route">
-              <div class="route__leg">
-                <span class="route__dot route__dot--pickup"></span>
-                <div class="route__body">
-                  <span class="route__label">Pickup</span>
-                  <p class="route__addr">{{ trip.pickup_address || '—' }}</p>
-                  <small class="route__coord" *ngIf="trip.pickup_lat != null">
+            <div class="party customer-party" style="margin-top: 12px;">
+              <div class="party__avatar">
+                <img *ngIf="trip.customer.avatar_path" [src]="trip.customer.avatar_path" alt="" />
+                <tm-icon *ngIf="!trip.customer.avatar_path" name="user" [size]="22" />
+              </div>
+              <div class="party__id">
+                <span class="party__name">{{ trip.customer.name || ('Customer #' + trip.customer.id) }}</span>
+                <span class="party__sub" *ngIf="trip.customer.phone">
+                  <tm-icon name="phone" [size]="12" /> {{ trip.customer.phone }}
+                </span>
+                <span class="party__sub" *ngIf="trip.is_for_other && trip.booked_for_name">
+                  Booked for: <strong>{{ trip.booked_for_name }}</strong> ({{ trip.booked_for_phone || '—' }})
+                </span>
+              </div>
+            </div>
+
+            <!-- Integrated Pickup & Drop in Customer Card -->
+            <div class="customer-locations">
+              <div class="loc-row">
+                <span class="loc-dot loc-dot--pickup"></span>
+                <div class="loc-body">
+                  <span class="loc-type">Pickup Location</span>
+                  <p class="loc-text">{{ trip.pickup_address || '—' }}</p>
+                  <small class="loc-sub" *ngIf="trip.pickup_lat != null">
                     {{ trip.pickup_lat | number: '1.5-5' }}, {{ trip.pickup_lng | number: '1.5-5' }}
                   </small>
                 </div>
               </div>
-              <span class="route__rail"></span>
-              <div class="route__leg">
-                <span class="route__dot route__dot--drop"></span>
-                <div class="route__body">
-                  <span class="route__label">Drop</span>
-                  <p class="route__addr">{{ trip.drop_address || '—' }}</p>
-                  <small class="route__coord" *ngIf="trip.drop_lat != null">
+
+              <div class="loc-connector"></div>
+
+              <div class="loc-row">
+                <span class="loc-dot loc-dot--drop"></span>
+                <div class="loc-body">
+                  <div class="loc-head">
+                    <span class="loc-type">Drop Destination</span>
+                    <button
+                      type="button"
+                      *ngIf="canChangeDrop()"
+                      class="change-drop-btn"
+                      (click)="openChangeDropModal()"
+                    >
+                      <tm-icon name="pin" [size]="11" /> Change Drop
+                    </button>
+                  </div>
+                  <p class="loc-text">{{ trip.drop_address || '—' }}</p>
+                  <small class="loc-sub" *ngIf="trip.drop_lat != null">
                     {{ trip.drop_lat | number: '1.5-5' }}, {{ trip.drop_lng | number: '1.5-5' }}
                   </small>
                 </div>
@@ -280,38 +312,102 @@ interface ShowResponse {
             </div>
           </section>
 
-          <!-- Fixed passengers -->
+          <!-- 2. Fixed passengers (Multi-customer manifest) -->
           <section class="block" *ngIf="fixedManifest?.passengers?.length">
             <div class="passenger-headline">
               <div>
-                <h3 class="block__title">Customers</h3>
-                <p>{{ fixedManifest?.departure?.route_name || fixedManifestRouteLabel() }}</p>
+                <h3 class="block__title" style="margin: 0 0 2px;">Customers</h3>
+                <p class="passenger-headline__route">{{ fixedManifest?.departure?.route_name || fixedManifestRouteLabel() }}</p>
               </div>
-              <span>{{ fixedManifest?.passengers?.length }} customer{{ (fixedManifest?.passengers?.length || 0) > 1 ? 's' : '' }}</span>
+              <span class="passenger-count-pill">{{ fixedManifest?.passengers?.length }} customer{{ (fixedManifest?.passengers?.length || 0) > 1 ? 's' : '' }}</span>
             </div>
 
             <div class="passenger-list">
               <article class="passenger-row" *ngFor="let p of fixedManifest?.passengers">
                 <div class="passenger-main">
-                  <strong>{{ p.customer_name || 'Passenger' }}</strong>
-                  <small>{{ p.customer_phone || 'No phone' }}</small>
+                  <div class="passenger-user">
+                    <strong>{{ p.customer_name || 'Passenger' }}</strong>
+                    <small *ngIf="p.customer_phone"><tm-icon name="phone" [size]="11" /> {{ p.customer_phone }}</small>
+                  </div>
+                  <div class="passenger-badges">
+                    <span class="chip" [attr.data-s]="(p.status || 'BOOKED').toLowerCase()">{{ passengerStatusLabel(p.status) }}</span>
+                    <span class="chip" [attr.data-s]="(p.payment_status || 'pending').toLowerCase()">{{ p.payment_status || 'Pending' }}</span>
+                    <span class="chip-seats">{{ p.seats || 1 }} seat{{ (p.seats || 1) > 1 ? 's' : '' }}</span>
+                    <span class="chip-fare" *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
+                  </div>
                 </div>
-                <div class="passenger-route">
-                  <span><b>Pickup</b>{{ p.board || '—' }}</span>
-                  <span><b>Drop</b>{{ p.drop || '—' }}</span>
+
+                <div class="passenger-stops-card">
+                  <div class="p-stop-row">
+                    <span class="p-stop-dot p-stop-dot--board"></span>
+                    <div class="p-stop-content">
+                      <span class="p-stop-lbl">Pickup Stop</span>
+                      <span class="p-stop-val">{{ p.board || '—' }}</span>
+                    </div>
+                  </div>
+                  <div class="p-stop-row">
+                    <span class="p-stop-dot p-stop-dot--drop"></span>
+                    <div class="p-stop-content">
+                      <span class="p-stop-lbl">Drop Stop</span>
+                      <span class="p-stop-val">{{ p.drop || '—' }}</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="passenger-meta">
-                  <span>{{ p.seats || 1 }} seat{{ (p.seats || 1) > 1 ? 's' : '' }}</span>
-                  <span>{{ p.payment_status || 'payment pending' }}</span>
-                  <span>{{ p.status || 'BOOKED' }}</span>
-                  <span *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
-                  <button type="button" class="passenger-map-btn" [disabled]="!canViewPassengerOnMap(p)" (click)="viewPassengerOnMap(p)">View on map</button>
+
+                <div class="passenger-actions">
+                  <button type="button" class="passenger-btn" [disabled]="!canViewPassengerOnMap(p)" (click)="viewPassengerOnMap(p)">
+                    <tm-icon name="pin" [size]="11" /> View on map
+                  </button>
+                  <button
+                    type="button"
+                    class="passenger-btn passenger-btn--edit"
+                    *ngIf="canChangePassengerDrop(p)"
+                    (click)="openChangePassengerDropModal(p)"
+                  >
+                    <tm-icon name="edit" [size]="11" /> Change Drop
+                  </button>
                 </div>
               </article>
             </div>
           </section>
 
-          <!-- Fare -->
+          <!-- 3. Driver and vehicle -->
+          <section class="block">
+            <h3 class="block__title">Driver &amp; vehicle</h3>
+            <div *ngIf="trip.driver" class="party">
+              <div class="party__avatar">
+                <img *ngIf="trip.driver.avatar_path" [src]="trip.driver.avatar_path" alt="" />
+                <tm-icon *ngIf="!trip.driver.avatar_path" name="id-card" [size]="22" />
+              </div>
+              <div class="party__id">
+                <span class="party__name">{{ trip.driver.name || ('Driver #' + trip.driver.id) }}</span>
+                <span class="party__sub" *ngIf="trip.driver.phone">
+                  <tm-icon name="phone" [size]="12" /> {{ trip.driver.phone }}
+                </span>
+                <span class="party__sub" *ngIf="driverProfile?.rating_avg != null">
+                  ★ {{ driverProfile?.rating_avg }} ({{ driverProfile?.rating_count || 0 }} ratings)
+                </span>
+              </div>
+            </div>
+            <p *ngIf="!trip.driver" class="muted">No driver assigned.</p>
+
+            <dl class="kv" *ngIf="driverProfile || trip.city_vehicle_type || trip.ride_type">
+              <ng-container *ngIf="vehicleHeadline()">
+                <dt>Vehicle</dt><dd>{{ vehicleHeadline() }}</dd>
+              </ng-container>
+              <ng-container *ngIf="driverProfile?.vehicle_reg_no">
+                <dt>Reg no.</dt><dd class="mono">{{ driverProfile?.vehicle_reg_no }}</dd>
+              </ng-container>
+              <ng-container *ngIf="trip.city_vehicle_type?.display_name">
+                <dt>Listed as</dt><dd>{{ trip.city_vehicle_type?.display_name }}</dd>
+              </ng-container>
+              <ng-container *ngIf="trip.ride_type?.name">
+                <dt>Ride type</dt><dd>{{ trip.ride_type?.name }}</dd>
+              </ng-container>
+            </dl>
+          </section>
+
+          <!-- 4. Fare breakdown -->
           <section class="block">
             <h3 class="block__title">Fare breakdown</h3>
             <div class="lines">
@@ -341,7 +437,7 @@ interface ShowResponse {
             </div>
           </section>
 
-          <!-- Payment -->
+          <!-- 5. Payment -->
           <section class="block">
             <h3 class="block__title">Payment</h3>
             <p *ngIf="!trip.payment" class="muted">No payment record yet.</p>
@@ -368,7 +464,21 @@ interface ShowResponse {
             </dl>
           </section>
 
-          <!-- Cancellation -->
+          <!-- 6. Timeline -->
+          <section class="block" *ngIf="timeline().length">
+            <h3 class="block__title">Timeline</h3>
+            <ol class="tl">
+              <li *ngFor="let t of timeline()" class="tl__row">
+                <span class="tl__dot"></span>
+                <div class="tl__text">
+                  <span class="tl__label">{{ t.label }}</span>
+                  <span class="tl__time">{{ t.at | date: 'dd MMM, HH:mm' }}</span>
+                </div>
+              </li>
+            </ol>
+          </section>
+
+          <!-- 7. Cancellation -->
           <section class="block" *ngIf="trip.cancelled_reason || trip.no_show_by">
             <h3 class="block__title">Cancellation</h3>
             <p *ngIf="trip.cancelled_reason"><strong>Reason:</strong> {{ trip.cancelled_reason }}</p>
@@ -377,6 +487,166 @@ interface ShowResponse {
 
         </div>
       </div>
+
+      <!-- Start Ride Confirmation Modal -->
+      <tm-modal
+        [open]="startConfirmOpen"
+        title="Start Ride #{{ trip.id }}"
+        (closed)="startConfirmOpen = false"
+      >
+        <div slot="body" class="action-modal">
+          <p class="action-modal__desc">
+            Are you sure you want to force-start this ride? This bypasses the rider's OTP check and transitions the trip to in-transit (En Route Drop). Both the driver and customer will receive an in-app notification.
+          </p>
+        </div>
+        <div slot="footer">
+          <tm-button variant="ghost" (clicked)="startConfirmOpen = false" [disabled]="submittingAction">
+            Cancel
+          </tm-button>
+          <tm-button variant="green" (clicked)="confirmStartRide()" [disabled]="submittingAction">
+            {{ submittingAction ? 'Starting...' : 'Confirm Start' }}
+          </tm-button>
+        </div>
+      </tm-modal>
+
+      <!-- Cancel Ride Modal -->
+      <tm-modal
+        [open]="cancelModalOpen"
+        title="Cancel Ride #{{ trip.id }}"
+        (closed)="cancelModalOpen = false"
+      >
+        <div slot="body" class="action-modal">
+          <p class="action-modal__desc">
+            Please enter the reason for cancelling this trip. In-app notifications will be sent to both parties.
+          </p>
+          <div class="form-field">
+            <label class="form-label">Cancellation Reason *</label>
+            <input
+              type="text"
+              class="form-input"
+              [(ngModel)]="cancelReason"
+              placeholder="e.g. Driver vehicle breakdown, Customer emergency..."
+            />
+          </div>
+          <div class="form-field form-field--checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="cancelWaiveFee" />
+              <span>Waive cancellation fee (₹0 fee charged)</span>
+            </label>
+          </div>
+        </div>
+        <div slot="footer">
+          <tm-button variant="ghost" (clicked)="cancelModalOpen = false" [disabled]="submittingAction">
+            Close
+          </tm-button>
+          <tm-button
+            variant="danger"
+            (clicked)="submitCancel()"
+            [disabled]="!cancelReason.trim() || submittingAction"
+          >
+            {{ submittingAction ? 'Cancelling...' : 'Cancel Ride' }}
+          </tm-button>
+        </div>
+      </tm-modal>
+
+      <!-- Change Drop Modal -->
+      <tm-modal
+        [open]="changeDropModalOpen"
+        [title]="targetPassenger ? ('Change Drop for ' + (targetPassenger.customer_name || 'Customer')) : ('Change Drop Location for Trip #' + trip.id)"
+        (closed)="closeChangeDropModal()"
+      >
+        <div slot="body" class="action-modal">
+          <p class="action-modal__desc">
+            {{ isStopBased ? 'Select the new destination stop along this route. Both the customer and driver will be notified.' : 'Update the destination coordinates and address. For local rides, metered fare is dynamically recalculated.' }}
+          </p>
+
+          <ng-container *ngIf="isStopBased; else customAddressForm">
+            <div class="drop-stop-card" *ngIf="targetPassenger">
+              <div class="drop-stop-row">
+                <span class="drop-stop-lbl">Customer:</span>
+                <strong>{{ targetPassenger.customer_name || 'Passenger #' + targetPassenger.id }}</strong>
+                <small *ngIf="targetPassenger.customer_phone">({{ targetPassenger.customer_phone }})</small>
+              </div>
+              <div class="drop-stop-row">
+                <span class="drop-stop-lbl">Pickup Stop:</span>
+                <span>{{ targetPassenger.board || '—' }}</span>
+              </div>
+              <div class="drop-stop-row">
+                <span class="drop-stop-lbl">Current Drop:</span>
+                <span class="curr-drop">{{ targetPassenger.drop || '—' }}</span>
+              </div>
+            </div>
+
+            <div class="drop-stop-card" *ngIf="!targetPassenger">
+              <div class="drop-stop-row">
+                <span class="drop-stop-lbl">Current Drop:</span>
+                <span class="curr-drop">{{ trip.drop_address || '—' }}</span>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Select New Drop Stop *</label>
+              <select class="form-input" [(ngModel)]="selectedDropStopId" (ngModelChange)="onDropStopSelected($event)">
+                <option [ngValue]="null">-- Select a stop on this route --</option>
+                <option *ngFor="let s of validDropStops" [ngValue]="s.id">
+                  Stop #{{ s.seq }} — {{ s.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="stop-change-preview" *ngIf="selectedDropStop">
+              <tm-icon name="pin" [size]="16" />
+              <span>Changing drop destination to <strong>Stop #{{ selectedDropStop.seq }}: {{ selectedDropStop.name }}</strong></span>
+            </div>
+          </ng-container>
+
+          <ng-template #customAddressForm>
+            <div class="form-field">
+              <label class="form-label">Drop Address</label>
+              <input
+                type="text"
+                class="form-input"
+                [(ngModel)]="newDropAddress"
+                placeholder="Destination address or landmark"
+              />
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Latitude *</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  class="form-input"
+                  [(ngModel)]="newDropLat"
+                  placeholder="e.g. 12.9716"
+                />
+              </div>
+              <div class="form-field">
+                <label class="form-label">Longitude *</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  class="form-input"
+                  [(ngModel)]="newDropLng"
+                  placeholder="e.g. 77.5946"
+                />
+              </div>
+            </div>
+          </ng-template>
+        </div>
+        <div slot="footer">
+          <tm-button variant="ghost" (clicked)="closeChangeDropModal()" [disabled]="submittingAction">
+            Close
+          </tm-button>
+          <tm-button
+            variant="green"
+            (clicked)="submitChangeDrop()"
+            [disabled]="isStopBased ? (!selectedDropStopId || submittingAction) : (newDropLat == null || newDropLng == null || submittingAction)"
+          >
+            {{ submittingAction ? 'Updating...' : 'Update Drop' }}
+          </tm-button>
+        </div>
+      </tm-modal>
     </div>
 
     <div *ngIf="!trip && !loading && error" class="cue">
@@ -401,9 +671,11 @@ interface ShowResponse {
 
     /* ---------- Breadcrumb ---------- */
     .crumb {
-      display: flex; align-items: center; gap: 8px;
-      padding-bottom: 12px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding-bottom: 14px; flex-wrap: wrap;
     }
+    .crumb__left { display: inline-flex; align-items: center; gap: 8px; }
+    .crumb__actions { display: inline-flex; align-items: center; gap: 8px; }
     .crumb__sep { color: var(--tm-text-soft); font-size: 14px; }
     .crumb__here {
       font-family: var(--tm-font-body);
@@ -562,32 +834,91 @@ interface ShowResponse {
     .tl__label { font-size: 13px; font-weight: 700; color: var(--tm-text); }
     .tl__time { font-size: 11px; color: var(--tm-text-muted); font-family: var(--tm-font-mono); }
 
-    /* ---------- Route block ---------- */
-    .route { display: flex; flex-direction: column; }
-    .route__leg { display: flex; gap: 12px; align-items: flex-start; }
-    .route__dot {
-      width: 14px; height: 14px; border-radius: 50%;
-      margin-top: 5px; flex: none;
+    /* ---------- Single Customer Card & Locations ---------- */
+    .customer-card { display: flex; flex-direction: column; }
+    .customer-party { margin-top: 10px; }
+    .customer-locations {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--tm-line);
+      display: flex;
+      flex-direction: column;
+    }
+    .loc-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .loc-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex: none;
       border: 2px solid var(--tm-surface);
       box-shadow: 0 0 0 1px var(--tm-line);
     }
-    .route__dot--pickup { background: var(--tm-success-fg, #2dd36f); }
-    .route__dot--drop { background: var(--tm-danger-fg, #b91c1c); }
-    .route__rail {
-      width: 2px; height: 20px; margin-left: 6px;
+    .loc-dot--pickup { background: var(--tm-success-fg, #2dd36f); }
+    .loc-dot--drop { background: var(--tm-danger-fg, #b91c1c); }
+    .loc-connector {
+      width: 2px;
+      height: 18px;
+      margin-left: 5px;
       background: repeating-linear-gradient(
         to bottom,
-        var(--tm-line-2) 0 4px, transparent 4px 8px
+        var(--tm-line-2) 0 3px, transparent 3px 6px
       );
     }
-    .route__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-    .route__label {
-      font-size: 10px; font-weight: 800;
-      text-transform: uppercase; letter-spacing: 0.08em;
+    .loc-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1;
+    }
+    .loc-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .loc-type {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
       color: var(--tm-text-muted);
     }
-    .route__addr { margin: 0; font-size: 13px; color: var(--tm-text); line-height: 1.4; }
-    .route__coord { font-family: var(--tm-font-mono); font-size: 11px; color: var(--tm-text-muted); }
+    .loc-text {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--tm-text);
+      line-height: 1.4;
+    }
+    .loc-sub {
+      font-family: var(--tm-font-mono);
+      font-size: 11px;
+      color: var(--tm-text-muted);
+    }
+    .change-drop-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--tm-green-deep);
+      background: var(--tm-green-tint, #ecfdf5);
+      border: 1px solid var(--tm-green-deep);
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: var(--tm-radius-sm, 6px);
+      transition: all var(--tm-duration-fast) var(--tm-ease);
+    }
+    .change-drop-btn:hover {
+      background: var(--tm-green-deep);
+      color: #fff;
+    }
 
     /* ---------- Parties row (Customer + Driver side-by-side) ---------- */
     .parties {
@@ -602,7 +933,7 @@ interface ShowResponse {
     /* ---------- Party ---------- */
     .party { display: flex; gap: 12px; align-items: center; }
     .party__avatar {
-      width: 48px; height: 48px; flex: none;
+      width: 44px; height: 44px; flex: none;
       border-radius: 50%; overflow: hidden;
       display: grid; place-items: center;
       background: var(--tm-canvas-2); color: var(--tm-text-muted);
@@ -630,81 +961,126 @@ interface ShowResponse {
       text-align: right; font-weight: 600;
     }
 
-    /* ---------- Fixed passengers ---------- */
+    /* ---------- Multi-Passenger manifest styling ---------- */
     .passenger-headline {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
-    .passenger-headline .block__title { margin-bottom: 3px; }
-    .passenger-headline p { margin: 0; font-size: 13px; font-weight: 700; color: var(--tm-text); }
-    .passenger-headline > span {
+    .passenger-headline__route {
+      margin: 0; font-size: 13px; font-weight: 700; color: var(--tm-text);
+    }
+    .passenger-count-pill {
       flex: none;
-      padding: 4px 10px;
+      padding: 3px 10px;
       border-radius: var(--tm-radius-pill);
       background: var(--tm-green-tint);
       color: var(--tm-green-deep);
       font-size: 11px;
       font-weight: 800;
     }
-    .passenger-list { display: flex; flex-direction: column; gap: 10px; }
+    .passenger-list {
+      display: flex; flex-direction: column; gap: 12px;
+    }
     .passenger-row {
-      display: grid;
-      grid-template-columns: minmax(130px, 0.9fr) minmax(180px, 1.2fr);
-      gap: 10px 14px;
-      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
       border: 1px solid var(--tm-line);
       border-radius: var(--tm-radius-md);
       background: var(--tm-canvas-2);
     }
-    .passenger-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-    .passenger-main strong { font-size: 13px; font-weight: 800; color: var(--tm-text); }
-    .passenger-main small { font-family: var(--tm-font-mono); font-size: 11px; color: var(--tm-text-muted); }
-    .passenger-route { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
-    .passenger-route span {
+    .passenger-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .passenger-user {
       display: flex; flex-direction: column; gap: 2px;
-      min-width: 0;
-      font-size: 12px;
+    }
+    .passenger-user strong {
+      font-size: 14px; font-weight: 800; color: var(--tm-text);
+    }
+    .passenger-user small {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 12px; color: var(--tm-text-muted);
+    }
+    .passenger-badges {
+      display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .chip-seats, .chip-fare {
+      padding: 2px 8px; border-radius: var(--tm-radius-pill);
+      background: var(--tm-surface); color: var(--tm-text);
+      font-size: 10px; font-weight: 800; border: 1px solid var(--tm-line);
+    }
+    .passenger-stops-card {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--tm-surface);
+      border: 1px solid var(--tm-line);
+      border-radius: var(--tm-radius-sm);
+    }
+    @media (max-width: 600px) {
+      .passenger-stops-card { grid-template-columns: 1fr; }
+    }
+    .p-stop-row {
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .p-stop-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      margin-top: 4px; flex: none;
+    }
+    .p-stop-dot--board { background: var(--tm-success-fg, #2dd36f); }
+    .p-stop-dot--drop { background: var(--tm-danger-fg, #b91c1c); }
+    .p-stop-content {
+      display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    }
+    .p-stop-lbl {
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--tm-text-muted);
+    }
+    .p-stop-val {
+      font-size: 13px; font-weight: 600; color: var(--tm-text);
       line-height: 1.35;
-      color: var(--tm-text);
     }
-    .passenger-route b {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--tm-text-muted);
+    .passenger-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
     }
-    .passenger-meta {
-      grid-column: 1 / -1;
-      display: flex; flex-wrap: wrap; gap: 6px;
-    }
-    .passenger-meta span,
-    .passenger-map-btn {
-      padding: 3px 8px;
-      border-radius: var(--tm-radius-pill);
+    .passenger-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: var(--tm-radius-pill);
+      font-size: 11px; font-weight: 700;
+      border: 1px solid var(--tm-line-2);
       background: var(--tm-surface);
       color: var(--tm-text-muted);
-      font-size: 10px;
-      font-weight: 800;
-      text-transform: capitalize;
-    }
-    .passenger-map-btn {
-      border: 1px solid var(--tm-green-deep);
-      background: var(--tm-surface);
-      color: var(--tm-green-deep);
       cursor: pointer;
+      transition: all var(--tm-duration-fast) var(--tm-ease);
     }
-    .passenger-map-btn:disabled {
-      border-color: var(--tm-line-2);
-      color: var(--tm-text-soft);
-      cursor: not-allowed;
-    }
-    .passenger-map-btn:not(:disabled):hover {
+    .passenger-btn:hover:not(:disabled) {
+      border-color: var(--tm-green-deep);
+      color: var(--tm-green-deep);
       background: var(--tm-green-tint);
     }
-    @media (max-width: 640px) {
-      .passenger-headline { flex-direction: column; }
-      .passenger-row,
-      .passenger-route { grid-template-columns: 1fr; }
+    .passenger-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .passenger-btn--edit {
+      border-color: var(--tm-green-deep);
+      color: var(--tm-green-deep);
+      background: var(--tm-green-tint);
+      font-weight: 800;
+    }
+    .passenger-btn--edit:hover:not(:disabled) {
+      background: var(--tm-green-deep);
+      color: #fff;
     }
 
     /* ---------- Fare lines ---------- */
@@ -737,6 +1113,47 @@ interface ShowResponse {
     .mono { font-family: var(--tm-font-mono); font-size: 12px; }
     .muted { color: var(--tm-text-muted); font-size: 13px; margin: 0; }
 
+    .summary__head-left { display: flex; flex-direction: column; gap: 4px; }
+
+    .action-modal { display: flex; flex-direction: column; gap: 14px; }
+    .action-modal__desc { font-size: 13px; color: var(--tm-text-muted); margin: 0 0 4px; line-height: 1.45; }
+    .drop-stop-card {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 12px 14px; border-radius: var(--tm-radius-md);
+      background: var(--tm-canvas-2); border: 1px solid var(--tm-line);
+    }
+    .drop-stop-row {
+      display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--tm-text);
+    }
+    .drop-stop-lbl {
+      font-size: 11px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--tm-text-muted); min-width: 120px; flex-shrink: 0;
+    }
+    .curr-drop { font-weight: 700; color: var(--tm-text); }
+    .stop-change-preview {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border-radius: var(--tm-radius-md);
+      background: var(--tm-green-tint, #ecfdf5);
+      border: 1px solid var(--tm-green-deep, #059669);
+      color: var(--tm-green-deep, #059669); font-size: 13px;
+    }
+    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-field--checkbox { margin-top: 4px; }
+    .form-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--tm-text-muted); }
+    .form-input {
+      width: 100%; box-sizing: border-box;
+      padding: 9px 12px; font-size: 13px;
+      border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md);
+      background: var(--tm-canvas-2); color: var(--tm-text);
+      outline: none; transition: border-color var(--tm-duration-fast) var(--tm-ease);
+    }
+    .form-input:focus { border-color: var(--tm-green-deep); background: var(--tm-surface); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .checkbox-label {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--tm-text); cursor: pointer;
+    }
+
     .cue {
       display: flex; flex-direction: column; align-items: center; gap: 8px;
       padding: 64px 24px; text-align: center;
@@ -758,6 +1175,18 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   path: PathPoint[] = [];
   fixedManifest: FixedManifest | null = null;
 
+  startConfirmOpen = false;
+  cancelModalOpen = false;
+  cancelReason = '';
+  cancelWaiveFee = false;
+  changeDropModalOpen = false;
+  targetPassenger: FixedManifestPassenger | null = null;
+  selectedDropStopId: number | null = null;
+  newDropAddress = '';
+  newDropLat: number | null = null;
+  newDropLng: number | null = null;
+  submittingAction = false;
+
   // Filled from DirectionsService once the planned route resolves.
   routeDistanceKm: number | null = null;
   routeDurationMin: number | null = null;
@@ -776,10 +1205,229 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
     private api: ApiService,
+    private toast: ToastService,
     private maps: GoogleMapsLoaderService,
     private zone: NgZone,
     private cdr: ChangeDetectorRef,
   ) {}
+
+  canTakeAction(): boolean {
+    return this.canStartRide() || this.canCancelRide();
+  }
+
+  canStartRide(): boolean {
+    if (!this.trip || !this.trip.driver) return false;
+    return ['ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'].includes(this.trip.status);
+  }
+
+  canChangeDrop(): boolean {
+    if (!this.trip) return false;
+    return !['COMPLETED', 'CANCELLED'].includes(this.trip.status);
+  }
+
+  canCancelRide(): boolean {
+    if (!this.trip) return false;
+    return !['COMPLETED', 'CANCELLED'].includes(this.trip.status);
+  }
+
+  get isStopBased(): boolean {
+    return !!this.targetPassenger || this.availableStops.length > 0;
+  }
+
+  get availableStops(): RouteStop[] {
+    if (this.fixedManifest?.stops?.length) {
+      return this.fixedManifest.stops;
+    }
+    if (this.trip?.route_departure?.route?.stops?.length) {
+      return this.trip.route_departure.route.stops;
+    }
+    if (this.trip?.route?.stops?.length) {
+      return this.trip.route.stops;
+    }
+    return [];
+  }
+
+  get validDropStops(): RouteStop[] {
+    const stops = this.availableStops;
+    if (!this.targetPassenger || !this.targetPassenger.board_stop_id) {
+      return stops;
+    }
+    const boardStop = stops.find((s) => s.id === this.targetPassenger?.board_stop_id);
+    if (!boardStop) return stops;
+    return stops.filter((s) => s.seq > boardStop.seq);
+  }
+
+  get selectedDropStop(): RouteStop | undefined {
+    if (!this.selectedDropStopId) return undefined;
+    return this.availableStops.find((s) => s.id === Number(this.selectedDropStopId));
+  }
+
+  canChangePassengerDrop(p?: FixedManifestPassenger): boolean {
+    if (!this.trip || !p) return false;
+    if (['COMPLETED', 'CANCELLED'].includes(this.trip.status)) return false;
+    const status = (p.status || '').toUpperCase();
+    return !['COMPLETED', 'DROPPED', 'CANCELLED', 'NO_SHOW'].includes(status);
+  }
+
+  openChangePassengerDropModal(p: FixedManifestPassenger): void {
+    if (!this.trip) return;
+    this.targetPassenger = p;
+    this.selectedDropStopId = p.drop_stop_id ?? null;
+    this.newDropAddress = p.drop || '';
+    this.newDropLat = p.drop_lat ?? null;
+    this.newDropLng = p.drop_lng ?? null;
+    this.changeDropModalOpen = true;
+  }
+
+  confirmStartRide(): void {
+    if (!this.trip) return;
+    this.submittingAction = true;
+    this.api.post<{ message: string; trip: Trip }>(`/admin/trips/${this.trip.id}/start`, {}).subscribe({
+      next: (res) => {
+        this.submittingAction = false;
+        this.startConfirmOpen = false;
+        this.toast.success(res?.message || 'Trip started successfully.');
+        if (res?.trip) {
+          this.trip = { ...this.trip, ...res.trip };
+          this.cdr.detectChanges();
+        }
+        this.fetch();
+      },
+      error: (err) => {
+        this.submittingAction = false;
+        this.toast.error(err?.error?.message || 'Failed to start trip.');
+      },
+    });
+  }
+
+  openCancelModal(): void {
+    this.cancelReason = '';
+    this.cancelWaiveFee = false;
+    this.cancelModalOpen = true;
+  }
+
+  submitCancel(): void {
+    if (!this.trip || !this.cancelReason.trim()) return;
+    this.submittingAction = true;
+    this.api.post<{ message: string; trip: Trip }>(`/admin/trips/${this.trip.id}/cancel`, {
+      reason: this.cancelReason.trim(),
+      waive_fee: this.cancelWaiveFee,
+      cancelled_by: 'operator',
+    }).subscribe({
+      next: (res) => {
+        this.submittingAction = false;
+        this.cancelModalOpen = false;
+        this.toast.success(res?.message || 'Trip cancelled.');
+        if (res?.trip) {
+          this.trip = { ...this.trip, ...res.trip };
+          this.cdr.detectChanges();
+        }
+        this.fetch();
+      },
+      error: (err) => {
+        this.submittingAction = false;
+        this.toast.error(err?.error?.message || 'Failed to cancel trip.');
+      },
+    });
+  }
+
+  openChangeDropModal(): void {
+    if (!this.trip) return;
+    this.targetPassenger = null;
+    this.selectedDropStopId = null;
+    this.newDropAddress = this.trip.drop_address || '';
+    this.newDropLat = this.trip.drop_lat != null ? Number(this.trip.drop_lat) : null;
+    this.newDropLng = this.trip.drop_lng != null ? Number(this.trip.drop_lng) : null;
+    this.changeDropModalOpen = true;
+  }
+
+  closeChangeDropModal(): void {
+    if (this.submittingAction) return;
+    this.changeDropModalOpen = false;
+    this.targetPassenger = null;
+    this.selectedDropStopId = null;
+  }
+
+  onDropStopSelected(stopId: number | null): void {
+    this.selectedDropStopId = stopId ? Number(stopId) : null;
+    const stop = this.selectedDropStop;
+    if (stop) {
+      this.newDropAddress = stop.name;
+      this.newDropLat = stop.lat != null ? Number(stop.lat) : null;
+      this.newDropLng = stop.lng != null ? Number(stop.lng) : null;
+    }
+  }
+
+  submitChangeDrop(): void {
+    if (!this.trip) return;
+
+    if (this.targetPassenger) {
+      if (!this.selectedDropStopId) return;
+      this.submittingAction = true;
+      this.api.post<{ message: string; passenger: any }>(
+        `/admin/trips/${this.trip.id}/passengers/${this.targetPassenger.id}/change-drop`,
+        { drop_stop_id: this.selectedDropStopId },
+      ).subscribe({
+        next: (res) => {
+          this.submittingAction = false;
+          this.closeChangeDropModal();
+          this.toast.success(res?.message || 'Passenger drop destination updated.');
+          this.fetch();
+        },
+        error: (err) => {
+          this.submittingAction = false;
+          this.toast.error(err?.error?.message || 'Failed to update passenger drop destination.');
+        },
+      });
+      return;
+    }
+
+    if (this.isStopBased && this.selectedDropStopId) {
+      this.submittingAction = true;
+      this.api.post<{ message: string; trip: Trip }>(`/admin/trips/${this.trip.id}/change-drop`, {
+        drop_stop_id: this.selectedDropStopId,
+      }).subscribe({
+        next: (res) => {
+          this.submittingAction = false;
+          this.closeChangeDropModal();
+          this.toast.success(res?.message || 'Drop destination updated.');
+          if (res?.trip) {
+            this.trip = { ...this.trip, ...res.trip };
+            this.cdr.detectChanges();
+          }
+          this.fetch();
+        },
+        error: (err) => {
+          this.submittingAction = false;
+          this.toast.error(err?.error?.message || 'Failed to update drop destination.');
+        },
+      });
+      return;
+    }
+
+    if (this.newDropLat == null || this.newDropLng == null) return;
+    this.submittingAction = true;
+    this.api.post<{ message: string; trip: Trip }>(`/admin/trips/${this.trip.id}/change-drop`, {
+      drop_lat: this.newDropLat,
+      drop_lng: this.newDropLng,
+      drop_address: this.newDropAddress.trim() || undefined,
+    }).subscribe({
+      next: (res) => {
+        this.submittingAction = false;
+        this.closeChangeDropModal();
+        this.toast.success(res?.message || 'Drop destination updated.');
+        if (res?.trip) {
+          this.trip = { ...this.trip, ...res.trip };
+          this.cdr.detectChanges();
+        }
+        this.fetch();
+      },
+      error: (err) => {
+        this.submittingAction = false;
+        this.toast.error(err?.error?.message || 'Failed to update drop destination.');
+      },
+    });
+  }
 
   ngOnInit(): void {
     this.tripId = Number(this.route.snapshot.paramMap.get('tripId'));
@@ -1049,6 +1697,18 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Display helpers ─────────────────────────────────────────────
   statusDisplay(s: string): string {
     return s.replace(/_/g, ' ').toLowerCase();
+  }
+  passengerStatusLabel(s?: string | null): string {
+    switch ((s || '').toUpperCase()) {
+      case 'BOOKED':
+      case 'CONFIRMED': return 'Confirmed';
+      case 'BOARDED': return 'Onboard';
+      case 'DROPPED': return 'Dropped Off';
+      case 'COMPLETED': return 'Completed';
+      case 'NO_SHOW': return 'No-Show';
+      case 'CANCELLED': return 'Cancelled';
+      default: return s ? s.replace(/_/g, ' ') : 'Confirmed';
+    }
   }
   statusBucket(s: string): string {
     if (s === 'COMPLETED') return 'completed';

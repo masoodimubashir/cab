@@ -24,9 +24,16 @@ export const environment = {
   apiUrl: 'https://dreamcabs.in/api',
   /** Login OTP via server-side MSG91 (POST /auth/otp/sms/*). Set false for Firebase. */
   useServerOtp: true,
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
+  // Reverb websockets. Port 8080 is exposed directly by the server stack
+  // (see backend deploy). With HTTPS you'd typically proxy this to 443.
+  reverbAppKey: '4jsb8ggrbvcriyaskojh',
+  reverbHost: SERVER_HOST,
+  reverbPort: USE_HTTPS ? 443 : 8080,
+  reverbScheme: wsScheme,
   /** Same Web app config as dev; `appId` must be `…:web:…`, not Android/iOS. */
   firebase: {
-    apiKey: "REMOVED_GOOGLE_API_KEY",
+    apiKey: "REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY",
     authDomain: "dreamcabs-1cd27.firebaseapp.com",
     projectId: "dreamcabs-1cd27",
     storageBucket: "dreamcabs-1cd27.firebasestorage.app",
@@ -34,15 +41,5 @@ export const environment = {
     appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
     measurementId: "G-CLHQFG1HW1"
   },
-  // Reverb websockets. Port 8080 is exposed directly by the server stack
-  // (see backend deploy). With HTTPS you'd typically proxy this to 443.
-  reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: SERVER_HOST,
-  reverbPort: USE_HTTPS ? 443 : 8080,
-  reverbScheme: wsScheme,
-  fcmVapidKey: '',
-  // Shared with the customer + admin apps so all three render maps under the
-  // same Google Cloud project. Restrict by HTTP referrer in the Cloud Console
-  // when going to production.
-  googleMapsApiKey: 'REMOVED_GOOGLE_API_KEY',
+  fcmVapidKey: "",
 };

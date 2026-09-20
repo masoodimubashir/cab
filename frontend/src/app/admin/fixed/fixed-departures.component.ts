@@ -68,6 +68,7 @@ interface Passenger {
   customer_name: string | null;
   customer_phone: string | null;
   seats: number;
+  seat_labels?: string[] | null;
   booking_channel: string;
   status: string;
   fixed_live_status?: PassengerLiveStatus | null;
@@ -88,6 +89,7 @@ interface FixedSupportBooking {
   board?: string | null;
   drop?: string | null;
   seats: number;
+  seat_labels?: string[] | null;
   status: string;
   departure_status?: string | null;
   service_date?: string | null;
@@ -131,7 +133,7 @@ interface FixedSupportTimeline {
 }
 
 type RecoveryActionType = 'close_vehicle' | 'cancel_vehicle' | 'cancel_booking';
-type ManualSupportActionType = 'refund_pending' | 'refund_resolved_manual' | 'payment_resolved_manual';
+type ManualSupportActionType = 'refund_resolved_manual';
 
 interface RecoveryAction {
   type: RecoveryActionType;
@@ -154,33 +156,10 @@ interface ManualSupportAction {
 
 const STATUS_OPTIONS = [
   { label: 'Boarding', value: 'FORMING' },
-  { label: 'Started', value: 'DISPATCHED' },
+  { label: 'In Transit', value: 'DISPATCHED' },
   { label: 'Departed', value: 'DEPARTED' },
   { label: 'Completed', value: 'COMPLETED' },
   { label: 'Cancelled', value: 'CANCELLED' },
-];
-
-const BOOKING_STATUS_OPTIONS = [
-  { label: 'Booked', value: 'BOOKED' },
-  { label: 'Confirmed', value: 'CONFIRMED' },
-  { label: 'Boarded', value: 'BOARDED' },
-  { label: 'Dropped', value: 'DROPPED' },
-  { label: 'No-show', value: 'NO_SHOW' },
-  { label: 'Cancelled', value: 'CANCELLED' },
-];
-
-const PAYMENT_STATUS_OPTIONS = [
-  { label: 'Paid', value: 'PAID' },
-  { label: 'Refunded', value: 'REFUNDED' },
-  { label: 'Pending', value: 'PENDING' },
-  { label: 'Failed', value: 'FAILED' },
-];
-
-const REFUND_STATUS_OPTIONS = [
-  { label: 'None', value: 'NONE' },
-  { label: 'Approved', value: 'APPROVED' },
-  { label: 'Refunded', value: 'REFUNDED' },
-  { label: 'Rejected', value: 'REJECTED' },
 ];
 
 @Component({
@@ -203,9 +182,8 @@ const REFUND_STATUS_OPTIONS = [
       <header class="page__hero">
         <div>
           <h1 class="page__title">Live Fixed Vehicles</h1>
-          <p class="page__sub">Open, publish and monitor live fixed vehicles and their seat inventory.</p>
+          <p class="page__sub">Monitor and manage live fixed vehicles, seat manifests, and passengers.</p>
         </div>
-        <tm-button *ngIf="cityId != null" variant="green" icon="plus" (clicked)="openCreate()">Open vehicle</tm-button>
       </header>
 
       <div class="cue" *ngIf="cityId == null">
@@ -222,7 +200,7 @@ const REFUND_STATUS_OPTIONS = [
           [pageSize]="pageSize"
           [loading]="loading"
           emptyTitle="No live fixed vehicles"
-          emptyHint="Open a vehicle after setting up a fixed route."
+          emptyHint="Live vehicles will appear here when drivers open routes."
           (pageChange)="onPageChange($event)"
         >
           <div slot="search" class="table-search">
@@ -262,7 +240,7 @@ const REFUND_STATUS_OPTIONS = [
             <tm-filter-pill *ngIf="query.trim()" icon="search" label="Search" [value]="query" (clear)="clearSearch()" />
             <tm-filter-pill *ngIf="routeId !== 'all'" icon="road" label="Route" [value]="routeLabel()" (clear)="clearRouteFilter()" />
             <tm-filter-pill *ngIf="status !== 'all'" icon="shield" label="Status" [value]="statusLabel()" (clear)="clearStatusFilter()" />
-            <tm-filter-pill *ngIf="dateFrom || dateTo" icon="calendar" label="Ride date" [value]="dateRangeLabel()" (clear)="clearDateRange()" />
+            <tm-filter-pill *ngIf="isCustomDate" icon="calendar" label="Ride date" [value]="dateRangeLabel()" (clear)="clearDateRange()" />
           </ng-container>
 
           <tm-column key="route" label="Route">
@@ -283,7 +261,7 @@ const REFUND_STATUS_OPTIONS = [
             </ng-template>
           </tm-column>
 
-          <tm-column key="inventory" label="Inventory" width="150">
+          <tm-column key="inventory" label="Seats" width="150">
             <ng-template let-row>
               <div class="cell-id">
                 <span class="cell-name seats" [class.full]="row.seats_remaining === 0">{{ row.seats_taken }} / {{ row.capacity }} seats</span>
@@ -303,141 +281,315 @@ const REFUND_STATUS_OPTIONS = [
 
           <tm-column key="status" label="Status" width="120">
             <ng-template let-row>
-              <span class="status-pill" [attr.data-s]="row.status">{{ row.status }}</span>
+              <span class="status-pill" [attr.data-s]="row.status">{{ vehicleStatusLabel(row.status) }}</span>
             </ng-template>
           </tm-column>
 
-          <tm-column key="actions" label="" width="320" align="right">
+          <tm-column key="actions" label="" width="140" align="right">
             <ng-template let-row>
               <div class="cell-actions">
-                <tm-button variant="ghost" size="sm" icon="user" (clicked)="openManifest(row)">Manifest</tm-button>
-                <tm-button variant="ghost" size="sm" [disabled]="!canCloseVehicle(row)" (clicked)="openCloseBookings(row)">Close bookings</tm-button>
-                <tm-button variant="danger" size="sm" [disabled]="!canCancelVehicle(row)" (clicked)="openCancelVehicle(row)">Cancel vehicle</tm-button>
-                <button class="icon-btn" (click)="openEdit(row)" aria-label="Edit vehicle"><tm-icon name="edit" [size]="14" /></button>
+                <tm-button variant="green" size="sm" icon="users" (clicked)="openManifest(row)">Manage Ride</tm-button>
               </div>
             </ng-template>
           </tm-column>
         </tm-data-table>
 
-        <section class="support-panel">
-          <div class="support-head">
-            <div>
-              <h2>Fixed booking support</h2>
-              <p>Review passenger status, payment, refund and timeline details.</p>
-            </div>
-            <tm-button variant="ghost" size="sm" (clicked)="fetchBookings()">Refresh</tm-button>
-          </div>
-
-          <div class="support-filters">
-            <label class="support-search">
-              <span>Search</span>
-              <input [(ngModel)]="supportQuery" type="search" placeholder="Customer, phone, booking ID, payment ref" (ngModelChange)="onSupportFilterChange()" />
-            </label>
-            <label class="support-search compact"><span>Ride from</span><input [(ngModel)]="supportRideDateFrom" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
-            <label class="support-search compact"><span>Ride to</span><input [(ngModel)]="supportRideDateTo" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
-            <label class="support-search compact"><span>Booked from</span><input [(ngModel)]="supportBookingDateFrom" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
-            <label class="support-search compact"><span>Booked to</span><input [(ngModel)]="supportBookingDateTo" type="date" (ngModelChange)="onSupportFilterChange()" /></label>
-            <tm-filter-select icon="road" ariaLabel="Support route" allLabel="All routes" [options]="routeFilterOptions" [value]="supportRouteId" (valueChange)="onSupportRouteChange($event)" />
-            <tm-filter-select icon="shield" ariaLabel="Booking status" allLabel="All booking statuses" [options]="bookingStatusOptions" [value]="supportStatus" (valueChange)="onSupportStatusChange($event)" />
-            <tm-filter-select icon="shield" ariaLabel="Payment status" allLabel="All payment statuses" [options]="paymentStatusOptions" [value]="supportPaymentStatus" (valueChange)="onSupportPaymentStatusChange($event)" />
-            <tm-filter-select icon="refresh" ariaLabel="Refund status" allLabel="All refund statuses" [options]="refundStatusOptions" [value]="supportRefundStatus" (valueChange)="onSupportRefundStatusChange($event)" />
-            <tm-button variant="ghost" size="sm" (clicked)="resetSupportFilters()">Reset</tm-button>
-          </div>
-
-          <div class="cue support-cue" *ngIf="supportLoading"><tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading fixed bookings...</p></div>
-          <div class="cue support-cue" *ngIf="!supportLoading && !supportBookings.length"><tm-icon name="user" [size]="20" /><p class="cue__text">No fixed bookings match these filters.</p></div>
-
-          <div class="support-list" *ngIf="!supportLoading && supportBookings.length">
-            <article class="support-card" *ngFor="let row of supportBookings">
-              <div class="support-card__main">
-                <div><span class="support-title">#{{ row.id }} · {{ row.customer_name || "Customer" }}</span><span class="support-sub">{{ row.customer_phone || "No phone" }} · booked {{ bookingDate(row) }} · ride {{ rideDate(row) }}</span></div>
-                <div class="support-card__actions"><span class="status-pill" [attr.data-s]="row.status">{{ bookingStatusLabel(row) }}</span><tm-button variant="ghost" size="sm" icon="eye" (clicked)="openSupportTimeline(row)">Timeline</tm-button></div>
-              </div>
-              <div class="support-route"><tm-icon name="road" [size]="14" /><span>{{ row.route_name || "Fixed route" }} · {{ row.board || "Pickup" }} → {{ row.drop || "Drop" }}</span></div>
-              <div class="support-meta"><span>{{ row.seats }} seat{{ row.seats > 1 ? "s" : "" }}</span><span>Ride {{ departureStatus(row) }}</span><span>{{ supportProgress(row) }}</span><span>{{ supportPayment(row) }}</span><span>{{ supportRefund(row) }}</span><span *ngIf="row.driver_name">Driver {{ row.driver_name }}</span></div>
-              <p class="support-note" *ngIf="row.fixed_live_status?.detail">{{ row.fixed_live_status?.label }} · {{ row.fixed_live_status?.detail }}</p>
-            </article>
-          </div>
-
-          <div class="support-pages" *ngIf="supportTotal > supportPageSize">
-            <tm-button variant="ghost" size="sm" [disabled]="supportPage <= 1" (clicked)="onSupportPageChange(-1)">Previous</tm-button>
-            <span>Page {{ supportPage }} of {{ supportPageCount }}</span>
-            <tm-button variant="ghost" size="sm" [disabled]="supportPage >= supportPageCount" (clicked)="onSupportPageChange(1)">Next</tm-button>
-          </div>
-        </section>
-
       </ng-container>
     </div>
 
-    <tm-modal [open]="editorOpen" [title]="editingId ? 'Edit live fixed vehicle' : 'Open fixed vehicle'" (closed)="closeEditor()">
-      <div slot="body" class="modal-body vehicle-modal">
-        <div class="grid2">
-          <label class="field">
-            <span class="field__lbl">Route</span>
-            <select [(ngModel)]="form.route_id" (ngModelChange)="onFormRouteChange($event)" [disabled]="!!editingId">
-              <option [ngValue]="null">Select…</option>
-              <option *ngFor="let route of routes" [ngValue]="route.id">{{ route.name }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field__lbl">Status</span>
-            <select [(ngModel)]="form.status" [disabled]="!!editingId">
-              <option *ngFor="let option of statusOptions" [value]="option.value">{{ option.label }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field__lbl">Capacity</span>
-            <input [(ngModel)]="form.capacity" type="number" min="1" max="200" step="1" />
-          </label>
-          <label class="field">
-            <span class="field__lbl">Luggage spaces</span>
-            <input [(ngModel)]="form.luggage_capacity" type="number" min="0" max="200" step="1" />
-          </label>
-          <div class="live-note">
-            <tm-icon name="calendar" [size]="16" />
-            <span>{{ editingId ? 'Use action buttons for status changes. Capacity cannot go below active or held seats.' : 'Customers see this as boarding now. The driver starts the ride when ready.' }}</span>
-          </div>
-          <label class="field">
-            <span class="field__lbl">Boarding closes</span>
-            <input [(ngModel)]="form.boarding_closed_at" type="datetime-local" />
-          </label>
-        </div>
-
-        <div class="toggles modal-toggle-row">
-          <label class="toggle"><input type="checkbox" [(ngModel)]="form.visible_to_customers" /> <span>Visible to customers</span></label>
-        </div>
-      </div>
-      <div slot="footer" class="modal-foot">
-        <tm-button variant="ghost" (clicked)="closeEditor()">Cancel</tm-button>
-        <tm-button variant="green" [disabled]="saving || !formValid" (clicked)="submit()">{{ saving ? 'Saving…' : editingId ? 'Save vehicle' : 'Open vehicle' }}</tm-button>
-      </div>
-    </tm-modal>
-
     <tm-drawer
       [open]="manifestOpen"
-      [title]="manifestDeparture ? (manifestDeparture.route_name + ' — manifest') : 'Manifest'"
-      [subtitle]="manifestDeparture ? (openedLabel(manifestDeparture) + ' · ' + (manifestDeparture.visible_to_customers ? 'Boarding now' : 'Hidden')) : ''"
-      [width]="520"
+      [title]="manifestDeparture ? manifestDeparture.route_name : 'Manage Fixed Ride'"
+      [subtitle]="manifestDeparture ? (openedLabel(manifestDeparture) + ' · ' + (manifestDeparture.driver || 'No driver assigned') + ' · ' + manifestDeparture.seats_taken + '/' + manifestDeparture.capacity + ' seats') : ''"
+      [width]="580"
       (closed)="manifestOpen = false"
     >
-      <div slot="body" class="manifest-body">
-        <div class="cue" *ngIf="loadingManifest">
-          <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading manifest…</p>
+      <div slot="body" class="manifest-body" *ngIf="manifestDeparture">
+        <!-- Ride Quick Overview Card -->
+        <section class="manifest-overview">
+          <div class="manifest-overview__head">
+            <div class="manifest-overview__info">
+              <span class="manifest-overview__route">{{ manifestDeparture.route_name }}</span>
+              <span class="manifest-overview__sub">{{ manifestDeparture.scope | uppercase }} · {{ manifestDeparture.driver || 'Driver not assigned' }}</span>
+            </div>
+            <span class="status-pill" [attr.data-s]="manifestDeparture.status">{{ vehicleStatusLabel(manifestDeparture.status) }}</span>
+          </div>
+
+          <div class="manifest-overview__meta">
+            <span class="meta-chip">
+              <tm-icon name="users" [size]="13" />
+              <strong>{{ manifestDeparture.seats_taken }} / {{ manifestDeparture.capacity }}</strong> seats taken
+            </span>
+            <span class="meta-chip" *ngIf="activePassengers.length">
+              <span class="group-dot group-dot--active"></span>
+              <strong>{{ activePassengers.length }}</strong> active
+            </span>
+            <span class="meta-chip" *ngIf="droppedPassengers.length">
+              <span class="group-dot group-dot--dropped"></span>
+              <strong>{{ droppedPassengers.length }}</strong> dropped
+            </span>
+            <span class="meta-chip" *ngIf="cancelledPassengers.length">
+              <span class="group-dot group-dot--cancelled"></span>
+              <strong>{{ cancelledPassengers.length }}</strong> cancelled
+            </span>
+            <span class="meta-chip" [attr.data-s]="manifestDeparture.visible_to_customers ? 'published' : 'hidden'">
+              {{ manifestDeparture.visible_to_customers ? 'Live for booking' : 'Booking closed' }}
+            </span>
+          </div>
+        </section>
+
+        <!-- Passenger Manifest Header & Category Filters -->
+        <div class="manifest-passengers-head">
+          <h3 class="manifest-head-title">Passenger Manifest ({{ passengers.length }})</h3>
+          <tm-button variant="ghost" size="sm" icon="refresh" (clicked)="openManifest(manifestDeparture)">Refresh</tm-button>
         </div>
-        <p class="muted" *ngIf="!loadingManifest && !passengers.length">No passengers booked yet.</p>
-        <div class="pax" *ngFor="let p of passengers">
-          <div class="pax__main">
-            <span class="pax__name">{{ p.customer_name || 'Guest' }}</span>
-            <span class="pax__sub">{{ p.board || '—' }} → {{ p.drop || '—' }}</span>
-            <span class="pax__note" *ngIf="p.fixed_live_status">{{ p.fixed_live_status.label }} · {{ p.fixed_live_status.detail }}</span>
-            <span class="pax__note" *ngIf="p.refund_status && p.refund_status !== 'NONE'">Refund: {{ p.refund_status }}</span>
-          </div>
-          <div class="pax__meta">
-            <span class="pax__seats">{{ p.seats }} seat{{ p.seats > 1 ? 's' : '' }}</span>
-            <span class="status-pill" [attr.data-s]="p.status">{{ p.status }}</span>
-            <span class="pax__fare" *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
-            <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openPassengerTimeline(p)">Timeline</tm-button>
-          </div>
+
+        <!-- Category Tabs -->
+        <div class="manifest-tabs" *ngIf="!loadingManifest && passengers.length">
+          <button
+            type="button"
+            class="manifest-tab"
+            [class.active]="manifestFilter === 'all'"
+            (click)="manifestFilter = 'all'"
+          >
+            All <span class="manifest-tab-count">{{ passengers.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="manifest-tab"
+            [class.active]="manifestFilter === 'active'"
+            (click)="manifestFilter = 'active'"
+          >
+            <span class="group-dot group-dot--active"></span>
+            In Vehicle / Active <span class="manifest-tab-count">{{ activePassengers.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="manifest-tab"
+            [class.active]="manifestFilter === 'dropped'"
+            (click)="manifestFilter = 'dropped'"
+          >
+            <span class="group-dot group-dot--dropped"></span>
+            Dropped Off <span class="manifest-tab-count">{{ droppedPassengers.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="manifest-tab"
+            [class.active]="manifestFilter === 'cancelled'"
+            (click)="manifestFilter = 'cancelled'"
+          >
+            <span class="group-dot group-dot--cancelled"></span>
+            Cancelled / No-Show <span class="manifest-tab-count">{{ cancelledPassengers.length }}</span>
+          </button>
+        </div>
+
+        <div class="cue manifest-cue" *ngIf="loadingManifest">
+          <tm-icon name="refresh" [size]="20" /><p class="cue__text">Loading passengers…</p>
+        </div>
+
+        <p class="muted empty-passengers" *ngIf="!loadingManifest && !passengers.length">
+          No passengers booked on this vehicle yet.
+        </p>
+
+        <!-- Passengers List with Category Sections -->
+        <div class="manifest-passenger-list" *ngIf="!loadingManifest && passengers.length">
+
+          <!-- Section 1: Active / In-Vehicle Passengers -->
+          <ng-container *ngIf="(manifestFilter === 'all' || manifestFilter === 'active') && activePassengers.length">
+            <div class="manifest-group-header" *ngIf="manifestFilter === 'all'">
+              <h4 class="manifest-group-title">
+                <span class="group-dot group-dot--active"></span>
+                Active Passengers in Vehicle ({{ activePassengers.length }})
+              </h4>
+              <span class="manifest-group-sub">Currently onboard or awaiting pickup</span>
+            </div>
+
+            <article class="pax-card pax-card--active" *ngFor="let p of activePassengers" [attr.data-s]="p.status">
+              <div class="pax-card__top">
+                <div class="pax-card__user">
+                  <strong>{{ p.customer_name || 'Passenger #' + p.id }}</strong>
+                  <small *ngIf="p.customer_phone"><tm-icon name="phone" [size]="11" /> {{ p.customer_phone }}</small>
+                </div>
+                <div class="pax-card__badges">
+                  <span class="status-pill" [attr.data-s]="p.status">{{ passengerStatusLabel(p.status) }}</span>
+                  <span class="pax-fare-badge" *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
+                </div>
+              </div>
+
+              <!-- Seat Allocation / Representation Banner -->
+              <div class="pax-seat-banner" [attr.data-tone]="passengerSeatState(p).tone">
+                <div class="pax-seat-banner__left">
+                  <span class="pax-seat-icon">💺</span>
+                  <div class="pax-seat-info">
+                    <span class="pax-seat-title">{{ passengerSeatState(p).title }}</span>
+                    <span class="pax-seat-sub">{{ passengerSeatState(p).subtext }}</span>
+                  </div>
+                </div>
+                <span class="pax-seat-badge" [attr.data-tone]="passengerSeatState(p).tone">
+                  {{ passengerSeatState(p).badge }}
+                </span>
+              </div>
+
+              <div class="pax-route-box">
+                <div class="pax-stop-row">
+                  <span class="stop-dot stop-dot--pickup"></span>
+                  <span class="stop-lbl">Pickup:</span>
+                  <span class="stop-name">{{ p.board || 'Pickup stop' }}</span>
+                </div>
+                <div class="pax-stop-row">
+                  <span class="stop-dot stop-dot--drop"></span>
+                  <span class="stop-lbl">Drop:</span>
+                  <span class="stop-name">{{ p.drop || 'Drop stop' }}</span>
+                </div>
+              </div>
+
+              <div class="pax-alert-note" *ngIf="p.fixed_live_status?.detail">
+                <tm-icon name="alert-triangle" [size]="12" />
+                <span>{{ p.fixed_live_status?.label }}: {{ p.fixed_live_status?.detail }}</span>
+              </div>
+              <div class="pax-alert-note pax-alert-note--refund" *ngIf="p.refund_status && p.refund_status !== 'NONE'">
+                <tm-icon name="refresh" [size]="12" />
+                <span>Refund status: {{ prettyToken(p.refund_status) }}</span>
+              </div>
+
+              <div class="pax-card__actions">
+                <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openPassengerTimeline(p)">Timeline & Support</tm-button>
+                <tm-button
+                  variant="danger"
+                  size="sm"
+                  icon="x"
+                  *ngIf="canCancelPassenger(p)"
+                  (clicked)="openCancelPassengerFromManifest(p)"
+                >
+                  Cancel Ride
+                </tm-button>
+              </div>
+            </article>
+          </ng-container>
+
+          <!-- Section 2: Dropped Off / Completed Passengers -->
+          <ng-container *ngIf="(manifestFilter === 'all' || manifestFilter === 'dropped') && droppedPassengers.length">
+            <div class="manifest-group-header" *ngIf="manifestFilter === 'all'">
+              <h4 class="manifest-group-title">
+                <span class="group-dot group-dot--dropped"></span>
+                Previously Dropped Off / Completed ({{ droppedPassengers.length }})
+              </h4>
+              <span class="manifest-group-sub">Trip completed · Seats vacated</span>
+            </div>
+
+            <article class="pax-card pax-card--dropped" *ngFor="let p of droppedPassengers" [attr.data-s]="p.status">
+              <div class="pax-card__top">
+                <div class="pax-card__user">
+                  <strong>{{ p.customer_name || 'Passenger #' + p.id }}</strong>
+                  <small *ngIf="p.customer_phone"><tm-icon name="phone" [size]="11" /> {{ p.customer_phone }}</small>
+                </div>
+                <div class="pax-card__badges">
+                  <span class="status-pill" [attr.data-s]="p.status">{{ passengerStatusLabel(p.status) }}</span>
+                  <span class="pax-fare-badge" *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
+                </div>
+              </div>
+
+              <div class="pax-seat-banner" [attr.data-tone]="passengerSeatState(p).tone">
+                <div class="pax-seat-banner__left">
+                  <span class="pax-seat-icon">💺</span>
+                  <div class="pax-seat-info">
+                    <span class="pax-seat-title">{{ passengerSeatState(p).title }}</span>
+                    <span class="pax-seat-sub">{{ passengerSeatState(p).subtext }}</span>
+                  </div>
+                </div>
+                <span class="pax-seat-badge" [attr.data-tone]="passengerSeatState(p).tone">
+                  {{ passengerSeatState(p).badge }}
+                </span>
+              </div>
+
+              <div class="pax-route-box">
+                <div class="pax-stop-row">
+                  <span class="stop-dot stop-dot--pickup"></span>
+                  <span class="stop-lbl">Pickup:</span>
+                  <span class="stop-name">{{ p.board || 'Pickup stop' }}</span>
+                </div>
+                <div class="pax-stop-row">
+                  <span class="stop-dot stop-dot--drop"></span>
+                  <span class="stop-lbl">Dropped At:</span>
+                  <span class="stop-name">{{ p.drop || 'Drop stop' }}</span>
+                </div>
+              </div>
+
+              <div class="pax-card__actions">
+                <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openPassengerTimeline(p)">Timeline & Support</tm-button>
+              </div>
+            </article>
+          </ng-container>
+
+          <!-- Section 3: Cancelled / No-Show Passengers -->
+          <ng-container *ngIf="(manifestFilter === 'all' || manifestFilter === 'cancelled') && cancelledPassengers.length">
+            <div class="manifest-group-header" *ngIf="manifestFilter === 'all'">
+              <h4 class="manifest-group-title">
+                <span class="group-dot group-dot--cancelled"></span>
+                Cancelled / No-Show Rides ({{ cancelledPassengers.length }})
+              </h4>
+              <span class="manifest-group-sub">Seats released back to available inventory</span>
+            </div>
+
+            <article class="pax-card pax-card--cancelled" *ngFor="let p of cancelledPassengers" [attr.data-s]="p.status">
+              <div class="pax-card__top">
+                <div class="pax-card__user">
+                  <strong>{{ p.customer_name || 'Passenger #' + p.id }}</strong>
+                  <small *ngIf="p.customer_phone"><tm-icon name="phone" [size]="11" /> {{ p.customer_phone }}</small>
+                </div>
+                <div class="pax-card__badges">
+                  <span class="status-pill" [attr.data-s]="p.status">{{ passengerStatusLabel(p.status) }}</span>
+                  <span class="pax-fare-badge" *ngIf="p.fare_amount != null">₹{{ p.fare_amount | number: '1.0-2' }}</span>
+                </div>
+              </div>
+
+              <div class="pax-seat-banner" [attr.data-tone]="passengerSeatState(p).tone">
+                <div class="pax-seat-banner__left">
+                  <span class="pax-seat-icon">💺</span>
+                  <div class="pax-seat-info">
+                    <span class="pax-seat-title">{{ passengerSeatState(p).title }}</span>
+                    <span class="pax-seat-sub">{{ passengerSeatState(p).subtext }}</span>
+                  </div>
+                </div>
+                <span class="pax-seat-badge" [attr.data-tone]="passengerSeatState(p).tone">
+                  {{ passengerSeatState(p).badge }}
+                </span>
+              </div>
+
+              <div class="pax-route-box">
+                <div class="pax-stop-row">
+                  <span class="stop-dot stop-dot--pickup"></span>
+                  <span class="stop-lbl">Original Pickup:</span>
+                  <span class="stop-name">{{ p.board || 'Pickup stop' }}</span>
+                </div>
+                <div class="pax-stop-row">
+                  <span class="stop-dot stop-dot--drop"></span>
+                  <span class="stop-lbl">Original Drop:</span>
+                  <span class="stop-name">{{ p.drop || 'Drop stop' }}</span>
+                </div>
+              </div>
+
+              <div class="pax-alert-note pax-alert-note--refund" *ngIf="p.refund_status && p.refund_status !== 'NONE'">
+                <tm-icon name="refresh" [size]="12" />
+                <span>Refund status: {{ prettyToken(p.refund_status) }}</span>
+              </div>
+
+              <div class="pax-card__actions">
+                <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openPassengerTimeline(p)">Timeline & Support</tm-button>
+              </div>
+            </article>
+          </ng-container>
+
+          <!-- Empty state when a specific filter is empty -->
+          <p class="muted empty-passengers" *ngIf="manifestFilter === 'active' && !activePassengers.length">
+            No active passengers currently in the vehicle or awaiting pickup.
+          </p>
+          <p class="muted empty-passengers" *ngIf="manifestFilter === 'dropped' && !droppedPassengers.length">
+            No passengers have been dropped off yet on this ride.
+          </p>
+          <p class="muted empty-passengers" *ngIf="manifestFilter === 'cancelled' && !cancelledPassengers.length">
+            No cancelled or no-show passengers for this vehicle.
+          </p>
         </div>
       </div>
     </tm-drawer>
@@ -446,44 +598,72 @@ const REFUND_STATUS_OPTIONS = [
       [open]="supportTimelineOpen"
       [title]="supportTimeline?.booking ? ('Fixed booking #' + supportTimeline?.booking?.id) : 'Fixed booking timeline'"
       [subtitle]="supportTimeline?.booking ? ((supportTimeline?.booking?.customer_name || 'Customer') + ' · ' + (supportTimeline?.booking?.route_name || 'Fixed route')) : ''"
-      [width]="560"
+      [width]="580"
       (closed)="closeSupportTimeline()"
     >
       <div slot="body" class="timeline-drawer">
-        <div class="cue" *ngIf="supportTimelineLoading">
+        <div class="cue manifest-cue" *ngIf="supportTimelineLoading">
           <tm-icon name="refresh" [size]="20" />
           <p class="cue__text">Loading booking timeline...</p>
         </div>
 
         <ng-container *ngIf="!supportTimelineLoading && supportTimeline as timeline">
           <section class="timeline-summary">
-            <div>
-              <span class="support-title">{{ timeline.booking.board || 'Pickup' }} → {{ timeline.booking.drop || 'Drop' }}</span>
-              <span class="support-sub">Ride {{ rideDate(timeline.booking) }} · booked {{ bookingDate(timeline.booking) }} · {{ supportPayment(timeline.booking) }} · {{ supportRefund(timeline.booking) }}</span>
+            <div class="timeline-summary__info">
+              <div class="support-title-row">
+                <span class="support-title">{{ timeline.booking.board || 'Pickup' }} → {{ timeline.booking.drop || 'Drop' }}</span>
+                <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ bookingStatusLabel(timeline.booking) }}</span>
+              </div>
+              <div class="support-meta-chips">
+                <span class="meta-chip">
+                  <tm-icon name="calendar" [size]="12" />
+                  Ride: <strong>{{ rideDate(timeline.booking) }}</strong>
+                </span>
+                <span class="meta-chip">
+                  <tm-icon name="clock" [size]="12" />
+                  Booked: <strong>{{ bookingDate(timeline.booking) }}</strong>
+                </span>
+                <span class="meta-chip">
+                  <tm-icon name="users" [size]="12" />
+                  <strong>{{ passengerSeatLabel(timeline.booking) }}</strong>
+                </span>
+                <span class="meta-chip" *ngIf="timeline.booking.fare_amount != null">
+                  Fare: <strong>₹{{ timeline.booking.fare_amount | number: '1.0-2' }}</strong>
+                </span>
+                <span class="meta-chip" [attr.data-pay]="(timeline.booking.payment_status || 'pending').toLowerCase()">
+                  Payment: <strong>{{ prettyToken(timeline.booking.payment_status || 'Pending') }}</strong>
+                  <ng-container *ngIf="timeline.booking.payment_method"> ({{ prettyToken(timeline.booking.payment_method) }})</ng-container>
+                </span>
+                <span class="meta-chip meta-chip--refund" *ngIf="timeline.booking.refund_status && timeline.booking.refund_status !== 'NONE'" [attr.data-refund]="timeline.booking.refund_status.toLowerCase()">
+                  Refund: <strong>{{ prettyToken(timeline.booking.refund_status) }}</strong>
+                  <ng-container *ngIf="timeline.booking.refund_amount"> (₹{{ timeline.booking.refund_amount | number: '1.2-2' }})</ng-container>
+                </span>
+              </div>
             </div>
             <div class="timeline-summary__actions">
-              <span class="status-pill" [attr.data-s]="timeline.booking.status">{{ bookingStatusLabel(timeline.booking) }}</span>
-              <tm-button variant="danger" size="sm" [disabled]="!canCancelBooking(timeline.booking)" (clicked)="openCancelBooking(timeline.booking)">Cancel passenger</tm-button>
+              <tm-button variant="danger" size="sm" [disabled]="!canCancelBooking(timeline.booking)" (clicked)="openCancelBooking(timeline.booking)">Cancel Ride</tm-button>
             </div>
           </section>
 
-          <section class="timeline-section support-actions-section">
-            <h3>Support actions</h3>
-            <p class="muted">Record manual payment or refund handling done outside the app. These actions do not call Razorpay or send money automatically.</p>
-            <div class="manual-actions action-grid">
-              <tm-button variant="ghost" size="sm" (clicked)="openManualSupportAction(timeline.booking, 'refund_pending')">Mark refund pending</tm-button>
-              <tm-button variant="green" size="sm" (clicked)="openManualSupportAction(timeline.booking, 'refund_resolved_manual')">Mark refund resolved manually</tm-button>
-              <tm-button variant="ghost" size="sm" (clicked)="openManualSupportAction(timeline.booking, 'payment_resolved_manual')">Mark payment resolved manually</tm-button>
+          <section class="timeline-section support-actions-section" *ngIf="canRecordRefund(timeline.booking)">
+            <div class="support-actions-head">
+              <h3>Offline Refund Recording</h3>
+              <p class="muted">Record a refund that you have already sent to the customer outside the app. This synchronizes the refund register and financial ledger.</p>
+            </div>
+            <div class="manual-actions-list">
+              <tm-button variant="green" size="sm" icon="check" (clicked)="openManualSupportAction(timeline.booking, 'refund_resolved_manual')">
+                Record Offline Refund (₹{{ (timeline.booking.refund_amount || 0) | number: '1.2-2' }})
+              </tm-button>
             </div>
           </section>
 
           <section class="timeline-section">
-            <h3>Timeline</h3>
+            <h3>Booking Timeline</h3>
             <p class="muted" *ngIf="!timeline.events.length">No timeline events have been recorded yet.</p>
             <div class="timeline-list" *ngIf="timeline.events.length">
               <article class="timeline-event" *ngFor="let event of timeline.events">
                 <span class="timeline-event__dot"></span>
-                <div>
+                <div class="timeline-event__content">
                   <span class="timeline-event__time">{{ eventDate(event.created_at) }}{{ event.actor_name ? ' · ' + event.actor_name : '' }}</span>
                   <span class="timeline-event__title">{{ event.title }}</span>
                   <p *ngIf="event.detail">{{ event.detail }}</p>
@@ -493,7 +673,7 @@ const REFUND_STATUS_OPTIONS = [
           </section>
 
           <section class="timeline-section">
-            <h3>Support notes</h3>
+            <h3>Support Notes</h3>
             <label class="note-box">
               <span>Add internal note</span>
               <textarea [(ngModel)]="supportNoteText" rows="3" placeholder="Refund follow-up, customer call result, dispute decision..."></textarea>
@@ -503,8 +683,8 @@ const REFUND_STATUS_OPTIONS = [
             </div>
             <p class="muted" *ngIf="!timeline.notes.length">No support notes yet.</p>
             <article class="support-note-card" *ngFor="let note of timeline.notes">
-              <span>{{ eventDate(note.created_at) }}{{ note.admin_name ? ' · ' + note.admin_name : '' }}</span>
-              <p>{{ note.note }}</p>
+              <span class="support-note-meta">{{ eventDate(note.created_at) }}{{ note.admin_name ? ' · ' + note.admin_name : '' }}</span>
+              <p class="support-note-text">{{ note.note }}</p>
             </article>
           </section>
         </ng-container>
@@ -518,23 +698,23 @@ const REFUND_STATUS_OPTIONS = [
         <p class="recovery-intro">{{ action.intro }}</p>
         <div class="grid2">
           <label class="field">
-            <span class="field__lbl">Manual method</span>
+            <span class="field__lbl">Payment method *</span>
             <select [(ngModel)]="manualSupportMethod">
-              <option value="">Not specified</option>
-              <option value="Bank transfer">Bank transfer</option>
-              <option value="GPay">GPay</option>
-              <option value="Cash">Cash</option>
-              <option value="Razorpay dashboard">Razorpay dashboard</option>
-              <option value="Other">Other</option>
+              <option value="">Select payment method…</option>
+              <option value="gpay">Google Pay (UPI)</option>
+              <option value="bank">Bank Transfer (NEFT / IMPS)</option>
+              <option value="cash">Cash Handover</option>
+              <option value="razorpay_dashboard">Razorpay Dashboard</option>
+              <option value="other">Other / Cheque</option>
             </select>
           </label>
           <label class="field">
-            <span class="field__lbl">Reference</span>
-            <input [(ngModel)]="manualSupportReference" type="text" placeholder="UTR / transaction ID / note ref" />
+            <span class="field__lbl">Transaction reference (UTR) *</span>
+            <input [(ngModel)]="manualSupportReference" type="text" placeholder="e.g. UTR1234567890 / Txn ID" />
           </label>
           <label class="field" *ngIf="action.showAmount">
-            <span class="field__lbl">Amount</span>
-            <input [(ngModel)]="manualSupportAmount" type="number" min="0" step="0.01" />
+            <span class="field__lbl">Approved refund amount</span>
+            <input [value]="'₹' + ((manualSupportAmount || 0) | number: '1.2-2') + ' (Locked)'" type="text" readonly disabled style="font-weight: 700; background: var(--tm-canvas-2); cursor: not-allowed;" />
           </label>
         </div>
         <label class="field">
@@ -582,8 +762,9 @@ const REFUND_STATUS_OPTIONS = [
     .seats.full { color: var(--tm-danger, #ef4444); }
     .status-pill { display: inline-flex; align-items: center; text-transform: capitalize; font-size: 10px; font-weight: 800; letter-spacing: 0.3px; padding: 3px 9px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text-muted); }
     .status-pill[data-s="SCHEDULED"], .status-pill[data-s="published"] { background: #eef2ff; color: #4338ca; }
-    .status-pill[data-s="FORMING"], .status-pill[data-s="CONFIRMED"] { background: #ecfeff; color: #0f766e; }
+    .status-pill[data-s="FORMING"], .status-pill[data-s="CONFIRMED"], .status-pill[data-s="BOOKED"] { background: #ecfeff; color: #0f766e; }
     .status-pill[data-s="DISPATCHED"], .status-pill[data-s="DEPARTED"], .status-pill[data-s="BOARDED"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .status-pill[data-s="DROPPED"], .status-pill[data-s="COMPLETED"], .status-pill[data-s="ARRIVED"] { background: #f1f5f9; color: #475569; }
     .status-pill[data-s="CANCELLED"], .status-pill[data-s="NO_SHOW"], .status-pill[data-s="hidden"] { background: #fef2f2; color: #b91c1c; }
     .table-search { display: inline-flex; align-items: center; gap: 8px; width: min(360px, 100%); height: 38px; padding: 0 11px; border: 1px solid var(--tm-line-2, var(--tm-line)); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text-muted); }
     .table-search:focus-within { border-color: var(--tm-green); }
@@ -624,75 +805,120 @@ const REFUND_STATUS_OPTIONS = [
     .toggles { display: flex; flex-wrap: wrap; gap: 14px; }
     .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tm-text); }
     .toggle input { width: 16px; height: 16px; }
-    .manifest-body { display: flex; flex-direction: column; gap: 8px; }
-    .pax { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--tm-line); }
-    .pax__main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
-    .pax__name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
-    .pax__sub { font-size: 11px; color: var(--tm-text-muted); }
-    .pax__note { max-width: 310px; font-size: 11px; line-height: 1.35; color: var(--tm-warning-fg, #92400e); overflow-wrap: anywhere; }
-    .pax__meta { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; max-width: 220px; }
-    .pax__seats { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); }
-    .pax__fare { font-family: var(--tm-font-mono); font-weight: 700; font-size: 12px; color: var(--tm-text); }
-    .support-panel { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-lg); }
-    .support-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-    .support-head h2 { margin: 0; font-size: 17px; font-weight: 850; color: var(--tm-text); }
-    .support-head p { margin: 3px 0 0; font-size: 12px; color: var(--tm-text-muted); }
-    .support-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
-    .support-search { display: flex; flex-direction: column; gap: 5px; min-width: min(280px, 100%); }
-    .support-search.compact { min-width: 145px; }
-    .support-search span { font-size: 12px; font-weight: 700; color: var(--tm-text); }
-    .support-search input { min-height: 38px; padding: 8px 11px; border: 1px solid var(--tm-line-2); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-family: inherit; font-size: 13px; }
-    .support-list { display: flex; flex-direction: column; gap: 10px; }
-    .support-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
-    .support-card__main { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-    .support-card__actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
-    .support-title { display: block; font-size: 13px; font-weight: 850; color: var(--tm-text); overflow-wrap: anywhere; }
-    .support-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--tm-text-muted); overflow-wrap: anywhere; }
-    .support-route { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 750; color: var(--tm-text); overflow-wrap: anywhere; }
-    .support-meta { display: flex; flex-wrap: wrap; gap: 7px; }
-    .support-meta span { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text-muted); font-size: 11px; font-weight: 750; }
-    .support-note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--tm-warning-fg, #92400e); overflow-wrap: anywhere; }
-    .support-pages { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 12px; color: var(--tm-text-muted); }
-    .manual-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-    .support-actions-section { padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
-    .support-cue { min-height: 120px; }
-    .timeline-drawer { display: flex; flex-direction: column; gap: 16px; }
-    .timeline-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
-    .timeline-summary__actions { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-    .timeline-section { display: flex; flex-direction: column; gap: 10px; }
+    .manifest-body { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
+    .manifest-overview { display: flex; flex-direction: column; gap: 12px; padding: 14px; background: var(--tm-surface); border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); width: 100%; box-sizing: border-box; }
+    .manifest-overview__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; min-width: 0; }
+    .manifest-overview__info { min-width: 0; flex: 1 1 auto; }
+    .manifest-overview__route { display: block; font-size: 15px; font-weight: 850; color: var(--tm-text); word-break: break-word; overflow-wrap: anywhere; }
+    .manifest-overview__sub { display: block; margin-top: 3px; font-size: 12px; color: var(--tm-text-muted); }
+    .manifest-overview__meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .meta-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text); font-size: 11px; font-weight: 600; }
+    .meta-chip[data-s="published"] { background: #ecfeff; color: #0f766e; }
+    .meta-chip[data-s="hidden"] { background: #fef2f2; color: #b91c1c; }
+    .manifest-passengers-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 4px; }
+    .manifest-head-title { margin: 0; font-size: 14px; font-weight: 800; color: var(--tm-text); }
+    .manifest-tabs { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; box-sizing: border-box; }
+    .manifest-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--tm-radius-pill); border: 1px solid var(--tm-line); background: var(--tm-canvas); color: var(--tm-text-muted); font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; font-family: inherit; }
+    .manifest-tab:hover { background: var(--tm-canvas-2); color: var(--tm-text); }
+    .manifest-tab.active { background: var(--tm-ink); color: #fff; border-color: var(--tm-ink); }
+    .manifest-tab-count { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; background: rgba(0,0,0,0.08); }
+    .manifest-tab.active .manifest-tab-count { background: rgba(255,255,255,0.25); color: #fff; }
+    .manifest-group-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0 4px; margin-top: 4px; border-bottom: 1px solid var(--tm-line-2); width: 100%; box-sizing: border-box; }
+    .manifest-group-title { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--tm-text); margin: 0; }
+    .manifest-group-sub { font-size: 11px; color: var(--tm-text-muted); }
+    .group-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+    .group-dot--active { background: #10b981; }
+    .group-dot--dropped { background: #64748b; }
+    .group-dot--cancelled { background: #ef4444; }
+    .manifest-cue { padding: 24px; }
+    .empty-passengers { margin: 16px 0; font-size: 13px; text-align: center; }
+    .manifest-passenger-list { display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box; }
+    .pax-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-surface); width: 100%; box-sizing: border-box; }
+    .pax-card--active { border-color: rgba(16, 185, 129, 0.35); box-shadow: 0 1px 3px rgba(16, 185, 129, 0.05); }
+    .pax-card--dropped { border-color: var(--tm-line); background: var(--tm-canvas); }
+    .pax-card--cancelled { border-color: rgba(239, 68, 68, 0.25); background: var(--tm-canvas); border-style: dashed; opacity: 0.88; }
+    .pax-card[data-s="CANCELLED"], .pax-card[data-s="NO_SHOW"] { opacity: 0.85; background: var(--tm-canvas); border-style: dashed; }
+    .pax-card__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; min-width: 0; }
+    .pax-card__user { min-width: 0; flex: 1 1 auto; word-break: break-word; overflow-wrap: anywhere; }
+    .pax-card__user strong { font-size: 14px; font-weight: 800; color: var(--tm-text); display: block; }
+    .pax-card__user small { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--tm-text-muted); margin-top: 2px; }
+    .pax-card__badges { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; flex: 0 0 auto; }
+    .pax-fare-badge { font-family: var(--tm-font-mono); font-size: 12px; font-weight: 750; color: var(--tm-text); }
+    .pax-seat-banner { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--tm-radius-sm); background: var(--tm-canvas); border: 1px solid var(--tm-line-2); width: 100%; box-sizing: border-box; }
+    .pax-seat-banner[data-tone="active"] { background: #f0fdf4; border-color: #bbf7d0; }
+    .pax-seat-banner[data-tone="boarded"] { background: #ecfdf5; border-color: #a7f3d0; }
+    .pax-seat-banner[data-tone="completed"] { background: #f8fafc; border-color: #e2e8f0; }
+    .pax-seat-banner[data-tone="cancelled"] { background: #fef2f2; border-color: #fecaca; }
+    .pax-seat-banner__left { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; }
+    .pax-seat-icon { font-size: 15px; line-height: 1; flex: 0 0 auto; }
+    .pax-seat-info { display: flex; flex-direction: column; min-width: 0; }
+    .pax-seat-title { font-size: 13px; font-weight: 800; color: var(--tm-text); font-family: var(--tm-font-mono, monospace); word-break: break-word; }
+    .pax-seat-sub { font-size: 11px; color: var(--tm-text-muted); margin-top: 1px; word-break: break-word; }
+    .pax-seat-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: var(--tm-radius-pill); font-size: 11px; font-weight: 750; white-space: nowrap; flex: 0 0 auto; }
+    .pax-seat-badge[data-tone="active"] { background: #dcfce7; color: #166534; }
+    .pax-seat-badge[data-tone="boarded"] { background: #059669; color: #ffffff; }
+    .pax-seat-badge[data-tone="completed"] { background: #e2e8f0; color: #475569; }
+    .pax-seat-badge[data-tone="cancelled"] { background: #fee2e2; color: #991b1b; }
+    .pax-route-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--tm-radius-sm); background: var(--tm-canvas); border: 1px solid var(--tm-line-2); width: 100%; box-sizing: border-box; }
+    .pax-stop-row { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+    .stop-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+    .stop-dot--pickup { background: var(--tm-green); }
+    .stop-dot--drop { background: #ef4444; }
+    .stop-lbl { font-size: 11px; font-weight: 700; color: var(--tm-text-muted); flex: 0 0 auto; }
+    .stop-name { font-weight: 700; color: var(--tm-text); overflow-wrap: anywhere; word-break: break-word; }
+    .pax-alert-note { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; line-height: 1.4; color: var(--tm-warning-fg, #92400e); background: #fffbeb; padding: 8px 10px; border-radius: var(--tm-radius-sm); width: 100%; box-sizing: border-box; }
+    .pax-alert-note--refund { color: #4338ca; background: #eef2ff; }
+    .pax-card__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; padding-top: 4px; }
+    .support-title { display: block; font-size: 14px; font-weight: 850; color: var(--tm-text); word-break: break-word; overflow-wrap: anywhere; }
+    .support-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .support-meta-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .meta-chip[data-pay="paid"] { background: var(--tm-success-bg); color: var(--tm-success-fg); }
+    .meta-chip[data-pay="refunded"] { background: #fef2f2; color: #b91c1c; }
+    .meta-chip[data-pay="pending"] { background: #fffbeb; color: #92400e; }
+    .meta-chip[data-pay="failed"] { background: #fef2f2; color: #b91c1c; }
+    .meta-chip--refund { background: #eef2ff; color: #4338ca; }
+    .meta-chip--refund[data-refund="approved"] { background: #fffbeb; color: #92400e; }
+    .meta-chip--refund[data-refund="refunded"] { background: #ecfeff; color: #0f766e; }
+    .meta-chip--refund[data-refund="rejected"] { background: #fef2f2; color: #b91c1c; }
+    .timeline-drawer { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
+    .timeline-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-surface); width: 100%; box-sizing: border-box; }
+    .timeline-summary__info { min-width: 0; flex: 1 1 auto; }
+    .timeline-summary__actions { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; }
+    .support-actions-section { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-surface); width: 100%; box-sizing: border-box; }
+    .support-actions-head h3 { margin: 0; font-size: 14px; font-weight: 850; color: var(--tm-text); }
+    .support-actions-head p { margin: 3px 0 0; font-size: 12px; color: var(--tm-text-muted); }
+    .manual-actions-list { display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box; }
+    .timeline-section { display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box; }
     .timeline-section h3 { margin: 0; font-size: 14px; font-weight: 850; color: var(--tm-text); }
-    .timeline-list { display: flex; flex-direction: column; gap: 0; }
-    .timeline-event { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 0 0 14px; }
+    .timeline-list { display: flex; flex-direction: column; gap: 0; width: 100%; }
+    .timeline-event { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 0 0 14px; min-width: 0; }
     .timeline-event::before { content: ''; position: absolute; left: 6px; top: 12px; bottom: 0; width: 1px; background: var(--tm-line); }
     .timeline-event:last-child::before { display: none; }
     .timeline-event__dot { position: relative; z-index: 1; width: 13px; height: 13px; margin-top: 3px; border-radius: 50%; background: var(--tm-green); box-shadow: 0 0 0 3px var(--tm-success-bg); }
+    .timeline-event__content { min-width: 0; }
     .timeline-event__time { display: block; font-size: 11px; color: var(--tm-text-muted); }
-    .timeline-event__title { display: block; margin-top: 2px; font-size: 13px; font-weight: 850; color: var(--tm-text); }
-    .timeline-event p { margin: 3px 0 0; font-size: 12px; line-height: 1.45; color: var(--tm-text-muted); overflow-wrap: anywhere; }
-    .note-box { display: flex; flex-direction: column; gap: 6px; }
+    .timeline-event__title { display: block; margin-top: 2px; font-size: 13px; font-weight: 850; color: var(--tm-text); word-break: break-word; overflow-wrap: anywhere; }
+    .timeline-event p { margin: 3px 0 0; font-size: 12px; line-height: 1.45; color: var(--tm-text-muted); word-break: break-word; overflow-wrap: anywhere; }
+    .note-box { display: flex; flex-direction: column; gap: 6px; width: 100%; box-sizing: border-box; }
     .note-box span { font-size: 12px; font-weight: 750; color: var(--tm-text); }
-    .note-box textarea { width: 100%; resize: vertical; min-height: 84px; padding: 10px 11px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-family: inherit; font-size: 13px; }
+    .note-box textarea { width: 100%; resize: vertical; min-height: 84px; padding: 10px 11px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-family: inherit; font-size: 13px; box-sizing: border-box; }
     .note-actions { display: flex; justify-content: flex-end; }
-    .support-note-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
-    .support-note-card span { font-size: 11px; color: var(--tm-text-muted); }
-    .support-note-card p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--tm-text); overflow-wrap: anywhere; }
+    .support-note-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); width: 100%; box-sizing: border-box; }
+    .support-note-meta { font-size: 11px; color: var(--tm-text-muted); }
+    .support-note-text { margin: 0; font-size: 12px; line-height: 1.45; color: var(--tm-text); word-break: break-word; overflow-wrap: anywhere; }
     .recovery-body { gap: 12px; }
     .recovery-intro { margin: 0; font-size: 13px; line-height: 1.45; color: var(--tm-text); }
-    .recovery-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; color: var(--tm-text-muted); font-size: 12px; line-height: 1.45; }
+    .recovery-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; color: var(--tm-text-muted); font-size: 12px; line-height: 1.45; width: 100%; box-sizing: border-box; }
     .recovery-list li { margin: 0; padding: 9px 10px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); }
     @media (max-width: 900px) {
       .page__hero { flex-direction: column; align-items: stretch; }
       .cell-actions { justify-content: flex-start; max-width: none; }
-      .action-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 760px) {
       .grid2 { grid-template-columns: 1fr; }
       .modal-body, .vehicle-modal, .support-modal, .recovery-body { width: calc(100vw - 28px); }
       .modal-foot { justify-content: stretch; }
       .modal-foot tm-button { flex: 1 1 140px; }
-      .pax { flex-direction: column; }
-      .pax__meta { justify-content: flex-start; max-width: none; }
       .timeline-summary { flex-direction: column; }
       .timeline-summary__actions { justify-content: flex-start; }
       .table-search { width: min(100%, 320px); }
@@ -709,40 +935,40 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   page = 1;
   pageSize = 25;
   loading = false;
-  saving = false;
   cityId: number | null = null;
 
   routeId = 'all';
   status = 'all';
   query = '';
-  dateFrom = '';
-  dateTo = '';
+  dateFrom = this.today();
+  dateTo = this.today();
   statusOptions = STATUS_OPTIONS;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  editorOpen = false;
-  editingId: number | null = null;
-  form = this.blankForm();
 
   manifestOpen = false;
   manifestDeparture: DepartureRow | null = null;
   passengers: Passenger[] = [];
   loadingManifest = false;
+  manifestFilter: 'all' | 'active' | 'dropped' | 'cancelled' = 'all';
 
-  supportBookings: FixedSupportBooking[] = [];
-  supportTotal = 0;
-  supportPage = 1;
-  supportPageSize = 20;
-  supportLoading = false;
-  supportQuery = '';
-  supportRouteId = 'all';
-  supportStatus = 'all';
-  supportPaymentStatus = 'all';
-  supportRefundStatus = 'all';
-  supportRideDateFrom = '';
-  supportRideDateTo = '';
-  supportBookingDateFrom = '';
-  supportBookingDateTo = '';
+  get activePassengers(): Passenger[] {
+    return this.passengers.filter((p) =>
+      ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((p.status || '').toUpperCase())
+    );
+  }
+
+  get droppedPassengers(): Passenger[] {
+    return this.passengers.filter((p) =>
+      ['DROPPED', 'COMPLETED'].includes((p.status || '').toUpperCase())
+    );
+  }
+
+  get cancelledPassengers(): Passenger[] {
+    return this.passengers.filter((p) =>
+      ['CANCELLED', 'NO_SHOW'].includes((p.status || '').toUpperCase())
+    );
+  }
+
   supportTimelineOpen = false;
   supportTimelineLoading = false;
   supportTimeline: FixedSupportTimeline | null = null;
@@ -758,9 +984,6 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   manualSupportAmount: number | null = null;
   manualSupportNote = '';
   manualSupportSaving = false;
-  bookingStatusOptions = BOOKING_STATUS_OPTIONS;
-  paymentStatusOptions = PAYMENT_STATUS_OPTIONS;
-  refundStatusOptions = REFUND_STATUS_OPTIONS;
 
   private subs: Subscription[] = [];
 
@@ -780,14 +1003,12 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
         this.page = 1;
         this.loadRoutes();
         this.fetch();
-        this.fetchBookings();
       }),
     );
     const unsubscribeFixedCatalog = this.realtime.subscribeFixedCatalog((payload) => {
       if (this.cityId == null || payload.city_id !== this.cityId) return;
       this.loadRoutes();
       this.fetch();
-      this.fetchBookings();
     });
     this.subs.push({ unsubscribe: unsubscribeFixedCatalog } as Subscription);
   }
@@ -806,44 +1027,16 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     return this.routes.map((r) => ({ label: r.name, value: String(r.id) }));
   }
 
-  get formValid(): boolean {
-    return !!this.form.route_id
-      && (this.form.capacity ?? 0) > 0;
+  get isCustomDate(): boolean {
+    return this.dateFrom !== this.today() || this.dateTo !== this.today();
   }
 
   get rangeLabel(): string {
     if (!this.dateFrom && !this.dateTo) return '';
-    return this.formatDate(this.dateFrom) + ' -> ' + this.formatDate(this.dateTo);
-  }
-
-  openCreate(): void {
-    this.editingId = null;
-    this.form = this.blankForm();
-    this.editorOpen = true;
-  }
-
-  openEdit(row: DepartureRow): void {
-    this.editingId = row.id;
-    this.form = {
-      route_id: row.route_id,
-      service_date: row.service_date || this.today(),
-      departure_kind: 'driver_opened',
-      status: row.status,
-      capacity: row.capacity,
-      luggage_capacity: row.luggage_capacity ?? 0,
-      announced_depart_at: '',
-      boarding_opened_at: this.toDatetimeLocal(row.boarding_opened_at),
-      boarding_closed_at: this.toDatetimeLocal(row.boarding_closed_at),
-      visible_to_customers: row.visible_to_customers,
-    };
-    this.editorOpen = true;
-  }
-
-  closeEditor(): void {
-    this.editorOpen = false;
-    this.editingId = null;
-    this.saving = false;
-    this.form = this.blankForm();
+    if (this.dateFrom === this.dateTo) {
+      return this.dateFrom === this.today() ? 'Today (' + this.formatDate(this.dateFrom) + ')' : this.formatDate(this.dateFrom);
+    }
+    return this.formatDate(this.dateFrom) + ' → ' + this.formatDate(this.dateTo);
   }
 
   onPageChange(page: number): void {
@@ -896,8 +1089,8 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   clearDateRange(): void {
-    this.dateFrom = '';
-    this.dateTo = '';
+    this.dateFrom = this.today();
+    this.dateTo = this.today();
     this.syncDateRangePicker();
     this.page = 1;
     this.fetch();
@@ -925,7 +1118,97 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   canCancelBooking(row: FixedSupportBooking): boolean {
-    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(row.status);
+    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((row.status || '').toUpperCase());
+  }
+
+  canCancelPassenger(p: Passenger): boolean {
+    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((p.status || '').toUpperCase());
+  }
+
+  passengerSeatLabel(p: Passenger | FixedSupportBooking): string {
+    if (p.seat_labels && p.seat_labels.length > 0) {
+      return p.seat_labels.join(', ');
+    }
+    const count = p.seats || 1;
+    return `${count} seat${count > 1 ? 's' : ''}`;
+  }
+
+  passengerSeatState(p: Passenger): {
+    title: string;
+    subtext: string;
+    badge: string;
+    tone: 'active' | 'boarded' | 'completed' | 'cancelled' | 'neutral';
+  } {
+    const s = (p.status || '').toUpperCase();
+    const hasSpecificLabels = !!(p.seat_labels && p.seat_labels.length > 0);
+    const seatText = this.passengerSeatLabel(p);
+    const prefix = hasSpecificLabels
+      ? (p.seat_labels!.length > 1 ? 'Seats ' : 'Seat ')
+      : '';
+    const title = `${prefix}${seatText}`;
+
+    if (s === 'BOARDED') {
+      return {
+        title,
+        badge: 'Onboard in vehicle',
+        subtext: 'Passenger is seated inside the vehicle',
+        tone: 'boarded',
+      };
+    }
+    if (s === 'BOOKED' || s === 'CONFIRMED') {
+      return {
+        title,
+        badge: 'Reserved (Occupying seat)',
+        subtext: 'Holding vehicle seat capacity for pickup',
+        tone: 'active',
+      };
+    }
+    if (s === 'DROPPED' || s === 'COMPLETED') {
+      return {
+        title,
+        badge: 'Completed · Seat freed',
+        subtext: 'Passenger dropped off · Seat vacated',
+        tone: 'completed',
+      };
+    }
+    if (s === 'CANCELLED') {
+      return {
+        title,
+        badge: 'Cancelled · Seat released',
+        subtext: 'Booking cancelled and seat returned to available inventory',
+        tone: 'cancelled',
+      };
+    }
+    if (s === 'NO_SHOW') {
+      return {
+        title,
+        badge: 'No-show · Seat released',
+        subtext: 'Passenger marked no-show · Seat released',
+        tone: 'cancelled',
+      };
+    }
+    return {
+      title,
+      badge: s || 'Reserved',
+      subtext: 'Seat allocation record',
+      tone: 'neutral',
+    };
+  }
+
+  openCancelPassengerFromManifest(p: Passenger): void {
+    this.openCancelBooking({
+      id: p.id,
+      customer_name: p.customer_name,
+      customer_phone: p.customer_phone,
+      seats: p.seats,
+      seat_labels: p.seat_labels,
+      status: p.status,
+      fixed_live_status: p.fixed_live_status,
+      refund_status: p.refund_status,
+      fare_amount: p.fare_amount,
+      board: p.board,
+      drop: p.drop,
+    });
   }
 
   vehicleIntent(row: DepartureRow): string {
@@ -943,6 +1226,7 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
       customer_name: row.customer_name,
       customer_phone: row.customer_phone,
       seats: row.seats,
+      seat_labels: row.seat_labels,
       status: row.status,
       fixed_live_status: row.fixed_live_status,
       refund_status: row.refund_status,
@@ -993,15 +1277,15 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     this.recoveryAction = {
       type: 'cancel_booking',
       id: row.id,
-      title: 'Cancel one passenger booking',
-      intro: 'This cancels only this passenger booking. The fixed vehicle and other passengers continue normally.',
+      title: 'Cancel Ride for Passenger',
+      intro: 'This cancels only this passenger’s ride booking. The fixed vehicle and other passengers continue normally.',
       effects: [
-        'Only this passenger booking is cancelled.',
-        'Seat and luggage inventory are released for this vehicle.',
-        'Full-refund handling starts for this passenger booking.',
-        'Other passengers and the vehicle status are not changed.',
+        'Only this passenger’s ride booking is cancelled.',
+        'Seat and luggage allocations are released back to available vehicle capacity.',
+        'Full refund handling will be initiated for this passenger booking if eligible.',
+        'The vehicle status and all other passengers remain unchanged.',
       ],
-      confirmLabel: 'Cancel passenger',
+      confirmLabel: 'Cancel Ride',
       danger: true,
     };
     this.recoveryReason = '';
@@ -1034,7 +1318,9 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
         this.recoveryAction = null;
         this.recoveryReason = '';
         this.fetch();
-        this.fetchBookings();
+        if (this.manifestOpen && this.manifestDeparture) {
+          this.openManifest(this.manifestDeparture);
+        }
         if (this.supportTimelineBookingId) this.fetchSupportTimeline(this.supportTimelineBookingId);
       },
       error: (err: any) => {
@@ -1045,31 +1331,23 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
 
-  openManualSupportAction(row: FixedSupportBooking, type: ManualSupportActionType): void {
-    const config: Record<ManualSupportActionType, Omit<ManualSupportAction, 'type' | 'bookingId'>> = {
-      refund_pending: {
-        title: 'Mark refund pending',
-        intro: 'Use this when admin has identified that a refund needs manual follow-up. This only updates the support record; it does not send money.',
-        confirmLabel: 'Mark pending',
-        showAmount: false,
-      },
-      refund_resolved_manual: {
-        title: 'Mark refund resolved manually',
-        intro: 'Use this after admin has sent or confirmed the refund outside the app, such as bank transfer, GPay, or Razorpay dashboard.',
-        confirmLabel: 'Mark refund resolved',
-        showAmount: true,
-      },
-      payment_resolved_manual: {
-        title: 'Mark payment resolved manually',
-        intro: 'Use this when admin has confirmed the customer payment outside the app and wants the booking support record to show payment as resolved.',
-        confirmLabel: 'Mark payment resolved',
-        showAmount: false,
-      },
+  canRecordRefund(row: FixedSupportBooking): boolean {
+    return row.refund_status === 'APPROVED' && row.payment_status === 'PAID' && (row.refund_amount ?? 0) > 0;
+  }
+
+  openManualSupportAction(row: FixedSupportBooking, type: ManualSupportActionType = 'refund_resolved_manual'): void {
+    if (!this.canRecordRefund(row)) return;
+    this.manualSupportAction = {
+      type: 'refund_resolved_manual',
+      bookingId: row.id,
+      title: 'Record Offline Refund',
+      intro: 'Use this only after you have sent the refund outside the app. The amount owed is locked. Saving records the refund in the register and notifies the customer; it does not transfer money.',
+      confirmLabel: 'Record Refund',
+      showAmount: true,
     };
-    this.manualSupportAction = { ...config[type], type, bookingId: row.id };
     this.manualSupportMethod = '';
     this.manualSupportReference = '';
-    this.manualSupportAmount = row.fare_amount ?? null;
+    this.manualSupportAmount = row.refund_amount ?? null;
     this.manualSupportNote = '';
   }
 
@@ -1083,28 +1361,30 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   confirmManualSupportAction(): void {
-    if (!this.cityId || !this.manualSupportAction || this.manualSupportSaving) return;
+    if (!this.cityId || !this.manualSupportAction || this.manualSupportSaving || !this.manualSupportMethod || !this.manualSupportReference.trim()) return;
     const action = this.manualSupportAction;
     const body = {
-      action: action.type,
-      method: this.manualSupportMethod || null,
-      reference: this.manualSupportReference.trim() || null,
-      amount: action.showAmount ? this.manualSupportAmount : null,
+      action: 'refund_resolved_manual',
+      method: this.manualSupportMethod,
+      reference: this.manualSupportReference.trim(),
       note: this.manualSupportNote.trim() || null,
     };
 
     this.manualSupportSaving = true;
     this.api.post<{ message: string }>(`/admin/cities/${this.cityId}/fixed-bookings/${action.bookingId}/support-action`, body).subscribe({
       next: (res) => {
-        this.toast.success(res?.message || 'Support action saved');
+        this.toast.success(res?.message || 'Refund recorded successfully');
         this.manualSupportSaving = false;
         this.closeManualSupportAction();
-        this.fetchBookings();
-        this.fetchSupportTimeline(action.bookingId);
+        this.fetch();
+        if (this.manifestOpen && this.manifestDeparture) {
+          this.openManifest(this.manifestDeparture);
+        }
+        if (this.supportTimelineBookingId === action.bookingId) this.fetchSupportTimeline(action.bookingId);
       },
       error: (err) => {
         this.manualSupportSaving = false;
-        this.toast.error(err?.error?.message || 'Failed to save support action');
+        this.toast.error(err?.error?.message || 'Failed to record refund');
       },
     });
   }
@@ -1159,67 +1439,33 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     return isNaN(date.getTime()) ? iso : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
-  onSupportRouteChange(value: string): void {
-    this.supportRouteId = value || "all";
-    this.onSupportFilterChange();
+  vehicleStatusLabel(status?: string | null): string {
+    switch ((status || '').toUpperCase()) {
+      case 'FORMING': return 'Boarding';
+      case 'DISPATCHED':
+      case 'DEPARTED': return 'In Transit';
+      case 'COMPLETED': return 'Completed';
+      case 'CANCELLED': return 'Cancelled';
+      default: return this.prettyToken(status || 'Scheduled');
+    }
   }
 
-  onSupportStatusChange(value: string): void {
-    this.supportStatus = value || "all";
-    this.onSupportFilterChange();
-  }
-
-  onSupportPaymentStatusChange(value: string): void {
-    this.supportPaymentStatus = value || "all";
-    this.onSupportFilterChange();
-  }
-
-  onSupportRefundStatusChange(value: string): void {
-    this.supportRefundStatus = value || "all";
-    this.onSupportFilterChange();
-  }
-
-  onSupportFilterChange(): void {
-    this.supportPage = 1;
-    this.fetchBookings();
-  }
-
-  onSupportPageChange(delta: number): void {
-    const maxPage = Math.max(1, Math.ceil(this.supportTotal / this.supportPageSize));
-    this.supportPage = Math.min(maxPage, Math.max(1, this.supportPage + delta));
-    this.fetchBookings();
-  }
-
-  resetSupportFilters(): void {
-    this.supportQuery = '';
-    this.supportRouteId = 'all';
-    this.supportStatus = 'all';
-    this.supportPaymentStatus = 'all';
-    this.supportRefundStatus = 'all';
-    this.supportRideDateFrom = '';
-    this.supportRideDateTo = '';
-    this.supportBookingDateFrom = '';
-    this.supportBookingDateTo = '';
-    this.supportPage = 1;
-    this.fetchBookings();
-  }
-
-  get supportPageCount(): number {
-    return Math.max(1, Math.ceil(this.supportTotal / this.supportPageSize));
+  passengerStatusLabel(status?: string | null): string {
+    switch ((status || '').toUpperCase()) {
+      case 'BOOKED':
+      case 'CONFIRMED': return 'Confirmed';
+      case 'BOARDED': return 'Onboard';
+      case 'DROPPED': return 'Dropped Off';
+      case 'COMPLETED': return 'Completed';
+      case 'NO_SHOW': return 'No-Show';
+      case 'CANCELLED': return 'Cancelled';
+      default: return this.prettyToken(status || 'Confirmed');
+    }
   }
 
   bookingStatusLabel(row: FixedSupportBooking): string {
-    if (row.fixed_live_status?.key === "driver_missed_stop") return "Driver missed pickup";
-    switch ((row.status || "").toUpperCase()) {
-      case "BOOKED":
-      case "CONFIRMED": return "Booked";
-      case "BOARDED": return "Boarded";
-      case "DROPPED": return "Dropped off";
-      case "COMPLETED": return "Completed";
-      case "NO_SHOW": return "No-show";
-      case "CANCELLED": return "Cancelled";
-      default: return row.status || "Status";
-    }
+    if (row.fixed_live_status?.key === 'driver_missed_stop') return 'Driver Missed Pickup';
+    return this.passengerStatusLabel(row.status);
   }
 
   bookingDate(row: FixedSupportBooking): string {
@@ -1227,7 +1473,10 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   rideDate(row: FixedSupportBooking): string {
-    return this.shortDateTime(row.announced_depart_at || row.depart_at || row.service_date);
+    if (row.announced_depart_at) return this.shortDateTime(row.announced_depart_at);
+    if (row.depart_at) return this.shortDateTime(row.depart_at);
+    if (row.service_date) return moment(row.service_date, 'YYYY-MM-DD').format('DD MMM YYYY');
+    return '-';
   }
 
   departureStatus(row: FixedSupportBooking): string {
@@ -1242,70 +1491,36 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
 
   supportPayment(row: FixedSupportBooking): string {
     const method = row.payment_method ? this.prettyToken(row.payment_method) : 'Payment';
-    return method + ' · ' + this.prettyToken(row.payment_status || 'unknown');
+    const status = this.prettyToken(row.payment_status || 'Pending');
+    return `${method} (${status})`;
   }
 
   supportRefund(row: FixedSupportBooking): string {
-    if (!row.refund_status || row.refund_status === 'NONE') return 'Refund none';
-    const amount = row.refund_amount != null ? ' · INR ' + Number(row.refund_amount).toFixed(2) : '';
-    return 'Refund ' + this.prettyToken(row.refund_status) + amount;
+    if (!row.refund_status || row.refund_status === 'NONE') return 'No refund';
+    const status = this.prettyToken(row.refund_status);
+    const amount = (row.refund_amount != null && row.refund_amount > 0) ? ` · ₹${Number(row.refund_amount).toFixed(2)}` : '';
+    return `Refund: ${status}${amount}`;
   }
 
   private shortDateTime(raw?: string | null): string {
     if (!raw) return '-';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
+      return moment(raw.trim(), 'YYYY-MM-DD').format('DD MMM YYYY');
+    }
     const date = new Date(raw);
     return isNaN(date.getTime()) ? raw : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
-  private prettyToken(value: string): string {
+  prettyToken(value?: string | null): string {
+    if (!value) return '';
     return value.toString().toLowerCase().split('_').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
-  }
-
-  onFormRouteChange(routeId: number | null): void {
-    if (this.editingId) return;
-    const route = this.routes.find((r) => r.id === Number(routeId));
-    this.form.luggage_capacity = route?.max_luggage_per_vehicle ?? 0;
-  }
-
-  submit(): void {
-    if (!this.cityId || this.saving || !this.formValid) return;
-    const body = {
-      route_id: this.form.route_id,
-      service_date: this.form.service_date || this.today(),
-      departure_kind: 'driver_opened',
-      status: this.form.status,
-      capacity: this.form.capacity,
-      luggage_capacity: this.form.luggage_capacity ?? 0,
-      announced_depart_at: null,
-      depart_at: null,
-      boarding_opened_at: this.fromDatetimeLocal(this.form.boarding_opened_at),
-      boarding_closed_at: this.fromDatetimeLocal(this.form.boarding_closed_at),
-      visible_to_customers: this.form.visible_to_customers,
-    };
-
-    this.saving = true;
-    const base = `/admin/cities/${this.cityId}/fixed-departures`;
-    const req = this.editingId
-      ? this.api.patch(`${base}/${this.editingId}`, body)
-      : this.api.post(base, body);
-
-    req.subscribe({
-      next: () => {
-        this.toast.success(this.editingId ? 'Live fixed vehicle updated' : 'Live fixed vehicle opened');
-        this.closeEditor();
-        this.fetch();
-      },
-      error: (err) => {
-        this.saving = false;
-        this.toast.error(err?.error?.message || 'Failed to save live fixed vehicle');
-      },
-    });
   }
 
   openManifest(row: DepartureRow): void {
     if (this.cityId == null) return;
     this.manifestDeparture = row;
     this.manifestOpen = true;
+    this.manifestFilter = 'all';
     this.passengers = [];
     this.loadingManifest = true;
     this.api.get<{ passengers: Passenger[] }>(`/admin/cities/${this.cityId}/departures/${row.id}/manifest`).subscribe({
@@ -1321,10 +1536,17 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   openedLabel(row: DepartureRow): string {
-    const iso = row.boarding_opened_at || row.service_date;
-    if (!iso) return 'Today';
-    const date = new Date(iso);
-    return isNaN(date.getTime()) ? 'Today' : date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const iso = row.boarding_opened_at || row.announced_depart_at || row.depart_at;
+    if (iso) {
+      const date = new Date(iso);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      }
+    }
+    if (row.service_date) {
+      return moment(row.service_date, 'YYYY-MM-DD').format('DD MMM YYYY');
+    }
+    return 'Today';
   }
 
   timeOf(iso: string | null): string {
@@ -1342,7 +1564,9 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
         autoUpdateInput: false,
         opens: 'left',
         alwaysShowCalendars: true,
-        locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
+        startDate: this.dateFrom ? moment(this.dateFrom, 'YYYY-MM-DD') : moment(),
+        endDate: this.dateTo ? moment(this.dateTo, 'YYYY-MM-DD') : moment(),
+        locale: { format: 'YYYY-MM-DD', cancelLabel: 'Reset to Today', applyLabel: 'Apply' },
         ranges: {
           Today: [moment(), moment()],
           Yesterday: [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
@@ -1401,41 +1625,6 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     });
   }
 
-  fetchBookings(): void {
-    if (this.cityId == null) {
-      this.supportBookings = [];
-      this.supportTotal = 0;
-      return;
-    }
-
-    const params = new URLSearchParams();
-    params.set('page', String(this.supportPage));
-    params.set('per_page', String(this.supportPageSize));
-    if (this.supportQuery.trim()) params.set('q', this.supportQuery.trim());
-    if (this.supportRouteId !== 'all') params.set('route_id', this.supportRouteId);
-    if (this.supportStatus !== 'all') params.set('status', this.supportStatus);
-    if (this.supportPaymentStatus !== 'all') params.set('payment_status', this.supportPaymentStatus);
-    if (this.supportRefundStatus !== 'all') params.set('refund_status', this.supportRefundStatus);
-    if (this.supportRideDateFrom) params.set('ride_date_from', this.supportRideDateFrom);
-    if (this.supportRideDateTo) params.set('ride_date_to', this.supportRideDateTo);
-    if (this.supportBookingDateFrom) params.set('booking_date_from', this.supportBookingDateFrom);
-    if (this.supportBookingDateTo) params.set('booking_date_to', this.supportBookingDateTo);
-
-    this.supportLoading = true;
-    this.api.get<{ data: { data: FixedSupportBooking[]; total: number } }>('/admin/cities/' + this.cityId + '/fixed-bookings?' + params.toString()).subscribe({
-      next: (res) => {
-        this.supportBookings = res?.data?.data || [];
-        this.supportTotal = res?.data?.total || 0;
-        this.supportLoading = false;
-      },
-      error: (err) => {
-        this.supportLoading = false;
-        this.toast.error(err?.error?.message || 'Failed to load fixed booking support rows');
-      },
-    });
-  }
-
-
   private fetchSupportTimeline(bookingId: number): void {
     if (this.cityId == null) return;
     this.supportTimelineLoading = true;
@@ -1480,34 +1669,8 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     });
   }
 
-  private blankForm() {
-    return {
-      route_id: null as number | null,
-      service_date: this.today(),
-      departure_kind: 'driver_opened' as 'driver_opened' | 'scheduled',
-      status: 'FORMING',
-      capacity: 4,
-      luggage_capacity: 0,
-      announced_depart_at: '',
-      boarding_opened_at: '',
-      boarding_closed_at: '',
-      visible_to_customers: true,
-    };
-  }
-
   private today(): string {
     return new Date().toISOString().slice(0, 10);
   }
-
-  private toDatetimeLocal(iso: string | null): string {
-    if (!iso) return '';
-    const date = new Date(iso);
-    if (isNaN(date.getTime())) return '';
-    const tzOffset = date.getTimezoneOffset() * 60000;
-    return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
-  }
-
-  private fromDatetimeLocal(value: string): string | null {
-    return value ? new Date(value).toISOString() : null;
-  }
 }
+
