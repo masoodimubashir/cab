@@ -18,6 +18,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Client configuration is provisioned privately, outside the Git checkout.
+FRONTEND_CONFIG_DIR="${DREAMCABS_FRONTEND_CONFIG_DIR:-$HOME/dreamcabs-config/frontend}"
+
+# Also serialize manual deploys on the VPS.
+exec 9>"$ROOT_DIR/backend/.deploy.lock"
+if ! flock -n 9; then
+  echo "Another deployment is running. Try again after it finishes." >&2
+  exit 1
+fi
+SECONDS=0
+trap 'echo "Deployment failed at line $LINENO; success marker was not updated." >&2' ERR
+
 FORCE_ALL="${1:-}"
 if [ "$FORCE_ALL" = "--force" ] || [ "$FORCE_ALL" = "--all" ] || [ "$FORCE_ALL" = "-f" ]; then
   FORCE_BUILD=true
@@ -62,15 +74,8 @@ if [ "$FORCE_BUILD" = "false" ] && [ -f "$LAST_COMMIT_FILE" ]; then
   fi
 fi
 
-if [ -z "$PREV_COMMIT" ] && [ "$FORCE_BUILD" = "false" ]; then
-  if git rev-parse --verify ORIG_HEAD >/dev/null 2>&1; then
-    PREV_COMMIT="ORIG_HEAD"
-  elif git rev-parse --verify "HEAD@{1}" >/dev/null 2>&1; then
-    PREV_COMMIT="HEAD@{1}"
-  elif git rev-parse --verify "HEAD~1" >/dev/null 2>&1; then
-    PREV_COMMIT="HEAD~1"
-  fi
-fi
+# Without a successful-deploy marker, rebuild everything. Git reflog entries
+# do not prove which revision is actually running on the server.
 
 CURRENT_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo 'manual')"
 
@@ -78,12 +83,27 @@ CURRENT_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo 'manual')"
 FRONTEND_CHANGED=false
 NPM_DEPS_CHANGED=false
 
+# Validate both inputs before copying either. Never print their contents.
+for config_name in environment.ts environment.prod.ts; do
+  if [ ! -s "$FRONTEND_CONFIG_DIR/$config_name" ] || [ ! -r "$FRONTEND_CONFIG_DIR/$config_name" ]; then
+    echo "!!! Missing readable private frontend configuration: $FRONTEND_CONFIG_DIR/$config_name" >&2
+    exit 1
+  fi
+done
+mkdir -p "$ROOT_DIR/frontend/src/environments"
+for config_name in environment.ts environment.prod.ts; do
+  install -m 600 "$FRONTEND_CONFIG_DIR/$config_name" "$ROOT_DIR/frontend/src/environments/$config_name"
+done
+# Private configuration changes are invisible to git diff. Always rebuild the
+# frontend so rotations (including retries after a failed build) take effect.
+FRONTEND_CHANGED=true
+
 if [ "$FORCE_BUILD" = "true" ] || [ ! -d "$ROOT_DIR/frontend/dist/frontend" ] || [ -z "$PREV_COMMIT" ]; then
   FRONTEND_CHANGED=true
   NPM_DEPS_CHANGED=true
-elif git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend" 2>/dev/null | grep -q .; then
+elif git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend" | grep . >/dev/null; then
   FRONTEND_CHANGED=true
-  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/package-lock.json" 2>/dev/null | grep -q .; then
+  if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/package-lock.json" | grep . >/dev/null; then
     NPM_DEPS_CHANGED=true
   fi
 fi
@@ -106,7 +126,8 @@ if [ "$FRONTEND_CHANGED" = "true" ]; then
       -w /app \
       node:20-alpine sh -c "if [ ! -d node_modules ] || [ '$NPM_DEPS_CHANGED' = 'true' ]; then npm install --prefer-offline --no-audit; fi && npm run build -- --configuration production --base-href /admin/"
   else
-    echo "!!! npm not found and Docker not available. Unable to build frontend."
+    echo "!!! npm not found and Docker not available. Unable to build frontend." >&2
+    exit 1
   fi
 else
   echo "==> [SKIP] No frontend changes detected. Angular build skipped."
@@ -118,21 +139,16 @@ cd "$ROOT_DIR/backend"
 if [ "$USE_DOCKER" = "true" ]; then
   BACKEND_CODE_CHANGED=false
   DOCKER_IMAGE_CHANGED=false
-  MIGRATIONS_CHANGED=false
 
   if [ "$FORCE_BUILD" = "true" ] || [ -z "$PREV_COMMIT" ]; then
     BACKEND_CODE_CHANGED=true
     DOCKER_IMAGE_CHANGED=true
-    MIGRATIONS_CHANGED=true
   else
-    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend" 2>/dev/null | grep -q .; then
+    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend" | grep . >/dev/null; then
       BACKEND_CODE_CHANGED=true
     fi
-    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/Dockerfile" "$ROOT_DIR/backend/composer.json" "$ROOT_DIR/backend/composer.lock" "$ROOT_DIR/backend/deploy" 2>/dev/null | grep -q .; then
+    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/Dockerfile" "$ROOT_DIR/backend/composer.json" "$ROOT_DIR/backend/composer.lock" "$ROOT_DIR/backend/deploy" | grep . >/dev/null; then
       DOCKER_IMAGE_CHANGED=true
-    fi
-    if git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" -- "$ROOT_DIR/backend/database/migrations" 2>/dev/null | grep -q .; then
-      MIGRATIONS_CHANGED=true
     fi
   fi
 
@@ -143,54 +159,51 @@ if [ "$USE_DOCKER" = "true" ]; then
   fi
 
   if [ "$CONTAINERS_RUNNING" = "false" ] || [ "$DOCKER_IMAGE_CHANGED" = "true" ] || [ "$BACKEND_CODE_CHANGED" = "true" ]; then
-    echo "==> Rebuilding and starting Docker stack with fresh code..."
-    docker compose up -d --build
-  elif [ "$FRONTEND_CHANGED" = "true" ]; then
-    echo "==> Reloading Nginx with new frontend assets..."
-    docker compose restart nginx
+    echo "==> Building the backend while the existing containers keep serving..."
+    docker compose build app
   fi
 
-  # --- 3. DATABASE MIGRATIONS ----------------------------------------------
-  echo "==> Checking and running database migrations..."
-  docker compose exec -T app php artisan migrate --force --no-interaction || true
+  # The entrypoint alone runs migrations and caches before FPM starts listening.
+  # Compose waits for that readiness check, not just container creation.
+  echo "==> Starting services and waiting for PHP readiness..."
+  if ! docker compose up -d --no-build --wait --wait-timeout 180; then
+    docker compose ps
+    docker compose logs --tail=80 app nginx
+    exit 1
+  fi
 
-  # --- 4. LARAVEL CACHE REFRESH (ALWAYS RUN TO AVOID STALE ROUTES) ----------
-  echo "==> Refreshing route, config, and view caches..."
-  docker compose exec -T app php artisan config:clear || true
-  docker compose exec -T app php artisan route:clear || true
-  docker compose exec -T app php artisan view:clear || true
-  docker compose exec -T app php artisan config:cache || true
-  docker compose exec -T app php artisan route:cache || true
-
-  # Restart worker processes to pick up updated code & routes
-  echo "==> Restarting queue and websocket workers..."
-  docker compose restart queue reverb || true
-
-  echo "==> Checking container health..."
+  # A graceful reload picks up bind-mounted config and refreshes upstreams,
+  # including on the first deployment from the old static-DNS configuration.
+  docker compose exec -T nginx nginx -t
+  docker compose exec -T nginx nginx -s reload
+  echo "==> Checking HTTPS -> nginx -> Laravel..."
+  curl --fail --silent --show-error --output /dev/null \
+    --connect-timeout 5 --max-time 10 --retry 10 --retry-delay 2 --retry-connrefused \
+    --resolve dreamcabs.in:443:127.0.0.1 https://dreamcabs.in/up
   docker compose ps
 
 else
   # --- BARE-METAL / DIRECT HOST EXECUTION ----------------------------------
   echo "==> Running Composer autoloader & optimization..."
   if command -v composer >/dev/null 2>&1; then
-    composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader || true
+    composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
   fi
 
   echo "==> Running database migrations..."
-  php artisan migrate --force --no-interaction || true
+  php artisan migrate --force --no-interaction
 
   echo "==> Clearing and warming Laravel caches..."
-  php artisan config:clear || true
-  php artisan route:clear || true
-  php artisan view:clear || true
-  php artisan config:cache || true
-  php artisan route:cache || true
+  php artisan view:clear
+  php artisan config:cache
+  php artisan route:cache
 
   if command -v supervisorctl >/dev/null 2>&1; then
     echo "==> Restarting supervisor worker queues..."
-    supervisorctl restart all || true
+    supervisorctl restart all
   fi
 fi
+
+echo "==> Deployment verified in ${SECONDS}s."
 
 # Record this commit as successfully deployed
 if [ "$CURRENT_COMMIT" != "manual" ]; then

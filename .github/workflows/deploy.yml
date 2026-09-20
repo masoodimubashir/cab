@@ -8,6 +8,11 @@ on:
       - opeartor-payments
   workflow_dispatch:
 
+# All branches deploy to the same VPS; never overlap or cancel a running release.
+concurrency:
+  group: dreamcabs-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy to GoDaddy VPS
@@ -26,11 +31,19 @@ jobs:
           command_timeout: 30m
           script: |
             set -e
+            export DREAMCABS_FRONTEND_CONFIG_DIR=/home/dreamcabs/dreamcabs-config/frontend
+            # Check access before git pull can remove the formerly tracked files.
+            for config_name in environment.ts environment.prod.ts; do
+              if [ ! -r "$DREAMCABS_FRONTEND_CONFIG_DIR/$config_name" ] || [ ! -s "$DREAMCABS_FRONTEND_CONFIG_DIR/$config_name" ]; then
+                echo "Deployment stopped: private frontend configuration is missing or unreadable for $(id -un)." >&2
+                exit 1
+              fi
+            done
             echo "🚀 Starting automated deployment on GoDaddy VPS..."
             cd /var/www/dreamcabs
             CURRENT_BRANCH=$(git branch --show-current || echo "master")
             echo "📥 Fetching latest changes from Git ($CURRENT_BRANCH)..."
-            git pull origin "$CURRENT_BRANCH" || git pull
+            git pull --ff-only origin "$CURRENT_BRANCH"
             
             echo "🔨 Running unified build & deploy..."
             bash backend/deploy/deploy.sh

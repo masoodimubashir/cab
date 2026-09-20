@@ -119,6 +119,7 @@ class BookingSettlementPhase5Test extends TestCase
 
         if ($refundThrows) {
             $mock->shouldReceive('refundPayment')->andThrow(new \RuntimeException('Razorpay refund rejected'));
+            $mock->shouldReceive('verifyExistingRefund')->andReturn(null);
         } else {
             $mock->shouldReceive('refundPayment')->andReturnUsing(
                 fn ($paymentId, $amount, $notes = []) => ['id' => 'rfnd_' . substr(md5($paymentId . $amount), 0, 10), 'status' => 'processed', 'amount' => $amount]

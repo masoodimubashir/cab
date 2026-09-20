@@ -70,8 +70,14 @@ export class AppComponent implements OnInit {
   private static readonly CITY_SCOPED: RegExp[] = [
     /^\/pricing\b/,
     /^\/vehicles\b/,
+    /^\/vehicle-seat-layouts\b/,
     /^\/promotions\/coupons\b/,
-    /^\/settings\/(cities|city|app-assets|fleets|vehicle-types)\b/,
+    /^\/subscriptions\b/,
+    /^\/fixed-departures\b/,
+    /^\/fixed-routes\b/,
+    /^\/shuttle-bookings\b/,
+    /^\/rides\b/,
+    /^\/settings\/(cities|city|app-assets|fleets|vehicle-types|operator)\b/,
   ];
 
   private url = signal(this.router.url);
@@ -148,7 +154,16 @@ export class AppComponent implements OnInit {
     if (can('fleets')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
 
     // --- Operations ---
-    if (can('rides')) operations.push({ label: 'Rides', icon: 'road', route: '/rides' });
+    if (can('rides')) {
+      operations.push({
+        label: 'Rides',
+        icon: 'road',
+        children: filterTruthy([
+          can('rides') && { label: 'History', icon: 'calendar', route: '/rides' },
+          can('rides') && { label: 'Live', icon: 'map-marker', route: '/fixed-departures' },
+        ]),
+      });
+    }
     if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
 
     if (can('manual_dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });

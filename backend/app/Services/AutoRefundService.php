@@ -235,15 +235,25 @@ class AutoRefundService
                 ['trip_id' => (string) $trip->id, 'reason' => $decision['reason'], 'cancelled_by' => $cancelledBy],
             );
         } catch (\Throwable $e) {
-            $payment->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
-            Log::error('DreamCabs Model B cancellation refund failed at Razorpay — needs attention', [
-                'payment_id' => $payment->id,
-                'trip_id' => $trip->id,
-                'amount_paise' => $refundPaise,
-                'error' => $e->getMessage(),
-            ]);
+            $existing = $this->razorpay->verifyExistingRefund((string) $payment->razorpay_payment_id, $refundPaise);
+            if ($existing !== null) {
+                $refund = $existing;
+                Log::info('Recovered processed Razorpay refund on timeout/connection error during Model B cancellation', [
+                    'payment_id' => $payment->id,
+                    'trip_id' => $trip->id,
+                    'refund_id' => $refund['id'],
+                ]);
+            } else {
+                $payment->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
+                Log::error('DreamCabs Model B cancellation refund failed at Razorpay — needs attention', [
+                    'payment_id' => $payment->id,
+                    'trip_id' => $trip->id,
+                    'amount_paise' => $refundPaise,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return ['refunded_paise' => 0, 'kept_paise' => $decision['kept_paise'], 'reason' => $decision['reason'], 'status' => 'refund_failed'];
+                return ['refunded_paise' => 0, 'kept_paise' => $decision['kept_paise'], 'reason' => $decision['reason'], 'status' => 'refund_failed'];
+            }
         }
 
         $status = ($refund['status'] ?? 'processed') === 'processed'
@@ -299,14 +309,24 @@ class AutoRefundService
                 ['trip_id' => (string) $tripId, 'reason' => 'booking_cancelled', 'cancelled_by' => $cancelledBy],
             );
         } catch (\Throwable $e) {
-            Log::error('DreamCabs Model B booking refund failed at Razorpay — falls to the manual register', [
-                'razorpay_payment_id' => $razorpayPaymentId,
-                'trip_id' => $tripId,
-                'amount_paise' => $refundPaise,
-                'error' => $e->getMessage(),
-            ]);
+            $existing = $this->razorpay->verifyExistingRefund($razorpayPaymentId, $refundPaise);
+            if ($existing !== null) {
+                $refund = $existing;
+                Log::info('Recovered processed Razorpay refund on timeout/connection error during Model B booking refund', [
+                    'razorpay_payment_id' => $razorpayPaymentId,
+                    'trip_id' => $tripId,
+                    'refund_id' => $refund['id'],
+                ]);
+            } else {
+                Log::error('DreamCabs Model B booking refund failed at Razorpay — falls to the manual register', [
+                    'razorpay_payment_id' => $razorpayPaymentId,
+                    'trip_id' => $tripId,
+                    'amount_paise' => $refundPaise,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return ['refunded_paise' => 0, 'reversed_paise' => 0, 'reason' => 'booking_cancelled', 'status' => 'refund_failed', 'refund_id' => null];
+                return ['refunded_paise' => 0, 'reversed_paise' => 0, 'reason' => 'booking_cancelled', 'status' => 'refund_failed', 'refund_id' => null];
+            }
         }
 
         $status = ($refund['status'] ?? 'processed') === 'processed' ? 'refunded' : 'refund_pending';
@@ -412,21 +432,31 @@ class AutoRefundService
                 ['trip_id' => (string) $claimed->trip_id, 'reason' => 'booking_cancelled'],
             );
         } catch (\Throwable $e) {
-            $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
-            Log::error('DreamCabs booking auto-refund failed at Razorpay — needs attention', [
-                'payment_id' => $claimed->id,
-                'trip_id' => $claimed->trip_id,
-                'amount_paise' => $refundPaise,
-                'error' => $e->getMessage(),
-            ]);
+            $existing = $this->razorpay->verifyExistingRefund((string) $claimed->razorpay_payment_id, $refundPaise);
+            if ($existing !== null) {
+                $refund = $existing;
+                Log::info('Recovered processed Razorpay refund on timeout/connection error during booking auto-refund', [
+                    'payment_id' => $claimed->id,
+                    'trip_id' => $claimed->trip_id,
+                    'refund_id' => $refund['id'],
+                ]);
+            } else {
+                $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
+                Log::error('DreamCabs booking auto-refund failed at Razorpay — needs attention', [
+                    'payment_id' => $claimed->id,
+                    'trip_id' => $claimed->trip_id,
+                    'amount_paise' => $refundPaise,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return [
-                'refunded_paise' => 0,
-                'reversed_paise' => $reversedPaise,
-                'reason' => 'booking_cancelled',
-                'status' => 'refund_failed',
-                'refund_id' => null,
-            ];
+                return [
+                    'refunded_paise' => 0,
+                    'reversed_paise' => $reversedPaise,
+                    'reason' => 'booking_cancelled',
+                    'status' => 'refund_failed',
+                    'refund_id' => null,
+                ];
+            }
         }
 
         $this->ledger->record(
@@ -505,15 +535,25 @@ class AutoRefundService
                 ['trip_id' => (string) $claimed->trip_id, 'reason' => 'prepaid_above_final_fare'],
             );
         } catch (\Throwable $e) {
-            $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
-            Log::error('DreamCabs overpayment refund failed at Razorpay — customer is owed the difference', [
-                'payment_id' => $claimed->id,
-                'trip_id' => $claimed->trip_id,
-                'amount_paise' => $refundPaise,
-                'error' => $e->getMessage(),
-            ]);
+            $existing = $this->razorpay->verifyExistingRefund((string) $claimed->razorpay_payment_id, $refundPaise);
+            if ($existing !== null) {
+                $refund = $existing;
+                Log::info('Recovered processed Razorpay refund on timeout/connection error during overpayment refund', [
+                    'payment_id' => $claimed->id,
+                    'trip_id' => $claimed->trip_id,
+                    'refund_id' => $refund['id'],
+                ]);
+            } else {
+                $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
+                Log::error('DreamCabs overpayment refund failed at Razorpay — customer is owed the difference', [
+                    'payment_id' => $claimed->id,
+                    'trip_id' => $claimed->trip_id,
+                    'amount_paise' => $refundPaise,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return ['refunded_paise' => 0, 'status' => 'refund_failed', 'refund_id' => null];
+                return ['refunded_paise' => 0, 'status' => 'refund_failed', 'refund_id' => null];
+            }
         }
 
         $this->ledger->record(
@@ -703,20 +743,30 @@ class AutoRefundService
                 ['trip_id' => (string) $trip->id, 'reason' => $decision['reason']],
             );
         } catch (\Throwable $e) {
-            $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
-            Log::error('DreamCabs auto-refund failed at Razorpay — needs attention', [
-                'payment_id' => $claimed->id,
-                'trip_id' => $trip->id,
-                'amount_paise' => $refundPaise,
-                'error' => $e->getMessage(),
-            ]);
+            $existing = $this->razorpay->verifyExistingRefund((string) $claimed->razorpay_payment_id, $refundPaise);
+            if ($existing !== null) {
+                $refund = $existing;
+                Log::info('Recovered processed Razorpay refund on timeout/connection error during trip refund', [
+                    'payment_id' => $claimed->id,
+                    'trip_id' => $trip->id,
+                    'refund_id' => $refund['id'],
+                ]);
+            } else {
+                $claimed->forceFill(['refund_status' => Payment::REFUND_FAILED])->save();
+                Log::error('DreamCabs auto-refund failed at Razorpay — needs attention', [
+                    'payment_id' => $claimed->id,
+                    'trip_id' => $trip->id,
+                    'amount_paise' => $refundPaise,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return [
-                'refunded_paise' => 0,
-                'reversed_paise' => $reversedPaise,
-                'reason' => $decision['reason'],
-                'status' => 'refund_failed',
-            ];
+                return [
+                    'refunded_paise' => 0,
+                    'reversed_paise' => $reversedPaise,
+                    'reason' => $decision['reason'],
+                    'status' => 'refund_failed',
+                ];
+            }
         }
 
         // 3) Record the refund and finalise the payment.

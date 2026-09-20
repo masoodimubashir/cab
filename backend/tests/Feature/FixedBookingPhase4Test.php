@@ -285,6 +285,7 @@ class FixedBookingPhase4Test extends TestCase
         $razorpay->shouldReceive('refundPayment')
             ->once()
             ->andThrow(new \RuntimeException('Razorpay unavailable'));
+        $razorpay->shouldReceive('verifyExistingRefund')->andReturn(null);
         $this->instance(RazorpayService::class, $razorpay);
 
         Sanctum::actingAs($this->customer, ['act-as:customer']);

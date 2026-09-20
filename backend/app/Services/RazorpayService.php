@@ -163,6 +163,203 @@ class RazorpayService
     }
 
     /**
+     * Fetches a payment entity from Razorpay.
+     *
+     * @return array{id:string,status:string,amount:int,amount_refunded:int,refund_status:?string}|null
+     */
+    public function fetchPayment(string $paymentId): ?array
+    {
+        $paymentId = trim($paymentId);
+        if ($paymentId === '') {
+            return null;
+        }
+
+        try {
+            $payment = $this->api->payment->fetch($paymentId);
+
+            return [
+                'id' => (string) $payment->id,
+                'status' => (string) $payment->status,
+                'amount' => (int) $payment->amount,
+                'amount_refunded' => (int) ($payment->amount_refunded ?? 0),
+                'refund_status' => isset($payment->refund_status) ? (string) $payment->refund_status : null,
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Fetches all refunds created against a payment from Razorpay.
+     *
+     * @return array<int, array{id:string,payment_id:string,amount:int,status:string,created_at:int}>
+     */
+    public function fetchPaymentRefunds(string $paymentId): array
+    {
+        $paymentId = trim($paymentId);
+        if ($paymentId === '') {
+            return [];
+        }
+
+        try {
+            $refunds = $this->api->payment->fetch($paymentId)->refunds();
+            $out = [];
+            $items = $refunds->items ?? ($refunds instanceof \Traversable ? iterator_to_array($refunds) : []);
+            foreach ($items as $refund) {
+                $out[] = [
+                    'id' => (string) $refund->id,
+                    'payment_id' => (string) ($refund->payment_id ?? $paymentId),
+                    'amount' => (int) ($refund->amount ?? 0),
+                    'status' => (string) ($refund->status ?? 'pending'),
+                    'created_at' => (int) ($refund->created_at ?? 0),
+                ];
+            }
+
+            return $out;
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Checks whether Razorpay already recorded a successful, partial, or pending refund for this payment.
+     * Used to prevent duplicate refunds when a network connection fails during a refund call
+     * or before allowing manual operator payouts.
+     *
+     * @return array{id:string,payment_id:string,amount:int,status:string,remaining_paise?:int}|null
+     */
+    public function verifyExistingRefund(string $paymentId, ?int $expectedPaise = null): ?array
+    {
+        $paymentId = trim($paymentId);
+        if ($paymentId === '' || !str_starts_with($paymentId, 'pay_')) {
+            return null;
+        }
+
+        $refunds = $this->fetchPaymentRefunds($paymentId);
+        if ($refunds !== []) {
+            $totalProcessedPaise = 0;
+            $totalPendingPaise = 0;
+            $primaryProcessedId = null;
+            $primaryPendingId = null;
+
+            foreach ($refunds as $refund) {
+                $status = (string) ($refund['status'] ?? 'pending');
+                $amount = (int) ($refund['amount'] ?? 0);
+                if ($status === 'processed') {
+                    $totalProcessedPaise += $amount;
+                    if ($primaryProcessedId === null) {
+                        $primaryProcessedId = (string) $refund['id'];
+                    }
+                } elseif ($status === 'pending') {
+                    $totalPendingPaise += $amount;
+                    if ($primaryPendingId === null) {
+                        $primaryPendingId = (string) $refund['id'];
+                    }
+                }
+            }
+
+            if ($expectedPaise !== null && $expectedPaise > 0) {
+                if ($totalProcessedPaise >= $expectedPaise) {
+                    return [
+                        'id' => $primaryProcessedId ?? (string) $refunds[0]['id'],
+                        'payment_id' => $paymentId,
+                        'amount' => $totalProcessedPaise,
+                        'status' => 'processed',
+                    ];
+                }
+
+                // If any refund amount is in-flight pending confirmation, flag as pending
+                // to prevent duplicate offline payouts while the gateway processes the request.
+                if ($totalPendingPaise > 0) {
+                    return [
+                        'id' => $primaryPendingId ?? (string) $refunds[0]['id'],
+                        'payment_id' => $paymentId,
+                        'amount' => $totalPendingPaise,
+                        'status' => 'pending',
+                        'processed_paise' => $totalProcessedPaise,
+                        'pending_paise' => $totalPendingPaise,
+                    ];
+                }
+
+                if ($totalProcessedPaise > 0) {
+                    return [
+                        'id' => $primaryProcessedId ?? (string) $refunds[0]['id'],
+                        'payment_id' => $paymentId,
+                        'amount' => $totalProcessedPaise,
+                        'status' => 'partial',
+                        'processed_paise' => $totalProcessedPaise,
+                        'remaining_paise' => max(0, $expectedPaise - $totalProcessedPaise),
+                    ];
+                }
+            } else {
+                if ($totalPendingPaise > 0) {
+                    return [
+                        'id' => $primaryPendingId ?? (string) $refunds[0]['id'],
+                        'payment_id' => $paymentId,
+                        'amount' => $totalPendingPaise,
+                        'status' => 'pending',
+                        'processed_paise' => $totalProcessedPaise,
+                        'pending_paise' => $totalPendingPaise,
+                    ];
+                }
+                if ($totalProcessedPaise > 0) {
+                    return [
+                        'id' => $primaryProcessedId ?? (string) $refunds[0]['id'],
+                        'payment_id' => $paymentId,
+                        'amount' => $totalProcessedPaise,
+                        'status' => 'processed',
+                    ];
+                }
+            }
+        }
+
+        $payment = $this->fetchPayment($paymentId);
+        if ($payment !== null) {
+            $amountRefunded = (int) ($payment['amount_refunded'] ?? 0);
+            if ($amountRefunded > 0) {
+                if ($expectedPaise !== null && $expectedPaise > 0) {
+                    if ($amountRefunded >= $expectedPaise) {
+                        return [
+                            'id' => 'rfnd_verified_' . $paymentId,
+                            'payment_id' => $paymentId,
+                            'amount' => $amountRefunded,
+                            'status' => 'processed',
+                        ];
+                    }
+
+                    return [
+                        'id' => 'rfnd_verified_' . $paymentId,
+                        'payment_id' => $paymentId,
+                        'amount' => $amountRefunded,
+                        'status' => 'partial',
+                        'processed_paise' => $amountRefunded,
+                        'remaining_paise' => max(0, $expectedPaise - $amountRefunded),
+                    ];
+                }
+
+                return [
+                    'id' => 'rfnd_verified_' . $paymentId,
+                    'payment_id' => $paymentId,
+                    'amount' => $amountRefunded,
+                    'status' => 'processed',
+                ];
+            }
+
+            // Payment verified cleanly with 0 refunds on Razorpay
+            return null;
+        }
+
+        // When fetchPaymentRefunds is empty and fetchPayment returns null,
+        // the gateway could not be reached / verification failed.
+        return [
+            'id' => '',
+            'payment_id' => $paymentId,
+            'amount' => 0,
+            'status' => 'unverified',
+        ];
+    }
+
+    /**
      * Verifies webhook signature. Returns boolean.
      */
     public function verifyWebhookSignature(string $body, string $signature): bool

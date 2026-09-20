@@ -66,6 +66,7 @@ class FixedManifestService
                 'seats' => (int) $reservation->seats,
                 'seat_labels' => !empty($reservation->seat_labels) ? (array) $reservation->seat_labels : $labelsByReservation->get($reservation->id, []),
                 'status' => $reservation->status,
+                'boarded_at' => optional($reservation->boarded_at)->toIso8601String(),
                 'fixed_live_status' => $this->bookings->fixedLiveStatus($reservation),
                 'no_show_unlock_at' => optional(FixedNoShowPolicy::unlockAt($reservation, $departure, $waitMinutes))->toIso8601String(),
                 'refund_status' => $reservation->refund_status,

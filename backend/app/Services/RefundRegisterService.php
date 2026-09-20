@@ -29,7 +29,21 @@ class RefundRegisterService
         private readonly NotificationCenter $notifier,
         private readonly FixedBookingEventService $fixedEvents,
         private readonly CashDepositService $cashDeposit,
+        private readonly ?RazorpayService $razorpay = null,
     ) {}
+
+    private function razorpay(): ?RazorpayService
+    {
+        if ($this->razorpay !== null) {
+            return $this->razorpay;
+        }
+
+        try {
+            return app(RazorpayService::class);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
     /* ------------------------------------------------------------------ */
     /* Listing                                                             */
@@ -126,6 +140,115 @@ class RefundRegisterService
 
     private function markFixedRefunded(int $id, User $actor, string $method, ?string $reference, ?string $note): array
     {
+        /** @var SeatReservation|null $res */
+        $res = SeatReservation::query()->find($id);
+        if (!$res) {
+            throw new ReservationException('This fixed booking could not be found.', 404);
+        }
+        if ($res->refund_status === 'REFUNDED') {
+            throw new ReservationException('This refund is already marked as sent.', 409);
+        }
+        if ($res->refund_status !== 'APPROVED') {
+            throw new ReservationException('This booking has no refund due.', 422);
+        }
+
+        // Double-refund prevention: verify if a refund was already processed directly by Razorpay
+        $paymentRef = trim((string) $res->payment_reference);
+        if ($paymentRef !== '' && str_starts_with($paymentRef, 'pay_')) {
+            $baseRefundAmount = (float) ($res->fare_amount > 0 ? $res->fare_amount : ($res->refund_amount ?? 0));
+            $expectedPaise = (int) round($baseRefundAmount * 100);
+            $existingRefund = $this->razorpay()?->verifyExistingRefund($paymentRef, $expectedPaise);
+
+            if ($existingRefund !== null) {
+                $status = $existingRefund['status'] ?? 'processed';
+                $refundId = $existingRefund['id'];
+                $refundedAmount = ($existingRefund['amount'] ?? 0) > 0 ? $existingRefund['amount'] / 100 : $baseRefundAmount;
+
+                if ($status === 'unverified') {
+                    throw new ReservationException('Razorpay gateway verification is currently unavailable. Please verify manually on the Razorpay dashboard before recording an offline refund.', 503);
+                }
+
+                if ($status === 'processed') {
+                    $res->update([
+                        'refund_status' => 'REFUNDED',
+                        'payment_status' => 'REFUNDED',
+                        'refund_amount' => $refundedAmount,
+                        'refund_method' => 'razorpay',
+                        'refund_reference' => $refundId,
+                        'refund_note' => 'Automatically synced from Razorpay verification before manual payout.',
+                        'refunded_by' => $actor->id,
+                        'refunded_at' => now(),
+                    ]);
+
+                    $this->fixedEvents->record(
+                        $res,
+                        'refund_verified_razorpay',
+                        'Razorpay refund verified',
+                        "A refund of ₹" . number_format($refundedAmount, 2) . " was already processed by Razorpay ({$refundId}). Duplicate manual payout blocked and booking status synchronized.",
+                        [
+                            'refund_amount' => $refundedAmount,
+                            'refund_method' => 'razorpay',
+                            'refund_reference' => $refundId,
+                        ],
+                        $actor,
+                    );
+
+                    throw new ReservationException("This booking was already refunded by Razorpay ({$refundId} for ₹" . number_format($refundedAmount, 2) . "). The status has been synchronized to prevent duplicate payout.", 409);
+                }
+
+                if ($status === 'pending') {
+                    $res->update([
+                        'refund_status' => 'REQUESTED',
+                        'refund_amount' => $res->refund_amount ?? $baseRefundAmount,
+                        'refund_method' => 'razorpay',
+                        'refund_reference' => $refundId,
+                        'refund_note' => 'Razorpay refund is pending confirmation from gateway/bank.',
+                    ]);
+
+                    $this->fixedEvents->record(
+                        $res,
+                        'refund_pending_razorpay',
+                        'Razorpay refund pending',
+                        "A refund of ₹" . number_format($refundedAmount, 2) . " is currently pending confirmation from Razorpay ({$refundId}). Manual payout blocked.",
+                        [
+                            'refund_amount' => $refundedAmount,
+                            'refund_method' => 'razorpay',
+                            'refund_reference' => $refundId,
+                        ],
+                        $actor,
+                    );
+
+                    throw new ReservationException("A Razorpay refund of ₹" . number_format($refundedAmount, 2) . " ({$refundId}) is currently pending gateway confirmation. Status updated to pending confirmation.", 409);
+                }
+
+                if ($status === 'partial') {
+                    $remainingDue = isset($existingRefund['remaining_paise'])
+                        ? $existingRefund['remaining_paise'] / 100
+                        : max(0, $baseRefundAmount - $refundedAmount);
+
+                    $res->update([
+                        'refund_amount' => $remainingDue,
+                        'refund_note' => "Partial refund of ₹" . number_format($refundedAmount, 2) . " processed on Razorpay ({$refundId}). Remaining balance due: ₹" . number_format($remainingDue, 2) . ".",
+                    ]);
+
+                    $this->fixedEvents->record(
+                        $res,
+                        'refund_partial_verified_razorpay',
+                        'Partial Razorpay refund verified',
+                        "A partial refund of ₹" . number_format($refundedAmount, 2) . " was processed by Razorpay ({$refundId}). Remaining refund due updated to ₹" . number_format($remainingDue, 2) . ".",
+                        [
+                            'refunded_amount' => $refundedAmount,
+                            'remaining_due' => $remainingDue,
+                            'refund_reference' => $refundId,
+                        ],
+                        $actor,
+                    );
+
+                    throw new ReservationException("Razorpay already processed a partial refund of ₹" . number_format($refundedAmount, 2) . " ({$refundId}). The remaining refund amount has been adjusted to ₹" . number_format($remainingDue, 2) . ".", 409);
+                }
+            }
+        }
+
         $row = DB::transaction(function () use ($id, $actor, $method, $reference, $note) {
             /** @var SeatReservation|null $res */
             $res = SeatReservation::query()->lockForUpdate()->find($id);
@@ -179,6 +302,76 @@ class RefundRegisterService
 
     private function markShuttleRefunded(int $id, User $actor, string $method, ?string $reference, ?string $note): array
     {
+        /** @var ShuttlePassengerBooking|null $booking */
+        $booking = ShuttlePassengerBooking::query()->find($id);
+        if (!$booking) {
+            throw new ReservationException('This Shuttle booking could not be found.', 404);
+        }
+        if ($booking->refund_status === 'REFUNDED') {
+            throw new ReservationException('This refund is already marked as sent.', 409);
+        }
+        if ($booking->refund_status !== 'APPROVED') {
+            throw new ReservationException('This booking has no refund due.', 422);
+        }
+
+        // Double-refund prevention: verify if a refund was already processed directly by Razorpay
+        $paymentRef = trim((string) ($booking->razorpay_payment_id ?: $booking->payment_reference));
+        if ($paymentRef !== '' && str_starts_with($paymentRef, 'pay_')) {
+            $baseRefundAmount = (float) ($booking->fare_amount > 0 ? $booking->fare_amount : ($booking->refund_amount ?? 0));
+            $expectedPaise = (int) round($baseRefundAmount * 100);
+            $existingRefund = $this->razorpay()?->verifyExistingRefund($paymentRef, $expectedPaise);
+
+            if ($existingRefund !== null) {
+                $status = $existingRefund['status'] ?? 'processed';
+                $refundId = $existingRefund['id'];
+                $refundedAmount = ($existingRefund['amount'] ?? 0) > 0 ? $existingRefund['amount'] / 100 : $baseRefundAmount;
+
+                if ($status === 'unverified') {
+                    throw new ReservationException('Razorpay gateway verification is currently unavailable. Please verify manually on the Razorpay dashboard before recording an offline refund.', 503);
+                }
+
+                if ($status === 'processed') {
+                    $booking->update([
+                        'refund_status' => 'REFUNDED',
+                        'payment_status' => 'REFUNDED',
+                        'refund_amount' => $refundedAmount,
+                        'refund_method' => 'razorpay',
+                        'refund_reference' => $refundId,
+                        'refund_note' => 'Automatically synced from Razorpay verification before manual payout.',
+                        'refunded_by' => $actor->id,
+                        'refunded_at' => now(),
+                    ]);
+
+                    throw new ReservationException("This shuttle booking was already refunded by Razorpay ({$refundId} for ₹" . number_format($refundedAmount, 2) . "). The status has been synchronized to prevent duplicate payout.", 409);
+                }
+
+                if ($status === 'pending') {
+                    $booking->update([
+                        'refund_status' => 'REQUESTED',
+                        'refund_amount' => $booking->refund_amount ?? $baseRefundAmount,
+                        'refund_method' => 'razorpay',
+                        'refund_reference' => $refundId,
+                        'refund_note' => 'Razorpay refund is pending confirmation from gateway/bank.',
+                    ]);
+
+                    throw new ReservationException("A Razorpay refund of ₹" . number_format($refundedAmount, 2) . " ({$refundId}) is currently pending gateway confirmation. Status updated to pending confirmation.", 409);
+                }
+
+                if ($status === 'partial') {
+                    $remainingDue = isset($existingRefund['remaining_paise'])
+                        ? $existingRefund['remaining_paise'] / 100
+                        : max(0, $baseRefundAmount - $refundedAmount);
+
+                    $booking->update([
+                        'refund_amount' => $remainingDue,
+                        'refund_note' => "Partial refund of ₹" . number_format($refundedAmount, 2) . " processed on Razorpay ({$refundId}). Remaining balance due: ₹" . number_format($remainingDue, 2) . ".",
+                    ]);
+
+                    throw new ReservationException("Razorpay already processed a partial refund of ₹" . number_format($refundedAmount, 2) . " ({$refundId}). The remaining refund amount has been adjusted to ₹" . number_format($remainingDue, 2) . ".", 409);
+                }
+            }
+        }
+
         $row = DB::transaction(function () use ($id, $actor, $method, $reference, $note) {
             /** @var ShuttlePassengerBooking|null $booking */
             $booking = ShuttlePassengerBooking::query()->lockForUpdate()->find($id);

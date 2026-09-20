@@ -10,35 +10,18 @@ export const environment = {
   apiUrl: 'https://dreamcabs.in/api',
   /**
    * Login OTP provider:
-   *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). In mock mode
-   *           (no MSG91 key on the backend) the code is auto-filled for testing.
-   *   false → Firebase phone auth (the legacy client-side path).
+   *   true  → server-side SMS OTP via MSG91 (POST /auth/otp/sms/*). Mock mode
+   *           (no MSG91 key on the backend) auto-fills the code for testing.
+   *   false → Firebase phone auth (legacy client-side path).
    */
   useServerOtp: true,
-  /**
-   * Google Maps JavaScript API key (Places + Geocoding).
-   * Used for:
-   * - Google Places Autocomplete (address typing)
-   * - Map with markers for pickup/drop
-   *
-   * If empty, the booking screen will fall back to manual lat/lng + external maps links.
-   */
-  googleMapsApiKey: 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw',
-  /**
-   * Laravel Reverb websocket settings. Match `REVERB_*` in backend/.env.
-   * Leave reverbAppKey blank to fall back to polling-only.
-   */
-  reverbAppKey: '4jsb8ggrbvcriyaskojh',
-  reverbHost: 'dreamcabs.in',
-  reverbPort: 443,
-  reverbScheme: 'https' as 'http' | 'https',
   /**
    * Firebase: must be the **Web** app object (Console → Project settings → Your apps → </> Web).
    * If `appId` contains `:android:` or `:ios:` instead of `:web:`, Phone Auth in the browser throws
    * auth/configuration-not-found. Enable Phone sign-in; add `localhost` to Authorized domains.
    */
   firebase: {
-    apiKey: "AIzaSyCCpdahYlxnjogTRS1ZSaF3sQ6cF9DTbVY",
+    apiKey: "REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY",
     authDomain: "dreamcabs-1cd27.firebaseapp.com",
     projectId: "dreamcabs-1cd27",
     storageBucket: "dreamcabs-1cd27.firebasestorage.app",
@@ -46,12 +29,15 @@ export const environment = {
     appId: "1:862449587825:web:cc8f4f7d2df4a1d8ac2dd0",
     measurementId: "G-CLHQFG1HW1"
   },
-  /**
-   * FCM Web Push VAPID key — Firebase Console → Project Settings → Cloud Messaging →
-   * Web configuration → Web Push certificates → Generate key pair.
-   * Required for browser push to work; native (Android/iOS) does not need this.
-   */
-  fcmVapidKey: "",
+  /** Reverb (WebSocket) — match backend/.env REVERB_* values. */
+  reverbAppKey: '4jsb8ggrbvcriyaskojh',
+  reverbHost: 'dreamcabs.in',
+  reverbPort: 443,
+  reverbScheme: 'https' as 'http' | 'https',
+  /** FCM Web Push VAPID key — Firebase Console → Cloud Messaging → Web Push certificates. */
+  fcmVapidKey: '',
+  /** Google Maps JavaScript API key — used for the in-app live map (pickup + customer marker). */
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
 };
 
 /*

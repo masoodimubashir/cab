@@ -39,6 +39,10 @@ class FixedAdminRecoveryActionsTest extends TestCase
         config()->set('services.payments.split_enabled', true);
         config()->set('services.razorpay.key_id', 'rzp_test_admin');
 
+        $defaultGateway = Mockery::mock(RazorpayService::class);
+        $defaultGateway->shouldReceive('verifyExistingRefund')->byDefault()->andReturn(null);
+        $this->instance(RazorpayService::class, $defaultGateway);
+
         $this->cityId = DB::table('cities')->insertGetId([
             'name' => 'Admin Recovery City',
             'country_code' => 'IN',
@@ -219,10 +223,11 @@ class FixedAdminRecoveryActionsTest extends TestCase
 
     public function test_admin_can_record_manual_refund_resolution_without_calling_razorpay(): void
     {
-        $reservation = $this->createReservation(['payment_reference' => 'pay_manual_resolution']);
+        $reservation = $this->createReservation(['payment_reference' => 'pay_manual_resolution', 'refund_status' => 'APPROVED', 'refund_amount' => 120]);
         $this->departure->update(['seats_taken' => 1]);
 
         $razorpay = Mockery::mock(RazorpayService::class);
+        $razorpay->shouldReceive('verifyExistingRefund')->andReturn(null);
         $razorpay->shouldReceive('refundPayment')->never();
         $this->instance(RazorpayService::class, $razorpay);
 
@@ -230,9 +235,8 @@ class FixedAdminRecoveryActionsTest extends TestCase
 
         $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/support-action", [
             'action' => 'refund_resolved_manual',
-            'method' => 'GPay',
+            'method' => 'gpay',
             'reference' => 'UTR123',
-            'amount' => 120,
             'note' => 'Customer confirmed received.',
         ])->assertOk()
             ->assertJsonPath('booking.refund_status', 'REFUNDED')
@@ -243,17 +247,192 @@ class FixedAdminRecoveryActionsTest extends TestCase
         $this->assertSame('REFUNDED', $reservation->refund_status);
         $this->assertSame('REFUNDED', $reservation->payment_status);
         $this->assertSame('UTR123', $reservation->refund_reference);
+        $this->assertSame('gpay', $reservation->refund_method);
+        $this->assertSame($this->admin->id, $reservation->refunded_by);
+        $this->assertNotNull($reservation->refunded_at);
+        $this->assertNull($reservation->refund_note, 'Internal support notes must not become public refund notes.');
         $this->assertSame(120.0, (float) $reservation->refund_amount);
         $this->assertSame(1, $this->departure->fresh()->seats_taken);
         $this->assertDatabaseHas('fixed_booking_events', [
             'seat_reservation_id' => $reservation->id,
-            'event_type' => 'admin_manual_support_action',
-            'title' => 'Refund resolved manually',
+            'event_type' => 'refund_marked_paid',
+            'title' => 'Refund sent to customer',
         ]);
         $this->assertDatabaseHas('fixed_booking_support_notes', [
             'seat_reservation_id' => $reservation->id,
-            'note' => 'Refund resolved manually: Customer confirmed received.',
+            'note' => 'Customer confirmed received.',
         ]);
+    }
+
+    public function test_support_action_preserves_gateway_refund_sync_when_returning_conflict(): void
+    {
+        $reservation = $this->createReservation(['payment_reference' => 'pay_already_refunded', 'refund_status' => 'APPROVED', 'refund_amount' => 120]);
+        $razorpay = Mockery::mock(RazorpayService::class);
+        $razorpay->shouldReceive('verifyExistingRefund')->once()->with('pay_already_refunded', 12000)->andReturn([
+            'id' => 'rfnd_already_processed',
+            'payment_id' => 'pay_already_refunded',
+            'amount' => 12000,
+            'status' => 'processed',
+        ]);
+        $razorpay->shouldReceive('refundPayment')->never();
+        $this->instance(RazorpayService::class, $razorpay);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+
+        $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/support-action", [
+            'action' => 'refund_resolved_manual',
+            'method' => 'bank',
+            'reference' => 'UTR123',
+        ])->assertStatus(409);
+
+        $reservation->refresh();
+        $this->assertSame('REFUNDED', $reservation->refund_status);
+        $this->assertSame('REFUNDED', $reservation->payment_status);
+        $this->assertSame('rfnd_already_processed', $reservation->refund_reference);
+    }
+
+    public function test_rechecking_same_partial_gateway_refund_does_not_reduce_balance_again(): void
+    {
+        $reservation = $this->createReservation(['payment_reference' => 'pay_partial_retry', 'refund_status' => 'APPROVED', 'refund_amount' => 120]);
+        $gateway = Mockery::mock(RazorpayService::class)->makePartial();
+        $gateway->shouldReceive('fetchPaymentRefunds')->andReturn([
+            ['id' => 'rfnd_partial', 'status' => 'processed', 'amount' => 2000],
+        ]);
+        $this->instance(RazorpayService::class, $gateway);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/support-action";
+        $payload = ['action' => 'refund_resolved_manual', 'method' => 'bank', 'reference' => 'UTR_RETRY'];
+        $this->postJson($url, $payload)->assertStatus(409);
+        $this->assertSame(100.0, (float) $reservation->fresh()->refund_amount);
+        $this->postJson($url, $payload)->assertStatus(409);
+        $this->assertSame(100.0, (float) $reservation->fresh()->refund_amount);
+    }
+
+    public function test_processed_partial_with_pending_balance_stays_pending(): void
+    {
+        $reservation = $this->createReservation(['payment_reference' => 'pay_mixed_refunds', 'refund_status' => 'APPROVED', 'refund_amount' => 120]);
+        $gateway = Mockery::mock(RazorpayService::class)->makePartial();
+        $gateway->shouldReceive('fetchPaymentRefunds')->andReturn([
+            ['id' => 'rfnd_processed', 'status' => 'processed', 'amount' => 2000],
+            ['id' => 'rfnd_pending', 'status' => 'pending', 'amount' => 10000],
+        ]);
+        $this->instance(RazorpayService::class, $gateway);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/support-action", [
+            'action' => 'refund_resolved_manual', 'method' => 'bank', 'reference' => 'UTR_MIXED',
+        ])->assertStatus(409);
+        $this->assertSame('REQUESTED', $reservation->fresh()->refund_status);
+    }
+
+    public function test_unavailable_gateway_verification_does_not_mark_refund_complete(): void
+    {
+        $reservation = $this->createReservation(['payment_reference' => 'pay_gateway_unavailable', 'refund_status' => 'APPROVED', 'refund_amount' => 120]);
+        $gateway = Mockery::mock(RazorpayService::class)->makePartial();
+        // These are the actual fetch helpers' return values when gateway calls fail.
+        $gateway->shouldReceive('fetchPaymentRefunds')->andReturn([]);
+        $gateway->shouldReceive('fetchPayment')->andReturn(null);
+        $this->instance(RazorpayService::class, $gateway);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/support-action", [
+            'action' => 'refund_resolved_manual', 'method' => 'bank', 'reference' => 'UTR_UNVERIFIED',
+        ]);
+        $this->assertSame('APPROVED', $reservation->fresh()->refund_status);
+    }
+
+    public function test_admin_cannot_cancel_boarded_or_closed_passenger_rides(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $gateway = Mockery::mock(RazorpayService::class);
+        $gateway->shouldReceive('refundPayment')->never();
+        $this->instance(RazorpayService::class, $gateway);
+        foreach ([['status' => 'BOARDED'], ['boarded_at' => now()], ['status' => 'DROPPED'], ['status' => 'CANCELLED'], ['status' => 'NO_SHOW']] as $override) {
+            $booking = $this->createReservation($override);
+            $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel")->assertStatus(422);
+            $this->assertSame('NONE', $booking->fresh()->refund_status);
+        }
+        foreach (['COMPLETED', 'CANCELLED'] as $status) {
+            $this->departure->update(['status' => $status]);
+            $booking = $this->createReservation();
+            $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel")->assertStatus(422);
+            $this->assertSame('CONFIRMED', $booking->fresh()->status);
+        }
+    }
+
+    public function test_admin_can_cancel_unboarded_passenger_on_running_ride_once(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $this->departure->update(['status' => 'DEPARTED', 'seats_taken' => 1]);
+        $booking = $this->createReservation();
+        $gateway = Mockery::mock(RazorpayService::class);
+        $gateway->shouldReceive('refundPayment')->once()->andReturn(['id' => 'rfnd_running', 'status' => 'processed', 'amount' => 12000]);
+        $this->instance(RazorpayService::class, $gateway);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel";
+        $this->postJson($url)->assertOk();
+        $this->postJson($url)->assertStatus(422);
+        $this->assertSame('DEPARTED', $this->departure->fresh()->status);
+        $this->assertSame(0, $this->departure->fresh()->seats_taken);
+    }
+
+    public function test_removed_support_actions_and_editable_refund_amount_are_rejected(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $booking = $this->createReservation(['refund_status' => 'APPROVED', 'refund_amount' => 30]);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/support-action";
+        foreach (['refund_pending', 'payment_resolved_manual'] as $action) {
+            $this->postJson($url, ['action' => $action])->assertStatus(422);
+        }
+        $this->postJson($url, ['action' => 'refund_resolved_manual', 'method' => 'gpay', 'reference' => 'UTR', 'amount' => 9999])->assertStatus(422);
+        $this->assertSame('APPROVED', $booking->fresh()->refund_status);
+        $this->assertSame(30.0, (float) $booking->fresh()->refund_amount);
+    }
+
+    public function test_refund_recording_requires_due_amount_and_cannot_be_repeated(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $booking = $this->createReservation(['refund_amount' => 30]);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/support-action";
+        $payload = ['action' => 'refund_resolved_manual', 'method' => 'gpay', 'reference' => 'UTR'];
+        foreach (['NONE', 'REQUESTED', 'REFUNDED', 'REJECTED'] as $status) {
+            $booking->update(['refund_status' => $status]);
+            $this->postJson($url, $payload)->assertStatus($status === 'REFUNDED' ? 409 : 422);
+        }
+        $booking->update(['refund_status' => 'APPROVED']);
+        $this->postJson($url, ['action' => 'refund_resolved_manual'])->assertStatus(422);
+        $this->postJson($url, $payload)->assertOk()->assertJsonPath('booking.refund_amount', 30);
+        $this->postJson($url, $payload)->assertStatus(422);
+    }
+
+    public function test_pending_gateway_refund_waits_for_confirmation_and_failure_allows_manual_recording(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $booking = $this->createReservation();
+        $gateway = Mockery::mock(RazorpayService::class);
+        $gateway->shouldReceive('refundPayment')->once()->andReturn(['id' => 'rfnd_pending_review', 'status' => 'pending', 'amount' => 12000]);
+        $this->instance(RazorpayService::class, $gateway);
+        $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel")
+            ->assertOk()->assertJsonPath('refund_status', 'REQUESTED');
+        $this->assertSame('PAID', $booking->fresh()->payment_status);
+        $this->assertNull($booking->fresh()->refunded_at);
+        app(\App\Services\PaymentReconciliationService::class)->applyRefund('rfnd_pending_review', $booking->payment_reference, 12000, false);
+        $this->assertSame('APPROVED', $booking->fresh()->refund_status);
+        app(\App\Services\PaymentReconciliationService::class)->applyRefund('rfnd_pending_review', $booking->payment_reference, 12000, true);
+        $this->assertSame('REFUNDED', $booking->fresh()->refund_status);
+        app(\App\Services\PaymentReconciliationService::class)->applyRefund('rfnd_pending_review', $booking->payment_reference, 12000, false);
+        $this->assertSame('REFUNDED', $booking->fresh()->refund_status);
+    }
+
+    public function test_timeline_and_internal_notes_show_saved_details(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $booking = $this->createReservation(['refund_status' => 'APPROVED', 'refund_amount' => 30]);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}";
+        $this->postJson($url.'/notes', ['note' => 'Called customer.'])->assertCreated();
+        $this->postJson($url.'/support-action', ['action' => 'refund_resolved_manual', 'method' => 'bank', 'reference' => 'UTR123', 'note' => 'Internal confirmation.'])->assertOk();
+        $this->getJson($url.'/timeline')->assertOk()
+            ->assertJsonPath('data.events.0.title', 'Refund sent to customer')
+            ->assertJsonPath('data.events.0.metadata.refund_amount', 30)
+            ->assertJsonPath('data.notes.0.note', 'Internal confirmation.')
+            ->assertJsonPath('data.notes.1.note', 'Called customer.');
+        $this->assertNull($booking->fresh()->refund_note);
     }
 
     private function createReservation(array $overrides = []): SeatReservation

@@ -10,5 +10,5 @@ export const environment = {
   reverbHost: SERVER_HOST,
   reverbPort: USE_HTTPS ? 443 : 8080,
   reverbScheme: wsScheme,
-  googleMapsApiKey: 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw',
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
 };

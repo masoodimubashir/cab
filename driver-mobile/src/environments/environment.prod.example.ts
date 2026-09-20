@@ -26,7 +26,7 @@ export const environment = {
   useServerOtp: true,
   /** Same Web app config as dev; `appId` must be `…:web:…`, not Android/iOS. */
   firebase: {
-    apiKey: "AIzaSyCCpdahYlxnjogTRS1ZSaF3sQ6cF9DTbVY",
+    apiKey: "REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY",
     authDomain: "dreamcabs-1cd27.firebaseapp.com",
     projectId: "dreamcabs-1cd27",
     storageBucket: "dreamcabs-1cd27.firebasestorage.app",
@@ -44,5 +44,5 @@ export const environment = {
   // Shared with the customer + admin apps so all three render maps under the
   // same Google Cloud project. Restrict by HTTP referrer in the Cloud Console
   // when going to production.
-  googleMapsApiKey: 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw',
+  googleMapsApiKey: 'REPLACE_WITH_RESTRICTED_GOOGLE_API_KEY',
 };

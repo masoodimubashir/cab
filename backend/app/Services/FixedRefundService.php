@@ -135,6 +135,14 @@ class FixedRefundService
 
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
+            if ($reason === 'admin_passenger_cancelled') {
+                if (!in_array($res->status, ['BOOKED', 'CONFIRMED'], true) || $res->boarded_at !== null) {
+                    throw new ReservationException('This passenger has already boarded or their ride is closed. It cannot be cancelled.', 422);
+                }
+                if (!$dep || in_array($dep->status, ['COMPLETED', 'CANCELLED'], true)) {
+                    throw new ReservationException('This ride is already closed. It cannot be cancelled.', 422);
+                }
+            }
             $refundOutcome = $this->applyRefundIfNeeded($res, true, $dep?->trip_id, AutoRefundService::BY_OPERATOR);
 
             $this->releaseVehicleCapacity($dep, $res);
@@ -395,6 +403,17 @@ class FixedRefundService
      */
     private function applyRefundIfNeeded(SeatReservation $reservation, bool $eligibleForRefund, ?int $tripId, string $cancelledBy = AutoRefundService::BY_SYSTEM): array
     {
+        if (in_array($reservation->refund_status, ['REFUNDED', 'REQUESTED'], true)) {
+            $completed = $reservation->refund_status === 'REFUNDED';
+            return [
+                'refunded' => $completed,
+                'refund_pending' => !$completed,
+                'refund_status' => $reservation->refund_status,
+                'payment_status' => $reservation->payment_status,
+                'refund_path' => $completed ? 'already_refunded' : 'razorpay_processing',
+                'refund_amount' => (float) ($reservation->refund_amount ?? 0),
+            ];
+        }
         if (!$eligibleForRefund || ($reservation->fare_amount ?? 0) <= 0) {
             // R7 — the seat was released too late to resell, so the fare is
             // forfeited. Book it to the operator now (rather than leaving it to
@@ -460,6 +479,7 @@ class FixedRefundService
             $outcome = $this->autoRefundBooking($reservation, true, $cancelledBy);
 
             if ($outcome !== null && in_array($outcome['status'], ['refunded', 'refund_pending', 'skipped'], true)) {
+                $completed = $outcome['status'] === 'refunded';
                 // The engine refunds the captured amount (the deposit for cash);
                 // trust its figure, falling back to our computed online amount.
                 $refunded = ($outcome['refunded_paise'] ?? 0) > 0
@@ -473,15 +493,15 @@ class FixedRefundService
                     // refund.processed/failed webhook can find it, and the admin
                     // register can show what to look up in the dashboard.
                     'refund_reference' => ($outcome['refund_id'] ?? null) ?: $reservation->refund_reference,
-                    'refunded_at' => now(),
+                    'refunded_at' => $completed ? now() : null,
                 ])->save();
 
                 return [
-                    'refunded' => true,
-                    'refund_pending' => false,
-                    'refund_status' => 'REFUNDED',
-                    'payment_status' => 'REFUNDED',
-                    'refund_path' => 'razorpay_auto',
+                    'refunded' => $completed,
+                    'refund_pending' => !$completed,
+                    'refund_status' => $completed ? 'REFUNDED' : 'REQUESTED',
+                    'payment_status' => $completed ? 'REFUNDED' : $reservation->payment_status,
+                    'refund_path' => $completed ? 'razorpay_auto' : 'razorpay_processing',
                     'refund_amount' => $refunded,
                 ];
             }

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../environments/environment';
 
-const API_KEY = environment.googleMapsApiKey || 'AIzaSyB75-vyT02OBfQQ85Vt6JIAF0LoDXQRujw';
+const API_KEY = environment.googleMapsApiKey;
 const SCRIPT_ID = 'shared-google-maps-script';
 const CALLBACK_NAME = '__sharedInitGoogleMaps';
 
@@ -20,6 +20,10 @@ export class GoogleMapsLoaderService {
     }
     if (this.loadPromise) {
       return this.loadPromise;
+    }
+
+    if (!API_KEY) {
+      return Promise.reject(new Error('Google Maps API key is not configured.'));
     }
 
     this.loadPromise = new Promise<typeof google>((resolve, reject) => {
