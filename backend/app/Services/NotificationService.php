@@ -64,11 +64,37 @@ class NotificationService
 
         $stringData = array_map(static fn ($v) => is_scalar($v) ? (string) $v : json_encode($v), $data);
 
+        $androidConfig = [
+            'priority' => 'high',
+            'notification' => [
+                'channel_id' => 'ride_requests',
+                'sound' => 'default',
+                'priority' => 'high',
+                'visibility' => 'public',
+                'default_vibrate_timings' => true,
+                'default_sound' => true,
+            ],
+        ];
+        $apnsConfig = [
+            'headers' => [
+                'apns-priority' => '10',
+            ],
+            'payload' => [
+                'aps' => [
+                    'sound' => 'default',
+                    'content-available' => 1,
+                ],
+            ],
+        ];
+
         foreach ($tokens as $tokenId => $token) {
             $message = CloudMessage::new()
                 ->withToken($token)
                 ->withNotification(Notification::create($title, $body))
-                ->withData($stringData);
+                ->withData($stringData)
+                ->withHighestPossiblePriority()
+                ->withAndroidConfig($androidConfig)
+                ->withApnsConfig($apnsConfig);
 
             try {
                 $this->messaging->send($message);
