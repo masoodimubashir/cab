@@ -44,6 +44,7 @@ class TripAssignmentService
             $offer = FareNegotiationOffer::query()
                 ->where('id', $acceptedOfferId)
                 ->where('from_role', 'driver')
+                ->whereIn('status', ['PENDING', 'ACCEPTED'])
                 ->first();
 
             if (!$offer || !$offer->from_user_id) {
@@ -55,23 +56,27 @@ class TripAssignmentService
                 return null;
             }
 
-            // Universal Wallet Validation Rule during ride allocation
-            $driverUser = User::query()->find($offer->from_user_id);
-            if ($driverUser) {
-                $subPct = $this->subscriptionService->effectiveCommissionPercentForTrip($trip, -1.0);
-                $comm = $this->commissionService->commissionForFare(
-                    $trip->city_vehicle_type_id,
-                    $finalFare,
-                    (float) ($trip->toll_amount ?? 0),
-                    $subPct
-                )['amount'];
-
-                if (!$this->walletService->canAffordCommission($driverUser, $comm)) {
-                    return null;
-                }
+            // Concurrency protection: Lock the driver user record so simultaneous
+            // confirmations on different trips cannot both claim the same driver.
+            $driverUser = User::query()->where('id', $offer->from_user_id)->lockForUpdate()->first();
+            if (!$driverUser) {
+                return null;
             }
 
-            // One-trip-per-driver guard
+            // Universal Wallet Validation Rule during ride allocation
+            $subPct = $this->subscriptionService->effectiveCommissionPercentForTrip($trip, -1.0);
+            $comm = $this->commissionService->commissionForFare(
+                $trip->city_vehicle_type_id,
+                $finalFare,
+                (float) ($trip->toll_amount ?? 0),
+                $subPct
+            )['amount'];
+
+            if (!$this->walletService->canAffordCommission($driverUser, $comm)) {
+                return null;
+            }
+
+            // One-trip-per-driver guard (evaluated safely under the driver row lock)
             $driverBusy = Trip::query()
                 ->where('driver_id', $offer->from_user_id)
                 ->where('id', '!=', $trip->id)

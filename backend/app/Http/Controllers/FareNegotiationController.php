@@ -333,7 +333,7 @@ class FareNegotiationController extends Controller
     public function driverAction(Request $request, Trip $trip, TripAssignmentService $tripAssignmentService)
     {
         $data = $request->validate([
-            'action' => ['required', 'in:ACCEPT,COUNTER'],
+            'action' => ['required', 'in:ACCEPT,COUNTER,REJECT,DECLINE'],
             'amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
@@ -367,6 +367,24 @@ class FareNegotiationController extends Controller
             return response()->json(['message' => 'This request is no longer available.'], 409);
         }
 
+        // Driver explicitly declined/rejected the request during negotiation
+        if (in_array($data['action'], ['REJECT', 'DECLINE'], true)) {
+            \App\Models\TripAssignment::query()->updateOrCreate(
+                ['trip_id' => $trip->id, 'driver_id' => $user->id],
+                ['status' => 'REJECTED', 'decided_at' => now()]
+            );
+
+            $negotiation = FareNegotiation::query()->where('trip_id', $trip->id)->first();
+            if ($negotiation) {
+                $negotiation->offers()
+                    ->where('status', 'PENDING')
+                    ->where('from_user_id', $user->id)
+                    ->update(['status' => 'SUPERSEDED']);
+            }
+
+            return response()->json(['message' => 'Offer rejected.']);
+        }
+
         // Shuttle is prepaid by the customer. Drivers can accept the fixed
         // paid fare, but must not counter with a different price.
         if ($data['action'] === 'COUNTER') {
@@ -387,15 +405,15 @@ class FareNegotiationController extends Controller
             }
         }
 
-        // Acceptance window (bug #7): a driver auto-pinged by the dispatcher must
-        // act within driver_accept_window_sec of their ping. A late tap is
-        // rejected so the ride doesn't get claimed after the rider moved on.
-        // Drivers reached another way (manual pre-assign / customer select-driver)
-        // have no ping record and are unaffected.
+        // Acceptance window: a driver auto-pinged by the dispatcher must
+        // act within driver_accept_window_sec of their ping. Check both the short-term
+        // ping key and the 24h ping timestamp record so timeout cannot be evaded.
         $settings = DispatcherSetting::forTrip($trip->city_id, $trip->scope ?: 'local');
         $window = (int) ($settings->driver_accept_window_sec ?? 0);
         if ($window > 0) {
-            $pingedAt = Cache::get("dispatch_ping:{$trip->id}:{$user->id}");
+            $pingedAt = Cache::get("dispatch_ping_at:{$trip->id}:{$user->id}")
+                ?? Cache::get("dispatch_ping:{$trip->id}:{$user->id}");
+
             if ($pingedAt !== null && (now()->timestamp - (int) $pingedAt) > $window) {
                 return response()->json([
                     'message' => 'This request has expired. Please wait for the next one.',
@@ -577,10 +595,11 @@ class FareNegotiationController extends Controller
         $acceptedOffer = $negotiation->offers()
             ->where('id', $data['accepted_offer_id'])
             ->where('from_role', 'driver')
+            ->whereIn('status', ['PENDING', 'ACCEPTED'])
             ->first();
 
         if (!$acceptedOffer || !$acceptedOffer->from_user_id) {
-            return response()->json(['message' => 'Selected offer was not found on this trip.'], 422);
+            return response()->json(['message' => 'Selected offer is no longer valid or has been superseded.'], 422);
         }
 
         if (abs($finalFare - (float) $acceptedOffer->amount) > 0.01) {

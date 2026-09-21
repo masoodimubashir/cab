@@ -83,6 +83,51 @@ class SeatMapService
     }
 
     /**
+     * Release all expired holds and restore their seats to AVAILABLE.
+     */
+    public function releaseExpiredHoldsForDeparture(int $routeDepartureId): int
+    {
+        $expiredHolds = FixedSeatHold::query()
+            ->where('route_departure_id', $routeDepartureId)
+            ->where('status', 'HELD')
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '<=', now());
+            })
+            ->get();
+
+        $count = 0;
+        foreach ($expiredHolds as $hold) {
+            $this->releaseSeats($hold);
+            $hold->update(['status' => 'EXPIRED']);
+            $count++;
+        }
+
+        // Clean up any orphan HELD departure_seats without active valid holds
+        $activeHoldIds = FixedSeatHold::query()
+            ->where('route_departure_id', $routeDepartureId)
+            ->where('status', 'HELD')
+            ->where('expires_at', '>', now())
+            ->pluck('id');
+
+        $activeDepartureSeatIds = FixedSeatHoldSeat::query()
+            ->whereIn('fixed_seat_hold_id', $activeHoldIds)
+            ->pluck('departure_seat_id');
+
+        DepartureSeat::query()
+            ->where('route_departure_id', $routeDepartureId)
+            ->where('status', 'HELD')
+            ->whereNotIn('id', $activeDepartureSeatIds)
+            ->update([
+                'status' => 'AVAILABLE',
+                'seat_reservation_id' => null,
+                'updated_at' => now(),
+            ]);
+
+        return $count;
+    }
+
+    /**
      * Lock the given labels on the departure for this hold. Transactional +
      * lockForUpdate: two customers holding "2A" at the same time → the second
      * one loses cleanly with a 422.
@@ -95,6 +140,9 @@ class SeatMapService
             throw new ReservationException('Pick at least one seat.', 422);
         }
         $labels = array_values(array_unique($labels));
+
+        // Purge expired holds on this departure before checking seat availability
+        $this->releaseExpiredHoldsForDeparture((int) $hold->route_departure_id);
 
         DB::transaction(function () use ($hold, $labels) {
             $seats = DepartureSeat::query()
@@ -219,6 +267,7 @@ class SeatMapService
     public function mapForDeparture(RouteDeparture $departure): array
     {
         $this->snapshotForDeparture($departure);
+        $this->releaseExpiredHoldsForDeparture((int) $departure->id);
 
         $layout = $departure->seatLayout()->with('cells')->first();
         if (!$layout) {
