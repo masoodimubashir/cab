@@ -9,6 +9,7 @@ import { GeolocationService } from '../../../core/geolocation.service';
 import { FixedCustomerLocationService } from '../../../core/fixed-customer-location.service';
 import { PaymentOptionsService } from '../../../core/payment-options.service';
 import { RealtimeService } from '../../../core/realtime.service';
+import { AudioAlertService } from '../../../core/audio-alert.service';
 import { PaymentChoice } from '../../../shared/payment-method-modal.component';
 import { BookingService, resolveCity } from '../booking.service';
 import { City } from '../booking.models';
@@ -130,6 +131,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private geo: GeolocationService,
     private fixedLocation: FixedCustomerLocationService,
     private realtime: RealtimeService,
+    private audioAlert: AudioAlertService,
   ) {}
 
   async ngOnInit(): Promise<void> {
@@ -474,6 +476,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private onHoldAccepted(payload: any): void {
     if (this.step !== 'awaiting_approval') return;
     this.stopApprovalWaiting();
+    this.audioAlert.playDriverAccepted();
     if (this.hold) {
       this.hold.status = 'ACCEPTED';
       if (payload.expires_at) this.hold.expires_at = payload.expires_at;
@@ -485,6 +488,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   private async onHoldRejected(payload?: any): Promise<void> {
     this.stopApprovalWaiting();
+    this.audioAlert.playDriverDeclined();
     this.hold = null;
     this.step = 'seats';
     this.loadSeatMap();

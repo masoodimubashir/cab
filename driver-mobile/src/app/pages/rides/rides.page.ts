@@ -20,6 +20,7 @@ import {
   updateCarMarkerBearing,
   buildPassengerMarkerElement,
 } from '../../core/car-marker.helper';
+import { AudioRingtoneService } from '../../core/audio-ringtone.service';
 
 declare const google: any;
 
@@ -194,6 +195,7 @@ export class RidesPage implements OnInit, OnDestroy {
     private modalCtrl: ModalController,
     private geo: GeolocationService,
     private router: Router,
+    private ringtone: AudioRingtoneService,
   ) {}
 
 
@@ -319,6 +321,10 @@ export class RidesPage implements OnInit, OnDestroy {
     }
   }
 
+  ionViewWillLeave(): void {
+    this.ringtone.stopRinging();
+  }
+
   /**
    * Hydrate lastTrip from /drivers/me/active-trip so the redesigned in-trip
    * view renders without requiring the driver to re-accept. Falls back to
@@ -350,6 +356,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.ringtone.stopRinging();
     if (this.unsubscribeStatus) {
       this.unsubscribeStatus();
       this.unsubscribeStatus = null;
@@ -368,6 +375,11 @@ export class RidesPage implements OnInit, OnDestroy {
         this.available = res?.data || [];
         if (res?.reason && !this.available.length) {
           this.message = res.reason;
+        }
+        if (this.available.length > 0 && !this.hasActiveTrip && !this.priceOpen) {
+          this.ringtone.startRinging('available-rides');
+        } else if (this.available.length === 0) {
+          this.ringtone.stopRinging('available-rides');
         }
       },
       error: () => {
@@ -695,6 +707,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   pickAvailable(t: AvailableTrip, action: 'accept' | 'price'): void {
+    this.ringtone.stopRinging();
     this.tripId = t.id;
     this.error = null;
     this.message = null;
@@ -1274,11 +1287,13 @@ export class RidesPage implements OnInit, OnDestroy {
   reject(): void {
     const id = this.validId();
     if (id == null) return;
+    this.ringtone.stopRinging();
     this.busy = true;
     this.error = null;
     this.message = null;
     this.api.post<{ message?: string }>(`/trips/${id}/driver-reject`, {}).subscribe({
       next: (res) => {
+        this.ringtone.playRejectChime();
         this.message = res.message || 'Rejected';
         this.lastTrip = null;
       },
@@ -1294,6 +1309,7 @@ export class RidesPage implements OnInit, OnDestroy {
   acceptCustomerOffer(): void {
     const id = this.validId();
     if (id == null) return;
+    this.ringtone.stopRinging();
     this.negBusy = true;
     this.error = null;
     this.message = null;
@@ -1302,6 +1318,7 @@ export class RidesPage implements OnInit, OnDestroy {
       action: 'ACCEPT',
     }).subscribe({
       next: (res) => {
+        this.ringtone.playSuccessChime();
         this.negotiation = res.negotiation || null;
         this.message = this.isShuttleTrip(this.lastTrip) ? 'Shuttle fare accepted' : 'Offer accepted';
       },

@@ -19,6 +19,7 @@ import {
   buildStopMarkerElement,
 } from '../../core/car-marker.helper';
 import { PlacesService } from '../../core/places.service';
+import { AudioAlertService } from '../../core/audio-alert.service';
 import { PaymentChoice } from '../../shared/payment-method-modal.component';
 import { City } from '../booking/booking.models';
 import { resolveCity } from '../booking/booking.service';
@@ -256,6 +257,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     private realtime: RealtimeService,
     private places: PlacesService,
     private zone: NgZone,
+    private audioAlert: AudioAlertService,
   ) {}
 
   ngOnInit(): void {
@@ -1260,6 +1262,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private onHoldAccepted(payload: any, testPayment = false, method: PaymentChoice = 'online'): void {
     if (this.step !== 'awaiting_approval') return;
     this.stopApprovalWaiting();
+    this.audioAlert.playDriverAccepted();
     if (this.hold) {
       this.hold.status = 'ACCEPTED';
       if (payload.expires_at) this.hold.expires_at = payload.expires_at;
@@ -1270,6 +1273,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   private async onHoldRejected(payload: any): Promise<void> {
     this.stopApprovalWaiting();
+    this.audioAlert.playDriverDeclined();
     this.hold = null;
     this.step = 'seats';
     this.loadSeatMap();
