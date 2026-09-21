@@ -7,6 +7,7 @@ import { RouterModule, Routes } from '@angular/router';
 import { FixedBookPage } from './fixed.page';
 import { StepShellComponent } from '../step-shell.component';
 import { SeatGridComponent } from './seat-grid.component';
+import { HoldTimerComponent } from '../../fixed-book/hold-timer.component';
 import { PaymentMethodModalComponent } from '../../../shared/payment-method-modal.component';
 import { CityFilterModalComponent } from '../../../shared/city-filter-modal.component';
 
@@ -20,6 +21,7 @@ const routes: Routes = [{ path: '', component: FixedBookPage }];
     RouterModule.forChild(routes),
     StepShellComponent,
     SeatGridComponent,
+    HoldTimerComponent,
     PaymentMethodModalComponent,
     CityFilterModalComponent,
   ],
