@@ -114,8 +114,8 @@ class RideAssignmentController extends Controller
     {
         $user = $request->user();
 
-        if ($trip->status !== 'CONFIRMED') {
-            return response()->json(['message' => 'Trip is not ready for assignment.'], 409);
+        if ($trip->status !== 'CONFIRMED' && $trip->status !== 'NEGOTIATION') {
+            return response()->json(['message' => 'Trip is not in an assignable state.'], 409);
         }
 
         $driverProfile = Driver::query()->where('user_id', $user->id)->first();
@@ -128,10 +128,16 @@ class RideAssignmentController extends Controller
             ['status' => 'REJECTED', 'decided_at' => now()]
         );
 
-        // A shared journey was pre-assigned, not bid on — if its driver rejects,
-        // free the departure so the next dispatch cycle re-offers it to another
-        // driver (the already-paid riders must not be stranded). Reset it to its
-        // pre-dispatch state, detach the seats, and cancel the orphan trip.
+        // Supersede any pending offers from this driver on this trip
+        $negotiation = FareNegotiation::query()->where('trip_id', $trip->id)->first();
+        if ($negotiation) {
+            $negotiation->offers()
+                ->where('status', 'PENDING')
+                ->where('from_user_id', $user->id)
+                ->update(['status' => 'SUPERSEDED']);
+        }
+
+        // Shared route departure rejection
         if ($trip->isShared() && (int) $trip->driver_id === (int) $user->id) {
             DB::transaction(function () use ($trip) {
                 $dep = RouteDeparture::query()->lockForUpdate()->find($trip->route_departure_id);
@@ -150,6 +156,33 @@ class RideAssignmentController extends Controller
                     'cancelled_reason' => 'shared_driver_rejected',
                 ]);
             });
+        } elseif (!$trip->isShared()) {
+            // Private ride rejection: unbind the driver, revert trip to NEGOTIATION, and re-dispatch
+            DB::transaction(function () use ($trip, $user) {
+                if ((int) $trip->driver_id === (int) $user->id) {
+                    $trip->update([
+                        'driver_id' => null,
+                        'status' => 'NEGOTIATION',
+                    ]);
+                }
+            });
+
+            // Start a new dispatch chain if fare exists
+            $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+            if ($fare > 0 && $trip->status === 'NEGOTIATION') {
+                \App\Jobs\DispatchHopJob::startChain($trip->id, $fare);
+            }
+
+            if ($trip->customer_id) {
+                app(\App\Services\NotificationCenter::class)->notifyUserId(
+                    (int) $trip->customer_id,
+                    'driver_declined_redispatching',
+                    'Searching for another driver',
+                    'Your driver was unable to accept. We are finding another driver for you.',
+                    ['trip_id' => $trip->id],
+                    'car-outline'
+                );
+            }
         }
 
         return response()->json(['message' => 'Rejected.']);

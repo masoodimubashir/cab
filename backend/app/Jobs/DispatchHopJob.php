@@ -134,12 +134,19 @@ class DispatchHopJob implements ShouldQueue
             ->whereIn('status', Trip::DRIVER_BUSY_STATUSES)
             ->pluck('driver_id');
 
+        $rejectedDriverIds = \App\Models\TripAssignment::query()
+            ->where('trip_id', $trip->id)
+            ->where('status', 'REJECTED')
+            ->pluck('driver_id');
+
+        $excludedUserIds = $busyDriverIds->concat($rejectedDriverIds)->unique();
+
         $eligible = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
             ->where('active_service_scope', $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL)
             ->where('active_service_mode', $serviceMode)
-            ->whereNotIn('user_id', $busyDriverIds)
+            ->whereNotIn('user_id', $excludedUserIds)
             // When the customer picked a specific vehicle type, only drivers
             // with that vehicle qualify (skipped for "any vehicle" trips, where
             // requested_vehicle_type_id is null). Mirrors the nearbyDrivers list
@@ -252,6 +259,7 @@ class DispatchHopJob implements ShouldQueue
             );
             foreach ($newlyReached as $uid) {
                 Cache::put(self::pingKey($trip->id, (int) $uid), now()->timestamp, now()->addSeconds($searchTtlSec));
+                Cache::put("dispatch_ping_at:{$trip->id}:{$uid}", now()->timestamp, now()->addDay());
             }
 
             if ($newlyReached->isNotEmpty()) {
@@ -332,6 +340,12 @@ class DispatchHopJob implements ShouldQueue
     private function requeue(int $maxHops, int $hopIntervalSec): void
     {
         if ($this->hop >= $maxHops) {
+            if (!$this->discoveryMode) {
+                // Final wave reached without driver acceptance: schedule immediate
+                // timeout cancellation so customer is not kept waiting for cron.
+                \App\Jobs\ExpireUnansweredTripJob::dispatch($this->tripId, $this->genToken)
+                    ->delay(now()->addSeconds($hopIntervalSec));
+            }
             return;
         }
         self::dispatch($this->tripId, $this->amount, $this->hop + 1, $this->discoveryMode, $this->genToken)
