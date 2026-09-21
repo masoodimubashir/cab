@@ -87,8 +87,32 @@ class FixedBookingsController extends Controller
 
         return response()->json([
             'hold' => $this->bookings->shapeSeatHold($hold->fresh('routeDeparture.route')),
-            'message' => 'Seat hold created.',
+            'message' => $hold->status === 'PENDING_DRIVER_APPROVAL'
+                ? 'Seat request sent to driver.'
+                : 'Seat hold created.',
         ], 201);
+    }
+
+    public function showSeatHold(Request $request, FixedSeatHold $fixedSeatHold)
+    {
+        if ($fixedSeatHold->customer_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $this->availability->expireHoldIfNeeded($fixedSeatHold);
+
+        return response()->json([
+            'hold' => $this->bookings->shapeSeatHold($fixedSeatHold->fresh('routeDeparture.route')),
+        ]);
+    }
+
+    public function activeHold(Request $request)
+    {
+        $hold = $this->seatHolds->activeHoldForCustomer($request->user());
+
+        return response()->json([
+            'hold' => $hold ? $this->bookings->shapeSeatHold($hold->fresh('routeDeparture.route')) : null,
+        ]);
     }
 
     public function confirmSeatHoldPayment(Request $request, FixedSeatHold $fixedSeatHold, RazorpayService $razorpayService)

@@ -3307,3 +3307,268 @@ ion-content.is-map-fullscreen {
     letter-spacing: 0.5px;
   }
 }
+
+/* ==================== INCOMING SEAT REQUEST OVERLAY (M1.02) ==================== */
+.incoming-request-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  animation: irFadeIn 0.25s ease-out;
+
+  @media (min-width: 600px) {
+    align-items: center;
+  }
+}
+
+.incoming-request-card {
+  width: 100%;
+  max-width: 480px;
+  background: #FFFFFF;
+  border-radius: 22px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35);
+  border: 1px solid #E2E8F0;
+  padding: 18px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: irSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+  .ir-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .ir-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      font-weight: 900;
+      color: #059669;
+      background: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      padding: 4px 10px;
+      border-radius: 100px;
+      letter-spacing: 0.5px;
+
+      .ir-pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10B981;
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        animation: irPulseAnim 1.4s infinite;
+      }
+    }
+
+    .ir-timer {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      font-weight: 850;
+      color: #0F172A;
+      background: #F1F5F9;
+      padding: 4px 10px;
+      border-radius: 100px;
+
+      &--urgent {
+        color: #DC2626;
+        background: #FEF2F2;
+        border: 1px solid #FECACA;
+        animation: irUrgentPulse 0.8s infinite alternate;
+      }
+    }
+  }
+
+  .ir-body {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    .ir-passenger-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .ir-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: #0F172A;
+        color: #FFFFFF;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        flex-shrink: 0;
+      }
+
+      .ir-passenger-info {
+        flex: 1;
+        min-width: 0;
+
+        .ir-name {
+          margin: 0 0 2px;
+          font-size: 15px;
+          font-weight: 850;
+          color: #0F172A;
+        }
+
+        .ir-seats-badge {
+          font-size: 12px;
+          font-weight: 700;
+          color: #2563EB;
+        }
+      }
+
+      .ir-fare {
+        text-align: right;
+        flex-shrink: 0;
+
+        span {
+          display: block;
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: #64748B;
+        }
+
+        strong {
+          font-size: 18px;
+          font-weight: 900;
+          color: #059669;
+        }
+      }
+    }
+
+    .ir-route-track {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+
+      .ir-route-stop {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+
+        .ir-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          margin-top: 4px;
+          flex-shrink: 0;
+
+          &--pickup { background: #10B981; }
+          &--drop { background: #EF4444; }
+        }
+
+        .ir-stop-text {
+          min-width: 0;
+
+          small {
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            color: #94A3B8;
+            text-transform: uppercase;
+          }
+
+          strong {
+            display: block;
+            font-size: 13px;
+            font-weight: 750;
+            color: #1E293B;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        }
+      }
+
+      .ir-route-line {
+        position: absolute;
+        left: 16px;
+        top: 22px;
+        bottom: 22px;
+        width: 2px;
+        background: #CBD5E1;
+      }
+    }
+  }
+
+  .ir-actions {
+    display: grid;
+    grid-template-columns: 1fr 1.6fr;
+    gap: 10px;
+
+    .ir-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 800;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+
+      ion-icon { font-size: 18px; }
+
+      &--reject {
+        background: #FEE2E2;
+        color: #DC2626;
+        border: 1px solid #FECACA;
+
+        &:active { background: #FCA5A5; }
+      }
+
+      &--accept {
+        background: #10B981;
+        color: #FFFFFF;
+        box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+
+        &:active { background: #059669; }
+      }
+    }
+  }
+}
+
+@keyframes irFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes irSlideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes irPulseAnim {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes irUrgentPulse {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0.8; transform: scale(1.04); }
+}
+

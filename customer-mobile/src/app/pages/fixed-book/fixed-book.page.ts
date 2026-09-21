@@ -1,12 +1,17 @@
 import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
-import { Subscription } from 'rxjs';
+import { interval, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { FixedCustomerLocationService } from '../../core/fixed-customer-location.service';
 import { GeolocationService } from '../../core/geolocation.service';
-import { RealtimeService, TripLocationPayload } from '../../core/realtime.service';
+import {
+  FixedSeatHoldAcceptedPayload,
+  FixedSeatHoldRejectedPayload,
+  RealtimeService,
+  TripLocationPayload,
+} from '../../core/realtime.service';
 import {
   buildReusableCarMarkerElement,
   updateCarMarkerBearing,
@@ -82,12 +87,18 @@ interface SeatHold {
   id: number;
   route_departure_id: number;
   seats: number;
+  seat_labels?: string[];
   amount: number;
   original_amount?: number | null;
   discount_amount?: number | null;
   coupon_assignment_id?: number | null;
   status: string;
   expires_at: string | null;
+  board_stop_id?: number | null;
+  drop_stop_id?: number | null;
+  route_departure?: FixedDeparture | null;
+  board_stop?: { id: number; name: string } | null;
+  drop_stop?: { id: number; name: string } | null;
 }
 
 interface FixedRazorpayOrder {
@@ -142,7 +153,7 @@ interface FixedReservation {
   drop_stop?: { id: number; name: string } | null;
 }
 
-type Step = 'routes' | 'vehicles' | 'details' | 'seats' | 'review' | 'done';
+type Step = 'routes' | 'vehicles' | 'details' | 'seats' | 'review' | 'awaiting_approval' | 'done';
 
 interface SeatMapCell {
   row: number;
@@ -202,6 +213,12 @@ export class FixedBookPage implements OnInit, OnDestroy {
   couponError: string | null = null;
   applyingCoupon = false;
   hold: SeatHold | null = null;
+  approvalCountdown = 60;
+  private approvalTimerSub?: Subscription;
+  private approvalPollSub?: Subscription;
+  private unsubscribeHoldChannel?: (() => void) | null;
+  private unsubscribeCustomerHoldChannel?: (() => void) | null;
+
   /** Shared payment-method sheet (Online / GPay / Cash) shown before booking. */
   paymentModalOpen = false;
   cityModalOpen = false;
@@ -256,6 +273,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     });
   }
   ngOnDestroy(): void {
+    this.stopApprovalWaiting();
     this.unsubscribeFixedCity?.();
     this.unsubscribeFixedCity = null;
     this.stopLiveTracking();
@@ -265,7 +283,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.locationSub = undefined;
   }
 
-  ionViewWillLeave(): void {}
+  ionViewWillLeave(): void {
+    this.stopApprovalWaiting();
+  }
 
   ionViewDidEnter(): void {
     void this.initFixedMap();
@@ -727,6 +747,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.resetDetails();
     void this.loadCitiesAndResolve();
     this.loadMyBookings();
+    this.checkActiveHold();
   }
 
   private async loadCitiesAndResolve(): Promise<void> {
@@ -1070,28 +1091,36 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   testPay(): void {
-    this.confirm(true);
+    if (!this.canConfirm) return;
+    if (this.hold?.status === 'ACCEPTED') {
+      this.confirmHoldTestPayment(this.hold);
+    } else {
+      this.requestSeatHold(true, 'online');
+    }
   }
 
-  confirm(testPayment = false): void {
-    if (!this.canConfirm || !this.selectedDeparture) return;
-    // The dev/test path skips the chooser and pays online in full.
-    if (testPayment) {
-      this.createHoldAndPay('online', true);
-      return;
+  confirm(): void {
+    if (!this.canConfirm) return;
+    if (this.hold?.status === 'ACCEPTED') {
+      this.paymentModalOpen = true;
+    } else {
+      this.requestSeatHold(false, 'online');
     }
-    // Real bookings pick a method first (Online / GPay / Cash).
-    this.paymentModalOpen = true;
   }
 
   /** Chosen from the shared payment sheet — hold the seats tagged with the
    *  method (cash charges only the deposit online), then run its payment. */
   onFixedPayMethod(method: PaymentChoice): void {
     this.paymentModalOpen = false;
-    this.createHoldAndPay(method, false);
+    if (!this.hold) return;
+    if (method === 'cash') {
+      this.confirmCashPayment(this.hold);
+    } else {
+      void this.startRazorpayPayment(this.hold, method);
+    }
   }
 
-  private createHoldAndPay(method: PaymentChoice, testPayment: boolean): void {
+  private requestSeatHold(testPayment: boolean, method: PaymentChoice): void {
     if (!this.canConfirm || !this.selectedDeparture) return;
     this.booking = true;
     this.hold = null;
@@ -1101,16 +1130,23 @@ export class FixedBookPage implements OnInit, OnDestroy {
     };
     this.api.post<{ hold: SeatHold }>('/fixed/seat-holds', payload, { 'Idempotency-Key': this.uuid() }).subscribe({
       next: (res) => {
+        this.booking = false;
         this.hold = res?.hold ?? null;
         if (!this.hold) {
-          this.booking = false;
           void this.showToast('Could not hold seats. Please try again.');
           return;
         }
-        if (testPayment) {
-          this.confirmHoldTestPayment(this.hold);
-        } else {
-          void this.startRazorpayPayment(this.hold, method);
+
+        if (this.hold.status === 'PENDING_DRIVER_APPROVAL') {
+          this.step = 'awaiting_approval';
+          this.startApprovalWaiting(this.hold, testPayment, method);
+        } else if (this.hold.status === 'ACCEPTED' || this.hold.status === 'HELD') {
+          this.step = 'review';
+          if (testPayment) {
+            this.confirmHoldTestPayment(this.hold);
+          } else {
+            this.paymentModalOpen = true;
+          }
         }
       },
       error: async (err) => {
@@ -1118,6 +1154,172 @@ export class FixedBookPage implements OnInit, OnDestroy {
         await this.showToast(err?.error?.message || 'Could not hold seats. Please try again.');
       },
     });
+  }
+
+  private confirmCashPayment(hold: SeatHold): void {
+    this.booking = true;
+    this.api.post<{ reservation: FixedReservation }>(`/fixed/seat-holds/${hold.id}/confirm-payment`, {
+      board_stop_id: this.boardStopId,
+      drop_stop_id: this.dropStopId,
+      booking_channel: 'advance',
+      payment_mode: 'CASH',
+    }, { 'Idempotency-Key': this.uuid() }).subscribe({
+      next: (res) => {
+        this.booking = false;
+        this.confirmation = res?.reservation ?? null;
+        this.loadMyBookings();
+        this.openConfirmedFixedRide();
+      },
+      error: async (err) => {
+        this.booking = false;
+        await this.showToast(err?.error?.message || 'Cash confirmation failed. Your hold will expire automatically.');
+      },
+    });
+  }
+
+  checkActiveHold(): void {
+    this.api.get<{ hold: SeatHold | null }>('/fixed/active-hold').subscribe({
+      next: (res) => {
+        const active = res?.hold;
+        if (!active) return;
+        const now = Date.now();
+        const expiresAt = active.expires_at ? new Date(active.expires_at).getTime() : 0;
+        if (expiresAt <= now) return;
+
+        this.hold = active;
+        if (active.board_stop_id) this.boardStopId = active.board_stop_id;
+        if (active.drop_stop_id) this.dropStopId = active.drop_stop_id;
+        if (active.seat_labels && active.seat_labels.length) {
+          this.selectedLabels = active.seat_labels;
+          this.seats = active.seat_labels.length;
+        }
+
+        if (active.status === 'PENDING_DRIVER_APPROVAL') {
+          this.step = 'awaiting_approval';
+          this.startApprovalWaiting(active);
+        } else if (active.status === 'ACCEPTED' || active.status === 'HELD') {
+          this.step = 'review';
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  private startApprovalWaiting(hold: SeatHold, testPayment = false, method: PaymentChoice = 'online'): void {
+    this.stopApprovalWaiting();
+    this.updateApprovalCountdown();
+
+    this.approvalTimerSub = interval(1000).subscribe(() => {
+      this.updateApprovalCountdown();
+    });
+
+    this.unsubscribeHoldChannel = this.realtime.subscribeFixedHold(
+      hold.id,
+      (payload) => this.onHoldAccepted(payload, testPayment, method),
+      (payload) => this.onHoldRejected(payload),
+    );
+
+    const user = this.auth.getUser();
+    if (user?.id) {
+      this.unsubscribeCustomerHoldChannel = this.realtime.subscribeCustomerFixedHoldEvents(
+        user.id,
+        (payload) => {
+          if (payload.hold_id === this.hold?.id) {
+            this.onHoldAccepted(payload, testPayment, method);
+          }
+        },
+        (payload) => {
+          if (payload.hold_id === this.hold?.id) {
+            this.onHoldRejected(payload);
+          }
+        },
+      );
+    }
+
+    this.approvalPollSub = interval(2500).subscribe(() => {
+      if (!this.hold) return;
+      this.api.get<{ hold: SeatHold }>(`/fixed/seat-holds/${this.hold.id}`).subscribe({
+        next: (res) => {
+          const h = res?.hold;
+          if (!h) return;
+          if (h.status === 'ACCEPTED') {
+            this.onHoldAccepted(h, testPayment, method);
+          } else if (h.status === 'REJECTED') {
+            this.onHoldRejected(h);
+          }
+        },
+        error: () => {},
+      });
+    });
+  }
+
+  private onHoldAccepted(payload: any, testPayment = false, method: PaymentChoice = 'online'): void {
+    if (this.step !== 'awaiting_approval') return;
+    this.stopApprovalWaiting();
+    if (this.hold) {
+      this.hold.status = 'ACCEPTED';
+      if (payload.expires_at) this.hold.expires_at = payload.expires_at;
+    }
+    this.step = 'review';
+    void this.showToast('Driver accepted your request! Please complete payment within 5 minutes.');
+  }
+
+  private async onHoldRejected(payload: any): Promise<void> {
+    this.stopApprovalWaiting();
+    this.hold = null;
+    this.step = 'seats';
+    this.loadSeatMap();
+    const alert = await this.alertCtrl.create({
+      header: 'Request Declined',
+      message: 'The driver is unable to accept passenger requests at this stop. Your seats have been released at ₹0 charge.',
+      buttons: ['OK'],
+    });
+    await alert.present();
+  }
+
+  private updateApprovalCountdown(): void {
+    if (!this.hold?.expires_at) {
+      this.approvalCountdown = 60;
+      return;
+    }
+    const diff = Math.floor((new Date(this.hold.expires_at).getTime() - Date.now()) / 1000);
+    if (diff <= 0) {
+      this.approvalCountdown = 0;
+      this.handleApprovalTimeout();
+    } else {
+      this.approvalCountdown = diff;
+    }
+  }
+
+  private async handleApprovalTimeout(): Promise<void> {
+    this.stopApprovalWaiting();
+    this.hold = null;
+    this.step = 'seats';
+    this.loadSeatMap();
+    const alert = await this.alertCtrl.create({
+      header: 'Driver Unavailable',
+      message: 'The driver did not respond within 60 seconds. Your seat hold has expired at ₹0 charge.',
+      buttons: ['OK'],
+    });
+    await alert.present();
+  }
+
+  private stopApprovalWaiting(): void {
+    this.approvalTimerSub?.unsubscribe();
+    this.approvalTimerSub = undefined;
+    this.approvalPollSub?.unsubscribe();
+    this.approvalPollSub = undefined;
+    this.unsubscribeHoldChannel?.();
+    this.unsubscribeHoldChannel = null;
+    this.unsubscribeCustomerHoldChannel?.();
+    this.unsubscribeCustomerHoldChannel = null;
+  }
+
+  cancelAwaitingApproval(): void {
+    this.stopApprovalWaiting();
+    this.releaseCurrentHold();
+    this.step = 'seats';
+    this.loadSeatMap();
   }
 
   private async startRazorpayPayment(hold: SeatHold, method: PaymentChoice = 'online'): Promise<void> {
@@ -1256,6 +1458,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
   back(): void {
     if (this.step === 'done') {
       this.router.navigateByUrl('/customer-tabs/fixed-rides');
+      return;
+    }
+    if (this.step === 'awaiting_approval') {
+      this.cancelAwaitingApproval();
       return;
     }
     if (this.step === 'review') {

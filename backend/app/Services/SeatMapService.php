@@ -87,9 +87,11 @@ class SeatMapService
      */
     public function releaseExpiredHoldsForDeparture(int $routeDepartureId): int
     {
+        $holdStatuses = ['HELD', 'PENDING_DRIVER_APPROVAL', 'ACCEPTED'];
+
         $expiredHolds = FixedSeatHold::query()
             ->where('route_departure_id', $routeDepartureId)
-            ->where('status', 'HELD')
+            ->whereIn('status', $holdStatuses)
             ->where(function ($q) {
                 $q->whereNull('expires_at')
                   ->orWhere('expires_at', '<=', now());
@@ -106,7 +108,7 @@ class SeatMapService
         // Clean up any orphan HELD departure_seats without active valid holds
         $activeHoldIds = FixedSeatHold::query()
             ->where('route_departure_id', $routeDepartureId)
-            ->where('status', 'HELD')
+            ->whereIn('status', $holdStatuses)
             ->where('expires_at', '>', now())
             ->pluck('id');
 

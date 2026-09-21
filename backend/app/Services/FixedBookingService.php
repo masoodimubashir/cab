@@ -69,14 +69,23 @@ class FixedBookingService
 
     public function shapeSeatHold(FixedSeatHold $hold): array
     {
+        $hold->loadMissing(['heldSeats', 'boardStop', 'dropStop', 'routeDeparture.driver', 'customer']);
+
         return [
             'id' => $hold->id,
             'route_departure_id' => $hold->route_departure_id,
+            'driver_id' => $hold->routeDeparture?->driver_id,
+            'driver_name' => $hold->routeDeparture?->driver?->name,
+            'customer_id' => $hold->customer_id,
+            'customer_name' => $hold->customer?->name,
             'board_stop_id' => $hold->board_stop_id,
+            'board_stop_name' => $hold->boardStop?->name,
             'drop_stop_id' => $hold->drop_stop_id,
+            'drop_stop_name' => $hold->dropStop?->name,
             'route_id' => $hold->routeDeparture?->route_id,
             'route_name' => $hold->routeDeparture?->route?->name,
             'seats' => (int) $hold->seats,
+            'seat_labels' => $hold->heldSeats->pluck('label')->values()->all(),
             'amount' => (float) $hold->amount,
             'original_amount' => $hold->original_amount !== null ? (float) $hold->original_amount : (float) $hold->amount,
             'discount_amount' => $hold->discount_amount !== null ? (float) $hold->discount_amount : 0.0,

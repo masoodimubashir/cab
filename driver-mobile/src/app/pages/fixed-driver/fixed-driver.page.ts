@@ -4,6 +4,7 @@ import { AlertController, ToastController } from '@ionic/angular';
 import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
 import {
   buildReusableCarMarkerElement,
@@ -13,9 +14,28 @@ import {
 } from '../../core/car-marker.helper';
 import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { PlacesService } from '../../core/places.service';
-import { RealtimeService } from '../../core/realtime.service';
+import { FixedSeatHoldRequestedPayload, RealtimeService } from '../../core/realtime.service';
 
 declare const google: any;
+
+export interface PendingSeatHold {
+  id: number;
+  route_departure_id: number;
+  user_id?: number;
+  board_stop_id?: number | null;
+  drop_stop_id?: number | null;
+  seat_labels: string[];
+  seats: number;
+  amount: number;
+  status: string;
+  expires_at: string | null;
+  customer_name?: string | null;
+  board_name?: string | null;
+  drop_name?: string | null;
+  user?: { id: number; name: string | null; phone: string | null } | null;
+  board_stop?: { id: number; name: string } | null;
+  drop_stop?: { id: number; name: string } | null;
+}
 
 
 interface FixedRoute {
@@ -298,6 +318,14 @@ export class FixedDriverPage implements OnDestroy {
   nowMs = Date.now();
   private clockTimer?: Subscription;
 
+  // Pending seat requests (M1.02)
+  incomingSeatRequests: PendingSeatHold[] = [];
+  activeSeatRequest: PendingSeatHold | null = null;
+  requestCountdown = 60;
+  private holdTimerSubscription?: Subscription;
+  private unsubscribeDriverHoldRequests?: (() => void) | null;
+  private unsubscribeDepHoldRequests?: (() => void) | null;
+
   // Boarding OTP popup: tapping "Board" sends a code to the customer and the
   // driver must type it back here to confirm the right passenger boards.
   otpPassenger: FixedPassenger | null = null;
@@ -317,6 +345,7 @@ export class FixedDriverPage implements OnDestroy {
 
   constructor(
     private api: ApiService,
+    private auth: AuthService,
     private alerts: AlertController,
     private toasts: ToastController,
     private router: Router,
@@ -343,6 +372,7 @@ export class FixedDriverPage implements OnDestroy {
 
   ionViewWillEnter(): void {
     this.subscribeFixedCatalog();
+    this.subscribeHoldRequests();
     this.startClock();
     this.refresh();
   }
@@ -350,6 +380,8 @@ export class FixedDriverPage implements OnDestroy {
   ionViewWillLeave(): void {
     this.unsubscribeFixedCatalog?.();
     this.unsubscribeFixedCatalog = null;
+    this.unsubscribeHoldRequests();
+    this.stopHoldCountdown();
     this.stopManifestPolling();
     this.stopClock();
     this.closeBoardingOtp();
@@ -365,6 +397,8 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.unsubscribeHoldRequests();
+    this.stopHoldCountdown();
     void this.stopDriverWatch();
     this.resetEmbeddedMap();
     this.destroyRoutePreviewMap();
@@ -595,6 +629,7 @@ export class FixedDriverPage implements OnDestroy {
           if (res.city_settings) {
             this.citySettings = res.city_settings;
           }
+          this.loadPendingHolds(vehicleId);
           void this.syncFixedTripLocationStreaming();
 
           const newRadius = Number(this.citySettings?.fixed_stop_arrival_radius_m || 0);
@@ -1601,6 +1636,159 @@ export class FixedDriverPage implements OnDestroy {
   private async showToast(message: string): Promise<void> {
     const toast = await this.toasts.create({ message, duration: 1800, position: 'bottom' });
     await toast.present();
+  }
+
+  /* ─── Pending Seat Requests (M1.02 / M1.03) ─── */
+  private subscribeHoldRequests(): void {
+    this.unsubscribeHoldRequests();
+    const user = this.auth.getUser();
+    if (user?.id) {
+      this.unsubscribeDriverHoldRequests = this.realtime.subscribeFixedDriverHoldRequests(user.id, (payload) => {
+        this.onIncomingHoldRequested(payload);
+      });
+    }
+    if (this.activeVehicle?.id) {
+      this.unsubscribeDepHoldRequests = this.realtime.subscribeDepartureHoldRequests(this.activeVehicle.id, (payload) => {
+        this.onIncomingHoldRequested(payload);
+      });
+    }
+  }
+
+  private unsubscribeHoldRequests(): void {
+    this.unsubscribeDriverHoldRequests?.();
+    this.unsubscribeDriverHoldRequests = null;
+    this.unsubscribeDepHoldRequests?.();
+    this.unsubscribeDepHoldRequests = null;
+  }
+
+  loadPendingHolds(departureId: number): void {
+    this.api.get<{ data: PendingSeatHold[] }>(`/fixed/driver/departures/${departureId}/pending-holds`).subscribe({
+      next: (res) => {
+        const holds = res.data ?? [];
+        this.syncPendingHolds(holds);
+      },
+      error: () => {},
+    });
+  }
+
+  private syncPendingHolds(holds: PendingSeatHold[]): void {
+    const now = Date.now();
+    const activeHolds = holds.filter((h) => {
+      if (!h.expires_at) return true;
+      return new Date(h.expires_at).getTime() > now;
+    });
+
+    this.incomingSeatRequests = activeHolds;
+    if (activeHolds.length > 0) {
+      if (!this.activeSeatRequest || !activeHolds.some((h) => h.id === this.activeSeatRequest?.id)) {
+        this.activeSeatRequest = activeHolds[0];
+        this.startHoldCountdown();
+      }
+    } else {
+      this.activeSeatRequest = null;
+      this.stopHoldCountdown();
+    }
+  }
+
+  private onIncomingHoldRequested(payload: FixedSeatHoldRequestedPayload): void {
+    const hold: PendingSeatHold = {
+      id: payload.hold_id,
+      route_departure_id: payload.departure_id,
+      user_id: payload.customer_id,
+      customer_name: payload.customer_name,
+      board_name: payload.board_stop,
+      drop_name: payload.drop_stop,
+      seat_labels: payload.seat_labels || [],
+      seats: payload.seats || 1,
+      amount: payload.amount || 0,
+      status: 'PENDING_DRIVER_APPROVAL',
+      expires_at: payload.expires_at,
+    };
+
+    if (!this.incomingSeatRequests.some((h) => h.id === hold.id)) {
+      this.incomingSeatRequests = [hold, ...this.incomingSeatRequests];
+      this.activeSeatRequest = hold;
+      this.startHoldCountdown();
+      void this.showToast(`New seat request for ${hold.seats} seat(s)!`);
+    }
+  }
+
+  private startHoldCountdown(): void {
+    this.stopHoldCountdown();
+    this.updateHoldCountdown();
+    this.holdTimerSubscription = interval(1000).subscribe(() => {
+      this.updateHoldCountdown();
+    });
+  }
+
+  private updateHoldCountdown(): void {
+    if (!this.activeSeatRequest?.expires_at) {
+      this.requestCountdown = 60;
+      return;
+    }
+    const diff = Math.floor((new Date(this.activeSeatRequest.expires_at).getTime() - Date.now()) / 1000);
+    if (diff <= 0) {
+      this.requestCountdown = 0;
+      this.handleHoldExpired(this.activeSeatRequest.id);
+    } else {
+      this.requestCountdown = diff;
+    }
+  }
+
+  private handleHoldExpired(holdId: number): void {
+    this.incomingSeatRequests = this.incomingSeatRequests.filter((h) => h.id !== holdId);
+    if (this.activeSeatRequest?.id === holdId) {
+      this.activeSeatRequest = this.incomingSeatRequests[0] || null;
+      if (this.activeSeatRequest) {
+        this.startHoldCountdown();
+      } else {
+        this.stopHoldCountdown();
+      }
+    }
+    void this.showToast('Seat request expired.');
+  }
+
+  private stopHoldCountdown(): void {
+    this.holdTimerSubscription?.unsubscribe();
+    this.holdTimerSubscription = undefined;
+  }
+
+  acceptSeatRequest(req: PendingSeatHold): void {
+    this.busy = true;
+    this.api.post<{ hold: PendingSeatHold; message: string }>(`/fixed/driver/seat-holds/${req.id}/accept`, {})
+      .pipe(finalize(() => (this.busy = false)))
+      .subscribe({
+        next: async (res) => {
+          this.incomingSeatRequests = this.incomingSeatRequests.filter((h) => h.id !== req.id);
+          this.activeSeatRequest = this.incomingSeatRequests[0] || null;
+          if (this.activeSeatRequest) this.startHoldCountdown();
+          else this.stopHoldCountdown();
+          await this.showToast(res.message || 'Seat request accepted. Passenger has 5 minutes to pay.');
+          if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
+        },
+        error: (err) => {
+          void this.showToast(err?.error?.message || 'Could not accept seat request.');
+        },
+      });
+  }
+
+  rejectSeatRequest(req: PendingSeatHold): void {
+    this.busy = true;
+    this.api.post<{ hold: PendingSeatHold; message: string }>(`/fixed/driver/seat-holds/${req.id}/reject`, {})
+      .pipe(finalize(() => (this.busy = false)))
+      .subscribe({
+        next: async (res) => {
+          this.incomingSeatRequests = this.incomingSeatRequests.filter((h) => h.id !== req.id);
+          this.activeSeatRequest = this.incomingSeatRequests[0] || null;
+          if (this.activeSeatRequest) this.startHoldCountdown();
+          else this.stopHoldCountdown();
+          await this.showToast(res.message || 'Seat request declined.');
+          if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
+        },
+        error: (err) => {
+          void this.showToast(err?.error?.message || 'Could not decline seat request.');
+        },
+      });
   }
 
   /* ─── Embedded Map Management ─── */

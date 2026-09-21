@@ -83,11 +83,13 @@ class FixedAvailabilityService
             ->whereHas('route', fn ($q) => $q->where('city_id', $city->id)->where('mode', 'fixed'));
     }
 
+    public const ACTIVE_HOLD_STATUSES = ['HELD', 'PENDING_DRIVER_APPROVAL', 'ACCEPTED'];
+
     public function seatsHeld(RouteDeparture $departure, ?int $excludeHoldId = null): int
     {
         $query = FixedSeatHold::query()
             ->where('route_departure_id', $departure->id)
-            ->where('status', 'HELD')
+            ->whereIn('status', self::ACTIVE_HOLD_STATUSES)
             ->where('expires_at', '>', now());
 
         if ($excludeHoldId !== null) {
@@ -135,7 +137,7 @@ class FixedAvailabilityService
     {
         $query = FixedSeatHold::query()
             ->where('route_departure_id', $departure->id)
-            ->where('status', 'HELD')
+            ->whereIn('status', self::ACTIVE_HOLD_STATUSES)
             ->where('expires_at', '>', now());
 
         if ($excludeHoldId !== null) {
@@ -181,7 +183,7 @@ class FixedAvailabilityService
             ->join("route_stops as board_stops", "board_stops.id", "=", "fixed_seat_holds.board_stop_id")
             ->join("route_stops as drop_stops", "drop_stops.id", "=", "fixed_seat_holds.drop_stop_id")
             ->where("fixed_seat_holds.route_departure_id", $departure->id)
-            ->where("fixed_seat_holds.status", "HELD")
+            ->whereIn("fixed_seat_holds.status", self::ACTIVE_HOLD_STATUSES)
             ->where("fixed_seat_holds.expires_at", ">", now())
             ->where("board_stops.seq", "<", (int) $dropStop->seq)
             ->where("drop_stops.seq", ">", (int) $boardStop->seq);
@@ -199,7 +201,7 @@ class FixedAvailabilityService
             ->join("route_stops as board_stops", "board_stops.id", "=", "fixed_seat_holds.board_stop_id")
             ->join("route_stops as drop_stops", "drop_stops.id", "=", "fixed_seat_holds.drop_stop_id")
             ->where("fixed_seat_holds.route_departure_id", $departure->id)
-            ->where("fixed_seat_holds.status", "HELD")
+            ->whereIn("fixed_seat_holds.status", self::ACTIVE_HOLD_STATUSES)
             ->where("fixed_seat_holds.expires_at", ">", now())
             ->where("board_stops.seq", "<", (int) $dropStop->seq)
             ->where("drop_stops.seq", ">", (int) $boardStop->seq);
@@ -213,7 +215,7 @@ class FixedAvailabilityService
 
     public function expireHoldIfNeeded(FixedSeatHold $hold): FixedSeatHold
     {
-        if ($hold->status === 'HELD' && $hold->expires_at !== null && $hold->expires_at->isPast()) {
+        if (in_array($hold->status, self::ACTIVE_HOLD_STATUSES, true) && $hold->expires_at !== null && $hold->expires_at->isPast()) {
             $hold->update(['status' => 'EXPIRED']);
             $hold->refresh();
             $this->seatMap->releaseSeats($hold);
@@ -229,7 +231,7 @@ class FixedAvailabilityService
      */
     public function releaseHold(FixedSeatHold $hold): void
     {
-        if ($hold->status !== 'HELD') {
+        if (!in_array($hold->status, self::ACTIVE_HOLD_STATUSES, true)) {
             return;
         }
         $this->seatMap->releaseSeats($hold);
@@ -241,7 +243,7 @@ class FixedAvailabilityService
         $holds = FixedSeatHold::query()
             ->where('customer_id', $customerId)
             ->where('route_departure_id', $routeDepartureId)
-            ->where('status', 'HELD')
+            ->whereIn('status', self::ACTIVE_HOLD_STATUSES)
             ->get();
 
         foreach ($holds as $hold) {
