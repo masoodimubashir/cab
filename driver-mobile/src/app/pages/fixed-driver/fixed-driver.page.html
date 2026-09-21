@@ -1161,4 +1161,77 @@
       </button>
     </div>
   </div>
+
+  <!-- ==================== INCOMING SEAT REQUEST MODAL (M1.02) ==================== -->
+  <div class="incoming-request-overlay" *ngIf="activeSeatRequest">
+    <div class="incoming-request-card">
+      <div class="ir-header">
+        <div class="ir-badge">
+          <span class="ir-pulse"></span>
+          <strong>NEW SEAT REQUEST</strong>
+        </div>
+        <div class="ir-timer" [class.ir-timer--urgent]="requestCountdown <= 15">
+          <ion-icon name="time-outline"></ion-icon>
+          <span>{{ requestCountdown }}s</span>
+        </div>
+      </div>
+
+      <div class="ir-body">
+        <div class="ir-passenger-row">
+          <div class="ir-avatar"><ion-icon name="person"></ion-icon></div>
+          <div class="ir-passenger-info">
+            <h3 class="ir-name">{{ activeSeatRequest.customer_name || activeSeatRequest.user?.name || 'Passenger' }}</h3>
+            <span class="ir-seats-badge">
+              {{ activeSeatRequest.seats }} Seat{{ activeSeatRequest.seats > 1 ? 's' : '' }}
+              <strong *ngIf="activeSeatRequest.seat_labels?.length">({{ activeSeatRequest.seat_labels.join(', ') }})</strong>
+            </span>
+          </div>
+          <div class="ir-fare">
+            <span>Fare</span>
+            <strong>₹{{ activeSeatRequest.amount | number:'1.0-0' }}</strong>
+          </div>
+        </div>
+
+        <div class="ir-route-track">
+          <div class="ir-route-stop">
+            <span class="ir-dot ir-dot--pickup"></span>
+            <div class="ir-stop-text">
+              <small>Pickup Stop</small>
+              <strong>{{ activeSeatRequest.board_name || activeSeatRequest.board_stop?.name || 'Boarding' }}</strong>
+            </div>
+          </div>
+          <div class="ir-route-line"></div>
+          <div class="ir-route-stop">
+            <span class="ir-dot ir-dot--drop"></span>
+            <div class="ir-stop-text">
+              <small>Drop Stop</small>
+              <strong>{{ activeSeatRequest.drop_name || activeSeatRequest.drop_stop?.name || 'Destination' }}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ir-actions">
+        <button
+          type="button"
+          class="ir-btn ir-btn--reject dc-press"
+          [disabled]="busy"
+          (click)="rejectSeatRequest(activeSeatRequest)"
+        >
+          <ion-icon name="close-circle-outline"></ion-icon>
+          <span>Decline</span>
+        </button>
+        <button
+          type="button"
+          class="ir-btn ir-btn--accept dc-press"
+          [disabled]="busy"
+          (click)="acceptSeatRequest(activeSeatRequest)"
+        >
+          <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
+          <ion-icon *ngIf="!busy" name="checkmark-circle-outline"></ion-icon>
+          <span *ngIf="!busy">Accept ({{ requestCountdown }}s)</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </ion-content>

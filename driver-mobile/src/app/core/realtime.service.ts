@@ -74,6 +74,20 @@ export type AppNotificationPayload = {
   };
 };
 
+export type FixedSeatHoldRequestedPayload = {
+  hold_id: number;
+  departure_id: number;
+  driver_id: number;
+  customer_id: number;
+  customer_name?: string | null;
+  board_stop?: string | null;
+  drop_stop?: string | null;
+  seat_labels: string[];
+  seats: number;
+  amount: number;
+  expires_at: string | null;
+};
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private pusher: Pusher | null = null;
@@ -254,4 +268,43 @@ export class RealtimeService {
       pusher.unsubscribe(channelName);
     };
   }
+
+  subscribeFixedDriverHoldRequests(
+    driverId: number,
+    onRequested: (p: FixedSeatHoldRequestedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-driver.${driverId}`;
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: FixedSeatHoldRequestedPayload) => onRequested(data);
+
+    channel.bind('FixedSeatHoldRequested', handler);
+
+    return () => {
+      channel.unbind('FixedSeatHoldRequested', handler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
+  subscribeDepartureHoldRequests(
+    departureId: number,
+    onRequested: (p: FixedSeatHoldRequestedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-departure.${departureId}`;
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: FixedSeatHoldRequestedPayload) => onRequested(data);
+
+    channel.bind('FixedSeatHoldRequested', handler);
+
+    return () => {
+      channel.unbind('FixedSeatHoldRequested', handler);
+      pusher.unsubscribe(channelName);
+    };
+  }
 }
+

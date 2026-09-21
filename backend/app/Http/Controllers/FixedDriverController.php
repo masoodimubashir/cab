@@ -25,6 +25,8 @@ use App\Services\FixedNoShowPolicy;
 use App\Services\NotificationCenter;
 use App\Services\FixedRouteService;
 use App\Services\FixedRefundService;
+use App\Services\FixedBookingService;
+use App\Services\FixedSeatHoldService;
 use App\Services\SeatMapService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +47,8 @@ class FixedDriverController extends Controller
         private readonly FixedBoardingOtpService $boardingOtp,
         private readonly DriverRouteAccessService $routeAccess,
         private readonly SeatMapService $seatMap,
+        private readonly FixedSeatHoldService $seatHolds,
+        private readonly FixedBookingService $bookings,
     ) {}
 
     public function routes(Request $request)
@@ -1008,6 +1012,40 @@ class FixedDriverController extends Controller
             'seat_map' => $map,
             'vehicle' => $this->departures->shapeAdminDeparture($departure->fresh(['route', 'driver'])),
         ]);
+    }
+
+    public function acceptSeatHold(Request $request, FixedSeatHold $fixedSeatHold)
+    {
+        $hold = $this->seatHolds->driverAcceptHold($request->user(), $fixedSeatHold);
+
+        return response()->json([
+            'message' => 'Passenger seat request accepted.',
+            'hold' => $this->bookings->shapeSeatHold($hold->fresh('routeDeparture.route')),
+        ]);
+    }
+
+    public function rejectSeatHold(Request $request, FixedSeatHold $fixedSeatHold)
+    {
+        $this->seatHolds->driverRejectHold($request->user(), $fixedSeatHold);
+
+        return response()->json([
+            'message' => 'Passenger seat request declined.',
+        ]);
+    }
+
+    public function pendingSeatHolds(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+
+        $holds = FixedSeatHold::query()
+            ->where('route_departure_id', $departure->id)
+            ->where('status', 'PENDING_DRIVER_APPROVAL')
+            ->where('expires_at', '>', now())
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (FixedSeatHold $h) => $this->bookings->shapeSeatHold($h));
+
+        return response()->json(['data' => $holds]);
     }
 
     private function resolveRideTypeId(Route $route): int

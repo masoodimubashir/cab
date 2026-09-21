@@ -130,6 +130,10 @@ class FixedSeatHoldService
             // Idempotent — safe to call before every hold in case snapshot hasn't run yet.
             $this->seatMap->snapshotForDeparture($dep);
 
+            $hasDriver = $dep->driver_id !== null;
+            $initialStatus = $hasDriver ? 'PENDING_DRIVER_APPROVAL' : 'HELD';
+            $initialExpiry = $hasDriver ? now()->addSeconds(60) : now()->addMinutes(5);
+
             $newHold = FixedSeatHold::query()->create([
                 'route_departure_id' => $dep->id,
                 'customer_id' => $customer->id,
@@ -145,8 +149,8 @@ class FixedSeatHoldService
                 'has_extra_luggage' => $hasExtraLuggage,
                 'extra_luggage_count' => $extraLuggageCount,
                 'luggage_surcharge_amount' => $luggageSurcharge,
-                'status' => 'HELD',
-                'expires_at' => now()->addMinutes(5),
+                'status' => $initialStatus,
+                'expires_at' => $initialExpiry,
             ]);
 
             // Locks the specific labels; throws 422 if any is unavailable.
@@ -156,6 +160,150 @@ class FixedSeatHoldService
         });
 
         $this->broadcastDepartureUpdate((int) $hold->route_departure_id, 'seat_hold_created');
+
+        if ($hold->routeDeparture && $hold->routeDeparture->driver_id) {
+            $dep = $hold->routeDeparture;
+            $seatLabels = $hold->heldSeats->pluck('label')->values()->all();
+            broadcast(new \App\Events\FixedSeatHoldRequested(
+                driverUserId: (int) $dep->driver_id,
+                holdId: (int) $hold->id,
+                routeDepartureId: (int) $dep->id,
+                customerId: (int) $customer->id,
+                customerName: (string) ($customer->name ?? 'Customer'),
+                customerPhone: (string) ($customer->phone ?? ''),
+                seatLabels: $seatLabels,
+                seats: (int) $hold->seats,
+                boardStopName: (string) ($hold->boardStop?->name ?? 'Pickup'),
+                dropStopName: (string) ($hold->dropStop?->name ?? 'Drop'),
+                amount: (float) $hold->amount,
+                expiresInSec: 60,
+            ));
+
+            $this->notifier->notifyUserId(
+                (int) $dep->driver_id,
+                'fixed_seat_requested',
+                'New Seat Booking Request',
+                "Passenger requested {$hold->seats} seat(s) for ₹{$hold->amount}.",
+                [
+                    'hold_id' => $hold->id,
+                    'departure_id' => $dep->id,
+                    'seats' => $hold->seats,
+                    'amount' => $hold->amount,
+                ],
+                'car'
+            );
+        }
+
+        return $hold;
+    }
+
+    public function driverAcceptHold(User $driver, FixedSeatHold $hold): FixedSeatHold
+    {
+        $this->availability->expireHoldIfNeeded($hold);
+
+        return DB::transaction(function () use ($driver, $hold) {
+            $lockedHold = FixedSeatHold::query()->lockForUpdate()->find($hold->id);
+            if (!$lockedHold) {
+                throw new ReservationException('This seat hold could not be found.', 404);
+            }
+
+            $dep = RouteDeparture::query()->lockForUpdate()->find($lockedHold->route_departure_id);
+            if (!$dep || (int) $dep->driver_id !== (int) $driver->id) {
+                throw new ReservationException('You are not the assigned driver for this departure.', 403);
+            }
+
+            $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
+            if (!in_array($lockedHold->status, ['PENDING_DRIVER_APPROVAL', 'HELD'], true)) {
+                throw new ReservationException('This seat request is no longer pending.', 422);
+            }
+
+            $lockedHold->update([
+                'status' => 'ACCEPTED',
+                'expires_at' => now()->addMinutes(5),
+            ]);
+
+            $seatLabels = $lockedHold->heldSeats->pluck('label')->values()->all();
+            broadcast(new \App\Events\FixedSeatHoldAccepted(
+                customerId: (int) $lockedHold->customer_id,
+                holdId: (int) $lockedHold->id,
+                routeDepartureId: (int) $dep->id,
+                seatLabels: $seatLabels,
+                amount: (float) $lockedHold->amount,
+                expiresAt: $lockedHold->fresh()->expires_at->toIso8601String(),
+                paymentWindowSec: 300,
+            ));
+
+            $this->notifier->notifyUserId(
+                (int) $lockedHold->customer_id,
+                'fixed_seat_accepted',
+                'Driver Accepted Your Seat Request',
+                'Your seat request was approved! Please complete payment within 5 minutes.',
+                [
+                    'hold_id' => $lockedHold->id,
+                    'departure_id' => $dep->id,
+                    'expires_at' => optional($lockedHold->expires_at)->toIso8601String(),
+                ],
+                'check-circle'
+            );
+
+            return $lockedHold;
+        });
+    }
+
+    public function driverRejectHold(User $driver, FixedSeatHold $hold): void
+    {
+        DB::transaction(function () use ($driver, $hold) {
+            $lockedHold = FixedSeatHold::query()->lockForUpdate()->find($hold->id);
+            if (!$lockedHold) {
+                throw new ReservationException('This seat hold could not be found.', 404);
+            }
+
+            $dep = RouteDeparture::query()->lockForUpdate()->find($lockedHold->route_departure_id);
+            if (!$dep || (int) $dep->driver_id !== (int) $driver->id) {
+                throw new ReservationException('You are not the assigned driver for this departure.', 403);
+            }
+
+            $this->seatMap->releaseSeats($lockedHold);
+            $lockedHold->update(['status' => 'REJECTED']);
+
+            broadcast(new \App\Events\FixedSeatHoldRejected(
+                customerId: (int) $lockedHold->customer_id,
+                holdId: (int) $lockedHold->id,
+                routeDepartureId: (int) $dep->id,
+                reason: 'driver_rejected',
+            ));
+
+            $this->notifier->notifyUserId(
+                (int) $lockedHold->customer_id,
+                'fixed_seat_rejected',
+                'Seat Request Declined',
+                'The driver was unable to accept your seat request. No payment was charged.',
+                [
+                    'hold_id' => $lockedHold->id,
+                    'departure_id' => $dep->id,
+                ],
+                'alert-circle'
+            );
+        });
+
+        $this->broadcastDepartureUpdate((int) $hold->route_departure_id, 'seat_hold_released');
+    }
+
+    public function activeHoldForCustomer(User $customer): ?FixedSeatHold
+    {
+        $hold = FixedSeatHold::query()
+            ->where('customer_id', $customer->id)
+            ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'ACCEPTED', 'HELD'])
+            ->where('expires_at', '>', now())
+            ->latest('id')
+            ->first();
+
+        if ($hold) {
+            $hold = $this->availability->expireHoldIfNeeded($hold);
+            if (!in_array($hold->status, ['PENDING_DRIVER_APPROVAL', 'ACCEPTED', 'HELD'], true)) {
+                return null;
+            }
+        }
 
         return $hold;
     }
@@ -171,7 +319,10 @@ class FixedSeatHoldService
             }
 
             $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
-            if ($lockedHold->status !== 'HELD') {
+            if ($lockedHold->status === 'PENDING_DRIVER_APPROVAL') {
+                throw new ReservationException('Driver has not accepted this seat request yet.', 422);
+            }
+            if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
 
@@ -484,7 +635,10 @@ class FixedSeatHoldService
             }
 
             $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
-            if ($lockedHold->status !== "HELD") {
+            if ($lockedHold->status === 'PENDING_DRIVER_APPROVAL') {
+                throw new ReservationException('Driver has not accepted this seat request yet.', 422);
+            }
+            if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
                 throw new ReservationException("This seat hold is no longer active.", 422);
             }
 
@@ -616,7 +770,10 @@ class FixedSeatHoldService
             }
 
             $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
-            if ($lockedHold->status !== 'HELD') {
+            if ($lockedHold->status === 'PENDING_DRIVER_APPROVAL') {
+                throw new ReservationException('Driver has not accepted this seat request yet.', 422);
+            }
+            if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
 

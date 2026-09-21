@@ -64,4 +64,14 @@ class FixedSeatHold extends Model
     {
         return $this->hasMany(FixedSeatHoldSeat::class, 'fixed_seat_hold_id');
     }
+
+    public function boardStop(): BelongsTo
+    {
+        return $this->belongsTo(RouteStop::class, 'board_stop_id');
+    }
+
+    public function dropStop(): BelongsTo
+    {
+        return $this->belongsTo(RouteStop::class, 'drop_stop_id');
+    }
 }

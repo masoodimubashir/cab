@@ -35,3 +35,24 @@ Broadcast::channel('trip.{tripId}.{kind}', function ($user, int $tripId, string 
 Broadcast::channel('dispatch.live', function ($user) {
     return $user->hasRole('admin') && $user->hasPermission('live_operations');
 });
+
+Broadcast::channel('driver.{driverId}', function ($user, int $driverId) {
+    return (int) $user->id === (int) $driverId;
+});
+
+Broadcast::channel('customer.{customerId}', function ($user, int $customerId) {
+    return (int) $user->id === (int) $customerId;
+});
+
+Broadcast::channel('departure.{departureId}', function ($user, int $departureId) {
+    return true;
+});
+
+Broadcast::channel('fixed-hold.{holdId}', function ($user, int $holdId) {
+    $hold = \App\Models\FixedSeatHold::query()->find($holdId);
+    if (!$hold) {
+        return false;
+    }
+    return (int) $user->id === (int) $hold->customer_id
+        || ((int) $hold->routeDeparture?->driver_id === (int) $user->id);
+});

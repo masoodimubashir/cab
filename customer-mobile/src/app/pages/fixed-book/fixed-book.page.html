@@ -227,6 +227,14 @@
         <h3 class="sheet-title">Review fixed ride</h3>
       </div>
       <div class="sheet-body">
+        <div class="fb-accepted-banner" *ngIf="hold?.status === 'ACCEPTED'">
+          <ion-icon name="checkmark-circle"></ion-icon>
+          <div>
+            <strong>Driver accepted your request!</strong>
+            <span>Please complete payment before the 5-minute timer expires.</span>
+          </div>
+        </div>
+
         <div class="fb-review-card">
           <div class="fb-review-card__head">
             <div>
@@ -286,10 +294,47 @@
       </div>
       <div class="sheet-foot">
         <button type="button" class="fb-cta fb-cta--test dc-press" [disabled]="!canConfirm" (click)="testPay()">
-          {{ booking ? 'Confirming…' : 'Pay test' }}
+          {{ booking ? 'Confirming…' : (hold?.status === 'ACCEPTED' ? 'Pay test' : 'Request & test pay') }}
         </button>
         <button type="button" class="fb-cta dc-press" [disabled]="!canConfirm" (click)="confirm()">
-          {{ booking ? 'Confirming…' : 'Confirm & pay ₹' + (payableTotal | number: '1.0-2') }}
+          {{ booking ? 'Requesting…' : (hold?.status === 'ACCEPTED' ? ('Pay ₹' + (payableTotal | number: '1.0-2')) : ('Request Seats · ₹' + (payableTotal | number: '1.0-2'))) }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Awaiting Driver Approval (M1.02) -->
+    <div class="sheet-pane" *ngIf="step === 'awaiting_approval' && !loading">
+      <div class="sheet-head">
+        <h3 class="sheet-title">Waiting for driver approval</h3>
+      </div>
+      <div class="sheet-body center">
+        <div class="fb-approval-box">
+          <div class="fb-radar-pulse">
+            <ion-icon name="car"></ion-icon>
+          </div>
+
+          <div class="fb-approval-timer" [class.is-urgent]="approvalCountdown <= 15">
+            <ion-icon name="time-outline"></ion-icon>
+            <span>Driver has <strong>{{ approvalCountdown }}s</strong> to respond</span>
+          </div>
+
+          <div class="fb-approval-info">
+            <h4>{{ selectedRoute?.name || 'Fixed Route' }}</h4>
+            <p>{{ stopName(boardStopId) }} → {{ stopName(dropStopId) }}</p>
+            <div class="fb-approval-meta">
+              <span>{{ selectedLabels.length || seats }} Seat{{ (selectedLabels.length || seats) > 1 ? 's' : '' }} ({{ selectedLabels.join(', ') }})</span>
+              <span>₹{{ payableTotal | number: '1.0-0' }}</span>
+            </div>
+          </div>
+
+          <p class="fb-approval-hint">
+            Your seats are temporarily held. No payment is charged until the driver accepts your pickup request.
+          </p>
+        </div>
+      </div>
+      <div class="sheet-foot">
+        <button type="button" class="fb-cta fb-cta--cancel dc-press" (click)="cancelAwaitingApproval()">
+          Cancel Request
         </button>
       </div>
     </div>

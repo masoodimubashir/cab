@@ -96,6 +96,34 @@ export type AppNotificationPayload = {
   };
 };
 
+export type FixedSeatHoldAcceptedPayload = {
+  hold_id: number;
+  departure_id: number;
+  driver_id: number;
+  customer_id: number;
+  customer_name?: string | null;
+  board_stop?: string | null;
+  drop_stop?: string | null;
+  seat_labels: string[];
+  seats: number;
+  amount: number;
+  expires_at: string | null;
+};
+
+export type FixedSeatHoldRejectedPayload = {
+  hold_id: number;
+  departure_id: number;
+  driver_id: number;
+  customer_id: number;
+  customer_name?: string | null;
+  board_stop?: string | null;
+  drop_stop?: string | null;
+  seat_labels: string[];
+  seats: number;
+  amount: number;
+  reason?: string | null;
+};
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private pusher: Pusher | null = null;
@@ -270,4 +298,51 @@ export class RealtimeService {
       pusher.unsubscribe(channelName);
     };
   }
+
+  subscribeFixedHold(
+    holdId: number,
+    onAccepted: (p: FixedSeatHoldAcceptedPayload) => void,
+    onRejected: (p: FixedSeatHoldRejectedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-fixed-hold.${holdId}`;
+    const channel = pusher.subscribe(channelName);
+    const acceptHandler = (data: FixedSeatHoldAcceptedPayload) => onAccepted(data);
+    const rejectHandler = (data: FixedSeatHoldRejectedPayload) => onRejected(data);
+
+    channel.bind('FixedSeatHoldAccepted', acceptHandler);
+    channel.bind('FixedSeatHoldRejected', rejectHandler);
+
+    return () => {
+      channel.unbind('FixedSeatHoldAccepted', acceptHandler);
+      channel.unbind('FixedSeatHoldRejected', rejectHandler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
+  subscribeCustomerFixedHoldEvents(
+    customerId: number,
+    onAccepted: (p: FixedSeatHoldAcceptedPayload) => void,
+    onRejected: (p: FixedSeatHoldRejectedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = `private-customer.${customerId}`;
+    const channel = pusher.subscribe(channelName);
+    const acceptHandler = (data: FixedSeatHoldAcceptedPayload) => onAccepted(data);
+    const rejectHandler = (data: FixedSeatHoldRejectedPayload) => onRejected(data);
+
+    channel.bind('FixedSeatHoldAccepted', acceptHandler);
+    channel.bind('FixedSeatHoldRejected', rejectHandler);
+
+    return () => {
+      channel.unbind('FixedSeatHoldAccepted', acceptHandler);
+      channel.unbind('FixedSeatHoldRejected', rejectHandler);
+      pusher.unsubscribe(channelName);
+    };
+  }
 }
+
