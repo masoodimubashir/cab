@@ -12,6 +12,7 @@ export class AudioRingtoneService {
   private audioCtx: AudioContext | null = null;
   private isRinging = false;
   private ringInterval: any = null;
+  private ringTimeout: any = null;
   private currentContextId: string | null = null;
 
   constructor(private ngZone: NgZone) {
@@ -52,14 +53,26 @@ export class AudioRingtoneService {
   }
 
   /**
-   * Start a continuous repeating ringtone pattern with vibration until stopRinging() is called.
+   * Start a continuous repeating ringtone pattern with vibration until stopRinging() is called,
+   * with an automatic timeout safeguard tied to the request's actual remaining seconds.
    */
-  startRinging(contextId?: string): void {
+  startRinging(contextId?: string, maxDurationSeconds = 60): void {
+    if (maxDurationSeconds <= 0) {
+      return; // Already expired, do not ring
+    }
+    const safeDuration = Math.max(1, Math.min(Math.round(maxDurationSeconds), 60));
+
     if (this.isRinging && contextId && this.currentContextId === contextId) {
       return; // Already ringing for this request
     }
     this.currentContextId = contextId || 'default';
     this.isRinging = true;
+
+    // Reset auto-timeout timer
+    if (this.ringTimeout) {
+      clearTimeout(this.ringTimeout);
+      this.ringTimeout = null;
+    }
 
     // Trigger first chime + vibration immediately
     this.playRingCycle();
@@ -75,6 +88,13 @@ export class AudioRingtoneService {
       }
       this.playRingCycle();
     }, 1800);
+
+    // Auto-timeout safeguard tied to actual remaining seconds
+    this.ringTimeout = setTimeout(() => {
+      if (this.currentContextId === (contextId || 'default')) {
+        this.stopRinging(this.currentContextId);
+      }
+    }, safeDuration * 1000);
   }
 
   /**
@@ -86,6 +106,10 @@ export class AudioRingtoneService {
     }
     this.isRinging = false;
     this.currentContextId = null;
+    if (this.ringTimeout) {
+      clearTimeout(this.ringTimeout);
+      this.ringTimeout = null;
+    }
     if (this.ringInterval) {
       clearInterval(this.ringInterval);
       this.ringInterval = null;

@@ -4,7 +4,9 @@ import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { App as CapacitorApp } from '@capacitor/app';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { ApiService } from './api.service';
+import { AudioRingtoneService } from './audio-ringtone.service';
 import { environment } from '../../environments/environment';
 
 /** Real device name + OS version + app version for the admin detail pages. */
@@ -57,10 +59,38 @@ export class PushService {
   private currentToken: string | null = null;
   private listenersBound = false;
 
-  constructor(private api: ApiService, private nav: NavController) {}
+  constructor(
+    private api: ApiService,
+    private nav: NavController,
+    private ringtone: AudioRingtoneService,
+  ) {}
 
   async registerForUser(): Promise<void> {
     try {
+      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+        try {
+          await PushNotifications.createChannel({
+            id: 'ride_requests',
+            name: 'Ride & Seat Requests',
+            description: 'Incoming passenger ride & seat requests',
+            importance: 5,
+            visibility: 1,
+            sound: 'default',
+            vibration: true,
+            lights: true,
+            lightColor: '#10B981',
+          });
+        } catch (e) {
+          console.warn('PushNotifications.createChannel failed', e);
+        }
+      }
+
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        try {
+          await Notification.requestPermission();
+        } catch {}
+      }
+
       const perm = await FirebaseMessaging.requestPermissions();
       if (perm.receive !== 'granted') return;
 
@@ -82,6 +112,40 @@ export class PushService {
         .subscribe({ error: () => {} });
     } catch (e) {
       console.warn('PushService.registerForUser failed', e);
+    }
+  }
+
+  /**
+   * Display a local / browser pop-up notification when an incoming request arrives.
+   */
+  async showLocalNotification(title: string, body: string, data: Record<string, any> = {}): Promise<void> {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        try {
+          const n = new Notification(title, {
+            body,
+            icon: '/assets/icon/icon.png',
+            tag: data['hold_id'] ? `hold-${data['hold_id']}` : 'ride-request',
+            requireInteraction: true,
+          });
+          n.onclick = () => {
+            window.focus();
+            if (data['hold_id'] || data['departure_id']) {
+              this.nav.navigateForward(`/tabs/fixed-driver`, {
+                queryParams: { departure: data['departure_id'], hold: data['hold_id'] },
+              });
+            } else if (data['trip_id']) {
+              this.nav.navigateForward(`/tabs/rides`, {
+                queryParams: { trip: data['trip_id'] },
+              });
+            }
+          };
+        } catch (e) {
+          console.warn('Web notification display failed', e);
+        }
+      } else if (Notification.permission === 'default') {
+        void Notification.requestPermission();
+      }
     }
   }
 
@@ -133,15 +197,39 @@ export class PushService {
     FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
       const data = (event.notification?.data || {}) as Record<string, unknown>;
       const tripId = data['trip_id'];
-      if (tripId != null) {
-        this.nav.navigateForward(`/driver-tabs/rides`, {
+      const departureId = data['departure_id'] || data['route_departure_id'];
+      const holdId = data['hold_id'];
+      const type = data['type'];
+
+      if (type === 'fixed_seat_requested' || holdId != null || departureId != null) {
+        this.nav.navigateForward(`/tabs/fixed-driver`, {
+          queryParams: { departure: departureId, hold: holdId },
+        });
+      } else if (tripId != null) {
+        this.nav.navigateForward(`/tabs/rides`, {
           queryParams: { trip: tripId },
         });
       }
     });
 
-    FirebaseMessaging.addListener('notificationReceived', () => {
-      // Foreground: realtime channel already covers it; stay silent.
+    FirebaseMessaging.addListener('notificationReceived', (event) => {
+      const data = (event.notification?.data || {}) as Record<string, unknown>;
+      const type = data['type'];
+      const holdId = data['hold_id'];
+      const expiresAt = data['expires_at'] as string | undefined;
+
+      if (type === 'fixed_seat_requested' || holdId != null) {
+        let remainingSec = 60;
+        if (expiresAt) {
+          const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
+          if (diff <= 0) {
+            return; // Already expired, do not ring
+          }
+          remainingSec = Math.min(diff, 60);
+        }
+        this.ringtone.startRinging('push-seat-hold-' + (holdId || ''), remainingSec);
+      }
     });
   }
 }
+

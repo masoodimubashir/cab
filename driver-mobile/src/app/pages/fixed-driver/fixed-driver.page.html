@@ -1,4 +1,4 @@
-<ion-header class="ion-no-border" *ngIf="!previewMapFullscreen">
+<ion-header class="ion-no-border" *ngIf="!previewMapFullscreen && !activeSeatRequest">
   <ion-toolbar class="pg-toolbar">
     <ion-buttons slot="start">
       <button 
@@ -1162,76 +1162,144 @@
     </div>
   </div>
 
-  <!-- ==================== INCOMING SEAT REQUEST MODAL (M1.02) ==================== -->
-  <div class="incoming-request-overlay" *ngIf="activeSeatRequest">
-    <div class="incoming-request-card">
-      <div class="ir-header">
-        <div class="ir-badge">
-          <span class="ir-pulse"></span>
-          <strong>NEW SEAT REQUEST</strong>
-        </div>
-        <div class="ir-timer" [class.ir-timer--urgent]="requestCountdown <= 15">
-          <ion-icon name="time-outline"></ion-icon>
-          <span>{{ requestCountdown }}s</span>
-        </div>
-      </div>
-
-      <div class="ir-body">
-        <div class="ir-passenger-row">
-          <div class="ir-avatar"><ion-icon name="person"></ion-icon></div>
-          <div class="ir-passenger-info">
-            <h3 class="ir-name">{{ activeSeatRequest.customer_name || activeSeatRequest.user?.name || 'Passenger' }}</h3>
-            <span class="ir-seats-badge">
-              {{ activeSeatRequest.seats }} Seat{{ activeSeatRequest.seats > 1 ? 's' : '' }}
-              <strong *ngIf="activeSeatRequest.seat_labels?.length">({{ activeSeatRequest.seat_labels.join(', ') }})</strong>
-            </span>
-          </div>
-          <div class="ir-fare">
-            <span>Fare</span>
-            <strong>₹{{ activeSeatRequest.amount | number:'1.0-0' }}</strong>
+  <!-- ==================== FULL-SCREEN INCOMING RIDE REQUEST MODAL ==================== -->
+  <div class="incoming-request-overlay full-screen-ring-modal" *ngIf="activeSeatRequest">
+    <div class="ir-fullscreen-wrap">
+      
+      <!-- Top Section: Ringing Phone & Circular Timer -->
+      <div class="ir-top-header">
+        <div class="ir-phone-ripple-container">
+          <div class="ir-ripple-ring ring-1"></div>
+          <div class="ir-ripple-ring ring-2"></div>
+          <div class="ir-ripple-ring ring-3"></div>
+          <div class="ir-phone-circle">
+            <ion-icon name="call" class="ir-phone-icon"></ion-icon>
           </div>
         </div>
 
-        <div class="ir-route-track">
-          <div class="ir-route-stop">
-            <span class="ir-dot ir-dot--pickup"></span>
-            <div class="ir-stop-text">
-              <small>Pickup Stop</small>
-              <strong>{{ activeSeatRequest.board_name || activeSeatRequest.board_stop?.name || 'Boarding' }}</strong>
-            </div>
-          </div>
-          <div class="ir-route-line"></div>
-          <div class="ir-route-stop">
-            <span class="ir-dot ir-dot--drop"></span>
-            <div class="ir-stop-text">
-              <small>Drop Stop</small>
-              <strong>{{ activeSeatRequest.drop_name || activeSeatRequest.drop_stop?.name || 'Destination' }}</strong>
-            </div>
+        <div class="ir-header-title-box">
+          <span class="ir-live-pill">
+            <span class="ir-live-dot"></span>
+            INCOMING SEAT REQUEST
+          </span>
+          <h2 class="ir-main-title">{{ activeVehicle?.route_name || 'Fixed Route Corridor' }}</h2>
+        </div>
+
+        <!-- Circular Countdown Timer (Fills as time passes) -->
+        <div class="ir-circle-timer-wrap" [class.is-urgent]="requestCountdown <= 15">
+          <svg class="ir-circle-svg" viewBox="0 0 100 100">
+            <circle class="ir-circle-track" cx="50" cy="50" r="42" />
+            <circle
+              class="ir-circle-progress"
+              cx="50" cy="50" r="42"
+              [style.strokeDashoffset]="getCircleDashOffset(requestCountdown, 60)"
+            />
+          </svg>
+          <div class="ir-circle-content">
+            <span class="ir-circle-seconds">{{ requestCountdown }}</span>
+            <span class="ir-circle-unit">sec</span>
           </div>
         </div>
       </div>
 
-      <div class="ir-actions">
+      <!-- Middle Section: Customer Request List -->
+      <div class="ir-passengers-scroll-list">
+        <div class="ir-request-card" *ngFor="let req of incomingSeatRequests; let i = index">
+          <div class="ir-request-card__head">
+            <div class="ir-cust-avatar">
+              <ion-icon name="person"></ion-icon>
+            </div>
+            <div class="ir-cust-details">
+              <h3 class="ir-cust-name">{{ req.customer_name || req.user?.name || 'Passenger ' + (i + 1) }}</h3>
+              <div class="ir-cust-meta">
+                <span class="ir-badge-seats">
+                  <ion-icon name="people-outline"></ion-icon>
+                  {{ req.seats }} Seat{{ req.seats > 1 ? 's' : '' }}
+                  <span *ngIf="req.seat_labels?.length" class="ir-seat-labels">({{ req.seat_labels.join(', ') }})</span>
+                </span>
+              </div>
+            </div>
+            <div class="ir-cust-price">
+              <span class="ir-fare-label">Fare</span>
+              <strong class="ir-fare-val">₹{{ req.amount | number:'1.0-0' }}</strong>
+            </div>
+          </div>
+
+          <div class="ir-request-route">
+            <div class="ir-route-node">
+              <span class="ir-node-dot pickup"></span>
+              <div class="ir-node-info">
+                <small>Boarding</small>
+                <strong>{{ req.board_name || req.board_stop?.name || 'Boarding stop' }}</strong>
+              </div>
+            </div>
+            <div class="ir-route-connector"></div>
+            <div class="ir-route-node">
+              <span class="ir-node-dot drop"></span>
+              <div class="ir-node-info">
+                <small>Destination</small>
+                <strong>{{ req.drop_name || req.drop_stop?.name || 'Drop stop' }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <button
+            *ngIf="incomingSeatRequests.length > 1"
+            type="button"
+            class="ir-single-decline dc-press"
+            [disabled]="busy"
+            (click)="rejectSeatRequest(req)"
+          >
+            <ion-icon name="close-circle-outline"></ion-icon>
+            <span>Decline this passenger</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom Section: Slide to Accept & Cancel -->
+      <div class="ir-bottom-controls">
+        
+        <!-- Drag to Accept Slider -->
+        <div class="ir-slider-container">
+          <div class="ir-slider-track" #sliderTrack>
+            <div class="ir-slider-fill" [style.width.%]="dragProgress"></div>
+            <div class="ir-slider-label" [style.opacity]="1 - (dragProgress / 65)">
+              <span>Slide to Accept</span>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+            </div>
+            <div
+              class="ir-slider-thumb dc-press"
+              [class.is-dragging]="isDragging"
+              [style.transform]="'translateX(' + thumbTranslateX + 'px)'"
+              (touchstart)="onDragStart($event, sliderTrack)"
+              (touchmove)="onDragMove($event)"
+              (touchend)="onDragEnd()"
+              (touchcancel)="onDragCancel()"
+              (pointerdown)="onDragStart($event, sliderTrack)"
+              (pointermove)="onDragMove($event)"
+              (pointerup)="onDragEnd()"
+              (pointercancel)="onDragCancel()"
+            >
+              <ion-spinner *ngIf="busy" name="crescent" class="ir-thumb-spinner"></ion-spinner>
+              <ion-icon *ngIf="!busy" name="checkmark-outline" class="ir-thumb-icon"></ion-icon>
+            </div>
+          </div>
+        </div>
+
+        <!-- Decline / Cancel Button -->
         <button
           type="button"
-          class="ir-btn ir-btn--reject dc-press"
+          class="ir-decline-button dc-press"
           [disabled]="busy"
           (click)="rejectSeatRequest(activeSeatRequest)"
         >
-          <ion-icon name="close-circle-outline"></ion-icon>
-          <span>Decline</span>
-        </button>
-        <button
-          type="button"
-          class="ir-btn ir-btn--accept dc-press"
-          [disabled]="busy"
-          (click)="acceptSeatRequest(activeSeatRequest)"
-        >
-          <ion-spinner *ngIf="busy" name="crescent"></ion-spinner>
-          <ion-icon *ngIf="!busy" name="checkmark-circle-outline"></ion-icon>
-          <span *ngIf="!busy">Accept ({{ requestCountdown }}s)</span>
+          <ion-icon name="close-outline"></ion-icon>
+          <span>Decline Request</span>
         </button>
       </div>
+
     </div>
   </div>
 </ion-content>

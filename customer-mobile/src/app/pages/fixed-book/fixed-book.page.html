@@ -306,27 +306,81 @@
     </div>
 
     <!-- Awaiting Driver Approval (M1.02) -->
-    <div class="sheet-pane" *ngIf="step === 'awaiting_approval' && !loading">
-      <div class="sheet-head">
-        <h3 class="sheet-title">Waiting for driver approval</h3>
-      </div>
-      <div class="sheet-body center">
-        <div class="fb-approval-box">
-          <div class="fb-radar-pulse">
-            <ion-icon name="car"></ion-icon>
+    <div class="sheet-pane fb-awaiting-pane" *ngIf="step === 'awaiting_approval' && !loading">
+      <div class="fb-approval-box">
+        
+        <!-- Top Ripple + Pulse Icon -->
+        <div class="fb-phone-ripple-container">
+          <div class="fb-ripple-ring ring-1"></div>
+          <div class="fb-ripple-ring ring-2"></div>
+          <div class="fb-ripple-ring ring-3"></div>
+          <div class="fb-phone-circle">
+            <ion-icon name="car" class="fb-phone-icon"></ion-icon>
+          </div>
+        </div>
+
+        <div class="fb-header-title-box">
+          <span class="fb-live-pill">
+            <span class="fb-live-dot"></span>
+            WAITING FOR DRIVER APPROVAL
+          </span>
+          <h2 class="fb-main-title">{{ selectedRoute?.name || 'Fixed Route Corridor' }}</h2>
+        </div>
+
+        <p *ngIf="approvalStatusMessage" role="status" aria-live="polite">{{ approvalStatusMessage }}</p>
+      <!-- Circular Countdown Timer (Fills as time passes) -->
+        <div class="fb-circle-timer-wrap" [class.is-urgent]="approvalCountdown <= 15">
+          <svg class="fb-circle-svg" viewBox="0 0 100 100">
+            <circle class="fb-circle-track" cx="50" cy="50" r="42" />
+            <circle
+              class="fb-circle-progress"
+              cx="50" cy="50" r="42"
+              [style.strokeDashoffset]="getCircleDashOffset(approvalCountdown, 60)"
+            />
+          </svg>
+          <div class="fb-circle-content">
+            <span class="fb-circle-seconds">{{ approvalCountdown }}</span>
+            <span class="fb-circle-unit">sec</span>
+          </div>
+        </div>
+
+        <!-- Justified Trip & Stops Card -->
+        <div class="fb-trip-card">
+          <div class="fb-trip-card__head">
+            <div class="fb-trip-avatar">
+              <ion-icon name="person"></ion-icon>
+            </div>
+            <div class="fb-trip-details">
+              <h3 class="fb-trip-name">{{ user?.name || 'Passenger' }}</h3>
+              <div class="fb-trip-meta">
+                <span class="fb-badge-seats">
+                  <ion-icon name="people-outline"></ion-icon>
+                  {{ selectedLabels.length || seats }} Seat{{ (selectedLabels.length || seats) > 1 ? 's' : '' }}
+                  <span *ngIf="selectedLabels?.length" class="fb-seat-labels">({{ selectedLabels.join(', ') }})</span>
+                </span>
+              </div>
+            </div>
+            <div class="fb-trip-price">
+              <span class="fb-fare-label">Total</span>
+              <strong class="fb-fare-val">₹{{ payableTotal | number:'1.0-0' }}</strong>
+            </div>
           </div>
 
-          <div class="fb-approval-timer" [class.is-urgent]="approvalCountdown <= 15">
-            <ion-icon name="time-outline"></ion-icon>
-            <span>Driver has <strong>{{ approvalCountdown }}s</strong> to respond</span>
-          </div>
-
-          <div class="fb-approval-info">
-            <h4>{{ selectedRoute?.name || 'Fixed Route' }}</h4>
-            <p>{{ stopName(boardStopId) }} → {{ stopName(dropStopId) }}</p>
-            <div class="fb-approval-meta">
-              <span>{{ selectedLabels.length || seats }} Seat{{ (selectedLabels.length || seats) > 1 ? 's' : '' }} ({{ selectedLabels.join(', ') }})</span>
-              <span>₹{{ payableTotal | number: '1.0-0' }}</span>
+          <div class="fb-trip-route">
+            <div class="fb-route-node">
+              <span class="fb-node-dot pickup"></span>
+              <div class="fb-node-info">
+                <small>Boarding</small>
+                <strong>{{ stopName(boardStopId) }}</strong>
+              </div>
+            </div>
+            <div class="fb-route-connector"></div>
+            <div class="fb-route-node">
+              <span class="fb-node-dot drop"></span>
+              <div class="fb-node-info">
+                <small>Destination</small>
+                <strong>{{ stopName(dropStopId) }}</strong>
+              </div>
             </div>
           </div>
 
@@ -334,11 +388,13 @@
             Your seats are temporarily held. No payment is charged until the driver accepts your pickup request.
           </p>
         </div>
-      </div>
-      <div class="sheet-foot">
-        <button type="button" class="fb-cta fb-cta--cancel dc-press" (click)="cancelAwaitingApproval()">
-          Cancel Request
+
+        <!-- Cancel Request Button -->
+        <button type="button" class="fb-cancel-btn dc-press" (click)="cancelAwaitingApproval()">
+          <ion-icon name="close-outline"></ion-icon>
+          <span>Cancel Request</span>
         </button>
+
       </div>
     </div>
 

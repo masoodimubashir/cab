@@ -1,6 +1,8 @@
 import { Component, OnDestroy } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, ToastController } from '@ionic/angular';
+import { App as CapacitorApp } from '@capacitor/app';
+import { PluginListenerHandle } from '@capacitor/core';
 import { interval, Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
@@ -16,6 +18,7 @@ import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { PlacesService } from '../../core/places.service';
 import { FixedSeatHoldRequestedPayload, RealtimeService } from '../../core/realtime.service';
 import { AudioRingtoneService } from '../../core/audio-ringtone.service';
+import { PushService } from '../../core/push.service';
 
 declare const google: any;
 
@@ -343,6 +346,7 @@ export class FixedDriverPage implements OnDestroy {
   // then a fresh tap starts the whole process again with a new code.
   boardCooldowns: Record<number, number> = {};
   private otpTimer?: Subscription;
+  private appStateHandle?: PluginListenerHandle;
 
   constructor(
     private api: ApiService,
@@ -350,12 +354,21 @@ export class FixedDriverPage implements OnDestroy {
     private alerts: AlertController,
     private toasts: ToastController,
     private router: Router,
+    private route: ActivatedRoute,
     private realtime: RealtimeService,
     private backgroundLocation: BackgroundLocationService,
     private geo: GeolocationService,
     private places: PlacesService,
     private ringtone: AudioRingtoneService,
-  ) {}
+    private push: PushService,
+  ) {
+    this.route.queryParams.subscribe((params) => {
+      const depId = params['departure'] ? Number(params['departure']) : null;
+      if (depId) {
+        this.loadPendingHolds(depId);
+      }
+    });
+  }
 
   /**
    * Fresh GPS fix attached to board/drop/no-show requests so the backend's
@@ -377,9 +390,22 @@ export class FixedDriverPage implements OnDestroy {
     this.subscribeHoldRequests();
     this.startClock();
     this.refresh();
+
+    CapacitorApp.addListener('appStateChange', (state) => {
+      if (state.isActive) {
+        this.refresh();
+        if (this.activeVehicle) {
+          this.loadPendingHolds(this.activeVehicle.id);
+        }
+      }
+    }).then((handle) => {
+      this.appStateHandle = handle;
+    }).catch(() => {});
   }
 
   ionViewWillLeave(): void {
+    this.appStateHandle?.remove();
+    this.appStateHandle = undefined;
     this.unsubscribeFixedCatalog?.();
     this.unsubscribeFixedCatalog = null;
     this.unsubscribeHoldRequests();
@@ -1684,8 +1710,15 @@ export class FixedDriverPage implements OnDestroy {
     if (activeHolds.length > 0) {
       if (!this.activeSeatRequest || !activeHolds.some((h) => h.id === this.activeSeatRequest?.id)) {
         this.activeSeatRequest = activeHolds[0];
-        this.startHoldCountdown();
-        this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id);
+        const remaining = this.activeSeatRequest.expires_at
+          ? Math.max(0, Math.floor((new Date(this.activeSeatRequest.expires_at).getTime() - now) / 1000))
+          : 60;
+        if (remaining > 0) {
+          this.startHoldCountdown();
+          this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id, remaining);
+        } else {
+          this.handleHoldExpired(this.activeSeatRequest.id);
+        }
       }
     } else {
       this.activeSeatRequest = null;
@@ -1709,11 +1742,23 @@ export class FixedDriverPage implements OnDestroy {
       expires_at: payload.expires_at,
     };
 
+    const remaining = hold.expires_at
+      ? Math.max(0, Math.floor((new Date(hold.expires_at).getTime() - Date.now()) / 1000))
+      : 60;
+    if (remaining <= 0) {
+      return; // Expired, do not ring or add
+    }
+
     if (!this.incomingSeatRequests.some((h) => h.id === hold.id)) {
       this.incomingSeatRequests = [hold, ...this.incomingSeatRequests];
       this.activeSeatRequest = hold;
       this.startHoldCountdown();
-      this.ringtone.startRinging('fixed-hold-' + hold.id);
+      this.ringtone.startRinging('fixed-hold-' + hold.id, remaining);
+      void this.push.showLocalNotification(
+        '🚕 New Seat Booking Request!',
+        `${hold.customer_name || 'Passenger'} requested ${hold.seats} seat(s) for ₹${hold.amount}. Tap to accept or decline.`,
+        { hold_id: hold.id, departure_id: hold.route_departure_id, expires_at: hold.expires_at }
+      );
       void this.showToast(`New seat request for ${hold.seats} seat(s)!`);
     }
   }
@@ -1745,8 +1790,15 @@ export class FixedDriverPage implements OnDestroy {
     if (this.activeSeatRequest?.id === holdId) {
       this.activeSeatRequest = this.incomingSeatRequests[0] || null;
       if (this.activeSeatRequest) {
-        this.startHoldCountdown();
-        this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id);
+        const remaining = this.activeSeatRequest.expires_at
+          ? Math.max(0, Math.floor((new Date(this.activeSeatRequest.expires_at).getTime() - Date.now()) / 1000))
+          : 60;
+        if (remaining > 0) {
+          this.startHoldCountdown();
+          this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id, remaining);
+        } else {
+          this.handleHoldExpired(this.activeSeatRequest.id);
+        }
       } else {
         this.stopHoldCountdown();
         this.ringtone.stopRinging();
@@ -1809,6 +1861,68 @@ export class FixedDriverPage implements OnDestroy {
           void this.showToast(err?.error?.message || 'Could not decline seat request.');
         },
       });
+  }
+
+  /* ─── Circular Progress & Drag to Accept ─── */
+  getCircleDashOffset(countdown: number, totalSeconds = 60): number {
+    const circumference = 263.89; // 2 * PI * 42
+    const validTotal = totalSeconds > 0 ? totalSeconds : 60;
+    const remaining = Math.max(0, Math.min(countdown, validTotal));
+    // Circle fills as time passes (from 0% at 60s to 100% at 0s)
+    const fillRatio = (validTotal - remaining) / validTotal;
+    return circumference * (1 - fillRatio);
+  }
+
+  dragProgress = 0;
+  thumbTranslateX = 0;
+  isDragging = false;
+  private dragStartX = 0;
+  private maxTrackWidth = 0;
+  private draggedSeatRequest: PendingSeatHold | null = null;
+
+  onDragStart(event: TouchEvent | PointerEvent, trackEl: HTMLElement): void {
+    if (this.busy) return;
+    this.isDragging = true;
+    this.draggedSeatRequest = this.activeSeatRequest;
+    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+    this.dragStartX = clientX;
+    const trackWidth = trackEl.getBoundingClientRect().width;
+    const thumbWidth = 56;
+    this.maxTrackWidth = Math.max(1, trackWidth - thumbWidth);
+  }
+
+  onDragMove(event: TouchEvent | PointerEvent): void {
+    if (!this.isDragging || this.maxTrackWidth <= 0) return;
+    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+    const deltaX = Math.max(0, Math.min(clientX - this.dragStartX, this.maxTrackWidth));
+    this.thumbTranslateX = deltaX;
+    this.dragProgress = Math.round((deltaX / this.maxTrackWidth) * 100);
+  }
+
+  onDragEnd(): void {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+    const targetRequest = this.draggedSeatRequest || this.activeSeatRequest;
+    this.draggedSeatRequest = null;
+    if (this.dragProgress >= 80 && targetRequest) {
+      this.thumbTranslateX = this.maxTrackWidth;
+      this.dragProgress = 100;
+      this.acceptSeatRequest(targetRequest);
+      setTimeout(() => {
+        this.thumbTranslateX = 0;
+        this.dragProgress = 0;
+      }, 600);
+    } else {
+      this.thumbTranslateX = 0;
+      this.dragProgress = 0;
+    }
+  }
+
+  onDragCancel(): void {
+    this.isDragging = false;
+    this.draggedSeatRequest = null;
+    this.thumbTranslateX = 0;
+    this.dragProgress = 0;
   }
 
   /* ─── Embedded Map Management ─── */

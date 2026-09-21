@@ -177,6 +177,7 @@ class FixedSeatHoldService
                 dropStopName: (string) ($hold->dropStop?->name ?? 'Drop'),
                 amount: (float) $hold->amount,
                 expiresInSec: 60,
+                expiresAt: optional($hold->expires_at)->toIso8601String(),
             ));
 
             $this->notifier->notifyUserId(
@@ -189,6 +190,7 @@ class FixedSeatHoldService
                     'departure_id' => $dep->id,
                     'seats' => $hold->seats,
                     'amount' => $hold->amount,
+                    'expires_at' => optional($hold->expires_at)->toIso8601String(),
                 ],
                 'car'
             );
@@ -213,7 +215,7 @@ class FixedSeatHoldService
             }
 
             $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
-            if (!in_array($lockedHold->status, ['PENDING_DRIVER_APPROVAL', 'HELD'], true)) {
+            if ($lockedHold->status !== 'PENDING_DRIVER_APPROVAL') {
                 throw new ReservationException('This seat request is no longer pending.', 422);
             }
 
@@ -261,6 +263,11 @@ class FixedSeatHoldService
             $dep = RouteDeparture::query()->lockForUpdate()->find($lockedHold->route_departure_id);
             if (!$dep || (int) $dep->driver_id !== (int) $driver->id) {
                 throw new ReservationException('You are not the assigned driver for this departure.', 403);
+            }
+
+            $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
+            if ($lockedHold->status !== 'PENDING_DRIVER_APPROVAL') {
+                throw new ReservationException('This seat request is no longer pending.', 422);
             }
 
             $this->seatMap->releaseSeats($lockedHold);
@@ -322,6 +329,19 @@ class FixedSeatHoldService
             if ($lockedHold->status === 'PENDING_DRIVER_APPROVAL') {
                 throw new ReservationException('Driver has not accepted this seat request yet.', 422);
             }
+
+            if ($lockedHold->status === 'CONFIRMED') {
+                $existing = SeatReservation::query()
+                    ->where('route_departure_id', $lockedHold->route_departure_id)
+                    ->where('customer_id', $customer->id)
+                    ->whereNotNull('payment_reference')
+                    ->where('payment_reference', $lockedHold->payment_reference ?: $lockedHold->razorpay_payment_id)
+                    ->first();
+                if ($existing) {
+                    return $existing;
+                }
+            }
+
             if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
@@ -496,7 +516,7 @@ class FixedSeatHoldService
                 throw new ReservationException('This seat hold is already confirmed.', 409);
             }
 
-            if (!in_array($lockedHold->status, ['HELD', 'EXPIRED'], true)) {
+            if (!in_array($lockedHold->status, ['ACCEPTED', 'HELD', 'EXPIRED'], true)) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
             if ($lockedHold->razorpay_payment_id && $lockedHold->razorpay_payment_id !== $razorpayPaymentId) {
@@ -638,6 +658,19 @@ class FixedSeatHoldService
             if ($lockedHold->status === 'PENDING_DRIVER_APPROVAL') {
                 throw new ReservationException('Driver has not accepted this seat request yet.', 422);
             }
+
+            if ($lockedHold->status === 'CONFIRMED') {
+                $existing = SeatReservation::query()
+                    ->where('route_departure_id', $lockedHold->route_departure_id)
+                    ->where('customer_id', $customer->id)
+                    ->whereNotNull('payment_reference')
+                    ->where('payment_reference', $lockedHold->payment_reference ?: $lockedHold->razorpay_payment_id)
+                    ->first();
+                if ($existing) {
+                    return $existing;
+                }
+            }
+
             if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
                 throw new ReservationException("This seat hold is no longer active.", 422);
             }

@@ -473,8 +473,41 @@ interface TabDef { key: string; label: string; count?: number; }
           </div>
         </div>
 
+        <div class="route-view-tabs" aria-label="Route views">
+          <button type="button" [class.selected]="routeView === 'all'" [attr.aria-pressed]="routeView === 'all'" (click)="routeView = 'all'">All routes ({{ routesForVehicle(v).length }})</button>
+          <button type="button" [class.selected]="routeView === 'groups'" [attr.aria-pressed]="routeView === 'groups'" (click)="routeView = 'groups'">Route groups</button>
+        </div>
+
+        <section class="route-directory" *ngIf="routeView === 'all'">
+          <div class="route-directory-header">
+            <div><h3>All routes</h3><p>View, edit and enable routes for this vehicle, including disabled routes.</p></div>
+            <label>Status
+              <select [(ngModel)]="routeStatusFilter">
+                <option value="all">All statuses</option>
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+          </div>
+          <div class="route-directory-list">
+            <article class="route-directory-row" *ngFor="let r of directoryRoutes(v)">
+              <div class="route-directory-info">
+                <strong>{{ r.name }}</strong>
+                <span>{{ r.origin_name }} &rarr; {{ r.dest_name }}</span>
+                <small>{{ routeGroupNames(r) }}</small>
+              </div>
+              <span class="pill pill--sm" [class.success]="isRouteEnabled(r)" [class.neutral]="!isRouteEnabled(r)">{{ isRouteEnabled(r) ? 'Enabled' : 'Disabled' }}</span>
+              <button type="button" class="btn-kb-outline" (click)="editRouteFor(v, r.id)">Edit route</button>
+              <button type="button" class="btn-kb-outline" [disabled]="savingRouteIds.has(r.id)" [attr.aria-label]="(isRouteEnabled(r) ? 'Disable ' : 'Enable ') + r.name" (click)="toggleRouteActive(r, $event)">{{ savingRouteIds.has(r.id) ? 'Saving...' : (isRouteEnabled(r) ? 'Disable' : 'Enable') }}</button>
+            </article>
+            <div class="kb-empty-col" *ngIf="!directoryRoutes(v).length">
+              <span>{{ routesForVehicle(v).length ? 'No routes match your search and status filter.' : 'No routes yet. Use Add Route on Map or Import KML to create one.' }}</span>
+            </div>
+          </div>
+        </section>
+
         <!-- Kanban Board Columns Area -->
-        <div class="kb-columns-container">
+        <div class="kb-columns-container" *ngIf="routeView === 'groups'">
 
           <!-- COLUMN 0: UNGROUPED / UNASSIGNED ROUTES -->
           <div
@@ -571,6 +604,35 @@ interface TabDef { key: string; label: string; count?: number; }
               </div>
             </div>
           </div>
+
+          <section class="kb-column" aria-label="Inactive routes">
+            <div class="kb-col-header">
+              <div class="kb-col-title-line">
+                <div class="kb-col-title">
+                  <span class="kb-col-heading">Inactive routes</span>
+                </div>
+                <span class="kb-count-pill">{{ filterKanbanRoutes(inactiveRoutesForVehicle(v)).length }}</span>
+              </div>
+              <p class="kb-col-desc">Enable a route to return it to its assigned group or Ungrouped.</p>
+            </div>
+            <div class="kb-cards-scroll">
+              <article class="kb-card" *ngFor="let r of filterKanbanRoutes(inactiveRoutesForVehicle(v))">
+                <div class="kb-card-head">
+                  <span class="kb-card-name" [title]="r.name">{{ r.name }}</span>
+                  <span class="pill pill--sm neutral">Inactive</span>
+                </div>
+                <div class="kb-card-path">{{ r.origin_name }} &rarr; {{ r.dest_name }}</div>
+                <div class="kb-card-path">{{ routeGroupNames(r) }}</div>
+                <div class="kb-card-footer">
+                  <button type="button" class="kb-action-btn kb-action-btn--edit" (click)="editRouteFor(v, r.id)">Edit route</button>
+                  <button type="button" class="btn-kb-primary" [disabled]="savingRouteIds.has(r.id)" [attr.aria-label]="'Enable ' + r.name" (click)="toggleRouteActive(r, $event)">{{ savingRouteIds.has(r.id) ? 'Saving...' : 'Enable route' }}</button>
+                </div>
+              </article>
+              <div class="kb-empty-col" *ngIf="!filterKanbanRoutes(inactiveRoutesForVehicle(v)).length">
+                <span>{{ inactiveRoutesForVehicle(v).length ? 'No inactive routes match your search.' : 'No inactive routes for this vehicle.' }}</span>
+              </div>
+            </div>
+          </section>
 
           <!-- COLUMNS 1..N: GROUP COLUMNS -->
           <div
@@ -1896,6 +1958,20 @@ interface TabDef { key: string; label: string; count?: number; }
       display: flex; flex-direction: column; gap: 14px;
       min-height: 0; flex: 1;
     }
+    .route-view-tabs { display: flex; gap: 8px; flex-shrink: 0; }
+    .route-view-tabs button { padding: 10px 16px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-surface, #fff); color: var(--tm-text); font: inherit; cursor: pointer; }
+    .route-view-tabs button.selected { background: var(--tm-green-tint, #ecfdf5); border-color: var(--tm-green, #16a34a); font-weight: 700; }
+    .route-directory { border: 1px solid var(--tm-line); border-radius: 14px; background: var(--tm-surface, #fff); overflow: auto; min-height: 0; }
+    .route-directory-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px; border-bottom: 1px solid var(--tm-line); }
+    .route-directory-header h3 { margin: 0 0 6px; }
+    .route-directory-header p { margin: 0; color: var(--tm-muted, #64748b); font-size: 13px; }
+    .route-directory-header label { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .route-directory-header select { padding: 8px 12px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface, #fff); color: var(--tm-text); }
+    .route-directory-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--tm-line); }
+    .route-directory-row:last-child { border-bottom: 0; }
+    .route-directory-info { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+    .route-directory-info span, .route-directory-info small { color: var(--tm-muted, #64748b); }
+    .route-directory-row button:disabled { opacity: .6; cursor: wait; }
     .kb-top-bar {
       display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
       padding: 10px 16px; border-radius: 12px; background: var(--tm-canvas); border: 1.5px solid var(--tm-line);
@@ -2597,6 +2673,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.operationsDrawerVehicle = v;
     this.activeDrawerTab = tab;
+    this.routeView = tab === 'all-routes' ? 'all' : 'groups';
+    this.routeStatusFilter = 'all';
+    this.kanbanSearch = '';
     this.operationsDrawerOpen = true;
   }
 
@@ -2616,6 +2695,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.operationsDrawerVehicle = v;
     this.activeDrawerTab = 'groups';
+    this.routeView = 'groups';
+    this.kanbanSearch = '';
     if (g) {
       this.activeDeckGroupId[v.id] = g.id;
     }
@@ -2627,6 +2708,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.operationsDrawerVehicle = v;
     this.activeDrawerTab = 'drivers';
+    this.routeView = 'groups';
+    this.kanbanSearch = '';
     this.operationsDrawerOpen = true;
   }
 
@@ -3659,18 +3742,38 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     return this.routesForVehicle(v).filter((r) => !r.is_active || (r.is_active as any) === 0 || (r.is_active as any) === '0' || (r.is_active as any) === false);
   }
 
+  routeView: 'all' | 'groups' = 'all';
+  routeStatusFilter: 'all' | 'enabled' | 'disabled' = 'all';
+  savingRouteIds = new Set<number>();
+
+  isRouteEnabled(r: RouteLite): boolean {
+    return r.is_active === true || Number(r.is_active) === 1;
+  }
+
+  directoryRoutes(v: CityVehicleRow): RouteLite[] {
+    return this.filterKanbanRoutes(this.routesForVehicle(v)).filter((r) =>
+      this.routeStatusFilter === 'all' || this.isRouteEnabled(r) === (this.routeStatusFilter === 'enabled')
+    );
+  }
+
+  routeGroupNames(r: RouteLite): string {
+    return this.groups.filter((g) => g.route_ids.includes(r.id)).map((g) => g.name).join(', ') || 'Ungrouped';
+  }
+
   toggleRouteActive(r: RouteLite, ev?: Event): void {
     ev?.stopPropagation();
-    if (this.cityId == null) return;
-    const next = !r.is_active;
+    if (this.cityId == null || this.savingRouteIds.has(r.id)) return;
+    const next = !this.isRouteEnabled(r);
+    this.savingRouteIds.add(r.id);
     this.api.patch(`/admin/cities/${this.cityId}/fixed-routes/${r.id}`, { is_active: next }).subscribe({
       next: () => {
+        this.savingRouteIds.delete(r.id);
         r.is_active = next;
-        this.loadRoutes();
         this.toast.success(next ? `Route "${r.name}" enabled` : `Route "${r.name}" disabled`);
         this.onRouteMutation();
       },
       error: (err) => {
+        this.savingRouteIds.delete(r.id);
         this.toast.error(err?.error?.message || 'Could not update route status');
       },
     });
@@ -3922,6 +4025,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   /** After a reviewed import is saved or cancelled, open the next queued route. */
   onRouteEditorClosed(): void {
+    this.routeView = 'all';
+    this.routeStatusFilter = 'all';
+    this.kanbanSearch = '';
     this.onRouteMutation();
     if (this.importQueue.length) setTimeout(() => this.openNextImported(), 150);
     else { this.importTotal = 0; this.importTargetVehicle = null; }

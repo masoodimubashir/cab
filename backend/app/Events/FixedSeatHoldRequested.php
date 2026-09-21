@@ -2,10 +2,11 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Carbon;
 
 class FixedSeatHoldRequested implements ShouldBroadcast
 {
@@ -24,14 +25,15 @@ class FixedSeatHoldRequested implements ShouldBroadcast
         public string $dropStopName,
         public float $amount,
         public int $expiresInSec = 60,
+        public ?string $expiresAt = null,
     ) {}
 
     public function broadcastOn(): array
     {
         return [
-            new Channel('driver.' . $this->driverUserId),
-            new Channel('departure.' . $this->routeDepartureId),
-            new Channel('fixed-hold.' . $this->holdId),
+            new PrivateChannel('driver.' . $this->driverUserId),
+            new PrivateChannel('departure.' . $this->routeDepartureId),
+            new PrivateChannel('fixed-hold.' . $this->holdId),
         ];
     }
 
@@ -42,19 +44,28 @@ class FixedSeatHoldRequested implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
+        $expiresAtStr = $this->expiresAt ?? now()->addSeconds($this->expiresInSec)->toIso8601String();
+        $targetTime = Carbon::parse($expiresAtStr);
+        $remainingSec = max(0, (int) now()->diffInSeconds($targetTime, false));
+
         return [
             'type' => 'fixed_seat_hold_requested',
             'hold_id' => $this->holdId,
+            'departure_id' => $this->routeDepartureId,
             'route_departure_id' => $this->routeDepartureId,
             'customer_id' => $this->customerId,
             'customer_name' => $this->customerName,
-            'customer_phone' => $this->customerPhone,
             'seat_labels' => $this->seatLabels,
             'seats' => $this->seats,
+            'board_name' => $this->boardStopName,
+            'drop_name' => $this->dropStopName,
+            'board_stop' => $this->boardStopName,
+            'drop_stop' => $this->dropStopName,
             'board_stop_name' => $this->boardStopName,
             'drop_stop_name' => $this->dropStopName,
             'amount' => $this->amount,
-            'expires_in_sec' => $this->expiresInSec,
+            'expires_at' => $expiresAtStr,
+            'expires_in_sec' => $remainingSec,
         ];
     }
 }
