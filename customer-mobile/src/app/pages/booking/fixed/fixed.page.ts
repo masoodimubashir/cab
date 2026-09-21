@@ -105,6 +105,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   private approvalPollSub?: Subscription;
   private unsubscribeHoldChannel: (() => void) | null = null;
   private unsubscribeCustomerHoldChannel: (() => void) | null = null;
+  private isCheckingTimeout = false;
+  approvalStatusMessage = '';
+  private nextApprovalCheckAt = 0;
 
   // Payment method chooser (Online / UPI / Cash). Cash pays only the upfront
   // deposit online; the rest is cash to the driver at drop-off.
@@ -501,6 +504,15 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  getCircleDashOffset(countdown: number, totalSeconds = 60): number {
+    const circumference = 263.89; // 2 * PI * 42
+    const validTotal = totalSeconds > 0 ? totalSeconds : 60;
+    const remaining = Math.max(0, Math.min(countdown, validTotal));
+    // Circle fills as time passes (0% at 60s to 100% at 0s)
+    const fillRatio = (validTotal - remaining) / validTotal;
+    return circumference * (1 - fillRatio);
+  }
+
   private updateApprovalCountdown(): void {
     if (!this.hold?.expires_at) {
       this.approvalCountdown = 60;
@@ -510,7 +522,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
     const diff = Math.floor((new Date(this.hold.expires_at).getTime() - Date.now()) / 1000);
     if (diff <= 0) {
       this.approvalCountdown = 0;
-      this.handleApprovalTimeout();
+      if (!this.isCheckingTimeout) {
+        void this.handleApprovalTimeout();
+      }
     } else {
       this.approvalCountdown = diff;
     }
@@ -518,13 +532,67 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   private async handleApprovalTimeout(): Promise<void> {
+    if (this.isCheckingTimeout || Date.now() < this.nextApprovalCheckAt || this.step !== 'awaiting_approval' || !this.hold) {
+      return;
+    }
+    this.isCheckingTimeout = true;
+    this.nextApprovalCheckAt = Date.now() + 5000;
+    const targetHoldId = this.hold.id;
+
+    try {
+      const res = await this.api.get<{ hold?: SeatHold }>(`/fixed/seat-holds/${targetHoldId}`).toPromise();
+      if (this.step !== 'awaiting_approval' || this.hold?.id !== targetHoldId) {
+        return;
+      }
+      const h = res?.hold;
+      if (!h || h.id !== targetHoldId) throw new Error('Hold status unavailable');
+      this.approvalStatusMessage = '';
+      if (h?.status === 'ACCEPTED') {
+        this.onHoldAccepted(h);
+        this.cdr.markForCheck();
+        return;
+      }
+      if (h?.status === 'REJECTED') {
+        this.onHoldRejected(h);
+        this.cdr.markForCheck();
+        return;
+      }
+      if (h?.status === 'PENDING_DRIVER_APPROVAL' && h.expires_at) {
+        const remaining = Math.floor((new Date(h.expires_at).getTime() - Date.now()) / 1000);
+        if (remaining > 0) {
+          this.hold.expires_at = h.expires_at;
+          this.approvalCountdown = remaining;
+          this.cdr.markForCheck();
+          return;
+        }
+      }
+      if (h.status !== 'EXPIRED') {
+        this.approvalStatusMessage = 'Confirming your request status. Retrying automatically.';
+        this.cdr.markForCheck();
+        return;
+      }
+    } catch {
+      if (this.step !== 'awaiting_approval' || this.hold?.id !== targetHoldId) {
+        return;
+      }
+      this.approvalStatusMessage = 'Unable to check your request. Reconnecting automatically.';
+      this.cdr.markForCheck();
+      return;
+    } finally {
+      this.isCheckingTimeout = false;
+    }
+
+    if (this.step !== 'awaiting_approval' || this.hold?.id !== targetHoldId) {
+      return;
+    }
+
     this.stopApprovalWaiting();
     this.hold = null;
     this.step = 'seats';
     this.loadSeatMap();
     const alert = await this.alertCtrl.create({
       header: 'Driver Unavailable',
-      message: 'The driver did not respond within 60 seconds. Your seat hold has expired at ₹0 charge.',
+      message: 'The driver did not respond within the allocated time. Your seat hold has expired at ₹0 charge.',
       buttons: ['OK'],
     });
     await alert.present();
@@ -532,6 +600,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   private stopApprovalWaiting(): void {
+    this.isCheckingTimeout = false;
+    this.nextApprovalCheckAt = 0;
+    this.approvalStatusMessage = '';
     this.approvalTimerSub?.unsubscribe();
     this.approvalTimerSub = undefined;
     this.approvalPollSub?.unsubscribe();

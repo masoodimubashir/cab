@@ -2,7 +2,7 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -21,9 +21,9 @@ class FixedSeatHoldRejected implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('customer.' . $this->customerId),
-            new Channel('fixed-hold.' . $this->holdId),
-            new Channel('departure.' . $this->routeDepartureId),
+            new PrivateChannel('customer.' . $this->customerId),
+            new PrivateChannel('fixed-hold.' . $this->holdId),
+            new PrivateChannel('departure.' . $this->routeDepartureId),
         ];
     }
 
@@ -38,6 +38,7 @@ class FixedSeatHoldRejected implements ShouldBroadcast
             'type' => 'fixed_seat_hold_rejected',
             'hold_id' => $this->holdId,
             'route_departure_id' => $this->routeDepartureId,
+            'departure_id' => $this->routeDepartureId,
             'reason' => $this->reason,
         ];
     }

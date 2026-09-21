@@ -886,5 +886,398 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
         ]);
         $res2->assertCreated();
     }
+
+    public function test_fixed_hold_accepted_status_is_confirmable_by_payment_reconciliation(): void
+    {
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $this->vehicleTypeId);
+
+        $route = Route::create([
+            'city_id' => $this->cityId,
+            'scope' => 'local',
+            'mode' => 'fixed',
+            'name' => 'Route Rec-Test',
+            'origin_name' => 'Stop A',
+            'dest_name' => 'Stop B',
+            'origin_lat' => 34.08,
+            'origin_lng' => 74.79,
+            'dest_lat' => 34.12,
+            'dest_lng' => 74.84,
+            'fare_config' => ['seat_fare' => 150],
+            'booking_window_hours' => 12,
+            'max_seats_per_booking' => 4,
+            'is_active' => true,
+        ]);
+
+        $pickup = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 1,
+            'name' => 'Stop A',
+            'lat' => 34.08,
+            'lng' => 74.79,
+            'is_pickup' => true,
+            'is_drop' => false,
+            'is_active' => true,
+        ]);
+
+        $drop = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 2,
+            'name' => 'Stop B',
+            'lat' => 34.12,
+            'lng' => 74.84,
+            'is_pickup' => false,
+            'is_drop' => true,
+            'is_active' => true,
+        ]);
+
+        $departure = RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driverUser->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'depart_at' => now()->addHours(2),
+            'announced_depart_at' => now()->addHours(2),
+            'boarding_opened_at' => now(),
+            'visible_to_customers' => true,
+            'capacity' => 6,
+            'seats_taken' => 0,
+            'status' => 'FORMING',
+        ]);
+
+        // Customer requests seat 1A
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $holdRes = $this->postJson('/api/fixed/seat-holds', [
+            'route_departure_id' => $departure->id,
+            'board_stop_id' => $pickup->id,
+            'drop_stop_id' => $drop->id,
+            'seat_labels' => ['1A'],
+        ]);
+        $holdId = $holdRes->json('hold.id');
+
+        // Driver accepts the request -> hold status becomes ACCEPTED
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $acceptRes = $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept");
+        $acceptRes->assertOk();
+
+        $hold = FixedSeatHold::find($holdId);
+        $this->assertEquals('ACCEPTED', $hold->status);
+
+        // Webhook / confirmation arrives with ACCEPTED status
+        $holdService = app(\App\Services\FixedSeatHoldService::class);
+        $reservation = $holdService->confirmPaidHold($hold, 'pay_test_recon_123', 'online');
+
+        $this->assertNotNull($reservation);
+        $this->assertEquals('CONFIRMED', $hold->fresh()->status);
+        $this->assertEquals('CONFIRMED', $reservation->status);
+    }
+
+    public function test_fixed_hold_cannot_be_rejected_or_accepted_when_not_pending(): void
+    {
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $this->vehicleTypeId);
+
+        $route = Route::create([
+            'city_id' => $this->cityId,
+            'scope' => 'local',
+            'mode' => 'fixed',
+            'name' => 'Route Guard-Test',
+            'origin_name' => 'Stop A',
+            'dest_name' => 'Stop B',
+            'origin_lat' => 34.08,
+            'origin_lng' => 74.79,
+            'dest_lat' => 34.12,
+            'dest_lng' => 74.84,
+            'fare_config' => ['seat_fare' => 150],
+            'booking_window_hours' => 12,
+            'max_seats_per_booking' => 4,
+            'is_active' => true,
+        ]);
+
+        $pickup = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 1,
+            'name' => 'Stop A',
+            'lat' => 34.08,
+            'lng' => 74.79,
+            'is_pickup' => true,
+            'is_drop' => false,
+            'is_active' => true,
+        ]);
+
+        $drop = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 2,
+            'name' => 'Stop B',
+            'lat' => 34.12,
+            'lng' => 74.84,
+            'is_pickup' => false,
+            'is_drop' => true,
+            'is_active' => true,
+        ]);
+
+        $departure = RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driverUser->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'depart_at' => now()->addHours(2),
+            'announced_depart_at' => now()->addHours(2),
+            'boarding_opened_at' => now(),
+            'visible_to_customers' => true,
+            'capacity' => 6,
+            'seats_taken' => 0,
+            'status' => 'FORMING',
+        ]);
+
+        // Customer requests seat 1A
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $holdRes = $this->postJson('/api/fixed/seat-holds', [
+            'route_departure_id' => $departure->id,
+            'board_stop_id' => $pickup->id,
+            'drop_stop_id' => $drop->id,
+            'seat_labels' => ['1A'],
+        ]);
+        $holdId = $holdRes->json('hold.id');
+
+        // Driver accepts the request
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $acceptRes = $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept");
+        $acceptRes->assertOk();
+
+        // Trying to reject already-accepted hold returns 422
+        $rejectRes = $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/reject");
+        $rejectRes->assertStatus(422);
+
+        // Trying to accept again returns 422
+        $acceptAgainRes = $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept");
+        $acceptAgainRes->assertStatus(422);
+    }
+
+    public function test_webhook_first_confirmation_returns_existing_reservation_on_customer_confirmation_request(): void
+    {
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $this->vehicleTypeId);
+
+        $route = Route::create([
+            'city_id' => $this->cityId,
+            'scope' => 'local',
+            'mode' => 'fixed',
+            'name' => 'Route Webhook-Race',
+            'origin_name' => 'Stop A',
+            'dest_name' => 'Stop B',
+            'origin_lat' => 34.08,
+            'origin_lng' => 74.79,
+            'dest_lat' => 34.12,
+            'dest_lng' => 74.84,
+            'fare_config' => ['seat_fare' => 150],
+            'booking_window_hours' => 12,
+            'max_seats_per_booking' => 4,
+            'is_active' => true,
+        ]);
+
+        $pickup = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 1,
+            'name' => 'Stop A',
+            'lat' => 34.08,
+            'lng' => 74.79,
+            'is_pickup' => true,
+            'is_drop' => false,
+            'is_active' => true,
+        ]);
+
+        $drop = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 2,
+            'name' => 'Stop B',
+            'lat' => 34.12,
+            'lng' => 74.84,
+            'is_pickup' => false,
+            'is_drop' => true,
+            'is_active' => true,
+        ]);
+
+        $departure = RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driverUser->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'depart_at' => now()->addHours(2),
+            'announced_depart_at' => now()->addHours(2),
+            'boarding_opened_at' => now(),
+            'visible_to_customers' => true,
+            'capacity' => 6,
+            'seats_taken' => 0,
+            'status' => 'FORMING',
+        ]);
+
+        // Customer requests seat 1A
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $holdRes = $this->postJson('/api/fixed/seat-holds', [
+            'route_departure_id' => $departure->id,
+            'board_stop_id' => $pickup->id,
+            'drop_stop_id' => $drop->id,
+            'seat_labels' => ['1A'],
+        ]);
+        $holdId = $holdRes->json('hold.id');
+
+        // Driver accepts
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept")->assertOk();
+
+        // 1. Webhook arrives FIRST and confirms hold
+        $hold = FixedSeatHold::find($holdId);
+        $holdService = app(\App\Services\FixedSeatHoldService::class);
+        $reservation = $holdService->confirmPaidHold($hold, 'pay_webhook_first_789', 'online');
+        $this->assertNotNull($reservation);
+        $this->assertEquals('CONFIRMED', $hold->fresh()->status);
+
+        // A later booking for this same customer/departure must never be returned.
+        $later = $reservation->replicate();
+        $later->payment_reference = 'pay_another_booking';
+        $later->save();
+
+        // 2. Customer app confirmation request arrives AFTER webhook
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $clientConfirmRes = $this->postJson("/api/fixed/seat-holds/{$holdId}/test-confirm-payment");
+
+        // Must succeed with 200/201 and return the existing reservation instead of 422
+        $clientConfirmRes->assertSuccessful();
+        $this->assertEquals($reservation->id, $clientConfirmRes->json('reservation.id'));
+        $this->assertEquals('CONFIRMED', $clientConfirmRes->json('reservation.status'));
+        $this->postJson("/api/fixed/seat-holds/{$holdId}/confirm-payment", [
+            'board_stop_id' => $pickup->id,
+            'drop_stop_id' => $drop->id,
+            'booking_channel' => 'advance',
+            'razorpay_payment_id' => 'pay_webhook_first_789',
+            'razorpay_order_id' => 'order_webhook_first',
+            'razorpay_signature' => 'already_verified_by_webhook',
+        ])->assertSuccessful()->assertJsonPath('reservation.id', $reservation->id);
+        $this->assertEquals(2, \App\Models\SeatReservation::where('route_departure_id', $departure->id)->count());
+    }
+
+    public function test_departure_channel_authorization_restricts_unauthorized_users(): void
+    {
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->cityId, $this->vehicleTypeId);
+
+        $route = Route::create([
+            'city_id' => $this->cityId,
+            'scope' => 'local',
+            'mode' => 'fixed',
+            'name' => 'Route Auth-Test',
+            'origin_name' => 'Stop A',
+            'dest_name' => 'Stop B',
+            'origin_lat' => 34.08,
+            'origin_lng' => 74.79,
+            'dest_lat' => 34.12,
+            'dest_lng' => 74.84,
+            'fare_config' => ['seat_fare' => 150],
+            'booking_window_hours' => 12,
+            'max_seats_per_booking' => 4,
+            'is_active' => true,
+        ]);
+
+        $pickup = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 1,
+            'name' => 'Stop A',
+            'lat' => 34.08,
+            'lng' => 74.79,
+            'is_pickup' => true,
+            'is_drop' => false,
+            'is_active' => true,
+        ]);
+
+        $drop = RouteStop::create([
+            'route_id' => $route->id,
+            'seq' => 2,
+            'name' => 'Stop B',
+            'lat' => 34.12,
+            'lng' => 74.84,
+            'is_pickup' => false,
+            'is_drop' => true,
+            'is_active' => true,
+        ]);
+
+        $departure = RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driverUser->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'depart_at' => now()->addHours(2),
+            'announced_depart_at' => now()->addHours(2),
+            'boarding_opened_at' => now(),
+            'visible_to_customers' => true,
+            'capacity' => 6,
+            'seats_taken' => 0,
+            'status' => 'FORMING',
+        ]);
+
+        // Customer 1 holds a seat
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson('/api/fixed/seat-holds', [
+            'route_departure_id' => $departure->id,
+            'board_stop_id' => $pickup->id,
+            'drop_stop_id' => $drop->id,
+            'seat_labels' => ['1A'],
+        ])->assertCreated();
+
+        // Retrieve the channel authorization callback directly from Broadcast manager
+        $channels = \Illuminate\Support\Facades\Broadcast::driver()->getChannels();
+        $callback = $channels['departure.{departureId}'] ?? null;
+        $this->assertNotNull($callback, 'Departure channel authorization rule must be registered.');
+
+        // 1. Assigned driver -> ALLOWED (true)
+        $this->assertTrue((bool) $callback($this->driverUser, $departure->id));
+
+        // 2. Customer 1 (with hold on this departure) -> ALLOWED (true)
+        $this->assertTrue((bool) $callback($this->customer, $departure->id));
+
+        // 3. Customer 2 (unrelated user with no hold or reservation) -> FORBIDDEN (false)
+        $this->assertFalse((bool) $callback($this->customer2, $departure->id));
+        $hold = FixedSeatHold::where('route_departure_id', $departure->id)->firstOrFail();
+        $note = \App\Models\AppNotification::where('type', 'fixed_seat_requested')
+            ->where('user_id', $this->driverUser->id)->latest('id')->firstOrFail();
+        $this->assertEquals($hold->expires_at->toIso8601String(), $note->data['expires_at']);
+        $this->assertEquals($hold->id, $note->data['hold_id']);
+        $this->freezeTime();
+        foreach (['PENDING_DRIVER_APPROVAL', 'ACCEPTED', 'HELD'] as $status) {
+            $hold->update(['status' => $status, 'expires_at' => now()->addMinute()]);
+            $this->assertTrue((bool) $callback($this->customer, $departure->id));
+            $hold->update(['expires_at' => now()]);
+            $this->assertFalse((bool) $callback($this->customer, $departure->id));
+            $hold->update(['expires_at' => now()->subMinute()]);
+            $this->assertFalse((bool) $callback($this->customer, $departure->id));
+        }
+        $this->assertTrue((bool) $callback($this->driverUser, $departure->id));
+    }
+
+    public function test_fixed_seat_hold_requested_event_preserves_exact_hold_deadline(): void
+    {
+        $deadline = now()->addSeconds(45);
+        $event = new \App\Events\FixedSeatHoldRequested(
+            driverUserId: $this->driverUser->id,
+            holdId: 999,
+            routeDepartureId: 888,
+            customerId: $this->customer->id,
+            customerName: 'Alice',
+            customerPhone: '9876543210',
+            seatLabels: ['1A'],
+            seats: 1,
+            boardStopName: 'Alpha',
+            dropStopName: 'Beta',
+            amount: 150.00,
+            expiresInSec: 45,
+            expiresAt: $deadline->toIso8601String(),
+        );
+
+        $payload = $event->broadcastWith();
+        $this->assertEquals($deadline->toIso8601String(), $payload['expires_at']);
+        $this->assertLessThanOrEqual(45, $payload['expires_in_sec']);
+        $this->assertGreaterThanOrEqual(40, $payload['expires_in_sec']);
+        $this->assertArrayNotHasKey('customer_phone', $payload);
+    }
 }
 

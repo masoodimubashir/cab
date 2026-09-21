@@ -354,105 +354,318 @@
   width: 100%;
 }
 
-.fb-radar-pulse {
-  width: 68px;
-  height: 68px;
+/* ─── Top Ripple + Pulse Icon ─── */
+.fb-phone-ripple-container {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.fb-ripple-ring {
+  position: absolute;
+  inset: 0;
   border-radius: 50%;
-  background: #0D1B2A;
+  border: 2px solid rgba(16, 185, 129, 0.35);
+  animation: phoneRippleAnim 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+
+  &.ring-2 { animation-delay: 0.7s; }
+  &.ring-3 { animation-delay: 1.4s; }
+}
+
+.fb-phone-circle {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
   color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  position: relative;
-  box-shadow: 0 0 0 0 rgba(13, 27, 42, 0.4);
-  animation: fbRadarAnim 1.8s infinite;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+  z-index: 2;
+  animation: fbWobbleAnim 2s ease-in-out infinite;
 
-  ion-icon {
-    font-size: 32px;
+  .fb-phone-icon {
+    font-size: 28px;
     color: #FFFFFF;
   }
 }
 
-.fb-approval-timer {
-  display: inline-flex;
+.fb-header-title-box {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
-  font-size: 13.5px;
-  font-weight: 750;
-  color: #0F172A;
-  background: #F1F5F9;
-  border: 1px solid #E2E8F0;
-  padding: 6px 14px;
-  border-radius: 100px;
 
-  ion-icon { font-size: 16px; color: #64748B; }
+  .fb-live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.75px;
+    text-transform: uppercase;
+    color: #059669;
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    padding: 3px 12px;
+    border-radius: 100px;
 
-  &.is-urgent {
-    color: #DC2626;
-    background: #FEF2F2;
-    border-color: #FECACA;
-    ion-icon { color: #DC2626; }
-    animation: fbUrgentPulse 0.8s infinite alternate;
+    .fb-live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    }
   }
-}
 
-.fb-approval-info {
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
-  border-radius: 16px;
-  padding: 14px 16px;
-  width: 100%;
-  text-align: left;
-
-  h4 {
-    margin: 0 0 4px;
-    font-size: 15px;
+  .fb-main-title {
+    margin: 0;
+    font-size: 18px;
     font-weight: 850;
     color: #0F172A;
+    letter-spacing: -0.3px;
+  }
+}
+
+/* ─── Circular Progress Timer ─── */
+.fb-circle-timer-wrap {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0 6px;
+
+  .fb-circle-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
   }
 
-  p {
-    margin: 0 0 10px;
-    font-size: 13px;
-    color: #64748B;
-    font-weight: 600;
+  .fb-circle-track {
+    fill: none;
+    stroke: #E2E8F0;
+    stroke-width: 6;
   }
 
-  .fb-approval-meta {
+  .fb-circle-progress {
+    fill: none;
+    stroke: #10B981;
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-dasharray: 263.89;
+    transition: stroke-dashoffset 0.8s linear, stroke 0.3s ease;
+  }
+
+  .fb-circle-content {
+    position: absolute;
+    inset: 0;
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    border-top: 1px dashed #CBD5E1;
-    padding-top: 10px;
-    font-size: 13.5px;
-    font-weight: 800;
+    justify-content: center;
+    line-height: 1;
 
-    span:first-child { color: #2563EB; }
-    span:last-child { color: #059669; font-size: 16px; }
+    .fb-circle-seconds {
+      font-size: 22px;
+      font-weight: 900;
+      color: #0D1B2A;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fb-circle-unit {
+      font-size: 9px;
+      font-weight: 750;
+      text-transform: uppercase;
+      color: #64748B;
+      margin-top: 2px;
+    }
+  }
+
+  &.is-urgent {
+    .fb-circle-progress {
+      stroke: #EF4444;
+    }
+    .fb-circle-seconds {
+      color: #DC2626;
+    }
   }
 }
 
-.fb-approval-hint {
-  font-size: 12.5px;
-  color: #64748B;
-  line-height: 1.45;
-  margin: 0;
-  padding: 0 10px;
+/* ─── Trip & Stops Card ─── */
+.fb-trip-card {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+  border-radius: 20px;
+  padding: 16px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+
+  .fb-trip-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    .fb-trip-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: #F1F5F9;
+      color: #334155;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .fb-trip-details {
+      flex: 1;
+      min-width: 0;
+
+      .fb-trip-name {
+        margin: 0 0 4px;
+        font-size: 16px;
+        font-weight: 850;
+        color: #0F172A;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .fb-badge-seats {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 800;
+        color: #2563EB;
+        background: #EFF6FF;
+        border: 1px solid #DBEAFE;
+        padding: 2px 8px;
+        border-radius: 6px;
+
+        ion-icon { font-size: 14px; }
+
+        .fb-seat-labels {
+          color: #1E40AF;
+        }
+      }
+    }
+
+    .fb-trip-price {
+      text-align: right;
+      flex-shrink: 0;
+
+      .fb-fare-label {
+        display: block;
+        font-size: 10px;
+        font-weight: 750;
+        text-transform: uppercase;
+        color: #64748B;
+        letter-spacing: 0.5px;
+      }
+
+      .fb-fare-val {
+        display: block;
+        font-size: 22px;
+        font-weight: 900;
+        color: #059669;
+        line-height: 1.1;
+      }
+    }
+  }
+
+  .fb-trip-route {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+
+    .fb-route-node {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+
+      .fb-node-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-top: 4px;
+        flex-shrink: 0;
+
+        &.pickup { background: #10B981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+        &.drop { background: #EF4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2); }
+      }
+
+      .fb-node-info {
+        min-width: 0;
+        flex: 1;
+
+        small {
+          display: block;
+          font-size: 9.5px;
+          font-weight: 800;
+          color: #64748B;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        strong {
+          display: block;
+          font-size: 13.5px;
+          font-weight: 750;
+          color: #0F172A;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          margin-top: 1px;
+        }
+      }
+    }
+
+    .fb-route-connector {
+      position: absolute;
+      left: 18px;
+      top: 24px;
+      bottom: 24px;
+      width: 2px;
+      background: #CBD5E1;
+    }
+  }
+
+  .fb-approval-hint {
+    font-size: 12.5px;
+    color: #64748B;
+    line-height: 1.45;
+    margin: 0;
+    padding: 2px 4px 0;
+    text-align: center;
+  }
 }
 
-@keyframes fbRadarAnim {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(18, 179, 91, 0.6); }
-  70% { transform: scale(1); box-shadow: 0 0 0 16px rgba(18, 179, 91, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(18, 179, 91, 0); }
+@keyframes phoneRippleAnim {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.6); opacity: 0; }
 }
 
-@keyframes fbFadeSlideDown {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fbUrgentPulse {
-  from { opacity: 1; }
-  to { opacity: 0.75; transform: scale(1.02); }
+@keyframes fbWobbleAnim {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
 }

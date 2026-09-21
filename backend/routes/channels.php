@@ -45,7 +45,30 @@ Broadcast::channel('customer.{customerId}', function ($user, int $customerId) {
 });
 
 Broadcast::channel('departure.{departureId}', function ($user, int $departureId) {
-    return true;
+    $dep = \App\Models\RouteDeparture::query()->find($departureId);
+    if (!$dep) {
+        return false;
+    }
+    if ((int) $dep->driver_id === (int) $user->id) {
+        return true;
+    }
+    if (method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+        return true;
+    }
+    $hasHold = \App\Models\FixedSeatHold::query()
+        ->where('route_departure_id', $departureId)
+        ->where('customer_id', $user->id)
+        ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'ACCEPTED', 'HELD'])
+        ->where('expires_at', '>', now())
+        ->exists();
+    if ($hasHold) {
+        return true;
+    }
+    return \App\Models\SeatReservation::query()
+        ->where('route_departure_id', $departureId)
+        ->where('customer_id', $user->id)
+        ->whereNotIn('status', ['CANCELLED'])
+        ->exists();
 });
 
 Broadcast::channel('fixed-hold.{holdId}', function ($user, int $holdId) {
