@@ -25,6 +25,19 @@ class AdminDriverApprovalFlowTest extends TestCase
         return $admin;
     }
 
+    public function test_full_profile_lists_missing_current_requirements_without_uploads(): void
+    {
+        $admin = $this->createAdmin();
+        $driver = Driver::query()->create(['user_id' => User::factory()->create()->id, 'approval_status' => 'approved']);
+        Document::query()->create(['name' => 'New permit', 'category' => 'driver_document',
+            'required' => 'mandatory_drive', 'no_of_images' => 2, 'status' => 'active']);
+        Sanctum::actingAs($admin, ['act-as:admin']);
+        $this->getJson("/api/admin/drivers/{$driver->id}/full")->assertOk()
+            ->assertJsonPath('documents', [])
+            ->assertJsonPath('document_requirements.0.name', 'New permit')
+            ->assertJsonPath('document_requirements.0.status', 'missing');
+    }
+
     public function test_irrelevant_catalog_documents_do_not_block_driver_approval(): void
     {
         $admin = $this->createAdmin();

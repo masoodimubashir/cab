@@ -308,6 +308,7 @@ class DriversController extends Controller
             ],
             'driver' => $driver,
             'documents' => $documents,
+            'document_requirements' => $driver ? app(\App\Services\DriverDocumentRequirements::class)->forDriver($driver) : [],
             'city_vehicle_type_config' => [
                 'show_low_wallet_alert' => (bool) ($citySettings?->show_low_wallet_alert ?? true),
             ],
@@ -728,16 +729,8 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
 
-        // Once the driver is approved, no further uploads are accepted —
-        // their paperwork is locked. Operator handles changes after this.
-        if ($driver->approval_status === 'approved') {
-            return response()->json([
-                'message' => 'Your registration is approved. Contact the operator to update documents.',
-            ], 403);
-        }
-
         $imageIndex = isset($data['image_index']) ? max(1, (int) $data['image_index']) : null;
-        $imageIndex = $imageIndex ?? ((int) (DriverDocument::query()
+        $imageIndex = $imageIndex ?? ((int) (DriverDocument::query()->where('driver_id', $driver->id)
             ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', (int) $data['document_id']), fn ($q) => $q->where('document_type', $data['document_type']))
             ->when(array_key_exists('vehicle_type_id', $data), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id'] ?? null))
             ->max('image_index') ?: 0) + 1);
@@ -759,7 +752,15 @@ class DriversController extends Controller
             ];
 
         $existing = DriverDocument::query()->where($matcher)->first();
-        if ($existing && $existing->status === 'approved') {
+        // An admin upload may have no vehicle type while the app supplies the
+        // driver's current type. Neither spelling may replace an approved slot.
+        $approvedSlot = DriverDocument::query()->where('driver_id', $driver->id)
+            ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', $data['document_id']),
+                fn ($q) => $q->whereNull('document_id')->where('document_type', $data['document_type']))
+            ->where('image_index', $imageIndex)
+            ->where(fn ($q) => $q->whereNull('vehicle_type_id')->orWhere('vehicle_type_id', $data['vehicle_type_id'] ?? $driver->vehicle_type_id))
+            ->where('status', 'approved')->exists();
+        if ($approvedSlot || ($existing && $existing->status === 'approved')) {
             return response()->json([
                 'message' => 'This document image is already approved and cannot be re-uploaded.',
             ], 409);
@@ -865,49 +866,14 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver is not approved.'], 422);
         }
 
-        // Consult the dynamic catalog instead of the legacy DL/RC/INSURANCE/ID
-        // enum. Mandatory rows in the documents catalog must each have an
-        // approved driver_documents entry for this driver. Legacy enum rows
-        // that exist and aren't approved still block — they don't gate
-        // approval otherwise.
-        $mandatoryDocIds = \App\Models\Document::query()
-            ->forDrivers()
-            ->where('required', 'mandatory_register')
-            ->pluck('id')
-            ->all();
-
-        $missing = [];
-        if (!empty($mandatoryDocIds)) {
-            $approvedByDocId = DriverDocument::query()
-                ->where('driver_id', $driver->id)
-                ->whereIn('document_id', $mandatoryDocIds)
-                ->where('status', 'approved')
-                ->pluck('document_id')
-                ->unique()
-                ->all();
-
-            $missingIds = array_values(array_diff($mandatoryDocIds, $approvedByDocId));
-            if (!empty($missingIds)) {
-                $missing = \App\Models\Document::query()
-                    ->whereIn('id', $missingIds)
-                    ->pluck('name')
-                    ->all();
-            }
-        }
-
-        $legacyPending = DriverDocument::query()
-            ->where('driver_id', $driver->id)
-            ->whereNull('document_id')
-            ->whereNotNull('document_type')
-            ->where('status', '!=', 'approved')
-            ->pluck('document_type')
-            ->all();
-        $missing = array_merge($missing, $legacyPending);
-
-        if (!empty($missing)) {
+        $requirements = app(\App\Services\DriverDocumentRequirements::class)->forDriver($driver);
+        $outstanding = array_values(array_filter($requirements, fn ($doc) => $doc['status'] !== 'approved'));
+        if ($outstanding) {
             return response()->json([
-                'message' => 'Not all required documents are approved.',
-                'missing' => array_values(array_unique($missing)),
+                'message' => 'Required documents need attention before you can go online.',
+                'error_code' => 'documents_required',
+                'missing' => array_column($outstanding, 'name'),
+                'document_requirements' => $requirements,
             ], 422);
         }
 

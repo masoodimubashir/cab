@@ -1,3 +1,4 @@
+import { DocumentRequirement, DocumentRequirementsModalComponent } from '../../shared/document-requirements-modal.component';
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertController, ModalController } from '@ionic/angular';
@@ -261,9 +262,54 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     setTimeout(() => this.finishHomeLoading(), 6000);
   }
 
+  private documentRequirements: DocumentRequirement[] = [];
+  private documentPromptSignature = '';
+  private documentPromptBusy = false;
+  private dashboardActive = false;
+  private lastDocumentCheck = 0;
+  private documentCheckBusy = false;
+  private greetingInProgress = false;
+
+  private applyDocumentRequirements(requirements: DocumentRequirement[]): void {
+    this.documentRequirements = requirements.filter(doc => doc.status !== 'approved');
+    if (!this.documentRequirements.length) this.documentPromptSignature = '';
+    else void this.showDocumentRequirements();
+  }
+
+  private async showDocumentRequirements(force = false): Promise<void> {
+    const signature = JSON.stringify(this.documentRequirements);
+    if (!this.dashboardActive || this.greetingInProgress || this.documentPromptBusy || (!force && signature === this.documentPromptSignature)) return;
+    this.documentPromptBusy = true;
+    try {
+      if (await this.modalCtrl.getTop()) return;
+      this.documentPromptSignature = signature;
+      const modal = await this.modalCtrl.create({
+        component: DocumentRequirementsModalComponent,
+        componentProps: { requirements: this.documentRequirements },
+        cssClass: 'document-requirements-modal',
+      });
+      await modal.present();
+      const { data } = await modal.onDidDismiss();
+      if (data?.upload) await this.router.navigate(['/profile'], { queryParams: { tab: 'documents' } });
+    } finally { this.documentPromptBusy = false; }
+  }
+
+  private checkDocumentRequirements(): void {
+    if (this.documentCheckBusy) return;
+    this.documentCheckBusy = true;
+    this.lastDocumentCheck = Date.now();
+    this.api.get<{ document_requirements?: DocumentRequirement[] }>('/drivers/me').subscribe({
+      next: res => { if (this.dashboardActive) this.applyDocumentRequirements(res.document_requirements ?? []); },
+      error: () => { this.documentCheckBusy = false; },
+      complete: () => { this.documentCheckBusy = false; },
+    });
+  }
+
   private syncTimer: ReturnType<typeof setInterval> | null = null;
 
   ionViewWillEnter(): void {
+    this.dashboardActive = true;
+    this.greetingInProgress = true;
     this.hasInitialOverviewFramed = false;
     this.refresh();
     void this.loadActiveFixedVehicleState();
@@ -274,6 +320,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.stopSyncTimer();
     this.syncTimer = setInterval(() => {
       this.refreshWalletBalance();
+      if (Date.now() - this.lastDocumentCheck > 30000) this.checkDocumentRequirements();
+      if (this.documentRequirements.length) void this.showDocumentRequirements();
     }, 4000);
   }
 
@@ -303,8 +351,13 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
    * this session.
    */
   private async greetOnAppOpen(): Promise<void> {
-    await this.maybeShowModePrompt();
-    await this.maybeShowSubscriptionPrompt();
+    try {
+      await this.maybeShowModePrompt();
+      await this.maybeShowSubscriptionPrompt();
+    } finally {
+      this.greetingInProgress = false;
+      if (this.documentRequirements.length) void this.showDocumentRequirements();
+    }
   }
 
   /**
@@ -401,6 +454,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   }
 
   ionViewWillLeave(): void {
+    this.dashboardActive = false;
     this.stopSyncTimer();
     this.stopFixedManifestPolling();
     // Drop the visual-only watch when navigating away. If the driver is online,
@@ -477,12 +531,6 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
    */
   get canGoOnline(): boolean {
     return this.isApproved && !this.isWalletBelowLimit;
-  }
-
-  /** The "documents under review" banner text, or null when approved. */
-  get reviewBannerText(): string | null {
-    if (this.isApproved) return null;
-    return 'Your documents are under review. You can go online once they are approved.';
   }
 
   // ------------------------------------------------------------------ drawer --
@@ -953,9 +1001,12 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       user: { name?: string; roles?: string[]; avatar_path?: string | null; avatar_url?: string | null };
       city_vehicle_type_config?: CityVehicleTypeConfig | null;
       wallet_balance?: number | null;
+      document_requirements?: DocumentRequirement[];
     }>('/drivers/me').subscribe({
       next: (res) => {
         this.driver = res.driver;
+        this.lastDocumentCheck = Date.now();
+        this.applyDocumentRequirements(res.document_requirements ?? []);
         // Keep the route guard's cached state in step with reality so navigation
         // (e.g. via "View application") never bounces on a stale "pending".
         if (this.driver?.['approval_status'] === 'approved') {
@@ -1282,7 +1333,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       return;
     }
     if (!this.canGoOnline) {
-      if (!silent) this.error = this.reviewBannerText || 'You cannot go online until your documents are approved.';
+      if (!silent) await this.showDocumentRequirements(true);
       return;
     }
     this.toggling = true;
@@ -1316,8 +1367,12 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       }
       this.followMe = true;
     } catch (e) {
-      if (!silent) {
-        const body = (e as { error?: Record<string, unknown> })?.error;
+      const body = (e as { error?: Record<string, unknown> })?.error;
+      if (body?.['error_code'] === 'documents_required') {
+        try { localStorage.removeItem('dc_driver_intended_online'); } catch { /* ignore */ }
+        this.documentRequirements = (body['document_requirements'] as DocumentRequirement[]).filter(doc => doc.status !== 'approved');
+        await this.showDocumentRequirements(true);
+      } else if (!silent) {
         this.error = (body?.['message'] as string) || (e as Error)?.message || 'Could not go online';
       }
     } finally {

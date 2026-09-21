@@ -22,12 +22,14 @@ import { DriverProfilePaneComponent } from './driver-profile.pane';
 import { DriverDocumentsPaneComponent } from './driver-documents.pane';
 import {
   CatalogDoc,
+  DocumentRequirement,
   DriverDocumentRow,
   DriverProfile,
   VehicleForm,
 } from './driver-detail.types';
 
 interface FullProfileResponse {
+  document_requirements?: DocumentRequirement[];
   driver: DriverProfile;
   documents: DriverDocumentRow[];
 }
@@ -100,6 +102,7 @@ interface FullProfileResponse {
             />
 
             <app-driver-documents-pane
+              [requirements]="requirements"
               [documents]="documents"
               (openUpload)="openAdminUpload()"
               (viewFile)="viewFile($event)"
@@ -503,6 +506,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   loading = false;
   driver: DriverProfile | null = null;
   documents: DriverDocumentRow[] = [];
+  requirements: DocumentRequirement[] = [];
 
   vehicleForm: VehicleForm = { vehicle_reg_no: '' };
   savingVehicle = false;
@@ -548,6 +552,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     document.body.style.overflow = 'hidden';
     this.driver = null;
     this.documents = [];
+    this.requirements = [];
     this.fetch(id);
     this.fetchCatalog();
     this.startLiveRefresh();
@@ -607,6 +612,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
       next: (res) => {
         this.driver = res.driver;
         this.documents = res.documents || [];
+        this.requirements = res.document_requirements || [];
         if (!this.savingVehicle) this.vehicleForm = { vehicle_reg_no: res.driver.vehicle_reg_no || '' };
         this.loading = false;
         this.refreshInFlight = false;
