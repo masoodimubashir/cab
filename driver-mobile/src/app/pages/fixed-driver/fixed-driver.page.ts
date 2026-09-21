@@ -15,6 +15,7 @@ import {
 import { GeoFix, GeolocationService } from '../../core/geolocation.service';
 import { PlacesService } from '../../core/places.service';
 import { FixedSeatHoldRequestedPayload, RealtimeService } from '../../core/realtime.service';
+import { AudioRingtoneService } from '../../core/audio-ringtone.service';
 
 declare const google: any;
 
@@ -353,6 +354,7 @@ export class FixedDriverPage implements OnDestroy {
     private backgroundLocation: BackgroundLocationService,
     private geo: GeolocationService,
     private places: PlacesService,
+    private ringtone: AudioRingtoneService,
   ) {}
 
   /**
@@ -1683,10 +1685,12 @@ export class FixedDriverPage implements OnDestroy {
       if (!this.activeSeatRequest || !activeHolds.some((h) => h.id === this.activeSeatRequest?.id)) {
         this.activeSeatRequest = activeHolds[0];
         this.startHoldCountdown();
+        this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id);
       }
     } else {
       this.activeSeatRequest = null;
       this.stopHoldCountdown();
+      this.ringtone.stopRinging();
     }
   }
 
@@ -1709,34 +1713,8 @@ export class FixedDriverPage implements OnDestroy {
       this.incomingSeatRequests = [hold, ...this.incomingSeatRequests];
       this.activeSeatRequest = hold;
       this.startHoldCountdown();
-      this.playIncomingChime();
+      this.ringtone.startRinging('fixed-hold-' + hold.id);
       void this.showToast(`New seat request for ${hold.seats} seat(s)!`);
-    }
-  }
-
-  private playIncomingChime(): void {
-    try {
-      if (typeof window !== 'undefined' && 'navigator' in window && navigator.vibrate) {
-        navigator.vibrate([200, 100, 200, 100, 300]);
-      }
-      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (AudioContextClass) {
-        const ctx = new AudioContextClass();
-        const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, now); // D5
-        osc.frequency.setValueAtTime(880, now + 0.15); // A5
-        gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.45);
-      }
-    } catch {
-      // Ignore audio restriction
     }
   }
 
@@ -1768,8 +1746,10 @@ export class FixedDriverPage implements OnDestroy {
       this.activeSeatRequest = this.incomingSeatRequests[0] || null;
       if (this.activeSeatRequest) {
         this.startHoldCountdown();
+        this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id);
       } else {
         this.stopHoldCountdown();
+        this.ringtone.stopRinging();
       }
     }
     void this.showToast('Seat request expired.');
@@ -1778,18 +1758,25 @@ export class FixedDriverPage implements OnDestroy {
   private stopHoldCountdown(): void {
     this.holdTimerSubscription?.unsubscribe();
     this.holdTimerSubscription = undefined;
+    this.ringtone.stopRinging();
   }
 
   acceptSeatRequest(req: PendingSeatHold): void {
+    this.ringtone.stopRinging();
     this.busy = true;
     this.api.post<{ hold: PendingSeatHold; message: string }>(`/fixed/driver/seat-holds/${req.id}/accept`, {})
       .pipe(finalize(() => (this.busy = false)))
       .subscribe({
         next: async (res) => {
+          this.ringtone.playSuccessChime();
           this.incomingSeatRequests = this.incomingSeatRequests.filter((h) => h.id !== req.id);
           this.activeSeatRequest = this.incomingSeatRequests[0] || null;
-          if (this.activeSeatRequest) this.startHoldCountdown();
-          else this.stopHoldCountdown();
+          if (this.activeSeatRequest) {
+            this.startHoldCountdown();
+            this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id);
+          } else {
+            this.stopHoldCountdown();
+          }
           await this.showToast(res.message || 'Seat request accepted. Passenger has 5 minutes to pay.');
           if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
         },
@@ -1800,15 +1787,21 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   rejectSeatRequest(req: PendingSeatHold): void {
+    this.ringtone.stopRinging();
     this.busy = true;
     this.api.post<{ hold: PendingSeatHold; message: string }>(`/fixed/driver/seat-holds/${req.id}/reject`, {})
       .pipe(finalize(() => (this.busy = false)))
       .subscribe({
         next: async (res) => {
+          this.ringtone.playRejectChime();
           this.incomingSeatRequests = this.incomingSeatRequests.filter((h) => h.id !== req.id);
           this.activeSeatRequest = this.incomingSeatRequests[0] || null;
-          if (this.activeSeatRequest) this.startHoldCountdown();
-          else this.stopHoldCountdown();
+          if (this.activeSeatRequest) {
+            this.startHoldCountdown();
+            this.ringtone.startRinging('fixed-hold-' + this.activeSeatRequest.id);
+          } else {
+            this.stopHoldCountdown();
+          }
           await this.showToast(res.message || 'Seat request declined.');
           if (this.activeVehicle) this.loadManifest(this.activeVehicle.id, false);
         },
