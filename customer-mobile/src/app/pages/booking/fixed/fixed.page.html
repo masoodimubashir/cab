@@ -113,10 +113,10 @@
     title="Pick your seats"
     [barLabel]="route?.name || 'Share a seat'"
     [step]="4" [total]="total"
-    cta="Review"
-    [disabled]="!selected.length"
+    [cta]="'Book ' + (selected.length || 0) + ' Seat' + ((selected.length || 0) > 1 ? 's' : '') + ' · ₹' + seatFare"
+    [disabled]="!selected.length || busy"
     (back)="back()"
-    (primary)="goToReview()">
+    (primary)="bookSeats()">
 
     <p class="bk-sub" *ngIf="loading">Loading seats…</p>
     <p class="bk-note bk-note--warn" *ngIf="error && !loading">{{ error }}</p>
@@ -153,9 +153,44 @@
           <button class="fx-refresh" type="button" (click)="refreshSeats()" [disabled]="loading">↻ Refresh</button>
         </div>
 
-        <div class="bk-note" *ngIf="selected.length">Selected {{ selected.length }} seat{{ selected.length > 1 ? 's' : '' }} · ₹{{ seatFare }}.</div>
+        <div class="bk-note" *ngIf="selected.length">Selected {{ selected.length }} seat{{ selected.length > 1 ? 's' : '' }} · ₹{{ seatFare }}. Tap "Book Seats" to request driver approval.</div>
       </ng-container>
     </ng-container>
+  </app-step-shell>
+
+  <!-- Step 4.5 — awaiting driver approval -->
+  <app-step-shell
+    *ngIf="step === 'awaiting_approval'"
+    title="Waiting for driver approval"
+    [barLabel]="route?.name || 'Share a seat'"
+    [step]="4" [total]="total"
+    cta="Cancel Request"
+    (back)="cancelAwaitingApproval()"
+    (primary)="cancelAwaitingApproval()">
+
+    <div class="fb-approval-box">
+      <div class="fb-radar-pulse">
+        <ion-icon name="car"></ion-icon>
+      </div>
+
+      <div class="fb-approval-timer" [class.is-urgent]="approvalCountdown <= 15">
+        <ion-icon name="time-outline"></ion-icon>
+        <span>Driver has <strong>{{ approvalCountdown }}s</strong> to respond</span>
+      </div>
+
+      <div class="fb-approval-info">
+        <h4>{{ route?.name || 'Fixed Route' }}</h4>
+        <p>{{ getStopName(boardStopId) }} → {{ getStopName(dropStopId) }}</p>
+        <div class="fb-approval-meta">
+          <span>{{ selected.length }} Seat{{ selected.length > 1 ? 's' : '' }} ({{ selected.join(', ') }})</span>
+          <span>₹{{ finalTotal }}</span>
+        </div>
+      </div>
+
+      <p class="fb-approval-hint">
+        Your seats are temporarily held. No payment is charged until the driver accepts your pickup request.
+      </p>
+    </div>
   </app-step-shell>
 
   <!-- Step 5 — review + pay -->
@@ -168,6 +203,18 @@
     [disabled]="busy"
     (back)="back()"
     (primary)="pay()">
+
+    <div class="fb-accepted-banner" *ngIf="hold?.status === 'ACCEPTED'">
+      <ion-icon name="checkmark-circle"></ion-icon>
+      <div>
+        <strong>Driver accepted your request!</strong>
+        <span>Please complete payment before the 5-minute timer expires.</span>
+      </div>
+    </div>
+
+    <div class="fb-timer-wrap" *ngIf="hold?.expires_at">
+      <app-hold-timer [expiresAt]="hold?.expires_at || null" (expired)="onHoldExpired()"></app-hold-timer>
+    </div>
 
     <label class="bk-field">
       <input class="bk-field__input" type="text" placeholder="Coupon code" [(ngModel)]="couponTitle" />
@@ -182,7 +229,7 @@
       <div class="bk-money__row" *ngIf="coupon?.coupon"><span>{{ coupon?.coupon?.title }}</span><span>−₹{{ coupon?.discount }}</span></div>
       <div class="bk-money__row bk-money__tot"><span>You pay</span><span>₹{{ finalTotal }}</span></div>
     </div>
-    <div class="bk-note">Paid before boarding. You'll get a code to show the driver.</div>
+    <div class="bk-note">Seats are held for 5 minutes while you complete payment.</div>
     <p class="bk-note bk-note--warn" *ngIf="error">{{ error }}</p>
   </app-step-shell>
 
