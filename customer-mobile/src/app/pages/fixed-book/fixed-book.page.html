@@ -215,9 +215,12 @@
 
       <div class="sheet-foot">
         <button type="button" class="fb-cta dc-press"
-                [disabled]="selectedLabels.length < 1"
-                (click)="reviewBooking()">
-          Continue with {{ selectedLabels.length || 0 }} seat{{ selectedLabels.length === 1 ? '' : 's' }}
+                [disabled]="selectedLabels.length < 1 || booking"
+                (click)="bookSeats()">
+          <ion-spinner *ngIf="booking" name="crescent"></ion-spinner>
+          <span *ngIf="!booking">
+            Book {{ selectedLabels.length || 0 }} Seat{{ (selectedLabels.length || 0) > 1 ? 's' : '' }} · ₹{{ fareTotal | number: '1.0-0' }}
+          </span>
         </button>
       </div>
     </div>

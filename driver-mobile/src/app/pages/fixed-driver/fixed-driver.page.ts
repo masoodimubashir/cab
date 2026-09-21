@@ -1709,7 +1709,34 @@ export class FixedDriverPage implements OnDestroy {
       this.incomingSeatRequests = [hold, ...this.incomingSeatRequests];
       this.activeSeatRequest = hold;
       this.startHoldCountdown();
+      this.playIncomingChime();
       void this.showToast(`New seat request for ${hold.seats} seat(s)!`);
+    }
+  }
+
+  private playIncomingChime(): void {
+    try {
+      if (typeof window !== 'undefined' && 'navigator' in window && navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 300]);
+      }
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, now); // D5
+        osc.frequency.setValueAtTime(880, now + 0.15); // A5
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.45);
+      }
+    } catch {
+      // Ignore audio restriction
     }
   }
 
