@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Events\DriverVerificationUpdated;
+use App\Models\Document;
 use App\Models\Driver;
 use App\Models\DriverDocument;
 use App\Models\DriverSubscription;
@@ -918,21 +919,40 @@ class AdminDriversController
             ], 422);
         }
 
-        $imageIndex = isset($data['image_index']) ? max(1, (int) $data['image_index']) : null;
-        $imageIndex = $imageIndex ?? ((int) (DriverDocument::query()
+        $catalogDoc = !empty($data['document_id']) ? Document::find($data['document_id']) : null;
+        $maxImages = $catalogDoc ? max(1, (int) $catalogDoc->no_of_images) : 1;
+
+        $existingUploads = DriverDocument::query()
+            ->where('driver_id', $driver->id)
             ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', (int) $data['document_id']), fn ($q) => $q->where('document_type', $data['document_type']))
             ->when(array_key_exists('vehicle_type_id', $data), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id'] ?? null))
-            ->max('image_index') ?: 0) + 1);
+            ->get();
 
-        $labelValues = null;
-        if (isset($data['label_values'])) {
-            $labelValues = is_string($data['label_values'])
-                ? json_decode($data['label_values'], true)
-                : $data['label_values'];
-            if (!is_array($labelValues)) $labelValues = null;
+        if (isset($data['image_index'])) {
+            $imageIndex = (int) $data['image_index'];
+            if ($imageIndex < 1 || $imageIndex > $maxImages) {
+                return response()->json([
+                    'message' => "Image slot {$imageIndex} is invalid. Maximum allowed is {$maxImages}.",
+                ], 422);
+            }
+        } else {
+            // Find lowest missing or rejected slot in 1..$maxImages
+            $imageIndex = null;
+            for ($i = 1; $i <= $maxImages; $i++) {
+                $match = $existingUploads->firstWhere('image_index', $i);
+                if (!$match || $match->status === 'rejected') {
+                    $imageIndex = $i;
+                    break;
+                }
+            }
+
+            if ($imageIndex === null) {
+                $docName = $catalogDoc?->name ?? $data['document_type'] ?? 'Document';
+                return response()->json([
+                    'message' => "All {$maxImages} image(s) for {$docName} have already been uploaded.",
+                ], 422);
+            }
         }
-
-        $path = $request->file('file')->store('driver-documents', 'local');
 
         $matcher = !empty($data['document_id'])
             ? [
@@ -947,6 +967,23 @@ class AdminDriversController
                 'image_index' => $imageIndex,
             ];
 
+        $existing = DriverDocument::query()->where($matcher)->first();
+
+        $labelValues = null;
+        if (isset($data['label_values'])) {
+            $labelValues = is_string($data['label_values'])
+                ? json_decode($data['label_values'], true)
+                : $data['label_values'];
+            if (!is_array($labelValues)) $labelValues = null;
+        }
+
+        // Clean up previous file if overwriting
+        if ($existing && $existing->file_path && Storage::disk('local')->exists($existing->file_path)) {
+            Storage::disk('local')->delete($existing->file_path);
+        }
+
+        $path = $request->file('file')->store('driver-documents', 'local');
+
         $doc = DriverDocument::query()->updateOrCreate(
             $matcher,
             [
@@ -960,6 +997,23 @@ class AdminDriversController
                 'rejection_reason' => null,
             ]
         );
+
+        // When a new document is uploaded, driver approval is reset to pending until reviewed.
+        $driver->approval_status = 'pending';
+        $driver->is_online = false;
+        $driver->save();
+
+        try {
+            broadcast(new DriverVerificationUpdated(
+                userId: (int) $driver->user_id,
+                driverId: (int) $driver->id,
+                reason: 'Document uploaded on behalf. Account approval is pending review.',
+                documentId: $doc->document_id,
+                status: 'uploaded',
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('DriverVerificationUpdated broadcast failed', ['error' => $e->getMessage()]);
+        }
 
         return response()->json(['document' => $doc->fresh()]);
     }

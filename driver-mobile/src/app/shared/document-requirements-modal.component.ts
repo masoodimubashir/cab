@@ -20,29 +20,33 @@ export interface DocumentRequirement {
       <ion-title>Document check</ion-title>
       <ion-buttons slot="end"><ion-button (click)="close()" aria-label="Close document check"><ion-icon name="close-outline" slot="icon-only"></ion-icon></ion-button></ion-buttons>
     </ion-toolbar></ion-header>
-    <ion-content>
+    <div class="check-body" role="region" aria-label="Document requirements" tabindex="0">
       <div class="document-check">
         <div class="check-icon"><ion-icon name="document-text-outline"></ion-icon></div>
         <h1>{{ needsUpload ? 'A few documents need attention' : 'Your documents are under review' }}</h1>
-        <p class="intro">{{ needsUpload ? 'Complete the current requirements below before going online. Your approved images are already saved.' : 'Your uploads are with the team. You can go online once the required documents and your account are approved.' }}</p>
+        <p class="intro">{{ needsUpload ? 'Complete the current requirements below before going online. Your approved documents are already saved.' : 'Your uploads are with the team. You can go online once the required documents and your account are approved.' }}</p>
         <article *ngFor="let doc of requirements">
           <div class="document-heading"><h2>{{ doc.name }}</h2><span [class.review]="doc.status === 'pending'">{{ doc.status === 'pending' ? 'In review' : doc.status === 'rejected' ? 'Re-upload' : 'Upload needed' }}</span></div>
           <p>{{ doc.approved_images }} of {{ doc.required_images }} images approved</p>
           <ng-container *ngFor="let slot of doc.slots">
             <small *ngIf="slot.status === 'missing'">Image {{ slot.index }}: upload needed</small>
+            <small *ngIf="slot.status === 'pending' || slot.status === 'uploaded'">Image {{ slot.index }}: uploaded (in review)</small>
+            <small *ngIf="slot.status === 'approved'">Image {{ slot.index }}: approved</small>
             <small class="rejection" *ngIf="slot.status === 'rejected'">Image {{ slot.index }}: {{ slot.rejection_reason || 'Please upload a clear, valid copy.' }}</small>
           </ng-container>
           <small *ngIf="doc.document_id === null">Contact support to update this older document.</small>
         </article>
       </div>
-    </ion-content>
+    </div>
     <ion-footer class="ion-no-border"><div class="check-footer">
       <span>{{ needsUpload ? 'Open Profile → Documents' : 'No need to upload pending files again.' }}</span>
       <ion-button size="small" (click)="openDocuments()">{{ needsUpload ? 'Upload here' : 'View documents' }}<ion-icon name="arrow-forward-outline" slot="end"></ion-icon></ion-button>
     </div></ion-footer>
   `,
   styles: [`
-    :host { --ion-background-color: #fff; --ion-text-color: #17232b; }
+    :host { --ion-background-color: #fff; --ion-text-color: #17232b; display: flex; flex-direction: column; background: #fff; max-height: 90vh; max-height: 90dvh; }
+    ion-header, ion-footer { flex: 0 0 auto; }
+    .check-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
     ion-toolbar { --background: #fff; --border-width: 0; padding: 4px 8px; }
     ion-title { font-size: 17px; font-weight: 700; }
     .document-check { padding: 16px 22px 24px; }

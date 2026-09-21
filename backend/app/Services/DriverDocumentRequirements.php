@@ -23,6 +23,10 @@ class DriverDocumentRequirements
                 $legacy = $rows->whereNull('image_index')->values();
                 for ($i = 1; $i <= $count; $i++) {
                     $row = $rows->firstWhere('image_index', $i) ?? $legacy->shift();
+                    if (!$row) {
+                        $overflow = $rows->filter(fn ($r) => $r->image_index > $count || ($r->image_index !== null && $r->image_index < 1))->values();
+                        $row = $overflow->get($i - 1);
+                    }
                     $slots[] = [
                         'index' => $i,
                         'status' => $row?->status ?? 'missing',
@@ -33,12 +37,15 @@ class DriverDocumentRequirements
                 $status = in_array('rejected', $statuses, true) ? 'rejected'
                     : (in_array('missing', $statuses, true) ? 'missing'
                     : (in_array('uploaded', $statuses, true) ? 'pending' : 'approved'));
+                $uploadedCount = count(array_filter($statuses, fn ($s) => in_array($s, ['uploaded', 'approved', 'pending'])));
+                $approvedCount = count(array_filter($statuses, fn ($s) => $s === 'approved'));
                 return [
                     'document_id' => $doc->id,
                     'name' => $doc->name,
                     'required' => $doc->required,
                     'required_images' => $count,
-                    'approved_images' => count(array_filter($statuses, fn ($s) => $s === 'approved')),
+                    'uploaded_images' => $uploadedCount,
+                    'approved_images' => $approvedCount,
                     'status' => $status,
                     'slots' => $slots,
                 ];

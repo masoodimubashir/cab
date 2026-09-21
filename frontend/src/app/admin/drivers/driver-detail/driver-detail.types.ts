@@ -52,6 +52,7 @@ export interface DocumentRequirement {
   name: string;
   required: string;
   required_images: number;
+  uploaded_images?: number;
   approved_images: number;
   status: 'missing' | 'pending' | 'rejected' | 'approved';
 }

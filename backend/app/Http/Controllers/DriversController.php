@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Events\DispatchDriverLocationUpdated;
+use App\Events\DriverVerificationUpdated;
 use App\Models\CitySetting;
 use App\Models\CityVehicleType;
 use App\Models\Driver;
 use App\Models\Fleet;
+use App\Models\Document;
 use App\Models\DriverDocument;
 use App\Models\DriverLocation;
 use App\Models\OperatorSetting;
@@ -17,6 +19,7 @@ use App\Services\FixedStopAutomationService;
 use App\Services\ShuttleStopAutomationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -729,11 +732,38 @@ class DriversController extends Controller
             return response()->json(['message' => 'Driver profile not found.'], 404);
         }
 
-        $imageIndex = isset($data['image_index']) ? max(1, (int) $data['image_index']) : null;
-        $imageIndex = $imageIndex ?? ((int) (DriverDocument::query()->where('driver_id', $driver->id)
-            ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', (int) $data['document_id']), fn ($q) => $q->where('document_type', $data['document_type']))
-            ->when(array_key_exists('vehicle_type_id', $data), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id'] ?? null))
-            ->max('image_index') ?: 0) + 1);
+        $catalogDoc = !empty($data['document_id']) ? Document::find($data['document_id']) : null;
+        $maxImages = $catalogDoc ? max(1, (int) $catalogDoc->no_of_images) : 1;
+
+        if (isset($data['image_index'])) {
+            $imageIndex = (int) $data['image_index'];
+            if ($imageIndex < 1 || $imageIndex > $maxImages) {
+                return response()->json([
+                    'message' => "Image slot {$imageIndex} is invalid. Maximum allowed is {$maxImages}.",
+                ], 422);
+            }
+        } else {
+            $existingUploads = DriverDocument::query()->where('driver_id', $driver->id)
+                ->when(!empty($data['document_id']), fn ($q) => $q->where('document_id', (int) $data['document_id']), fn ($q) => $q->where('document_type', $data['document_type']))
+                ->when(array_key_exists('vehicle_type_id', $data), fn ($q) => $q->where('vehicle_type_id', $data['vehicle_type_id'] ?? null))
+                ->get();
+
+            $imageIndex = null;
+            for ($i = 1; $i <= $maxImages; $i++) {
+                $match = $existingUploads->firstWhere('image_index', $i);
+                if (!$match || $match->status === 'rejected') {
+                    $imageIndex = $i;
+                    break;
+                }
+            }
+
+            if ($imageIndex === null) {
+                $docName = $catalogDoc?->name ?? $data['document_type'] ?? 'Document';
+                return response()->json([
+                    'message' => "All {$maxImages} image(s) for {$docName} have already been uploaded.",
+                ], 422);
+            }
+        }
 
         // Look up an existing row with the same identity + image slot.
         // Pending/rejected rows can be replaced by the driver; approved rows
@@ -799,6 +829,23 @@ class DriversController extends Controller
                 'rejection_reason' => null,
             ]
         );
+
+        // When a new document is uploaded, driver approval is reset to pending until reviewed.
+        $driver->approval_status = 'pending';
+        $driver->is_online = false;
+        $driver->save();
+
+        try {
+            broadcast(new DriverVerificationUpdated(
+                userId: (int) $user->id,
+                driverId: (int) $driver->id,
+                reason: 'Document uploaded. Account approval is pending review.',
+                documentId: $doc->document_id,
+                status: 'uploaded',
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('DriverVerificationUpdated broadcast failed', ['error' => $e->getMessage()]);
+        }
 
         return response()->json(['document' => $doc->fresh()]);
     }

@@ -1030,7 +1030,6 @@ export class ProfilePage implements OnInit, OnDestroy {
     const existingByDocId = new Map<number, ExistingUpload[]>();
     for (const upload of uploads) {
       if (upload.document_id == null) continue;
-      if (upload.vehicle_type_id != null && upload.vehicle_type_id !== this.vehicle_type_id) continue;
       const list = existingByDocId.get(upload.document_id) ?? [];
       list.push(upload);
       existingByDocId.set(upload.document_id, list);
@@ -1042,12 +1041,12 @@ export class ProfilePage implements OnInit, OnDestroy {
     this.docs = catalogDocs.map((doc) => {
       const previous = previousByDocId.get(doc.id);
       const existingList = [...(existingByDocId.get(doc.id) ?? [])];
-      const legacy = existingList.filter(row => row.image_index == null);
       const slotCount = Math.max(1, doc.no_of_images || 1);
+      const unmapped = existingList.filter(row => row.image_index == null || row.image_index > slotCount || row.image_index < 1);
       const uploadsState: DocImageSlot[] = Array.from({ length: slotCount }, (_, idx) => {
         const imageIndex = idx + 1;
         const exact = existingList.find((row) => row.image_index === imageIndex) ?? null;
-        const fallback = !exact ? legacy.shift() ?? null : null;
+        const fallback = !exact ? unmapped.shift() ?? null : null;
         return {
           index: imageIndex,
           file: previous?.uploads[idx]?.file ?? null,

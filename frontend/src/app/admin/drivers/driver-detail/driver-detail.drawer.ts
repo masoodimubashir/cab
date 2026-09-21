@@ -38,14 +38,6 @@ interface FullProfileResponse {
  * Slide-in drawer that hosts the driver profile, document review, and
  * approve/reject actions. Opens whenever `[driverId]` becomes non-null;
  * closing emits `(closed)` and the parent strips the URL param.
- *
- * The mount/animation pattern mirrors `drivers-list.component.ts` insights
- * drawer — it's the same shape: backdrop click + Escape close, body scroll
- * locked while open, 200ms close animation before unmount.
- *
- * A `generation` counter guards against the race where the user clicks a
- * different driver before the previous close animation finishes — only
- * timeouts from the latest open finalize the close.
  */
 @Component({
   selector: 'app-driver-detail-drawer',
@@ -160,6 +152,11 @@ interface FullProfileResponse {
           Drop one or more files, then pick which catalog document each one represents.
         </p>
 
+        <div *ngIf="!hasAnyAvailableDocSlots() && !uploads.length" class="doc-fulfilled-banner">
+          <tm-icon name="check" [size]="14" />
+          <span>All required catalog documents have already been uploaded for this driver.</span>
+        </div>
+
         <tm-file-drop
           accept="image/*,application/pdf"
           [multiple]="true"
@@ -189,8 +186,12 @@ interface FullProfileResponse {
                   (ngModelChange)="assignDoc(u, $event)"
                   [disabled]="u.status !== 'queued'"
                 >
-                  <option [ngValue]="null" disabled>Choose document type…</option>
-                  <option *ngFor="let d of catalogDocs" [ngValue]="d.id">{{ d.name }}</option>
+                  <option [ngValue]="null" disabled>
+                    {{ getAvailableDocsForUpload(u).length ? 'Choose document type…' : 'No document slots available' }}
+                  </option>
+                  <option *ngFor="let d of getAvailableDocsForUpload(u)" [ngValue]="d.id">
+                    {{ getDocDropdownLabel(d, u) }}
+                  </option>
                 </select>
 
                 <span class="upload__status"
@@ -357,6 +358,20 @@ interface FullProfileResponse {
     .muted { color: var(--tm-text-muted); }
     .small { font-size: 12px; }
 
+    .doc-fulfilled-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      border-radius: var(--tm-radius-sm);
+      background: var(--tm-green-tint);
+      color: var(--tm-green-deep);
+      border: 1px solid var(--tm-green-soft);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
     /* Upload list */
     .uploads {
       list-style: none;
@@ -379,7 +394,7 @@ interface FullProfileResponse {
     }
     .upload__row {
       display: grid;
-      grid-template-columns: 1fr 200px 80px 28px;
+      grid-template-columns: 1fr 240px 80px 28px;
       align-items: center;
       gap: 10px;
     }
@@ -569,8 +584,6 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     this.closing = true;
     const gen = this.generation;
     this.closeTimer = setTimeout(() => {
-      // If a new driver opened during the animation, this stale timeout
-      // would otherwise blank the new drawer. Guard with the generation.
       if (gen !== this.generation) return;
       this.mounted = false;
       this.closing = false;
@@ -829,6 +842,56 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   }
 
   // ------------------------------------------------------------------------
+  // Admin upload-on-behalf slot calculation & helpers
+  // ------------------------------------------------------------------------
+
+  getExistingDocCount(docId: number): number {
+    return this.documents.filter(
+      (d) => d.document_id === docId && d.status !== 'rejected',
+    ).length;
+  }
+
+  getTotalRequiredCount(doc: CatalogDoc): number {
+    return Math.max(1, doc.no_of_images || 1);
+  }
+
+  getServerRemainingSlots(doc: CatalogDoc): number {
+    const existing = this.getExistingDocCount(doc.id);
+    const total = this.getTotalRequiredCount(doc);
+    return Math.max(0, total - existing);
+  }
+
+  getOtherAssignedCount(docId: number, currentUploadId: string): number {
+    return this.uploads.filter(
+      (x) => x.id !== currentUploadId && x.docId === docId && x.status !== 'failed',
+    ).length;
+  }
+
+  getRemainingSlotsForUpload(doc: CatalogDoc, currentUpload: PendingUpload): number {
+    const serverRemaining = this.getServerRemainingSlots(doc);
+    const otherAssigned = this.getOtherAssignedCount(doc.id, currentUpload.id);
+    return Math.max(0, serverRemaining - otherAssigned);
+  }
+
+  getAvailableDocsForUpload(currentUpload: PendingUpload): CatalogDoc[] {
+    return this.catalogDocs.filter((d) => {
+      if (currentUpload.docId === d.id) return true;
+      return this.getRemainingSlotsForUpload(d, currentUpload) > 0;
+    });
+  }
+
+  getDocDropdownLabel(doc: CatalogDoc, currentUpload: PendingUpload): string {
+    const uploaded = this.getExistingDocCount(doc.id);
+    const total = this.getTotalRequiredCount(doc);
+    const remaining = this.getRemainingSlotsForUpload(doc, currentUpload);
+    return `${doc.name} (${uploaded}/${total} uploaded · ${remaining} needed)`;
+  }
+
+  hasAnyAvailableDocSlots(): boolean {
+    return this.catalogDocs.some((d) => this.getServerRemainingSlots(d) > 0);
+  }
+
+  // ------------------------------------------------------------------------
   // Admin upload-on-behalf (drag-drop with per-file progress)
   // ------------------------------------------------------------------------
 
@@ -836,6 +899,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     this.uploads = [];
     this.uploadIdSeq = 0;
     this.uploadOpen = true;
+    if (!this.catalogDocs.length) this.fetchCatalog();
   }
 
   closeUploadModal(): void {
@@ -849,15 +913,31 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   }
 
   onFilesAdded(files: File[]): void {
-    // If only one catalog doc exists, pre-assign it to avoid an extra click.
-    const presetDocId = this.catalogDocs.length === 1 ? this.catalogDocs[0].id : null;
-    const next = files.map<PendingUpload>((f) => ({
-      id: `u-${++this.uploadIdSeq}`,
-      file: f,
-      docId: presetDocId,
-      status: 'queued',
-      percent: 0,
-    }));
+    const next: PendingUpload[] = [];
+    for (const f of files) {
+      const uId = `u-${++this.uploadIdSeq}`;
+      const tempUpload: PendingUpload = {
+        id: uId,
+        file: f,
+        docId: null,
+        status: 'queued',
+        percent: 0,
+      };
+
+      // Auto-assign if only 1 document type in the entire catalog currently needs slots
+      const docsWithSlots = this.catalogDocs.filter((d) => {
+        const serverRemaining = this.getServerRemainingSlots(d);
+        const alreadyAssignedInQueue = [...this.uploads, ...next].filter(
+          (x) => x.docId === d.id && x.status !== 'failed',
+        ).length;
+        return serverRemaining - alreadyAssignedInQueue > 0;
+      });
+
+      if (docsWithSlots.length === 1) {
+        tempUpload.docId = docsWithSlots[0].id;
+      }
+      next.push(tempUpload);
+    }
     this.uploads = [...this.uploads, ...next];
     this.cdr.markForCheck();
   }
@@ -887,9 +967,10 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   }
 
-  /** True when there's at least one queued upload with a doc-type chosen. */
+  /** True when there's at least one queued upload with a valid doc-type chosen. */
   canSubmitUpload(): boolean {
     return !this.uploadBusy
+      && this.uploads.length > 0
       && this.uploads.some((u) => u.status === 'queued' && u.docId != null);
   }
 
@@ -912,39 +993,69 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     const inheritedVehicleTypeId = this.driver?.vehicle_type_id ?? null;
     let pending = targets.length;
 
+    // Group target uploads by docId so we can allocate exact slot indexes
+    const targetsByDoc = new Map<number, PendingUpload[]>();
     for (const target of targets) {
-      this.markUpload(target.id, { status: 'uploading', percent: 0 });
-      const fd = new FormData();
-      fd.append('document_id', String(target.docId));
-      if (inheritedVehicleTypeId) fd.append('vehicle_type_id', String(inheritedVehicleTypeId));
-      fd.append('file', target.file);
+      if (target.docId == null) continue;
+      const list = targetsByDoc.get(target.docId) ?? [];
+      list.push(target);
+      targetsByDoc.set(target.docId, list);
+    }
 
-      this.api
-        .postMultipartWithProgress<{ document: unknown }>(
-          `/admin/drivers/${this.driverId}/documents`,
-          fd,
-        )
-        .subscribe({
-          next: (ev) => {
-            if (ev.kind === 'progress') {
-              this.markUpload(target.id, { percent: ev.percent });
-            } else {
-              this.markUpload(target.id, { status: 'done', percent: 100 });
-              this.toast.success(`${target.file.name} uploaded`);
-            }
-          },
-          error: (err) => {
-            this.markUpload(target.id, {
-              status: 'failed',
-              error: err?.error?.message || `HTTP ${err?.status ?? '?'}`,
-            });
-            this.toast.error(`${target.file.name} failed`);
-            if (--pending === 0) this.finishBatch();
-          },
-          complete: () => {
-            if (--pending === 0) this.finishBatch();
-          },
-        });
+    for (const [docId, docTargets] of targetsByDoc.entries()) {
+      const catDoc = this.catalogDocs.find((d) => d.id === docId);
+      const totalSlots = catDoc ? this.getTotalRequiredCount(catDoc) : 1;
+      const existingRows = this.documents.filter(
+        (d) => d.document_id === docId && (inheritedVehicleTypeId == null || d.vehicle_type_id == null || d.vehicle_type_id === inheritedVehicleTypeId),
+      );
+
+      // Find missing or rejected slots in 1..totalSlots
+      const availableSlots: number[] = [];
+      for (let s = 1; s <= totalSlots; s++) {
+        const row = existingRows.find((r) => r.image_index === s);
+        if (!row || row.status === 'rejected') {
+          availableSlots.push(s);
+        }
+      }
+
+      for (let i = 0; i < docTargets.length; i++) {
+        const target = docTargets[i];
+        const assignedSlot = availableSlots[i] ?? (i + 1);
+
+        this.markUpload(target.id, { status: 'uploading', percent: 0 });
+        const fd = new FormData();
+        fd.append('document_id', String(target.docId));
+        fd.append('image_index', String(assignedSlot));
+        if (inheritedVehicleTypeId) fd.append('vehicle_type_id', String(inheritedVehicleTypeId));
+        fd.append('file', target.file);
+
+        this.api
+          .postMultipartWithProgress<{ document: unknown }>(
+            `/admin/drivers/${this.driverId}/documents`,
+            fd,
+          )
+          .subscribe({
+            next: (ev) => {
+              if (ev.kind === 'progress') {
+                this.markUpload(target.id, { percent: ev.percent });
+              } else {
+                this.markUpload(target.id, { status: 'done', percent: 100 });
+                this.toast.success(`${target.file.name} uploaded`);
+              }
+            },
+            error: (err) => {
+              this.markUpload(target.id, {
+                status: 'failed',
+                error: err?.error?.message || `HTTP ${err?.status ?? '?'}`,
+              });
+              this.toast.error(`${target.file.name} failed`);
+              if (--pending === 0) this.finishBatch();
+            },
+            complete: () => {
+              if (--pending === 0) this.finishBatch();
+            },
+          });
+      }
     }
   }
 
