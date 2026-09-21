@@ -49,7 +49,7 @@ interface DocumentGroupView {
           <span class="muted small">Current requirements to go online, including documents not yet uploaded.</span>
         </div>
         <div class="requirement" *ngFor="let doc of requirements">
-          <div><strong>{{ doc.name }}</strong><small class="muted">{{ doc.approved_images }} of {{ doc.required_images }} images approved · {{ doc.required === 'mandatory_drive' ? 'Required to drive' : 'Required at registration' }}</small></div>
+          <div><strong>{{ doc.name }}</strong><small class="muted">{{ doc.uploaded_images ?? doc.approved_images }} of {{ doc.required_images }} images uploaded ({{ doc.approved_images }} approved) · {{ doc.required === 'mandatory_drive' ? 'Required to drive' : 'Required at registration' }}</small></div>
           <span class="status-pill" [class.is-approved]="doc.status === 'approved'" [class.is-rejected]="doc.status === 'rejected'" [class.is-uploaded]="doc.status === 'pending'" [class.is-missing]="doc.status === 'missing'">
             {{ doc.status === 'missing' ? 'Upload needed' : doc.status === 'pending' ? 'Awaiting review' : doc.status === 'rejected' ? 'Re-upload needed' : 'Approved' }}
           </span>

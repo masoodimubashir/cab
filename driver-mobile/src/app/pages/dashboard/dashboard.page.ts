@@ -287,6 +287,9 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
         component: DocumentRequirementsModalComponent,
         componentProps: { requirements: this.documentRequirements },
         cssClass: 'document-requirements-modal',
+        breakpoints: [0, 1],
+        initialBreakpoint: 1,
+        handle: false,
       });
       await modal.present();
       const { data } = await modal.onDidDismiss();
