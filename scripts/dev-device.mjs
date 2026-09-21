@@ -68,11 +68,16 @@ function buildChildEnv() {
   const ptDir = path.dirname(ADB);
   if (path.isAbsolute(ADB) && path.basename(ptDir).toLowerCase() === 'platform-tools') {
     const root = path.dirname(ptDir);
-    if (!env.ANDROID_HOME) env.ANDROID_HOME = root;
-    if (!env.ANDROID_SDK_ROOT) env.ANDROID_SDK_ROOT = root;
+    env.ANDROID_HOME = root;
+    env.ANDROID_SDK_ROOT = root;
     const sep = IS_WIN ? ';' : ':';
     const currentPath = env.PATH || env.Path || '';
     if (!currentPath.split(sep).includes(ptDir)) {
+      // Windows environment keys are case-insensitive. Keep only one PATH
+      // spelling so Node cannot pass an older Path value to the child.
+      for (const key of Object.keys(env)) {
+        if (IS_WIN && key.toLowerCase() === 'path') delete env[key];
+      }
       env.PATH = ptDir + sep + currentPath;
     }
   }
@@ -110,16 +115,19 @@ function listDevices() {
 const haveDevice = () => listDevices().some((d) => d.state === 'device');
 
 // Print the target id Capacitor will deploy to.
+let capListError = '';
 function capTarget(preferred, port) {
   let out = '';
   try {
     out = execFileSync(NPX, ['cap', 'run', 'android', '--list', '--json'], {
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       shell: IS_WIN, // Windows needs a shell to resolve npx.cmd
       env: CHILD_ENV, // ensure Capacitor sees the same SDK/adb we found
     });
-  } catch {
+    capListError = '';
+  } catch (err) {
+    capListError = [err.stderr, err.stdout].filter(Boolean).map(String).join('\n').trim() || err.message;
     return '';
   }
   return resolveTargetId(out, preferred, port);
@@ -204,14 +212,19 @@ for (let i = 0; i < 10; i++) {
 }
 
 if (!target) {
-  console.error("❌ Phone is attached but Capacitor can't see it.");
+  const currentDevices = listDevices();
+  const online = currentDevices.some((d) => d.state === 'device');
+  console.error(online
+    ? '❌ ADB sees an authorized device, but Capacitor could not resolve a target.'
+    : '❌ The phone disconnected or is no longer authorized during device detection.');
   console.error('   adb devices sees:');
-  for (const d of listDevices()) console.error(`     • ${d.serial}  (${d.state})`);
-  console.error('   Most often this means Capacitor is using a different/empty Android SDK.');
+  if (!currentDevices.length) console.error('     (no devices)');
+  for (const d of currentDevices) console.error(`     • ${d.serial}  (${d.state})`);
+  if (capListError) console.error(`   Capacitor device-list command failed:\n${capListError}`);
   console.error(`   Using SDK: ${CHILD_ENV.ANDROID_HOME || '(none — set ANDROID_HOME to your SDK)'}`);
-  console.error('   Fixes: set ANDROID_HOME to the SDK that owns this adb, make sure that');
-  console.error('   SDK\'s platform-tools is on PATH, then re-run. (USB: unplug/replug and');
-  console.error('   accept the prompt. Wireless: adb connect <ip>:5555.)');
+  console.error('   USB: reconnect the phone, enable USB debugging, and accept the authorization prompt.');
+  console.error('   Wireless: adb connect <ip>:5555, or run npm run go:wireless while connected by USB.');
+  if (online) console.error('   Diagnose Capacitor with: npx cap run android --list --json');
   process.exit(1);
 }
 

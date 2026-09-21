@@ -47,6 +47,15 @@ export interface DriverDocumentRow {
   uploaded_at: string | null;
 }
 
+export interface DocumentRequirement {
+  document_id: number | null;
+  name: string;
+  required: string;
+  required_images: number;
+  approved_images: number;
+  status: 'missing' | 'pending' | 'rejected' | 'approved';
+}
+
 export interface CatalogDoc {
   id: number;
   name: string;

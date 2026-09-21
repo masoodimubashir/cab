@@ -13,7 +13,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { ApiService } from '../../../core/api.service';
 import { ButtonComponent, IconComponent } from '../../../ui';
 
-import { DriverDocumentRow } from './driver-detail.types';
+import { DriverDocumentRow, DocumentRequirement } from './driver-detail.types';
 
 interface DocumentGroupView {
   key: string;
@@ -42,6 +42,19 @@ interface DocumentGroupView {
           </tm-button>
         </div>
       </header>
+
+      <div class="requirements" *ngIf="requirements.length">
+        <div class="requirements__intro">
+          <strong>Required documents</strong>
+          <span class="muted small">Current requirements to go online, including documents not yet uploaded.</span>
+        </div>
+        <div class="requirement" *ngFor="let doc of requirements">
+          <div><strong>{{ doc.name }}</strong><small class="muted">{{ doc.approved_images }} of {{ doc.required_images }} images approved · {{ doc.required === 'mandatory_drive' ? 'Required to drive' : 'Required at registration' }}</small></div>
+          <span class="status-pill" [class.is-approved]="doc.status === 'approved'" [class.is-rejected]="doc.status === 'rejected'" [class.is-uploaded]="doc.status === 'pending'" [class.is-missing]="doc.status === 'missing'">
+            {{ doc.status === 'missing' ? 'Upload needed' : doc.status === 'pending' ? 'Awaiting review' : doc.status === 'rejected' ? 'Re-upload needed' : 'Approved' }}
+          </span>
+        </div>
+      </div>
 
       <ng-container *ngIf="groups.length; else emptyDocs">
         <div class="docs">
@@ -144,6 +157,12 @@ interface DocumentGroupView {
   `,
   styles: [`
     :host { display: block; }
+    .requirements { margin-bottom: 20px; border: 1px solid var(--tm-line); border-radius: 12px; overflow: hidden; }
+    .requirements__intro { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; background: var(--tm-canvas); }
+    .requirement { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-top: 1px solid var(--tm-line); flex-wrap: wrap; }
+    .requirement strong { font-size: 13px; }
+    .requirement small { display: block; margin-top: 4px; font-size: 12px; }
+    .status-pill.is-missing { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
 
     .card {
       background: var(--tm-surface);
@@ -364,6 +383,7 @@ export class DriverDocumentsPaneComponent implements OnChanges, OnDestroy {
   private readonly loadingIds = new Set<number>();
 
   @Input() documents: DriverDocumentRow[] = [];
+  @Input() requirements: DocumentRequirement[] = [];
 
   @Output() openUpload = new EventEmitter<void>();
   @Output() viewFile = new EventEmitter<DriverDocumentRow>();

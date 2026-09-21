@@ -279,3 +279,9 @@
   50% { opacity: 0.2; }
 }
 
+ion-modal.document-requirements-modal {
+  --width: min(100%, 480px);
+  --height: min(85vh, 680px);
+  --border-radius: 24px;
+  --box-shadow: 0 20px 70px rgba(15, 30, 40, 0.22);
+}

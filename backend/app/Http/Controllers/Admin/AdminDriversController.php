@@ -328,6 +328,7 @@ class AdminDriversController
                 'created_at' => optional($driver->created_at)->toIso8601String(),
             ],
             'documents' => $docs,
+            'document_requirements' => app(\App\Services\DriverDocumentRequirements::class)->forDriver($driver),
         ]);
     }
 

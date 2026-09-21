@@ -60,20 +60,6 @@
     </button>
   </div>
 
-  <!-- ===== Verification status banner =====
-       Shown until the driver's documents are approved. -->
-  <div
-    class="payout-banner"
-    *ngIf="driver && reviewBannerText && !error && !drawerOpen"
-    style="cursor: default;"
-  >
-    <ion-icon name="shield-checkmark-outline" aria-hidden="true"></ion-icon>
-    <span class="payout-banner__text">
-      <strong>Under review</strong>
-      <small>{{ reviewBannerText }}</small>
-    </span>
-  </div>
-
   <!-- ===== Recenter / my-location FAB ===== -->
   <button
     class="recenter-fab dc-press"

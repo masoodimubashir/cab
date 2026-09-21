@@ -44,6 +44,8 @@ interface ExistingUpload {
   rejection_reason: string | null;
   file_url: string;
   uploaded_at: string | null;
+  label_values?: Record<string, string> | null;
+  vehicle_type_id?: number | null;
 }
 interface DocImageSlot {
   index: number;
@@ -210,6 +212,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   }
 
   ionViewDidEnter(): void {
+    this.refreshDocumentStep(false);
     this.backSub = this.platform.backButton.subscribeWithPriority(99, () => {
       if (this.onboarding && this.onboardingStep !== 'profile') {
         this.handleOnboardingBack();
@@ -1027,22 +1030,24 @@ export class ProfilePage implements OnInit, OnDestroy {
     const existingByDocId = new Map<number, ExistingUpload[]>();
     for (const upload of uploads) {
       if (upload.document_id == null) continue;
+      if (upload.vehicle_type_id != null && upload.vehicle_type_id !== this.vehicle_type_id) continue;
       const list = existingByDocId.get(upload.document_id) ?? [];
       list.push(upload);
       existingByDocId.set(upload.document_id, list);
     }
     existingByDocId.forEach((list) => {
-      list.sort((a, b) => (a.image_index ?? 999) - (b.image_index ?? 999) || a.id - b.id);
+      list.sort((a, b) => b.id - a.id);
     });
 
     this.docs = catalogDocs.map((doc) => {
       const previous = previousByDocId.get(doc.id);
       const existingList = [...(existingByDocId.get(doc.id) ?? [])];
+      const legacy = existingList.filter(row => row.image_index == null);
       const slotCount = Math.max(1, doc.no_of_images || 1);
       const uploadsState: DocImageSlot[] = Array.from({ length: slotCount }, (_, idx) => {
         const imageIndex = idx + 1;
-        const exact = existingList.find((row) => (row.image_index ?? imageIndex) === imageIndex) ?? null;
-        const fallback = !exact && existingList[idx] ? existingList[idx] : null;
+        const exact = existingList.find((row) => row.image_index === imageIndex) ?? null;
+        const fallback = !exact ? legacy.shift() ?? null : null;
         return {
           index: imageIndex,
           file: previous?.uploads[idx]?.file ?? null,
@@ -1055,7 +1060,7 @@ export class ProfilePage implements OnInit, OnDestroy {
       return {
         doc,
         uploads: uploadsState,
-        labelValues: this.mergeLabelValues(doc, previous?.labelValues),
+        labelValues: this.mergeLabelValues(doc, { ...existingList[0]?.label_values, ...previous?.labelValues }),
       };
     });
   }

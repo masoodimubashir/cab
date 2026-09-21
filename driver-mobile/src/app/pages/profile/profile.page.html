@@ -557,11 +557,11 @@
           <!-- Document Label Fields (e.g. License Number, Expiry Date) -->
           <div class="doc-labels-form" *ngIf="slot.doc.labels.length">
             <ng-container *ngFor="let l of slot.doc.labels">
-              <label class="pf-field" *ngIf="onboarding">
+              <label class="pf-field" *ngIf="onboarding || getSlotOverallStatus(slot) !== 'approved'">
                 <span class="pf-field__label">{{ l.label }} <em *ngIf="l.mandatory">*</em></span>
                 <input class="pf-input" [(ngModel)]="slot.labelValues[l.label]" [placeholder]="'Enter ' + l.label" />
               </label>
-              <div class="doc-view-label-item" *ngIf="!onboarding">
+              <div class="doc-view-label-item" *ngIf="!onboarding && getSlotOverallStatus(slot) === 'approved'">
                 <span class="doc-view-label-item__key">{{ l.label }}:</span>
                 <strong class="doc-view-label-item__val">{{ slot.labelValues[l.label] || '—' }}</strong>
               </div>
@@ -633,7 +633,7 @@
                 </div>
 
                 <!-- Re-upload Action (if rejected or during onboarding) -->
-                <label class="doc-reupload-btn dc-press" *ngIf="ex.status === 'rejected' || onboarding">
+                <label class="doc-reupload-btn dc-press" *ngIf="ex.status !== 'approved' && (ex.status === 'rejected' || onboarding)">
                   <input type="file" accept="image/*,application/pdf" hidden (change)="onDocFileSelected(slot, image, $event)" [disabled]="image.status === 'uploading'" />
                   <ion-icon name="refresh-outline"></ion-icon>
                   <span>{{ ex.status === 'rejected' ? 'Re-upload Document' : 'Replace File' }}</span>
