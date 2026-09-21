@@ -1059,11 +1059,15 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.clearCouponPreview();
   }
 
-  /** Seat picker Continue → move to review (no hold yet; hold is created on Confirm & pay). */
-  reviewBooking(): void {
+  /** Seat picker "Book Seats" → directly requests seats from driver and shows approval waiting screen. */
+  bookSeats(testPayment = false): void {
     if (this.step !== 'seats' || this.selectedLabels.length < 1) return;
     this.seats = this.selectedLabels.length;
-    this.step = 'review';
+    this.requestSeatHold(testPayment, 'online');
+  }
+
+  reviewBooking(): void {
+    this.bookSeats();
   }
 
   applyCoupon(): void {
