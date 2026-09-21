@@ -525,6 +525,8 @@ Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
     Route::get('/fixed/routes', [FixedRoutesController::class, 'index']);
     Route::get('/fixed/routes/{route}/departures', [FixedRoutesController::class, 'departures']);
     Route::get('/fixed/departures/{departure}/seat-map', [FixedSeatMapController::class, 'show']);
+    Route::get('/fixed/active-hold', [FixedBookingsController::class, 'activeHold']);
+    Route::get('/fixed/seat-holds/{fixedSeatHold}', [FixedBookingsController::class, 'showSeatHold']);
     Route::post('/fixed/coupon-preview', [FixedBookingsController::class, 'couponPreview'])->middleware('throttle:booking');
     Route::post('/fixed/seat-holds', [FixedBookingsController::class, 'storeSeatHold'])->middleware(['throttle:booking', 'idempotent']);
     Route::post('/fixed/seat-holds/{fixedSeatHold}/release', [FixedBookingsController::class, 'releaseSeatHold'])->middleware('throttle:booking');
@@ -560,6 +562,9 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::get('/fixed/driver/vehicles', [FixedDriverController::class, 'vehicles']);
     Route::post('/fixed/driver/vehicles', [FixedDriverController::class, 'open'])->middleware('throttle:booking');
     Route::get('/fixed/departures/{departure}/manifest', [FixedDriverController::class, 'manifest']);
+    Route::get('/fixed/driver/departures/{departure}/pending-holds', [FixedDriverController::class, 'pendingSeatHolds']);
+    Route::post('/fixed/driver/seat-holds/{fixedSeatHold}/accept', [FixedDriverController::class, 'acceptSeatHold']);
+    Route::post('/fixed/driver/seat-holds/{fixedSeatHold}/reject', [FixedDriverController::class, 'rejectSeatHold']);
     Route::get('/fixed/driver/departures/{departure}/seat-map', [FixedDriverController::class, 'seatMap']);
     Route::post('/fixed/driver/departures/{departure}/seats/block', [FixedDriverController::class, 'blockSeat']);
     Route::post('/fixed/driver/departures/{departure}/seats/unblock', [FixedDriverController::class, 'unblockSeat']);
