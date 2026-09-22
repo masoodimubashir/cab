@@ -10,6 +10,7 @@ use App\Services\ShuttleBookingService;
 use App\Services\ShuttleRefundService;
 use App\Services\ShuttleSeatMapService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ShuttleBookingsController extends Controller
 {
@@ -119,7 +120,7 @@ class ShuttleBookingsController extends Controller
         if ($booking->customer_id !== $request->user()->id) {
             abort(404);
         }
-        if ($booking->status !== 'PAYMENT_PENDING') {
+        if (!in_array($booking->status, ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING'], true)) {
             return response()->json(['message' => 'Seats can only be picked before payment.'], 422);
         }
 
@@ -135,8 +136,18 @@ class ShuttleBookingsController extends Controller
 
         // Re-picking replaces the previous hold: free what this booking held, then
         // hold the new set (so a customer can change 1A → 2B cleanly).
-        $this->seatMaps->releaseSeats($booking);
-        $this->seatMaps->holdSeats($journey, $booking, $data['labels']);
+        DB::transaction(function () use ($booking, $journey, $data) {
+            $locked = ShuttlePassengerBooking::query()->lockForUpdate()->findOrFail($booking->id);
+            if (!in_array($locked->status, ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING'], true)) {
+                abort(409, 'This booking has already been processed.');
+            }
+            if (count(array_unique($data['labels'])) !== (int) $locked->seats) {
+                abort(422, 'Select exactly the number of seats in this booking.');
+            }
+            $this->seatMaps->releaseSeats($locked);
+            $this->seatMaps->holdSeats($journey, $locked, $data['labels']);
+            $this->bookings->requestDriver($locked);
+        });
 
         return response()->json([
             'booking' => $this->bookings->shapeBooking($booking->fresh()),
@@ -218,6 +229,34 @@ class ShuttleBookingsController extends Controller
         return response()->json([
             'booking' => $this->bookings->shapeBooking($booking->fresh()),
             'razorpay' => $order,
+            'payment_required' => $order['payment_required'] ?? true,
         ]);
+    }
+
+    public function requestDriver(Request $request, ShuttlePassengerBooking $booking)
+    {
+        if ((int) $booking->customer_id !== (int) $request->user()->id) {
+            abort(404);
+        }
+        // Older clients did not expose a seat picker. Reserve a real seat before dispatch.
+        DB::transaction(function () use ($booking) {
+            $locked = ShuttlePassengerBooking::query()->lockForUpdate()->findOrFail($booking->id);
+            if ($locked->status !== 'PENDING_DRIVER_APPROVAL') {
+                abort(409, 'This booking has already been processed.');
+            }
+            $journey = $locked->journey;
+            $this->seatMaps->snapshotForJourney($journey);
+            $owned = \App\Models\JourneySeat::query()->where('shuttle_passenger_booking_id', $locked->id)->exists();
+            if (!$owned) {
+                $label = \App\Models\JourneySeat::query()->where('shuttle_journey_id', $journey->id)
+                    ->where('status', 'AVAILABLE')->lockForUpdate()->value('label');
+                if (!$label) {
+                    abort(409, 'No seat is available.');
+                }
+                $this->seatMaps->holdSeats($journey, $locked, [$label]);
+            }
+            $this->bookings->requestDriver($locked);
+        });
+        return response()->json(['booking' => $this->bookings->shapeBooking($booking->fresh())]);
     }
 }

@@ -93,9 +93,12 @@ class TripAssignmentService
                 return null;
             }
 
-            $this->stateMachine->transition($trip, 'CONFIRMED', [
+            $this->stateMachine->transition($trip, 'PAYMENT_PENDING', [
                 'final_fare' => $finalFare,
             ]);
+
+            app(ShuttleBookingService::class)->driverApproved($trip);
+            app(BookingConfirmationService::class)->confirmIfReady($trip);
 
             return $trip->fresh();
         });

@@ -399,6 +399,8 @@ export class RidesPage implements OnInit, OnDestroy {
     const status = (this.lastTrip?.['status'] as string | undefined) ?? '';
     const shuttle = this.isShuttleTrip(this.lastTrip);
     switch (status) {
+      case 'PAYMENT_PENDING':
+        return { title: 'Driver approval complete', sub: 'Waiting for customer payment or deposit.', tone: 'warning' };
       case 'CONFIRMED':
         return shuttle
           ? { title: 'Shuttle request confirmed', sub: 'Accept it to start pickup flow', tone: 'primary' }
@@ -458,6 +460,7 @@ export class RidesPage implements OnInit, OnDestroy {
     const status = (this.lastTrip?.['status'] as string | undefined) ?? '';
     if (!this.lastTrip) return false;
     return [
+      'PAYMENT_PENDING',
       'CONFIRMED',
       'ASSIGNED',
       'EN_ROUTE_PICKUP',

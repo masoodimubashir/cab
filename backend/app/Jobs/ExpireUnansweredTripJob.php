@@ -50,6 +50,7 @@ class ExpireUnansweredTripJob implements ShouldQueue
         $stateMachine->transition($trip, 'CANCELLED', [
             'cancelled_reason' => 'unanswered_timeout',
         ]);
+        app(\App\Services\ShuttleRefundService::class)->markCancelledForTrip($trip, 'unanswered_timeout');
 
         $notifier->notifyUserId(
             (int) $trip->customer_id,

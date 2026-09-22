@@ -33,6 +33,19 @@ class ShuttleBookingPhase1Test extends TestCase
         $this->customer->addRole('customer');
     }
 
+    private function approveBooking(ShuttlePassengerBooking $booking): void
+    {
+        Queue::fake();
+        $cvt = $booking->cityVehicleType;
+        \Tests\Support\SeatLayoutFactory::standardErtiga6P($booking->city_id, $cvt->vehicle_type_id);
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/request-driver")->assertOk();
+        $trip = $booking->fresh()->journey->trip;
+        $trip->update(['driver_id' => User::factory()->create()->id]);
+        $trip = app(TripStateMachineService::class)->transition($trip, 'PAYMENT_PENDING', ['final_fare' => $booking->fare_amount]);
+        app(\App\Services\ShuttleBookingService::class)->driverApproved($trip);
+        $booking->refresh();
+    }
+
     public function test_customer_can_create_pending_shuttle_booking_with_configured_fare(): void
     {
         Sanctum::actingAs($this->customer, ['act-as:customer']);
@@ -48,7 +61,7 @@ class ShuttleBookingPhase1Test extends TestCase
                     'scope' => 'local',
                     'vehicle_name' => 'Sedan Shuttle',
                     'payment_status' => 'PENDING',
-                    'status' => 'PAYMENT_PENDING',
+                    'status' => 'PENDING_DRIVER_APPROVAL',
                     'booking_enabled_for_driver' => false,
                 ],
             ]);
@@ -64,7 +77,7 @@ class ShuttleBookingPhase1Test extends TestCase
             'city_vehicle_type_id' => $cityVehicleTypeId,
             'scope' => 'local',
             'payment_status' => 'PENDING',
-            'status' => 'PAYMENT_PENDING',
+            'status' => 'PENDING_DRIVER_APPROVAL',
         ]);
     }
 
@@ -100,6 +113,7 @@ class ShuttleBookingPhase1Test extends TestCase
         $bookingResponse = $this->postJson('/api/shuttle/bookings', $this->payload($cityVehicleTypeId));
         $bookingId = $bookingResponse->json('booking.id');
         $booking = ShuttlePassengerBooking::query()->findOrFail($bookingId);
+        $this->approveBooking($booking);
         $amountPaise = max(100, (int) round($booking->fare_amount * 100));
 
         $razorpay = Mockery::mock(RazorpayService::class);
@@ -136,6 +150,7 @@ class ShuttleBookingPhase1Test extends TestCase
         $bookingResponse = $this->postJson("/api/shuttle/bookings", $this->payload($cityVehicleTypeId));
         $bookingId = $bookingResponse->json("booking.id");
         $booking = ShuttlePassengerBooking::query()->findOrFail($bookingId);
+        $this->approveBooking($booking);
         $amountPaise = max(100, (int) round($booking->fare_amount * 100));
 
         $razorpay = Mockery::mock(RazorpayService::class);
@@ -178,7 +193,7 @@ class ShuttleBookingPhase1Test extends TestCase
         $booking->refresh();
         $journey = $booking->journey()->firstOrFail();
         $this->assertNotNull($journey->trip_id);
-        $this->assertSame("FORMING", $journey->status);
+        $this->assertSame("ASSIGNED", $journey->status);
 
         $trip = Trip::query()->findOrFail($journey->trip_id);
         $this->assertSame($this->customer->id, $trip->customer_id);
@@ -187,7 +202,7 @@ class ShuttleBookingPhase1Test extends TestCase
         $this->assertSame($rideTypeId, $trip->ride_type_id);
         $this->assertSame("local", $booking->scope);
         $this->assertSame("local", $trip->scope);
-        $this->assertSame("NEGOTIATION", $trip->status);
+        $this->assertSame("CONFIRMED", $trip->status);
         $this->assertTrue((bool) $trip->is_manual_dispatch);
         // The dispatch trip carries the booking's payment method so settlement can
         // take a cash ride's commission from the driver's wallet.
@@ -208,16 +223,9 @@ class ShuttleBookingPhase1Test extends TestCase
         Queue::assertNotPushed(DispatchHopJob::class);
         $this->assertNotNull($journey->fresh()->forming_deadline_at);
 
-        $driver = User::factory()->create();
-        $trip->driver_id = $driver->id;
-        $trip->save();
-        app(TripStateMachineService::class)->transition($trip->fresh(), 'CONFIRMED', [
-            'final_fare' => (float) $booking->fare_amount,
-        ]);
-
         $journey->refresh();
         $this->assertSame('ASSIGNED', $journey->status);
-        $this->assertSame($driver->id, $journey->driver_id);
+        $this->assertSame($trip->driver_id, $journey->driver_id);
     }
 
     public function test_customer_can_list_own_shuttle_bookings_with_refund_status(): void
@@ -233,12 +241,12 @@ class ShuttleBookingPhase1Test extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.0.id', $bookingId)
-            ->assertJsonPath('data.0.status', 'PAYMENT_PENDING')
+            ->assertJsonPath('data.0.status', 'PENDING_DRIVER_APPROVAL')
             ->assertJsonPath('data.0.refund_status', 'NONE')
             ->assertJsonPath('data.0.vehicle_name', 'Sedan Shuttle');
     }
 
-    public function test_cancelling_paid_shuttle_trip_marks_manual_refund_approved(): void
+    public function test_cancelling_paid_shuttle_trip_records_successful_refund(): void
     {
         Sanctum::actingAs($this->customer, ["act-as:customer"]);
         [$cityId, $vehicleTypeId, $cityVehicleTypeId, $rideTypeId] = $this->seedVehicle("Shuttle");
@@ -257,9 +265,12 @@ class ShuttleBookingPhase1Test extends TestCase
             ->once()
             ->with("order_shuttle_cancel", "pay_shuttle_cancel", "sig_shuttle_cancel")
             ->andReturn(true);
-        $razorpay->shouldNotReceive("refundPayment");
+        $razorpay->shouldReceive('refundPayment')->once()->andReturn([
+            'id' => 'rfnd_shuttle_cancel', 'amount' => $amountPaise, 'status' => 'processed',
+        ]);
         $this->instance(RazorpayService::class, $razorpay);
 
+        $this->approveBooking($booking);
         $this->postJson("/api/shuttle/bookings/{$bookingId}/razorpay-order", [])->assertOk();
         Queue::fake();
         $confirm = $this->postJson("/api/shuttle/bookings/{$bookingId}/confirm-payment", [
@@ -280,8 +291,8 @@ class ShuttleBookingPhase1Test extends TestCase
         $this->assertDatabaseHas('shuttle_passenger_bookings', [
             'id' => $bookingId,
             'status' => 'CANCELLED',
-            'payment_status' => 'PAID',
-            'refund_status' => 'APPROVED',
+            'payment_status' => 'REFUNDED',
+            'refund_status' => 'REFUNDED',
             'cancelled_reason' => 'Customer changed plan',
         ]);
     }

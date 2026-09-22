@@ -36,6 +36,7 @@ class ShuttlePoolingDispatchTest extends TestCase
         $this->cityId = DB::table('cities')->insertGetId(['name' => 'Dispatch City', 'country_code' => 'IN', 'created_at' => $now, 'updated_at' => $now]);
         $rideTypeId = DB::table('ride_types')->insertGetId(['name' => 'Shuttle', 'mode' => 'shuttle', 'description' => 'Shuttle', 'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now]);
         $vehicleTypeId = DB::table('vehicle_types')->insertGetId(['name' => 'Van', 'sort_order' => 1, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        \Tests\Support\SeatLayoutFactory::standardErtiga6P($this->cityId, $vehicleTypeId);
         // Capacity 2 so one rider isn't full but two riders are.
         $this->cityVehicleTypeId = DB::table('city_vehicle_types')->insertGetId([
             'city_id' => $this->cityId, 'ride_type_id' => $rideTypeId, 'vehicle_type_id' => $vehicleTypeId,
@@ -71,16 +72,21 @@ class ShuttlePoolingDispatchTest extends TestCase
         ]);
     }
 
-    private function pay(ShuttlePassengerBooking $b, string $payId): void
+    private function requestDriver(ShuttlePassengerBooking $b): void
     {
-        app(ShuttleBookingService::class)->confirmPaidServerVerified($b->fresh(), $payId, 'test');
+        $maps = app(\App\Services\ShuttleSeatMapService::class);
+        $maps->snapshotForJourney($b->journey);
+        $label = \App\Models\JourneySeat::where('shuttle_journey_id', $b->shuttle_journey_id)->where('status', 'AVAILABLE')->value('label');
+        $maps->holdSeats($b->journey, $b, [$label]);
+        app(ShuttleBookingService::class)->requestDriver($b->fresh());
+        $this->assertSame('PENDING', $b->fresh()->payment_status);
     }
 
     public function test_a_lone_rider_does_not_dispatch_and_starts_the_forming_window(): void
     {
         Queue::fake();
         $b1 = $this->book();
-        $this->pay($b1, 'pay_lone');
+        $this->requestDriver($b1);
 
         Queue::assertNotPushed(DispatchHopJob::class);
 
@@ -97,10 +103,10 @@ class ShuttlePoolingDispatchTest extends TestCase
         $b2 = $this->book(); // pools into the same journey (capacity 2)
         $this->assertSame($b1->shuttle_journey_id, $b2->shuttle_journey_id);
 
-        $this->pay($b1, 'pay_1');
+        $this->requestDriver($b1);
         Queue::assertNotPushed(DispatchHopJob::class); // 1 of 2
 
-        $this->pay($b2, 'pay_2');
+        $this->requestDriver($b2);
         Queue::assertPushed(DispatchHopJob::class); // full → dispatched
 
         $this->assertNotNull(ShuttleJourney::query()->findOrFail($b1->shuttle_journey_id)->dispatched_at);
@@ -110,7 +116,7 @@ class ShuttlePoolingDispatchTest extends TestCase
     {
         Queue::fake();
         $b1 = $this->book();
-        $this->pay($b1, 'pay_timer');
+        $this->requestDriver($b1);
         Queue::assertNotPushed(DispatchHopJob::class);
 
         // Force the forming window into the past, then run the timer sweep.
@@ -128,8 +134,8 @@ class ShuttlePoolingDispatchTest extends TestCase
         Queue::fake();
         $b1 = $this->book();
         $b2 = $this->book();
-        $this->pay($b1, 'pay_a');
-        $this->pay($b2, 'pay_b'); // full → dispatched inline
+        $this->requestDriver($b1);
+        $this->requestDriver($b2); // full → dispatched inline
 
         // Journey already dispatched; the sweep must not dispatch it again.
         ShuttleJourney::query()->where('id', $b1->shuttle_journey_id)

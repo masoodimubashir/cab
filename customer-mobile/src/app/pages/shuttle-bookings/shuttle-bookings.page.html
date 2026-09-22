@@ -7,7 +7,7 @@
       <ion-icon name="refresh-outline"></ion-icon>
     </button>
     <h1>Shuttle</h1>
-    <p>Your Shuttle bookings, Razorpay payment and manual refund status.</p>
+    <p>Your requests, driver approval and booking payments.</p>
   </div>
 
   <div class="page-body">
@@ -42,6 +42,13 @@
         </div>
 
         <p class="live-detail">{{ detailLine(booking) }}</p>
+        <div class="booking-actions" *ngIf="booking.status === 'PAYMENT_PENDING'">
+          <p *ngIf="booking.payment_method === 'cash'">Online deposit: ₹{{ booking.upfront_amount }} · Cash at drop-off: ₹{{ booking.cash_balance_due }}</p>
+          <button class="open-btn" type="button" [disabled]="payingId !== null" (click)="pay($event, booking)">
+            {{ payingId === booking.id ? 'Processing…' : (booking.upfront_amount ? 'Pay ₹' + booking.upfront_amount : 'Confirm cash booking') }}
+          </button>
+        </div>
+        <button class="open-btn" type="button" *ngIf="booking.status === 'PENDING_DRIVER_APPROVAL' || booking.status === 'PAYMENT_PENDING'" [disabled]="payingId !== null" (click)="cancel($event, booking)">Cancel request</button>
 
         <div class="quick-meta">
           <span>{{ fareLine(booking) }}</span>

@@ -69,6 +69,7 @@ class Trip extends Model
     use HasFactory;
 
     public const ACTIVE_DRIVER_STATUSES = [
+        'PAYMENT_PENDING',
         'ASSIGNED',
         'EN_ROUTE_PICKUP',
         'ARRIVED_PICKUP',
@@ -88,6 +89,7 @@ class Trip extends Model
      * double-book a driver).
      */
     public const DRIVER_BUSY_STATUSES = [
+        'PAYMENT_PENDING',
         'CONFIRMED',
         'ASSIGNED',
         'EN_ROUTE_PICKUP',
@@ -307,4 +309,3 @@ class Trip extends Model
     }
 
 }
-

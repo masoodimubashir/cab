@@ -29,10 +29,12 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 
 **Booking order:** Select ride/seat → Driver accepts → Payment → Booking confirmed.
 
+For cash bookings, “Payment” means the configured online deposit; a zero deposit requires no gateway charge. Collect the remaining cash later. This order applies to Fixed, Private and Shuttle, as confirmed by the user on 22 September 2026.
+
 | ID | Modular feature / delivery | Acceptance and testing checks | Decisions / dependencies | Dev | Test |
 | --- | --- | --- | --- | --- | --- |
 | M1.01 | Audible driver ring alerts | Eligible driver receives an audible ride-request alert; check supported notification/app states | D01; existing notifications | Assess | Pending |
-| M1.02 | Driver accept/reject before payment and seat confirmation | Acceptance allows payment; rejection does not confirm booking; confirmation follows successful payment | D01; booking order above | Assess | Pending |
+| M1.02 | Driver accept/reject before payment and seat confirmation | All ride types: approval first, then full online payment or configured cash deposit, then confirmation; remaining cash is paid later | D01 booking order confirmed; other operational rules remain open | Done | Passed |
 | M1.03 | Unanswered-request handling | Unanswered request reaches the agreed outcome after the agreed time without remaining indefinitely pending | D01 | Assess | Pending |
 | M1.04 | Passenger names and booked seats | Correct passenger names and booked seat counts appear for the selected ride | Existing booking records | Assess | Pending |
 | M1.05 | Driver cancellation before boarding | Cancellation follows agreed pre-boarding rules; check disallowed states and resulting booking/ride status | D01 | In progress | In progress |
@@ -50,7 +52,7 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 | M1.17 | Fix Kupwara-to-Srinagar driver route visibility | Reproduce mismatch; route appears for eligible drivers and remains correct for customers; check eligibility exclusions | Client report: 15 September 2026 | Assess | Pending |
 | M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Assess | Pending |
 | M1.19 | Fix coupon application and discount calculation | Reproduce issue; verify valid/invalid coupons and correct discount/final payable amount under existing rules | Existing coupon rules; client report: 15 September 2026 | Assess | Pending |
-| M1.20 | Fixed Admin drop correction | Same route, stop ahead, unchanged fare/payment, available seats/luggage for each remaining leg; reject closed bookings | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | In progress |
+| M1.20 | Fixed Admin drop correction | Same route, stop ahead, unchanged fare/payment, available seats/luggage for each remaining leg; reject closed bookings | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | Passed |
 | M1.21 | Fixed Admin early exit | Only onboard passengers on running rides; explicit confirmation/reason; record drop-off, free capacity and preserve fare | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | In progress |
 | M1.22 | Admin Rides ? History / Live access | Rides expands below Customers; History retains current page; Live shows active Fixed rides with passenger actions | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | In progress |
 
@@ -121,7 +123,7 @@ Only work depending on unresolved decisions needs to wait. Record the agreed out
 
 | ID | Required decision | Affected features | Status | Confirmed outcome / source / date |
 | --- | --- | --- | --- | --- |
-| D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Open | — |
+| D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Partly confirmed | 2026-09-22: approval → required payment → confirmation for all ride types; cash requires only configured deposit, with balance later. Other operational rules remain open. |
 | D02 | History period: four hours, six hours or another agreed period | M1.11 | Open | — |
 | D03 | Approval rules for vehicle details/type changes | M1.12 | Open | — |
 | D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Open | — |
@@ -150,6 +152,57 @@ Add one row per meaningful development update or test run. Link detailed evidenc
 | Date | Feature ID(s) | Work / affected files or change link | Build / environment / platform | Checks and result | Defects / next action |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-16 | All | Converted scope into modular development/testing reference | Documentation only | Scope organised; implementation not assessed | Assess existing features and confirm open decisions |
+| 2026-09-22 | M1.20 | Implemented route/progress and drop eligibility checks, per-leg capacity checks, transactional saving, fare/payment preservation, and notifications after the transaction returns successfully; code reviewed in [AdminTripsController.php](../backend/app/Http/Controllers/Admin/AdminTripsController.php) and [ride-detail.component.ts](../frontend/src/app/admin/rides/ride-detail.component.ts) | Reported: PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | User-reported: 15 tests, 57 assertions passed in [AdminTripActionsTest.php](../backend/tests/Feature/AdminTripActionsTest.php); TypeScript compilation passed with 0 errors. Code review confirmed implementation and test assertions; these runs were not independently reproduced in this review. | Development steps done; Test Passed reflects the reported automated results. Manual Admin/app checks and actual device push receipt remain unverified. |
+
+### M1.02 baseline audit — 22 September 2026 (before implementation below)
+
+At the initial audit, M1.02 was not complete against the booking order above. Local code review found these distinct flows:
+
+| Ride path | Current implementation | Difference from scope |
+| --- | --- | --- |
+| Fixed with assigned driver | Pending driver approval → accepted → payment → reservation confirmed; rejection releases held seats | Matches the intended order for this path |
+| Fixed without assigned driver | Creates a HELD request, which is eligible for payment without driver acceptance | Driver approval is bypassed on this path |
+| Private | Driver offer/customer agreement → trip CONFIRMED → normal fare payment at completion; configured cash deposits can be requested after confirmation | Confirmation precedes payment |
+| Shuttle | Booking PAYMENT_PENDING → payment → booking CONFIRMED → driver dispatch when the pool fills or its waiting window expires | Payment and booking confirmation precede driver approval |
+
+Evidence: [FixedSeatHoldService.php](../backend/app/Services/FixedSeatHoldService.php), [TripAssignmentService.php](../backend/app/Services/TripAssignmentService.php), [PaymentsController.php](../backend/app/Http/Controllers/PaymentsController.php), and [ShuttleBookingService.php](../backend/app/Services/ShuttleBookingService.php). Customer booking screens reflect these different flows.
+
+Local verification on PHP 8.3.31 / PHPUnit 12.5.14 / configured MySQL test database:
+
+- `php vendor/bin/phpunit tests/Feature/Module1AcceptRejectAndTimeoutTest.php --stop-on-failure`: **Passed, 19 tests / 95 assertions**. This verifies existing behavior, including Private confirmation before payment; it is not proof that every ride type follows the scope order.
+- `php vendor/bin/phpunit tests/Feature/ShuttleBookingPhase1Test.php tests/Feature/ShuttlePoolingDispatchTest.php --stop-on-failure`: **Stopped at 7 tests / 48 assertions, 1 failure and 1 risky test**. The cancellation test expected payment PAID and refund APPROVED but received REFUNDED for both. Six preceding tests passed. The remaining tests, including the pooling dispatch suite, were not completed in this run. Investigate the refund expectation separately before claiming that suite passes.
+
+No booking logic changed during that initial audit. The user subsequently confirmed the scope order for all three ride types, with any configured online deposit collected after approval for cash bookings and the cash balance collected later. D01's remaining operational decisions remain open. Live payment, device behavior, and concurrent payment/approval races were not verified by this review.
+
+### M1.02 implementation — 22 September 2026
+
+Confirmed scope: **Fixed, Private and Shuttle all require driver acceptance before payment.** Online bookings require payment before confirmation. Cash bookings require the configured deposit first; a zero deposit allows confirmation after acceptance without creating a gateway charge. Remaining cash is collected later. M1.21 Early Exit is deferred at the user's request.
+
+- [x] Fixed: reject requests without an assigned driver; bind acceptance to that driver and recheck it before payment/confirmation. Support cash deposits and zero-deposit confirmation.
+- [x] Private: enter `PAYMENT_PENDING` after driver/customer fare agreement; confirm only after the required payment. Preserve the deposit when recording the later cash balance.
+- [x] Shuttle: request a driver after seat selection, then unlock passenger payments. Preserve pooling deadlines; prevent a journey starting while participating bookings still await payment.
+- [x] Handle payment callbacks, repeated checkout/confirmation, driver rejection and passenger cancellation. Late captured deposits on rejected Shuttle bookings are refunded using the captured amount.
+- [x] Update customer payment screens and driver waiting status. Customer and driver Angular TypeScript/template compilation passed locally.
+- [x] Complete the focused backend regression verification: 59 tests, 293 assertions, no failures; 13 pre-existing legacy Razorpay Route tests skipped (46 executed successfully).
+- [ ] Verify real gateway checkout/webhooks and customer/driver behavior on devices before release.
+
+Deployment requires the new `2026_09_22_180000_add_driver_approval_payment_states.php` migration and coordinated backend/mobile updates. It adds the pending-payment states and the Fixed acceptance driver ID. Existing Fixed holds lack that driver evidence: allow outstanding checkouts to finish before deployment or have customers request new holds; do not infer acceptance for unpaid legacy holds. No production migration, live charge or device validation has been performed here.
+
+Local evidence (PHP 8.3.31, PHPUnit 12.5.14, MySQL test database): `php vendor/bin/phpunit tests/Feature/Module1AcceptRejectAndTimeoutTest.php tests/Feature/PrivatePrepaymentTest.php tests/Feature/ShuttleBookingPhase1Test.php tests/Feature/ShuttlePoolingDispatchTest.php tests/Feature/ShuttleCashDepositTest.php`. Mobile verification: `node node_modules/@angular/compiler-cli/bundles/src/bin/ngc.js -p tsconfig.app.json --noEmit` passed in both `customer-mobile` and `driver-mobile`. Test Passed refers to these automated checks, not the entire backend suite or release/device acceptance. Gateway calls are mocked; simultaneous-request races have not been load-tested. The earlier Shuttle refund test expectation was updated to assert the existing successful automatic-refund behavior.
+
+### M1.20 completed steps — 22 September 2026
+
+- [x] Enforce the same route and a drop stop after pickup and ahead of recorded vehicle progress.
+- [x] Require an active, available stop designated for drop-off; filter Admin dropdown choices accordingly.
+- [x] Validate seat and luggage capacity on each affected remaining leg, including active reservations and unexpired holds.
+- [x] Enforce zero luggage capacity without a validation bypass.
+- [x] Wrap validation and saving in a database transaction with row locks.
+- [x] Preserve fare and payment fields when changing the passenger drop.
+- [x] Dispatch passenger and driver notifications after the transaction returns successfully.
+- [x] Add rejection and success tests, fare/payment preservation assertions, and push-service spy assertions.
+- [x] Record user-reported verification: 15 tests / 57 assertions passed; TypeScript compilation passed.
+
+**Evidence limits:** The push spy verifies that sending is requested, not receipt on a phone. The no-notification failure test covers invalid input; it does not simulate a database rollback. Manual successful/rejected changes through Admin and checks in the passenger/driver apps remain pending. These completion marks apply to M1.20 only.
 
 ## AI Approach and Supporting Services
 

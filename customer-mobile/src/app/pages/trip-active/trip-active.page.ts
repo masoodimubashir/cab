@@ -311,6 +311,8 @@ export class TripActivePage implements OnInit, OnDestroy {
     const status = this.trip?.status ?? '';
     const shuttle = this.isShuttleTrip;
     switch (status) {
+      case 'PAYMENT_PENDING':
+        return { title: 'Driver accepted', sub: 'Complete payment or your cash deposit to confirm this booking.' };
       case 'NEGOTIATION':
         return shuttle
           ? { title: 'Finding Shuttle driver', sub: 'We are sending your paid Shuttle request to nearby drivers.' }
@@ -1310,6 +1312,13 @@ export class TripActivePage implements OnInit, OnDestroy {
   onPrivatePayMethod(method: PaymentChoice): void {
     this.payModalOpen = false;
     if (method === 'cash') {
+      if (this.isCompleted()) {
+        this.api.post(`/trips/${this.tripId}/pay/cash`, {}).subscribe({
+          next: () => this.refresh(),
+          error: (err) => { this.toastCtrl.create({ message: err?.error?.message || 'Could not record cash payment.', duration: 2500 }).then(t => t.present()); },
+        });
+        return;
+      }
       void this.doPayCashDeposit();
       return;
     }
@@ -1319,12 +1328,6 @@ export class TripActivePage implements OnInit, OnDestroy {
   /** Cash = pay the upfront deposit online now (the rest is cash to the driver
    *  at trip end). A 0% operator deposit needs no online charge at all. */
   private async doPayCashDeposit(): Promise<void> {
-    if (typeof Razorpay === 'undefined') {
-      const t = await this.toastCtrl.create({ message: 'Payment library not loaded. Check your connection.', duration: 2500, color: 'danger' });
-      await t.present();
-      return;
-    }
-
     let res: CashDepositResponse;
     try {
       res = (await this.api
@@ -1346,6 +1349,11 @@ export class TripActivePage implements OnInit, OnDestroy {
       return;
     }
 
+    if (typeof Razorpay === 'undefined') {
+      const t = await this.toastCtrl.create({ message: 'Payment library not loaded. Check your connection.', duration: 2500, color: 'danger' });
+      await t.present();
+      return;
+    }
     const user = this.auth.getUser();
     const rzp = new Razorpay({
       key: res.razorpay.key_id,

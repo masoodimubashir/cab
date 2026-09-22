@@ -57,6 +57,8 @@ interface RouteStop {
   lng?: number | null;
   is_pickup?: boolean;
   is_drop?: boolean;
+  is_active?: boolean;
+  is_temporarily_unavailable?: boolean;
 }
 
 interface FixedManifestPassenger {
@@ -78,7 +80,14 @@ interface FixedManifestPassenger {
 }
 
 interface FixedManifest {
-  departure?: { route_name?: string | null; origin_name?: string | null; dest_name?: string | null } | null;
+  departure?: {
+    id?: number;
+    route_name?: string | null;
+    origin_name?: string | null;
+    dest_name?: string | null;
+    fixed_last_reached_stop_seq?: number | null;
+    fixed_last_reached_stop_at?: string | null;
+  } | null;
   passengers: FixedManifestPassenger[];
   stops?: RouteStop[];
 }
@@ -132,7 +141,12 @@ interface Trip {
   route_id?: number | null;
   route_departure_id?: number | null;
   route?: { id: number; name?: string | null; stops?: RouteStop[] } | null;
-  route_departure?: { id: number; route?: { id: number; name?: string | null; stops?: RouteStop[] } | null } | null;
+  route_departure?: {
+    id: number;
+    fixed_last_reached_stop_seq?: number | null;
+    fixed_last_reached_stop_at?: string | null;
+    route?: { id: number; name?: string | null; stops?: RouteStop[] } | null;
+  } | null;
 }
 
 interface PathPoint {
@@ -1249,12 +1263,15 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   get validDropStops(): RouteStop[] {
     const stops = this.availableStops;
-    if (!this.targetPassenger || !this.targetPassenger.board_stop_id) {
-      return stops;
+    const reachedSeq = Number(this.trip?.route_departure?.fixed_last_reached_stop_seq ?? this.fixedManifest?.departure?.fixed_last_reached_stop_seq ?? 0);
+    let minSeq = reachedSeq;
+    if (this.targetPassenger?.board_stop_id) {
+      const boardStop = stops.find((s) => s.id === this.targetPassenger?.board_stop_id);
+      if (boardStop) {
+        minSeq = Math.max(minSeq, boardStop.seq);
+      }
     }
-    const boardStop = stops.find((s) => s.id === this.targetPassenger?.board_stop_id);
-    if (!boardStop) return stops;
-    return stops.filter((s) => s.seq > boardStop.seq);
+    return stops.filter((s) => s.seq > minSeq && s.is_active !== false && !s.is_temporarily_unavailable && s.is_drop !== false);
   }
 
   get selectedDropStop(): RouteStop | undefined {

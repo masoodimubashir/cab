@@ -344,4 +344,748 @@ class AdminTripActionsTest extends TestCase
             'stops',
         ]);
     }
+
+    public function test_admin_change_passenger_drop_rejects_stop_from_different_route(): void
+    {
+        $this->asAdmin();
+
+        $route1 = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Route 1',
+            'origin_name' => 'Start 1',
+            'dest_name' => 'End 1',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+        $stop1_1 = \App\Models\RouteStop::create(['route_id' => $route1->id, 'name' => 'Stop 1-1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1]);
+        $stop1_2 = \App\Models\RouteStop::create(['route_id' => $route1->id, 'name' => 'Stop 1-2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2]);
+
+        $route2 = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Route 2',
+            'origin_name' => 'Start 2',
+            'dest_name' => 'End 2',
+            'origin_lat' => 13.1,
+            'origin_lng' => 78.1,
+            'dest_lat' => 13.3,
+            'dest_lng' => 78.3,
+            'is_active' => true,
+        ]);
+        $stop2_1 = \App\Models\RouteStop::create(['route_id' => $route2->id, 'name' => 'Stop 2-1', 'seq' => 1, 'lat' => 13.1, 'lng' => 78.1]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route1->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'seats_taken' => 1,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route1->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route1->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1_1->id,
+            'drop_stop_id' => $stop1_2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => $stop2_1->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('same route', strtolower($res->json('message')));
+        $this->assertSame($stop1_2->id, $passenger->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_rejects_stop_behind_vehicle_progress(): void
+    {
+        $this->asAdmin();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Progress Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 4',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.4,
+            'dest_lng' => 77.4,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2]);
+        $stop3 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 3', 'seq' => 3, 'lat' => 12.3, 'lng' => 77.3]);
+        $stop4 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 4', 'seq' => 4, 'lat' => 12.4, 'lng' => 77.4]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'seats_taken' => 1,
+            'status' => 'DEPARTED',
+            'fixed_last_reached_stop_seq' => 2,
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'EN_ROUTE_DROP',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.4,
+            'drop_lng' => 77.4,
+        ]);
+
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop4->id,
+            'status' => 'BOARDED',
+            'seats' => 1,
+            'fare_amount' => 200.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        // Trying to set drop to Stop 2 when vehicle is already past Stop 2
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => $stop2->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('reached or passed', strtolower($res->json('message')));
+        $this->assertSame($stop4->id, $passenger->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_rejects_when_leg_seat_capacity_exceeded(): void
+    {
+        $this->asAdmin();
+
+        $secondCustomer = User::factory()->create();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Capacity Test Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 4',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.4,
+            'dest_lng' => 77.4,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2]);
+        $stop3 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 3', 'seq' => 3, 'lat' => 12.3, 'lng' => 77.3]);
+        $stop4 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 4', 'seq' => 4, 'lat' => 12.4, 'lng' => 77.4]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        // Vehicle total seat capacity = 3
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 3,
+            'seats_taken' => 3,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        // Passenger 1: Stop 1 -> Stop 2 (occupies 2 seats on Leg 1->2)
+        $passenger1 = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 2,
+            'fare_amount' => 180.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        // Passenger 2: Stop 2 -> Stop 4 (occupies 2 seats on Leg 2->3 and Leg 3->4)
+        \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $secondCustomer->id,
+            'board_stop_id' => $stop2->id,
+            'drop_stop_id' => $stop4->id,
+            'status' => 'CONFIRMED',
+            'seats' => 2,
+            'fare_amount' => 200.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        // Passenger 1 attempts to change drop from Stop 2 to Stop 3.
+        // Leg 2->3 would need Passenger 1 (2 seats) + Passenger 2 (2 seats) = 4 seats > capacity (3 seats).
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger1->id}/change-drop", [
+            'drop_stop_id' => $stop3->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('seat capacity', strtolower($res->json('message')));
+        $this->assertSame($stop2->id, $passenger1->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_rejects_when_leg_luggage_capacity_exceeded(): void
+    {
+        $this->asAdmin();
+
+        $secondCustomer = User::factory()->create();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Luggage Test Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 4',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.4,
+            'dest_lng' => 77.4,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2]);
+        $stop3 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 3', 'seq' => 3, 'lat' => 12.3, 'lng' => 77.3]);
+        $stop4 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 4', 'seq' => 4, 'lat' => 12.4, 'lng' => 77.4]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        // Vehicle total capacity = 4 seats, 2 luggage
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 4,
+            'luggage_capacity' => 2,
+            'seats_taken' => 2,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        // Passenger 1: Stop 1 -> Stop 2 (1 seat, 2 extra luggage)
+        $passenger1 = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'has_extra_luggage' => true,
+            'extra_luggage_count' => 2,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        // Passenger 2: Stop 2 -> Stop 4 (1 seat, 1 extra luggage)
+        \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $secondCustomer->id,
+            'board_stop_id' => $stop2->id,
+            'drop_stop_id' => $stop4->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'has_extra_luggage' => true,
+            'extra_luggage_count' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        // Passenger 1 tries to extend drop to Stop 3.
+        // Leg 2->3 would need Passenger 1 (2 luggage) + Passenger 2 (1 luggage) = 3 luggage > capacity (2).
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger1->id}/change-drop", [
+            'drop_stop_id' => $stop3->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('luggage capacity', strtolower($res->json('message')));
+        $this->assertSame($stop2->id, $passenger1->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_rejects_non_drop_stop(): void
+    {
+        $this->asAdmin();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Drop Eligibility Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 3',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1, 'is_drop' => true]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2, 'is_drop' => true]);
+        $stop3 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 3 (Pickup Only)', 'seq' => 3, 'lat' => 12.3, 'lng' => 77.3, 'is_drop' => false]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'seats_taken' => 1,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => $stop3->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('not designated as a drop stop', strtolower($res->json('message')));
+        $this->assertSame($stop2->id, $passenger->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_rejects_unavailable_stop(): void
+    {
+        $this->asAdmin();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Unavailable Stop Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 3',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1, 'is_drop' => true]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2, 'is_drop' => true]);
+        $stop3 = \App\Models\RouteStop::create([
+            'route_id' => $route->id,
+            'name' => 'Stop 3 (Temporary Closed)',
+            'seq' => 3,
+            'lat' => 12.3,
+            'lng' => 77.3,
+            'is_drop' => true,
+            'is_temporarily_unavailable' => true,
+        ]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'seats_taken' => 1,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => $stop3->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('currently unavailable', strtolower($res->json('message')));
+        $this->assertSame($stop2->id, $passenger->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_rejects_when_vehicle_has_zero_luggage_capacity(): void
+    {
+        $this->asAdmin();
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Zero Luggage Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 3',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1, 'is_drop' => true]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2, 'is_drop' => true]);
+        $stop3 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 3', 'seq' => 3, 'lat' => 12.3, 'lng' => 77.3, 'is_drop' => true]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        // Vehicle explicitly has 0 luggage capacity
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'luggage_capacity' => 0,
+            'seats_taken' => 1,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        // Passenger holds 1 extra luggage item
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'has_extra_luggage' => true,
+            'extra_luggage_count' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => $stop3->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('luggage capacity', strtolower($res->json('message')));
+        $this->assertSame($stop2->id, $passenger->fresh()->drop_stop_id);
+    }
+
+    public function test_admin_change_passenger_drop_succeeds_extending_drop_and_preserves_fare(): void
+    {
+        $this->asAdmin();
+
+        $notificationService = \Mockery::spy(\App\Services\NotificationService::class);
+        $this->app->instance(\App\Services\NotificationService::class, $notificationService);
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Valid Extension Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 3',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1, 'is_drop' => true]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2, 'is_drop' => true]);
+        $stop3 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 3', 'seq' => 3, 'lat' => 12.3, 'lng' => 77.3, 'is_drop' => true]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'seats_taken' => 1,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+            'payment_method' => 'razorpay',
+            'payment_reference' => 'pay_test123',
+        ]);
+
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => $stop3->id,
+        ]);
+
+        $res->assertOk();
+        $fresh = $passenger->fresh();
+        $this->assertSame($stop3->id, $fresh->drop_stop_id);
+        $this->assertEquals(12.3, (float) $fresh->drop_lat);
+        $this->assertEquals(77.3, (float) $fresh->drop_lng);
+        $this->assertSame('Stop 3', $fresh->drop_address);
+        // Fare and payment must remain preserved
+        $this->assertEquals(150.0, (float) $fresh->fare_amount);
+        $this->assertSame('PAID', $fresh->payment_status);
+        $this->assertSame('razorpay', $fresh->payment_method);
+        $this->assertSame('pay_test123', $fresh->payment_reference);
+
+        // Assert notification created for customer and driver in DB
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $this->customer->id,
+            'type' => 'trip_destination_updated',
+        ]);
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $this->driver->id,
+            'type' => 'passenger_destination_updated',
+        ]);
+
+        // Assert push notification was dispatched directly to the customer & driver via NotificationService
+        $notificationService->shouldHaveReceived('sendToUser')
+            ->with(
+                \Mockery::on(fn ($u) => (int) $u->id === (int) $this->driver->id),
+                'Passenger drop updated',
+                \Mockery::type('string'),
+                \Mockery::on(fn ($data) => isset($data['drop_stop_id']) && (int) $data['drop_stop_id'] === $stop3->id)
+            )
+            ->once();
+
+        $notificationService->shouldHaveReceived('sendToUser')
+            ->with(
+                \Mockery::on(fn ($u) => (int) $u->id === (int) $this->customer->id),
+                'Destination updated',
+                \Mockery::type('string'),
+                \Mockery::on(fn ($data) => isset($data['drop_stop_id']) && (int) $data['drop_stop_id'] === $stop3->id)
+            )
+            ->once();
+    }
+
+    public function test_admin_change_passenger_drop_does_not_send_notifications_on_failure(): void
+    {
+        $this->asAdmin();
+
+        $notificationService = \Mockery::spy(\App\Services\NotificationService::class);
+        $this->app->instance(\App\Services\NotificationService::class, $notificationService);
+
+        $route = \App\Models\Route::create([
+            'city_id' => $this->city->id,
+            'name' => 'Failure Notification Route',
+            'origin_name' => 'Stop 1',
+            'dest_name' => 'Stop 3',
+            'origin_lat' => 12.1,
+            'origin_lng' => 77.1,
+            'dest_lat' => 12.3,
+            'dest_lng' => 77.3,
+            'is_active' => true,
+        ]);
+        $stop1 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 1', 'seq' => 1, 'lat' => 12.1, 'lng' => 77.1, 'is_drop' => true]);
+        $stop2 = \App\Models\RouteStop::create(['route_id' => $route->id, 'name' => 'Stop 2', 'seq' => 2, 'lat' => 12.2, 'lng' => 77.2, 'is_drop' => true]);
+
+        $layoutId = SeatLayoutFactory::standardErtiga6P($this->city->id, $this->vehicleType->id);
+        $dep = \App\Models\RouteDeparture::create([
+            'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
+            'vehicle_seat_layout_id' => $layoutId,
+            'service_date' => now()->toDateString(),
+            'departure_kind' => 'driver_opened',
+            'capacity' => 6,
+            'seats_taken' => 1,
+            'status' => 'SCHEDULED',
+            'visible_to_customers' => true,
+        ]);
+
+        $trip = Trip::create([
+            'customer_id' => $this->customer->id,
+            'driver_id' => $this->driver->id,
+            'city_id' => $this->city->id,
+            'ride_type_id' => $this->rideType->id,
+            'route_id' => $route->id,
+            'route_departure_id' => $dep->id,
+            'status' => 'ASSIGNED',
+            'pickup_lat' => 12.1,
+            'pickup_lng' => 77.1,
+            'drop_lat' => 12.2,
+            'drop_lng' => 77.2,
+        ]);
+
+        $passenger = \App\Models\SeatReservation::create([
+            'route_departure_id' => $dep->id,
+            'route_id' => $route->id,
+            'trip_id' => $trip->id,
+            'customer_id' => $this->customer->id,
+            'board_stop_id' => $stop1->id,
+            'drop_stop_id' => $stop2->id,
+            'status' => 'CONFIRMED',
+            'seats' => 1,
+            'fare_amount' => 150.0,
+            'payment_status' => 'PAID',
+        ]);
+
+        // Attempting to change drop to invalid stop ID
+        $res = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$passenger->id}/change-drop", [
+            'drop_stop_id' => 999999,
+        ]);
+
+        $res->assertStatus(422);
+
+        // Prove push notification was NEVER sent
+        $notificationService->shouldNotHaveReceived('sendToUser');
+
+        // Prove in-app DB notification was NEVER created
+        $this->assertDatabaseMissing('app_notifications', [
+            'user_id' => $this->customer->id,
+            'type' => 'trip_destination_updated',
+        ]);
+        $this->assertDatabaseMissing('app_notifications', [
+            'user_id' => $this->driver->id,
+            'type' => 'passenger_destination_updated',
+        ]);
+    }
 }
+

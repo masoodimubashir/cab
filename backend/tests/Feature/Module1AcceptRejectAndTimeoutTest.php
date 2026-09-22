@@ -279,16 +279,19 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
         $confirmResponse->assertOk();
 
         $freshTrip = $trip->fresh();
-        $this->assertEquals('CONFIRMED', $freshTrip->status);
+        $this->assertEquals('PAYMENT_PENDING', $freshTrip->status);
         $this->assertEquals(150.0, (float) $freshTrip->final_fare);
 
-        // Once the trip is completed, customer can pay online
-        $freshTrip->update(['status' => 'COMPLETED']);
+        // Approval unlocks payment, but does not confirm the booking yet.
         $payResponse = $this->postJson("/api/trips/{$trip->id}/pay/razorpay", [
             'payment_method' => 'razorpay',
         ]);
         $payResponse->assertOk();
         $this->assertNotNull($payResponse->json('razorpay.order_id'));
+        $this->assertSame('PAYMENT_PENDING', $trip->fresh()->status);
+        $payment = \App\Models\Payment::where('trip_id', $trip->id)->firstOrFail();
+        app(\App\Services\PaymentReconciliationService::class)->applyPayment('pay_module1', $payment->razorpay_order_id, true);
+        $this->assertSame('CONFIRMED', $trip->fresh()->status);
     }
 
     /**
@@ -552,6 +555,7 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
 
         $departure = RouteDeparture::create([
             'route_id' => $route->id,
+            'driver_id' => $this->driverUser->id,
             'vehicle_seat_layout_id' => $layoutId,
             'service_date' => now()->toDateString(),
             'departure_kind' => 'driver_opened',
@@ -1252,6 +1256,270 @@ class Module1AcceptRejectAndTimeoutTest extends TestCase
             $this->assertFalse((bool) $callback($this->customer, $departure->id));
         }
         $this->assertTrue((bool) $callback($this->driverUser, $departure->id));
+    }
+
+    private function pendingFixedCash(float $percent): FixedSeatHold
+    {
+        OperatorSetting::instance()->forceFill(['cash_deposit_percent' => $percent])->save();
+        $layout = SeatLayoutFactory::standardErtiga6P($this->cityId, $this->vehicleTypeId);
+        $route = Route::create([
+            'city_id' => $this->cityId, 'scope' => 'local', 'mode' => 'fixed', 'name' => 'Cash route',
+            'origin_name' => 'A', 'dest_name' => 'B', 'origin_lat' => 34.08, 'origin_lng' => 74.79,
+            'dest_lat' => 34.12, 'dest_lng' => 74.84, 'fare_config' => ['seat_fare' => 150],
+            'booking_window_hours' => 12, 'max_seats_per_booking' => 4, 'is_active' => true,
+        ]);
+        $board = RouteStop::create(['route_id' => $route->id, 'seq' => 1, 'name' => 'A', 'lat' => 34.08, 'lng' => 74.79, 'is_pickup' => true, 'is_drop' => false, 'is_active' => true]);
+        $drop = RouteStop::create(['route_id' => $route->id, 'seq' => 2, 'name' => 'B', 'lat' => 34.12, 'lng' => 74.84, 'is_pickup' => false, 'is_drop' => true, 'is_active' => true]);
+        $dep = RouteDeparture::create([
+            'route_id' => $route->id, 'driver_id' => $this->driverUser->id, 'vehicle_seat_layout_id' => $layout,
+            'service_date' => now()->toDateString(), 'departure_kind' => 'driver_opened',
+            'depart_at' => now()->addHours(2), 'announced_depart_at' => now()->addHours(2),
+            'boarding_opened_at' => now(), 'visible_to_customers' => true, 'capacity' => 6, 'seats_taken' => 0, 'status' => 'FORMING',
+        ]);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $response = $this->postJson('/api/fixed/seat-holds', [
+            'route_departure_id' => $dep->id, 'board_stop_id' => $board->id, 'drop_stop_id' => $drop->id,
+            'seat_labels' => ['1A'], 'payment_method' => 'cash',
+        ])->assertCreated();
+        return FixedSeatHold::findOrFail($response->json('hold.id'));
+    }
+
+    public function test_fixed_zero_deposit_cash_never_creates_a_gateway_charge(): void
+    {
+        $hold = $this->pendingFixedCash(0);
+        $this->postJson("/api/fixed/seat-holds/{$hold->id}/razorpay-order")->assertStatus(422);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/fixed/driver/seat-holds/{$hold->id}/accept")->assertOk();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/fixed/seat-holds/{$hold->id}/razorpay-order")
+            ->assertOk()->assertJsonPath('payment_required', false)
+            ->assertJsonPath('reservation.status', 'CONFIRMED')->assertJsonPath('reservation.payment_status', 'PENDING');
+        $this->assertSame('CONFIRMED', $hold->fresh()->status);
+        $this->assertNull($hold->fresh()->razorpay_payment_id);
+        $this->assertNull($hold->fresh()->razorpay_order_id);
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_fixed_cash_deposit_requires_current_driver_approval(): void
+    {
+        $hold = $this->pendingFixedCash(20);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/fixed/driver/seat-holds/{$hold->id}/accept")->assertOk();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/fixed/seat-holds/{$hold->id}/razorpay-order")->assertOk()->assertJsonPath('razorpay.amount_paise', 3000);
+        $this->assertSame('ACCEPTED', $hold->fresh()->status);
+        $hold->routeDeparture->update(['driver_id' => null]);
+        $this->postJson("/api/fixed/seat-holds/{$hold->id}/confirm-payment", [
+            'board_stop_id' => $hold->board_stop_id, 'drop_stop_id' => $hold->drop_stop_id,
+            'razorpay_order_id' => $hold->fresh()->razorpay_order_id,
+            'razorpay_payment_id' => 'pay_changed_driver', 'razorpay_signature' => 'signature',
+            'booking_channel' => 'advance',
+        ])->assertStatus(409);
+        $this->assertDatabaseCount('seat_reservations', 0);
+    }
+
+    public function test_fixed_departure_without_driver_cannot_bypass_approval(): void
+    {
+        $hold = $this->pendingFixedCash(0);
+        $hold->routeDeparture->update(['driver_id' => null]);
+        $this->postJson('/api/fixed/seat-holds', [
+            'route_departure_id' => $hold->route_departure_id, 'board_stop_id' => $hold->board_stop_id,
+            'drop_stop_id' => $hold->drop_stop_id, 'seat_labels' => ['2A'],
+        ])->assertStatus(409);
+        $this->assertDatabaseCount('seat_reservations', 0);
+    }
+
+    private function approvePrivateBooking(string $method, float $depositPercent): Trip
+    {
+        OperatorSetting::instance()->forceFill(['cash_deposit_percent' => $depositPercent])->save();
+        $trip = $this->createNegotiationTrip();
+        $trip->update(['payment_method' => $method]);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/trips/{$trip->id}/negotiation/driver-action", ['action' => 'ACCEPT'])->assertOk();
+        $offer = FareNegotiationOffer::where('from_user_id', $this->driverUser->id)->latest('id')->firstOrFail();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/trips/{$trip->id}/negotiation/customer-confirm", [
+            'final_fare' => 150, 'accepted_offer_id' => $offer->id,
+        ])->assertOk();
+        return $trip->fresh();
+    }
+
+    public function test_private_zero_deposit_cash_confirms_only_after_approval_without_payment(): void
+    {
+        $trip = $this->approvePrivateBooking('cash', 0);
+        $this->assertSame('CONFIRMED', $trip->status);
+        $this->assertDatabaseMissing('payments', ['trip_id' => $trip->id]);
+    }
+
+    public function test_private_cash_deposit_confirms_booking_and_cash_balance_preserves_deposit(): void
+    {
+        $trip = $this->approvePrivateBooking('cash', 20);
+        $this->assertSame('PAYMENT_PENDING', $trip->status);
+        $this->assertNull($trip->confirmed_at);
+        $order = $this->postJson("/api/trips/{$trip->id}/pay/cash-deposit")->assertOk();
+        $this->assertEquals(3000, $order->json('razorpay.amount_paise'));
+        $this->postJson("/api/trips/{$trip->id}/pay/cash-deposit")->assertOk()
+            ->assertJsonPath('razorpay.order_id', $order->json('razorpay.order_id'));
+        $this->assertSame('PAYMENT_PENDING', $trip->fresh()->status);
+        app(RazorpayService::class)->shouldReceive('verifyPaymentSignature')->once()->andReturn(true);
+        $this->postJson("/api/trips/{$trip->id}/pay/razorpay/verify", [
+            'razorpay_order_id' => $order->json('razorpay.order_id'),
+            'razorpay_payment_id' => 'pay_cash_deposit', 'razorpay_signature' => 'verified',
+        ])->assertOk();
+        $this->assertSame('CONFIRMED', $trip->fresh()->status);
+        $this->postJson("/api/trips/{$trip->id}/pay/cash-deposit")->assertOk()
+            ->assertJsonPath('deposit_required', false);
+        $trip->update(['status' => 'COMPLETED']);
+        $this->postJson("/api/trips/{$trip->id}/pay/cash")->assertOk()->assertJsonPath('payment.amount', 120);
+        $this->assertDatabaseHas('payments', ['trip_id' => $trip->id, 'razorpay_payment_id' => 'pay_cash_deposit', 'amount' => 30]);
+        $this->postJson("/api/trips/{$trip->id}/pay/cash")->assertOk();
+        $this->assertEquals(2, \App\Models\Payment::where('trip_id', $trip->id)->count());
+    }
+
+    public function test_invalid_private_payment_does_not_confirm_or_allow_driver_progress(): void
+    {
+        $trip = $this->approvePrivateBooking('razorpay', 0);
+        $order = $this->postJson("/api/trips/{$trip->id}/pay/razorpay")->assertOk();
+        app(RazorpayService::class)->shouldReceive('verifyPaymentSignature')->once()->andReturn(false);
+        $this->postJson("/api/trips/{$trip->id}/pay/razorpay/verify", [
+            'razorpay_order_id' => $order->json('razorpay.order_id'),
+            'razorpay_payment_id' => 'bad', 'razorpay_signature' => 'invalid',
+        ])->assertStatus(400);
+        $this->assertSame('PAYMENT_PENDING', $trip->fresh()->status);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/trips/{$trip->id}/driver-accept")->assertStatus(409);
+    }
+
+    private function pendingShuttle(string $method = 'razorpay'): \App\Models\ShuttlePassengerBooking
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        RideType::findOrFail($this->rideTypeId)->update(['name' => 'Shuttle', 'mode' => 'shuttle']);
+        $this->driverProfile->update(['active_service_mode' => 'shuttle']);
+        SeatLayoutFactory::standardErtiga6P($this->cityId, $this->vehicleTypeId);
+        CitySetting::firstOrCreate(['city_id' => $this->cityId])->update(['shuttle_forming_window_minutes' => 0]);
+        $journey = \App\Models\ShuttleJourney::create([
+            'city_id' => $this->cityId, 'city_vehicle_type_id' => $this->cityVehicleTypeId,
+            'status' => 'FORMING', 'capacity' => 6, 'seats_taken' => 1,
+        ]);
+        $booking = \App\Models\ShuttlePassengerBooking::create([
+            'shuttle_journey_id' => $journey->id, 'city_id' => $this->cityId,
+            'city_vehicle_type_id' => $this->cityVehicleTypeId, 'customer_id' => $this->customer->id,
+            'scope' => 'local', 'seats' => 1, 'fare_amount' => 150, 'currency' => 'INR',
+            'pickup_lat' => 34.08, 'pickup_lng' => 74.79, 'drop_lat' => 34.12, 'drop_lng' => 74.84,
+            'payment_method' => $method, 'payment_status' => 'PENDING', 'status' => 'PENDING_DRIVER_APPROVAL',
+        ]);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/request-driver")->assertOk();
+        $this->assertNotNull($journey->fresh()->trip_id);
+        $this->assertSame('PENDING', $booking->fresh()->payment_status);
+        return $booking->fresh();
+    }
+
+    private function approveShuttle(\App\Models\ShuttlePassengerBooking $booking): Trip
+    {
+        $trip = $booking->journey->trip;
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/trips/{$trip->id}/negotiation/driver-action", ['action' => 'ACCEPT'])->assertOk();
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        return $trip->fresh();
+    }
+
+    public function test_shuttle_dispatches_before_payment_and_blocks_payment_until_driver_accepts(): void
+    {
+        $booking = $this->pendingShuttle();
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\DispatchHopJob::class);
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/razorpay-order")->assertStatus(422);
+        $trip = $this->approveShuttle($booking);
+        $this->assertSame('PAYMENT_PENDING', $trip->status);
+        $this->assertSame('PAYMENT_PENDING', $booking->fresh()->status);
+        $order = $this->postJson("/api/shuttle/bookings/{$booking->id}/razorpay-order")->assertOk();
+        $this->assertEquals(15000, $order->json('razorpay.amount_paise'));
+        app(RazorpayService::class)->shouldReceive('verifyPaymentSignature')->once()->andReturn(true);
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/confirm-payment", [
+            'razorpay_order_id' => $order->json('razorpay.order_id'),
+            'razorpay_payment_id' => 'pay_shuttle_approved', 'razorpay_signature' => 'verified',
+        ])->assertOk();
+        $this->assertSame('CONFIRMED', $trip->fresh()->status);
+        $this->assertSame('CONFIRMED', $booking->fresh()->status);
+    }
+
+    public function test_shuttle_cash_zero_deposit_confirms_after_acceptance_without_capture(): void
+    {
+        OperatorSetting::instance()->forceFill(['cash_deposit_percent' => 0])->save();
+        $booking = $this->pendingShuttle('cash');
+        $trip = $this->approveShuttle($booking);
+        $this->assertSame('CONFIRMED', $trip->status);
+        $this->assertSame('CONFIRMED', $booking->fresh()->status);
+        $this->assertSame('PENDING', $booking->fresh()->payment_status);
+        $this->assertNull($booking->fresh()->razorpay_payment_id);
+        $this->assertDatabaseMissing('payments', ['trip_id' => $trip->id]);
+    }
+
+    public function test_shuttle_cash_deposit_confirms_and_duplicate_confirmation_is_idempotent(): void
+    {
+        OperatorSetting::instance()->forceFill(['cash_deposit_percent' => 20])->save();
+        $booking = $this->pendingShuttle('cash');
+        $trip = $this->approveShuttle($booking);
+        $this->postJson("/api/trips/{$trip->id}/pay/razorpay")->assertStatus(409);
+        $order = $this->postJson("/api/shuttle/bookings/{$booking->id}/razorpay-order")->assertOk();
+        $order->assertJsonPath('razorpay.amount_paise', 3000);
+        app(RazorpayService::class)->shouldReceive('verifyPaymentSignature')->once()->andReturn(true);
+        $payload = ['razorpay_order_id' => $order->json('razorpay.order_id'),
+            'razorpay_payment_id' => 'pay_shuttle_deposit', 'razorpay_signature' => 'verified'];
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/confirm-payment", $payload)->assertOk();
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/confirm-payment", $payload)->assertOk();
+        $this->assertSame('CONFIRMED', $trip->fresh()->status);
+        $this->assertSame('CONFIRMED', $booking->fresh()->status);
+        $shape = app(\App\Services\ShuttleBookingService::class)->shapeBooking($booking->fresh());
+        $this->assertEquals(120, $shape['cash_balance_due']);
+        $this->assertSame(1, \App\Models\JourneySeat::where('shuttle_passenger_booking_id', $booking->id)->where('status', 'BOOKED')->count());
+    }
+
+    public function test_shuttle_cash_deposit_and_rejection_release_without_confirmation(): void
+    {
+        OperatorSetting::instance()->forceFill(['cash_deposit_percent' => 20])->save();
+        $booking = $this->pendingShuttle('cash');
+        $trip = $this->approveShuttle($booking);
+        $order = $this->postJson("/api/shuttle/bookings/{$booking->id}/razorpay-order")
+            ->assertOk()->assertJsonPath('razorpay.amount_paise', 3000);
+        Sanctum::actingAs($this->driverUser, ['act-as:driver']);
+        $this->postJson("/api/trips/{$trip->id}/driver-reject")->assertOk();
+        $this->assertSame('CANCELLED', $booking->fresh()->status);
+        $this->assertDatabaseMissing('journey_seats', ['shuttle_passenger_booking_id' => $booking->id]);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/shuttle/bookings/{$booking->id}/razorpay-order")->assertStatus(422);
+        app(RazorpayService::class)->shouldReceive('fetchPayment')->once()->with('pay_late_deposit')
+            ->andReturn(['amount' => 3000]);
+        app(RazorpayService::class)->shouldReceive('refundPayment')->once()->with('pay_late_deposit', 3000, Mockery::type('array'))
+            ->andReturn(['id' => 'rfnd_late_deposit', 'amount' => 3000]);
+        $result = app(\App\Services\PaymentReconciliationService::class)->applyPayment('pay_late_deposit', $order->json('razorpay.order_id'), true);
+        $this->assertSame('refunded', $result['action']);
+        $this->assertSame('CANCELLED', $trip->fresh()->status);
+        $this->assertEquals(30, $booking->fresh()->refund_amount);
+    }
+
+    public function test_shuttle_waits_for_all_riders_and_unpaid_cancellation_preserves_other_booking(): void
+    {
+        $first = $this->pendingShuttle();
+        $second = $first->replicate();
+        $second->customer_id = $this->customer2->id;
+        $second->save();
+        $first->journey->update(['seats_taken' => 2]);
+        $maps = app(\App\Services\ShuttleSeatMapService::class);
+        $label = \App\Models\JourneySeat::where('shuttle_journey_id', $first->shuttle_journey_id)->where('status', 'AVAILABLE')->value('label');
+        $maps->holdSeats($first->journey, $second, [$label]);
+        app(\App\Services\ShuttleBookingService::class)->requestDriver($second);
+        $trip = $this->approveShuttle($first);
+        $order = $this->postJson("/api/shuttle/bookings/{$first->id}/razorpay-order")->assertOk();
+        app(\App\Services\PaymentReconciliationService::class)->applyPayment('pay_pool_first', $order->json('razorpay.order_id'), true);
+        $this->assertSame('CONFIRMED', $first->fresh()->status);
+        $this->assertSame('PAYMENT_PENDING', $trip->fresh()->status);
+        Sanctum::actingAs($this->customer2, ['act-as:customer']);
+        $this->postJson("/api/shuttle/bookings/{$second->id}/cancel")->assertOk();
+        $this->assertSame('CONFIRMED', $trip->fresh()->status);
+        $this->assertSame('CONFIRMED', $first->fresh()->status);
+        $this->assertSame('CANCELLED', $second->fresh()->status);
+        $this->assertSame(1, $first->journey->fresh()->seats_taken);
     }
 
     public function test_fixed_seat_hold_requested_event_preserves_exact_hold_deadline(): void

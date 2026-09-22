@@ -1865,7 +1865,8 @@ export class CustomerBookPage implements OnDestroy {
       if (!res?.booking?.id) {
         throw new Error("Shuttle booking was created but the booking id was missing.");
       }
-      await this.startShuttleRazorpayPayment(res.booking, method);
+      await this.api.post(`/shuttle/bookings/${res.booking.id}/request-driver`, {}).toPromise();
+      await this.router.navigateByUrl('/customer-tabs/shuttle-rides');
     } catch (e: any) {
       this.error = e?.error?.message || e?.message || "Could not create Shuttle booking.";
     } finally {

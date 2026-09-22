@@ -180,7 +180,15 @@ class FixedBookingsController extends Controller
             abort(404);
         }
 
-        $order = $this->seatHolds->createRazorpayOrder($request->user(), $fixedSeatHold, $razorpayService);
+        $data = $request->validate(['payment_method' => ['nullable', 'in:cash,razorpay']]);
+        $order = $this->seatHolds->createRazorpayOrder($request->user(), $fixedSeatHold, $razorpayService, $data['payment_method'] ?? null);
+
+        if (($order['payment_required'] ?? true) === false) {
+            return response()->json([
+                'payment_required' => false,
+                'reservation' => $this->bookings->shapeBooking(SeatReservation::query()->findOrFail($order['reservation_id'])),
+            ]);
+        }
 
         return response()->json([
             'hold' => $this->bookings->shapeSeatHold($fixedSeatHold->fresh('routeDeparture.route')),

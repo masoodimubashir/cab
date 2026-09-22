@@ -368,8 +368,7 @@ export class ShuttleBookPage implements OnInit {
 
   continueToPay(): void {
     if (!this.canPayForSeat) { this.seatError = 'Pick a seat to continue.'; this.cdr.markForCheck(); return; }
-    this.step = 'paying';
-    this.cdr.markForCheck();
+    void this.router.navigateByUrl('/customer-tabs/shuttle-rides');
   }
 
   // ---- step 5: pay ------------------------------------------------------

@@ -122,40 +122,11 @@ interface TabDef { key: string; label: string; count?: number; }
       <app-return-to-setup></app-return-to-setup>
 
       <header class="ws__head">
-        <tm-button
-          variant="green"
-          size="sm"
-          icon="plus"
-          [disabled]="!canManageSingleVehicle"
-          [title]="!canManageSingleVehicle ? (selectedIds.size > 1 ? 'Disabled when multiple vehicles are selected' : 'Click a vehicle in the table to add a route') : ('Add route for ' + singleSelectedVehicle?.display_name)"
-          (clicked)="addNewRouteFromTop()"
-        >
-          Add route
-        </tm-button>
-        <tm-button
-          variant="outline"
-          size="sm"
-          icon="grid"
-          [disabled]="!canManageSingleVehicle"
-          [title]="!canManageSingleVehicle ? (selectedIds.size > 1 ? 'Disabled when multiple vehicles are selected' : 'Click a vehicle in the table to manage its groups and routes') : ('Manage groups for ' + singleSelectedVehicle?.display_name)"
-          (clicked)="openUnifiedGroupDrawerFromTop()"
-        >
-          Manage Routes & Groups {{ singleSelectedVehicle ? ('(' + singleSelectedVehicle.display_name + ')') : '' }}
-        </tm-button>
-        <tm-button
-          variant="outline"
-          size="sm"
-          icon="upload"
-          [disabled]="!canManageSingleVehicle || importingKml"
-          [title]="!canManageSingleVehicle ? (selectedIds.size > 1 ? 'Disabled when multiple vehicles are selected' : 'Click a vehicle to import routes') : ('Import routes for ' + singleSelectedVehicle?.display_name)"
-          (clicked)="triggerKmlImportFromTop()"
-        >
-          {{ importingKml ? 'Reading…' : 'Import from My Maps' }}
-        </tm-button>
+        <div class="vehicle-page-heading"><h1>Vehicles</h1><p>Choose a vehicle to manage its routes, groups, drivers and fares.</p></div>
         <span class="ws__grow"></span>
-        <tm-button variant="outline" size="sm" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
         <tm-button variant="outline" size="sm" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
-        <tm-button variant="outline" size="sm" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
+        <tm-button variant="outline" size="sm" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
+        <tm-button variant="green" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
       </header>
 
       <div class="cue" *ngIf="cityId == null">
@@ -175,43 +146,26 @@ interface TabDef { key: string; label: string; count?: number; }
           <div class="seg" role="tablist" aria-label="Status filter">
             <button type="button" class="seg__btn" *ngFor="let s of statusChips" [class.on]="status === s.value" [attr.aria-pressed]="status === s.value" (click)="setStatus(s.value)">{{ s.label }}</button>
           </div>
-          <!-- Type filter — custom dropdown (matches the Drivers page state-select) -->
-          <div class="fsel" [class.has-value]="typeFilter !== 'all'" [class.is-open]="filterOpen === 'type'">
-            <button type="button" class="fsel__trigger" (click)="toggleFilter('type', $event)" [attr.aria-expanded]="filterOpen === 'type'" aria-haspopup="listbox" aria-label="Vehicle type filter">
-              <span class="fsel__icon"><tm-icon name="filter" [size]="14" /></span>
-              <span class="fsel__value">{{ typeFilterLabel }}</span>
-              <tm-icon name="chevron-down" [size]="12" class="fsel__caret" />
-            </button>
-            <ul class="fsel__menu" *ngIf="filterOpen === 'type'" role="listbox" (click)="$event.stopPropagation()">
-              <li class="fsel__option" [class.is-selected]="typeFilter === 'all'" role="option" [attr.aria-selected]="typeFilter === 'all'" (click)="setTypeFilter('all')">
-                <tm-icon *ngIf="typeFilter === 'all'" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">All types</span>
-              </li>
-              <li *ngFor="let t of types" class="fsel__option" [class.is-selected]="typeFilter === (t.id + '')" role="option" [attr.aria-selected]="typeFilter === (t.id + '')" (click)="setTypeFilter(t.id + '')">
-                <tm-icon *ngIf="typeFilter === (t.id + '')" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">{{ t.name }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Vehicle filter — custom dropdown -->
-          <div class="fsel" [class.has-value]="vehicleFilter !== 'all'" [class.is-open]="filterOpen === 'vehicle'">
-            <button type="button" class="fsel__trigger" (click)="toggleFilter('vehicle', $event)" [attr.aria-expanded]="filterOpen === 'vehicle'" aria-haspopup="listbox" aria-label="Vehicle filter">
-              <span class="fsel__icon"><tm-icon name="car" [size]="14" /></span>
-              <span class="fsel__value">{{ vehicleFilterLabel }}</span>
-              <tm-icon name="chevron-down" [size]="12" class="fsel__caret" />
-            </button>
-            <ul class="fsel__menu" *ngIf="filterOpen === 'vehicle'" role="listbox" (click)="$event.stopPropagation()">
-              <li class="fsel__option" [class.is-selected]="vehicleFilter === 'all'" role="option" [attr.aria-selected]="vehicleFilter === 'all'" (click)="setVehicleFilter('all')">
-                <tm-icon *ngIf="vehicleFilter === 'all'" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">All vehicles</span>
-              </li>
-              <li *ngFor="let name of vehicleNames" class="fsel__option" [class.is-selected]="vehicleFilter === name" role="option" [attr.aria-selected]="vehicleFilter === name" (click)="setVehicleFilter(name)">
-                <tm-icon *ngIf="vehicleFilter === name" name="check" [size]="12" class="fsel__check" /><span class="fsel__olabel">{{ name }}</span>
-              </li>
-            </ul>
-          </div>
+          <label class="vehicle-filter">Vehicle type
+            <select [ngModel]="typeFilter" (ngModelChange)="setTypeFilter($event)">
+              <option value="all">All types</option>
+              <option *ngFor="let t of types" [value]="t.id + ''">{{ t.name }}</option>
+            </select>
+          </label>
+          <label class="vehicle-filter">Vehicle name
+            <select [ngModel]="vehicleFilter" (ngModelChange)="setVehicleFilter($event)">
+              <option value="all">All vehicles</option>
+              <option *ngFor="let name of vehicleNames" [value]="name">{{ name }}</option>
+            </select>
+          </label>
           <button type="button" class="clearall" *ngIf="hasActiveFilters" (click)="clearAllFilters()">
             <tm-icon name="x" [size]="13" /> Clear all
           </button>
-          <span class="count-note"><b>{{ visible.length }}</b> of <b>{{ vehicles.length }}</b> vehicles · click a cell to edit</span>
+          <span class="count-note"><b>{{ visible.length }}</b> of <b>{{ vehicles.length }}</b> vehicles</span>
+          <div class="route-view-tabs" aria-label="Vehicle view">
+            <button type="button" [class.selected]="vehicleView === 'overview'" [attr.aria-pressed]="vehicleView === 'overview'" (click)="vehicleView = 'overview'">Overview</button>
+            <button type="button" [class.selected]="vehicleView === 'table'" [attr.aria-pressed]="vehicleView === 'table'" (click)="vehicleView = 'table'">Edit details</button>
+          </div>
         </div>
 
         <!-- bulk bar -->
@@ -225,8 +179,40 @@ interface TabDef { key: string; label: string; count?: number; }
           <button type="button" class="bulk__x" (click)="clearSel()" aria-label="Clear selection"><tm-icon name="x" [size]="16" /></button>
         </div>
 
+        <div class="vehicle-overview" *ngIf="vehicleView === 'overview'">
+          <article class="vehicle-summary" *ngFor="let v of visible; trackBy: trackVehicle" [class.vehicle-summary--selected]="isSel(v)">
+            <header>
+              <label class="vehicle-select"><input type="checkbox" [checked]="isSel(v)" (click)="toggleSel(v, $event)" [attr.aria-label]="'Select ' + v.display_name" /></label>
+              <div class="vehicle-summary-title"><h2>{{ v.display_name }}</h2><span>{{ v.vehicle_type_name || 'Type not set' }} &middot; {{ v.max_people }} seats &middot; {{ v.luggage_capacity }} bags</span></div>
+              <span class="pill" [class.success]="v.is_active" [class.neutral]="!v.is_active">{{ v.is_active ? 'Enabled' : 'Disabled' }}</span>
+            </header>
+            <div class="vehicle-summary-stats">
+              <button type="button" (click)="openOperationsDrawer(v, 'all-routes', $event)"><b>{{ routesForVehicle(v).length }}</b><span>Routes</span></button>
+              <button type="button" (click)="openOperationsDrawer(v, 'groups', $event)"><b>{{ groupsForVehicle(v).length }}</b><span>Groups</span></button>
+              <button type="button" (click)="openOperationsDrawer(v, 'drivers', $event)"><b>{{ driversForVehicle(v).length }}</b><span>Drivers</span></button>
+            </div>
+            <div class="vehicle-summary-actions">
+              <button type="button" class="btn-kb-primary" (click)="openOperationsDrawer(v, 'all-routes', $event)">Manage routes</button>
+              <button type="button" class="btn-kb-outline" (click)="openOperationsDrawer(v, 'groups', $event)">Groups &amp; drivers</button>
+              <button type="button" class="btn-kb-outline" (click)="newRouteFor(v)">Add route</button>
+            </div>
+            <details class="vehicle-settings">
+              <summary>Fares, seat layout &amp; vehicle settings</summary>
+              <div class="vehicle-settings-actions">
+                <button type="button" class="btn-kb-outline" *ngFor="let rt of fareRideTypes" (click)="openFareDrawer(v, rt, $event)">{{ rt.name }} fare: {{ fareConfigured(v, rt) ? 'Edit' : 'Set up' }}</button>
+                <button type="button" class="btn-kb-outline" (click)="openLayoutsList(v, $event)">Seat layouts ({{ layoutCountFor(v) }})</button>
+                <button type="button" class="btn-kb-outline" (click)="triggerKmlImportFor(v)" [disabled]="importingKml">Import routes</button>
+                <button type="button" class="btn-kb-outline" (click)="openCommonDrawer(v)">Edit name &amp; capacity</button>
+                <button type="button" class="btn-kb-outline" (click)="toggleActiveFor(v, $event)">{{ v.is_active ? 'Disable vehicle' : 'Enable vehicle' }}</button>
+              </div>
+            </details>
+          </article>
+          <div class="empty" *ngIf="!visible.length && !loading"><strong>{{ hasActiveFilters ? 'No matching vehicles' : 'No vehicles yet' }}</strong><span>{{ hasActiveFilters ? 'Try another search or clear the filters.' : 'Use Add vehicle to get started.' }}</span><button type="button" class="btn-kb-outline" *ngIf="hasActiveFilters" (click)="clearAllFilters()">Clear filters</button></div>
+          <div class="skeleton" *ngIf="loading"><span class="sk" *ngFor="let i of [1,2,3,4]"></span></div>
+        </div>
+        <p class="vehicle-edit-hint" *ngIf="vehicleView === 'table'">Click a vehicle name, seat count or bag count to edit it. Press Enter to save or Escape to cancel.</p>
         <!-- spreadsheet -->
-        <div class="sheetwrap">
+        <div class="sheetwrap" *ngIf="vehicleView === 'table'">
           <table class="sheet">
             <thead>
               <tr>
@@ -313,7 +299,7 @@ interface TabDef { key: string; label: string; count?: number; }
             </tfoot>
           </table>
 
-          <div class="empty" *ngIf="!visible.length && !loading"><strong>No city vehicles</strong><span>Add a city vehicle after creating vehicle types.</span></div>
+          <div class="empty" *ngIf="!visible.length && !loading"><strong>{{ hasActiveFilters ? 'No matching vehicles' : 'No city vehicles' }}</strong><span>{{ hasActiveFilters ? 'Try another search or clear the filters.' : 'Add a city vehicle after creating vehicle types.' }}</span></div>
           <div class="skeleton" *ngIf="loading"><span class="sk" *ngFor="let i of [1,2,3,4]"></span></div>
         </div>
 
@@ -437,30 +423,13 @@ interface TabDef { key: string; label: string; count?: number; }
               <input
                 type="text"
                 [(ngModel)]="kanbanSearch"
-                placeholder="Search routes or stops..."
+                placeholder="Search route name, origin or destination" aria-label="Search routes"
               />
             </div>
           </div>
 
           <div class="kb-top-actions">
-            <!-- Inline Quick Group Creator -->
-            <div class="kb-quick-add-group">
-              <input
-                type="text"
-                class="kb-quick-grp-input"
-                placeholder="+ New group name..."
-                [(ngModel)]="inlineNewGroupName[v.id]"
-                (keydown.enter)="quickCreateInlineGroup(v)"
-              />
-              <button
-                type="button"
-                class="btn-kb-quick-add"
-                [disabled]="!canCreateInlineGroup(v.id) || isCreatingInlineGroup"
-                (click)="quickCreateInlineGroup(v)"
-              >
-                {{ isCreatingInlineGroup ? 'Creating...' : '+ Create Group' }}
-              </button>
-            </div>
+            <button type="button" class="btn-kb-outline" (click)="routeView = 'groups'; showGroupCreator = !showGroupCreator">Create group</button>
 
             <button type="button" class="btn-kb-primary" (click)="newRouteFor(v)">
               <tm-icon name="plus" [size]="13" />
@@ -506,12 +475,31 @@ interface TabDef { key: string; label: string; count?: number; }
           </div>
         </section>
 
+        <div class="group-workspace" *ngIf="routeView === 'groups'">
+          <aside class="group-navigation" aria-label="Route groups">
+            <h3>Route groups</h3>
+            <p>Select a group to manage its routes and drivers.</p>
+            <button type="button" class="btn-kb-primary" (click)="showGroupCreator = !showGroupCreator" [attr.aria-expanded]="showGroupCreator">Create group</button>
+            <form class="group-create-form" *ngIf="showGroupCreator" (ngSubmit)="quickCreateInlineGroup(v)">
+              <label for="new-route-group">Group name</label>
+              <input id="new-route-group" name="groupName" [(ngModel)]="inlineNewGroupName[v.id]" placeholder="e.g. Dargah Sumo" required />
+              <button type="submit" class="btn-kb-primary" [disabled]="!canCreateInlineGroup(v.id) || isCreatingInlineGroup">{{ isCreatingInlineGroup ? 'Creating...' : 'Create group' }}</button>
+            </form>
+            <input class="group-search" [(ngModel)]="groupSearch" placeholder="Find a group" aria-label="Find a group" />
+            <button type="button" class="group-nav-item" [class.selected]="selectedGroupSection === 'ungrouped'" (click)="selectGroupSection('ungrouped')"><span>Ungrouped routes</span><b>{{ ungroupedForVehicle(v).length }}</b></button>
+            <button type="button" class="group-nav-item" [class.selected]="selectedGroupSection === 'inactive'" (click)="selectGroupSection('inactive')"><span>Inactive routes</span><b>{{ inactiveRoutesForVehicle(v).length }}</b></button>
+            <button type="button" class="group-nav-item" *ngFor="let group of navigationGroups(v)" [class.selected]="selectedGroupSection === group.id" (click)="selectGroupSection(group.id)">
+              <span>{{ group.name }}<small>{{ driversIn(group).length }} drivers</small></span><b>{{ routesIn(group).length }}</b>
+            </button>
+            <p *ngIf="!navigationGroups(v).length">{{ groupsForVehicle(v).length ? 'No groups match your search.' : 'Create your first group, then add routes and drivers.' }}</p>
+          </aside>
         <!-- Kanban Board Columns Area -->
         <div class="kb-columns-container" *ngIf="routeView === 'groups'">
 
           <!-- COLUMN 0: UNGROUPED / UNASSIGNED ROUTES -->
           <div
             class="kb-column kb-column--unassigned"
+            *ngIf="selectedGroupSection === 'ungrouped'"
             [class.is-drop-target]="dragOverColumnId === 'ungrouped'"
             (dragover)="onColDragOver($event, 'ungrouped')"
             (dragleave)="onColDragLeave('ungrouped')"
@@ -521,7 +509,7 @@ interface TabDef { key: string; label: string; count?: number; }
               <div class="kb-col-title-line">
                 <div class="kb-col-title">
                   <span class="kb-col-dot kb-col-dot--sky"></span>
-                  <span class="kb-col-heading">Available Ungrouped</span>
+                  <span class="kb-col-heading">Ungrouped routes</span>
                 </div>
                 <span class="kb-count-pill kb-count-pill--sky">
                   {{ filterKanbanRoutes(ungroupedForVehicle(v)).length }}
@@ -605,7 +593,7 @@ interface TabDef { key: string; label: string; count?: number; }
             </div>
           </div>
 
-          <section class="kb-column" aria-label="Inactive routes">
+          <section class="kb-column" aria-label="Inactive routes" *ngIf="selectedGroupSection === 'inactive'">
             <div class="kb-col-header">
               <div class="kb-col-title-line">
                 <div class="kb-col-title">
@@ -641,7 +629,7 @@ interface TabDef { key: string; label: string; count?: number; }
             (dragover)="onColDragOver($event, g.id)"
             (dragleave)="onColDragLeave(g.id)"
             (drop)="onColDrop($event, g)"
-            *ngFor="let g of groupsForVehicle(v); trackBy: trackGroup"
+            *ngFor="let g of selectedOperationGroups(v); trackBy: trackGroup"
           >
             <div class="kb-col-header">
               <div class="kb-col-title-line">
@@ -661,11 +649,11 @@ interface TabDef { key: string; label: string; count?: number; }
 
                 <div class="kb-grp-acts">
                   <span class="kb-count-pill">{{ filterKanbanRoutes(routesIn(g)).length }}</span>
-                  <button type="button" class="kb-icon-btn" title="Rename group" (click)="startInlineRename(g)">
-                    <tm-icon name="edit" [size]="11" />
+                  <button type="button" class="btn-kb-outline" title="Rename group" (click)="startInlineRename(g)">
+                    Rename
                   </button>
-                  <button type="button" class="kb-icon-btn kb-icon-btn--danger" title="Delete group" (click)="deleteGroup(g)">
-                    <tm-icon name="trash" [size]="11" />
+                  <button type="button" class="btn-kb-outline" title="Delete group" (click)="deleteGroup(g)">
+                    Delete group
                   </button>
                 </div>
               </div>
@@ -690,7 +678,7 @@ interface TabDef { key: string; label: string; count?: number; }
                     (click)="toggleGroupDriverDropdown(g.id, $event)"
                     title="Manage assigned drivers"
                   >
-                    <span>+ Drivers</span>
+                    <span>Manage drivers</span>
                     <tm-icon name="chevron-down" [size]="10" />
                   </button>
                 </div>
@@ -701,8 +689,9 @@ interface TabDef { key: string; label: string; count?: number; }
                     <b>Assign Drivers to {{ g.name }}</b>
                     <button type="button" class="kb-popover-x" (click)="openDriverDropdownGroupId = null">×</button>
                   </div>
-                  <div class="kb-popover-list" *ngIf="driversForVehicle(v).length; else noDriversRegistered">
-                    <label class="kb-popover-item" *ngFor="let d of driversForVehicle(v)">
+                  <input class="group-search" [(ngModel)]="groupDriverSearch" placeholder="Search drivers" aria-label="Search drivers" />
+                  <div class="kb-popover-list" *ngIf="filteredGroupDrivers(v).length; else noDriversRegistered">
+                    <label class="kb-popover-item" *ngFor="let d of filteredGroupDrivers(v)">
                       <input
                         type="checkbox"
                         [checked]="isDriverInGroup(d.user_id, g.id)"
@@ -716,12 +705,29 @@ interface TabDef { key: string; label: string; count?: number; }
                     </label>
                   </div>
                   <ng-template #noDriversRegistered>
-                    <div class="kb-pop-empty">No drivers registered for this vehicle.</div>
+                    <div class="kb-pop-empty">No matching drivers for this vehicle.</div>
                   </ng-template>
                 </div>
               </div>
             </div>
 
+            <div class="group-route-actions">
+              <button type="button" class="btn-kb-primary" (click)="showGroupRoutePicker = !showGroupRoutePicker" [attr.aria-expanded]="showGroupRoutePicker">Add routes</button>
+              <span>{{ routesIn(g).length }} active routes in this group</span>
+            </div>
+            <div class="group-route-picker" *ngIf="showGroupRoutePicker">
+              <strong>Add ungrouped routes</strong>
+              <p>Select routes below, then add them together. Set a fare before adding a route.</p>
+              <input class="group-search" [(ngModel)]="groupRouteSearch" placeholder="Find a route to add" aria-label="Find a route to add" />
+              <div class="group-picker-list">
+                <label *ngFor="let route of groupRouteCandidates(v)">
+                  <input type="checkbox" [checked]="pendingGroupRouteIds.has(route.id)" [disabled]="route.flat_fare == null || savingGroupRoutes" (change)="togglePendingGroupRoute(route.id)" />
+                  <span>{{ route.name }}<small>{{ route.flat_fare == null ? 'Set a fare in All routes first' : route.origin_name + ' to ' + route.dest_name }}</small></span>
+                </label>
+                <p *ngIf="!groupRouteCandidates(v).length">No matching ungrouped routes. Create a route or move one from another group.</p>
+              </div>
+              <button type="button" class="btn-kb-primary" [disabled]="!pendingGroupRouteIds.size || savingGroupRoutes" (click)="addSelectedRoutesToGroup(v, g)">{{ savingGroupRoutes ? 'Adding...' : 'Add selected routes (' + pendingGroupRouteIds.size + ')' }}</button>
+            </div>
             <!-- Group Routes Cards -->
             <div class="kb-cards-scroll">
               <div
@@ -766,6 +772,7 @@ interface TabDef { key: string; label: string; count?: number; }
                 </div>
 
                 <div class="kb-card-footer">
+                  <button type="button" class="kb-action-btn kb-action-btn--edit" (click)="editRouteFor(v, r.id)">Edit route</button>
                   <div class="kb-move-dropdown">
                     <select class="kb-select-input" (change)="onMoveSelectChange(g, $event, r.id)">
                       <option value="" disabled selected>Move to ▾</option>
@@ -781,7 +788,7 @@ interface TabDef { key: string; label: string; count?: number; }
                     title="Remove route from this group"
                   >
                     <tm-icon name="x" [size]="11" />
-                    <span>Remove</span>
+                    <span>Remove from group</span>
                   </button>
                 </div>
               </div>
@@ -794,13 +801,14 @@ interface TabDef { key: string; label: string; count?: number; }
 
               <div class="kb-empty-col" *ngIf="!filterKanbanRoutes(routesIn(g)).length && dragOverColumnId !== g.id">
                 <tm-icon name="road" [size]="20" />
-                <span>No routes in this group. Drag routes here from Ungrouped.</span>
+                <span>No matching active routes. Use Add routes to assign routes to this group.</span>
               </div>
             </div>
           </div>
 
         </div>
 
+        </div>
       </div>
 
       <div slot="footer">
@@ -1057,6 +1065,26 @@ interface TabDef { key: string; label: string; count?: number; }
     .echoice__txt { display: flex; flex-direction: column; gap: 3px; }
     .echoice__t { font-weight: 800; color: var(--tm-text); }
     .echoice__d { font-size: 12.5px; color: var(--tm-text-muted); line-height: 1.4; }
+    .vehicle-page-heading p { margin: 6px 0 0; color: var(--tm-text-muted); font-size: 14px; }
+    .vehicle-filter { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--tm-text-muted); }
+    .vehicle-filter select { padding: 9px 12px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface); color: var(--tm-text); font: inherit; font-size: 13px; }
+    .vehicle-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; }
+    .vehicle-summary { border: 1px solid var(--tm-line); border-radius: 16px; padding: 20px; background: var(--tm-surface); align-self: start; }
+    .vehicle-summary--selected { border-color: var(--tm-green, #16a34a); }
+    .vehicle-summary header { display: flex; align-items: center; gap: 12px; }
+    .vehicle-select input { width: 18px; height: 18px; }
+    .vehicle-summary-title { flex: 1; min-width: 0; }
+    .vehicle-summary-title h2 { margin: 0 0 6px; font-size: 18px; overflow-wrap: anywhere; }
+    .vehicle-summary-title span { color: var(--tm-text-muted); font-size: 13px; }
+    .vehicle-summary-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0; }
+    .vehicle-summary-stats button { display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-canvas); padding: 12px; color: var(--tm-text); cursor: pointer; font: inherit; }
+    .vehicle-summary-stats b { font-size: 20px; }
+    .vehicle-summary-stats span { font-size: 12px; color: var(--tm-text-muted); }
+    .vehicle-summary-actions, .vehicle-settings-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .vehicle-settings { margin-top: 20px; border-top: 1px solid var(--tm-line); padding-top: 16px; }
+    .vehicle-settings summary { cursor: pointer; font-size: 13px; }
+    .vehicle-settings-actions { margin-top: 14px; }
+    .vehicle-edit-hint { margin: 0; font-size: 13px; color: var(--tm-text-muted); }
     .ws__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .ws__head h1 { margin: 0; font-size: 22px; font-weight: 800; color: var(--tm-text); }
     .ws__city { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--tm-line); border-radius: 999px; background: var(--tm-surface); font-size: 12px; font-weight: 700; color: var(--tm-text-muted); }
@@ -2032,6 +2060,33 @@ interface TabDef { key: string; label: string; count?: number; }
       background: var(--tm-canvas); max-height: calc(100vh - 220px);
       transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .15s ease;
     }
+    .group-workspace { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px; min-height: 0; }
+    .group-navigation { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--tm-line); border-radius: 14px; background: var(--tm-surface); align-self: start; }
+    .group-navigation h3 { margin: 0; }
+    .group-navigation p, .group-route-picker p { color: var(--tm-text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 8px; }
+    .group-search, .group-create-form input { width: 100%; box-sizing: border-box; border: 1px solid var(--tm-line); border-radius: 8px; padding: 10px; font: inherit; color: var(--tm-text); background: var(--tm-surface); }
+    .group-nav-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 12px; color: var(--tm-text); font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+    .group-nav-item.selected { background: var(--tm-green-tint, #ecfdf5); border-color: var(--tm-green, #16a34a); }
+    .group-nav-item small, .group-picker-list small { display: block; margin-top: 4px; color: var(--tm-text-muted); font-size: 12px; }
+    .group-create-form { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--tm-canvas); border-radius: 10px; }
+    .group-workspace .kb-columns-container { min-width: 0; overflow-x: visible; display: block; }
+    .group-workspace .kb-column { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; max-height: none; padding: 20px; }
+    .group-workspace .kb-cards-scroll { overflow: visible; max-height: none; }
+    .group-workspace .kb-grp-name { max-width: none; white-space: normal; font-size: 18px; }
+    .group-workspace .kb-drv-chips-container { max-height: none; }
+    .group-workspace .kb-drv-popover { position: static; width: auto; margin-top: 12px; box-shadow: none; }
+    .group-workspace .kb-card-name, .group-workspace .kb-card-path { white-space: normal; }
+    .group-workspace .kb-card-name { font-size: 14px; }
+    .group-workspace .kb-card-path { font-size: 13px; }
+    .group-workspace .kb-card { cursor: default; user-select: text; padding: 16px; }
+    .group-workspace .kb-action-btn { min-height: 34px; font-size: 12px; }
+    .group-workspace .kb-col-title-line, .group-workspace .kb-card-footer { flex-wrap: wrap; }
+    .group-workspace .kb-col-desc { font-size: 13px; line-height: 1.5; }
+    .group-route-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; font-size: 13px; }
+    .group-route-picker { padding: 16px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-surface); }
+    .group-picker-list { max-height: 280px; overflow-y: auto; margin: 12px 0; }
+    .group-picker-list label { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--tm-line); }
+    @media (max-width: 800px) { .group-workspace { grid-template-columns: 1fr; } .group-navigation { max-height: 320px; overflow: auto; } }
     .kb-column--unassigned { border-color: #bae6fd; background: #f8fafc; }
     .kb-column--group { border-color: var(--tm-line); background: var(--tm-canvas); }
 
@@ -2396,11 +2451,78 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     return null;
   }
 
+  vehicleView: 'overview' | 'table' = 'overview';
+
   kanbanSearch = '';
+  groupDriverSearch = '';
+  groupRouteSearch = '';
+  selectedGroupSection: number | 'ungrouped' | 'inactive' = 'ungrouped';
+  showGroupCreator = false;
+  showGroupRoutePicker = false;
+  savingGroupRoutes = false;
+  pendingGroupRouteIds = new Set<number>();
+
+  selectGroupSection(section: number | 'ungrouped' | 'inactive'): void {
+    this.selectedGroupSection = section;
+    this.showGroupRoutePicker = false;
+    this.pendingGroupRouteIds.clear();
+    this.groupRouteSearch = '';
+    this.kanbanSearch = '';
+    this.openDriverDropdownGroupId = null;
+  }
+
+  navigationGroups(v: CityVehicleRow): GroupRow[] {
+    const query = this.groupSearch.trim().toLowerCase();
+    return this.groupsForVehicle(v).filter((g) => g.name.toLowerCase().includes(query));
+  }
+
+  selectedOperationGroups(v: CityVehicleRow): GroupRow[] {
+    return this.groupsForVehicle(v).filter((g) => g.id === this.selectedGroupSection);
+  }
+
+  filteredGroupDrivers(v: CityVehicleRow): DriverOpt[] {
+    const query = this.groupDriverSearch.trim().toLowerCase();
+    return this.driversForVehicle(v).filter((d) => `${d.name} ${d.phone || ''} ${d.vehicle_reg_no || ''}`.toLowerCase().includes(query));
+  }
+
+  groupRouteCandidates(v: CityVehicleRow): RouteLite[] {
+    const query = this.groupRouteSearch.trim().toLowerCase();
+    return this.ungroupedForVehicle(v).filter((r) => `${r.name} ${r.origin_name} ${r.dest_name}`.toLowerCase().includes(query));
+  }
+
+  togglePendingGroupRoute(id: number): void {
+    if (this.pendingGroupRouteIds.has(id)) this.pendingGroupRouteIds.delete(id);
+    else this.pendingGroupRouteIds.add(id);
+  }
+
+  addSelectedRoutesToGroup(v: CityVehicleRow, g: GroupRow): void {
+    if (this.cityId == null || this.savingGroupRoutes) return;
+    const selected = this.ungroupedForVehicle(v).filter((r) => this.pendingGroupRouteIds.has(r.id) && r.flat_fare != null);
+    if (!selected.length) return;
+    const routeIds = [...new Set([...g.route_ids, ...selected.map((r) => r.id)])];
+    this.savingGroupRoutes = true;
+    this.api.patch(`/admin/cities/${this.cityId}/route-groups/${g.id}`, { name: g.name, route_ids: routeIds }).subscribe({
+      next: () => {
+        this.savingGroupRoutes = false;
+        g.route_ids = routeIds;
+        if (this.selectedGroupSection === g.id) {
+          this.pendingGroupRouteIds.clear();
+          this.showGroupRoutePicker = false;
+        }
+        this.toast.success(`${selected.length} routes added to ${g.name}`);
+        this.loadGroups();
+      },
+      error: (err) => {
+        this.savingGroupRoutes = false;
+        this.toast.error(err?.error?.message || 'Could not add routes. Please try again.');
+      },
+    });
+  }
   openDriverDropdownGroupId: number | null = null;
 
   toggleGroupDriverDropdown(gId: number, ev?: Event): void {
     ev?.stopPropagation();
+    this.groupDriverSearch = '';
     this.openDriverDropdownGroupId = this.openDriverDropdownGroupId === gId ? null : gId;
   }
 
@@ -2636,9 +2758,16 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.isCreatingInlineGroup = false;
         this.inlineNewGroupName[v.id] = '';
+        this.showGroupCreator = false;
+        this.routeView = 'groups';
+        this.groupSearch = '';
+        this.kanbanSearch = '';
         this.toast.success(`Group "${name}" created`);
         if (res?.group?.id) {
           this.activeDeckGroupId[v.id] = res.group.id;
+          this.groups = [...this.groups.filter((g) => g.id !== res.group.id), { ...res.group, route_ids: res.group.route_ids ?? [], driver_user_ids: res.group.driver_user_ids ?? [] }];
+          this.selectGroupSection(res.group.id);
+          this.showGroupRoutePicker = true;
         }
         this.onRouteMutation();
       },
@@ -2673,6 +2802,10 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.operationsDrawerVehicle = v;
     this.activeDrawerTab = tab;
+    this.groupSearch = '';
+    this.showGroupCreator = false;
+    this.selectGroupSection(this.groupsForVehicle(v)[0]?.id ?? 'ungrouped');
+    if (tab === 'drivers' && typeof this.selectedGroupSection === 'number') this.openDriverDropdownGroupId = this.selectedGroupSection;
     this.routeView = tab === 'all-routes' ? 'all' : 'groups';
     this.routeStatusFilter = 'all';
     this.kanbanSearch = '';
@@ -2695,6 +2828,8 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.operationsDrawerVehicle = v;
     this.activeDrawerTab = 'groups';
+    this.groupSearch = '';
+    this.selectGroupSection(g?.id ?? this.groupsForVehicle(v)[0]?.id ?? 'ungrouped');
     this.routeView = 'groups';
     this.kanbanSearch = '';
     if (g) {
@@ -2708,6 +2843,9 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     this.select(v);
     this.operationsDrawerVehicle = v;
     this.activeDrawerTab = 'drivers';
+    this.groupSearch = '';
+    this.selectGroupSection(this.groupsForVehicle(v)[0]?.id ?? 'ungrouped');
+    if (typeof this.selectedGroupSection === 'number') this.openDriverDropdownGroupId = this.selectedGroupSection;
     this.routeView = 'groups';
     this.kanbanSearch = '';
     this.operationsDrawerOpen = true;
@@ -3498,7 +3636,11 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
     if (this.cityId == null) return;
     if (!confirm(`Delete "${g.name}"? Its routes go back to needing a group.`)) return;
     this.api.delete(`/admin/cities/${this.cityId}/route-groups/${g.id}`).subscribe({
-      next: () => { this.toast.success('Route group deleted'); this.loadGroups(); },
+      next: () => {
+        if (this.selectedGroupSection === g.id) this.selectGroupSection('ungrouped');
+        this.toast.success('Route group deleted');
+        this.loadGroups();
+      },
       error: (err) => this.toast.error(err?.error?.message || 'Could not delete group'),
     });
   }
