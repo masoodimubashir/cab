@@ -422,7 +422,7 @@ class TripsController extends Controller
         // EN_ROUTE_PICKUP is cancellable too — the rider may still bail while the
         // driver is approaching. The proximity gate below revokes that option
         // once the driver is within the city's configured cancel-block radius.
-        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
+        if (!in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
             return response()->json(['message' => 'Trip cannot be cancelled in current status.'], 409);
         }
 
@@ -701,11 +701,7 @@ class TripsController extends Controller
             return response()->json(['message' => 'Trip is not in negotiation state.'], 409);
         }
 
-        $tripStateMachineService->transition($trip, 'CONFIRMED', [
-            'final_fare' => (float) $data['final_fare'],
-        ]);
-
-        return response()->json(['trip' => $trip->fresh()]);
+        return response()->json(['message' => 'Choose an accepted driver offer before payment using the booking confirmation flow.'], 409);
     }
 
     /**
@@ -1358,4 +1354,3 @@ class TripsController extends Controller
         ], 201);
     }
 }
-

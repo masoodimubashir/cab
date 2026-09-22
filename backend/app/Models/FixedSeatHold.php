@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'extra_luggage_count',
     'luggage_surcharge_amount',
     'status',
+    'approved_driver_id',
     'expires_at',
     'payment_reference',
     'razorpay_order_id',

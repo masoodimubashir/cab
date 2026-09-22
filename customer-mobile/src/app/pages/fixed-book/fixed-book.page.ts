@@ -103,6 +103,8 @@ interface SeatHold {
 }
 
 interface FixedRazorpayOrder {
+  payment_required?: boolean;
+  reservation?: FixedReservation;
   hold: SeatHold;
   razorpay: { key_id: string; order_id: string; amount_paise: number; currency: string };
 }
@@ -1171,23 +1173,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
 
   private confirmCashPayment(hold: SeatHold): void {
     this.booking = true;
-    this.api.post<{ reservation: FixedReservation }>(`/fixed/seat-holds/${hold.id}/confirm-payment`, {
-      board_stop_id: this.boardStopId,
-      drop_stop_id: this.dropStopId,
-      booking_channel: 'advance',
-      payment_mode: 'CASH',
-    }, { 'Idempotency-Key': this.uuid() }).subscribe({
-      next: (res) => {
-        this.booking = false;
-        this.confirmation = res?.reservation ?? null;
-        this.loadMyBookings();
-        this.openConfirmedFixedRide();
-      },
-      error: async (err) => {
-        this.booking = false;
-        await this.showToast(err?.error?.message || 'Cash confirmation failed. Your hold will expire automatically.');
-      },
-    });
+    void this.startRazorpayPayment(hold, 'cash');
   }
 
   checkActiveHold(): void {
@@ -1405,16 +1391,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   private async startRazorpayPayment(hold: SeatHold, method: PaymentChoice = 'online'): Promise<void> {
-    if (typeof Razorpay === 'undefined') {
-      this.booking = false;
-      await this.showToast('Payment library not loaded. Check your connection.');
-      return;
-    }
-
     let order: FixedRazorpayOrder;
     try {
       order = (await this.api
-        .post<FixedRazorpayOrder>(`/fixed/seat-holds/${hold.id}/razorpay-order`, {}, { 'Idempotency-Key': this.uuid() })
+        .post<FixedRazorpayOrder>(`/fixed/seat-holds/${hold.id}/razorpay-order`, { payment_method: method === 'cash' ? 'cash' : 'razorpay' }, { 'Idempotency-Key': this.uuid() })
         .toPromise()) as FixedRazorpayOrder;
     } catch (err: any) {
       this.booking = false;
@@ -1422,6 +1402,18 @@ export class FixedBookPage implements OnInit, OnDestroy {
       return;
     }
 
+    if (order.payment_required === false) {
+      this.booking = false;
+      this.confirmation = order.reservation ?? null;
+      this.loadMyBookings();
+      this.openConfirmedFixedRide();
+      return;
+    }
+    if (typeof Razorpay === 'undefined') {
+      this.booking = false;
+      await this.showToast('Payment library not loaded. Check your connection.');
+      return;
+    }
     const user = this.auth.getUser();
     const rzp = new Razorpay({
       key: order.razorpay.key_id,

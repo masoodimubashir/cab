@@ -114,6 +114,21 @@ class RideAssignmentController extends Controller
     {
         $user = $request->user();
 
+        if ($trip->status === 'PAYMENT_PENDING') {
+            if ((int) $trip->driver_id !== (int) $user->id) {
+                abort(403);
+            }
+            DB::transaction(function () use ($trip) {
+                $locked = Trip::query()->lockForUpdate()->findOrFail($trip->id);
+                if ($locked->status !== 'PAYMENT_PENDING') {
+                    abort(409, 'This request has changed. Refresh and try again.');
+                }
+                app(TripStateMachineService::class)->transition($locked, 'CANCELLED', ['cancelled_reason' => 'driver_rejected']);
+                app(\App\Services\ShuttleRefundService::class)->markCancelledForTrip($locked, 'driver_rejected');
+            });
+            return response()->json(['message' => 'Request rejected.']);
+        }
+
         if ($trip->status !== 'CONFIRMED' && $trip->status !== 'NEGOTIATION') {
             return response()->json(['message' => 'Trip is not in an assignable state.'], 409);
         }
@@ -188,4 +203,3 @@ class RideAssignmentController extends Controller
         return response()->json(['message' => 'Rejected.']);
     }
 }
-

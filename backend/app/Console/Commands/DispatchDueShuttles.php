@@ -11,10 +11,10 @@ use Illuminate\Support\Facades\DB;
 /**
  * Module 8B — dispatches forming shuttle pools that are due (decision 6C).
  *
- * A pool gets its driver as soon as it's full (handled inline at payment) OR
+ * A pool gets its driver as soon as it's full (handled at seat selection) OR
  * once its forming window expires — this command is the timer half. Idempotent:
  * it row-locks each journey and stamps dispatched_at, so a pool is never
- * dispatched twice (nor re-dispatched by a racing "full" payment). Safe to run
+ * dispatched twice (nor re-dispatched by a racing seat selection). Safe to run
  * every minute.
  */
 class DispatchDueShuttles extends Command
@@ -40,10 +40,9 @@ class DispatchDueShuttles extends Command
             ->get();
 
         foreach ($due as $journey) {
-            $total = $this->paidFareTotal((int) $journey->id);
+            $total = $this->requestedFareTotal((int) $journey->id);
 
-            // Nothing paid yet — leave it; a pool with no paying rider aboard has
-            // nothing to dispatch (abandoned holds are cleaned up separately).
+            // Only riders who selected seats participate in the driver request.
             if ($total <= 0) {
                 continue;
             }
@@ -72,12 +71,12 @@ class DispatchDueShuttles extends Command
         return self::SUCCESS;
     }
 
-    private function paidFareTotal(int $journeyId): float
+    private function requestedFareTotal(int $journeyId): float
     {
         return round((float) ShuttlePassengerBooking::query()
             ->where('shuttle_journey_id', $journeyId)
-            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
-            ->where('payment_status', 'PAID')
+            ->where('status', 'PENDING_DRIVER_APPROVAL')
+            ->whereIn('id', \App\Models\JourneySeat::query()->where('status', 'HELD')->select('shuttle_passenger_booking_id'))
             ->sum('fare_amount'), 2);
     }
 }

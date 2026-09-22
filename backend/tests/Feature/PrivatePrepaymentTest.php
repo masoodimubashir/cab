@@ -402,7 +402,7 @@ class PrivatePrepaymentTest extends TestCase
     /* The flag                                                            */
     /* ------------------------------------------------------------------ */
 
-    public function test_with_the_engine_off_a_ride_still_cannot_be_paid_before_it_ends(): void
+    public function test_approved_ride_can_be_paid_before_it_ends_with_split_engine_off(): void
     {
         config()->set('services.payments.split_enabled', false);
         $this->mockRazorpay();
@@ -411,8 +411,8 @@ class PrivatePrepaymentTest extends TestCase
         Sanctum::actingAs($this->customer, ['act-as:customer']);
         $this->withHeaders(['Idempotency-Key' => 'legacy-prepay'])
             ->postJson("/api/trips/{$trip->id}/pay/razorpay")
-            ->assertStatus(409)
-            ->assertJsonPath('message', 'Trip must be completed before payment.');
+            ->assertOk()
+            ->assertJsonPath('razorpay.amount_paise', 20000);
     }
 
     public function test_with_the_engine_off_paying_after_the_ride_splits_nothing(): void
@@ -421,12 +421,13 @@ class PrivatePrepaymentTest extends TestCase
         $this->mockRazorpay();
         $trip = $this->confirmedTrip($this->driver(), 200);
         $trip = $this->complete($trip);
+        $entriesAfterCompletion = LedgerEntry::query()->count();
 
         $payment = $this->pay($trip);
 
         $this->assertNull($payment->settlement_mode);
         $this->assertNull($payment->split_at);
-        $this->assertSame(0, LedgerEntry::query()->count());
+        $this->assertSame($entriesAfterCompletion, LedgerEntry::query()->count(), 'Payment capture must not run the removed split engine.');
     }
 
     protected function tearDown(): void

@@ -178,17 +178,18 @@ class FareNegotiationController extends Controller
     /**
      * How much is still owed on this trip, and whether the rider can pay it now.
      *
-     * Under the auto-split engine the ride is PREPAID: the fare is payable the
-     * moment it's agreed (CONFIRMED), and after the ride only a shortfall over
-     * what was prepaid remains. With the engine off, nothing is payable until
-     * the trip completes — the legacy behaviour.
+     * Driver approval unlocks upfront payment; any remaining balance is due at completion.
      *
      * @return array{amount:float,payable:bool,prepay:bool}
      */
     private function paymentDue(Trip $trip): array
     {
-        // Route removed — nothing is payable until the trip completes (postpaid).
-        $prepay = false;
+        // Approval unlocks upfront payment; a later shortfall is due at completion.
+        $prepay = $trip->status === 'PAYMENT_PENDING' && $trip->driver_id !== null;
+        if (\App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists()) {
+            // Shuttle payments belong to each passenger booking, not the pool's trip.
+            return ['amount' => 0.0, 'payable' => false, 'prepay' => false];
+        }
         $fare = (float) ($trip->final_fare ?? 0);
 
         $paid = (float) \App\Models\Payment::query()
@@ -689,4 +690,3 @@ class FareNegotiationController extends Controller
         ];
     }
 }
-

@@ -30,7 +30,7 @@ class ShuttleRefundService
             if (!$locked) {
                 throw new ReservationException('This Shuttle booking could not be found.', 404);
             }
-            if (!in_array($locked->status, ['PAYMENT_PENDING', 'CONFIRMED'], true)) {
+            if (!in_array($locked->status, ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING', 'CONFIRMED'], true)) {
                 throw new ReservationException('This Shuttle booking can no longer be cancelled.', 422);
             }
 
@@ -69,13 +69,18 @@ class ShuttleRefundService
                 }
             }
 
-            if ($trip && in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
+            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER, $refundFull, $modelBRefundPaise);
+            $remaining = ShuttlePassengerBooking::query()->where('shuttle_journey_id', $locked->shuttle_journey_id)
+                ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING', 'CONFIRMED', 'BOARDED'])->exists();
+            if (!$remaining && $trip && in_array($trip->status, ['REQUESTED', 'NEGOTIATION', 'PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP'], true)) {
                 app(TripStateMachineService::class)->transition($trip, 'CANCELLED', [
                     'cancelled_reason' => $reason,
                 ]);
             }
 
-            $this->markCancelled($locked, $reason, AutoRefundService::BY_CUSTOMER, $refundFull, $modelBRefundPaise);
+            if ($remaining && $trip) {
+                app(BookingConfirmationService::class)->confirmIfReady($trip);
+            }
 
             return [
                 'booking' => $locked->fresh(['journey:id,status,capacity,seats_taken,trip_id']),
@@ -99,7 +104,7 @@ class ShuttleRefundService
 
             $bookings = ShuttlePassengerBooking::query()
                 ->where('shuttle_journey_id', $journey->id)
-                ->whereIn('status', ['PAYMENT_PENDING', 'CONFIRMED'])
+                ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING', 'CONFIRMED'])
                 ->lockForUpdate()
                 ->get();
 
@@ -254,9 +259,11 @@ class ShuttleRefundService
         $this->seatMaps->releaseSeats($booking);
 
         if ($booking->journey) {
+            $remaining = ShuttlePassengerBooking::query()->where('shuttle_journey_id', $booking->shuttle_journey_id)
+                ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING', 'CONFIRMED', 'BOARDED'])->sum('seats');
             $booking->journey->update([
-                'seats_taken' => max(0, (int) $booking->journey->seats_taken - (int) $booking->seats),
-                'status' => 'CANCELLED',
+                'seats_taken' => $remaining,
+                'status' => $remaining > 0 ? $booking->journey->status : 'CANCELLED',
             ]);
         }
 

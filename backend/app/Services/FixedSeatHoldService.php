@@ -95,6 +95,9 @@ class FixedSeatHoldService
             }
 
             $this->availability->assertBookableDeparture($dep, true);
+            if (!$dep->driver_id) {
+                throw new ReservationException('A driver must be assigned before requesting seats on this departure.', 409);
+            }
             $route = $dep->route;
             if (!$route) {
                 throw new ReservationException('This fixed route is not available.', 404);
@@ -221,6 +224,7 @@ class FixedSeatHoldService
 
             $lockedHold->update([
                 'status' => 'ACCEPTED',
+                'approved_driver_id' => $driver->id,
                 'expires_at' => now()->addMinutes(5),
             ]);
 
@@ -342,13 +346,16 @@ class FixedSeatHoldService
                 }
             }
 
-            if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
+            if ($lockedHold->status !== 'ACCEPTED' || !$lockedHold->approved_driver_id) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
 
             $dep = RouteDeparture::query()->with('route')->lockForUpdate()->find($lockedHold->route_departure_id);
             if (!$dep) {
                 throw new ReservationException('This departure could not be found.', 404);
+            }
+            if ((int) $dep->driver_id !== (int) $lockedHold->approved_driver_id) {
+                throw new ReservationException('Driver approval is no longer valid.', 409);
             }
 
             $this->availability->assertBookableDeparture($dep, true);
@@ -516,7 +523,7 @@ class FixedSeatHoldService
                 throw new ReservationException('This seat hold is already confirmed.', 409);
             }
 
-            if (!in_array($lockedHold->status, ['ACCEPTED', 'HELD', 'EXPIRED'], true)) {
+            if (!in_array($lockedHold->status, ['ACCEPTED', 'EXPIRED'], true) || !$lockedHold->approved_driver_id) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
             if ($lockedHold->razorpay_payment_id && $lockedHold->razorpay_payment_id !== $razorpayPaymentId) {
@@ -531,6 +538,16 @@ class FixedSeatHoldService
             $dep = RouteDeparture::query()->with('route')->lockForUpdate()->find($lockedHold->route_departure_id);
             if (!$dep) {
                 throw new ReservationException('This departure could not be found.', 404);
+            }
+
+            if ((int) $dep->driver_id !== (int) $lockedHold->approved_driver_id) {
+                throw new ReservationException('Driver approval is no longer valid. Please request seats again.', 409);
+            }
+            $cashWithoutDeposit = $source === 'cash_zero_deposit';
+            if ($cashWithoutDeposit && ($lockedHold->payment_method !== 'cash'
+                || !app(CashDepositService::class)->cashEnabled()
+                || app(CashDepositService::class)->quote((float) $lockedHold->amount)['deposit'] > 0)) {
+                throw new ReservationException('An online payment is required.', 422);
             }
 
             $this->availability->assertBookableDeparture($dep, true);
@@ -588,7 +605,7 @@ class FixedSeatHoldService
                 'promo_discount_amount' => $lockedHold->discount_amount !== null ? (float) $lockedHold->discount_amount : null,
                 'coupon_assignment_id' => $lockedHold->coupon_assignment_id,
                 'payment_method' => $lockedHold->payment_method ?? 'razorpay',
-                'payment_status' => 'PAID',
+                'payment_status' => $cashWithoutDeposit ? 'PENDING' : 'PAID',
                 'payment_reference' => $razorpayPaymentId,
                 'has_extra_luggage' => $extraLuggageCount > 0,
                 'extra_luggage_count' => $extraLuggageCount,
@@ -604,8 +621,8 @@ class FixedSeatHoldService
             $lockedHold->update([
                 'status' => 'CONFIRMED',
                 'payment_reference' => $razorpayPaymentId,
-                'razorpay_payment_id' => $razorpayPaymentId,
-                'razorpay_signature' => 'server_verified:' . $source,
+                'razorpay_payment_id' => $cashWithoutDeposit ? null : $razorpayPaymentId,
+                'razorpay_signature' => $cashWithoutDeposit ? null : 'server_verified:' . $source,
             ]);
 
             $this->seatMap->markSeatsBooked($lockedHold, $reservation);
@@ -613,18 +630,17 @@ class FixedSeatHoldService
 
             // Phase 5 — mirror the prepayment onto the shared money engine (see
             // confirmHold). No-op while the split engine is disabled.
-            app(\App\Services\BookingPaymentService::class)->recordSeatCapture(
-                $reservation,
-                (string) $razorpayPaymentId,
-            );
+            if (!$cashWithoutDeposit) {
+                app(\App\Services\BookingPaymentService::class)->recordSeatCapture($reservation, (string) $razorpayPaymentId);
+            }
 
             $this->events->record(
                 $reservation,
                 'booking_confirmed',
                 'Booking confirmed',
-                $source === 'sweeper'
+                $cashWithoutDeposit ? 'Driver approval completed the cash booking; no online deposit was required.' : ($source === 'sweeper'
                     ? 'Razorpay confirmed the payment during reconciliation and the fixed booking was completed automatically.'
-                    : 'Razorpay confirmed the payment via webhook and the fixed booking was completed automatically.',
+                    : 'Razorpay confirmed the payment via webhook and the fixed booking was completed automatically.'),
                 [
                     'payment_reference' => $razorpayPaymentId,
                     'booking_channel' => 'advance',
@@ -637,8 +653,10 @@ class FixedSeatHoldService
         });
 
         if (!$alreadyConfirmed) {
-            $this->broadcastDepartureUpdate((int) $reservation->route_departure_id, 'booking_confirmed');
-            $this->notifyBookingConfirmed($reservation);
+            DB::afterCommit(function () use ($reservation) {
+                $this->broadcastDepartureUpdate((int) $reservation->route_departure_id, 'booking_confirmed');
+                $this->notifyBookingConfirmed($reservation);
+            });
         }
 
         return $reservation;
@@ -671,13 +689,16 @@ class FixedSeatHoldService
                 }
             }
 
-            if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
+            if ($lockedHold->status !== 'ACCEPTED' || !$lockedHold->approved_driver_id) {
                 throw new ReservationException("This seat hold is no longer active.", 422);
             }
 
             $dep = RouteDeparture::query()->with("route")->lockForUpdate()->find($lockedHold->route_departure_id);
             if (!$dep) {
                 throw new ReservationException("This departure could not be found.", 404);
+            }
+            if ((int) $dep->driver_id !== (int) $lockedHold->approved_driver_id) {
+                throw new ReservationException('Driver approval is no longer valid.', 409);
             }
 
             $this->availability->assertBookableDeparture($dep, true);
@@ -792,26 +813,48 @@ class FixedSeatHoldService
     }
 
 
-    public function createRazorpayOrder(User $customer, FixedSeatHold $hold, RazorpayService $razorpayService): array
+    public function createRazorpayOrder(User $customer, FixedSeatHold $hold, RazorpayService $razorpayService, ?string $paymentMethod = null): array
     {
         $this->availability->expireHoldIfNeeded($hold);
 
-        return DB::transaction(function () use ($customer, $hold, $razorpayService) {
+        return DB::transaction(function () use ($customer, $hold, $razorpayService, $paymentMethod) {
             $lockedHold = FixedSeatHold::query()->lockForUpdate()->find($hold->id);
             if (!$lockedHold || $lockedHold->customer_id !== $customer->id) {
                 throw new ReservationException('This seat hold could not be found.', 404);
             }
 
             $lockedHold = $this->availability->expireHoldIfNeeded($lockedHold);
+            if ($lockedHold->status === 'CONFIRMED' && str_starts_with((string) $lockedHold->payment_reference, 'cash_fixed_')) {
+                $reservation = SeatReservation::query()->where('payment_reference', $lockedHold->payment_reference)
+                    ->where('customer_id', $customer->id)->firstOrFail();
+                return ['payment_required' => false, 'reservation_id' => $reservation->id];
+            }
             if ($lockedHold->status === 'PENDING_DRIVER_APPROVAL') {
                 throw new ReservationException('Driver has not accepted this seat request yet.', 422);
             }
-            if (!in_array($lockedHold->status, ['HELD', 'ACCEPTED'], true)) {
+            if ($lockedHold->status !== 'ACCEPTED' || !$lockedHold->approved_driver_id) {
                 throw new ReservationException('This seat hold is no longer active.', 422);
             }
 
+            $dep = RouteDeparture::query()->lockForUpdate()->findOrFail($lockedHold->route_departure_id);
+            if ((int) $dep->driver_id !== (int) $lockedHold->approved_driver_id) {
+                throw new ReservationException('Driver approval is no longer valid.', 409);
+            }
+            if ($paymentMethod && $paymentMethod !== $lockedHold->payment_method) {
+                if ($lockedHold->razorpay_order_id) {
+                    throw new ReservationException('A payment is already in progress. Keep the same payment method or request seats again.', 409);
+                }
+                $lockedHold->update(['payment_method' => $paymentMethod]);
+            }
+            if ($lockedHold->payment_method === 'cash' && !app(CashDepositService::class)->cashEnabled()) {
+                throw new ReservationException('Cash is not available.', 422);
+            }
             if ($lockedHold->razorpay_order_id) {
                 return $this->razorpayOrderResponse($lockedHold);
+            }
+            if ($lockedHold->payment_method === 'cash' && app(CashDepositService::class)->quote((float) $lockedHold->amount)['deposit'] <= 0) {
+                $reservation = $this->confirmPaidHold($lockedHold, 'cash_fixed_' . $lockedHold->id, 'cash_zero_deposit');
+                return ['payment_required' => false, 'reservation_id' => $reservation->id];
             }
 
             // Cash pays only the upfront deposit online; online pays the full fare.

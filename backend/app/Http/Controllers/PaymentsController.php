@@ -63,11 +63,8 @@ class PaymentsController extends Controller
         ]);
     }
 
-    /**
-     * Phases the customer may pay in BEFORE the ride runs. The fare is agreed at
-     * CONFIRMED, so that's the earliest point there's an amount to charge.
-     */
-    private const PREPAY_STATUSES = ['CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'];
+    /** Approved phases in which upfront payment is allowed. */
+    private const PREPAY_STATUSES = ['PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'];
 
     public function payRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService, CouponService $couponService, PaymentModeService $paymentModeService)
     {
@@ -76,17 +73,16 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        // Under the automatic model the customer pays up front, as soon as the
-        // fare is agreed — the ride is prepaid, not billed afterwards. The
-        // post-completion charge stays available for the balance when the final
-        // fare came in above the estimate (waiting time, tolls, a changed route),
-        // and remains the ONLY path while the engine is off.
-        $prepay = $this->prepaymentsEnabled() && in_array($trip->status, self::PREPAY_STATUSES, true);
+        // Driver approval unlocks payment. Later fare increases remain payable at completion.
+        if (\App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists()) {
+            return response()->json(['message' => 'Pay through your shuttle seat booking.'], 409);
+        }
+        $prepay = $trip->driver_id && in_array($trip->status, self::PREPAY_STATUSES, true);
 
         if (!$prepay && $trip->status !== 'COMPLETED') {
             return response()->json([
                 'message' => $this->prepaymentsEnabled()
-                    ? 'This trip is not ready for payment yet.'
+                    ? 'Driver approval is required before payment.'
                     : 'Trip must be completed before payment.',
             ], 409);
         }
@@ -176,7 +172,12 @@ class PaymentsController extends Controller
 
         $receipt = 'trip_' . $trip->id . '_' . now()->format('YmdHis');
 
-        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $customerFeeAmount, $operatorFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay) {
+        return DB::transaction(function () use ($trip, $amountPaise, $payableAmount, $chargeAmount, $customerFeeAmount, $operatorFeeAmount, $methodGroup, $couponAssignmentId, $discountAmount, $receipt, $razorpayService, $prepay, $alreadyPaid) {
+            $trip = Trip::query()->lockForUpdate()->findOrFail($trip->id);
+            abort_unless(($trip->driver_id && in_array($trip->status, self::PREPAY_STATUSES, true)) || $trip->status === 'COMPLETED', 409, 'Trip is no longer payable.');
+            $currentPaid = (float) Payment::query()->where('trip_id', $trip->id)->whereIn('status', ['SUCCESS', 'REFUNDED'])
+                ->sum(DB::raw('amount - COALESCE(gateway_fee_amount, 0)'));
+            abort_unless(round($currentPaid, 2) === round($alreadyPaid, 2), 409, 'Payment changed. Refresh before paying again.');
             // Reuse an abandoned checkout for this trip rather than piling up
             // rows; a settled payment is never touched (there may now be several
             // per trip: the prepayment plus a balance).
@@ -205,15 +206,19 @@ class PaymentsController extends Controller
                 'provider_response' => null,
                 'coupon_assignment_id' => $couponAssignmentId,
                 'discount_amount' => $discountAmount,
-                // Every online payment on a private ride settles through the
-                // booking engine once the engine is on — a prepayment because the
-                // ride hasn't happened yet, and a post-ride balance because it is
-                // the SECOND capture against ONE fare and must be divided against
-                // what the prepayment already took, not against the whole fare
-                // again. Null keeps the legacy split-at-capture path.
-                'settlement_mode' => $this->prepaymentsEnabled() ? Payment::SETTLE_BOOKING : null,
+                // Upfront payments wait for completion before settlement.
+                'settlement_mode' => $prepay ? Payment::SETTLE_BOOKING : null,
             ];
 
+            if ($payment && $payment->razorpay_order_id) {
+                abort_unless($payment->method === 'RAZORPAY' && (float) $payment->amount === $chargeAmount
+                    && $payment->payment_method_group === $methodGroup && $payment->coupon_assignment_id == $couponAssignmentId,
+                    409, 'An existing payment checkout must be completed before changing payment details.');
+                return response()->json(['payment' => $payment, 'prepaid' => (bool) $prepay, 'razorpay' => [
+                    'key_id' => env('RAZORPAY_KEY_ID'), 'order_id' => $payment->razorpay_order_id,
+                    'amount_paise' => $amountPaise, 'currency' => $payment->currency, 'method' => $methodGroup,
+                ]]);
+            }
             if ($payment) {
                 $payment->forceFill($attributes)->save();
             } else {
@@ -230,6 +235,10 @@ class PaymentsController extends Controller
             $order = $razorpayService->createOrder($amountPaise, $receipt);
             $payment->razorpay_order_id = $order['order_id'];
             $payment->save();
+
+            if ($prepay && $trip->payment_method !== 'razorpay') {
+                $trip->forceFill(['payment_method' => 'razorpay'])->save();
+            }
 
             return response()->json([
                 'payment' => $payment,
@@ -287,13 +296,12 @@ class PaymentsController extends Controller
     }
 
     /**
-     * Is the customer expected to pay up front on a private ride? No — Route/prepay
-     * was removed. Private rides are postpaid (pay at completion); the wallet
-     * settles the driver afterwards (Model B).
+     * Approved private bookings require online payment (or the cash deposit)
+     * before confirmation. Settlement still occurs when the ride completes.
      */
     private function prepaymentsEnabled(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -352,7 +360,7 @@ class PaymentsController extends Controller
                 'message' => $exists ? 'Order ID mismatch.' : 'Payment record not found.',
             ], $exists ? 409 : 404);
         }
-        if ($payment->status === 'SUCCESS') {
+        if (in_array($payment->status, ['SUCCESS', 'REFUNDED'], true)) {
             return response()->json(['payment' => $payment]);
         }
 
@@ -363,8 +371,7 @@ class PaymentsController extends Controller
         );
 
         if (!$valid) {
-            $payment->status = 'FAILED';
-            $payment->save();
+            Payment::query()->whereKey($payment->id)->where('status', 'PENDING')->update(['status' => 'FAILED']);
             Log::warning('DreamCabs Razorpay payment signature invalid', [
                 'trip_id' => $trip->id,
                 'razorpay_order_id' => $data['razorpay_order_id'],
@@ -374,12 +381,18 @@ class PaymentsController extends Controller
         }
 
         return DB::transaction(function () use ($payment, $data, $trip) {
+            $payment = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+            if (in_array($payment->status, ['SUCCESS', 'REFUNDED'], true)) {
+                return response()->json(['payment' => $payment]);
+            }
             $payment->razorpay_payment_id = $data['razorpay_payment_id'];
             $payment->status = 'SUCCESS';
             $payment->paid_at = now();
             $payment->save();
 
             $this->markCouponRedeemed($payment, $trip);
+
+            app(\App\Services\BookingConfirmationService::class)->confirmIfReady($trip);
 
             // Auto-split at source (Route): driver share transferred/held,
             // operator keeps commission. Idempotent + no-op while disabled, and
@@ -452,13 +465,17 @@ class PaymentsController extends Controller
         }
 
         return DB::transaction(function () use ($trip, $payableAmount, $couponAssignmentId, $discountAmount) {
+            Trip::query()->whereKey($trip->id)->lockForUpdate()->firstOrFail();
+            $onlinePaid = Payment::query()->where('trip_id', $trip->id)->where('status', 'SUCCESS')
+                ->where('provider', 'RAZORPAY')->get()
+                ->sum(fn ($p) => max(0, (float) $p->amount - (float) $p->gateway_fee_amount));
             $payment = Payment::query()->updateOrCreate(
-                ['trip_id' => $trip->id],
+                ['trip_id' => $trip->id, 'method' => 'CASH', 'provider' => 'NONE'],
                 [
                     'method' => 'CASH',
                     'provider' => 'NONE',
                     'status' => 'SUCCESS',
-                    'amount' => $payableAmount,
+                    'amount' => max(0, round($payableAmount - $onlinePaid, 2)),
                     'currency' => 'INR',
                     'paid_at' => now(),
                     'coupon_assignment_id' => $couponAssignmentId,
@@ -487,7 +504,8 @@ class PaymentsController extends Controller
         }
 
         // The deposit is collected up front, as soon as the fare is agreed.
-        if (!in_array($trip->status, self::PREPAY_STATUSES, true)) {
+        if (!$trip->driver_id || !in_array($trip->status, self::PREPAY_STATUSES, true)
+            || \App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists()) {
             return response()->json(['message' => 'This trip is not ready for a deposit yet.'], 409);
         }
 
@@ -496,34 +514,50 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Cash is not available for this trip.'], 422);
         }
 
-        $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
-        if ($fare <= 0) {
-            return response()->json(['message' => 'Fare not available yet.'], 422);
-        }
+        return DB::transaction(function () use ($trip, $razorpayService) {
+            $trip = Trip::query()->lockForUpdate()->findOrFail($trip->id);
+            abort_unless($trip->driver_id && in_array($trip->status, self::PREPAY_STATUSES, true), 409, 'Trip is no longer payable.');
+            $fare = (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0);
+            if ($fare <= 0) {
+                return response()->json(['message' => 'Fare not available yet.'], 422);
+            }
 
-        $quote = app(\App\Services\CashDepositService::class)->quote($fare);
-        $deposit = $quote['deposit'];
-        $balance = $quote['balance'];
+            $quote = app(\App\Services\CashDepositService::class)->quote($fare);
+            $deposit = $quote['deposit'];
+            $balance = $quote['balance'];
 
-        // Mark the trip as cash so completion settles it as cash (commission from
-        // the wallet, deposit wholly to the driver).
-        if (strtolower((string) $trip->payment_method) !== 'cash') {
-            $trip->forceFill(['payment_method' => 'cash'])->save();
-        }
+            $captured = (float) Payment::query()->where('trip_id', $trip->id)->where('status', 'SUCCESS')
+                ->sum(DB::raw('amount - COALESCE(gateway_fee_amount, 0)'));
+            $depositPaid = Payment::query()->where('trip_id', $trip->id)->where('status', 'SUCCESS')
+                ->where('method', 'CASH')->whereNotNull('cash_deposit_amount')->exists();
+            if ($depositPaid || ($captured >= $deposit && $captured > 0)) {
+                app(\App\Services\BookingConfirmationService::class)->confirmIfReady($trip);
+                return response()->json(['deposit_required' => false, 'cash_balance_due' => max(0, $fare - $captured)]);
+            }
+            if (Payment::query()->where('trip_id', $trip->id)->where('status', 'PENDING')
+                ->where('method', '!=', 'CASH')->whereNotNull('razorpay_order_id')->exists()) {
+                return response()->json(['message' => 'Complete the existing online checkout before changing payment method.'], 409);
+            }
 
-        // A 0% operator deposit means nothing is collected online — pure cash ride.
-        if ($deposit <= 0) {
-            return response()->json([
-                'deposit_required' => false,
-                'cash_balance_due' => $balance,
-                'message' => 'No upfront deposit — pay the driver in cash at trip end.',
-            ]);
-        }
+            // Mark the trip as cash so completion settles it as cash (commission from
+            // the wallet, deposit wholly to the driver).
+            if (strtolower((string) $trip->payment_method) !== 'cash') {
+                $trip->forceFill(['payment_method' => 'cash'])->save();
+            }
 
-        $amountPaise = (int) round($deposit * 100);
-        $receipt = 'trip_' . $trip->id . '_dep_' . now()->format('YmdHis');
+            // A 0% operator deposit means nothing is collected online — pure cash ride.
+            if ($deposit <= 0) {
+                app(\App\Services\BookingConfirmationService::class)->confirmIfReady($trip);
+                return response()->json([
+                    'deposit_required' => false,
+                    'cash_balance_due' => $balance,
+                    'message' => 'No upfront deposit — pay the driver in cash at trip end.',
+                ]);
+            }
 
-        return DB::transaction(function () use ($trip, $fare, $amountPaise, $deposit, $balance, $receipt, $razorpayService) {
+            $amountPaise = (int) round($deposit * 100);
+            $receipt = 'trip_' . $trip->id . '_dep_' . now()->format('YmdHis');
+
             // Reuse an abandoned deposit checkout for this trip rather than piling
             // up rows; a settled deposit is never touched.
             $payment = Payment::query()
@@ -532,6 +566,14 @@ class PaymentsController extends Controller
                 ->whereNotNull('cash_deposit_amount')
                 ->latest('id')
                 ->first();
+
+            if ($payment && $payment->razorpay_order_id) {
+                return response()->json(['payment' => $payment, 'deposit_required' => true,
+                    'breakdown' => ['fare' => $fare, 'deposit' => (float) $payment->amount, 'cash_balance_due' => (float) $payment->cash_balance_due],
+                    'razorpay' => ['key_id' => env('RAZORPAY_KEY_ID'), 'order_id' => $payment->razorpay_order_id,
+                        'amount_paise' => (int) round((float) $payment->amount * 100), 'currency' => $payment->currency],
+                ]);
+            }
 
             // Private cash: the operator bears the gateway fee on the deposit. It's
             // recorded on the payment for the operator's net-settlement; it is NOT a
@@ -745,4 +787,3 @@ class PaymentsController extends Controller
         return response()->json(['ok' => true] + $result);
     }
 }
-

@@ -90,7 +90,7 @@ class ShuttleBookingService
                 'currency' => 'INR',
                 'payment_method' => $paymentMethod,
                 'payment_status' => 'PENDING',
-                'status' => 'PAYMENT_PENDING',
+                'status' => 'PENDING_DRIVER_APPROVAL',
             ]);
         });
     }
@@ -162,6 +162,7 @@ class ShuttleBookingService
 
         $candidates = ShuttleJourney::query()
             ->where('city_vehicle_type_id', $cvt->id)
+            ->whereNull('dispatched_at')
             ->whereIn('status', ['DISPATCH_DISABLED', 'FORMING'])
             ->whereColumn('seats_taken', '<', 'capacity')
             ->orderByDesc('id')
@@ -171,7 +172,7 @@ class ShuttleBookingService
         foreach ($candidates as $candidate) {
             $anchor = ShuttlePassengerBooking::query()
                 ->where('shuttle_journey_id', $candidate->id)
-                ->whereIn('status', ['PAYMENT_PENDING', 'CONFIRMED', 'BOARDED'])
+                ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING', 'CONFIRMED', 'BOARDED'])
                 ->where('scope', $scope)
                 ->orderBy('id')
                 ->first();
@@ -188,6 +189,7 @@ class ShuttleBookingService
             // Lock and re-check before committing to the join.
             $locked = ShuttleJourney::query()->whereKey($candidate->id)->lockForUpdate()->first();
             if ($locked
+                && $locked->dispatched_at === null
                 && in_array($locked->status, ['DISPATCH_DISABLED', 'FORMING'], true)
                 && (int) $locked->seats_taken < (int) $locked->capacity) {
                 $locked->increment('seats_taken');
@@ -227,6 +229,10 @@ class ShuttleBookingService
             if ($locked->status !== 'PAYMENT_PENDING') {
                 throw new ReservationException('This Shuttle booking is not waiting for payment.', 422);
             }
+            $this->assertDriverApproved($locked);
+            if ($locked->payment_method === 'cash' && !app(CashDepositService::class)->cashEnabled()) {
+                throw new ReservationException('Cash is not available.', 422);
+            }
             if ((float) $locked->fare_amount <= 0) {
                 throw new ReservationException('Shuttle fare is not available for this booking.', 422);
             }
@@ -238,6 +244,11 @@ class ShuttleBookingService
             $onlineAmount = strtolower((string) $locked->payment_method) === 'cash'
                 ? app(CashDepositService::class)->quote((float) $locked->fare_amount)['deposit']
                 : (float) $locked->fare_amount;
+
+            if ($locked->payment_method === 'cash' && $onlineAmount <= 0) {
+                $this->confirmCashBooking($locked);
+                return ['payment_required' => false, 'booking_id' => $locked->id];
+            }
 
             $amountPaise = max(100, (int) round($onlineAmount * 100));
             $receipt = 'shuttle_' . $locked->id . '_' . now()->format('YmdHis');
@@ -259,16 +270,20 @@ class ShuttleBookingService
 
     public function confirmPayment(User $customer, ShuttlePassengerBooking $booking, array $data, RazorpayService $razorpay): ShuttlePassengerBooking
     {
-        $dispatch = null;
-
-        $confirmed = DB::transaction(function () use ($customer, $booking, $data, $razorpay, &$dispatch) {
+        $confirmed = DB::transaction(function () use ($customer, $booking, $data, $razorpay) {
             $locked = ShuttlePassengerBooking::query()->lockForUpdate()->find($booking->id);
             if (!$locked || $locked->customer_id !== $customer->id) {
                 throw new ReservationException("This Shuttle booking could not be found.", 404);
             }
+            if ($locked->status === 'CONFIRMED' && $locked->payment_status === 'PAID'
+                && $locked->razorpay_payment_id === ($data['razorpay_payment_id'] ?? null)
+                && $locked->razorpay_order_id === ($data['razorpay_order_id'] ?? null)) {
+                return $locked;
+            }
             if (!in_array($locked->status, ["PAYMENT_PENDING", "CONFIRMED"], true)) {
                 throw new ReservationException("This Shuttle booking is not waiting for payment.", 422);
             }
+            $this->assertDriverApproved($locked);
 
             $razorpayOrderId = trim((string) $data["razorpay_order_id"]);
             $razorpayPaymentId = trim((string) $data["razorpay_payment_id"]);
@@ -301,20 +316,10 @@ class ShuttleBookingService
             $this->markCouponRedeemed($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
-
-            // Dispatch a driver as soon as the van is full (decision 6C). Otherwise
-            // the pool keeps forming and the timer sweep (shuttle:dispatch-due)
-            // dispatches it once the wait window expires.
-            if ($this->claimDispatchIfFull($locked->shuttle_journey_id)) {
-                $dispatch = [$trip->id, $this->journeyPaidFareTotal($locked->shuttle_journey_id)];
-            }
+            app(BookingConfirmationService::class)->confirmIfReady($trip);
 
             return $locked->fresh();
         });
-
-        if ($dispatch) {
-            DispatchHopJob::startChain($dispatch[0], $dispatch[1]);
-        }
 
         $this->dispatchInvoiceForShuttle($confirmed, (string) ($confirmed->razorpay_payment_id ?? ''));
 
@@ -329,9 +334,7 @@ class ShuttleBookingService
      */
     public function confirmPaidServerVerified(ShuttlePassengerBooking $booking, string $razorpayPaymentId, string $source = 'webhook'): ShuttlePassengerBooking
     {
-        $dispatch = null;
-
-        $confirmed = DB::transaction(function () use ($booking, $razorpayPaymentId, $source, &$dispatch) {
+        $confirmed = DB::transaction(function () use ($booking, $razorpayPaymentId, $source) {
             $locked = ShuttlePassengerBooking::query()->lockForUpdate()->find($booking->id);
             if (!$locked) {
                 throw new ReservationException('This Shuttle booking could not be found.', 404);
@@ -342,6 +345,7 @@ class ShuttleBookingService
             if (!in_array($locked->status, ['PAYMENT_PENDING', 'CONFIRMED'], true)) {
                 throw new ReservationException('This Shuttle booking is not waiting for payment.', 422);
             }
+            $this->assertDriverApproved($locked);
             if ($locked->razorpay_payment_id && $locked->razorpay_payment_id !== $razorpayPaymentId) {
                 throw new ReservationException('This Shuttle booking is already linked to another payment.', 422);
             }
@@ -363,18 +367,10 @@ class ShuttleBookingService
             $this->markCouponRedeemed($locked);
 
             $this->recordSplitCapture($locked, $trip, $razorpayPaymentId);
-
-            // Dispatch when the van is full; otherwise the timer sweep handles it.
-            if ($this->claimDispatchIfFull($locked->shuttle_journey_id)) {
-                $dispatch = [$trip->id, $this->journeyPaidFareTotal($locked->shuttle_journey_id)];
-            }
+            app(BookingConfirmationService::class)->confirmIfReady($trip);
 
             return $locked->fresh();
         });
-
-        if ($dispatch) {
-            DispatchHopJob::startChain($dispatch[0], $dispatch[1]);
-        }
 
         $this->dispatchInvoiceForShuttle($confirmed, $razorpayPaymentId);
 
@@ -491,6 +487,10 @@ class ShuttleBookingService
                 'address' => $booking->drop_address,
             ],
             'fare_amount' => (float) $booking->fare_amount,
+            'upfront_amount' => $booking->payment_method === 'cash'
+                ? app(CashDepositService::class)->quote((float) $booking->fare_amount)['deposit'] : (float) $booking->fare_amount,
+            'cash_balance_due' => $booking->payment_method === 'cash'
+                ? app(CashDepositService::class)->quote((float) $booking->fare_amount)['balance'] : 0,
             'promo_discount_amount' => $booking->promo_discount_amount !== null ? (float) $booking->promo_discount_amount : 0.0,
             'currency' => $booking->currency,
             'payment_method' => $booking->payment_method,
@@ -508,6 +508,86 @@ class ShuttleBookingService
             'booking_enabled_for_driver' => false,
             'created_at' => optional($booking->created_at)->toIso8601String(),
         ];
+    }
+
+    /** Request a driver only after the rider has selected a seat. */
+    public function requestDriver(ShuttlePassengerBooking $booking): void
+    {
+        DB::transaction(function () use ($booking) {
+            $locked = ShuttlePassengerBooking::query()->lockForUpdate()->findOrFail($booking->id);
+            if ($locked->status !== 'PENDING_DRIVER_APPROVAL') {
+                return;
+            }
+            $trip = $this->ensureDispatchTrip($locked);
+            if ($trip->status !== 'NEGOTIATION') {
+                throw new ReservationException('This pool has already been accepted. Please request a new booking.', 409);
+            }
+            $requested = ShuttlePassengerBooking::query()->where('shuttle_journey_id', $locked->shuttle_journey_id)
+                ->where('status', 'PENDING_DRIVER_APPROVAL')
+                ->whereIn('id', \App\Models\JourneySeat::query()->where('status', 'HELD')->select('shuttle_passenger_booking_id'));
+            $fare = (float) (clone $requested)->sum('fare_amount');
+            $trip->update(['estimated_fare' => $fare]);
+            $trip->fareNegotiation?->offers()->where('from_role', 'customer')->update(['amount' => $fare]);
+            $journey = ShuttleJourney::query()->lockForUpdate()->findOrFail($locked->shuttle_journey_id);
+            if ($journey->dispatched_at === null && ((int) (clone $requested)->sum('seats') >= (int) $journey->capacity
+                || ($journey->forming_deadline_at && $journey->forming_deadline_at->lte(now())))) {
+                $journey->update(['dispatched_at' => now()]);
+                DB::afterCommit(fn () => DispatchHopJob::startChain($trip->id, $fare));
+            }
+        });
+    }
+
+    public function driverApproved(Trip $trip): void
+    {
+        $journey = ShuttleJourney::query()->where('trip_id', $trip->id)->first();
+        if (!$journey) {
+            return;
+        }
+        $bookings = ShuttlePassengerBooking::query()->where('shuttle_journey_id', $journey->id)
+            ->where('status', 'PENDING_DRIVER_APPROVAL')->lockForUpdate()->get();
+        foreach ($bookings as $booking) {
+            if (!\App\Models\JourneySeat::query()->where('shuttle_passenger_booking_id', $booking->id)->where('status', 'HELD')->exists()) {
+                $booking->update(['status' => 'CANCELLED', 'cancelled_at' => now(), 'cancelled_reason' => 'Seat selection was not completed before driver acceptance. Please book again.']);
+                $journey->decrement('seats_taken', (int) $booking->seats);
+                continue;
+            }
+            $booking->update(['status' => 'PAYMENT_PENDING']);
+            if ($booking->payment_method === 'cash' && app(CashDepositService::class)->quote((float) $booking->fare_amount)['deposit'] <= 0) {
+                $this->confirmCashBooking($booking);
+            }
+            DB::afterCommit(function () use ($booking, $trip) {
+                app(NotificationCenter::class)->notifyUserId($booking->customer_id, 'shuttle_driver_accepted',
+                    'Driver accepted', 'Your driver accepted. Complete any required payment to confirm your seat.',
+                    ['booking_id' => $booking->id, 'trip_id' => $trip->id]);
+            });
+        }
+    }
+
+    private function assertDriverApproved(ShuttlePassengerBooking $booking): Trip
+    {
+        $journey = ShuttleJourney::query()->findOrFail($booking->shuttle_journey_id);
+        $trip = $journey->trip_id ? Trip::query()->find($journey->trip_id) : null;
+        if (!$trip || !$trip->driver_id || !in_array($trip->status, ['PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED'], true)) {
+            throw new ReservationException('Driver approval is required before payment.', 422);
+        }
+        $seats = \App\Models\JourneySeat::query()->where('shuttle_passenger_booking_id', $booking->id)
+            ->whereIn('status', ['HELD', 'BOOKED'])->count();
+        if ($seats !== (int) $booking->seats) {
+            throw new ReservationException('Select your seat before payment.', 422);
+        }
+        return $trip;
+    }
+
+    private function confirmCashBooking(ShuttlePassengerBooking $booking): void
+    {
+        $trip = $this->assertDriverApproved($booking);
+        if (!app(CashDepositService::class)->cashEnabled()) {
+            throw new ReservationException('Cash is not available.', 422);
+        }
+        $booking->update(['status' => 'CONFIRMED', 'payment_status' => 'PENDING']);
+        $this->seatMaps->bookSeats($booking);
+        $this->markCouponRedeemed($booking);
+        app(BookingConfirmationService::class)->confirmIfReady($trip);
     }
 
     private function ensureDispatchTrip(ShuttlePassengerBooking $booking): Trip
@@ -574,7 +654,7 @@ class ShuttleBookingService
 
         // Start the pool-forming window (decision 6C): a driver is dispatched when
         // the van fills or this deadline passes, whichever comes first. A window of
-        // 0 means dispatch as soon as the first rider pays (instant, no pooling wait).
+        // 0 dispatches as soon as the first rider selects a seat.
         $window = (int) (CitySetting::query()
             ->where('city_id', $booking->city_id)
             ->value('shuttle_forming_window_minutes') ?? 2);
@@ -586,44 +666,6 @@ class ShuttleBookingService
         ]);
 
         return $trip;
-    }
-
-    /**
-     * Claim the dispatch for a journey that is now full, exactly once. Row-locks
-     * the journey and stamps dispatched_at so neither a racing payment nor the
-     * timer sweep can dispatch the same van twice. Returns true when THIS call won
-     * the claim. Must run inside the caller's transaction.
-     */
-    private function claimDispatchIfFull(int $journeyId): bool
-    {
-        $journey = ShuttleJourney::query()->whereKey($journeyId)->lockForUpdate()->first();
-        if (! $journey || $journey->dispatched_at !== null) {
-            return false;
-        }
-
-        $paidSeats = ShuttlePassengerBooking::query()
-            ->where('shuttle_journey_id', $journeyId)
-            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
-            ->where('payment_status', 'PAID')
-            ->count();
-
-        if ($paidSeats < (int) $journey->capacity) {
-            return false;
-        }
-
-        $journey->forceFill(['dispatched_at' => now()])->save();
-
-        return true;
-    }
-
-    /** Total paid fare across the journey's confirmed riders (the pool's value). */
-    private function journeyPaidFareTotal(int $journeyId): float
-    {
-        return round((float) ShuttlePassengerBooking::query()
-            ->where('shuttle_journey_id', $journeyId)
-            ->whereIn('status', ['CONFIRMED', 'BOARDED', 'COMPLETED'])
-            ->where('payment_status', 'PAID')
-            ->sum('fare_amount'), 2);
     }
 
     /**

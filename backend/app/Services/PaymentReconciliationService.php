@@ -127,6 +127,7 @@ class PaymentReconciliationService
                 $trip = $locked->trip()->first();
                 if ($trip) {
                     $this->markCouponRedeemed($locked, $trip->id);
+                    app(BookingConfirmationService::class)->confirmIfReady($trip);
                     // Auto-split at source (Route). Idempotent via payments.split_at,
                     // so a webhook + sweeper + client-verify race splits only once.
                     // A prepayment is skipped here — it settles at completion.
@@ -224,7 +225,9 @@ class PaymentReconciliationService
         }
 
         try {
-            $amountPaise = max(1, (int) round(((float) $hold->amount) * 100));
+            $amountPaise = $hold->payment_method === 'cash'
+                ? $this->capturedAmount($paymentId)
+                : max(1, (int) round(((float) $hold->amount) * 100));
             $refund = $this->razorpay->refundPayment($paymentId, $amountPaise, [
                 'module' => 'fixed',
                 'fixed_seat_hold_id' => (string) $hold->id,
@@ -290,7 +293,9 @@ class PaymentReconciliationService
         }
 
         try {
-            $amountPaise = max(1, (int) round(((float) $booking->fare_amount) * 100));
+            $amountPaise = $booking->payment_method === 'cash'
+                ? $this->capturedAmount($paymentId)
+                : max(1, (int) round(((float) $booking->fare_amount) * 100));
             $refund = $this->razorpay->refundPayment($paymentId, $amountPaise, [
                 'module' => 'shuttle',
                 'shuttle_booking_id' => (string) $booking->id,
@@ -330,6 +335,16 @@ class PaymentReconciliationService
 
             return 'refund_failed';
         }
+    }
+
+    private function capturedAmount(string $paymentId): int
+    {
+        $payment = $this->razorpay->fetchPayment($paymentId);
+        $amount = (int) ($payment['amount'] ?? 0);
+        if ($amount <= 0) {
+            throw new \RuntimeException('Cannot determine the captured deposit amount for refund.');
+        }
+        return $amount;
     }
 
     /* ------------------------------------------------------------------ */
@@ -585,7 +600,7 @@ class PaymentReconciliationService
 
         // 3) Fixed seat holds that died unconfirmed but might hold captured money
         FixedSeatHold::query()
-            ->whereIn('status', ['HELD', 'EXPIRED'])
+            ->whereIn('status', ['ACCEPTED', 'HELD', 'EXPIRED'])
             ->whereNotNull('razorpay_order_id')
             ->whereBetween('updated_at', [$floor, $cutoff])
             ->orderBy('id')

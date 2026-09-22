@@ -30,7 +30,8 @@ class TripStateMachineService
     {
         return [
             'REQUESTED' => ['NEGOTIATION' => true, 'CANCELLED' => true],
-            'NEGOTIATION' => ['CONFIRMED' => true, 'CANCELLED' => true],
+            'NEGOTIATION' => ['PAYMENT_PENDING' => true, 'CONFIRMED' => true, 'CANCELLED' => true],
+            'PAYMENT_PENDING' => ['CONFIRMED' => true, 'CANCELLED' => true],
             'CONFIRMED' => ['ASSIGNED' => true, 'CANCELLED' => true],
             'ASSIGNED' => [
                 'EN_ROUTE_PICKUP' => true,
@@ -57,6 +58,11 @@ class TripStateMachineService
         $trip->status = $to;
 
         switch ($to) {
+            case 'PAYMENT_PENDING':
+                if (isset($meta['final_fare'])) {
+                    $trip->final_fare = (float) $meta['final_fare'];
+                }
+                break;
             case 'NEGOTIATION':
                 $trip->negotiation_started_at = now();
                 break;
@@ -220,7 +226,7 @@ class TripStateMachineService
     private function syncShuttleJourney(Trip $trip, string $tripStatus): void
     {
         $journeyStatus = match ($tripStatus) {
-            'CONFIRMED', 'ASSIGNED' => 'ASSIGNED',
+            'PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED' => 'ASSIGNED',
             'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP', 'EN_ROUTE_DROP', 'ARRIVED_DROP' => 'IN_PROGRESS',
             'COMPLETED' => 'COMPLETED',
             'CANCELLED' => 'CANCELLED',
@@ -284,4 +290,3 @@ class TripStateMachineService
         ];
     }
 }
-

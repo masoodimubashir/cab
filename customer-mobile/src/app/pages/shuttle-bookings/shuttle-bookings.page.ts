@@ -1,6 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
+
+declare const Razorpay: any;
 
 interface ShuttleBooking {
   id: number;
@@ -26,6 +29,8 @@ interface ShuttleBooking {
   shuttle_auto_outcome?: string | null;
   shuttle_auto_processed_at?: string | null;
   created_at?: string | null;
+  upfront_amount?: number;
+  cash_balance_due?: number;
 }
 
 @Component({
@@ -34,39 +39,94 @@ interface ShuttleBooking {
   styleUrls: ['./shuttle-bookings.page.scss'],
   standalone: false,
 })
-export class ShuttleBookingsPage {
+export class ShuttleBookingsPage implements OnDestroy {
   loading = false;
   error: string | null = null;
   bookings: ShuttleBooking[] = [];
   expandedId: number | null = null;
+  payingId: number | null = null;
+  private poll?: ReturnType<typeof setInterval>;
+  private refreshing = false;
 
   constructor(
     private api: ApiService,
     private router: Router,
+    private auth: AuthService,
   ) {}
 
   ionViewWillEnter(): void {
     this.refresh();
+    this.ionViewWillLeave();
+    this.poll = setInterval(() => { if (!this.loading && !this.payingId) this.refresh(true); }, 5000);
   }
 
-  refresh(): void {
-    this.loading = true;
-    this.error = null;
+  ionViewWillLeave(): void { if (this.poll) clearInterval(this.poll); this.poll = undefined; }
+  ngOnDestroy(): void { this.ionViewWillLeave(); }
+
+  refresh(silent = false): void {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    this.loading = !silent;
+    if (!silent) this.error = null;
     this.api.get<{ data: ShuttleBooking[] }>('/shuttle/bookings').subscribe({
       next: (res) => {
         this.bookings = res?.data || [];
         this.loading = false;
+        this.refreshing = false;
       },
       error: (err) => {
         this.error = err?.error?.message || 'Could not load shuttle bookings.';
-        this.bookings = [];
+        if (!silent) this.bookings = [];
         this.loading = false;
+        this.refreshing = false;
       },
     });
   }
 
   back(): void {
     this.router.navigateByUrl('/customer-tabs/go');
+  }
+
+  async pay(event: Event, booking: ShuttleBooking): Promise<void> {
+    event.stopPropagation();
+    if (this.payingId || booking.status !== 'PAYMENT_PENDING') return;
+    this.payingId = booking.id;
+    this.error = null;
+    try {
+      const res = await this.api.post<any>(`/shuttle/bookings/${booking.id}/razorpay-order`, {}).toPromise();
+      if (res?.payment_required === false) {
+        this.payingId = null;
+        this.refresh(true);
+        return;
+      }
+      if (typeof Razorpay === 'undefined') throw new Error('Payment library not loaded. Please try again.');
+      const user = this.auth.getUser();
+      const order = res.razorpay;
+      const checkout = new Razorpay({
+        key: order.key_id, order_id: order.order_id, amount: order.amount_paise, currency: order.currency,
+        name: 'DreamCabs', description: booking.payment_method === 'cash' ? 'Cash booking deposit' : 'Shuttle booking',
+        prefill: { name: user?.name || '', email: user?.email || '', contact: user?.phone || '' },
+        handler: async (payment: any) => {
+          try {
+            await this.api.post(`/shuttle/bookings/${booking.id}/confirm-payment`, payment).toPromise();
+          } catch (err: any) { this.error = err?.error?.message || 'Payment confirmation is pending. Refresh to check.'; }
+          finally { this.payingId = null; this.refresh(true); }
+        },
+        modal: { ondismiss: () => { this.payingId = null; } },
+      });
+      checkout.on('payment.failed', () => { this.payingId = null; this.error = 'Payment failed. You can try again.'; });
+      checkout.open();
+    } catch (err: any) {
+      this.payingId = null;
+      this.error = err?.error?.message || err?.message || 'Could not start payment.';
+    }
+  }
+
+  async cancel(event: Event, booking: ShuttleBooking): Promise<void> {
+    event.stopPropagation();
+    if (this.payingId) return;
+    try { await this.api.post(`/shuttle/bookings/${booking.id}/cancel`, {}).toPromise(); this.refresh(true); }
+    catch (err: any) { this.error = err?.error?.message || 'Could not cancel this request.'; }
   }
 
   toggle(booking: ShuttleBooking): void {
@@ -116,8 +176,9 @@ export class ShuttleBookingsPage {
         ? 'This Shuttle booking was cancelled and refunded.'
         : 'This Shuttle booking was cancelled. Refund will be handled manually through Razorpay.';
     }
-    if (booking.status === 'PAYMENT_PENDING') return 'Payment is pending for this Shuttle booking.';
-    if (booking.status === 'CONFIRMED') return 'Your paid Shuttle request is confirmed and waiting for driver flow.';
+    if (booking.status === 'PENDING_DRIVER_APPROVAL') return 'Waiting for a driver to accept. No payment has been taken.';
+    if (booking.status === 'PAYMENT_PENDING') return 'Driver accepted. Complete the required payment to confirm your seat.';
+    if (booking.status === 'CONFIRMED') return booking.payment_method === 'cash' ? 'Booking confirmed. Pay the remaining cash to your driver at drop-off.' : 'Your Shuttle booking is confirmed.';
     if (booking.status === 'BOARDED') return 'You have boarded this Shuttle ride.';
     if (booking.status === 'DROPPED') return 'This Shuttle ride is complete.';
     return `Shuttle booking status is ${booking.status}.`;
@@ -125,7 +186,7 @@ export class ShuttleBookingsPage {
 
   statusClass(booking: ShuttleBooking): string {
     if (booking.status === 'CANCELLED' || booking.status === 'NO_SHOW') return 'status--danger';
-    if (booking.status === 'PAYMENT_PENDING') return 'status--warning';
+    if (['PENDING_DRIVER_APPROVAL', 'PAYMENT_PENDING'].includes(booking.status)) return 'status--warning';
     if (booking.status === 'DROPPED') return 'status--success';
     return 'status--primary';
   }
