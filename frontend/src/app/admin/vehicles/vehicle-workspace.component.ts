@@ -123,10 +123,11 @@ interface TabDef { key: string; label: string; count?: number; }
 
       <header class="ws__head">
         <div class="vehicle-page-heading"><h1>Vehicles</h1><p>Choose a vehicle to manage its routes, groups, drivers and fares.</p></div>
-        <span class="ws__grow"></span>
-        <tm-button variant="outline" size="sm" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
-        <tm-button variant="outline" size="sm" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
+        <div class="vehicle-page-actions">
+        <tm-button variant="outline" icon="cog" (clicked)="openTypes()">Vehicle types</tm-button>
+        <tm-button variant="outline" icon="copy" [disabled]="cityId == null || !vehicles.length" (clicked)="openCopyModal()">Copy to location</tm-button>
         <tm-button variant="green" icon="plus" [disabled]="cityId == null || !vehicleTypeOptions.length" (clicked)="openCreate()">Add vehicle</tm-button>
+        </div>
       </header>
 
       <div class="cue" *ngIf="cityId == null">
@@ -146,25 +147,27 @@ interface TabDef { key: string; label: string; count?: number; }
           <div class="seg" role="tablist" aria-label="Status filter">
             <button type="button" class="seg__btn" *ngFor="let s of statusChips" [class.on]="status === s.value" [attr.aria-pressed]="status === s.value" (click)="setStatus(s.value)">{{ s.label }}</button>
           </div>
-          <label class="vehicle-filter">Vehicle type
-            <select [ngModel]="typeFilter" (ngModelChange)="setTypeFilter($event)">
+          <div class="vehicle-filter">
+            <select aria-label="Vehicle type" [ngModel]="typeFilter" (ngModelChange)="setTypeFilter($event)">
               <option value="all">All types</option>
               <option *ngFor="let t of types" [value]="t.id + ''">{{ t.name }}</option>
             </select>
-          </label>
-          <label class="vehicle-filter">Vehicle name
-            <select [ngModel]="vehicleFilter" (ngModelChange)="setVehicleFilter($event)">
+          </div>
+          <div class="vehicle-filter">
+            <select aria-label="Vehicle name" [ngModel]="vehicleFilter" (ngModelChange)="setVehicleFilter($event)">
               <option value="all">All vehicles</option>
               <option *ngFor="let name of vehicleNames" [value]="name">{{ name }}</option>
             </select>
-          </label>
+          </div>
           <button type="button" class="clearall" *ngIf="hasActiveFilters" (click)="clearAllFilters()">
             <tm-icon name="x" [size]="13" /> Clear all
           </button>
+          <div class="vehicle-view-controls">
           <span class="count-note"><b>{{ visible.length }}</b> of <b>{{ vehicles.length }}</b> vehicles</span>
           <div class="route-view-tabs" aria-label="Vehicle view">
             <button type="button" [class.selected]="vehicleView === 'overview'" [attr.aria-pressed]="vehicleView === 'overview'" (click)="vehicleView = 'overview'">Overview</button>
             <button type="button" [class.selected]="vehicleView === 'table'" [attr.aria-pressed]="vehicleView === 'table'" (click)="vehicleView = 'table'">Edit details</button>
+          </div>
           </div>
         </div>
 
@@ -1066,8 +1069,13 @@ interface TabDef { key: string; label: string; count?: number; }
     .echoice__t { font-weight: 800; color: var(--tm-text); }
     .echoice__d { font-size: 12.5px; color: var(--tm-text-muted); line-height: 1.4; }
     .vehicle-page-heading p { margin: 6px 0 0; color: var(--tm-text-muted); font-size: 14px; }
-    .vehicle-filter { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--tm-text-muted); }
-    .vehicle-filter select { padding: 9px 12px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-surface); color: var(--tm-text); font: inherit; font-size: 13px; }
+    .vehicle-page-heading { flex: 1 1 360px; min-width: 0; }
+    .vehicle-page-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .vehicle-filter { display: flex; flex: 0 1 170px; min-width: 140px; }
+    .vehicle-filter select { width: 100%; height: 40px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--tm-line); border-radius: 10px; background: var(--tm-surface); color: var(--tm-text); font: inherit; font-size: 13px; }
+    .vehicle-view-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-left: auto; }
+    .vehicle-view-controls .count-note { margin-left: 0; white-space: nowrap; }
+    .vehicle-view-controls .route-view-tabs button { height: 40px; box-sizing: border-box; padding: 0 16px; font-size: 13px; }
     .vehicle-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; }
     .vehicle-summary { border: 1px solid var(--tm-line); border-radius: 16px; padding: 20px; background: var(--tm-surface); align-self: start; }
     .vehicle-summary--selected { border-color: var(--tm-green, #16a34a); }
@@ -1549,7 +1557,9 @@ interface TabDef { key: string; label: string; count?: number; }
     /* ─────────────── full-width spreadsheet ─────────────── */
     .grid { display: flex; flex-direction: column; gap: 12px; }
     .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .controls .search { flex: 0 1 300px; height: 38px; border-radius: 10px; }
+    .controls .search { flex: 1 1 220px; max-width: 300px; height: 40px; box-sizing: border-box; border-radius: 10px; }
+    .controls .seg { height: 40px; box-sizing: border-box; flex-shrink: 0; }
+    .controls .clearall { height: 40px; box-sizing: border-box; }
     .controls .mini { height: 38px; max-width: 160px; border-radius: 10px; padding: 0 12px; }
     .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--tm-canvas-2, #eaeef4); border-radius: 10px; }
     .seg__btn { padding: 7px 13px; border: 0; border-radius: 8px; background: transparent; color: var(--tm-text-muted); font: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; transition: background .15s, color .15s; }
@@ -2270,6 +2280,10 @@ interface TabDef { key: string; label: string; count?: number; }
       .cards { grid-template-columns: 1fr; }
     }
     @media (max-width: 620px) {
+      .vehicle-page-heading { flex-basis: 100%; }
+      .controls .search { flex-basis: 100%; max-width: none; }
+      .vehicle-filter { flex: 1 1 140px; }
+      .vehicle-view-controls { width: 100%; margin-left: 0; justify-content: space-between; }
       .rt { grid-template-columns: 1fr auto auto; }
       .rt__col--sm { display: none; }
     }
