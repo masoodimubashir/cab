@@ -348,6 +348,7 @@ class FixedDepartureService
             'route_name' => $departure->route?->name,
             'origin_name' => $originName,
             'dest_name' => $destName,
+            'trip_id' => $departure->trip_id,
             'scope' => $departure->route?->scope,
             'mode' => $departure->route?->mode,
             'service_date' => $departure->service_date ? ($departure->service_date instanceof \DateTimeInterface ? $departure->service_date->toDateString() : (string) $departure->service_date) : null,
