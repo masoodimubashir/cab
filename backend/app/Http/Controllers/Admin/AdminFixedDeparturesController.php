@@ -5,15 +5,20 @@ namespace App\Http\Controllers\Admin;
 use App\Events\FixedRouteCatalogUpdated;
 use App\Models\City;
 use App\Models\FixedBookingSupportNote;
+use App\Models\FixedSeatHold;
 use App\Models\RouteDeparture;
+use App\Models\RouteStop;
 use App\Models\SeatReservation;
+use App\Models\Trip;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedBookingService;
 use App\Services\FixedBookingEventService;
 use App\Services\FixedDepartureService;
 use App\Services\FixedManifestService;
 use App\Services\FixedRefundService;
+use App\Services\NotificationCenter;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AdminFixedDeparturesController
@@ -25,6 +30,7 @@ class AdminFixedDeparturesController
         private readonly FixedBookingEventService $events,
         private readonly FixedRefundService $refunds,
         private readonly FixedManifestService $manifestService,
+        private readonly NotificationCenter $notifier,
     ) {}
 
     public function index(Request $request, City $city)
@@ -264,6 +270,209 @@ class AdminFixedDeparturesController
             'booking' => $this->shapeSupportBooking($updated),
             'refund_status' => $updated->refund_status,
             'message' => 'Passenger booking cancelled. Other passengers were not affected.',
+        ]);
+    }
+
+    public function changePassengerDrop(
+        Request $request,
+        City $city,
+        SeatReservation $reservation,
+    ) {
+        $reservation = $this->cityScopedReservation($city, $reservation);
+
+        $departure = $reservation->routeDeparture;
+        if ($departure && in_array($departure->status, ['COMPLETED', 'CANCELLED'], true)) {
+            return response()->json(['message' => 'Cannot change drop destination for a finished or cancelled fixed vehicle.'], 409);
+        }
+
+        if (in_array($reservation->status, ['COMPLETED', 'DROPPED', 'CANCELLED', 'NO_SHOW'], true)) {
+            return response()->json(['message' => 'Cannot change drop stop for a finished or cancelled passenger booking.'], 409);
+        }
+
+        $data = $request->validate([
+            'drop_stop_id' => ['required', 'integer', 'exists:route_stops,id'],
+        ]);
+
+        $result = DB::transaction(function () use ($reservation, $data) {
+            /** @var SeatReservation $lockedPassenger */
+            $lockedPassenger = SeatReservation::query()->whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+
+            if (in_array($lockedPassenger->status, ['COMPLETED', 'DROPPED', 'CANCELLED', 'NO_SHOW'], true)) {
+                return response()->json(['message' => 'Cannot change drop stop for a finished or cancelled passenger booking.'], 409);
+            }
+
+            $lockedDeparture = $lockedPassenger->route_departure_id
+                ? RouteDeparture::query()->whereKey($lockedPassenger->route_departure_id)->lockForUpdate()->first()
+                : null;
+
+            if ($lockedDeparture && in_array($lockedDeparture->status, ['COMPLETED', 'CANCELLED'], true)) {
+                return response()->json(['message' => 'Cannot change drop destination for a finished or cancelled fixed vehicle.'], 409);
+            }
+
+            $routeId = (int) ($lockedPassenger->route_id ?: $lockedDeparture?->route_id);
+            $newStop = RouteStop::query()->findOrFail((int) $data['drop_stop_id']);
+
+            if ((int) $newStop->route_id !== $routeId) {
+                return response()->json(['message' => 'The selected drop stop does not belong to the same route.'], 422);
+            }
+
+            if (!$newStop->is_drop) {
+                return response()->json(['message' => 'The selected stop is not designated as a drop stop.'], 422);
+            }
+
+            if (!$newStop->is_active || $newStop->is_temporarily_unavailable) {
+                return response()->json(['message' => 'The selected drop stop is currently unavailable.'], 422);
+            }
+
+            if ($lockedPassenger->board_stop_id) {
+                $boardStop = RouteStop::query()->find($lockedPassenger->board_stop_id);
+                if ($boardStop && (int) $newStop->seq <= (int) $boardStop->seq) {
+                    return response()->json(['message' => 'Drop stop must be after the pickup stop.'], 422);
+                }
+            }
+
+            $reachedSeq = (int) ($lockedDeparture?->fixed_last_reached_stop_seq ?? 0);
+            if ($reachedSeq > 0 && (int) $newStop->seq <= $reachedSeq) {
+                return response()->json(['message' => 'The vehicle has already reached or passed this stop.'], 422);
+            }
+
+            if ($lockedDeparture) {
+                $capacity = (int) ($lockedDeparture->capacity ?: 4);
+                $luggageCapacity = (int) ($lockedDeparture->luggage_capacity ?? 0);
+                $passengerSeats = max(1, (int) $lockedPassenger->seats);
+                $passengerLuggage = max(0, (int) ($lockedPassenger->extra_luggage_count ?? 0));
+                $startSeq = $lockedPassenger->board_stop_id
+                    ? (int) (RouteStop::query()->whereKey($lockedPassenger->board_stop_id)->value('seq') ?? 1)
+                    : 1;
+                $effectiveStartSeq = max($startSeq, $reachedSeq);
+
+                for ($s = $effectiveStartSeq; $s < (int) $newStop->seq; $s++) {
+                    $otherReserved = SeatReservation::query()
+                        ->join('route_stops as bs', 'bs.id', '=', 'seat_reservations.board_stop_id')
+                        ->join('route_stops as ds', 'ds.id', '=', 'seat_reservations.drop_stop_id')
+                        ->where('seat_reservations.route_departure_id', $lockedDeparture->id)
+                        ->where('seat_reservations.id', '!=', $lockedPassenger->id)
+                        ->whereIn('seat_reservations.status', SeatReservation::ACTIVE_STATUSES)
+                        ->where('bs.seq', '<=', $s)
+                        ->where('ds.seq', '>=', $s + 1)
+                        ->selectRaw('COALESCE(SUM(seat_reservations.seats), 0) as total_seats, COALESCE(SUM(seat_reservations.extra_luggage_count), 0) as total_luggage')
+                        ->first();
+
+                    $otherSeats = (int) ($otherReserved->total_seats ?? 0);
+                    $otherLuggage = (int) ($otherReserved->total_luggage ?? 0);
+
+                    $held = FixedSeatHold::query()
+                        ->join('route_stops as bs', 'bs.id', '=', 'fixed_seat_holds.board_stop_id')
+                        ->join('route_stops as ds', 'ds.id', '=', 'fixed_seat_holds.drop_stop_id')
+                        ->where('fixed_seat_holds.route_departure_id', $lockedDeparture->id)
+                        ->whereIn('fixed_seat_holds.status', FixedAvailabilityService::ACTIVE_HOLD_STATUSES)
+                        ->where('fixed_seat_holds.expires_at', '>', now())
+                        ->where('bs.seq', '<=', $s)
+                        ->where('ds.seq', '>=', $s + 1)
+                        ->selectRaw('COALESCE(SUM(fixed_seat_holds.seats), 0) as total_seats, COALESCE(SUM(fixed_seat_holds.extra_luggage_count), 0) as total_luggage')
+                        ->first();
+
+                    $heldSeats = (int) ($held->total_seats ?? 0);
+                    $heldLuggage = (int) ($held->total_luggage ?? 0);
+
+                    $totalOccupiedSeats = $otherSeats + $heldSeats + $passengerSeats;
+                    if ($totalOccupiedSeats > $capacity) {
+                        $availableSeats = max(0, $capacity - ($otherSeats + $heldSeats));
+                        return response()->json([
+                            'message' => "Insufficient seat capacity on route leg (Stop #{$s} to Stop #" . ($s + 1) . "). Only {$availableSeats} seat(s) available.",
+                        ], 422);
+                    }
+
+                    $totalOccupiedLuggage = $otherLuggage + $heldLuggage + $passengerLuggage;
+                    if ($totalOccupiedLuggage > $luggageCapacity) {
+                        $availableLuggage = max(0, $luggageCapacity - ($otherLuggage + $heldLuggage));
+                        return response()->json([
+                            'message' => "Insufficient luggage capacity on route leg (Stop #{$s} to Stop #" . ($s + 1) . "). Only {$availableLuggage} luggage space(s) available.",
+                        ], 422);
+                    }
+                }
+            }
+
+            $lockedPassenger->drop_stop_id = $newStop->id;
+            $lockedPassenger->drop_lat = (float) $newStop->lat;
+            $lockedPassenger->drop_lng = (float) $newStop->lng;
+            $lockedPassenger->drop_address = $newStop->name;
+            $lockedPassenger->save();
+
+            $trip = null;
+            if ($lockedDeparture) {
+                $trip = Trip::query()
+                    ->where('route_departure_id', $lockedDeparture->id)
+                    ->where('customer_id', $lockedPassenger->customer_id)
+                    ->lockForUpdate()
+                    ->first();
+                if ($trip) {
+                    $trip->drop_lat = (float) $newStop->lat;
+                    $trip->drop_lng = (float) $newStop->lng;
+                    $trip->drop_address = $newStop->name;
+                    $trip->save();
+                }
+            }
+
+            return [
+                'passenger' => $lockedPassenger->fresh(['boardStop', 'dropStop', 'customer']),
+                'departure' => $lockedDeparture?->fresh(['driver']),
+                'trip' => $trip,
+                'newStop' => $newStop,
+            ];
+        });
+
+        if ($result instanceof \Illuminate\Http\JsonResponse) {
+            return $result;
+        }
+
+        $freshPassenger = $result['passenger'];
+        $freshDeparture = $result['departure'];
+        $newStop = $result['newStop'];
+
+        $customerName = $freshPassenger->customer?->name ?: 'Passenger #' . $freshPassenger->id;
+        $driverId = $freshDeparture?->driver_id ?: ($result['trip']?->driver_id ?? null);
+        if ($driverId) {
+            $this->notifier->notifyUserId(
+                $driverId,
+                'passenger_destination_updated',
+                'Passenger drop updated',
+                "Operator updated {$customerName}'s drop to Stop #{$newStop->seq}: {$newStop->name}.",
+                [
+                    'route_departure_id' => $freshDeparture?->id,
+                    'reservation_id' => $freshPassenger->id,
+                    'drop_stop_id' => $newStop->id,
+                    'drop_name' => $newStop->name,
+                    'drop_lat' => (float) $newStop->lat,
+                    'drop_lng' => (float) $newStop->lng,
+                ],
+                'map-pin',
+            );
+        }
+
+        if ($freshPassenger->customer_id) {
+            $this->notifier->notifyUserId(
+                $freshPassenger->customer_id,
+                'passenger_destination_updated',
+                'Drop destination updated',
+                "Your drop destination has been updated to Stop #{$newStop->seq}: {$newStop->name}.",
+                [
+                    'route_departure_id' => $freshDeparture?->id,
+                    'reservation_id' => $freshPassenger->id,
+                    'drop_stop_id' => $newStop->id,
+                    'drop_name' => $newStop->name,
+                    'drop_lat' => (float) $newStop->lat,
+                    'drop_lng' => (float) $newStop->lng,
+                ],
+                'map-pin',
+            );
+        }
+
+        $this->broadcastFixedUpdate($city, (int) $freshPassenger->route_id, 'passenger_drop_updated');
+
+        return response()->json([
+            'passenger' => $freshPassenger,
+            'message' => 'Passenger drop destination updated.',
         ]);
     }
 

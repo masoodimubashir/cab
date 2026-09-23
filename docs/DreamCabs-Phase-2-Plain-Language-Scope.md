@@ -8,7 +8,7 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 ## How to use this tracker
 
 - Work and report progress by feature ID, for example `M1.01`. Keep IDs stable when linking tasks, changes and defects.
-- Track development separately from testing. Development: `Assess`, `Pending`, `In progress`, `Blocked`, `Done`. Testing: `Pending`, `In progress`, `Blocked`, `Failed`, `Passed`.
+- Track development separately from testing. Development: `Assess`, `Pending`, `In progress`, `Blocked`, `Deferred`, `Done`. Testing: `Pending`, `In progress`, `Blocked`, `Deferred`, `Failed`, `Passed`. Deferred work is not scheduled for development or testing until explicitly resumed.
 - Every included feature starts as **Assess / Pending**: its current implementation and test evidence have not been assessed for this tracker. This does not mean the feature is absent.
 - Before development, inspect the existing implementation and record affected files/screens, remaining work and applicable decisions. Reuse working features.
 - Mark development `Done` after implementation or verification of existing behaviour. Mark testing `Passed` only with recorded results against the acceptance checks.
@@ -53,7 +53,7 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 | M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Assess | Pending |
 | M1.19 | Fix coupon application and discount calculation | Reproduce issue; verify valid/invalid coupons and correct discount/final payable amount under existing rules | Existing coupon rules; client report: 15 September 2026 | Assess | Pending |
 | M1.20 | Fixed Admin drop correction | Same route, stop ahead, unchanged fare/payment, available seats/luggage for each remaining leg; reject closed bookings | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | Passed |
-| M1.21 | Fixed Admin early exit | Only onboard passengers on running rides; explicit confirmation/reason; record drop-off, free capacity and preserve fare | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | In progress |
+| M1.21 | Fixed Admin early exit | Only onboard passengers on running rides; explicit confirmation/reason; record drop-off, free capacity and preserve fare | Deferred by user on 23 September 2026; resume only on explicit request; D11; [reference](Fixed-Live-Ride-Controls.md) | Deferred | Deferred |
 | M1.22 | Admin Rides ? History / Live access | Rides expands below Customers; History retains current page; Live shows active Fixed rides with passenger actions | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | In progress |
 
 **Limits:** History depends on recorded data. History duration and detailed ride rules need confirmation. Clarify Private versus Fixed with DreamCabs on a call before finalising booking rules. Extra workflows require agreement. Reported defects require reproduction and verification; no fix is claimed by this tracker.
@@ -152,6 +152,7 @@ Add one row per meaningful development update or test run. Link detailed evidenc
 | Date | Feature ID(s) | Work / affected files or change link | Build / environment / platform | Checks and result | Defects / next action |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-16 | All | Converted scope into modular development/testing reference | Documentation only | Scope organised; implementation not assessed | Assess existing features and confirm open decisions |
+| 2026-09-23 | M1.21 | User confirmed deferral of Fixed Admin early exit; corrected the previous Done / In progress row to Deferred / Deferred | Documentation only; user instruction in conversation | No implementation or testing claimed | Keep development and testing deferred until explicitly resumed |
 | 2026-09-22 | M1.20 | Implemented route/progress and drop eligibility checks, per-leg capacity checks, transactional saving, fare/payment preservation, and notifications after the transaction returns successfully; code reviewed in [AdminTripsController.php](../backend/app/Http/Controllers/Admin/AdminTripsController.php) and [ride-detail.component.ts](../frontend/src/app/admin/rides/ride-detail.component.ts) | Reported: PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | User-reported: 15 tests, 57 assertions passed in [AdminTripActionsTest.php](../backend/tests/Feature/AdminTripActionsTest.php); TypeScript compilation passed with 0 errors. Code review confirmed implementation and test assertions; these runs were not independently reproduced in this review. | Development steps done; Test Passed reflects the reported automated results. Manual Admin/app checks and actual device push receipt remain unverified. |
 
 ### M1.02 baseline audit — 22 September 2026 (before implementation below)

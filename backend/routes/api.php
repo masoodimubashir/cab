@@ -625,6 +625,7 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::get('/admin/cities/{city}/fixed-bookings/{reservation}/timeline', [AdminFixedDeparturesController::class, 'bookingTimeline']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/notes', [AdminFixedDeparturesController::class, 'storeBookingNote']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/cancel', [AdminFixedDeparturesController::class, 'cancelBooking']);
+    Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/change-drop', [AdminFixedDeparturesController::class, 'changePassengerDrop']);
     Route::post('/admin/cities/{city}/fixed-bookings/{reservation}/support-action', [AdminFixedDeparturesController::class, 'storeSupportAction']);
     Route::get('/admin/cities/{city}/fixed-departures/{departure}/manifest', [AdminFixedDeparturesController::class, 'manifest']);
     Route::get('/admin/cities/{city}/departures/{departure}/manifest', [AdminFixedDeparturesController::class, 'manifest']);

@@ -54,6 +54,18 @@ interface DepartureRow {
   fixed_last_reached_stop_at?: string | null;
 }
 
+interface RouteStop {
+  id: number;
+  seq: number;
+  name: string;
+  lat?: number | null;
+  lng?: number | null;
+  is_pickup?: boolean;
+  is_drop?: boolean;
+  is_active?: boolean;
+  is_temporarily_unavailable?: boolean;
+}
+
 interface PassengerLiveStatus {
   key: string;
   label: string;
@@ -77,6 +89,8 @@ interface Passenger {
   fare_amount: number | null;
   board: string | null;
   drop: string | null;
+  board_stop_id?: number | null;
+  drop_stop_id?: number | null;
 }
 
 interface FixedSupportBooking {
@@ -155,7 +169,8 @@ interface ManualSupportAction {
 }
 
 const STATUS_OPTIONS = [
-  { label: 'Boarding', value: 'FORMING' },
+  { label: 'Active vehicles', value: 'active' },
+  { label: 'Boarding (Forming)', value: 'FORMING' },
   { label: 'In Transit', value: 'DISPATCHED' },
   { label: 'Departed', value: 'DEPARTED' },
   { label: 'Completed', value: 'COMPLETED' },
@@ -455,6 +470,15 @@ const STATUS_OPTIONS = [
               <div class="pax-card__actions">
                 <tm-button variant="ghost" size="sm" icon="eye" (clicked)="openPassengerTimeline(p)">Timeline & Support</tm-button>
                 <tm-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pin"
+                  *ngIf="canChangePassengerDrop(p)"
+                  (clicked)="openChangeDropModal(p)"
+                >
+                  Change Drop
+                </tm-button>
+                <tm-button
                   variant="danger"
                   size="sm"
                   icon="x"
@@ -745,6 +769,60 @@ const STATUS_OPTIONS = [
       </div>
     </tm-modal>
 
+    <tm-modal
+      [open]="changeDropModalOpen"
+      [title]="targetPassenger ? ('Change Drop for ' + (targetPassenger.customer_name || 'Passenger #' + targetPassenger.id)) : 'Change Drop Stop'"
+      (closed)="closeChangeDropModal()"
+    >
+      <div slot="body" class="modal-body change-drop-modal" *ngIf="targetPassenger">
+        <p class="action-modal__desc">
+          Select a new destination stop along this fixed route. Both driver and customer will be notified immediately.
+        </p>
+
+        <div class="drop-stop-card">
+          <div class="drop-stop-row">
+            <span class="drop-stop-lbl">Passenger:</span>
+            <strong>{{ targetPassenger.customer_name || 'Passenger #' + targetPassenger.id }}</strong>
+            <small *ngIf="targetPassenger.customer_phone">({{ targetPassenger.customer_phone }})</small>
+          </div>
+          <div class="drop-stop-row">
+            <span class="drop-stop-lbl">Pickup Stop:</span>
+            <span>{{ targetPassenger.board || '—' }}</span>
+          </div>
+          <div class="drop-stop-row">
+            <span class="drop-stop-lbl">Current Drop:</span>
+            <span class="curr-drop">{{ targetPassenger.drop || '—' }}</span>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label">Select New Drop Stop *</label>
+          <select class="form-input" [(ngModel)]="selectedDropStopId">
+            <option [ngValue]="null">-- Select a stop on this route --</option>
+            <option *ngFor="let s of validDropStopsFor(targetPassenger)" [ngValue]="s.id">
+              Stop #{{ s.seq }} — {{ s.name }}
+            </option>
+          </select>
+        </div>
+
+        <div class="stop-change-preview" *ngIf="selectedDropStop">
+          <tm-icon name="pin" [size]="16" />
+          <span>Changing drop destination to <strong>Stop #{{ selectedDropStop.seq }}: {{ selectedDropStop.name }}</strong></span>
+        </div>
+      </div>
+
+      <div slot="footer" class="modal-foot">
+        <tm-button variant="ghost" [disabled]="submittingDropChange" (clicked)="closeChangeDropModal()">Cancel</tm-button>
+        <tm-button
+          variant="green"
+          (clicked)="submitChangeDrop()"
+          [disabled]="!selectedDropStopId || selectedDropStopId === targetPassenger?.drop_stop_id || submittingDropChange"
+        >
+          {{ submittingDropChange ? 'Updating...' : 'Update Drop Stop' }}
+        </tm-button>
+      </div>
+    </tm-modal>
+
   `,
   styles: [`
     .page { display: flex; flex-direction: column; gap: 16px; }
@@ -754,6 +832,16 @@ const STATUS_OPTIONS = [
     .cue { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 24px; text-align: center; background: var(--tm-surface); border: 1px dashed var(--tm-line); border-radius: var(--tm-radius-lg); color: var(--tm-text-muted); }
     .cue__title { margin: 6px 0 0; font-size: 15px; font-weight: 800; color: var(--tm-text); }
     .cue__text { margin: 0; font-size: 13px; }
+    .action-modal__desc { margin: 0 0 14px; font-size: 13px; line-height: 1.45; color: var(--tm-text-muted); }
+    .drop-stop-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--tm-radius-md); background: var(--tm-canvas-2); border: 1px solid var(--tm-line); margin-bottom: 14px; }
+    .drop-stop-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--tm-text); }
+    .drop-stop-lbl { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--tm-text-muted); min-width: 110px; flex-shrink: 0; }
+    .curr-drop { font-weight: 700; color: var(--tm-text); }
+    .stop-change-preview { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--tm-radius-md); background: var(--tm-green-tint, #ecfdf5); border: 1px solid var(--tm-green-deep, #059669); color: var(--tm-green-deep, #059669); font-size: 13px; margin-top: 12px; }
+    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--tm-text-muted); }
+    .form-input { width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-md); background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; font-family: inherit; box-sizing: border-box; }
+    .form-input:focus { outline: none; border-color: var(--tm-green-deep, #059669); box-shadow: 0 0 0 2px rgba(16,185,129,0.18); }
     .cell-id { display: flex; flex-direction: column; min-width: 0; }
     .cell-name { font-size: 13px; font-weight: 800; color: var(--tm-text); }
     .cell-sub { font-size: 11px; color: var(--tm-text-muted); text-transform: capitalize; }
@@ -938,7 +1026,7 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   cityId: number | null = null;
 
   routeId = 'all';
-  status = 'all';
+  status = 'active';
   query = '';
   dateFrom = this.today();
   dateTo = this.today();
@@ -948,8 +1036,14 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   manifestOpen = false;
   manifestDeparture: DepartureRow | null = null;
   passengers: Passenger[] = [];
+  availableStops: RouteStop[] = [];
   loadingManifest = false;
   manifestFilter: 'all' | 'active' | 'dropped' | 'cancelled' = 'all';
+
+  changeDropModalOpen = false;
+  targetPassenger: Passenger | null = null;
+  selectedDropStopId: number | null = null;
+  submittingDropChange = false;
 
   get activePassengers(): Passenger[] {
     return this.passengers.filter((p) =>
@@ -1522,15 +1616,85 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     this.manifestOpen = true;
     this.manifestFilter = 'all';
     this.passengers = [];
+    this.availableStops = [];
     this.loadingManifest = true;
-    this.api.get<{ passengers: Passenger[] }>(`/admin/cities/${this.cityId}/departures/${row.id}/manifest`).subscribe({
+    this.api.get<{ departure: Partial<DepartureRow>; passengers: Passenger[]; stops?: RouteStop[] }>(`/admin/cities/${this.cityId}/departures/${row.id}/manifest`).subscribe({
       next: (res) => {
+        if (this.manifestDeparture?.id !== row.id) return;
+        this.manifestDeparture = { ...row, ...res.departure };
         this.passengers = res?.passengers || [];
+        this.availableStops = res?.stops || [];
         this.loadingManifest = false;
       },
       error: () => {
         this.loadingManifest = false;
         this.toast.error('Failed to load manifest');
+      },
+    });
+  }
+
+  canChangePassengerDrop(p: Passenger): boolean {
+    if (!this.manifestDeparture || ['COMPLETED', 'CANCELLED'].includes(this.manifestDeparture.status)) return false;
+    if (!['BOOKED', 'CONFIRMED', 'BOARDED'].includes((p.status || '').toUpperCase())) return false;
+    return this.validDropStopsFor(p).length > 0;
+  }
+
+  getBoardStopSeq(p: Passenger): number {
+    if (p.board_stop_id) {
+      const stop = this.availableStops.find((s) => s.id === p.board_stop_id);
+      if (stop) return stop.seq;
+    }
+    if (p.board) {
+      const stop = this.availableStops.find((s) => s.name?.trim().toLowerCase() === p.board?.trim().toLowerCase());
+      if (stop) return stop.seq;
+    }
+    return 0;
+  }
+
+  validDropStopsFor(p: Passenger): RouteStop[] {
+    const reachedSeq = Number(this.manifestDeparture?.fixed_last_reached_stop_seq ?? 0);
+    const boardSeq = this.getBoardStopSeq(p);
+    const minSeq = Math.max(reachedSeq, boardSeq);
+    return this.availableStops.filter((s) => s.seq > minSeq && s.is_active !== false && !s.is_temporarily_unavailable && s.is_drop !== false);
+  }
+
+  get selectedDropStop(): RouteStop | undefined {
+    if (!this.selectedDropStopId) return undefined;
+    return this.availableStops.find((s) => s.id === Number(this.selectedDropStopId));
+  }
+
+  openChangeDropModal(p: Passenger): void {
+    this.targetPassenger = p;
+    this.selectedDropStopId = p.drop_stop_id ?? null;
+    this.changeDropModalOpen = true;
+  }
+
+  closeChangeDropModal(): void {
+    if (this.submittingDropChange) return;
+    this.changeDropModalOpen = false;
+    this.targetPassenger = null;
+    this.selectedDropStopId = null;
+  }
+
+  submitChangeDrop(): void {
+    if (!this.cityId || !this.targetPassenger || !this.selectedDropStopId) return;
+    this.submittingDropChange = true;
+    this.api.post<{ message: string; passenger: any }>(
+      `/admin/cities/${this.cityId}/fixed-bookings/${this.targetPassenger.id}/change-drop`,
+      { drop_stop_id: this.selectedDropStopId },
+    ).subscribe({
+      next: (res) => {
+        this.submittingDropChange = false;
+        this.toast.success(res?.message || 'Passenger drop destination updated.');
+        this.closeChangeDropModal();
+        if (this.manifestDeparture) {
+          this.openManifest(this.manifestDeparture);
+        }
+        this.fetch();
+      },
+      error: (err) => {
+        this.submittingDropChange = false;
+        this.toast.error(err?.error?.message || 'Failed to update passenger drop destination.');
       },
     });
   }
