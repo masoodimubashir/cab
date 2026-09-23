@@ -154,6 +154,8 @@ export class AppComponent implements OnInit {
     if (can('fleets')) citySetup.push({ label: 'Fleets', icon: 'car', route: '/settings/fleets' });
 
     // --- Operations ---
+    if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
+
     if (can('rides')) {
       operations.push({
         label: 'Rides',
@@ -164,7 +166,6 @@ export class AppComponent implements OnInit {
         ]),
       });
     }
-    if (can('customers')) operations.push({ label: 'Customers', icon: 'user-plus', route: '/customers' });
 
     if (can('manual_dispatch')) operations.push({ label: 'Manual Dispatch', icon: 'send', route: '/rides/manual-dispatch' });
 

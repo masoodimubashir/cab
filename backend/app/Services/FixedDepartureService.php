@@ -37,7 +37,13 @@ class FixedDepartureService
 
         $query = $this->availability->adminDeparturesQuery($city)
             ->when(isset($filters['route_id']), fn ($q) => $q->where('route_id', (int) $filters['route_id']))
-            ->when(isset($filters['status']), fn ($q) => $q->where('status', $filters['status']))
+            ->when(isset($filters['status']) && $filters['status'] !== 'all', function ($q) use ($filters) {
+                if ($filters['status'] === 'active') {
+                    $q->whereNotIn('status', ['COMPLETED', 'CANCELLED']);
+                } else {
+                    $q->where('status', $filters['status']);
+                }
+            })
             ->when(isset($filters['date_from']), fn ($q) => $q->whereDate('service_date', '>=', $filters['date_from']))
             ->when(isset($filters['date_to']), fn ($q) => $q->whereDate('service_date', '<=', $filters['date_to']))
             ->when(!empty($filters['q']), function ($q) use ($filters) {

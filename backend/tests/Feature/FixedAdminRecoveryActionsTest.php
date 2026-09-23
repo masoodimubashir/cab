@@ -7,6 +7,8 @@ use App\Models\Route;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
+use App\Models\Trip;
+use App\Models\FixedSeatHold;
 use App\Models\User;
 use App\Services\RazorpayService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -433,6 +435,139 @@ class FixedAdminRecoveryActionsTest extends TestCase
             ->assertJsonPath('data.notes.0.note', 'Internal confirmation.')
             ->assertJsonPath('data.notes.1.note', 'Called customer.');
         $this->assertNull($booking->fresh()->refund_note);
+    }
+
+    public function test_admin_can_change_passenger_drop_stop(): void
+    {
+        $newStop = RouteStop::query()->create([
+            'route_id' => $this->route->id,
+            'seq' => 3,
+            'name' => 'Extended Terminal',
+            'lat' => 34.1500000,
+            'lng' => 74.1500000,
+            'is_pickup' => false,
+            'is_drop' => true,
+            'is_active' => true,
+            'is_temporarily_unavailable' => false,
+        ]);
+
+        $reservation = $this->createReservation(['seats' => 1]);
+
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+
+        $res = $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/change-drop", [
+            'drop_stop_id' => $newStop->id,
+        ]);
+
+        $res->assertOk();
+        $res->assertJsonFragment(['message' => 'Passenger drop destination updated.']);
+
+        $reservation->refresh();
+        $this->assertSame($newStop->id, $reservation->drop_stop_id);
+        $this->assertSame('Extended Terminal', $reservation->drop_address);
+    }
+
+    public function test_drop_change_updates_customer_trip_and_preserves_payment(): void
+    {
+        $newStop = $this->extendedDropStop();
+        $reservation = $this->createReservation();
+        $rideTypeId = DB::table('ride_types')->insertGetId([
+            'name' => 'Fixed', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $trip = Trip::query()->create([
+            'customer_id' => $this->customer->id,
+            'ride_type_id' => $rideTypeId,
+            'route_id' => $this->route->id,
+            'route_departure_id' => $this->departure->id,
+            'status' => 'CONFIRMED',
+            'pickup_lat' => $this->pickupStop->lat, 'pickup_lng' => $this->pickupStop->lng,
+            'drop_lat' => $this->dropStop->lat, 'drop_lng' => $this->dropStop->lng,
+            'drop_address' => $this->dropStop->name,
+        ]);
+        $reservation->update(['trip_id' => $trip->id]);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+
+        $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/change-drop", [
+            'drop_stop_id' => $newStop->id,
+        ])->assertOk();
+
+        $this->assertSame($newStop->name, $trip->fresh()->drop_address);
+        $this->assertEquals($newStop->lat, $trip->fresh()->drop_lat);
+        $this->assertSame($newStop->id, $reservation->fresh()->drop_stop_id);
+        $this->assertSame(120.0, $reservation->fresh()->fare_amount);
+        $this->assertSame('PAID', $reservation->fresh()->payment_status);
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $this->customer->id, 'type' => 'passenger_destination_updated',
+        ]);
+    }
+
+    public function test_drop_extension_checks_reserved_seats_and_held_luggage(): void
+    {
+        $newStop = $this->extendedDropStop();
+        $reservation = $this->createReservation(['extra_luggage_count' => 1]);
+        $other = $this->createReservation([
+            'customer_id' => $this->secondCustomer->id,
+            'board_stop_id' => $this->dropStop->id, 'drop_stop_id' => $newStop->id,
+            'seats' => 4,
+        ]);
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/change-drop";
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertStatus(422);
+        $this->assertSame($this->dropStop->id, $reservation->fresh()->drop_stop_id);
+
+        $other->update(['status' => 'CANCELLED']);
+        $hold = FixedSeatHold::query()->create([
+            'route_departure_id' => $this->departure->id, 'customer_id' => $this->secondCustomer->id,
+            'board_stop_id' => $this->dropStop->id, 'drop_stop_id' => $newStop->id,
+            'seats' => 1, 'extra_luggage_count' => 3, 'amount' => 120,
+            'status' => 'HELD', 'expires_at' => now()->addMinutes(5),
+        ]);
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertStatus(422);
+        $this->assertSame($this->dropStop->id, $reservation->fresh()->drop_stop_id);
+        $hold->update(['expires_at' => now()->subMinute()]);
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertOk();
+    }
+
+    public function test_drop_change_rejects_unavailable_passed_and_finished_destinations(): void
+    {
+        $newStop = $this->extendedDropStop();
+        $reservation = $this->createReservation();
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-bookings/{$reservation->id}/change-drop";
+        $newStop->update(['is_temporarily_unavailable' => true]);
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertStatus(422);
+        $newStop->update(['is_temporarily_unavailable' => false]);
+        $this->departure->update(['fixed_last_reached_stop_seq' => 3]);
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertStatus(422);
+        $this->departure->update(['fixed_last_reached_stop_seq' => null, 'status' => 'COMPLETED']);
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertStatus(409);
+        $this->departure->update(['status' => 'FORMING']);
+        $reservation->update(['status' => 'DROPPED']);
+        $this->postJson($url, ['drop_stop_id' => $newStop->id])->assertStatus(409);
+        $this->assertSame($this->dropStop->id, $reservation->fresh()->drop_stop_id);
+    }
+
+    public function test_active_departures_filter_excludes_finished_vehicles(): void
+    {
+        foreach (['COMPLETED', 'CANCELLED'] as $status) {
+            $closed = $this->departure->replicate();
+            $closed->status = $status;
+            $closed->save();
+        }
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $url = "/api/admin/cities/{$this->cityId}/fixed-departures";
+        $this->getJson($url . '?status=active')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson($url . '?status=all')->assertOk()->assertJsonPath('data.total', 3);
+        $this->getJson($url . '?status=COMPLETED')->assertOk()->assertJsonPath('data.total', 1);
+    }
+
+    private function extendedDropStop(): RouteStop
+    {
+        return RouteStop::query()->create([
+            'route_id' => $this->route->id, 'seq' => 3, 'name' => 'Extended Terminal',
+            'lat' => 34.15, 'lng' => 74.15, 'is_pickup' => false, 'is_drop' => true,
+            'is_active' => true, 'is_temporarily_unavailable' => false,
+        ]);
     }
 
     private function createReservation(array $overrides = []): SeatReservation
