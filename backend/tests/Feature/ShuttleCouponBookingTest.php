@@ -77,6 +77,41 @@ class ShuttleCouponBookingTest extends TestCase
         $this->assertSame(0, ShuttlePassengerBooking::query()->count());
     }
 
+    public function test_coupon_cannot_be_redeemed_by_two_pending_shuttle_bookings(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        config()->set('services.payments.split_enabled', false);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        [$cityId, $vehicleTypeId, $cvtId, $rideTypeId] = $this->seedVehicle();
+        $this->seedPricing($cityId, $vehicleTypeId, $cvtId, $rideTypeId);
+        \Tests\Support\SeatLayoutFactory::standardErtiga6P($cityId, $vehicleTypeId);
+        $assignmentId = $this->assignCoupon($cityId, 'POOL20', 20);
+        $bookings = [];
+        foreach ([1, 2] as $index) {
+            $id = $this->postJson('/api/shuttle/bookings', $this->payload($cvtId) + ['coupon_title' => 'POOL20'])
+                ->assertCreated()->json('booking.id');
+            $bookings[] = ShuttlePassengerBooking::query()->findOrFail($id);
+        }
+        $service = app(\App\Services\ShuttleBookingService::class);
+        foreach ($bookings as $booking) {
+            $this->postJson("/api/shuttle/bookings/{$booking->id}/request-driver")->assertOk();
+        }
+        $approvedTrips = [];
+        foreach ($bookings as $booking) {
+            $trip = $booking->fresh()->journey->trip;
+            if (isset($approvedTrips[$trip->id])) continue;
+            $approvedTrips[$trip->id] = true;
+            $trip->update(['driver_id' => User::factory()->create()->id]);
+            $trip = app(\App\Services\TripStateMachineService::class)->transition($trip, 'PAYMENT_PENDING', ['final_fare' => $booking->fare_amount]);
+            $service->driverApproved($trip);
+        }
+        $first = $service->confirmPaidServerVerified($bookings[0]->fresh(), 'pay_coupon_first');
+        $this->assertSame('CONFIRMED', $first->status);
+        $this->assertNotNull(DB::table('coupon_assignments')->where('id', $assignmentId)->value('used_at'));
+        $this->expectException(\App\Exceptions\ReservationException::class);
+        $service->confirmPaidServerVerified($bookings[1]->fresh(), 'pay_coupon_second');
+    }
+
     private function assignCoupon(int $cityId, string $title, float $percent): int
     {
         $couponId = DB::table('coupons')->insertGetId([

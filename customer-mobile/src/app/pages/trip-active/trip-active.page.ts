@@ -63,6 +63,7 @@ type TripDetail = {
   id: number;
   status: string;
   final_fare: number | null;
+  estimated_fare?: number | null;
   tip_amount?: number | null;
   payment_method?: PaymentMethod | null;
   service_mode?: 'private' | 'shuttle' | string | null;

@@ -81,11 +81,11 @@
           </p>
         </div>
 
-        <!-- Fare summary (completed only — during the ride the fare lives in the details modal) -->
-        <div class="info-card fare-card" *ngIf="isCompleted() && (t.final_fare != null || couponPreview)">
+        <!-- Fare summary -->
+        <div class="info-card fare-card" *ngIf="(isCompleted() || canPayNow) && (t.final_fare != null || paymentDue != null || couponPreview)">
           <span class="card-label">Fare summary</span>
-          <div class="fare-row" *ngIf="t.final_fare != null">
-            <span>Fare</span><span>₹{{ t.final_fare }}</span>
+          <div class="fare-row" *ngIf="t.final_fare != null || paymentDue != null">
+            <span>Fare</span><span>₹{{ t.final_fare ?? paymentDue?.amount }}</span>
           </div>
           <div class="fare-row discount" *ngIf="couponPreview">
             <span>Coupon · {{ couponPreview.coupon.title }}</span>
@@ -118,8 +118,8 @@
           <span>Your driver is almost here — this ride can no longer be cancelled.</span>
         </p>
 
-        <!-- Completed: coupon -->
-        <div class="info-card coupon-card" *ngIf="isCompleted()">
+        <!-- Coupon -->
+        <div class="info-card coupon-card" *ngIf="isCompleted() || canPayNow">
           <span class="card-label">Have a coupon?</span>
           <div class="coupon-row">
             <ion-icon name="gift-outline" class="coupon-icon" aria-hidden="true"></ion-icon>

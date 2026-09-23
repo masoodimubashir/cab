@@ -972,7 +972,7 @@ class FixedSeatHoldService
         );
 
         if ((int) $resolved['assignment_id'] !== (int) $assignment->id
-            || round((float) $resolved['final_amount'], 2) !== round((float) $hold->amount, 2)
+            || round((float) $resolved['final_amount'], 2) !== round((float) $hold->amount - (float) ($hold->tip_amount ?? 0), 2)
             || round((float) $resolved['discount'], 2) !== round((float) $hold->discount_amount, 2)) {
             throw new ReservationException('This coupon is no longer valid for this fixed booking. Please create a new hold.', 422);
         }

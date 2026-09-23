@@ -10,7 +10,7 @@ use App\Models\ShuttleJourney;
 use App\Models\ShuttlePassengerBooking;
 use App\Models\Trip;
 use App\Models\User;
-use App\Models\WalletTransaction;
+use App\Models\DriverPayoutLedger;
 use App\Services\CommissionSettlementService;
 use App\Services\WalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -81,12 +81,22 @@ class CouponOperatorFundedSettlementTest extends TestCase
         return $driver;
     }
 
-    private function reimbursement(User $driver): ?WalletTransaction
+    private function reimbursement(User $driver): ?DriverPayoutLedger
     {
-        return WalletTransaction::query()
-            ->where('user_id', $driver->id)
-            ->where('reason', 'Coupon reimbursement (operator-funded)')
+        return DriverPayoutLedger::query()
+            ->where('driver_user_id', $driver->id)
+            ->where('source', DriverPayoutLedger::SOURCE_COUPON_REIMBURSEMENT)
             ->first();
+    }
+
+    private function assertOnlineNet(User $driver): void
+    {
+        $collected = (float) DriverPayoutLedger::query()->where('driver_user_id', $driver->id)
+            ->where('type', DriverPayoutLedger::TYPE_COLLECTED)->sum('amount');
+        $wallet = app(WalletService::class)->balance($driver->fresh());
+        $this->assertSame(100.0, $collected);
+        $this->assertSame(-10.0, $wallet);
+        $this->assertSame(90.0, $collected + $wallet);
     }
 
     // ---------------------------------------------------------------- Private
@@ -115,7 +125,7 @@ class CouponOperatorFundedSettlementTest extends TestCase
         app(CommissionSettlementService::class)->settle($trip->fresh());
 
         // Driver whole on the gross: ₹100 − ₹10 = ₹90. No separate reimbursement line online.
-        $this->assertSame(90.0, app(WalletService::class)->balance($driver->fresh()));
+        $this->assertOnlineNet($driver);
         $this->assertNull($this->reimbursement($driver));
     }
 
@@ -147,21 +157,22 @@ class CouponOperatorFundedSettlementTest extends TestCase
         $reimbursement = $this->reimbursement($driver);
         $this->assertNotNull($reimbursement);
         $this->assertSame(20.0, (float) $reimbursement->amount);
-        $this->assertSame(10.0, app(WalletService::class)->balance($driver->fresh()));
+        $this->assertSame(-10.0, app(WalletService::class)->balance($driver->fresh()));
+        $this->assertSame(90.0, 80.0 + $reimbursement->amount + app(WalletService::class)->balance($driver->fresh()));
     }
 
     // ------------------------------------------------------------------ Fixed
 
     private function fixedRoute(): int
     {
-        return DB::table('routes')->insertGetId([
+        return (int) Route::query()->create([
             'city_id' => $this->cityId, 'scope' => 'local', 'mode' => 'fixed', 'name' => 'FR',
             'origin_name' => 'O', 'dest_name' => 'D',
             'origin_lat' => 34.0, 'origin_lng' => 74.0, 'dest_lat' => 34.1, 'dest_lng' => 74.1,
             'city_vehicle_type_id' => null, 'max_seats_per_booking' => 6, 'max_luggage_per_vehicle' => 2,
-            'fare_config' => json_encode(['seat_fare' => 100, 'commission_type' => 'percent', 'commission_percent' => 10]),
+            'fare_config' => ['seat_fare' => 100, 'commission_type' => 'percent', 'commission_percent' => 10],
             'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
-        ]);
+        ])->id;
     }
 
     private function fixedTripWithSeat(User $driver, string $method, float $paid, float $discount): Trip
@@ -203,7 +214,7 @@ class CouponOperatorFundedSettlementTest extends TestCase
         app(CommissionSettlementService::class)->settle($trip->fresh());
 
         // Gross ₹100 − 10% = ₹90 (NOT ₹80 − 10% = ₹72).
-        $this->assertEqualsWithDelta(90.0, app(WalletService::class)->balance($driver->fresh()), 0.001);
+        $this->assertOnlineNet($driver);
         $this->assertNull($this->reimbursement($driver));
     }
 
@@ -254,7 +265,7 @@ class CouponOperatorFundedSettlementTest extends TestCase
         app(CommissionSettlementService::class)->settle($trip->fresh());
 
         // Gross ₹100 − 10% = ₹90 credited as shuttle earnings.
-        $this->assertEqualsWithDelta(90.0, app(WalletService::class)->balance($driver->fresh()), 0.001);
+        $this->assertOnlineNet($driver);
         $this->assertNull($this->reimbursement($driver));
     }
 

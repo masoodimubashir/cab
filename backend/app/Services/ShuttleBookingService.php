@@ -6,6 +6,7 @@ use App\Exceptions\ReservationException;
 use App\Jobs\DispatchHopJob;
 use App\Models\CitySetting;
 use App\Models\CityVehicleType;
+use App\Models\CouponAssignment;
 use App\Models\FareNegotiation;
 use App\Models\PricingRule;
 use App\Models\ShuttleJourney;
@@ -230,6 +231,7 @@ class ShuttleBookingService
                 throw new ReservationException('This Shuttle booking is not waiting for payment.', 422);
             }
             $this->assertDriverApproved($locked);
+            $this->assertCouponStillRedeemable($locked, $customer);
             if ($locked->payment_method === 'cash' && !app(CashDepositService::class)->cashEnabled()) {
                 throw new ReservationException('Cash is not available.', 422);
             }
@@ -284,6 +286,7 @@ class ShuttleBookingService
                 throw new ReservationException("This Shuttle booking is not waiting for payment.", 422);
             }
             $this->assertDriverApproved($locked);
+            $this->assertCouponStillRedeemable($locked, $customer);
 
             $razorpayOrderId = trim((string) $data["razorpay_order_id"]);
             $razorpayPaymentId = trim((string) $data["razorpay_payment_id"]);
@@ -346,6 +349,7 @@ class ShuttleBookingService
                 throw new ReservationException('This Shuttle booking is not waiting for payment.', 422);
             }
             $this->assertDriverApproved($locked);
+            $this->assertCouponStillRedeemable($locked);
             if ($locked->razorpay_payment_id && $locked->razorpay_payment_id !== $razorpayPaymentId) {
                 throw new ReservationException('This Shuttle booking is already linked to another payment.', 422);
             }
@@ -581,6 +585,7 @@ class ShuttleBookingService
     private function confirmCashBooking(ShuttlePassengerBooking $booking): void
     {
         $trip = $this->assertDriverApproved($booking);
+        $this->assertCouponStillRedeemable($booking);
         if (!app(CashDepositService::class)->cashEnabled()) {
             throw new ReservationException('Cash is not available.', 422);
         }
@@ -709,6 +714,49 @@ class ShuttleBookingService
         ];
     }
 
+    private function assertCouponStillRedeemable(ShuttlePassengerBooking $booking, ?User $customer = null): void
+    {
+        if (! $booking->coupon_assignment_id) {
+            return;
+        }
+
+        $customerId = $customer ? $customer->id : $booking->customer_id;
+
+        $assignment = CouponAssignment::query()
+            ->with('coupon')
+            ->where('id', $booking->coupon_assignment_id)
+            ->where('user_id', $customerId)
+            ->whereNull('used_at')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>=', now());
+            })
+            ->lockForUpdate()
+            ->first();
+
+        if (! $assignment || ! $assignment->coupon || ! $assignment->coupon->is_active) {
+            throw new ReservationException('This coupon has expired or is no longer available.', 422);
+        }
+
+        $customerUser = $customer ?? User::query()->find($customerId);
+        $cvt = CityVehicleType::query()->find($booking->city_vehicle_type_id);
+        if ($customerUser && $cvt) {
+            $baseFare = (float) $booking->fare_amount + (float) ($booking->promo_discount_amount ?? 0) - (float) ($booking->tip_amount ?? 0);
+            $resolved = $this->resolveShuttleCoupon($customerUser, $cvt, [
+                'coupon_title' => $assignment->coupon->title,
+                'pickup_lat' => $booking->pickup_lat,
+                'pickup_lng' => $booking->pickup_lng,
+                'drop_lat' => $booking->drop_lat,
+                'drop_lng' => $booking->drop_lng,
+            ], $baseFare);
+
+            if ((int) $resolved['assignment_id'] !== (int) $assignment->id
+                || round((float) $resolved['discount'], 2) !== round((float) ($booking->promo_discount_amount ?? 0), 2)) {
+                throw new ReservationException('This coupon is no longer valid for this shuttle booking.', 422);
+            }
+        }
+    }
+
     /** Burn the coupon assignment tied to a booking once its payment confirms. */
     private function markCouponRedeemed(ShuttlePassengerBooking $booking): void
     {
@@ -716,7 +764,7 @@ class ShuttleBookingService
             return;
         }
 
-        \App\Models\CouponAssignment::query()
+        CouponAssignment::query()
             ->where('id', $booking->coupon_assignment_id)
             ->whereNull('used_at')
             ->update(['used_at' => now()]);

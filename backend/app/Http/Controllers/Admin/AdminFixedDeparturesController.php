@@ -6,6 +6,7 @@ use App\Events\FixedRouteCatalogUpdated;
 use App\Models\City;
 use App\Models\FixedBookingSupportNote;
 use App\Models\FixedSeatHold;
+use App\Models\RideType;
 use App\Models\RouteDeparture;
 use App\Models\RouteStop;
 use App\Models\SeatReservation;
@@ -284,9 +285,13 @@ class AdminFixedDeparturesController
                     ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
                     ->sum('fare_amount');
 
-                $rideTypeId = $route?->ride_type_id
-                    ?: \App\Models\RideType::query()->where('mode', 'fixed')->value('id')
-                    ?: ($route?->cityVehicleType?->ride_type_id ?? 1);
+                $rideTypeId = (int) ($route?->ride_type_id
+                    ?: RideType::query()->where('mode', 'fixed')->value('id')
+                    ?: ($route?->cityVehicleType?->ride_type_id && RideType::query()->whereKey((int) $route->cityVehicleType->ride_type_id)->exists() ? $route->cityVehicleType->ride_type_id : null)
+                    ?: RideType::query()->firstOrCreate(
+                        ['name' => 'Fixed'],
+                        ['description' => 'Fixed route shared ride', 'sort_order' => 30],
+                    )->id);
 
                 $trip = Trip::query()->create([
                     'customer_id' => null,

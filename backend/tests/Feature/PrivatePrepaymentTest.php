@@ -185,6 +185,25 @@ class PrivatePrepaymentTest extends TestCase
         $this->assertSame($operatorNet, $b['operator_net'], 'operator_net mismatch');
     }
 
+    public function test_coupon_preview_is_available_when_driver_approval_unlocks_payment(): void
+    {
+        $trip = $this->confirmedTrip($this->driver(), 200);
+        $trip->update(['status' => 'PAYMENT_PENDING']);
+        $couponId = DB::table('coupons')->insertGetId([
+            'city_id' => $this->cityId, 'title' => 'SAVE50', 'benefit_type' => 'discount',
+            'promo_type' => 'location_insensitive', 'discount_type' => 'flat',
+            'discount_value' => 50, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('coupon_assignments')->insert([
+            'coupon_id' => $couponId, 'user_id' => $this->customer->id, 'reason' => 'Verification',
+            'assigned_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        Sanctum::actingAs($this->customer, ['act-as:customer']);
+        $this->postJson("/api/trips/{$trip->id}/coupon-preview", ['coupon_title' => 'SAVE50'])
+            ->assertOk()->assertJsonPath('final_amount', 150);
+    }
+
     /* ------------------------------------------------------------------ */
     /* Paying before the ride                                              */
     /* ------------------------------------------------------------------ */
