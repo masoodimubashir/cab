@@ -632,6 +632,7 @@ Route::middleware(['auth:sanctum', 'role:admin', 'manager.city', 'permission:rid
     Route::post('/admin/cities/{city}/fixed-departures', [AdminFixedDeparturesController::class, 'store']);
     Route::patch('/admin/cities/{city}/fixed-departures/{departure}', [AdminFixedDeparturesController::class, 'update']);
     Route::post('/admin/cities/{city}/fixed-departures/{departure}/close-bookings', [AdminFixedDeparturesController::class, 'closeBookings']);
+    Route::post('/admin/cities/{city}/fixed-departures/{departure}/start', [AdminFixedDeparturesController::class, 'startDeparture']);
     Route::post('/admin/cities/{city}/fixed-departures/{departure}/cancel', [AdminFixedDeparturesController::class, 'cancelDeparture']);
 });
 

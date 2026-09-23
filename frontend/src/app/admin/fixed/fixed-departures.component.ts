@@ -1,6 +1,7 @@
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import $ from 'jquery';
 import moment from 'moment';
@@ -50,6 +51,7 @@ interface DepartureRow {
   status: string;
   departure_kind: 'driver_opened' | 'scheduled';
   visible_to_customers: boolean;
+  trip_id?: number | null;
   fixed_last_reached_stop_seq?: number | null;
   fixed_last_reached_stop_at?: string | null;
 }
@@ -146,7 +148,7 @@ interface FixedSupportTimeline {
   notes: FixedSupportNote[];
 }
 
-type RecoveryActionType = 'close_vehicle' | 'cancel_vehicle' | 'cancel_booking';
+type RecoveryActionType = 'close_vehicle' | 'cancel_vehicle' | 'cancel_booking' | 'start_vehicle';
 type ManualSupportActionType = 'refund_resolved_manual';
 
 interface RecoveryAction {
@@ -300,10 +302,28 @@ const STATUS_OPTIONS = [
             </ng-template>
           </tm-column>
 
-          <tm-column key="actions" label="" width="140" align="right">
+          <tm-column key="actions" label="" width="180" align="right">
             <ng-template let-row>
               <div class="cell-actions">
                 <tm-button variant="green" size="sm" icon="users" (clicked)="openManifest(row)">Manage Ride</tm-button>
+                <button
+                  *ngIf="canStartDeparture(row)"
+                  type="button"
+                  class="btn-icon-act btn-icon-act--start"
+                  title="Start Ride"
+                  (click)="openStartVehicle(row); $event.stopPropagation()"
+                >
+                  <tm-icon name="play" [size]="13" />
+                </button>
+                <button
+                  *ngIf="canCancelVehicle(row)"
+                  type="button"
+                  class="btn-icon-act btn-icon-act--cancel"
+                  title="Cancel Ride"
+                  (click)="openCancelVehicle(row); $event.stopPropagation()"
+                >
+                  <tm-icon name="x" [size]="13" />
+                </button>
               </div>
             </ng-template>
           </tm-column>
@@ -350,6 +370,48 @@ const STATUS_OPTIONS = [
             <span class="meta-chip" [attr.data-s]="manifestDeparture.visible_to_customers ? 'published' : 'hidden'">
               {{ manifestDeparture.visible_to_customers ? 'Live for booking' : 'Booking closed' }}
             </span>
+          </div>
+          <!-- Vehicle / Ride Control Actions -->
+          <div class="manifest-overview__actions">
+            <tm-button
+              variant="green"
+              size="sm"
+              icon="play"
+              *ngIf="canStartDeparture(manifestDeparture)"
+              (clicked)="openStartVehicle(manifestDeparture)"
+            >
+              Start Ride
+            </tm-button>
+
+            <tm-button
+              variant="danger"
+              size="sm"
+              icon="x"
+              *ngIf="canCancelVehicle(manifestDeparture)"
+              (clicked)="openCancelVehicle(manifestDeparture)"
+            >
+              Cancel Ride
+            </tm-button>
+
+            <tm-button
+              variant="ghost"
+              size="sm"
+              icon="shield"
+              *ngIf="canCloseVehicle(manifestDeparture)"
+              (clicked)="openCloseBookings(manifestDeparture)"
+            >
+              Close Bookings
+            </tm-button>
+
+            <tm-button
+              variant="ghost"
+              size="sm"
+              icon="external-link"
+              *ngIf="manifestDeparture.trip_id"
+              (clicked)="viewTripHistory(manifestDeparture.trip_id)"
+            >
+              Ride History
+            </tm-button>
           </div>
         </section>
 
@@ -903,6 +965,13 @@ const STATUS_OPTIONS = [
     .meta-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--tm-radius-pill); background: var(--tm-canvas-2); color: var(--tm-text); font-size: 11px; font-weight: 600; }
     .meta-chip[data-s="published"] { background: #ecfeff; color: #0f766e; }
     .meta-chip[data-s="hidden"] { background: #fef2f2; color: #b91c1c; }
+    .manifest-overview__actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid var(--tm-line); margin-top: 4px; }
+    .btn-icon-act { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--tm-radius-md, 7px); border: 1px solid var(--tm-line); background: var(--tm-canvas); cursor: pointer; transition: all 0.15s ease; color: var(--tm-text-muted); }
+    .btn-icon-act:hover { background: var(--tm-canvas-2); }
+    .btn-icon-act--start { color: var(--tm-green-deep, #059669); border-color: rgba(16,185,129,0.3); }
+    .btn-icon-act--start:hover { background: var(--tm-green-tint, #ecfdf5); border-color: var(--tm-green-deep, #059669); }
+    .btn-icon-act--cancel { color: var(--tm-danger, #ef4444); border-color: rgba(239,68,68,0.3); }
+    .btn-icon-act--cancel:hover { background: #fef2f2; border-color: var(--tm-danger, #ef4444); }
     .manifest-passengers-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 4px; }
     .manifest-head-title { margin: 0; font-size: 14px; font-weight: 800; color: var(--tm-text); }
     .manifest-tabs { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; box-sizing: border-box; }
@@ -1087,6 +1156,7 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     private toast: ToastService,
     private zone: NgZone,
     private realtime: AdminRealtimeService,
+    private router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -1202,6 +1272,11 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     return this.statusOptions.find((option) => option.value === this.status)?.label || this.status;
   }
 
+
+  canStartDeparture(row: DepartureRow | null): boolean {
+    if (!row) return false;
+    return !!row.driver && ['FORMING', 'SCHEDULED', 'DISPATCHED'].includes(row.status);
+  }
 
   canCloseVehicle(row: DepartureRow): boolean {
     return row.visible_to_customers && !['COMPLETED', 'CANCELLED'].includes(row.status);
@@ -1331,6 +1406,28 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     });
   }
 
+  openStartVehicle(row: DepartureRow): void {
+    this.recoveryAction = {
+      type: 'start_vehicle',
+      id: row.id,
+      title: 'Start Live Fixed Ride',
+      intro: 'This force-starts the fixed route vehicle and advances it to departed status.',
+      effects: [
+        'The vehicle status transitions to in-transit (Departed).',
+        'Departure trip is created/linked for route tracking.',
+        'Assigned driver and all active passengers receive in-app start notifications.',
+      ],
+      confirmLabel: 'Start Ride',
+      danger: false,
+    };
+    this.recoveryReason = '';
+  }
+
+  viewTripHistory(tripId?: number | null): void {
+    if (!tripId) return;
+    this.router.navigate(['/rides', tripId]);
+  }
+
   openCloseBookings(row: DepartureRow): void {
     this.recoveryAction = {
       type: 'close_vehicle',
@@ -1396,7 +1493,9 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     const action = this.recoveryAction;
     const body = { reason: this.recoveryReason.trim() || null };
     let req;
-    if (action.type === 'close_vehicle') {
+    if (action.type === 'start_vehicle') {
+      req = this.api.post<{ message: string; departure?: any }>(`/admin/cities/${this.cityId}/fixed-departures/${action.id}/start`, body);
+    } else if (action.type === 'close_vehicle') {
       req = this.api.post<{ message: string }>(`/admin/cities/${this.cityId}/fixed-departures/${action.id}/close-bookings`, body);
     } else if (action.type === 'cancel_vehicle') {
       req = this.api.post<{ message: string; cancelled_passengers: number; refund_pending: number }>(`/admin/cities/${this.cityId}/fixed-departures/${action.id}/cancel`, body);
@@ -1618,10 +1717,10 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
     this.passengers = [];
     this.availableStops = [];
     this.loadingManifest = true;
-    this.api.get<{ departure: Partial<DepartureRow>; passengers: Passenger[]; stops?: RouteStop[] }>(`/admin/cities/${this.cityId}/departures/${row.id}/manifest`).subscribe({
+    this.api.get<{ departure: Partial<DepartureRow>; passengers: Passenger[]; stops?: RouteStop[]; trip_id?: number | null }>(`/admin/cities/${this.cityId}/departures/${row.id}/manifest`).subscribe({
       next: (res) => {
         if (this.manifestDeparture?.id !== row.id) return;
-        this.manifestDeparture = { ...row, ...res.departure };
+        this.manifestDeparture = { ...row, ...res.departure, trip_id: res.trip_id ?? res.departure?.trip_id ?? row.trip_id };
         this.passengers = res?.passengers || [];
         this.availableStops = res?.stops || [];
         this.loadingManifest = false;

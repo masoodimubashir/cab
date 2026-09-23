@@ -250,6 +250,137 @@ class AdminFixedDeparturesController
         ]);
     }
 
+    public function startDeparture(Request $request, City $city, RouteDeparture $departure)
+    {
+        $this->availability->assertFixedDeparture($departure);
+        if ($departure->route?->city_id !== $city->id) {
+            abort(404);
+        }
+
+        if (in_array($departure->status, ['COMPLETED', 'CANCELLED', 'DEPARTED'], true)) {
+            return response()->json(['message' => 'Vehicle is already ' . strtolower($departure->status) . '.'], 409);
+        }
+
+        if (!$departure->driver_id) {
+            return response()->json(['message' => 'Cannot start a vehicle without an assigned driver.'], 422);
+        }
+
+        $departure = DB::transaction(function () use ($departure) {
+            $dep = RouteDeparture::query()->with(['route', 'driver'])->lockForUpdate()->findOrFail($departure->id);
+            $route = $dep->route;
+            $driverId = (int) $dep->driver_id;
+
+            $trip = $dep->trip_id ? Trip::query()->find($dep->trip_id) : null;
+            if (!$trip) {
+                $originName = $route?->origin_name ?: ($route?->name ?: 'Origin');
+                $destName = $route?->dest_name ?: ($route?->name ?: 'Destination');
+                $originLat = (float) ($route?->origin_lat ?? 0);
+                $originLng = (float) ($route?->origin_lng ?? 0);
+                $destLat = (float) ($route?->dest_lat ?? 0);
+                $destLng = (float) ($route?->dest_lng ?? 0);
+
+                $fareTotal = (float) SeatReservation::query()
+                    ->where('route_departure_id', $dep->id)
+                    ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+                    ->sum('fare_amount');
+
+                $rideTypeId = $route?->ride_type_id
+                    ?: \App\Models\RideType::query()->where('mode', 'fixed')->value('id')
+                    ?: ($route?->cityVehicleType?->ride_type_id ?? 1);
+
+                $trip = Trip::query()->create([
+                    'customer_id' => null,
+                    'driver_id' => $driverId,
+                    'city_id' => $route->city_id,
+                    'scope' => $route->scope ?: 'local',
+                    'city_vehicle_type_id' => $route->city_vehicle_type_id,
+                    'ride_type_id' => $rideTypeId,
+                    'route_id' => $route->id,
+                    'route_departure_id' => $dep->id,
+                    'status' => 'EN_ROUTE_PICKUP',
+                    'estimated_fare' => $fareTotal,
+                    'final_fare' => $fareTotal,
+                    'currency' => 'INR',
+                    'pickup_address' => $originName,
+                    'pickup_lat' => $originLat,
+                    'pickup_lng' => $originLng,
+                    'drop_address' => $destName,
+                    'drop_lat' => $destLat,
+                    'drop_lng' => $destLng,
+                    'confirmed_at' => now(),
+                    'assigned_at' => now(),
+                    'en_route_pickup_at' => now(),
+                ]);
+            } elseif (!in_array($trip->status, ['COMPLETED', 'CANCELLED'], true)) {
+                $trip->update([
+                    'driver_id' => $driverId,
+                    'status' => 'EN_ROUTE_PICKUP',
+                    'assigned_at' => $trip->assigned_at ?? now(),
+                    'en_route_pickup_at' => $trip->en_route_pickup_at ?? now(),
+                ]);
+            }
+
+            SeatReservation::query()
+                ->where('route_departure_id', $dep->id)
+                ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+                ->update(['trip_id' => $trip->id]);
+
+            try {
+                app(\App\Services\BookingPaymentService::class)->linkDepartureBookings($trip, $dep->id);
+            } catch (\Throwable $e) {
+                Log::warning('linkDepartureBookings failed', ['error' => $e->getMessage()]);
+            }
+
+            $dep->update([
+                'trip_id' => $trip->id,
+                'actual_depart_at' => $dep->actual_depart_at ?? now(),
+                'boarding_closed_at' => $dep->boarding_closed_at ?? now(),
+                'visible_to_customers' => true,
+                'status' => 'DEPARTED',
+                'fixed_last_reached_stop_seq' => $dep->fixed_last_reached_stop_seq ?: 1,
+                'fixed_last_reached_stop_at' => $dep->fixed_last_reached_stop_at ?? now(),
+            ]);
+
+            return $dep->fresh(['route.stops', 'driver:id,name']);
+        });
+
+        if ($departure->driver_id) {
+            $this->notifier->notifyUserId(
+                $departure->driver_id,
+                'fixed_ride_started_by_admin',
+                'Fixed ride started',
+                'Your fixed ride departure was started by operator.',
+                ['route_departure_id' => $departure->id],
+                'car-outline',
+            );
+        }
+
+        $activePassengerUserIds = SeatReservation::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->pluck('customer_id')
+            ->filter()
+            ->unique();
+
+        foreach ($activePassengerUserIds as $pUserId) {
+            $this->notifier->notifyUserId(
+                $pUserId,
+                'fixed_ride_started',
+                'Fixed ride has begun',
+                'Your fixed route vehicle has departed.',
+                ['route_departure_id' => $departure->id],
+                'car-outline',
+            );
+        }
+
+        $this->broadcastFixedUpdate($city, (int) $departure->route_id, 'departure_started');
+
+        return response()->json([
+            'departure' => $this->departures->shapeAdminDeparture($departure),
+            'message' => 'Fixed vehicle started.',
+        ]);
+    }
+
     public function cancelBooking(Request $request, City $city, SeatReservation $reservation)
     {
         $reservation = $this->cityScopedReservation($city, $reservation);
