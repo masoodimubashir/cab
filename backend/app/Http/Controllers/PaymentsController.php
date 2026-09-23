@@ -16,9 +16,12 @@ use Illuminate\Support\Facades\Log;
 
 class PaymentsController extends Controller
 {
+    /** Approved phases in which upfront payment is allowed. */
+    private const PREPAY_STATUSES = ['PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'];
+
     /**
      * Validate a typed coupon against this trip and return the discount it
-     * would apply to `final_fare`. Read-only — does not mark the coupon used.
+     * would apply to `final_fare` (or upfront quoted fare). Read-only — does not mark the coupon used.
      */
     public function couponPreview(Request $request, Trip $trip, CouponService $couponService)
     {
@@ -26,11 +29,26 @@ class PaymentsController extends Controller
         if ($trip->customer_id !== $user->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
-        if ($trip->status !== 'COMPLETED') {
-            return response()->json(['message' => 'Trip must be completed before applying a coupon.'], 409);
+
+        if (\App\Models\ShuttleJourney::query()->where('trip_id', $trip->id)->exists()) {
+            return response()->json(['message' => 'Apply coupons through your shuttle seat booking.'], 409);
         }
-        if ($trip->final_fare === null || (float) $trip->final_fare <= 0) {
-            return response()->json(['message' => 'Final fare not available.'], 422);
+
+        $prepay = $trip->driver_id && in_array($trip->status, self::PREPAY_STATUSES, true);
+        if (!$prepay && $trip->status !== 'COMPLETED') {
+            return response()->json([
+                'message' => $this->prepaymentsEnabled()
+                    ? 'Driver approval is required before applying a coupon.'
+                    : 'Trip must be completed before applying a coupon.',
+            ], 409);
+        }
+
+        $quotedFare = $prepay
+            ? (float) ($trip->final_fare ?? $trip->estimated_fare ?? 0)
+            : (float) ($trip->final_fare ?? 0);
+
+        if ($quotedFare <= 0) {
+            return response()->json(['message' => 'Fare not available.'], 422);
         }
 
         $data = $request->validate([
@@ -41,7 +59,7 @@ class PaymentsController extends Controller
             code: $data['coupon_title'],
             userId: (int) $user->id,
             cityId: (int) $trip->city_id,
-            baseAmount: (float) $trip->final_fare,
+            baseAmount: (float) $quotedFare,
             cityVehicleTypeId: $trip->city_vehicle_type_id ? (int) $trip->city_vehicle_type_id : null,
             pickupLat: $trip->pickup_lat !== null ? (float) $trip->pickup_lat : null,
             pickupLng: $trip->pickup_lng !== null ? (float) $trip->pickup_lng : null,
@@ -62,9 +80,6 @@ class PaymentsController extends Controller
             ],
         ]);
     }
-
-    /** Approved phases in which upfront payment is allowed. */
-    private const PREPAY_STATUSES = ['PAYMENT_PENDING', 'CONFIRMED', 'ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'];
 
     public function payRazorpay(Request $request, Trip $trip, RazorpayService $razorpayService, CouponService $couponService, PaymentModeService $paymentModeService)
     {

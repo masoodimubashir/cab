@@ -561,6 +561,35 @@ class FixedAdminRecoveryActionsTest extends TestCase
         $this->getJson($url . '?status=COMPLETED')->assertOk()->assertJsonPath('data.total', 1);
     }
 
+    public function test_admin_can_start_fixed_departure(): void
+    {
+        $driver = User::factory()->create();
+        $driver->addRole('driver');
+        $this->departure->update(['driver_id' => $driver->id]);
+        $reservation = $this->createReservation();
+
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $response = $this->postJson("/api/admin/cities/{$this->cityId}/fixed-departures/{$this->departure->id}/start");
+
+        $response->assertOk()->assertJsonPath('departure.status', 'DEPARTED');
+        $this->departure->refresh();
+        $this->assertSame('DEPARTED', $this->departure->status);
+        $this->assertNotNull($this->departure->trip_id);
+        $this->assertNotNull($this->departure->actual_depart_at);
+
+        $trip = Trip::query()->find($this->departure->trip_id);
+        $this->assertNotNull($trip);
+        $this->assertSame('EN_ROUTE_PICKUP', $trip->status);
+        $this->assertSame($driver->id, $trip->driver_id);
+
+        $reservation->refresh();
+        $this->assertSame($this->departure->trip_id, $reservation->trip_id);
+
+        // Cannot restart an already departed vehicle
+        $this->postJson("/api/admin/cities/{$this->cityId}/fixed-departures/{$this->departure->id}/start")
+            ->assertStatus(409);
+    }
+
     private function extendedDropStop(): RouteStop
     {
         return RouteStop::query()->create([

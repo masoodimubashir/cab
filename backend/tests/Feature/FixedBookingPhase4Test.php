@@ -116,6 +116,49 @@ class FixedBookingPhase4Test extends TestCase
         ]);
     }
 
+    public function test_coupon_confirmation_without_tip(): void
+    {
+        $this->verifyCouponConfirmation(0);
+    }
+
+    public function test_coupon_confirmation_with_tip(): void
+    {
+        $this->verifyCouponConfirmation(10);
+    }
+
+    private function verifyCouponConfirmation(float $tip): void
+    {
+        $couponId = DB::table('coupons')->insertGetId([
+            'city_id' => $this->route->city_id, 'title' => 'FIXED20', 'benefit_type' => 'discount',
+            'promo_type' => 'location_insensitive', 'discount_type' => 'percentage',
+            'discount_value' => 20, 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $assignmentId = DB::table('coupon_assignments')->insertGetId([
+            'coupon_id' => $couponId, 'user_id' => $this->customer->id, 'reason' => 'Verification',
+            'assigned_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $service = app(\App\Services\FixedSeatHoldService::class);
+        $payload = [
+            'route_departure_id' => $this->departure->id, 'seats' => 1,
+            'board_stop_id' => $this->pickupStop->id, 'drop_stop_id' => $this->dropStop->id,
+            'coupon_title' => 'FIXED20', 'tip_amount' => $tip,
+        ];
+        $preview = $service->previewCoupon($this->customer, $payload);
+        $this->assertSame(24.0, $preview['discount']);
+        $hold = $service->createHold($this->customer, $payload);
+        $this->assertSame(96.0 + $tip, (float) $hold->amount);
+        $service->driverAcceptHold($this->driver, $hold);
+        $hold->refresh()->update(['razorpay_order_id' => 'order_coupon_check']);
+        $gateway = Mockery::mock(RazorpayService::class);
+        $gateway->shouldReceive('verifyPaymentSignature')->once()->andReturn(true);
+        $reservation = $service->confirmHold($this->customer, $hold->fresh(), [
+            'razorpay_order_id' => 'order_coupon_check', 'razorpay_payment_id' => 'pay_coupon_check',
+            'razorpay_signature' => 'test', 'booking_channel' => 'advance',
+        ], $gateway);
+        $this->assertSame(96.0 + $tip, (float) $reservation->fare_amount);
+        $this->assertNotNull(DB::table('coupon_assignments')->where('id', $assignmentId)->value('used_at'));
+    }
+
     public function test_customer_cancel_more_than_30_minutes_before_departure_refunds_razorpay_and_releases_capacity(): void
     {
         $reservation = $this->createReservation(['seats' => 2, 'extra_luggage_count' => 1, 'fare_amount' => 265]);
