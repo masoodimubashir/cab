@@ -31,7 +31,10 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
           <span class="muted small">#{{ driver.id }}</span>
         </div>
         <div class="head__meta">
-          <span class="chip-mute">{{ driver.phone || '—' }}</span>
+          <span class="chip-mute chip-phone">
+            <span>{{ driver.phone || '—' }}</span>
+            <button type="button" class="btn-text-action" (click)="changePhone.emit()">Change</button>
+          </span>
           <span class="chip-mute" *ngIf="driver.ride_type_name">{{ driver.ride_type_name }}</span>
           <span class="chip-mute" *ngIf="driver.vehicle_type_name">{{ driver.vehicle_type_name }}</span>
           <span class="status-pill"
@@ -156,6 +159,9 @@ import { DriverProfile, VehicleForm } from './driver-detail.types';
       text-transform: uppercase;
       letter-spacing: 0.4px;
     }
+    .chip-phone { display: inline-flex; align-items: center; gap: 6px; }
+    .btn-text-action { background: none; border: none; color: var(--tm-green-deep, #0e8f49); font-size: 11px; font-weight: 700; cursor: pointer; padding: 0 2px; }
+    .btn-text-action:hover { text-decoration: underline; }
     .status-pill {
       display: inline-flex;
       align-items: center;
@@ -247,6 +253,7 @@ export class DriverProfilePaneComponent {
   @Input() savingVehicle = false;
   @Output() vehicleFormChange = new EventEmitter<VehicleForm>();
   @Output() save = new EventEmitter<void>();
+  @Output() changePhone = new EventEmitter<void>();
 
   onRegNoChange(value: string): void {
     this.vehicleFormChange.emit({ ...this.vehicleForm, vehicle_reg_no: value });

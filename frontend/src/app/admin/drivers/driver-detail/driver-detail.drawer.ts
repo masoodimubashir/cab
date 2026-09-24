@@ -91,6 +91,7 @@ interface FullProfileResponse {
               [savingVehicle]="savingVehicle"
               (vehicleFormChange)="vehicleForm = $event"
               (save)="saveVehicle()"
+              (changePhone)="openAdminPhoneModal()"
             />
 
             <app-driver-documents-pane
@@ -243,6 +244,99 @@ interface FullProfileResponse {
                    (clicked)="submitUploads()">{{ uploadButtonLabel() }}</tm-button>
       </ng-container>
     </tm-modal>
+
+    <!-- ============= Admin Phone Change Modal ============= -->
+    <tm-modal
+      [open]="adminPhoneModalOpen"
+      title="Change Driver Phone"
+      (closed)="closeAdminPhoneModal()"
+    >
+      <div slot="body" class="modal-form-body admin-phone-modal">
+        <div *ngIf="adminPhoneStep === 'input'">
+          <p class="form-hint">
+            To change this driver's phone number, an SMS OTP will be sent to the new number for verification.
+          </p>
+          <div class="form-group">
+            <label class="lbl"><span class="req">*</span> New Phone Number</label>
+            <input
+              class="input mono"
+              type="tel"
+              [(ngModel)]="adminNewPhone"
+              [disabled]="adminPhoneBusy"
+              placeholder="e.g. +919876543210"
+            />
+          </div>
+        </div>
+
+        <div *ngIf="adminPhoneStep === 'otp'">
+          <p class="form-hint">
+            Enter the 6-digit verification code sent to <strong>{{ adminNewPhone }}</strong>.
+          </p>
+          <div class="form-group">
+            <label class="lbl"><span class="req">*</span> Verification Code (OTP)</label>
+            <input
+              class="input mono"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              [(ngModel)]="adminOtpCode"
+              [disabled]="adminPhoneBusy"
+              placeholder="6-digit OTP"
+            />
+          </div>
+          <div class="modal-resend-row">
+            <button
+              type="button"
+              class="btn-link"
+              (click)="sendAdminPhoneOtp()"
+              [disabled]="adminPhoneBusy || adminResendCountdown > 0"
+            >
+              {{ adminResendCountdown > 0 ? 'Resend in ' + adminResendCountdown + 's' : 'Resend Code' }}
+            </button>
+            <button
+              type="button"
+              class="btn-link text-muted"
+              (click)="adminPhoneStep = 'input'"
+              [disabled]="adminPhoneBusy"
+            >
+              Edit number
+            </button>
+          </div>
+        </div>
+
+        <div class="form-error-notice" *ngIf="adminPhoneError">
+          <tm-icon name="alert-triangle" [size]="14" />
+          <span>{{ adminPhoneError }}</span>
+        </div>
+      </div>
+
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="closeAdminPhoneModal()" [disabled]="adminPhoneBusy">
+          Cancel
+        </tm-button>
+        <tm-button
+          *ngIf="adminPhoneStep === 'input'"
+          variant="green"
+          icon="send"
+          [loading]="adminPhoneBusy"
+          [disabled]="!adminNewPhone.trim()"
+          (clicked)="sendAdminPhoneOtp()"
+        >
+          Send OTP
+        </tm-button>
+        <tm-button
+          *ngIf="adminPhoneStep === 'otp'"
+          variant="green"
+          icon="check"
+          [loading]="adminPhoneBusy"
+          [disabled]="!adminOtpCode.trim()"
+          (clicked)="verifyAdminPhoneOtp()"
+        >
+          Verify &amp; Update
+        </tm-button>
+      </ng-container>
+    </tm-modal>
+
   `,
   styles: [`
     :host { display: contents; }
@@ -498,6 +592,16 @@ interface FullProfileResponse {
       .drawer__panel { width: 100vw; }
       .drawer__head { padding: var(--tm-space-3) var(--tm-space-4); }
       .drawer__body { padding: var(--tm-space-4); }
+
+    .admin-phone-modal { display: flex; flex-direction: column; gap: 12px; }
+    .admin-phone-modal .modal-resend-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .admin-phone-modal .btn-link { background: none; border: none; color: var(--tm-green-deep, #0e8f49); font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 0; }
+    .admin-phone-modal .btn-link.text-muted { color: var(--tm-text-muted); text-decoration: underline; }
+    .admin-phone-modal .btn-link:disabled { opacity: 0.5; cursor: not-allowed; }
+    .admin-phone-modal .form-hint { font-size: 13px; color: var(--tm-text-muted); margin: 0 0 10px; line-height: 1.4; }
+    .admin-phone-modal .form-error-notice { display: flex; align-items: center; gap: 6px; color: var(--tm-danger); font-size: 12px; font-weight: 600; margin-top: 8px; }
+    .mono { font-family: var(--tm-font-mono) !important; }
+
     }
   `],
 })
@@ -538,6 +642,16 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   uploads: PendingUpload[] = [];
   private uploadIdSeq = 0;
 
+  adminPhoneModalOpen = false;
+  adminPhoneStep: 'input' | 'otp' = 'input';
+  adminNewPhone = '';
+  adminOtpCode = '';
+  adminPhoneBusy = false;
+  adminPhoneError: string | null = null;
+  adminResendCountdown = 0;
+  private adminResendTimer: any = null;
+
+
   ngOnChanges(changes: SimpleChanges): void {
     if (!changes['driverId']) return;
     if (this.driverId == null) {
@@ -550,6 +664,7 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.adminResendTimer) { clearInterval(this.adminResendTimer); this.adminResendTimer = null; }
     if (this.closeTimer) clearTimeout(this.closeTimer);
     this.stopLiveRefresh();
     if (this.mounted) document.body.style.overflow = '';
@@ -1070,6 +1185,113 @@ export class DriverDetailDrawerComponent implements OnChanges, OnDestroy {
     if (this.driverId != null) this.fetch(this.driverId);
     this.cdr.markForCheck();
   }
+
+  openAdminPhoneModal(): void {
+    this.adminPhoneModalOpen = true;
+    this.adminPhoneStep = 'input';
+    this.adminNewPhone = '';
+    this.adminOtpCode = '';
+    this.adminPhoneBusy = false;
+    this.adminPhoneError = null;
+    this.adminResendCountdown = 0;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+      this.adminResendTimer = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  closeAdminPhoneModal(): void {
+    if (this.adminPhoneBusy) return;
+    this.adminPhoneModalOpen = false;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+      this.adminResendTimer = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  sendAdminPhoneOtp(): void {
+    if (!this.driver?.id || !this.adminNewPhone.trim() || this.adminPhoneBusy) return;
+    this.adminPhoneBusy = true;
+    this.adminPhoneError = null;
+    this.cdr.markForCheck();
+    this.api
+      .post<{ message?: string; debug_code?: string }>(
+        `/admin/drivers/${this.driver.id}/phone/start`,
+        { phone: this.adminNewPhone.trim() }
+      )
+      .subscribe({
+        next: (res) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneStep = 'otp';
+          this.startAdminResendTimer();
+          this.toast.success(res.message || 'OTP sent successfully');
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneError =
+            err?.error?.message ||
+            err?.error?.errors?.phone?.[0] ||
+            'Could not send OTP. Please check the phone number.';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  verifyAdminPhoneOtp(): void {
+    if (!this.driver?.id || !this.adminOtpCode.trim() || this.adminPhoneBusy) return;
+    this.adminPhoneBusy = true;
+    this.adminPhoneError = null;
+    this.cdr.markForCheck();
+    this.api
+      .post<{ message?: string; phone: string }>(
+        `/admin/drivers/${this.driver.id}/phone/verify`,
+        {
+          phone: this.adminNewPhone.trim(),
+          code: this.adminOtpCode.trim(),
+        }
+      )
+      .subscribe({
+        next: (res) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneModalOpen = false;
+          this.toast.success(res.message || 'Phone number updated successfully');
+          if (this.driver) {
+            this.driver = {
+              ...this.driver,
+              phone: res.phone || this.adminNewPhone.trim(),
+            };
+          }
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneError =
+            err?.error?.message ||
+            err?.error?.errors?.code?.[0] ||
+            'Verification failed. Please check the code and try again.';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  private startAdminResendTimer(): void {
+    this.adminResendCountdown = 60;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+    }
+    this.adminResendTimer = setInterval(() => {
+      this.adminResendCountdown--;
+      if (this.adminResendCountdown <= 0) {
+        clearInterval(this.adminResendTimer);
+        this.adminResendTimer = null;
+      }
+      this.cdr.markForCheck();
+    }, 1000);
+  }
+
 }
 
 export interface PendingUpload {

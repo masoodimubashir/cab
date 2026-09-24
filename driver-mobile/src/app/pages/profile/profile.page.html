@@ -180,6 +180,20 @@
           />
         </label>
 
+        <!-- Phone number (verified change) -->
+        <div class="pf-field pf-field--phone" *ngIf="!onboarding">
+          <div class="pf-field__head-row">
+            <span class="pf-field__label">Phone number</span>
+            <button type="button" class="pf-change-btn" (click)="openPhoneModal()" [disabled]="busy">
+              <ion-icon name="create-outline"></ion-icon> Change
+            </button>
+          </div>
+          <div class="pf-readonly-box">
+            <ion-icon name="call-outline"></ion-icon>
+            <span>{{ phone || '—' }}</span>
+          </div>
+        </div>
+
         <!-- Onboarding: date picker + Places autocomplete -->
         <ng-container *ngIf="onboarding">
           <label class="pf-field">
@@ -777,3 +791,71 @@
     </div>
   </ng-template>
 </ion-modal>
+
+<!-- ============ Phone Change Modal ============ -->
+<div class="phone-modal-backdrop" *ngIf="showPhoneModal" (click)="closePhoneModal()">
+  <div class="phone-modal-card dc-anim-up" (click)="$event.stopPropagation()">
+    <div class="phone-modal-header">
+      <div class="phone-modal-title-group">
+        <h2 class="phone-modal-title">Change Phone Number</h2>
+        <p class="phone-modal-sub" *ngIf="phoneStep === 'input'">Enter your new phone number to receive a verification code.</p>
+        <p class="phone-modal-sub" *ngIf="phoneStep === 'otp'">Enter the 6-digit code sent to <strong>{{ newPhone }}</strong>.</p>
+      </div>
+      <button type="button" class="modal-close-btn" (click)="closePhoneModal()" [disabled]="phoneBusy">
+        <ion-icon name="close-outline"></ion-icon>
+      </button>
+    </div>
+
+    <!-- Step 1: Input new phone -->
+    <div class="phone-modal-body" *ngIf="phoneStep === 'input'">
+      <div class="modal-input-wrap">
+        <span class="field-ico-box"><ion-icon name="call-outline"></ion-icon></span>
+        <input
+          type="tel"
+          [(ngModel)]="newPhone"
+          [disabled]="phoneBusy"
+          placeholder="e.g. +919876543210"
+          autocomplete="tel"
+        />
+      </div>
+      <p class="modal-error" *ngIf="phoneError">
+        <ion-icon name="alert-circle-outline"></ion-icon> {{ phoneError }}
+      </p>
+      <button type="button" class="modal-action-btn dc-press" (click)="sendPhoneOtp()" [disabled]="phoneBusy || !newPhone.trim()">
+        <ion-spinner *ngIf="phoneBusy" name="crescent"></ion-spinner>
+        <span *ngIf="!phoneBusy">Send Verification Code</span>
+      </button>
+    </div>
+
+    <!-- Step 2: OTP Verification -->
+    <div class="phone-modal-body" *ngIf="phoneStep === 'otp'">
+      <div class="modal-input-wrap">
+        <span class="field-ico-box"><ion-icon name="key-outline"></ion-icon></span>
+        <input
+          type="text"
+          inputmode="numeric"
+          maxlength="6"
+          [(ngModel)]="otpCode"
+          [disabled]="phoneBusy"
+          placeholder="Enter 6-digit OTP"
+          autocomplete="one-time-code"
+        />
+      </div>
+      <div class="modal-resend-row">
+        <button type="button" class="resend-btn" (click)="sendPhoneOtp()" [disabled]="phoneBusy || resendCountdown > 0">
+          {{ resendCountdown > 0 ? 'Resend in ' + resendCountdown + 's' : 'Resend Code' }}
+        </button>
+        <button type="button" class="change-num-link" (click)="phoneStep = 'input'" [disabled]="phoneBusy">
+          Edit number
+        </button>
+      </div>
+      <p class="modal-error" *ngIf="phoneError">
+        <ion-icon name="alert-circle-outline"></ion-icon> {{ phoneError }}
+      </p>
+      <button type="button" class="modal-action-btn dc-press" (click)="verifyPhoneOtp()" [disabled]="phoneBusy || !otpCode.trim()">
+        <ion-spinner *ngIf="phoneBusy" name="crescent"></ion-spinner>
+        <span *ngIf="!phoneBusy">Verify &amp; Update</span>
+      </button>
+    </div>
+  </div>
+</div>
