@@ -207,9 +207,117 @@ class AdminCustomersController
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
-        $user->fill($data)->save();
+        $user->fill(array_diff_key($data, ['phone' => true]))->save();
 
         return response()->json(['customer' => $user->fresh()]);
+    }
+
+    public function startPhoneChange(Request $request, User $user, \App\Services\PhoneOtpService $phoneOtpService)
+    {
+        $this->ensureCustomer($user);
+
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'min:6', 'max:20'],
+        ]);
+
+        $normalized = $this->normalizePhone($data['phone']);
+        $currentNormalized = $user->phone ? $this->normalizePhone($user->phone) : null;
+
+        if ($currentNormalized && $normalized === $currentNormalized) {
+            return response()->json([
+                'message' => 'This is already the customer\'s current phone number.',
+            ], 422);
+        }
+
+        $conflict = User::query()
+            ->where('id', '!=', $user->id)
+            ->where(function ($q) use ($normalized, $data) {
+                $q->where('phone', $normalized)
+                  ->orWhere('phone', $data['phone']);
+            })
+            ->exists();
+
+        if ($conflict) {
+            return response()->json([
+                'message' => 'This phone number is already registered to another account.',
+            ], 422);
+        }
+
+        $result = $phoneOtpService->start($normalized, 'customer', $user->id);
+
+        if (!($result['sent'] ?? false)) {
+            if (!isset($result['cooldown'])) {
+                return response()->json(['message' => 'Unable to send verification code. Please try again later.'], 503);
+            }
+            $cooldown = $result['cooldown'] ?? 30;
+            return response()->json([
+                'message' => "Please wait {$cooldown} seconds before requesting another code.",
+                'cooldown' => $cooldown,
+            ], 429);
+        }
+
+        Log::info('admin.customer.phone_change_otp', [
+            'customer_id' => $user->id,
+            'new_phone' => $normalized,
+        ]);
+
+        return response()->json(array_filter([
+            'ok' => true,
+            'message' => 'Verification code sent to ' . $normalized . '.',
+            'phone' => $normalized,
+            'resend_in' => (int) config('services.msg91.resend_cooldown_sec', 30),
+            'dev_code' => $result['dev_code'] ?? null,
+        ], static fn ($v) => $v !== null));
+    }
+
+    public function verifyPhoneChange(Request $request, User $user, \App\Services\PhoneOtpService $phoneOtpService)
+    {
+        $this->ensureCustomer($user);
+
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'min:6', 'max:20'],
+            'code' => ['required', 'string', 'regex:/^[0-9]{6}$/'],
+        ]);
+
+        $normalized = $this->normalizePhone($data['phone']);
+
+        $conflict = User::query()
+            ->where('id', '!=', $user->id)
+            ->where(function ($q) use ($normalized, $data) {
+                $q->where('phone', $normalized)
+                  ->orWhere('phone', $data['phone']);
+            })
+            ->exists();
+
+        if ($conflict) {
+            return response()->json([
+                'message' => 'This phone number is already registered to another account.',
+            ], 422);
+        }
+
+        if (!$phoneOtpService->verifyPhoneChange($user, $normalized, $data['code'])) {
+            return response()->json([
+                'message' => 'Invalid or expired verification code. Please try again.',
+            ], 422);
+        }
+
+
+        Log::info('admin.customer.phone_changed', [
+            'customer_id' => $user->id,
+            'new_phone' => $normalized,
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Customer phone number updated successfully.',
+            'customer' => $user->fresh(),
+        ]);
+    }
+
+    private function normalizePhone(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+        return $phone !== '' && $phone[0] === '+' ? '+' . $digits : $digits;
     }
 
     public function block(Request $request, User $user)

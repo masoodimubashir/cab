@@ -97,7 +97,11 @@ Route::post('/auth/otp/sms/start', [\App\Http\Controllers\Auth\OtpAuthController
 Route::post('/auth/otp/sms/verify', [\App\Http\Controllers\Auth\OtpAuthController::class, 'verify'])->middleware('throttle:otp');
 
 // Profile completion (used after first-time phone OTP sign-up to capture name/email/photo).
-Route::middleware('auth:sanctum')->post('/me/profile', [ProfileController::class, 'update']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/me/profile', [ProfileController::class, 'update']);
+    Route::post('/me/phone/change/start', [ProfileController::class, 'startPhoneChange'])->middleware('throttle:otp');
+    Route::post('/me/phone/change/verify', [ProfileController::class, 'verifyPhoneChange'])->middleware('throttle:otp');
+});
 
 // Per-user emergency contacts (driver + customer use the same endpoints).
 Route::middleware('auth:sanctum')->group(function () {
@@ -262,6 +266,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::patch('/admin/drivers/{driver}/activation', [AdminDriversController::class, 'setActivation'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/unsubscribe', [AdminDriversController::class, 'unsubscribe'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/send-otp', [AdminDriversController::class, 'sendOtp'])->middleware(['permission:drivers', 'throttle:otp']);
+    Route::post('/admin/drivers/{driver}/phone/start', [AdminDriversController::class, 'startPhoneChange'])->middleware(['permission:drivers', 'throttle:otp']);
+    Route::post('/admin/drivers/{driver}/phone/verify', [AdminDriversController::class, 'verifyPhoneChange'])->middleware(['permission:drivers', 'throttle:otp']);
     Route::post('/admin/drivers/{driver}/block', [AdminDriversController::class, 'block'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/unblock', [AdminDriversController::class, 'unblock'])->middleware('permission:drivers');
     Route::post('/admin/drivers/{driver}/verify-payout-account', [AdminDriversController::class, 'verifyPayoutAccount'])->middleware('permission:drivers');
@@ -322,6 +328,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::post('/{user}/unblock', [AdminCustomersController::class, 'unblock']);
         Route::post('/{user}/unsubscribe', [AdminCustomersController::class, 'unsubscribe']);
         Route::post('/{user}/send-otp', [AdminCustomersController::class, 'sendOtp'])
+            ->middleware('throttle:otp');
+        Route::post('/{user}/phone/start', [AdminCustomersController::class, 'startPhoneChange'])
+            ->middleware('throttle:otp');
+        Route::post('/{user}/phone/verify', [AdminCustomersController::class, 'verifyPhoneChange'])
             ->middleware('throttle:otp');
         Route::get('/{user}/wallet/transactions', [AdminCustomersController::class, 'walletTransactions']);
         Route::get('/{user}/rides', [AdminCustomersController::class, 'rides']);

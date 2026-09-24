@@ -172,7 +172,10 @@ const BLOCK_REASONS = [
             </div>
 
             <div class="hero-row-2">
-              <span class="meta-item mono"><tm-icon name="phone" [size]="12" /> {{ profile.phone || 'No phone' }}</span>
+              <span class="meta-item mono">
+                <tm-icon name="phone" [size]="12" /> {{ profile.phone || 'No phone' }}
+                <button type="button" class="btn-text-action" (click)="openAdminPhoneModal()">Change</button>
+              </span>
               <span class="meta-dot">·</span>
               <span class="meta-item" *ngIf="profile.email"><tm-icon name="envelope" [size]="12" /> {{ profile.email }}</span>
               <span class="meta-dot" *ngIf="profile.email">·</span>
@@ -543,7 +546,13 @@ const BLOCK_REASONS = [
               </div>
               <div class="sp-list">
                 <div class="sp-row"><span>Full Name</span><strong>{{ profile.name || 'Unnamed Driver' }}</strong></div>
-                <div class="sp-row"><span>Phone Number</span><strong class="mono">{{ profile.phone || '—' }}</strong></div>
+                <div class="sp-row">
+                  <span>Phone Number</span>
+                  <div style="display: inline-flex; align-items: center; gap: 8px;">
+                    <strong class="mono">{{ profile.phone || '—' }}</strong>
+                    <button type="button" class="btn-text-action" (click)="openAdminPhoneModal()">Change</button>
+                  </div>
+                </div>
                 <div class="sp-row"><span>Email Address</span><strong>{{ profile.email || '—' }}</strong></div>
                 <div class="sp-row"><span>Date of Birth</span><strong>{{ profile.dob || '—' }}</strong></div>
                 <div class="sp-row"><span>Residential Address</span><strong>{{ profile.address || '—' }}</strong></div>
@@ -846,8 +855,11 @@ const BLOCK_REASONS = [
 
         <div class="form-group-grid">
           <div class="form-group">
-            <label class="form-label">Phone Number</label>
-            <input class="form-control" type="tel" [(ngModel)]="editForm.phone" maxlength="20" />
+            <label class="form-label">Phone (Verified via OTP)</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input class="form-control mono" type="tel" [value]="profile?.phone || '—'" disabled style="background: var(--tm-canvas-2); cursor: not-allowed;" />
+              <tm-button variant="outline" size="sm" (clicked)="openAdminPhoneModal()">Change</tm-button>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Email Address</label>
@@ -952,6 +964,99 @@ const BLOCK_REASONS = [
         <tm-button variant="ghost" (clicked)="unsubOpen = false">Cancel</tm-button>
         <tm-button variant="green" icon="check" [loading]="unsubSaving" (clicked)="submitUnsub()">
           Save Settings
+        </tm-button>
+      </ng-container>
+    </tm-modal>
+
+
+    <!-- ============= Admin Phone Change Modal ============= -->
+    <tm-modal
+      [open]="adminPhoneModalOpen"
+      title="Change Driver Phone"
+      (closed)="closeAdminPhoneModal()"
+    >
+      <div slot="body" class="modal-form-body admin-phone-modal">
+        <div *ngIf="adminPhoneStep === 'input'">
+          <p class="form-hint">
+            To change this driver's phone number, an SMS OTP will be sent to the new number for verification.
+          </p>
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> New Phone Number</label>
+            <input
+              class="form-control mono"
+              type="tel"
+              [(ngModel)]="adminNewPhone"
+              [disabled]="adminPhoneBusy"
+              placeholder="e.g. +919876543210"
+            />
+          </div>
+        </div>
+
+        <div *ngIf="adminPhoneStep === 'otp'">
+          <p class="form-hint">
+            Enter the 6-digit verification code sent to <strong>{{ adminNewPhone }}</strong>.
+          </p>
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> Verification Code (OTP)</label>
+            <input
+              class="form-control mono"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              [(ngModel)]="adminOtpCode"
+              [disabled]="adminPhoneBusy"
+              placeholder="6-digit OTP"
+            />
+          </div>
+          <div class="modal-resend-row">
+            <button
+              type="button"
+              class="btn-link"
+              (click)="sendAdminPhoneOtp()"
+              [disabled]="adminPhoneBusy || adminResendCountdown > 0"
+            >
+              {{ adminResendCountdown > 0 ? 'Resend in ' + adminResendCountdown + 's' : 'Resend Code' }}
+            </button>
+            <button
+              type="button"
+              class="btn-link text-muted"
+              (click)="adminPhoneStep = 'input'"
+              [disabled]="adminPhoneBusy"
+            >
+              Edit number
+            </button>
+          </div>
+        </div>
+
+        <div class="form-error-notice mt-3" *ngIf="adminPhoneError">
+          <tm-icon name="alert-triangle" [size]="14" />
+          <span>{{ adminPhoneError }}</span>
+        </div>
+      </div>
+
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="closeAdminPhoneModal()" [disabled]="adminPhoneBusy">
+          Cancel
+        </tm-button>
+        <tm-button
+          *ngIf="adminPhoneStep === 'input'"
+          variant="green"
+          icon="send"
+          [loading]="adminPhoneBusy"
+          [disabled]="!adminNewPhone.trim()"
+          (clicked)="sendAdminPhoneOtp()"
+        >
+          Send OTP
+        </tm-button>
+        <tm-button
+          *ngIf="adminPhoneStep === 'otp'"
+          variant="green"
+          icon="check"
+          [loading]="adminPhoneBusy"
+          [disabled]="!adminOtpCode.trim()"
+          (clicked)="verifyAdminPhoneOtp()"
+        >
+          Verify &amp; Update
         </tm-button>
       </ng-container>
     </tm-modal>
@@ -1655,6 +1760,15 @@ const BLOCK_REASONS = [
     .text-muted   { color: var(--tm-text-muted) !important; }
     .mt-3 { margin-top: 10px; }
     .mt-4 { margin-top: 12px; }
+
+    .btn-text-action { background: none; border: none; color: var(--tm-green-deep); font-size: 11px; font-weight: 700; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+    .btn-text-action:hover { background: rgba(18, 179, 91, 0.08); text-decoration: underline; }
+    .admin-phone-modal { display: flex; flex-direction: column; gap: 12px; min-width: 320px; }
+    .admin-phone-modal .modal-resend-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .admin-phone-modal .btn-link { background: none; border: none; color: var(--tm-green-deep); font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 0; }
+    .admin-phone-modal .btn-link.text-muted { color: var(--tm-text-muted); text-decoration: underline; }
+    .admin-phone-modal .btn-link:disabled { opacity: 0.5; cursor: not-allowed; }
+
   `],
 })
 export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -1689,6 +1803,17 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Send OTP
   otpSending = false;
+
+  // Admin Phone Change
+  adminPhoneModalOpen = false;
+  adminPhoneStep: 'input' | 'otp' = 'input';
+  adminNewPhone = '';
+  adminOtpCode = '';
+  adminPhoneBusy = false;
+  adminPhoneError: string | null = null;
+  adminResendCountdown = 0;
+  private adminResendTimer: any = null;
+
 
   // Options for Edit Form
   allCities: { id: number; name: string }[] = [];
@@ -1787,6 +1912,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyRideRangePicker();
+    if (this.adminResendTimer) { clearInterval(this.adminResendTimer); this.adminResendTimer = null; }
   }
 
   // -------------------- Date range picker --------------------
@@ -2371,4 +2497,105 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       },
     });
   }
+
+  openAdminPhoneModal(): void {
+    this.adminPhoneModalOpen = true;
+    this.adminPhoneStep = 'input';
+    this.adminNewPhone = '';
+    this.adminOtpCode = '';
+    this.adminPhoneBusy = false;
+    this.adminPhoneError = null;
+    this.adminResendCountdown = 0;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+      this.adminResendTimer = null;
+    }
+  }
+
+  closeAdminPhoneModal(): void {
+    if (this.adminPhoneBusy) return;
+    this.adminPhoneModalOpen = false;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+      this.adminResendTimer = null;
+    }
+  }
+
+  sendAdminPhoneOtp(): void {
+    if (!this.driverId || !this.adminNewPhone.trim() || this.adminPhoneBusy) return;
+    this.adminPhoneBusy = true;
+    this.adminPhoneError = null;
+    this.api
+      .post<{ message?: string; debug_code?: string }>(
+        `/admin/drivers/${this.driverId}/phone/start`,
+        { phone: this.adminNewPhone.trim() }
+      )
+      .subscribe({
+        next: (res) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneStep = 'otp';
+          this.startAdminResendTimer();
+          this.toast.success(res.message || 'OTP sent successfully');
+        },
+        error: (err) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneError =
+            err?.error?.message ||
+            err?.error?.errors?.phone?.[0] ||
+            'Could not send OTP. Please check the phone number.';
+        },
+      });
+  }
+
+  verifyAdminPhoneOtp(): void {
+    if (!this.driverId || !this.adminOtpCode.trim() || this.adminPhoneBusy) return;
+    this.adminPhoneBusy = true;
+    this.adminPhoneError = null;
+    this.api
+      .post<{ message?: string; phone: string }>(
+        `/admin/drivers/${this.driverId}/phone/verify`,
+        {
+          phone: this.adminNewPhone.trim(),
+          code: this.adminOtpCode.trim(),
+        }
+      )
+      .subscribe({
+        next: (res) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneModalOpen = false;
+          this.toast.success(res.message || 'Phone number updated successfully');
+          if (this.profile) {
+            this.profile = {
+              ...this.profile,
+              phone: res.phone || this.adminNewPhone.trim(),
+            };
+          }
+          if (this.editForm) {
+            this.editForm.phone = res.phone || this.adminNewPhone.trim();
+          }
+        },
+        error: (err) => {
+          this.adminPhoneBusy = false;
+          this.adminPhoneError =
+            err?.error?.message ||
+            err?.error?.errors?.code?.[0] ||
+            'Verification failed. Please check the code and try again.';
+        },
+      });
+  }
+
+  private startAdminResendTimer(): void {
+    this.adminResendCountdown = 60;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+    }
+    this.adminResendTimer = setInterval(() => {
+      this.adminResendCountdown--;
+      if (this.adminResendCountdown <= 0) {
+        clearInterval(this.adminResendTimer);
+        this.adminResendTimer = null;
+      }
+    }, 1000);
+  }
+
 }

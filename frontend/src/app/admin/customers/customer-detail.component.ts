@@ -178,7 +178,13 @@ const BLOCK_REASONS = [
               </div>
               <div class="kv-list">
                 <div class="kv-row"><span>Name</span><strong>{{ profile.name || 'Unnamed customer' }}</strong></div>
-                <div class="kv-row"><span>Phone</span><strong class="mono">{{ profile.phone || '—' }}</strong></div>
+                <div class="kv-row">
+                  <span>Phone</span>
+                  <div class="val-with-action">
+                    <strong class="mono">{{ profile.phone || '—' }}</strong>
+                    <button type="button" class="btn-text-action" (click)="openAdminPhoneModal()">Change</button>
+                  </div>
+                </div>
                 <div class="kv-row"><span>Email</span><strong>{{ profile.email || '—' }}</strong></div>
                 <div class="kv-row"><span>DOB</span><strong>{{ profile.dob || '—' }}</strong></div>
                 <div class="kv-row"><span>Address</span><strong>{{ profile.address || '—' }}</strong></div>
@@ -641,8 +647,11 @@ const BLOCK_REASONS = [
           <input type="text" [(ngModel)]="editForm.name" maxlength="120" />
         </label>
         <label class="field">
-          <span class="field__lbl">Phone</span>
-          <input type="tel" [(ngModel)]="editForm.phone" maxlength="20" placeholder="e.g. 9000012345" />
+          <span class="field__lbl">Phone (Verified via OTP)</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="tel" [value]="profile?.phone || '—'" disabled style="flex: 1; background: var(--tm-canvas-2); cursor: not-allowed;" />
+            <tm-button variant="outline" size="sm" (clicked)="openAdminPhoneModal()">Change</tm-button>
+          </div>
         </label>
         <label class="field">
           <span class="field__lbl">Email</span>
@@ -665,6 +674,95 @@ const BLOCK_REASONS = [
       </ng-container>
     </tm-drawer>
 
+    <!-- ============= Admin Phone Change Modal ============= -->
+    <tm-modal
+      [open]="adminPhoneModalOpen"
+      title="Change Customer Phone"
+      (closed)="closeAdminPhoneModal()"
+    >
+      <div slot="body" class="admin-phone-modal">
+        <div *ngIf="adminPhoneStep === 'input'">
+          <p class="modal-hint">
+            To change this customer's phone number, an SMS OTP will be sent to the new number for verification.
+          </p>
+          <label class="field">
+            <span class="field__lbl">New Phone Number</span>
+            <input
+              type="tel"
+              [(ngModel)]="adminNewPhone"
+              [disabled]="adminPhoneBusy"
+              placeholder="e.g. +919876543210"
+            />
+          </label>
+        </div>
+
+        <div *ngIf="adminPhoneStep === 'otp'">
+          <p class="modal-hint">
+            Enter the 6-digit verification code sent to <strong>{{ adminNewPhone }}</strong>.
+          </p>
+          <label class="field">
+            <span class="field__lbl">Verification Code (OTP)</span>
+            <input
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              [(ngModel)]="adminOtpCode"
+              [disabled]="adminPhoneBusy"
+              placeholder="6-digit OTP"
+            />
+          </label>
+          <div class="modal-resend-row">
+            <button
+              type="button"
+              class="btn-link"
+              (click)="sendAdminPhoneOtp()"
+              [disabled]="adminPhoneBusy || adminResendCountdown > 0"
+            >
+              {{ adminResendCountdown > 0 ? 'Resend in ' + adminResendCountdown + 's' : 'Resend Code' }}
+            </button>
+            <button
+              type="button"
+              class="btn-link text-muted"
+              (click)="adminPhoneStep = 'input'"
+              [disabled]="adminPhoneBusy"
+            >
+              Edit number
+            </button>
+          </div>
+        </div>
+
+        <p class="modal-error" *ngIf="adminPhoneError">
+          <tm-icon name="alert-triangle" [size]="14" /> {{ adminPhoneError }}
+        </p>
+      </div>
+
+      <ng-container slot="footer">
+        <tm-button variant="ghost" (clicked)="closeAdminPhoneModal()" [disabled]="adminPhoneBusy">
+          Cancel
+        </tm-button>
+        <tm-button
+          *ngIf="adminPhoneStep === 'input'"
+          variant="green"
+          icon="send"
+          [loading]="adminPhoneBusy"
+          [disabled]="!adminNewPhone.trim()"
+          (clicked)="sendAdminPhoneOtp()"
+        >
+          Send OTP
+        </tm-button>
+        <tm-button
+          *ngIf="adminPhoneStep === 'otp'"
+          variant="green"
+          icon="check"
+          [loading]="adminPhoneBusy"
+          [disabled]="!adminOtpCode.trim()"
+          (clicked)="verifyAdminPhoneOtp()"
+        >
+          Verify &amp; Update
+        </tm-button>
+      </ng-container>
+    </tm-modal>
+
   `,
   styles: [`
     :host { display: block; }
@@ -679,6 +777,20 @@ const BLOCK_REASONS = [
     .edit-form input, .edit-form textarea { padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; font-family: inherit; outline: none; }
     .edit-form input:focus, .edit-form textarea:focus { border-color: var(--tm-green); }
     .edit-form textarea { resize: vertical; min-height: 70px; }
+    .val-with-action { display: inline-flex; align-items: center; gap: 8px; }
+    .btn-text-action { background: none; border: none; color: var(--tm-green); font-size: 12px; font-weight: 700; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+    .btn-text-action:hover { background: rgba(18, 179, 91, 0.08); text-decoration: underline; }
+    .admin-phone-modal { display: flex; flex-direction: column; gap: 12px; min-width: 320px; }
+    .admin-phone-modal .modal-hint { font-size: 13px; color: var(--tm-muted); margin: 0 0 10px; line-height: 1.4; }
+    .admin-phone-modal .modal-resend-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .admin-phone-modal .btn-link { background: none; border: none; color: var(--tm-green); font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 0; }
+    .admin-phone-modal .btn-link.text-muted { color: var(--tm-muted); text-decoration: underline; }
+    .admin-phone-modal .btn-link:disabled { opacity: 0.5; cursor: not-allowed; }
+    .admin-phone-modal .modal-error { display: flex; align-items: center; gap: 6px; color: var(--tm-danger); font-size: 12px; font-weight: 600; margin: 6px 0 0; }
+    .admin-phone-modal .field { display: flex; flex-direction: column; gap: 5px; }
+    .admin-phone-modal .field__lbl { font-size: 12px; font-weight: 700; color: var(--tm-text); }
+    .admin-phone-modal input { padding: 9px 11px; border: 1px solid var(--tm-line); border-radius: 8px; background: var(--tm-canvas); color: var(--tm-text); font-size: 13px; font-family: inherit; outline: none; }
+    .admin-phone-modal input:focus { border-color: var(--tm-green); }
 
     /* -------------------- Back link -------------------- */
     .back-link {
@@ -1876,6 +1988,14 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
   editOpen = false;
   editSaving = false;
   editForm: { name: string; phone: string; email: string; dob: string; address: string } | null = null;
+  adminPhoneModalOpen = false;
+  adminPhoneStep: 'input' | 'otp' = 'input';
+  adminNewPhone = '';
+  adminOtpCode = '';
+  adminPhoneBusy = false;
+  adminPhoneError: string | null = null;
+  adminResendCountdown = 0;
+  private adminResendTimer: any = null;
 
   // Block / Delete modal
   blockDeleteOpen = false;
@@ -2243,12 +2363,95 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
     this.editOpen = true;
   }
 
+  openAdminPhoneModal(prefill?: string): void {
+    this.adminPhoneModalOpen = true;
+    this.adminPhoneStep = 'input';
+    this.adminNewPhone = prefill || '';
+    this.adminOtpCode = '';
+    this.adminPhoneError = null;
+    this.adminPhoneBusy = false;
+  }
+
+  closeAdminPhoneModal(): void {
+    if (this.adminPhoneBusy) return;
+    this.adminPhoneModalOpen = false;
+    this.adminPhoneError = null;
+    if (this.adminResendTimer) {
+      clearInterval(this.adminResendTimer);
+      this.adminResendTimer = null;
+    }
+  }
+
+  sendAdminPhoneOtp(): void {
+    if (!this.customerId || !this.adminNewPhone.trim()) return;
+    this.adminPhoneError = null;
+    this.adminPhoneBusy = true;
+    this.api.post<{ ok: boolean; resend_in?: number; dev_code?: string; message?: string }>(
+      `/admin/customers/${this.customerId}/phone/start`,
+      { phone: this.adminNewPhone.trim() }
+    ).subscribe({
+      next: (res) => {
+        this.adminPhoneBusy = false;
+        this.adminPhoneStep = 'otp';
+        this.adminOtpCode = '';
+        this.startAdminResendCountdown(res.resend_in || 30);
+        this.toast.info(res.message || 'OTP sent to new phone number');
+      },
+      error: (err) => {
+        this.adminPhoneBusy = false;
+        this.adminPhoneError = err?.error?.message || 'Could not send OTP to this number.';
+      },
+    });
+  }
+
+  verifyAdminPhoneOtp(): void {
+    if (!this.customerId || !this.adminNewPhone.trim() || !this.adminOtpCode.trim()) return;
+    this.adminPhoneError = null;
+    this.adminPhoneBusy = true;
+    this.api.post<{ ok: boolean; customer: CustomerProfile; message?: string }>(
+      `/admin/customers/${this.customerId}/phone/verify`,
+      { phone: this.adminNewPhone.trim(), code: this.adminOtpCode.trim() }
+    ).subscribe({
+      next: (res) => {
+        this.adminPhoneBusy = false;
+        if (res?.customer && this.profile) {
+          this.profile = { ...this.profile, ...res.customer };
+        }
+        if (this.editForm) {
+          this.editForm.phone = this.adminNewPhone.trim();
+        }
+        this.toast.success(res.message || 'Customer phone number updated successfully.');
+        this.closeAdminPhoneModal();
+      },
+      error: (err) => {
+        this.adminPhoneBusy = false;
+        this.adminPhoneError = err?.error?.message || 'Invalid or expired OTP.';
+      },
+    });
+  }
+
+  private startAdminResendCountdown(sec: number): void {
+    this.adminResendCountdown = sec;
+    if (this.adminResendTimer) clearInterval(this.adminResendTimer);
+    this.adminResendTimer = setInterval(() => {
+      if (this.adminResendCountdown > 0) {
+        this.adminResendCountdown--;
+      } else {
+        clearInterval(this.adminResendTimer);
+        this.adminResendTimer = null;
+      }
+    }, 1000);
+  }
+
   submitEditProfile(): void {
     if (!this.customerId || !this.editForm || this.editSaving) return;
+    const newPhone = this.editForm.phone.trim();
+    const currentPhone = (this.profile?.phone || '').trim();
+    const phoneChanged = newPhone && newPhone !== currentPhone;
+
     this.editSaving = true;
     const payload = {
       name: this.editForm.name.trim() || null,
-      phone: this.editForm.phone.trim() || null,
       email: this.editForm.email.trim() || null,
       dob: this.editForm.dob || null,
       address: this.editForm.address.trim() || null,
@@ -2260,7 +2463,12 @@ export class CustomerDetailComponent implements OnInit, AfterViewInit, OnDestroy
         if (res?.customer && this.profile) {
           this.profile = { ...this.profile, ...res.customer };
         }
-        this.toast.success('Profile updated');
+        if (phoneChanged) {
+          this.openAdminPhoneModal(newPhone);
+          this.toast.info('Please verify OTP sent to the new phone number to complete the phone update.');
+        } else {
+          this.toast.success('Profile updated');
+        }
       },
       error: (err) => {
         this.editSaving = false;

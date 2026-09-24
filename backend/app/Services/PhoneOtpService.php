@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
-use App\Models\CitySetting;
 use App\Models\PhoneOtp;
+use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Server-side login OTP: generates a 6-digit code, stores it hashed with an
@@ -24,11 +27,16 @@ class PhoneOtpService
      * Generate + send an OTP. Returns:
      *   ['sent' => true, 'dev_code' => '123456'|null]            on success
      *   ['sent' => false, 'cooldown' => <seconds>]              when asked again too soon
+     *   ['sent' => false]                                     when a change SMS cannot be sent
      *
      * dev_code is only included in MOCK mode (no MSG91 key) so the flow is testable.
+     * Phone changes allow mock mode only in local/testing environments.
      */
-    public function start(string $phone, ?string $platform = null): array
+    public function start(string $phone, ?string $platform = null, ?int $changeUserId = null): array
     {
+        if ($changeUserId !== null && !$this->msg91->isLive() && !app()->environment('local', 'testing')) {
+            return ['sent' => false];
+        }
         $phone = $this->normalize($phone);
         $cooldown = (int) config('services.msg91.resend_cooldown_sec', 30);
 
@@ -48,6 +56,7 @@ class PhoneOtpService
             ['phone' => $phone],
             [
                 'code_hash' => Hash::make($code),
+                'change_user_id' => $changeUserId,
                 'attempts' => 0,
                 'expires_at' => Carbon::now()->addMinutes($ttlMin),
                 'last_sent_at' => Carbon::now(),
@@ -57,6 +66,16 @@ class PhoneOtpService
         $message = $this->buildMessage($code, $platform, $ttlMin);
         $sent = $this->msg91->sendOtp($phone, $code, $message);
 
+        if ($changeUserId !== null && !$sent) {
+            PhoneOtp::query()->where('phone', $phone)->where('change_user_id', $changeUserId)->delete();
+            return ['sent' => false];
+        }
+
+        if ($changeUserId !== null) {
+            PhoneOtp::query()->where('change_user_id', $changeUserId)
+                ->where('phone', '!=', $phone)->delete();
+        }
+
         // Surface the code in the log, but safely per environment:
         //   • dev/local (APP_DEBUG=true)  → ALWAYS, so on-device testing can read
         //     it back whether or not the SMS reached the phone;
@@ -64,7 +83,7 @@ class PhoneOtpService
         //     as a fallback. A successful LIVE send is never logged, so real
         //     customers' codes don't leak into the log file.
         // Read it with:  tail -f storage/logs/laravel.log | grep '\[otp\]'
-        if (config('app.debug') || !$sent) {
+        if ($changeUserId === null && (config('app.debug') || !$sent)) {
             Log::warning('[otp] login/registration code', [
                 'phone' => $phone,
                 'code' => $code,
@@ -85,10 +104,33 @@ class PhoneOtpService
      */
     public function verify(string $phone, string $code): bool
     {
-        $phone = $this->normalize($phone);
-        $row = PhoneOtp::query()->where('phone', $phone)->first();
+        return DB::transaction(fn () => $this->consume($phone, $code, null));
+    }
 
-        if (!$row || $row->expires_at->isPast()) {
+    public function verifyPhoneChange(User $user, string $phone, string $code): bool
+    {
+        try {
+            return DB::transaction(function () use ($user, $phone, $code) {
+                if (!$this->consume($phone, $code, $user->id)) {
+                    return false;
+                }
+                $user->phone = $this->normalize($phone);
+                $user->save();
+                return true;
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            throw ValidationException::withMessages([
+                'phone' => 'This phone number is already registered to another account.',
+            ]);
+        }
+    }
+
+    private function consume(string $phone, string $code, ?int $changeUserId): bool
+    {
+        $phone = $this->normalize($phone);
+        $row = PhoneOtp::query()->where('phone', $phone)->lockForUpdate()->first();
+
+        if (!$row || $row->change_user_id !== $changeUserId || $row->expires_at->isPast()) {
             return false;
         }
         if ($row->attempts >= (int) config('services.msg91.max_attempts', 5)) {
