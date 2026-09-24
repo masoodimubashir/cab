@@ -8,6 +8,9 @@ export interface CityOption {
   id: number;
   name: string;
   is_active?: boolean;
+  country_code?: string;
+  center_lat?: number | string | null;
+  center_lng?: number | string | null;
 }
 
 const STORAGE_KEY = 'dc.selectedCityId';
