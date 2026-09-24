@@ -1,4 +1,4 @@
-import { Component, EventEmitter, HostListener, Input, OnDestroy, OnInit, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, HostListener, Input, NgZone, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription, firstValueFrom } from 'rxjs';
@@ -58,6 +58,8 @@ interface RouteAlt {
   summary: string;
   distanceText: string;
   durationText: string;
+  meters?: number;
+  seconds?: number;
 }
 
 interface FixedNoShowSettings {
@@ -432,6 +434,72 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
               </button>
             </div>
           </div>
+
+            <!-- Route Alternatives Selection Cards -->
+            <div class="route-alts-card" *ngIf="routeAlts.length > 1">
+              <div class="route-alts-header">
+                <span class="route-alts-title">Available Corridors ({{ routeAlts.length }})</span>
+                <span class="route-alts-subtitle">Click a card below or tap any grey line on the map to switch route</span>
+              </div>
+              <div class="route-alts-list">
+                <div
+                  *ngFor="let alt of routeAlts; let i = index"
+                  class="route-alt-item"
+                  [class.is-selected]="selectedAltIdx === i"
+                  [class.is-hovered]="hoveredAltIdx === i"
+                  (click)="selectAlternative(i)"
+                  (mouseenter)="hoverAlternative(i)"
+                  (mouseleave)="hoverAlternative(null)"
+                >
+                  <div class="route-alt-radio">
+                    <span class="custom-radio-dot" [class.is-checked]="selectedAltIdx === i"></span>
+                  </div>
+                  <div class="route-alt-details">
+                    <div class="route-alt-name-row">
+                      <strong class="route-alt-name">{{ alt.summary ? ('Via ' + alt.summary) : ('Corridor Option ' + (i + 1)) }}</strong>
+                      <span class="route-alt-tag" *ngIf="selectedAltIdx === i">Active Path</span>
+                    </div>
+                    <div class="route-alt-metrics-row">
+                      <span>{{ alt.distanceText }}</span>
+                      <span class="meta-dot">·</span>
+                      <span>{{ alt.durationText }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Via Corridor Waypoint Section -->
+            <div class="via-corridor-box" *ngIf="form.origin_lat != null && form.dest_lat != null">
+              <div class="via-corridor-head">
+                <span class="via-corridor-title">Force Specific Corridor / Via Town</span>
+                <span class="via-corridor-hint">E.g. force route via Magam or Narbal</span>
+              </div>
+              <div class="via-input-group">
+                <input
+                  type="text"
+                  [(ngModel)]="viaSearchQuery"
+                  (keydown.enter)="addViaCorridorPoint(viaSearchQuery)"
+                  placeholder="Type town / landmark to route via (e.g. Magam)..."
+                />
+                <button
+                  type="button"
+                  class="btn-via-apply"
+                  (click)="addViaCorridorPoint(viaSearchQuery)"
+                  [disabled]="!viaSearchQuery.trim()"
+                >
+                  + Route Via
+                </button>
+              </div>
+              <div class="via-chips-row" *ngIf="form.path.length">
+                <span *ngFor="let p of form.path; let pi = index" class="via-chip">
+                  <span>Via Waypoint #{{ pi + 1 }}</span>
+                  <button type="button" class="via-chip-del" (click)="removeViaCorridorPoint(pi)" title="Remove waypoint">×</button>
+                </span>
+                <button type="button" class="btn-via-reset" (click)="clearViaCorridorPoints()">Reset to Direct</button>
+              </div>
+            </div>
+
 
           <!-- STEP 3: INTERMEDIATE STOPS -->
           <div class="wstep-content" *ngIf="wizardStep === 3">
@@ -1151,6 +1219,337 @@ const SCOPE_OPTIONS: { label: string; value: RouteScope }[] = [
     .meta-label { color: var(--tm-text-muted); font-size: 10.5px; font-weight: 700; }
     .meta-val { color: var(--tm-text); font-weight: 750; }
 
+    
+    /* Step 2 Route Corridors & Waypoints */
+    .route-alts-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 12px;
+      background: var(--tm-canvas, #f8fafc);
+      border: 1.5px solid var(--tm-line, #e2e8f0);
+      margin-top: 10px;
+    }
+    .route-alts-header {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .route-alts-title {
+      font-size: 13px;
+      font-weight: 850;
+      color: var(--tm-text, #0f172a);
+    }
+    .route-alts-subtitle {
+      font-size: 11px;
+      color: var(--tm-text-muted, #64748b);
+    }
+    .route-alts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .route-alt-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #ffffff;
+      border: 1.5px solid var(--tm-line, #e2e8f0);
+      cursor: pointer;
+      transition: all 0.18s ease-in-out;
+    }
+    .route-alt-item:hover {
+      border-color: #38bdf8;
+      background: #f0f9ff;
+      transform: translateY(-1px);
+    }
+    .route-alt-item.is-selected {
+      border-color: var(--tm-green, #16a34a);
+      background: #f0fdf4;
+      box-shadow: 0 2px 8px rgba(22, 163, 74, 0.12);
+    }
+    .route-alt-radio {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+    }
+    .custom-radio-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #cbd5e1;
+      background: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .custom-radio-dot.is-checked {
+      border-color: var(--tm-green, #16a34a);
+    }
+    .custom-radio-dot.is-checked::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--tm-green, #16a34a);
+    }
+    .route-alt-details {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .route-alt-name-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .route-alt-name {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--tm-text, #1e293b);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .route-alt-tag {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 20px;
+      background: #dcfce7;
+      color: #15803d;
+      flex: none;
+    }
+    .route-alt-metrics-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--tm-text-muted, #64748b);
+    }
+    .via-corridor-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1.5px dashed #cbd5e1;
+      margin-top: 10px;
+    }
+    .via-corridor-head {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .via-corridor-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--tm-text, #0f172a);
+    }
+    .via-corridor-hint {
+      font-size: 10.5px;
+      color: var(--tm-text-muted, #64748b);
+    }
+    .via-input-group {
+      display: flex;
+      gap: 6px;
+    }
+    .via-input-group input {
+      flex: 1;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--tm-line, #cbd5e1);
+      background: #ffffff;
+      font-size: 12px;
+      font-family: inherit;
+      color: var(--tm-text, #0f172a);
+      outline: none;
+    }
+    .via-input-group input:focus {
+      border-color: var(--tm-green, #16a34a);
+      box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+    }
+    .btn-via-apply {
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid #86efac;
+      background: #f0fdf4;
+      color: #166534;
+      font-size: 11.5px;
+      font-weight: 800;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .btn-via-apply:hover:not(:disabled) {
+      background: #16a34a;
+      color: #ffffff;
+      border-color: #16a34a;
+    }
+    .btn-via-apply:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .via-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .via-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: #e0f2fe;
+      color: #0369a1;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .via-chip-del {
+      border: none;
+      background: transparent;
+      color: #0284c7;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      font-weight: 900;
+    }
+    .via-chip-del:hover {
+      color: #b91c1c;
+    }
+    
+    .via-suggested-towns {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+    }
+    .via-suggested-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 750;
+      color: var(--tm-text-muted, #475569);
+    }
+    .via-town-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .btn-town-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 9px;
+      border-radius: 16px;
+      border: 1px solid #93c5fd;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 11px;
+      font-weight: 750;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .btn-town-chip:hover {
+      background: #1d4ed8;
+      color: #ffffff;
+      border-color: #1d4ed8;
+      transform: translateY(-1px);
+    }
+    .via-search-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .via-autocomplete-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: #ffffff;
+      border: 1.5px solid var(--tm-line, #cbd5e1);
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+      z-index: 50;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .via-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #f1f5f9;
+      transition: background 0.12s;
+    }
+    .via-dropdown-item:last-child {
+      border-bottom: none;
+    }
+    .via-dropdown-item:hover {
+      background: #f0fdf4;
+    }
+    .via-item-icon {
+      color: var(--tm-green, #16a34a);
+      flex: none;
+    }
+    .via-item-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .via-item-name {
+      font-size: 12px;
+      font-weight: 750;
+      color: var(--tm-text, #0f172a);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .via-item-sub {
+      font-size: 10px;
+      color: var(--tm-text-muted, #64748b);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-via-reset {
+      border: none;
+      background: transparent;
+      color: #dc2626;
+      font-size: 11px;
+      font-weight: 750;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 2px 4px;
+    }
+
     @media (max-width: 920px) { .rt-editor { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; } .rt-panel { border-left: 0; border-top: 1px solid var(--tm-line); } }
   `],
 })
@@ -1294,6 +1693,8 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     private toast: ToastService,
     private mapsLoader: GoogleMapsLoaderService,
     private realtime: AdminRealtimeService,
+    private zone: NgZone,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
@@ -2691,45 +3092,236 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.fetchRouteAlternatives();
   }
 
-  private fetchRouteAlternatives(): void {
-    if (!this.endpointsSet || !this.directionsSvc || this.directionsDisabled) return;
+      private async fetchRouteAlternatives(): Promise<void> {
+    const svc = this.directionsSvc;
+    if (!this.endpointsSet || !svc || this.directionsDisabled) return;
     const seq = ++this.altSeq;
     this.altsLoading = true;
-    const origin = { lat: this.form.origin_lat as number, lng: this.form.origin_lng as number };
-    const destination = { lat: this.form.dest_lat as number, lng: this.form.dest_lng as number };
-    this.directionsSvc.route(
-      { origin, destination, travelMode: google.maps.TravelMode.DRIVING, provideRouteAlternatives: true },
-      (res: any, status: any) => {
-        if (seq !== this.altSeq || !this.open) return;
-        this.altsLoading = false;
-        if (status !== 'OK' || !res?.routes?.length) {
-          if (status === 'REQUEST_DENIED') {
-            this.directionsDisabled = true;
-            this.toast.error('Road routing unavailable (enable Directions API).');
-          } else if (status === 'ZERO_RESULTS') {
-            this.toast.error('Google has no road route between these two points.');
-          }
-          this.clearAlternatives();
-          return;
+    const oLat = this.form.origin_lat as number;
+    const oLng = this.form.origin_lng as number;
+    const dLat = this.form.dest_lat as number;
+    const dLng = this.form.dest_lng as number;
+    const origin = { lat: oLat, lng: oLng };
+    const destination = { lat: dLat, lng: dLng };
+
+    // 1. Direct query with route alternatives (natural Google primary routes)
+    const directPromise = new Promise<any[]>((resolve) => {
+      this.directionsSvc!.route(
+        { origin, destination, travelMode: google.maps.TravelMode.DRIVING, provideRouteAlternatives: true },
+        (res: any, status: any) => {
+          if (status === 'OK' && res?.routes?.length) resolve(res.routes);
+          else resolve([]);
         }
-        this.routeAlts = (res.routes as any[])
-          .map((r) => ({
-            path: (r.overview_path || []).map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() })),
-            summary: r.summary || '',
-            distanceText: r.legs?.[0]?.distance?.text || '',
-            durationText: r.legs?.[0]?.duration?.text || '',
-          }))
-          .filter((a: RouteAlt) => a.path.length > 1);
-        if (!this.routeAlts.length) { this.clearAlternatives(); return; }
-        this.applyAlternative(0);
-        this.renderAlternatives();
-        this.toast.success(
-          this.routeAlts.length === 1
-            ? 'Google has one road route between these points.'
-            : `${this.routeAlts.length} road routes found — pick the one you want.`,
+      );
+    });
+
+    // 2. Discover intermediate transit towns/junctions within the bounding corridor envelope
+    const townPromises: Promise<any[]>[] = [directPromise];
+
+    const minLat = Math.min(oLat, dLat);
+    const maxLat = Math.max(oLat, dLat);
+    const minLng = Math.min(oLng, dLng);
+    const maxLng = Math.max(oLng, dLng);
+    const midLat = (oLat + dLat) / 2;
+    const midLng = (oLng + dLng) / 2;
+    const directDist = this.distanceMeters(oLat, oLng, dLat, dLng);
+
+    if (directDist > 3000 && this.placesSvc) {
+      const radiusM = Math.min(45000, Math.max(5000, directDist * 0.65));
+      const discoveredTowns: { name: string; lat: number; lng: number }[] = [];
+      const intermediatePoints = await new Promise<LatLng[]>((resolve) => {
+        const pts: LatLng[] = [];
+        this.placesSvc!.nearbySearch(
+          {
+            location: new google.maps.LatLng(midLat, midLng),
+            radius: radiusM,
+            type: 'locality',
+          },
+          (results, status) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK && results?.length) {
+              results.forEach((place) => {
+                if (place.geometry?.location && place.name) {
+                  const pLat = place.geometry.location.lat();
+                  const pLng = place.geometry.location.lng();
+                  if (
+                    pLat >= minLat - 0.08 &&
+                    pLat <= maxLat + 0.08 &&
+                    pLng >= minLng - 0.08 &&
+                    pLng <= maxLng + 0.08
+                  ) {
+                    pts.push({ lat: pLat, lng: pLng });
+                    const cleanName = place.name.split(',')[0].trim();
+                    if (!discoveredTowns.some(t => t.name.toLowerCase() === cleanName.toLowerCase())) {
+                      discoveredTowns.push({ name: cleanName, lat: pLat, lng: pLng });
+                    }
+                  }
+                }
+              });
+            }
+            resolve(pts);
+          }
         );
-      },
-    );
+      });
+      this.suggestedCorridorTowns = discoveredTowns.slice(0, 8);
+
+      intermediatePoints.slice(0, 8).forEach((pt) => {
+        const p = new Promise<any[]>((resolve) => {
+          this.directionsSvc!.route(
+            {
+              origin,
+              destination,
+              waypoints: [{ location: new google.maps.LatLng(pt.lat, pt.lng), stopover: false }],
+              travelMode: google.maps.TravelMode.DRIVING,
+            },
+            (res: any, status: any) => {
+              if (status === 'OK' && res?.routes?.length) resolve(res.routes);
+              else resolve([]);
+            }
+          );
+        });
+        townPromises.push(p);
+      });
+    }
+
+    try {
+      const results = await Promise.all(townPromises);
+      if (seq !== this.altSeq || !this.open) return;
+      this.altsLoading = false;
+
+      const rawRoutes: any[] = [];
+      results.forEach((routes) => {
+        if (Array.isArray(routes)) rawRoutes.push(...routes);
+      });
+
+      if (!rawRoutes.length) {
+        this.clearAlternatives();
+        return;
+      }
+
+      let minDistance = Infinity;
+      for (const r of rawRoutes) {
+        const dist = r.legs?.reduce((acc: number, l: any) => acc + (l.distance?.value || 0), 0) || 0;
+        if (dist > 0 && dist < minDistance) minDistance = dist;
+      }
+
+      const candidates: RouteAlt[] = [];
+
+      for (const r of rawRoutes) {
+        const pts: LatLng[] = (r.overview_path || []).map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
+        if (pts.length < 2) continue;
+
+        // 1. Strict loop/backtrack check: Never allow dead-end spur detours or U-turns
+        if (this.hasBacktrackOrLoop(pts)) continue;
+
+        const distanceM = r.legs?.reduce((acc: number, l: any) => acc + (l.distance?.value || 0), 0) || 0;
+        const durationS = r.legs?.reduce((acc: number, l: any) => acc + (l.duration?.value || 0), 0) || 0;
+
+        // 2. Reject extreme detours (> 35% longer than the shortest viable route)
+        if (distanceM > minDistance * 1.35) continue;
+
+        const distanceText = r.legs?.[0]?.distance?.text || `${Math.round(distanceM / 100) / 10} km`;
+        const durationText = r.legs?.[0]?.duration?.text || `${Math.round(durationS / 60)} mins`;
+        let summary = (r.summary || '').trim();
+
+        // 3. Deduplicate overlapping routes
+        let isDuplicate = false;
+        for (const existing of candidates) {
+          const distDiff = Math.abs(distanceM - (existing.meters || 0));
+          if (distDiff < 400 && (existing.summary === summary || this.pathsAreNearlyIdentical(pts, existing.path, 0.82))) {
+            isDuplicate = true;
+            break;
+          }
+          if (this.pathsAreNearlyIdentical(pts, existing.path, 0.88)) {
+            isDuplicate = true;
+            break;
+          }
+        }
+
+        if (!isDuplicate) {
+          if (!summary) summary = `Corridor Option ${candidates.length + 1}`;
+          candidates.push({
+            path: pts,
+            summary,
+            distanceText,
+            durationText,
+            meters: distanceM,
+            seconds: durationS,
+          });
+        }
+      }
+
+      if (!candidates.length) {
+        this.clearAlternatives();
+        return;
+      }
+
+      // Sort candidates: fastest / shortest first
+      candidates.sort((a, b) => (a.seconds || 0) - (b.seconds || 0));
+
+      this.routeAlts = candidates;
+      this.selectedAltIdx = 0;
+      this.applyAlternative(0);
+      this.renderAlternatives();
+      this.cdr.markForCheck();
+
+      this.toast.success(
+        this.routeAlts.length === 1
+          ? 'Route loaded.'
+          : `Discovered ${this.routeAlts.length} available corridors — select below or tap any grey line on the map.`
+      );
+    } catch {
+      if (seq !== this.altSeq) return;
+      this.altsLoading = false;
+      this.clearAlternatives();
+    }
+  }
+
+  /** Detects if a route contains dead-end U-turns or loop detours back onto the same road. */
+  private hasBacktrackOrLoop(pts: LatLng[]): boolean {
+    if (!pts || pts.length < 15) return false;
+    const len = pts.length;
+    const step = Math.max(1, Math.floor(len / 40));
+    for (let i = 0; i < len - step * 4; i += step) {
+      const p1 = pts[i];
+      for (let j = i + step * 4; j < len; j += step) {
+        const p2 = pts[j];
+        const directDist = this.distanceMeters(p1.lat, p1.lng, p2.lat, p2.lng);
+        if (directDist < 160) {
+          let pathDist = 0;
+          for (let k = i; k < j; k++) {
+            pathDist += this.distanceMeters(pts[k].lat, pts[k].lng, pts[k + 1].lat, pts[k + 1].lng);
+          }
+          if (pathDist > 1600) {
+            return true; // Drove > 1.6km only to return to same point (loop / U-turn)
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private pathsAreNearlyIdentical(pathA: LatLng[], pathB: LatLng[], threshold = 0.88): boolean {
+    if (!pathA.length || !pathB.length) return false;
+    const samples = Math.min(15, pathA.length);
+    const step = Math.max(1, Math.floor(pathA.length / samples));
+    let matching = 0;
+    let checked = 0;
+
+    for (let i = 0; i < pathA.length; i += step) {
+      const ptA = pathA[i];
+      checked++;
+      let minMeters = Infinity;
+      for (let j = 0; j < pathB.length; j += Math.max(1, Math.floor(pathB.length / 30))) {
+        const ptB = pathB[j];
+        const dist = this.distanceMeters(ptA.lat, ptA.lng, ptB.lat, ptB.lng);
+        if (dist < minMeters) minMeters = dist;
+        if (minMeters < 80) break;
+      }
+      if (minMeters < 250) {
+        matching++;
+      }
+    }
+    return checked > 0 && (matching / checked) >= threshold;
   }
 
   /** Make option `i` the saved route. */
@@ -2902,6 +3494,9 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     if (i === this.selectedAltIdx) return;
     this.applyAlternative(i);
     this.renderAlternatives();
+    this.cdr.markForCheck();
+    const name = this.routeAlts[i]?.summary ? 'Via ' + this.routeAlts[i].summary : ('Corridor Option ' + (i + 1));
+    this.toast.success('Active route switched to: ' + name);
   }
 
   hoverAlternative(i: number | null): void {
@@ -2914,20 +3509,32 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
   private renderAlternatives(): void {
     this.altPolylines.forEach((p) => p.setMap(null));
     this.altPolylines = [];
-    if (!this.map || this.pathMode !== 'road' || this.tool !== 'path') return;
+    if (!this.map || this.pathMode !== 'road') return;
     this.routeAlts.forEach((alt, i) => {
       if (i === this.selectedAltIdx) return;
       const hot = this.hoveredAltIdx === i;
       const line = new google.maps.Polyline({
         path: alt.path, map: this.map!, geodesic: true, clickable: true,
-        strokeColor: hot ? '#0ea5e9' : '#94a3b8',
+        strokeColor: hot ? '#0ea5e9' : '#64748b',
         strokeOpacity: hot ? 0.95 : 0.65,
-        strokeWeight: hot ? 6 : 4,
-        zIndex: hot ? 3 : 1,
+        strokeWeight: hot ? 7 : 5,
+        zIndex: hot ? 4 : 2,
       });
-      line.addListener('click', () => this.selectAlternative(i));
-      line.addListener('mouseover', () => this.hoverAlternative(i));
-      line.addListener('mouseout', () => this.hoverAlternative(null));
+      line.addListener('click', () => {
+        this.zone.run(() => {
+          this.selectAlternative(i);
+        });
+      });
+      line.addListener('mouseover', () => {
+        this.zone.run(() => {
+          this.hoverAlternative(i);
+        });
+      });
+      line.addListener('mouseout', () => {
+        this.zone.run(() => {
+          this.hoverAlternative(null);
+        });
+      });
       this.altPolylines.push(line);
     });
   }
@@ -2941,6 +3548,168 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     this.altPolylines.forEach((p) => p.setMap(null));
     this.altPolylines = [];
   }
+
+    suggestedCorridorTowns: { name: string; lat: number; lng: number }[] = [];
+  viaSearchQuery = '';
+  viaSearchDebounceTimer: any = null;
+  viaSearchResults: { place_id: string; main_text: string; secondary_text: string; description: string }[] = [];
+  isViaDropdownOpen = false;
+  isSearchingVia = false;
+
+  onViaSearchInput(query: string): void {
+    if (this.viaSearchDebounceTimer) {
+      clearTimeout(this.viaSearchDebounceTimer);
+    }
+    const trimmed = (query || '').trim();
+    if (!trimmed || trimmed.length < 2) {
+      this.viaSearchResults = [];
+      this.isViaDropdownOpen = false;
+      this.isSearchingVia = false;
+      return;
+    }
+
+    this.viaSearchDebounceTimer = setTimeout(() => {
+      this.fetchViaPredictions(trimmed);
+    }, 180);
+  }
+
+  onViaSearchFocus(): void {
+    if (this.viaSearchResults.length > 0) {
+      this.isViaDropdownOpen = true;
+    }
+  }
+
+  onViaSearchBlur(): void {
+    setTimeout(() => {
+      this.isViaDropdownOpen = false;
+    }, 200);
+  }
+
+  onViaSearchEnter(): void {
+    if (this.viaSearchResults.length > 0) {
+      this.selectViaSearchResult(this.viaSearchResults[0]);
+    } else {
+      this.addViaCorridorPoint(this.viaSearchQuery);
+    }
+  }
+
+  private fetchViaPredictions(query: string): void {
+    if (!this.autocompleteSvc && typeof google !== 'undefined' && google.maps?.places) {
+      this.autocompleteSvc = new google.maps.places.AutocompleteService();
+    }
+    if (!this.autocompleteSvc) return;
+
+    this.isSearchingVia = true;
+    const bounds = this.getCorridorBounds();
+
+    this.autocompleteSvc.getPlacePredictions(
+      {
+        input: query,
+        bounds: bounds || undefined,
+        componentRestrictions: { country: 'in' },
+      },
+      (predictions, status) => {
+        this.isSearchingVia = false;
+        if (status === google.maps.places.PlacesServiceStatus.OK && predictions?.length) {
+          this.viaSearchResults = predictions
+            .map((p) => ({
+              place_id: p.place_id,
+              main_text: p.structured_formatting?.main_text || p.description.split(',')[0],
+              secondary_text: p.structured_formatting?.secondary_text || p.description.split(',').slice(1).join(','),
+              description: p.description,
+            }))
+            .filter((p) => !this.isBadStopName(p.main_text));
+          this.isViaDropdownOpen = this.viaSearchResults.length > 0;
+        } else {
+          this.viaSearchResults = [];
+          this.isViaDropdownOpen = false;
+        }
+        this.cdr.markForCheck();
+      }
+    );
+  }
+
+  selectViaSearchResult(res: { place_id: string; main_text: string }): void {
+    this.isViaDropdownOpen = false;
+    this.viaSearchQuery = '';
+    if (this.placesSvc && res.place_id) {
+      this.placesSvc.getDetails({ placeId: res.place_id, fields: ['geometry', 'name', 'formatted_address'] }, (place, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+          const loc = place.geometry.location;
+          const pt = { lat: loc.lat(), lng: loc.lng() };
+          this.pathLocked = false;
+          this.form.path.push(pt);
+          this.recomputeRoadPath();
+          this.toast.success(`Route forced via "${place.name || res.main_text}"`);
+          this.cdr.markForCheck();
+        } else {
+          this.addViaCorridorPoint(res.main_text);
+        }
+      });
+    } else {
+      this.addViaCorridorPoint(res.main_text);
+    }
+  }
+
+  addViaTown(town: { name: string; lat: number; lng: number }): void {
+    this.pathLocked = false;
+    this.form.path.push({ lat: town.lat, lng: town.lng });
+    this.recomputeRoadPath();
+    this.toast.success(`Route forced via "${town.name}"`);
+    this.cdr.markForCheck();
+  }
+
+  getCorridorBounds(): google.maps.LatLngBounds | undefined {
+    if (this.form.origin_lat == null || this.form.dest_lat == null) return undefined;
+    const oLat = this.form.origin_lat, oLng = this.form.origin_lng!;
+    const dLat = this.form.dest_lat, dLng = this.form.dest_lng!;
+    const minLat = Math.min(oLat, dLat) - 0.08;
+    const maxLat = Math.max(oLat, dLat) + 0.08;
+    const minLng = Math.min(oLng, dLng) - 0.08;
+    const maxLng = Math.max(oLng, dLng) + 0.08;
+    return new google.maps.LatLngBounds(
+      new google.maps.LatLng(minLat, minLng),
+      new google.maps.LatLng(maxLat, maxLng)
+    );
+  }
+
+  addViaCorridorPoint(query: string): void {
+    if (!query.trim() || !this.geocoder) return;
+    const bounds = this.getCorridorBounds();
+    this.geocoder.geocode(
+      { address: query.trim(), bounds: bounds || this.map?.getBounds() || undefined, componentRestrictions: { country: 'in' } },
+      (results, status) => {
+        if (status === 'OK' && results && results[0]?.geometry?.location) {
+          const loc = results[0].geometry.location;
+          const pt = { lat: loc.lat(), lng: loc.lng() };
+          this.pathLocked = false;
+          this.form.path.push(pt);
+          this.viaSearchQuery = '';
+          this.recomputeRoadPath();
+          const name = results[0].formatted_address.split(',')[0].trim();
+          this.toast.success('Route forced via "' + name + '"');
+          this.cdr.markForCheck();
+        } else {
+          this.toast.error('Could not locate "' + query + '".');
+        }
+      }
+    );
+  }
+
+  removeViaCorridorPoint(index: number): void {
+    this.pathLocked = false;
+    this.form.path.splice(index, 1);
+    this.recomputeRoadPath();
+    this.cdr.markForCheck();
+  }
+
+  clearViaCorridorPoints(): void {
+    this.pathLocked = false;
+    this.form.path = [];
+    this.fetchRouteAlternatives();
+    this.cdr.markForCheck();
+  }
+
 
   /** Free mode: the saved line is exactly origin → clicked points → destination, straight. */
   private rebuildFreePath(): void {
@@ -3197,6 +3966,16 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
       return;
     }
 
+    if (this.wizardStep === 2 && this.form.dest_lat != null) {
+      const p = await this.snapPoint({ lat, lng });
+      this.pathLocked = false;
+      this.form.path.push(p);
+      this.recomputeRoadPath();
+      this.toast.success('Route adjusted to pass through clicked point.');
+      this.cdr.markForCheck();
+      return;
+    }
+
     if (this.tool === 'path') {
       if (this.pathMode === 'free') {
         if (this.form.path.length >= 300) { this.toast.error('This path already has the maximum number of points.'); return; }
@@ -3207,8 +3986,12 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
         this.rebuildFreePath();
         return;
       }
-      // Road mode needs no map clicks — the operator picks a ready-made Google route.
-      this.toast.error('Pick one of the route options on the right, or switch to Free draw to draw your own.');
+      const p = await this.snapPoint({ lat, lng });
+      this.pathLocked = false;
+      this.form.path.push(p);
+      this.recomputeRoadPath();
+      this.toast.success('Route adjusted to pass through clicked point.');
+      this.cdr.markForCheck();
       return;
     }
     if (this.tool === 'stop') {
@@ -3279,7 +4062,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     return new Promise((resolve) => {
       if (!this.directionsSvc || this.directionsDisabled) { resolve(p); return; }
       const destination = { lat: p.lat + 0.0006, lng: p.lng + 0.0006 };
-      this.directionsSvc.route(
+      this.directionsSvc!.route(
         { origin: p, destination, travelMode: google.maps.TravelMode.DRIVING },
         (res: any, status: any) => {
           if (status === 'OK' && res?.routes?.[0]?.legs?.[0]?.start_location) {
@@ -3315,7 +4098,7 @@ export class FixedRoutesComponent implements OnInit, OnDestroy {
     const origin = pts[0];
     const destination = pts[pts.length - 1];
     const waypoints = pts.slice(1, -1).map((p) => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false }));
-    this.directionsSvc.route(
+    this.directionsSvc!.route(
       { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING },
       (res: any, status: any) => {
         if (seq !== this.routeSeq) return;
