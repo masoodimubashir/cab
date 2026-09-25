@@ -237,6 +237,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   halfBanner: AppBanner | null = null;
   isFullScreenDismissed = false;
   isHalfBannerCollapsed = false;
+  private bannerRealtimeUnsub: (() => void) | null = null;
+  private bannerPollSub?: Subscription;
 
   private map: any | null = null;
   private selfMarker: any | null = null;
@@ -335,16 +337,60 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.refresh();
     void this.loadActiveFixedVehicleState();
     this.startSyncTimer();
+    this.setupBannerSubscription();
     this.loadBanners();
   }
 
   // ── App Banners handlers ────────────────────────────────────────────────
-  loadBanners(): void {
+  setupBannerSubscription(): void {
+    if (!this.bannerRealtimeUnsub) {
+      this.bannerRealtimeUnsub = this.realtime.subscribeAppBanners((payload) => {
+        if (payload.target_app === 'both' || payload.target_app === 'driver') {
+          this.loadBanners(true);
+        }
+      });
+    }
+
+    this.bannerPollSub ??= interval(20000).subscribe(() => {
+      this.loadBanners(false);
+    });
+  }
+
+  loadBanners(isLiveEvent = false): void {
     this.api.get<{ data: AppBanner[] }>('/app-banners?app=driver').subscribe({
       next: (res) => {
         const banners = res?.data ?? [];
-        this.fullScreenBanner = banners.find((b) => b.position === 'full_screen') || null;
-        this.halfBanner = banners.find((b) => b.position === 'half') || null;
+        const newFullScreen = banners.find((b) => b.position === 'full_screen') || null;
+        const newHalf = banners.find((b) => b.position === 'half') || null;
+
+        // If a full-screen banner was added or changed by admin, make it visible live!
+        if (newFullScreen) {
+          const changed = !this.fullScreenBanner ||
+            this.fullScreenBanner.id !== newFullScreen.id ||
+            this.fullScreenBanner.title !== newFullScreen.title ||
+            this.fullScreenBanner.image_url !== newFullScreen.image_url;
+          if (changed) {
+            this.isFullScreenDismissed = false;
+          }
+        } else {
+          this.isFullScreenDismissed = false;
+        }
+
+        // If a half banner was added or changed by admin, make it visible live!
+        if (newHalf) {
+          const changed = !this.halfBanner ||
+            this.halfBanner.id !== newHalf.id ||
+            this.halfBanner.title !== newHalf.title ||
+            this.halfBanner.image_url !== newHalf.image_url;
+          if (changed) {
+            this.isHalfBannerCollapsed = false;
+          }
+        } else {
+          this.isHalfBannerCollapsed = false;
+        }
+
+        this.fullScreenBanner = newFullScreen;
+        this.halfBanner = newHalf;
       },
       error: () => {},
     });
@@ -571,6 +617,10 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.stopOnlineTimer();
     this.driverVerifyUnsub?.();
     this.driverVerifyUnsub = null;
+    this.bannerRealtimeUnsub?.();
+    this.bannerRealtimeUnsub = null;
+    this.bannerPollSub?.unsubscribe();
+    this.bannerPollSub = undefined;
   }
 
   /**

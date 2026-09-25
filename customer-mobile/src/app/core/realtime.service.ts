@@ -82,6 +82,13 @@ export type FixedRouteCatalogUpdatedPayload = {
   reason: string;
 };
 
+export type AppBannerUpdatedPayload = {
+  type: 'app_banner_updated';
+  target_app: 'customer' | 'driver' | 'both';
+  action: string;
+  banner_id?: number | null;
+};
+
 export type AppNotificationPayload = {
   type: 'app_notification_created';
   notification: {
@@ -341,6 +348,24 @@ export class RealtimeService {
     return () => {
       channel.unbind('FixedSeatHoldAccepted', acceptHandler);
       channel.unbind('FixedSeatHoldRejected', rejectHandler);
+      pusher.unsubscribe(channelName);
+    };
+  }
+
+  subscribeAppBanners(
+    onUpdated: (p: AppBannerUpdatedPayload) => void,
+  ): () => void {
+    const pusher = this.ensure();
+    if (!pusher) return () => {};
+
+    const channelName = 'app-banners';
+    const channel = pusher.subscribe(channelName);
+    const handler = (data: AppBannerUpdatedPayload) => onUpdated(data);
+
+    channel.bind('AppBannerUpdated', handler);
+
+    return () => {
+      channel.unbind('AppBannerUpdated', handler);
       pusher.unsubscribe(channelName);
     };
   }

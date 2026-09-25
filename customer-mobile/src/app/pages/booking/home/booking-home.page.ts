@@ -136,7 +136,11 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     private cdr: ChangeDetectorRef,
   ) {}
 
+  private bannerRealtimeUnsub: (() => void) | null = null;
+  private bannerPollSub?: Subscription;
+
   async ngOnInit(): Promise<void> {
+    this.setupBannerSubscription();
     this.loadBanners();
     await this.initHome();
   }
@@ -145,6 +149,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!this.located || !this.city) {
       void this.initHome();
     }
+    this.setupBannerSubscription();
     this.loadBanners();
     this.checkActiveFixedRide();
     this.activeRidePollSub ??= interval(6000).subscribe(() => this.checkActiveFixedRide());
@@ -167,6 +172,8 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.activeRidePollSub?.unsubscribe();
     this.activeRidePollSub = undefined;
     this.stopActiveRideTracking();
+    this.bannerPollSub?.unsubscribe();
+    this.bannerPollSub = undefined;
   }
 
   ngOnDestroy(): void {
@@ -178,17 +185,64 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.activeRidePollSub = undefined;
     this.stopActiveRideTracking();
     this.clearActiveRideMap();
+    this.bannerRealtimeUnsub?.();
+    this.bannerRealtimeUnsub = null;
+    this.bannerPollSub?.unsubscribe();
+    this.bannerPollSub = undefined;
     this.userMarker = null;
     this.map = null;
   }
 
   // ── App Banners handlers ────────────────────────────────────────────────
-  loadBanners(): void {
+  setupBannerSubscription(): void {
+    if (!this.bannerRealtimeUnsub) {
+      this.bannerRealtimeUnsub = this.realtime.subscribeAppBanners((payload) => {
+        if (payload.target_app === 'both' || payload.target_app === 'customer') {
+          this.zone.run(() => this.loadBanners(true));
+        }
+      });
+    }
+
+    this.bannerPollSub ??= interval(20000).subscribe(() => {
+      this.loadBanners(false);
+    });
+  }
+
+  loadBanners(isLiveEvent = false): void {
     this.api.get<{ data: AppBanner[] }>('/app-banners?app=customer').subscribe({
       next: (res) => {
         const banners = res?.data ?? [];
-        this.fullScreenBanner = banners.find((b) => b.position === 'full_screen') || null;
-        this.halfBanner = banners.find((b) => b.position === 'half') || null;
+        const newFullScreen = banners.find((b) => b.position === 'full_screen') || null;
+        const newHalf = banners.find((b) => b.position === 'half') || null;
+
+        // If a full-screen banner was added or changed by admin, make it visible live!
+        if (newFullScreen) {
+          const changed = !this.fullScreenBanner ||
+            this.fullScreenBanner.id !== newFullScreen.id ||
+            this.fullScreenBanner.title !== newFullScreen.title ||
+            this.fullScreenBanner.image_url !== newFullScreen.image_url;
+          if (changed) {
+            this.isFullScreenDismissed = false;
+          }
+        } else {
+          this.isFullScreenDismissed = false;
+        }
+
+        // If a half banner was added or changed by admin, make it visible live!
+        if (newHalf) {
+          const changed = !this.halfBanner ||
+            this.halfBanner.id !== newHalf.id ||
+            this.halfBanner.title !== newHalf.title ||
+            this.halfBanner.image_url !== newHalf.image_url;
+          if (changed) {
+            this.isHalfBannerCollapsed = false;
+          }
+        } else {
+          this.isHalfBannerCollapsed = false;
+        }
+
+        this.fullScreenBanner = newFullScreen;
+        this.halfBanner = newHalf;
         this.cdr.markForCheck();
       },
       error: () => {},

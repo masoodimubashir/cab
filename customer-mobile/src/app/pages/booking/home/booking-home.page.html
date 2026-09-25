@@ -152,15 +152,6 @@
 
   <!-- ── 1. Active Fixed Ride Bottom Sheet (Replaces "Where are you going" when booking exists) ── -->
   <section class="bh-sheet bh-active-sheet dc-anim-pop" *ngIf="!locationPermissionNeeded && activeFixedRide as ride">
-    <!-- Recenter / My Location Floating Button -->
-    <button
-      type="button"
-      class="bh-recenter-btn dc-press"
-      (click)="recenterMap()"
-      aria-label="Recenter to my location">
-      <ion-icon name="locate"></ion-icon>
-    </button>
-
     <span class="bh-grip" aria-hidden="true"></span>
 
     <!-- Status & OTP Row -->
@@ -240,15 +231,6 @@
 
   <!-- ── 2. Standard "Where are you going?" Bottom Sheet (When NO active ride) ── -->
   <section class="bh-sheet" *ngIf="!locationPermissionNeeded && city && !activeFixedRide" [class.bh-sheet--loading]="loading">
-    <!-- Recenter / My Location Floating Button -->
-    <button
-      type="button"
-      class="bh-recenter-btn dc-press"
-      (click)="recenterMap()"
-      aria-label="Recenter to my location">
-      <ion-icon name="locate"></ion-icon>
-    </button>
-
     <span class="bh-grip" aria-hidden="true"></span>
 
     <h1 class="bk-title">Where are you going?</h1>

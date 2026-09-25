@@ -158,18 +158,6 @@
     </button>
   </div>
 
-  <!-- ===== Recenter / my-location FAB ===== -->
-  <button
-    class="recenter-fab dc-press"
-    *ngIf="!drawerOpen"
-    [class.is-raised]="isApproved && isOnline"
-    (click)="recenter()"
-    aria-label="Center on my location"
-  >
-    <ion-spinner name="crescent" *ngIf="locating"></ion-spinner>
-    <ion-icon *ngIf="!locating" [name]="hasFix ? 'locate' : 'locate-outline'"></ion-icon>
-  </button>
-
   <!-- ===== Bottom driver sheet ===== -->
   <div class="sheet" [class.is-online]="isApproved && isOnline" [class.is-warning]="isWalletBelowLimit && isApproved">
     <div class="sheet__handle"></div>
