@@ -21,6 +21,7 @@ import { OperatorSettingsComponent } from './admin/settings/operator-settings.co
 import { SetupWizardComponent } from './admin/setup/setup-wizard.component';
 import { ManualDispatchComponent } from './admin/rides/manual-dispatch.component';
 import { CouponsComponent } from './admin/promotions/coupons.component';
+import { BannersComponent } from './admin/promotions/banners.component';
 import { SubscriptionsComponent } from './admin/subscriptions/subscriptions.component';
 import { FixedDeparturesComponent } from './admin/fixed/fixed-departures.component';
 import { FixedRoutesHubComponent } from './admin/fixed/fixed-routes-hub.component';
@@ -123,6 +124,7 @@ export const routes: Routes = [
 
   { path: 'promotions', redirectTo: 'promotions/coupons', pathMatch: 'full' },
   { path: 'promotions/coupons', component: CouponsComponent, canActivate: [adminAuthGuard], data: { permission: 'coupons' } },
+  { path: 'promotions/banners', component: BannersComponent, canActivate: [adminAuthGuard], data: { permission: 'coupons' } },
 
   { path: 'subscriptions', component: SubscriptionsComponent, canActivate: [adminAuthGuard], data: { permission: 'subscriptions' } },
 

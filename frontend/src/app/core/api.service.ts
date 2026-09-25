@@ -9,6 +9,10 @@ export class ApiService {
   constructor(private http: HttpClient) {}
 
   getBaseUrl(): string {
+    if (typeof window !== 'undefined') {
+      const override = localStorage.getItem('dreamcabs_api_url');
+      if (override) return override.replace(/\/+$/, '');
+    }
     if (environment.apiUrl) {
       return environment.apiUrl.replace(/\/+$/, '');
     }

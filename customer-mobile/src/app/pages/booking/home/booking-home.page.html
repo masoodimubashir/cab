@@ -55,6 +55,101 @@
     <ion-menu-button menu="customer-menu" aria-label="Open menu"></ion-menu-button>
   </div>
 
+  <!-- ── Half Screen Floating Banner Card ── -->
+  <aside
+    class="dc-banner-half-card dc-anim-pop"
+    *ngIf="halfBanner && !isHalfBannerCollapsed && !locationPermissionNeeded"
+    role="complementary"
+    aria-label="Promotional banner"
+  >
+    <button
+      class="dc-banner-close-btn"
+      type="button"
+      (click)="collapseHalfBanner()"
+      aria-label="Collapse banner"
+    >
+      <ion-icon name="close"></ion-icon>
+    </button>
+    <div class="dc-banner-half-img-wrap" (click)="onBannerClick(halfBanner)">
+      <img
+        [src]="resolveBannerImageUrl(halfBanner.image_url)"
+        [alt]="halfBanner.title"
+        class="dc-banner-half-img"
+      />
+    </div>
+    <div class="dc-banner-half-body">
+      <h3 class="dc-banner-half-title" (click)="onBannerClick(halfBanner)">{{ halfBanner.title }}</h3>
+      <button
+        *ngIf="halfBanner.url_link"
+        class="dc-banner-cta-btn dc-press"
+        type="button"
+        (click)="onBannerClick(halfBanner)"
+      >
+        <span>Learn More</span>
+        <ion-icon name="open-outline"></ion-icon>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Collapsed Floating Trigger Pill (Shows for both Full-Screen & Half Banners) ── -->
+  <button
+    class="dc-banner-floating-pill dc-anim-pop dc-press"
+    type="button"
+    *ngIf="showOfferPill"
+    (click)="reopenOfferBanner()"
+    aria-label="View promotional banner"
+  >
+    <span class="dc-banner-pill-pulse"></span>
+    <ion-icon name="gift-outline" class="dc-banner-pill-icon"></ion-icon>
+    <span class="dc-banner-pill-label">Offer</span>
+  </button>
+
+  <!-- ── Full-Screen App Banner Overlay Modal (True Mobile Full Screen) ── -->
+  <div
+    class="dc-banner-fullscreen-modal dc-anim-fade"
+    *ngIf="fullScreenBanner && !isFullScreenDismissed && !locationPermissionNeeded"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="fullScreenBanner.title"
+  >
+    <button
+      class="dc-banner-fullscreen-close"
+      type="button"
+      (click)="dismissFullScreenBanner()"
+      aria-label="Close banner"
+    >
+      <ion-icon name="close"></ion-icon>
+    </button>
+    <div class="dc-banner-fullscreen-hero" (click)="onBannerClick(fullScreenBanner)">
+      <img
+        [src]="resolveBannerImageUrl(fullScreenBanner.image_url)"
+        [alt]="fullScreenBanner.title"
+        class="dc-banner-fullscreen-hero-img"
+      />
+    </div>
+    <div class="dc-banner-fullscreen-footer">
+      <h2 class="dc-banner-fullscreen-headline">{{ fullScreenBanner.title }}</h2>
+      <div class="dc-banner-fullscreen-actions">
+        <button
+          *ngIf="fullScreenBanner.url_link"
+          class="dc-banner-fullscreen-primary-btn dc-press"
+          type="button"
+          (click)="onBannerClick(fullScreenBanner)"
+        >
+          <span>Learn More</span>
+          <ion-icon name="open-outline"></ion-icon>
+        </button>
+        <button
+          class="dc-banner-fullscreen-dismiss-btn dc-press"
+          type="button"
+          (click)="dismissFullScreenBanner()"
+        >
+          <span>{{ fullScreenBanner.url_link ? 'Dismiss' : 'Got it' }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── 1. Active Fixed Ride Bottom Sheet (Replaces "Where are you going" when booking exists) ── -->
   <section class="bh-sheet bh-active-sheet dc-anim-pop" *ngIf="!locationPermissionNeeded && activeFixedRide as ride">
     <!-- Recenter / My Location Floating Button -->

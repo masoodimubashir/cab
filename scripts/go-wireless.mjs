@@ -17,8 +17,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const isDriver = process.cwd().toLowerCase().includes('driver');
+const args = process.argv.slice(2).join(' ').toLowerCase();
+const isDriver = process.cwd().toLowerCase().includes('driver') || args.includes('driver') || args.includes('8200');
 const PORT = isDriver ? '8200' : '8100';
+const appName = isDriver ? 'Driver App' : 'Customer App';
 const PORT_IP_FILE = path.join(os.homedir(), 'android-dev', `wireless-ip-${PORT}`);
 const GLOBAL_IP_FILE = path.join(os.homedir(), 'android-dev', 'wireless-ip');
 
@@ -115,9 +117,11 @@ adb(['-s', usb.serial, 'tcpip', '5555'], { allowFail: true });
 sleep(1000);
 
 console.log('   Connecting over Wi-Fi ...');
-fs.mkdirSync(path.dirname(GLOBAL_IP_FILE), { recursive: true });
-fs.writeFileSync(GLOBAL_IP_FILE, ip);
+fs.mkdirSync(path.dirname(PORT_IP_FILE), { recursive: true });
 fs.writeFileSync(PORT_IP_FILE, ip);
+if (PORT === '8100') {
+  fs.writeFileSync(GLOBAL_IP_FILE, ip);
+}
 
 // Some phones are slow to bring the Wi-Fi adb link up — poll for a few seconds
 // instead of giving up after one check.
@@ -132,10 +136,10 @@ for (let i = 0; i < 10; i++) {
 }
 
 if (ok) {
-  console.log(`✅ Wireless ready and remembered (${ip}).`);
+  console.log(`✅ Wireless ready and remembered for ${appName} (${ip}:5555).`);
   console.log('   You can unplug the USB cable now.');
-  console.log('   From now on just run:  npm run dev:device');
+  console.log(`   From now on just run:  npm run dev:device  (inside ${isDriver ? 'driver-mobile' : 'customer-mobile'})`);
 } else {
   console.log("⚠️  Sent the connect command but the wireless device didn't come up.");
-  console.log(`   IP is remembered — keep USB plugged for now, or retry:  adb connect ${ip}:5555`);
+  console.log(`   IP is remembered for ${appName} — keep USB plugged for now, or retry:  adb connect ${ip}:5555`);
 }

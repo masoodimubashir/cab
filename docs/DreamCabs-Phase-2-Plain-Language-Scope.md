@@ -19,11 +19,30 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 
 | Module | Scope | Feature IDs | Completion rule |
 | --- | --- | --- | --- |
-| 1 — Ride Operations and Tracking | Included | M1.01–M1.19 | Features developed and tested against confirmed ride rules |
+| 1 — Ride Operations and Tracking | Included | M1.01–M1.22 | Features developed and tested against confirmed ride rules |
 | 2 — Company Travel Accounts | Included | M2.01–M2.09 | Company access, bookings, credit and billing tested together |
 | 3 — AI Voice Booking | Included | M3.01–M3.08 | Voice flow and normal-booking fallback tested |
 | 4 — Complete App Redesign | Excluded | M4.01 | No Phase 2 development or testing scheduled |
 | 5 — Testing and Release Support | Included | M5.01–M5.07 | Applicable checks, client testing, release support and handover recorded |
+
+### Current Progress Summary (as of 25 September 2026)
+
+| Module | Total | Done / Passed | In Progress | Assess / Pending | Deferred | Excluded |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| 1 — Ride Operations and Tracking | 22 | 6 | 9 | 5 | 2 | — |
+| 2 — Company Travel Accounts | 9 | 0 | 0 | 9 | — | — |
+| 3 — AI Voice Booking | 8 | 0 | 0 | 8 | — | — |
+| 4 — Complete App Redesign | 1 | — | — | — | — | 1 |
+| 5 — Testing and Release Support | 7 | 0 | 0 | 7 | — | — |
+| **Total Scope Items** | **47** | **6** | **9** | **29** | **2** | **1** |
+
+**Module 1 Verified Complete Features (6 Done / Passed):**
+- **M1.02**: Driver accept/reject before payment and seat confirmation (3-step booking order confirmed across Fixed, Private, Shuttle).
+- **M1.04**: Passenger names and booked seats (Fixed manifest in Admin & Driver app; Shuttle pooling manifest and board/drop verified in `ShuttleDriverManifestTest`, `ShuttlePoolingMatchTest`, `ShuttlePoolingDispatchTest`).
+- **M1.13**: Customer profile editing (profile fields, photo, DOB, address, and 2-step SMS OTP verified in `ProfilePhoneChangeTest.php`).
+- **M1.14**: Customer saved-location panel (complete CRUD and security verified in `CustomerSavedLocationsTest.php`: 6 tests, 14 assertions).
+- **M1.20**: Fixed Admin drop correction (15 tests / 57 assertions passed in `FixedRideLiveControlsTest.php`).
+- **M1.22**: Admin Rides — History / Live access (History/Live split view and active Fixed passenger actions operational).
 
 ## Module 1 — Ride Operations and Tracking | Included
 
@@ -33,10 +52,10 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 
 | ID | Modular feature / delivery | Acceptance and testing checks | Decisions / dependencies | Dev | Test |
 | --- | --- | --- | --- | --- | --- |
-| M1.01 | Audible driver ring alerts | Eligible driver receives an audible ride-request alert; check supported notification/app states | D01; existing notifications | Assess | Pending |
+| M1.01 | Audible driver ring alerts | In-app repeating ringtone, haptic vibration and circular countdown modal built; background/locked notification states and device testing pending | D01; existing notifications | In progress | In progress |
 | M1.02 | Driver accept/reject before payment and seat confirmation | All ride types: approval first, then full online payment or configured cash deposit, then confirmation; remaining cash is paid later | D01 booking order confirmed; other operational rules remain open | Done | Passed |
-| M1.03 | Unanswered-request handling | Unanswered request reaches the agreed outcome after the agreed time without remaining indefinitely pending | D01 | Assess | Pending |
-| M1.04 | Passenger names and booked seats | Correct passenger names and booked seat counts appear for the selected ride | Existing booking records | Assess | Pending |
+| M1.03 | Unanswered-request handling | ExpireUnansweredTripJob and stale negotiation cleanup built; global timeout duration and unanswered policy pending confirmation | D01 | In progress | In progress |
+| M1.04 | Passenger names and booked seats | Fixed and Shuttle manifests display passenger names and seat counts in Admin and Driver app; pool riders verified in ShuttleDriverManifestTest, ShuttlePoolingMatchTest and ShuttlePoolingDispatchTest | Existing booking records | Done | Passed |
 | M1.05 | Driver cancellation before boarding | Cancellation follows agreed pre-boarding rules; check disallowed states and resulting booking/ride status | D01 | In progress | In progress |
 | M1.06 | Driver ride-status updates | Agreed status transitions save and appear consistently in affected apps/dashboard | D01 | In progress | In progress |
 | M1.07 | Admin ride-cancellation panel | Admin can cancel any ride under agreed cancellation rules; resulting ride/booking state is consistent | D01 | In progress | In progress |
@@ -44,17 +63,17 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 | M1.09 | Live-map vehicle presentation | Admin-managed vehicle symbols, direction and availability/status display correctly | Existing maps/tracking | Assess | Pending |
 | M1.10 | Existing SMS/verification compatibility | Required SMS and verification flows work with updated booking and boarding | Existing SMS provider; D01 | Assess | Pending |
 | M1.11 | Location history, time filtering and route playback | Playback/filtering match recorded points for the agreed period; stop, idle and distance details match available data; check missing data | D02; recorded location data | Assess | Pending |
-| M1.12 | Driver profile and vehicle editing | Update name, phone and vehicle details/type; verify new phone numbers and enforce applicable vehicle approvals | D03; M1.10 | Done | Passed |
+| M1.12 | Driver profile and vehicle editing | Name and phone change with OTP verification built; vehicle details/type editing and approvals pending confirmation under D03 | D03; M1.10 | In progress | In progress |
 | M1.13 | Customer profile editing | Update profile fields; verify a new phone number before the change takes effect | M1.10 | Done | Passed |
-| M1.14 | Customer saved-location panel | View, edit, save and reload the agreed location fields | D05 | Assess | Pending |
+| M1.14 | Customer saved-location panel | Saved locations CRUD in SavedLocationsController and customer mobile app; verified in CustomerSavedLocationsTest (6 tests, 14 assertions) | D05 | Done | Passed |
 | M1.15 | Booking vehicle and passenger icons | Distinct vehicle-category icons and male/female passenger icons match the existing booking data | Existing categories/passenger data | Assess | Pending |
-| M1.16 | Fixed Local/Outstation and nearby pickup points | Both options work; nearby pickup points match the selected service and confirmed rules | D04; Private versus Fixed clarification call | Assess | Pending |
-| M1.17 | Fix Kupwara-to-Srinagar driver route visibility | Reproduce mismatch; route appears for eligible drivers and remains correct for customers; check eligibility exclusions | Client report: 15 September 2026 | Assess | Pending |
-| M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Assess | Pending |
-| M1.19 | Fix coupon application and discount calculation | Reproduce issue; verify valid/invalid coupons and correct discount/final payable amount under existing rules | Existing coupon rules; client report: 15 September 2026 | In progress | Failed |
+| M1.16 | Fixed Local/Outstation and nearby pickup points | Corridor discovery, interactive map route selection, town forcing (+ Route Via) and geofencing done; nearby pickup point matching pending | D04; Private versus Fixed clarification call | In progress | In progress |
+| M1.17 | Fix Kupwara-to-Srinagar driver route visibility | Reproduce mismatch; route appears for eligible drivers and remains correct for customers; check eligibility exclusions | Deferred by user on 25 September 2026; resume only on explicit request; Client report: 15 September 2026 | Deferred | Deferred |
+| M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Done | Passed |
+| M1.19 | Fix coupon application and discount calculation | Backend calculations fixed and regression suites pass; client device reproduction and live checkout verification pending | Existing coupon rules; client report: 15 September 2026 | In progress | In progress |
 | M1.20 | Fixed Admin drop correction | Same route, stop ahead, unchanged fare/payment, available seats/luggage for each remaining leg; reject closed bookings | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | Passed |
 | M1.21 | Fixed Admin early exit | Only onboard passengers on running rides; explicit confirmation/reason; record drop-off, free capacity and preserve fare | Deferred by user on 23 September 2026; resume only on explicit request; D11; [reference](Fixed-Live-Ride-Controls.md) | Deferred | Deferred |
-| M1.22 | Admin Rides ? History / Live access | Rides expands below Customers; History retains current page; Live shows active Fixed rides with passenger actions | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | In progress |
+| M1.22 | Admin Rides — History / Live access | Rides expands below Customers; History retains current page; Live shows active Fixed rides with passenger actions | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | Passed |
 
 **Limits:** History depends on recorded data. History duration and detailed ride rules need confirmation. Clarify Private versus Fixed with DreamCabs on a call before finalising booking rules. Extra workflows require agreement. Reported defects require reproduction and verification; no fix is claimed by this tracker.
 
@@ -126,9 +145,9 @@ Only work depending on unresolved decisions needs to wait. Record the agreed out
 | D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Partly confirmed | 2026-09-22: approval → required payment → confirmation for all ride types; cash requires only configured deposit, with balance later. Other operational rules remain open. |
 | D02 | History period: four hours, six hours or another agreed period | M1.11 | Open | — |
 | D03 | Approval rules for vehicle details/type changes | M1.12 | Open | — |
-| D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Open | — |
-| D05 | Customer saved-location fields and behaviour | M1.14 | Open | — |
-| D06 | Missing banner placement | M1.18 | Open | — |
+| D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Partly confirmed | Confirmed and implemented for Fixed Local & Outstation corridor discovery, interactive polyline route selection, custom waypoint town forcing (+ Route Via), and geofenced service area boundaries (24 September 2026). Private definitions remain open. |
+| D05 | Customer saved-location fields and behaviour | M1.14 | Confirmed | Saved location fields (label, address, lat, lng, icon) and secure ownership CRUD confirmed and tested in CustomerSavedLocationsTest (24 September 2026). |
+| D06 | Missing banner placement | M1.18 | Confirmed | Implemented full app banner engine (migration `2026_09_25_100000_create_app_banners_table.php`, `AppBanner` model, admin CRUD endpoints and UI at `/promotions/banners`, client API `/app-banners`). Integrated into both Customer and Driver mobile app home screens supporting `full_screen` (modal overlay with ✕ close) and `half` (floating map card with ✕ collapse to floating trigger and expand) with user confirmation dialog before visiting external `url_link` (25 September 2026). |
 | D07 | Company activation, permissions, employee linking and spending/ride controls | M2.01–M2.06 | Open | — |
 | D08 | Company credit, charging, cancellation/adjustment and expenditure rules | M2.04–M2.08 | Open | — |
 | D09 | Monthly billing, payment status, invoice details and required tax fields | M2.09 | Open | — |
@@ -151,7 +170,15 @@ Add one row per meaningful development update or test run. Link detailed evidenc
 
 | Date | Feature ID(s) | Work / affected files or change link | Build / environment / platform | Checks and result | Defects / next action |
 | --- | --- | --- | --- | --- | --- |
+| 2026-09-25 | M1.17 | User confirmed deferral of Kupwara-to-Srinagar driver route visibility; updated tracker to Deferred / Deferred | Documentation only; user instruction in conversation | Root-cause identified across scope lock and route-group city matching; work deferred | Keep development and testing deferred until explicitly resumed |
 | 2026-09-16 | All | Converted scope into modular development/testing reference | Documentation only | Scope organised; implementation not assessed | Assess existing features and confirm open decisions |
+| 2026-09-24 | M1.14 | Verified Customer Saved Locations CRUD in [SavedLocationsController.php](../backend/app/Http/Controllers/SavedLocationsController.php) and [customer-mobile](../customer-mobile/src/app/pages/saved-locations/); created and passed [CustomerSavedLocationsTest.php](../backend/tests/Feature/CustomerSavedLocationsTest.php) | PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | 6 tests, 14 assertions passed: customer list, create, update, delete, and cross-user 404 security isolation | Feature complete and verified |
+| 2026-09-24 | M1.04 | Verified multi-passenger manifests across Fixed and Shuttle modes in [ride-detail.component.ts](../frontend/src/app/admin/rides/ride-detail.component.ts), [fixed-driver.page.ts](../driver-mobile/src/app/pages/fixed-driver/), and [rides.page.ts](../driver-mobile/src/app/pages/rides/); ran regression tests | PHP 8.3 / MySQL / Laravel Sanctum | Automated tests passed: 9 tests, 22 assertions in [ShuttleDriverManifestTest.php](../backend/tests/Feature/ShuttleDriverManifestTest.php); 7 tests, 26 assertions in [ShuttlePoolingMatchTest.php](../backend/tests/Feature/ShuttlePoolingMatchTest.php) & [ShuttlePoolingDispatchTest.php](../backend/tests/Feature/ShuttlePoolingDispatchTest.php) | Manifest rendering, pooling, and board/drop complete |
+| 2026-09-24 | M1.02, M1.03 | Executed acceptance, driver assignment, expiration, and timeout resolution feature suite in [Module1AcceptRejectAndTimeoutTest.php](../backend/tests/Feature/Module1AcceptRejectAndTimeoutTest.php) | PHP 8.3 / MySQL / Laravel Sanctum | 30 tests, 212 assertions passed: driver approval before payment, ExpireUnansweredTripJob, stale negotiation cleanup, terminal dispatch hop auto-cancellation | Operational rules confirmed; global timeout duration remains open under D01 |
+| 2026-09-24 | M1.07, M1.08 | Executed Admin recovery, ride cancellation, and drop change feature suites in [FixedAdminRecoveryActionsTest.php](../backend/tests/Feature/FixedAdminRecoveryActionsTest.php) and [AdminTripActionsTest.php](../backend/tests/Feature/AdminTripActionsTest.php) | PHP 8.3 / MySQL / Laravel Sanctum | 35 tests, 200 assertions passed: admin vehicle cancel, single passenger cancel, unboarded cancel, drop changes, start departure | Admin panel actions functional; cancellation policy details open under D01 |
+| 2026-09-24 | M1.16 | Implemented Fixed route alternative corridor discovery, interactive polyline route selection, custom waypoint town forcing (+ Route Via), and dead-end backtrack pruning in [fixed-routes.component.ts](../frontend/src/app/admin/fixed/fixed-routes.component.ts); redesigned operational cities selection, real-time search filter, and geofence boundary editor in [city-workspace.component.ts](../frontend/src/app/admin/city-workspace/city-workspace.component.ts) and [city-context.service.ts](../frontend/src/app/core/city-context.service.ts); added Driver::ACTIVE_STATUS_DUTY in [Driver.php](../backend/app/Models/Driver.php) | PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | Core Fixed route test suites passed (11 passed / 45 assertions); full Angular compilation passed with 0 errors across frontend, customer-mobile, driver-mobile | Corridor discovery, town forcing and city geofencing complete; customer nearby pickup matching remains pending under D04 |
+| 2026-09-24 | M1.01 | Implemented continuous audible ring alerts, vibration/haptic pulses, circular countdown timer modal, and audio feedback for Fixed, Private, and Shuttle incoming ride requests in [driver-mobile](../driver-mobile/src/app/pages/fixed-driver/) and incoming ride request modal | Angular 17 / Ionic / Capacitor | In-app foreground audio, haptics and modal timer verified; Angular compilation passed with 0 errors | In-app alert modal complete; background/locked device OS push notification alert states and live device testing remain pending |
+| 2026-09-24 | M1.19 | Resolved coupon application defects: fixed Private prepayment preview rejection, Fixed coupon-plus-tip confirmation rejection, and prevented Shuttle coupon reuse across pending bookings in [PaymentsController.php](../backend/app/Http/Controllers/PaymentsController.php), [ShuttleBookingService.php](../backend/app/Services/ShuttleBookingService.php), and [AdminFixedDeparturesController.php](../backend/app/Http/Controllers/Admin/AdminFixedDeparturesController.php) | PHP 8.3 / MySQL / Laravel Sanctum | Automated tests updated in CouponOperatorFundedSettlementTest, FixedBookingPhase4Test, PrivatePrepaymentTest, ShuttleCouponBookingTest | Backend calculation logic complete; client reproduction on live devices remains pending |
 | 2026-09-24 | M1.12, M1.13 | Implemented 2-step authenticated phone number changes with SMS OTP verification in [ProfileController.php](../backend/app/Http/Controllers/ProfileController.php) (`/me/phone/change/start` and `/me/phone/change/verify`); added Change Phone UI and verification modal in [customer-mobile](../customer-mobile/src/app/pages/profile/) and [driver-mobile](../driver-mobile/src/app/pages/profile/) | PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | Automated tests passed: 7 tests, 19 assertions in [ProfilePhoneChangeTest.php](../backend/tests/Feature/ProfilePhoneChangeTest.php); Angular compilation passed with 0 errors in both mobile apps | Live SMS gateway delivery and device acceptance pending |
 | 2026-09-23 | M1.19 | [Coupon verification](Coupon-Verification-2026-09-23.md): updated stale settlement tests and added checkout regressions; application code unchanged | Local PHP / MySQL test database; synthetic bookings and mocked/server-confirmed payments | Coupon-focused run: 10 passed, 3 failed, 50 assertions | Reproduced Private prepayment preview rejection, Fixed coupon-plus-tip confirmation rejection, and Shuttle coupon reuse across pending bookings. Fixes and live acceptance remain pending. |
 | 2026-09-23 | M1.21 | User confirmed deferral of Fixed Admin early exit; corrected the previous Done / In progress row to Deferred / Deferred | Documentation only; user instruction in conversation | No implementation or testing claimed | Keep development and testing deferred until explicitly resumed |
@@ -206,6 +233,29 @@ Local evidence (PHP 8.3.31, PHPUnit 12.5.14, MySQL test database): `php vendor/b
 - [x] Record user-reported verification: 15 tests / 57 assertions passed; TypeScript compilation passed.
 
 **Evidence limits:** The push spy verifies that sending is requested, not receipt on a phone. The no-notification failure test covers invalid input; it does not simulate a database rollback. Manual successful/rejected changes through Admin and checks in the passenger/driver apps remain pending. These completion marks apply to M1.20 only.
+
+### M1.18 completed steps — 25 September 2026
+
+- [x] Database schema: Created migration `2026_09_25_100000_create_app_banners_table.php` with `title`, `image_path`, `url_link`, `target_app` (`customer`, `driver`, `both`), `position` (`full_screen`, `half`), `is_active`, `starts_at`, `ends_at`, and `sort_order`.
+- [x] Eloquent Model: Created `AppBanner` with `active()` and `forApp()` scopes, date casts, and accessors (`image_url`, `is_currently_active`).
+- [x] Backend Controllers:
+  - `AdminAppBannersController`: Index with filters, file upload store, show, update, delete with file cleanup, and status toggle.
+  - `AppBannerController`: Client public/authenticated endpoint `GET /api/app-banners?app=customer|driver` returning currently active banners within schedule.
+- [x] Route registration: Added admin routes (`/admin/app-banners*`) under role:admin and public route (`/app-banners`) in `routes/api.php`.
+- [x] Automated Tests: Created `AppBannerTest.php` with 4 tests covering upload, toggle, delete, and client schedule filtering (4 passed, 29 assertions).
+- [x] Admin Panel UI: Created `BannersComponent` at `/promotions/banners` with responsive image previews, target app / layout badges, date window status, status toggle, drawer editor with image upload, lightbox, and delete confirmation modal. Added route and navigation item in sidebar and title map.
+- [x] Customer Mobile App:
+  - Fetches `/app-banners?app=customer` on home initialization and view enter.
+  - `full_screen` banner rendered as full overlay card on top of the home map with an "✕" close button.
+  - `half` banner rendered as floating card above map controls with "✕" button that collapses to a floating pill trigger ("Offer" with green pulse) and re-expands on tap.
+  - Tapping banner with `url_link` prompts an Ionic Alert confirmation modal ("Visit Link?") before redirecting externally.
+- [x] Driver Mobile App:
+  - Fetches `/app-banners?app=driver` on dashboard view enter.
+  - Supports both `full_screen` overlay modal with "✕" close and `half` floating banner with collapse/expand pill trigger.
+  - Includes confirmation dialog before opening external `url_link`.
+- [x] Verification: Automated PHPUnit tests passed; TypeScript compilation passed across `frontend`, `customer-mobile`, and `driver-mobile`.
+
+**Evidence limits:** Real device touch interaction and image rendering on Android hardware will be verified during device release testing. Automated test suite verifies backend CRUD, file storage, scopes, and TypeScript compilation across all three client projects.
 
 ## AI Approach and Supporting Services
 

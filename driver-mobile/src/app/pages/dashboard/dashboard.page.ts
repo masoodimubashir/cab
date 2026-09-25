@@ -21,6 +21,8 @@ import {
   buildStopMarkerElement,
 } from '../../core/car-marker.helper';
 
+import { environment } from '../../../environments/environment';
+
 declare const google: any;
 
 interface NavItem {
@@ -47,6 +49,16 @@ interface SubscriptionPrompt {
 /** Per-(city, vehicle type) wallet warning config served on /drivers/me. */
 interface CityVehicleTypeConfig {
   show_low_wallet_alert: boolean;
+}
+
+export interface AppBanner {
+  id: number;
+  title: string;
+  image_url: string;
+  url_link: string | null;
+  target_app: 'customer' | 'driver' | 'both';
+  position: 'full_screen' | 'half';
+  is_active: boolean;
 }
 
 interface FixedRouteOption {
@@ -220,6 +232,12 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     },
   ];
 
+  // ── App Banners ─────────────────────────────────────────────────────────
+  fullScreenBanner: AppBanner | null = null;
+  halfBanner: AppBanner | null = null;
+  isFullScreenDismissed = false;
+  isHalfBannerCollapsed = false;
+
   private map: any | null = null;
   private selfMarker: any | null = null;
   private accuracyCircle: any | null = null;
@@ -317,6 +335,86 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     this.refresh();
     void this.loadActiveFixedVehicleState();
     this.startSyncTimer();
+    this.loadBanners();
+  }
+
+  // ── App Banners handlers ────────────────────────────────────────────────
+  loadBanners(): void {
+    this.api.get<{ data: AppBanner[] }>('/app-banners?app=driver').subscribe({
+      next: (res) => {
+        const banners = res?.data ?? [];
+        this.fullScreenBanner = banners.find((b) => b.position === 'full_screen') || null;
+        this.halfBanner = banners.find((b) => b.position === 'half') || null;
+      },
+      error: () => {},
+    });
+  }
+
+  dismissFullScreenBanner(): void {
+    this.isFullScreenDismissed = true;
+  }
+
+  collapseHalfBanner(): void {
+    this.isHalfBannerCollapsed = true;
+  }
+
+  expandHalfBanner(): void {
+    this.isHalfBannerCollapsed = false;
+  }
+
+  get showOfferPill(): boolean {
+    if (this.fullScreenBanner && !this.isFullScreenDismissed) return false;
+    if (this.halfBanner && !this.isHalfBannerCollapsed) return false;
+    return (
+      (!!this.fullScreenBanner && this.isFullScreenDismissed) ||
+      (!!this.halfBanner && this.isHalfBannerCollapsed)
+    );
+  }
+
+  reopenOfferBanner(): void {
+    if (this.fullScreenBanner && this.isFullScreenDismissed) {
+      this.isFullScreenDismissed = false;
+    } else if (this.halfBanner && this.isHalfBannerCollapsed) {
+      this.isHalfBannerCollapsed = false;
+    } else {
+      this.isFullScreenDismissed = false;
+      this.isHalfBannerCollapsed = false;
+    }
+  }
+
+  resolveBannerImageUrl(url: string | null | undefined): string {
+    if (!url) return '';
+    if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) {
+      const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+      return url.replace(/^https?:\/\/[^\/]+/, apiBase);
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+      return `${apiBase}/${url.replace(/^\/+/, '')}`;
+    }
+    return url;
+  }
+
+  async onBannerClick(banner: AppBanner | null): Promise<void> {
+    if (!banner?.url_link) return;
+    const url = banner.url_link;
+    const alert = await this.alertCtrl.create({
+      header: 'Visit Link?',
+      message: `Do you want to visit this link?\n\n${url}`,
+      buttons: [
+        {
+          text: 'Cancel',
+          role: 'cancel',
+        },
+        {
+          text: 'Visit Link',
+          handler: () => {
+            window.open(url, '_blank') || (window.location.href = url);
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 
   private startSyncTimer(): void {

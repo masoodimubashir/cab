@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\AppBannerUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\AppBanner;
 use Illuminate\Http\JsonResponse;
@@ -72,6 +73,8 @@ class AdminAppBannersController extends Controller
             'sort_order' => (int) ($data['sort_order'] ?? 0),
         ]);
 
+        AppBannerUpdated::dispatch($banner->target_app, 'created', $banner->id);
+
         return response()->json([
             'data' => $banner->fresh(),
             'banner' => $banner->fresh(),
@@ -134,6 +137,8 @@ class AdminAppBannersController extends Controller
 
         $banner->save();
 
+        AppBannerUpdated::dispatch($banner->target_app, 'updated', $banner->id);
+
         return response()->json([
             'data' => $banner->fresh(),
             'banner' => $banner->fresh(),
@@ -145,6 +150,8 @@ class AdminAppBannersController extends Controller
     {
         $banner->is_active = !$banner->is_active;
         $banner->save();
+
+        AppBannerUpdated::dispatch($banner->target_app, 'toggled', $banner->id);
 
         return response()->json([
             'data' => $banner->fresh(),
@@ -159,7 +166,11 @@ class AdminAppBannersController extends Controller
             Storage::disk('public')->delete($banner->image_path);
         }
 
+        $targetApp = $banner->target_app;
+        $bannerId = $banner->id;
         $banner->delete();
+
+        AppBannerUpdated::dispatch($targetApp, 'deleted', $bannerId);
 
         return response()->json([
             'message' => 'Banner deleted successfully.',

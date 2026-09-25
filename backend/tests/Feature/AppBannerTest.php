@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Events\AppBannerUpdated;
 use App\Models\AppBanner;
 use App\Models\ManagerRole;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -36,6 +38,7 @@ class AppBannerTest extends TestCase
 
     public function test_admin_can_create_banner_with_uploaded_image(): void
     {
+        Event::fake([AppBannerUpdated::class]);
         Storage::fake('public');
         $admin = $this->createAdmin();
         Sanctum::actingAs($admin, ['act-as:admin']);
@@ -68,10 +71,17 @@ class AppBannerTest extends TestCase
         $banner = AppBanner::first();
         $this->assertNotNull($banner->image_path);
         Storage::disk('public')->assertExists($banner->image_path);
+
+        Event::assertDispatched(AppBannerUpdated::class, function ($event) use ($banner) {
+            return $event->targetApp === 'customer'
+                && $event->action === 'created'
+                && $event->bannerId === $banner->id;
+        });
     }
 
     public function test_admin_can_update_and_toggle_banner(): void
     {
+        Event::fake([AppBannerUpdated::class]);
         $admin = $this->createAdmin();
         Sanctum::actingAs($admin, ['act-as:admin']);
 
@@ -91,6 +101,10 @@ class AppBannerTest extends TestCase
             'is_active' => 0,
         ]);
 
+        Event::assertDispatched(AppBannerUpdated::class, function ($event) use ($banner) {
+            return $event->targetApp === 'driver' && $event->action === 'toggled';
+        });
+
         // Update
         $updateRes = $this->patchJson("/api/admin/app-banners/{$banner->id}", [
             'title' => 'Updated Driver Incentive',
@@ -99,10 +113,15 @@ class AppBannerTest extends TestCase
         $updateRes->assertOk()
             ->assertJsonPath('data.title', 'Updated Driver Incentive')
             ->assertJsonPath('data.position', 'half');
+
+        Event::assertDispatched(AppBannerUpdated::class, function ($event) use ($banner) {
+            return $event->targetApp === 'driver' && $event->action === 'updated';
+        });
     }
 
     public function test_admin_can_delete_banner(): void
     {
+        Event::fake([AppBannerUpdated::class]);
         Storage::fake('public');
         $admin = $this->createAdmin();
         Sanctum::actingAs($admin, ['act-as:admin']);
@@ -122,6 +141,10 @@ class AppBannerTest extends TestCase
 
         $this->assertDatabaseMissing('app_banners', ['id' => $banner->id]);
         Storage::disk('public')->assertMissing('banners/delete_me.png');
+
+        Event::assertDispatched(AppBannerUpdated::class, function ($event) use ($banner) {
+            return $event->targetApp === 'both' && $event->action === 'deleted';
+        });
     }
 
     public function test_public_banner_endpoint_respects_target_app_and_active_schedule(): void

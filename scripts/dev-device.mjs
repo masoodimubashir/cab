@@ -1,40 +1,45 @@
 #!/usr/bin/env node
 // Cross-platform (Windows / macOS / Linux) version of dev-device.sh.
 //
-// Launch Capacitor live-reload (hot reload) onto the connected phone — USB OR
-// wireless, with zero fuss:
-//   • Finds `adb` on PATH / via ANDROID_HOME / a standard SDK location.
-//   • If nothing is connected, auto-reconnects to the last wireless phone we
-//     remembered (see go-wireless.mjs) and waits a few seconds for it to come up
-//     — so a dropped Wi-Fi link heals itself instead of erroring out.
-//   • Reads the --target id from the SAME list Ionic validates against
-//     (`cap run android --list --json`), so it can never pass a stale id that
-//     Ionic rejects with "<id> is not a valid Target ID."
+// Launch Capacitor live-reload (hot reload) onto connected phone(s) — USB or Wi-Fi:
+//   • Dual-phone isolation: Customer App (8100) binds to Phone 1,
+//     Driver App (8200) binds to Phone 2.
+//   • Auto-conflict avoidance: if both apps point to the same device, the second
+//     app automatically picks the alternate connected phone.
+//   • Auto-reconnect: if either remembered wireless phone dropped, attempts Wi-Fi reconnect.
+//   • Interactive selection: pass `--select` to pick from all connected phones.
+//   • Manual override: pass an IP or serial: `npm run dev:device -- 192.168.29.166`
 //
-// Usage:  node ../scripts/dev-device.mjs <port> [phone-ip]
-//         <port>      dev-server port (8100 customer / 8200 driver)
-//         [phone-ip]  optional: connect this wireless IP first (also remembered)
+// Usage:  node ../scripts/dev-device.mjs <port> [phone-ip-or-serial | --select]
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline';
 
-const PORT = process.argv[2] || '8100';
-const IP_ARG = process.argv[3] || '';
-const PORT_IP_FILE = path.join(os.homedir(), 'android-dev', `wireless-ip-${PORT}`);
-const GLOBAL_IP_FILE = path.join(os.homedir(), 'android-dev', 'wireless-ip');
-const IP_FILE = fs.existsSync(PORT_IP_FILE) ? PORT_IP_FILE : GLOBAL_IP_FILE;
+const PORT = (process.argv[2] || '8100').trim();
+const isDriver = PORT === '8200' || process.cwd().toLowerCase().includes('driver');
+const otherPort = isDriver ? '8100' : '8200';
+const appName = isDriver ? 'Driver App' : 'Customer App';
+const otherAppName = isDriver ? 'Customer App' : 'Driver App';
+
+// Parse optional trailing argument (IP, serial, or flags)
+const trailingArgs = process.argv.slice(3);
+const WANT_SELECT = trailingArgs.some((a) => a === '--select' || a === '-s' || a === '--choose');
+const IS_DRY_RUN = trailingArgs.some((a) => a === '--dry-run');
+const CLI_TARGET = (trailingArgs.find((a) => a && !a.startsWith('-')) || '').trim();
+
+const DEV_DIR = path.join(os.homedir(), 'android-dev');
+const PORT_IP_FILE = path.join(DEV_DIR, `wireless-ip-${PORT}`);
+const OTHER_PORT_IP_FILE = path.join(DEV_DIR, `wireless-ip-${otherPort}`);
 
 const IS_WIN = process.platform === 'win32';
 const NPX = IS_WIN ? 'npx.cmd' : 'npx';
 
-// Synchronous sleep so the script reads top-to-bottom like the bash original.
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // --- locate adb ------------------------------------------------------------
-// Prefer an explicit SDK (ANDROID_HOME / ANDROID_SDK_ROOT), then the OS's
-// default SDK location, then fall back to whatever `adb` is on PATH.
 function findAdb() {
   const exe = IS_WIN ? 'adb.exe' : 'adb';
   const home = os.homedir();
@@ -53,16 +58,11 @@ function findAdb() {
     const candidate = path.join(root, 'platform-tools', exe);
     if (fs.existsSync(candidate)) return candidate;
   }
-  return 'adb'; // resolved via PATH (works for adb.exe on Windows too)
+  return 'adb';
 }
 
 const ADB = findAdb();
 
-// Environment for the cap / ionic child processes. Windows machines often have
-// `adb` reachable but no ANDROID_HOME set — so `adb devices` works here while
-// Capacitor's own device list comes back empty ("phone attached but Capacitor
-// can't see it"). If we found adb inside an SDK, hand that SDK down to the
-// children via ANDROID_HOME / ANDROID_SDK_ROOT and platform-tools on PATH.
 function buildChildEnv() {
   const env = { ...process.env };
   const ptDir = path.dirname(ADB);
@@ -73,8 +73,6 @@ function buildChildEnv() {
     const sep = IS_WIN ? ';' : ':';
     const currentPath = env.PATH || env.Path || '';
     if (!currentPath.split(sep).includes(ptDir)) {
-      // Windows environment keys are case-insensitive. Keep only one PATH
-      // spelling so Node cannot pass an older Path value to the child.
       for (const key of Object.keys(env)) {
         if (IS_WIN && key.toLowerCase() === 'path') delete env[key];
       }
@@ -86,161 +84,236 @@ function buildChildEnv() {
 
 const CHILD_ENV = buildChildEnv();
 
-// Run adb and return trimmed stdout. With allowFail, swallow non-zero exits.
 function adb(args, { allowFail = false } = {}) {
   try {
     return execFileSync(ADB, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   } catch (err) {
     if (allowFail) return (err.stdout || '').toString().trim();
     if (err.code === 'ENOENT') {
-      console.error("❌ Couldn't find `adb`. Install the Android platform-tools and either");
-      console.error('   add them to PATH or set ANDROID_HOME to your SDK folder, then retry.');
+      console.error("❌ Couldn't find `adb`. Install Android platform-tools and set ANDROID_HOME.");
       process.exit(1);
     }
     throw err;
   }
 }
 
-// Parse `adb devices` into [{ serial, state }].
+// Parse `adb devices -l` into [{ serial, state, model, raw }]
 function listDevices() {
-  return adb(['devices'])
+  const out = adb(['devices', '-l'], { allowFail: true });
+  return out
     .split(/\r?\n/)
-    .slice(1) // drop the "List of devices attached" header
-    .map((line) => line.trim().split(/\s+/))
-    .filter((cols) => cols.length >= 2)
-    .map(([serial, state]) => ({ serial, state }));
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const serial = parts[0] || '';
+      const state = parts[1] || '';
+      const modelMatch = line.match(/model:(\S+)/);
+      const model = modelMatch ? modelMatch[1].replace(/_/g, ' ') : '';
+      return { serial, state, model, raw: line };
+    })
+    .filter((d) => d.serial && d.state);
 }
 
-// Is any adb device in state "device" (authorized & online)?
-const haveDevice = () => listDevices().some((d) => d.state === 'device');
-
-// Print the target id Capacitor will deploy to.
-let capListError = '';
-function capTarget(preferred, port) {
-  let out = '';
+function readSaved(filePath) {
   try {
-    out = execFileSync(NPX, ['cap', 'run', 'android', '--list', '--json'], {
+    if (fs.existsSync(filePath)) return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {}
+  return '';
+}
+
+function savePref(filePath, val) {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, val);
+  } catch {}
+}
+
+function normalizeConnectHost(target) {
+  if (!target) return '';
+  const clean = target.trim();
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(clean)) return `${clean}:5555`;
+  return clean;
+}
+
+// Fetch list of targets from Capacitor
+function getCapacitorTargets() {
+  try {
+    const out = execFileSync(NPX, ['cap', 'run', 'android', '--list', '--json'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: IS_WIN, // Windows needs a shell to resolve npx.cmd
-      env: CHILD_ENV, // ensure Capacitor sees the same SDK/adb we found
+      shell: IS_WIN,
+      env: CHILD_ENV,
     });
-    capListError = '';
-  } catch (err) {
-    capListError = [err.stderr, err.stdout].filter(Boolean).map(String).join('\n').trim() || err.message;
-    return '';
+    const parsed = JSON.parse(out.trim());
+    if (Array.isArray(parsed)) return parsed;
+    const start = out.indexOf('[');
+    const end = out.lastIndexOf(']');
+    if (start !== -1 && end > start) return JSON.parse(out.slice(start, end + 1));
+  } catch {}
+  return [];
+}
+
+async function promptSelection(devices, app) {
+  console.log(`\n📱 Multiple devices available. Choose phone for ${app}:`);
+  devices.forEach((d, i) => {
+    console.log(`   [${i + 1}] ${d.serial} ${d.model ? `(${d.model})` : ''} [${d.state}]`);
+  });
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`\nEnter number (1-${devices.length}, default 1): `, (ans) => {
+      rl.close();
+      const n = parseInt(ans.trim(), 10);
+      if (!isNaN(n) && n >= 1 && n <= devices.length) {
+        resolve(devices[n - 1]);
+      } else {
+        resolve(devices[0]);
+      }
+    });
+  });
+}
+
+// --- Main Flow -------------------------------------------------------------
+async function main() {
+  // If user passed an explicit target via CLI
+  if (CLI_TARGET) {
+    savePref(PORT_IP_FILE, CLI_TARGET);
   }
-  return resolveTargetId(out, preferred, port);
-}
 
-// Pull target id out of `cap ... --json` output.
-function resolveTargetId(out, preferred, port) {
-  const parse = (s) => {
-    try {
-      const arr = JSON.parse(s);
-      if (!Array.isArray(arr) || !arr.length) return '';
+  const mySaved = readSaved(PORT_IP_FILE);
+  const otherSaved = readSaved(OTHER_PORT_IP_FILE);
 
-      // If user passed a specific preferred IP or serial
-      if (preferred) {
-        const hit = arr.find((d) => d?.id && d.id.includes(preferred));
-        if (hit?.id) return hit.id;
-      }
-
-      // If port is 8200 (driver) and we have multiple devices connected, pick the 2nd device
-      if (port === '8200' && arr.length > 1) {
-        return arr[1]?.id || arr[0]?.id || '';
-      }
-
-      // Default to 1st device
-      return arr[0]?.id || '';
-    } catch {
-      return '';
-    }
-  };
-  const id = parse(out.trim());
-  if (id) return id;
-  const start = out.indexOf('[');
-  const end = out.lastIndexOf(']');
-  return start !== -1 && end > start ? parse(out.slice(start, end + 1)) : '';
-}
-
-// --- 1. make sure a phone is attached --------------------------------------
-// Try a wireless (re)connect when nothing is attached: prefer an explicit IP
-// arg, else the IP we remembered from a previous `go:wireless`.
-if (!haveDevice()) {
-  let ip = IP_ARG;
-  if (!ip && fs.existsSync(IP_FILE)) ip = fs.readFileSync(IP_FILE, 'utf8').trim();
-  if (ip) {
-    console.log(`🔌 No device attached — trying wireless reconnect to ${ip}:5555 ...`);
-    adb(['connect', `${ip}:5555`], { allowFail: true });
-    if (IP_ARG) {
-      fs.mkdirSync(path.dirname(IP_FILE), { recursive: true });
-      fs.writeFileSync(IP_FILE, IP_ARG); // remember a freshly given IP
+  // Attempt auto-reconnection for known wireless targets
+  for (const s of [CLI_TARGET, mySaved, otherSaved].filter(Boolean)) {
+    if (s.includes('.') && !listDevices().some((d) => d.state === 'device' && d.serial.includes(s))) {
+      const host = normalizeConnectHost(s);
+      adb(['connect', host], { allowFail: true });
     }
   }
+
+  // Allow up to ~5 seconds for wireless links to appear
+  for (let i = 0; i < 10; i++) {
+    if (listDevices().some((d) => d.state === 'device')) break;
+    sleep(500);
+  }
+
+  const onlineDevices = listDevices().filter((d) => d.state === 'device');
+
+  if (!onlineDevices.length) {
+    console.error(`\n❌ No online Android devices found for ${appName} (port ${PORT}).`);
+    console.error('   • Connect your phone via USB or Wi-Fi.');
+    console.error('   • If using Wi-Fi:  adb connect <phone-ip>:5555');
+    console.error('   • Or run:  npm run dev:device -- <phone-ip>');
+    console.error('   • Check status with:  adb devices\n');
+    process.exit(1);
+  }
+
+  let chosen = null;
+
+  let isFallbackSingleDevice = false;
+
+  // 1. Interactive choice if requested
+  if (WANT_SELECT && onlineDevices.length > 1 && process.stdin.isTTY) {
+    chosen = await promptSelection(onlineDevices, appName);
+  }
+  // 2. Explicit CLI target
+  else if (CLI_TARGET) {
+    chosen = onlineDevices.find((d) => d.serial.includes(CLI_TARGET)) || { serial: CLI_TARGET, model: '' };
+  }
+  // 3. Exactly 1 device online
+  else if (onlineDevices.length === 1) {
+    chosen = onlineDevices[0];
+    if (otherSaved && chosen.serial.includes(otherSaved) && mySaved && !chosen.serial.includes(mySaved)) {
+      isFallbackSingleDevice = true;
+      console.log(`\n⚠️  Notice: Only 1 phone online (${chosen.serial}).`);
+      console.log(`   It was last saved for ${otherAppName}, but using it temporarily for ${appName}.`);
+      console.log(`   To run both apps simultaneously, connect your second phone!\n`);
+    }
+  }
+  // 4. Two or more devices online -> intelligent separation
+  else {
+    const myMatch = mySaved ? onlineDevices.find((d) => d.serial.includes(mySaved)) : null;
+    const otherMatch = otherSaved ? onlineDevices.find((d) => d.serial.includes(otherSaved)) : null;
+
+    if (myMatch && (!otherMatch || myMatch.serial !== otherMatch.serial)) {
+      chosen = myMatch;
+    } else if (myMatch && otherMatch && myMatch.serial === otherMatch.serial) {
+      // Conflict: both apps saved the exact same phone
+      if (isDriver) {
+        // Driver App yields and takes the other online phone
+        chosen = onlineDevices.find((d) => d.serial !== myMatch.serial) || onlineDevices[1];
+        console.log(`\n🔄 Conflict avoided: Both apps were set to ${myMatch.serial}.`);
+        console.log(`   Auto-assigning ${appName} to alternate phone: ${chosen.serial} (${chosen.model})\n`);
+      } else {
+        chosen = myMatch;
+      }
+    } else {
+      // No saved device or saved device offline: pick one not used by other app
+      const available = onlineDevices.find((d) => otherSaved ? !d.serial.includes(otherSaved) : true);
+      chosen = available || (isDriver ? onlineDevices[1] : onlineDevices[0]);
+    }
+  }
+
+  // Persist the choice for this port (unless temporarily falling back to the only available phone)
+  if (!isFallbackSingleDevice) {
+    savePref(PORT_IP_FILE, chosen.serial);
+  }
+
+  // Match target against Capacitor CLI list
+  let targetId = chosen.serial;
+  let capTargets = [];
+  for (let i = 0; i < 6; i++) {
+    capTargets = getCapacitorTargets();
+    const hit = capTargets.find(
+      (c) => c.id === chosen.serial || chosen.serial.includes(c.id) || c.id.includes(chosen.serial)
+    );
+    if (hit?.id) {
+      targetId = hit.id;
+      break;
+    }
+    sleep(500);
+  }
+
+  // Print Clean Dashboard
+  console.log('\n' + '='.repeat(66));
+  console.log(`🚀 DreamCabs Mobile Live-Reload Launcher`);
+  console.log('-'.repeat(66));
+  console.log(`📱 Current App : ${appName} (dev-server port ${PORT})`);
+  console.log(`🎯 Target Phone: ${targetId} ${chosen.model ? `(${chosen.model})` : ''}`);
+
+  if (onlineDevices.length > 1) {
+    const alternate = onlineDevices.find((d) => d.serial !== chosen.serial);
+    if (alternate) {
+      console.log(`📱 Other Phone : ${alternate.serial} ${alternate.model ? `(${alternate.model})` : ''} <= Reserved for ${otherAppName}`);
+    }
+  } else {
+    console.log(`💡 Tip: Connect a 2nd phone to run ${otherAppName} at the same time.`);
+  }
+
+  console.log('-'.repeat(66));
+  console.log(`⚡ Deploying live-reload to ${targetId}...`);
+  console.log(`   Leave this terminal running — changes will hot-reload on device.`);
+  console.log(`   Press Ctrl+C to stop.`);
+  console.log('='.repeat(66) + '\n');
+
+  if (IS_DRY_RUN) {
+    console.log('🏁 [Dry Run] Device allocation and target verification successful.');
+    process.exit(0);
+  }
+
+  // Spawn Ionic live-reload onto the targeted phone
+  const run = spawnSync(
+    NPX,
+    ['ionic', 'cap', 'run', 'android', '-l', '--external', `--port=${PORT}`, `--target=${targetId}`],
+    { stdio: 'inherit', shell: IS_WIN, env: CHILD_ENV }
+  );
+
+  process.exit(run.status ?? 0);
 }
 
-// Wait up to ~10s for a device to come online (handles a slow/flaky reconnect).
-for (let i = 0; i < 20; i++) {
-  if (haveDevice()) break;
-  sleep(500);
-}
-
-if (!haveDevice()) {
-  console.error('❌ No authorized device found.');
-  console.error("   • USB:      plug in the phone and accept 'Allow USB debugging'.");
-  console.error('   • Wireless: run  npm run go:wireless  once (while on USB) to set it up,');
-  console.error('               then this command auto-reconnects every time.');
-  console.error("   Check with:  adb devices   (state must be 'device')");
+main().catch((err) => {
+  console.error('Fatal launcher error:', err);
   process.exit(1);
-}
-
-// Remember the wireless phone's IP so next time we auto-reconnect.
-const wireless = listDevices().find((d) => d.state === 'device' && d.serial.endsWith(':5555'));
-if (wireless) {
-  fs.mkdirSync(path.dirname(IP_FILE), { recursive: true });
-  fs.writeFileSync(IP_FILE, wireless.serial.replace(/:5555$/, ''));
-}
-
-// --- 2. resolve the target id Ionic will accept ----------------------------
-// cap's list can lag adb by a moment after a reconnect — retry briefly.
-let target = '';
-for (let i = 0; i < 10; i++) {
-  target = capTarget(IP_ARG, PORT);
-  if (target) break;
-  sleep(500);
-}
-
-if (!target) {
-  const currentDevices = listDevices();
-  const online = currentDevices.some((d) => d.state === 'device');
-  console.error(online
-    ? '❌ ADB sees an authorized device, but Capacitor could not resolve a target.'
-    : '❌ The phone disconnected or is no longer authorized during device detection.');
-  console.error('   adb devices sees:');
-  if (!currentDevices.length) console.error('     (no devices)');
-  for (const d of currentDevices) console.error(`     • ${d.serial}  (${d.state})`);
-  if (capListError) console.error(`   Capacitor device-list command failed:\n${capListError}`);
-  console.error(`   Using SDK: ${CHILD_ENV.ANDROID_HOME || '(none — set ANDROID_HOME to your SDK)'}`);
-  console.error('   USB: reconnect the phone, enable USB debugging, and accept the authorization prompt.');
-  console.error('   Wireless: adb connect <ip>:5555, or run npm run go:wireless while connected by USB.');
-  if (online) console.error('   Diagnose Capacitor with: npx cap run android --list --json');
-  process.exit(1);
-}
-
-// --- 3. go -----------------------------------------------------------------
-const devices = listDevices();
-if (devices.length > 1) {
-  console.log(`📱 Multiple devices detected (${devices.length}):`);
-  for (const d of devices) console.log(`   ${d.serial === target ? '👉' : '  '} ${d.serial} (${d.state})`);
-}
-console.log(`✅ Deploying live-reload to: ${target}   (port ${PORT})`);
-console.log('   Leave this terminal open — every save hot-reloads on the phone.');
-console.log('   Press Ctrl+C to stop.');
-
-const run = spawnSync(
-  NPX,
-  ['ionic', 'cap', 'run', 'android', '-l', '--external', `--port=${PORT}`, `--target=${target}`],
-  { stdio: 'inherit', shell: IS_WIN, env: CHILD_ENV }
-);
-process.exit(run.status ?? 0);
+});

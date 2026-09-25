@@ -38,6 +38,7 @@ export class AppComponent implements OnInit {
     [/^\/pricing/,                  'Pricing'],
     [/^\/vehicles/,                 ''],
     [/^\/promotions\/coupons/,      'Coupons'],
+    [/^\/promotions\/banners/,      'App Banners'],
     [/^\/subscriptions/,            ''],
     [/^\/rides\/all/,               'All Rides'],
     [/^\/rides\/map/,               'Rides Map'],
@@ -147,6 +148,7 @@ export class AppComponent implements OnInit {
     if (can('city_settings'))          citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
     if (can('coupons')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
+    if (can('coupons')) citySetup.push({ label: 'Banners', icon: 'image', route: '/promotions/banners' });
 
     if (can('subscriptions'))
                                        citySetup.push({ label: 'Subscriptions', icon: 'star', route: '/subscriptions' });
