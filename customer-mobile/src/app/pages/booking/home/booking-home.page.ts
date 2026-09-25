@@ -9,7 +9,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
+import { AlertController, ViewDidEnter, ViewDidLeave, ViewWillEnter } from '@ionic/angular';
 import { Subscription, interval } from 'rxjs';
 
 import { ApiService } from '../../../core/api.service';
@@ -32,8 +32,19 @@ import {
   RawScope
 } from '../booking.service';
 import { City, RideMode, ServiceTile, TripScope } from '../booking.models';
+import { environment } from '../../../../environments/environment';
 
 declare const google: any;
+
+export interface AppBanner {
+  id: number;
+  title: string;
+  image_url: string;
+  url_link: string | null;
+  target_app: 'customer' | 'driver' | 'both';
+  position: 'full_screen' | 'half';
+  is_active: boolean;
+}
 
 export interface ActiveFixedRide {
   id: number;
@@ -87,6 +98,12 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   city: City | null = null;
   located = false;
 
+  // ── App Banners ─────────────────────────────────────────────────────────
+  fullScreenBanner: AppBanner | null = null;
+  halfBanner: AppBanner | null = null;
+  isFullScreenDismissed = false;
+  isHalfBannerCollapsed = false;
+
   // Active Live Fixed Ride
   activeFixedRide: ActiveFixedRide | null = null;
   private activeRidePollSub?: Subscription;
@@ -108,6 +125,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   private watchId: string | null = null;
 
   constructor(
+    private alertCtrl: AlertController,
     private api: ApiService,
     private booking: BookingService,
     private geo: GeolocationService,
@@ -119,6 +137,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
   ) {}
 
   async ngOnInit(): Promise<void> {
+    this.loadBanners();
     await this.initHome();
   }
 
@@ -126,6 +145,7 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     if (!this.located || !this.city) {
       void this.initHome();
     }
+    this.loadBanners();
     this.checkActiveFixedRide();
     this.activeRidePollSub ??= interval(6000).subscribe(() => this.checkActiveFixedRide());
   }
@@ -160,6 +180,91 @@ export class BookingHomePage implements OnInit, ViewWillEnter, ViewDidEnter, Vie
     this.clearActiveRideMap();
     this.userMarker = null;
     this.map = null;
+  }
+
+  // ── App Banners handlers ────────────────────────────────────────────────
+  loadBanners(): void {
+    this.api.get<{ data: AppBanner[] }>('/app-banners?app=customer').subscribe({
+      next: (res) => {
+        const banners = res?.data ?? [];
+        this.fullScreenBanner = banners.find((b) => b.position === 'full_screen') || null;
+        this.halfBanner = banners.find((b) => b.position === 'half') || null;
+        this.cdr.markForCheck();
+      },
+      error: () => {},
+    });
+  }
+
+  dismissFullScreenBanner(): void {
+    this.isFullScreenDismissed = true;
+    this.cdr.markForCheck();
+  }
+
+  collapseHalfBanner(): void {
+    this.isHalfBannerCollapsed = true;
+    this.cdr.markForCheck();
+  }
+
+  expandHalfBanner(): void {
+    this.isHalfBannerCollapsed = false;
+    this.cdr.markForCheck();
+  }
+
+  get showOfferPill(): boolean {
+    if (this.locationPermissionNeeded) return false;
+    if (this.fullScreenBanner && !this.isFullScreenDismissed) return false;
+    if (this.halfBanner && !this.isHalfBannerCollapsed) return false;
+    return (
+      (!!this.fullScreenBanner && this.isFullScreenDismissed) ||
+      (!!this.halfBanner && this.isHalfBannerCollapsed)
+    );
+  }
+
+  reopenOfferBanner(): void {
+    if (this.fullScreenBanner && this.isFullScreenDismissed) {
+      this.isFullScreenDismissed = false;
+    } else if (this.halfBanner && this.isHalfBannerCollapsed) {
+      this.isHalfBannerCollapsed = false;
+    } else {
+      this.isFullScreenDismissed = false;
+      this.isHalfBannerCollapsed = false;
+    }
+    this.cdr.markForCheck();
+  }
+
+  resolveBannerImageUrl(url: string | null | undefined): string {
+    if (!url) return '';
+    if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) {
+      const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+      return url.replace(/^https?:\/\/[^\/]+/, apiBase);
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      const apiBase = environment.apiUrl.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+      return `${apiBase}/${url.replace(/^\/+/, '')}`;
+    }
+    return url;
+  }
+
+  async onBannerClick(banner: AppBanner | null): Promise<void> {
+    if (!banner?.url_link) return;
+    const url = banner.url_link;
+    const alert = await this.alertCtrl.create({
+      header: 'Visit Link?',
+      message: `Do you want to visit this link?\n\n${url}`,
+      buttons: [
+        {
+          text: 'Cancel',
+          role: 'cancel',
+        },
+        {
+          text: 'Visit Link',
+          handler: () => {
+            window.open(url, '_blank') || (window.location.href = url);
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 
   private async initHome(): Promise<void> {
