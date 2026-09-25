@@ -53,6 +53,8 @@ use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InvoicesController;
 use App\Http\Controllers\RatingsController;
 use App\Http\Controllers\SafetyController;
+use App\Http\Controllers\AppBannerController;
+use App\Http\Controllers\Admin\AdminAppBannersController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\Admin\AdminVehicleSetsController;
 use App\Http\Controllers\Admin\AdminVehicleTypeImagesController;
@@ -85,6 +87,7 @@ Route::get('/', function () {
 });
 
 Route::get('/health', HealthController::class);
+Route::get('/app-banners', [AppBannerController::class, 'index']);
 
 // Admin auth (email + password)
 Route::post('/admin/login', [AdminAuthController::class, 'login']);
@@ -461,6 +464,15 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
         Route::patch('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'update'])->middleware('permission:subscriptions');
         Route::delete('/admin/cities/{city}/subscription-plans/{plan}', [AdminSubscriptionsController::class, 'destroy'])->middleware('permission:subscriptions');
     });
+
+    // ── App Banners (Promotions / Announcements) ─────────────────────
+    Route::get('/admin/app-banners', [AdminAppBannersController::class, 'index'])->middleware('permission:coupons|city_settings|operator_settings');
+    Route::post('/admin/app-banners', [AdminAppBannersController::class, 'store'])->middleware('permission:coupons|city_settings|operator_settings');
+    Route::get('/admin/app-banners/{banner}', [AdminAppBannersController::class, 'show'])->middleware('permission:coupons|city_settings|operator_settings');
+    Route::post('/admin/app-banners/{banner}', [AdminAppBannersController::class, 'update'])->middleware('permission:coupons|city_settings|operator_settings');
+    Route::patch('/admin/app-banners/{banner}', [AdminAppBannersController::class, 'update'])->middleware('permission:coupons|city_settings|operator_settings');
+    Route::patch('/admin/app-banners/{banner}/toggle', [AdminAppBannersController::class, 'toggle'])->middleware('permission:coupons|city_settings|operator_settings');
+    Route::delete('/admin/app-banners/{banner}', [AdminAppBannersController::class, 'destroy'])->middleware('permission:coupons|city_settings|operator_settings');
 
     // ── RBAC: permissions catalog (read-only) ───────────────────────
     Route::get('/admin/permissions', [AdminPermissionsController::class, 'index'])->middleware('permission:roles_permissions');
