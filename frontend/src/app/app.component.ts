@@ -147,8 +147,17 @@ export class AppComponent implements OnInit {
     // if (can('app_assets'))             citySetup.push({ label: 'App Assets',    icon: 'upload', route: '/settings/app-assets' });
     if (can('city_settings'))          citySetup.push({ label: 'City Settings', icon: 'cog', route: '/settings/city' });
 
-    if (can('coupons')) citySetup.push({ label: 'Coupons', icon: 'gift', route: '/promotions/coupons' });
-    if (can('coupons')) citySetup.push({ label: 'Banners', icon: 'image', route: '/promotions/banners' });
+    if (can('coupons')) {
+      citySetup.push({
+        label: 'Promotions',
+        icon: 'gift',
+        initiallyOpen: true,
+        children: filterTruthy([
+          can('coupons') && { label: 'Coupons', icon: 'gift', route: '/promotions/coupons' },
+          can('coupons') && { label: 'Banners', icon: 'image', route: '/promotions/banners' },
+        ]),
+      });
+    }
 
     if (can('subscriptions'))
                                        citySetup.push({ label: 'Subscriptions', icon: 'star', route: '/subscriptions' });
