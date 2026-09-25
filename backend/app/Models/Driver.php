@@ -57,6 +57,8 @@ class Driver extends Model
         self::SERVICE_MODE_SHUTTLE,
     ];
 
+    public const ACTIVE_STATUS_DUTY = 'on_duty';
+
     // Drivers go "Online" by tapping a button in the app, but the only signal
     // that they are still *reachable* is the periodic ping. After this many
     // seconds without a fresh ping (browser tab closed, app killed by OS,
