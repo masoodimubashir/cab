@@ -1287,11 +1287,11 @@ export class FixedDeparturesComponent implements OnInit, AfterViewInit, OnDestro
   }
 
   canCancelBooking(row: FixedSupportBooking): boolean {
-    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((row.status || '').toUpperCase());
+    return ['BOOKED', 'CONFIRMED'].includes((row.status || '').toUpperCase());
   }
 
   canCancelPassenger(p: Passenger): boolean {
-    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes((p.status || '').toUpperCase());
+    return ['BOOKED', 'CONFIRMED'].includes((p.status || '').toUpperCase());
   }
 
   passengerSeatLabel(p: Passenger | FixedSupportBooking): string {
