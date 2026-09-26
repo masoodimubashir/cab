@@ -448,6 +448,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/trips/{trip}/cancel', [AdminTripsController::class, 'cancel'])->middleware('permission:rides');
     Route::post('/admin/trips/{trip}/change-drop', [AdminTripsController::class, 'changeDrop'])->middleware('permission:rides');
     Route::post('/admin/trips/{trip}/passengers/{passenger}/change-drop', [AdminTripsController::class, 'changePassengerDrop'])->middleware('permission:rides');
+    Route::post('/admin/trips/{trip}/passengers/{passenger}/cancel', [AdminTripsController::class, 'cancelPassenger'])->middleware('permission:rides');
 
     Route::middleware('manager.city')->group(function () {
         // ── Promotions: coupons ─────────────────────────────────────────

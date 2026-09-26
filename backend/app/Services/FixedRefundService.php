@@ -136,8 +136,8 @@ class FixedRefundService
             /** @var RouteDeparture|null $dep */
             $dep = RouteDeparture::query()->lockForUpdate()->find($res->route_departure_id);
             if ($reason === 'admin_passenger_cancelled') {
-                if (!in_array($res->status, ['BOOKED', 'CONFIRMED'], true) || $res->boarded_at !== null) {
-                    throw new ReservationException('This passenger has already boarded or their ride is closed. It cannot be cancelled.', 422);
+                if (!in_array($res->status, ['BOOKED', 'CONFIRMED', 'BOARDED'], true)) {
+                    throw new ReservationException('This passenger has already completed or their ride is closed. It cannot be cancelled.', 422);
                 }
                 if (!$dep || in_array($dep->status, ['COMPLETED', 'CANCELLED'], true)) {
                     throw new ReservationException('This ride is already closed. It cannot be cancelled.', 422);

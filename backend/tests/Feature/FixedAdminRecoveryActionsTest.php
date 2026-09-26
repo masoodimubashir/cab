@@ -346,7 +346,7 @@ class FixedAdminRecoveryActionsTest extends TestCase
         $gateway = Mockery::mock(RazorpayService::class);
         $gateway->shouldReceive('refundPayment')->never();
         $this->instance(RazorpayService::class, $gateway);
-        foreach ([['status' => 'BOARDED'], ['boarded_at' => now()], ['status' => 'DROPPED'], ['status' => 'CANCELLED'], ['status' => 'NO_SHOW']] as $override) {
+        foreach ([['status' => 'DROPPED'], ['status' => 'CANCELLED'], ['status' => 'NO_SHOW']] as $override) {
             $booking = $this->createReservation($override);
             $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel")->assertStatus(422);
             $this->assertSame('NONE', $booking->fresh()->refund_status);
@@ -357,6 +357,72 @@ class FixedAdminRecoveryActionsTest extends TestCase
             $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel")->assertStatus(422);
             $this->assertSame('CONFIRMED', $booking->fresh()->status);
         }
+    }
+
+    public function test_admin_can_cancel_boarded_passenger_with_full_refund(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $this->departure->update(['seats_taken' => 1]);
+        $booking = $this->createReservation(['status' => 'BOARDED', 'boarded_at' => now()]);
+        $gateway = Mockery::mock(RazorpayService::class);
+        $gateway->shouldReceive('refundPayment')
+            ->once()
+            ->andReturn(['id' => 'rfnd_boarded_100', 'status' => 'processed', 'amount' => 12000]);
+        $this->instance(RazorpayService::class, $gateway);
+
+        $response = $this->postJson("/api/admin/cities/{$this->cityId}/fixed-bookings/{$booking->id}/cancel", [
+            'reason' => 'Passenger had emergency onboard',
+        ]);
+
+        $response->assertOk();
+        $this->assertSame('CANCELLED', $booking->fresh()->status);
+        $this->assertSame('REFUNDED', $booking->fresh()->refund_status);
+        $this->assertEquals(120.0, (float) $booking->fresh()->refund_amount);
+        $this->assertSame(0, $this->departure->fresh()->seats_taken);
+    }
+
+    public function test_admin_can_cancel_passenger_from_trips_controller_with_full_refund(): void
+    {
+        Sanctum::actingAs($this->admin, ['act-as:admin']);
+        $this->departure->update(['seats_taken' => 1]);
+        $rideTypeId = DB::table('ride_types')->insertGetId([
+            'name' => 'Fixed_' . uniqid(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $trip = Trip::query()->create([
+            'customer_id' => $this->customer->id,
+            'ride_type_id' => $rideTypeId,
+            'city_id' => $this->cityId,
+            'scope' => 'local',
+            'status' => 'EN_ROUTE_DROP',
+            'route_departure_id' => $this->departure->id,
+            'route_id' => $this->route->id,
+            'pickup_lat' => 34.0,
+            'pickup_lng' => 74.0,
+            'drop_lat' => 34.1,
+            'drop_lng' => 74.1,
+        ]);
+        $this->departure->update(['trip_id' => $trip->id]);
+        $booking = $this->createReservation([
+            'trip_id' => $trip->id,
+            'status' => 'BOARDED',
+            'boarded_at' => now(),
+        ]);
+
+        $gateway = Mockery::mock(RazorpayService::class);
+        $gateway->shouldReceive('refundPayment')
+            ->once()
+            ->andReturn(['id' => 'rfnd_trip_passenger_100', 'status' => 'processed', 'amount' => 12000]);
+        $this->instance(RazorpayService::class, $gateway);
+
+        $response = $this->postJson("/api/admin/trips/{$trip->id}/passengers/{$booking->id}/cancel", [
+            'reason' => 'Emergency breakdown mid-trip',
+        ]);
+
+        $response->assertOk();
+        $this->assertSame('CANCELLED', $booking->fresh()->status);
+        $this->assertSame('REFUNDED', $booking->fresh()->refund_status);
+        $this->assertEquals(120.0, (float) $booking->fresh()->refund_amount);
+        $this->assertSame(0, $this->departure->fresh()->seats_taken);
     }
 
     public function test_admin_can_cancel_unboarded_passenger_on_running_ride_once(): void

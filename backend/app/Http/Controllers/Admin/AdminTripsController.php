@@ -16,6 +16,7 @@ use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\FixedAvailabilityService;
 use App\Services\FixedManifestService;
+use App\Services\FixedRefundService;
 use App\Services\GeoService;
 use App\Services\ManagerScope;
 use App\Services\NotificationCenter;
@@ -784,6 +785,51 @@ class AdminTripsController
         return response()->json([
             'message' => "Passenger drop updated to Stop #{$newStop->seq} ({$newStop->name}).",
             'passenger' => $freshPassenger,
+        ]);
+    }
+
+    /**
+     * Cancel an individual passenger booking on a shared / fixed departure trip.
+     * Initiates 100% full refund and releases seat/luggage capacity.
+     */
+    public function cancelPassenger(
+        Request $request,
+        Trip $trip,
+        SeatReservation $passenger,
+        FixedRefundService $refundService,
+    ) {
+        ManagerScope::assertCityAllowed((int) $trip->city_id);
+
+        if ($passenger->trip_id && (int) $passenger->trip_id !== (int) $trip->id) {
+            abort(404);
+        }
+        if ($trip->route_departure_id && (int) $passenger->route_departure_id !== (int) $trip->route_departure_id) {
+            abort(404);
+        }
+
+        if (in_array($trip->status, ['COMPLETED', 'CANCELLED'], true)) {
+            return response()->json(['message' => 'Cannot cancel passenger on a finished or cancelled trip.'], 409);
+        }
+
+        if (in_array($passenger->status, ['COMPLETED', 'DROPPED', 'CANCELLED', 'NO_SHOW'], true)) {
+            return response()->json(['message' => 'Cannot cancel a finished or already cancelled passenger booking.'], 409);
+        }
+
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $detail = 'Admin cancelled this passenger booking. Full refund was initiated.';
+        if (!empty($data['reason'])) {
+            $detail .= ' Reason: ' . trim($data['reason']);
+        }
+
+        $updated = $refundService->cancelBySystem($passenger, 'admin_passenger_cancelled', $request->user(), $detail);
+
+        return response()->json([
+            'message' => 'Passenger booking cancelled with full-refund handling.',
+            'passenger' => $updated,
+            'refund_pending' => $updated->refund_status === 'APPROVED',
         ]);
     }
 }
