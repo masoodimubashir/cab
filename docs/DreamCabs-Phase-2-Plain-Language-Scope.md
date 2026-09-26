@@ -29,18 +29,19 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 
 | Module | Total | Done / Passed | In Progress | Assess / Pending | Deferred | Excluded |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1 — Ride Operations and Tracking | 22 | 10 | 6 | 3 | 3 | — |
+| 1 — Ride Operations and Tracking | 22 | 11 | 5 | 3 | 3 | — |
 | 2 — Company Travel Accounts | 9 | 0 | 0 | 9 | — | — |
 | 3 — AI Voice Booking | 8 | 0 | 0 | 8 | — | — |
 | 4 — Complete App Redesign | 1 | — | — | — | — | 1 |
 | 5 — Testing and Release Support | 7 | 0 | 0 | 7 | — | — |
-| **Total Scope Items** | **47** | **10** | **6** | **27** | **3** | **1** |
+| **Total Scope Items** | **47** | **11** | **5** | **27** | **3** | **1** |
 
-**Module 1 Verified Complete Features (10 Done / Passed):**
+**Module 1 Verified Complete Features (11 Done / Passed):**
 - **M1.02**: Driver accept/reject before payment and seat confirmation (3-step booking order confirmed across Fixed, Private, Shuttle).
 - **M1.04**: Passenger names and booked seats (Fixed manifest in Admin & Driver app; Shuttle pooling manifest and board/drop verified in `ShuttleDriverManifestTest`, `ShuttlePoolingMatchTest`, `ShuttlePoolingDispatchTest`).
 - **M1.05**: Driver cancellation before boarding (Private rides pre-boarding cancellation with ₹0 fee and 100% full customer refund, Fixed whole-departure cancellation with mass passenger refunds and seat release verified in `DriverRideCancellationTest.php`: 6 tests, 24 assertions).
 - **M1.07**: Admin ride-cancellation panel (Admin private trip cancellation with fee waiver and Fixed whole-vehicle and passenger cancellation with full-refund handling verified in `FixedAdminRecoveryActionsTest.php`: 22 tests, 151 assertions, `DriverRideCancellationTest.php`: 6 tests, 24 assertions, `AdminTripActionsTest.php`, and ride-detail UI).
+- **M1.12**: Driver profile and vehicle editing (Driver name/email/avatar editing, SMS OTP phone number change verification, active vehicle details lock enforcement preventing unauthorised vehicle category changes, and admin full vehicle and profile management verified in `DriverProfileVehicleManagementTest.php`: 8 tests, 45 assertions).
 - **M1.13**: Customer profile editing (profile fields, photo, DOB, address, and 2-step SMS OTP verified in `ProfilePhoneChangeTest.php`).
 - **M1.14**: Customer saved-location panel (complete CRUD and security verified in `CustomerSavedLocationsTest.php`: 6 tests, 14 assertions).
 - **M1.16**: Fixed Local/Outstation and nearby pickup points (corridors, town forcing, geofencing, customer nearest pickup point detection, walking distance and estimated walk minutes verified in `FixedNearbyPickupPointsTest.php`: 5 tests, 36 assertions, plus `FixedFullWalkthroughTest.php` and `FixedSeatMapCustomerFlowTest.php` passing 100%).
@@ -67,7 +68,7 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 | M1.09 | Live-map vehicle presentation | Admin-managed vehicle symbols, direction and availability/status display correctly | Existing maps/tracking | Assess | Pending |
 | M1.10 | Existing SMS/verification compatibility | Required SMS and verification flows work with updated booking and boarding | Existing SMS provider; D01 | Assess | Pending |
 | M1.11 | Location history, time filtering and route playback | Playback/filtering match recorded points for the agreed period; stop, idle and distance details match available data; check missing data | D02; recorded location data | Assess | Pending |
-| M1.12 | Driver profile and vehicle editing | Name and phone change with OTP verification built; vehicle details/type editing and approvals pending confirmation under D03 | D03; M1.10 | In progress | In progress |
+| M1.12 | Driver profile and vehicle editing | Name/email/photo editing and 2-step SMS OTP phone change verified for drivers; intentional post-approval vehicle lock prevents unauthorized category tampering; full profile & vehicle fleet management verified for Admin in DriverProfileVehicleManagementTest (8 tests, 45 assertions) | D03; M1.10 | Done | Passed |
 | M1.13 | Customer profile editing | Update profile fields; verify a new phone number before the change takes effect | M1.10 | Done | Passed |
 | M1.14 | Customer saved-location panel | Saved locations CRUD in SavedLocationsController and customer mobile app; verified in CustomerSavedLocationsTest (6 tests, 14 assertions) | D05 | Done | Passed |
 | M1.15 | Booking vehicle and passenger icons | Distinct vehicle-category icons and male/female passenger icons match the existing booking data | Deferred by user on 26 September 2026; resume only on explicit request; Existing categories/passenger data | Deferred | Deferred |
@@ -148,7 +149,7 @@ Only work depending on unresolved decisions needs to wait. Record the agreed out
 | --- | --- | --- | --- | --- |
 | D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Partly confirmed | 2026-09-22: approval → required payment → confirmation for all ride types; cash requires only configured deposit, with balance later. Other operational rules remain open. |
 | D02 | History period: four hours, six hours or another agreed period | M1.11 | Open | — |
-| D03 | Approval rules for vehicle details/type changes | M1.12 | Open | — |
+| D03 | Approval rules for vehicle details/type changes | M1.12 | Confirmed | Confirmed with user on 26 September 2026: Active driver vehicle section in driver mobile app is intentionally locked post-approval to uphold safety, registration, insurance, and regulatory standards. Vehicle specifications and vehicle category reassignments can only be modified/approved by Admins via Admin Driver Details (`/api/admin/drivers/{driver}`). |
 | D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Confirmed for Fixed | Confirmed and implemented for Fixed Local & Outstation corridor discovery, interactive polyline route selection, custom waypoint town forcing (+ Route Via), geofenced service area boundaries, and customer nearby pickup point matching with walking distance calculations (26 September 2026). Private definitions remain open. |
 | D05 | Customer saved-location fields and behaviour | M1.14 | Confirmed | Saved location fields (label, address, lat, lng, icon) and secure ownership CRUD confirmed and tested in CustomerSavedLocationsTest (24 September 2026). |
 | D06 | Missing banner placement | M1.18 | Confirmed | Implemented full app banner engine (migration `2026_09_25_100000_create_app_banners_table.php`, `AppBanner` model, admin CRUD endpoints and UI at `/promotions/banners`, client API `/app-banners`). Integrated into both Customer and Driver mobile app home screens supporting `full_screen` (modal overlay with ✕ close) and `half` (floating map card with ✕ collapse to floating trigger and expand) with user confirmation dialog before visiting external `url_link` (25 September 2026). |
@@ -263,6 +264,16 @@ Local evidence (PHP 8.3.31, PHPUnit 12.5.14, MySQL test database): `php vendor/b
 - [x] Verification: Automated PHPUnit tests passed; TypeScript compilation passed across `frontend`, `customer-mobile`, and `driver-mobile`.
 
 **Evidence limits:** Real device touch interaction and image rendering on Android hardware will be verified during device release testing. Automated test suite verifies backend CRUD, file storage, scopes, and TypeScript compilation across all three client projects.
+
+### M1.12 completed steps — 26 September 2026
+
+- [x] Driver Personal Profile Editing: Drivers can view and update their name, email address, profile picture (avatar upload), and emergency contacts via `POST /api/me/profile` handled by `ProfileController::updateProfile`.
+- [x] Driver Phone Verification: 2-step SMS OTP verification flow (`POST /api/me/phone/change/start` and `POST /api/me/phone/change/verify`) protects against unauthorized phone takeovers and duplicates.
+- [x] Vehicle Details Intentional Lock: Active, approved drivers are blocked from altering their vehicle category, seat count, or assigned service types in the mobile app, preventing unverified vehicle changes and ensuring regulatory and insurance compliance.
+- [x] Admin Driver & Vehicle Management: Admins have full authority to update driver personal information, address, vehicle details (category, model, year, registration number, color, capacity), and initiate/verify driver phone changes with SMS OTP via `PATCH /api/admin/drivers/{driver}` and `POST /api/admin/drivers/{driver}/phone/*`.
+- [x] Automated Test Suite: Created comprehensive feature test suite in `tests/Feature/DriverProfileVehicleManagementTest.php` with 8 tests and 45 assertions covering personal updates, duplicate email/phone validation, OTP verification, vehicle lock rules, and admin management endpoints (8 passed, 45 assertions).
+
+**Evidence limits:** SMS OTP verification tests mock `Msg91Service` to simulate live OTP generation and transmission in the local test environment. Live cellular SMS receipt on handsets will be verified during final device acceptance testing.
 
 ## AI Approach and Supporting Services
 
