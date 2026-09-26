@@ -198,6 +198,17 @@
       <!-- Secondary actions -->
       <div class="secondary-actions">
         <button
+          *ngIf="canDriverCancelTrip()"
+          class="dc-cta dc-cta--ghost is-danger dc-press"
+          type="button"
+          [disabled]="busy"
+          (click)="confirmDriverCancelTrip()"
+        >
+          <ion-icon name="close-circle-outline" aria-hidden="true"></ion-icon>
+          Cancel ride
+        </button>
+
+        <button
           *ngIf="lastTrip?.['status'] === 'ARRIVED_PICKUP'"
           class="dc-cta dc-cta--ghost is-danger dc-press"
           type="button"

@@ -1287,6 +1287,62 @@ export class RidesPage implements OnInit, OnDestroy {
       });
   }
 
+  canDriverCancelTrip(): boolean {
+    const s = String(this.lastTrip?.['status'] || '').toUpperCase();
+    return ['ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'].includes(s);
+  }
+
+  async confirmDriverCancelTrip(): Promise<void> {
+    const id = this.tripId ?? (this.lastTrip?.['id'] as number | undefined);
+    if (!id) return;
+
+    const alert = await this.alertCtrl.create({
+      header: 'Cancel ride?',
+      subHeader: 'Emergency / breakdown cancellation',
+      message: 'This will cancel the ride immediately. The customer will receive a 100% full refund.',
+      inputs: [
+        { name: 'reason', type: 'radio', label: 'Vehicle breakdown / flat tire', value: 'Vehicle breakdown / flat tire', checked: true },
+        { name: 'reason', type: 'radio', label: 'Personal emergency', value: 'Personal emergency' },
+        { name: 'reason', type: 'radio', label: 'Accident / road blocked', value: 'Accident / road blocked' },
+        { name: 'reason', type: 'radio', label: 'Cannot reach pickup location', value: 'Cannot reach pickup location' },
+      ],
+      buttons: [
+        { text: 'Keep ride', role: 'cancel' },
+        {
+          text: 'Cancel ride',
+          role: 'destructive',
+          handler: (reason: string) => {
+            this.executeDriverCancelTrip(id, reason || 'Driver cancelled before pickup');
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private executeDriverCancelTrip(tripId: number, reason: string): void {
+    this.busy = true;
+    this.error = null;
+    this.message = null;
+    this.api.post<{ trip?: Record<string, unknown>; message?: string }>(`/trips/${tripId}/driver-cancel`, { reason })
+      .subscribe({
+        next: (res) => {
+          this.lastTrip = res.trip || null;
+          this.tripId = null;
+          this.message = res.message || 'Ride cancelled.';
+          void this.bgLocation.stop();
+          this.refreshAvailable();
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Could not cancel ride.';
+          this.busy = false;
+        },
+        complete: () => {
+          this.busy = false;
+        },
+      });
+  }
+
   reject(): void {
     const id = this.validId();
     if (id == null) return;
