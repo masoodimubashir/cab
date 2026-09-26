@@ -25,6 +25,8 @@ class FixedRoutesController extends Controller
             'scope' => ['nullable', 'in:local,outstation'],
             'q' => ['nullable', 'string', 'max:80'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
         ]);
 
         return response()->json(['data' => $this->routes->customerRoutes($data)]);

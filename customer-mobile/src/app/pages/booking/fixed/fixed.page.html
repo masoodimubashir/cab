@@ -23,6 +23,9 @@
       <span class="bk-opt__main">
         <span class="bk-opt__t">{{ r.name }}</span>
         <span class="bk-opt__s">{{ r.origin_name }} → {{ r.dest_name }} · {{ (r.stops || []).length }} stops</span>
+        <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
+          <ion-icon name="walk-outline"></ion-icon> Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})
+        </span>
       </span>
       <span class="bk-opt__r">₹{{ r.flat_fare }}<small>a seat</small></span>
     </button>
@@ -77,11 +80,46 @@
     (back)="back()"
     (primary)="goToSeats()">
 
+    <!-- Nearest Pickup Point Recommendation Card -->
+    <div class="fb-nearest-card dc-press" *ngIf="nearestPickupStop" (click)="pickBoard(nearestPickupStop.id)">
+      <div class="fb-nearest-card__top">
+        <span class="fb-nearest-badge">
+          <ion-icon name="navigate-circle"></ion-icon>
+          NEAREST PICKUP TO YOU
+        </span>
+        <span class="fb-nearest-walk" *ngIf="nearestPickupStop.distance_meters">
+          <ion-icon name="walk-outline"></ion-icon>
+          {{ formatDistance(nearestPickupStop.distance_meters) }} · ~{{ nearestPickupStop.walk_minutes }} min walk
+        </span>
+      </div>
+      <div class="fb-nearest-card__body">
+        <div class="fb-nearest-card__info">
+          <strong class="fb-nearest-card__name">{{ nearestPickupStop.name }}</strong>
+          <span class="fb-nearest-card__sub">Closest boarding stop along this route</span>
+        </div>
+        <button type="button" class="fb-nearest-card__btn" [class.is-selected]="boardStopId === nearestPickupStop.id">
+          {{ boardStopId === nearestPickupStop.id ? '✓ Selected' : 'Choose' }}
+        </button>
+      </div>
+      <div class="fb-nearest-card__alert" *ngIf="isNearestStopFar">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        <span>You are {{ formatDistance(nearestPickupStop.distance_meters) }} away. You may need transport to reach this stop.</span>
+      </div>
+    </div>
+
     <p class="bk-lab">Board at</p>
-    <button *ngFor="let s of boardStops; trackBy: trackByStop" class="bk-opt" type="button"
+    <button *ngFor="let s of boardStops; trackBy: trackByStop" class="bk-opt fb-stop-opt" type="button"
             [class.bk-opt--on]="boardStopId === s.id" (click)="pickBoard(s.id)">
       <span class="bk-opt__ic">🔵</span>
-      <span class="bk-opt__main"><span class="bk-opt__t">{{ s.name }}</span></span>
+      <span class="bk-opt__main">
+        <span class="bk-opt__t">
+          {{ s.name }}
+          <span class="fb-nearest-tag" *ngIf="s.is_nearest_pickup">Nearest</span>
+        </span>
+        <span class="fb-stop-dist" *ngIf="s.distance_meters">
+          <ion-icon name="walk-outline"></ion-icon> {{ formatDistance(s.distance_meters) }} · ~{{ s.walk_minutes }} min walk
+        </span>
+      </span>
       <span class="bk-tick" *ngIf="boardStopId === s.id">✓</span>
     </button>
 
