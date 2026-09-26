@@ -606,12 +606,24 @@ export class FixedDriverPage implements OnDestroy {
   async closeBookings(): Promise<void> {
     if (!this.activeVehicle || !this.canCloseVehicle(this.activeVehicle)) return;
 
+    const activePassengerCount = this.passengers.filter(
+      (p) => !['CANCELLED', 'NO_SHOW'].includes((p.status || '').toUpperCase())
+    ).length;
+
+    let header = 'Close ride?';
+    let message = 'This closes the active ride because no customer has booked yet.';
+
+    if (activePassengerCount > 0) {
+      header = 'Cancel entire departure?';
+      message = `This will cancel the departure and automatically issue a 100% full refund to all ${activePassengerCount} booked passenger(s).`;
+    }
+
     const alert = await this.alerts.create({
-      header: 'Close ride?',
-      message: 'This closes the active ride because no customer has booked yet.',
+      header,
+      message,
       buttons: [
         { text: 'Keep open', role: 'cancel' },
-        { text: 'Close', role: 'confirm' },
+        { text: activePassengerCount > 0 ? 'Cancel ride & refund all' : 'Close', role: 'confirm' },
       ],
     });
     await alert.present();
@@ -620,11 +632,20 @@ export class FixedDriverPage implements OnDestroy {
 
     this.busy = true;
     this.error = null;
-    this.api.post<{ vehicle: FixedVehicle | null; message: string }>("/fixed/departures/" + this.activeVehicle.id + "/close-bookings", {})
+
+    const endpoint = activePassengerCount > 0
+      ? `/fixed/driver/vehicles/${this.activeVehicle.id}/cancel`
+      : `/fixed/departures/${this.activeVehicle.id}/close-bookings`;
+
+    const payload = activePassengerCount > 0
+      ? { reason: 'Driver emergency / breakdown before departure' }
+      : {};
+
+    this.api.post<{ vehicle?: FixedVehicle | null; departure?: FixedVehicle | null; message: string }>(endpoint, payload)
       .pipe(finalize(() => this.busy = false))
       .subscribe({
         next: async (res) => {
-          this.activeVehicle = res.vehicle;
+          this.activeVehicle = res.vehicle || res.departure || null;
           this.passengers = [];
           this.stops = [];
           this.stopManifestPolling();
@@ -1265,15 +1286,7 @@ export class FixedDriverPage implements OnDestroy {
   canCloseVehicle(vehicle: FixedVehicle | null): boolean {
     if (!vehicle) return false;
     const status = (vehicle.status || '').toUpperCase();
-    if (status !== 'FORMING' || this.rideStarted) return false;
-
-    const hasActiveSeats = (vehicle.seats_taken || 0) > 0;
-    const hasActiveHolds = (vehicle.active_hold_count || 0) > 0;
-    const hasActivePassengers = this.passengers.some(
-      (p) => !['CANCELLED', 'NO_SHOW'].includes((p.status || '').toUpperCase())
-    );
-
-    return !hasActiveSeats && !hasActiveHolds && !hasActivePassengers;
+    return status === 'FORMING' && !this.rideStarted;
   }
 
   /** The ride is under way — the backend only boards/drops on a started vehicle. */

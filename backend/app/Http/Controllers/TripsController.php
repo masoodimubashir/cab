@@ -487,6 +487,75 @@ class TripsController extends Controller
     }
 
     /**
+     * Driver cancellation before boarding (vehicle breakdown, flat tire, emergency).
+     * Only assigned driver can call it; only allowed before passenger boards.
+     * Grants customer 100% full refund with zero cancellation fee.
+     */
+    public function driverCancel(
+        Request $request,
+        Trip $trip,
+        TripStateMachineService $tripStateMachineService,
+        \App\Services\NotificationCenter $notifier,
+        ShuttleRefundService $shuttleRefunds,
+    ) {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $user = $request->user();
+        if ((int) $trip->driver_id !== (int) $user->id) {
+            return response()->json(['message' => 'Forbidden. You are not the assigned driver for this trip.'], 403);
+        }
+
+        // Driver may only cancel before the passenger boards.
+        // Once the trip is EN_ROUTE_DROP, ARRIVED_DROP, COMPLETED, or already CANCELLED, driver cannot cancel here.
+        if (!in_array($trip->status, ['ASSIGNED', 'EN_ROUTE_PICKUP', 'ARRIVED_PICKUP'], true)) {
+            return response()->json(['message' => 'Trip cannot be cancelled in current status (' . $trip->status . '). Cancellation is only permitted before boarding.'], 422);
+        }
+
+        $reason = !empty($data['reason']) ? trim($data['reason']) : 'Driver cancelled before pickup';
+
+        // When driver cancels, customer pays ZERO cancellation fee. Full refund guaranteed.
+        $trip->cancellation_fee_amount = 0.0;
+        $trip->save();
+
+        $tripStateMachineService->transition($trip, 'CANCELLED', [
+            'cancelled_reason' => $reason,
+            'cancelled_by' => \App\Services\AutoRefundService::BY_DRIVER,
+        ]);
+
+        $shuttleRefunds->markCancelledForTrip($trip->fresh(), $reason);
+
+        // Notify customer immediately
+        if ($trip->customer_id) {
+            $notifier->notifyUserId(
+                $trip->customer_id,
+                'trip_cancelled_by_driver',
+                'Ride Cancelled by Driver',
+                "Your driver had to cancel trip #{$trip->id}. Reason: {$reason}. Any advance payment has been fully refunded.",
+                ['trip_id' => $trip->id],
+                'alert-circle-outline'
+            );
+        }
+
+        // Notify admins if scheduled
+        if ($trip->scheduled_at) {
+            $notifier->notifyAdmins(
+                'scheduled_ride_cancelled_by_driver',
+                'Scheduled ride cancelled by driver',
+                "Driver cancelled scheduled trip #{$trip->id}. Reason: {$reason}",
+                ['trip_id' => $trip->id],
+                'alert-circle-outline'
+            );
+        }
+
+        return response()->json([
+            'message' => 'Trip cancelled successfully.',
+            'trip' => $trip->fresh(),
+        ]);
+    }
+
+    /**
      * Returns null when cancellation is allowed; otherwise the measured
      * distance + the configured radius that triggered the block. Only applies
      * once a driver is assigned and approaching pickup; missing coordinates or

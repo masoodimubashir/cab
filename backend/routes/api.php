@@ -183,6 +183,8 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/trips/{trip}/start-otp', [TripsController::class, 'requestStartOtp'])->middleware('throttle:otp');
     Route::patch('/trips/{trip}/driver-progress', [TripsController::class, 'driverProgress']);
     Route::post('/trips/{trip}/no-show', [TripsController::class, 'markNoShow']);
+    Route::post('/trips/{trip}/driver-cancel', [TripsController::class, 'driverCancel']);
+    Route::post('/drivers/trips/{trip}/cancel', [TripsController::class, 'driverCancel']);
 
     // Shared-departure manifest: read + per-seat board / no-show.
     Route::get('/trips/{trip}/manifest', [DriverManifestController::class, 'show']);
@@ -600,6 +602,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->group(function () {
     Route::post('/fixed/bookings/{reservation}/drop', [FixedDriverController::class, 'drop']);
     Route::post('/fixed/bookings/{reservation}/no-show', [FixedDriverController::class, 'noShow']);
     Route::post('/fixed/driver/bookings/{reservation}/cancel', [FixedDriverController::class, 'cancelPassenger'])->middleware('throttle:booking');
+    Route::post('/fixed/driver/vehicles/{departure}/cancel', [FixedDriverController::class, 'cancelDeparture'])->middleware('throttle:booking');
 
     // Shuttle pool — driver's multi-passenger manifest + per-rider board/drop.
     Route::get('/shuttle/journeys/{journey}/manifest', [ShuttleDriverController::class, 'manifest']);

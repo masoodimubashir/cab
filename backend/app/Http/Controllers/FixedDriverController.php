@@ -805,6 +805,24 @@ class FixedDriverController extends Controller
         ]);
     }
 
+    public function cancelDeparture(Request $request, RouteDeparture $departure)
+    {
+        $this->guardDriverDeparture($request, $departure);
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $result = $this->departures->cancelDriverDeparture($departure, $request->user(), $data['reason'] ?? null);
+        $this->broadcastAvailability($departure, 'departure_cancelled');
+
+        return response()->json([
+            'departure' => $this->departures->shapeAdminDeparture($result['departure']),
+            'cancelled_passengers' => $result['cancelled_passengers'],
+            'refund_pending' => $result['refund_pending'],
+            'message' => 'Vehicle departure cancelled. Any booked passenger seats were cancelled with full refunds.',
+        ]);
+    }
+
     /**
      * Board/drop/no-show taps may carry the driver's live GPS fix (lat/lng in
      * the request body) so the stop-reached guard never depends on the

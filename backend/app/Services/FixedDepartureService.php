@@ -255,6 +255,77 @@ class FixedDepartureService
         ];
     }
 
+    public function cancelDriverDeparture(RouteDeparture $departure, User $driver, ?string $reason = null): array
+    {
+        $this->availability->assertFixedDeparture($departure);
+        if ((int) $departure->driver_id !== (int) $driver->id) {
+            abort(403, 'You are not the assigned driver for this departure.');
+        }
+
+        if (in_array($departure->status, ['COMPLETED', 'CANCELLED'], true)) {
+            throw new ReservationException('This vehicle is already completed or cancelled.', 422);
+        }
+
+        if (in_array($departure->status, ['DEPARTED'], true)) {
+            throw new ReservationException('Cannot cancel vehicle once it has already departed.', 422);
+        }
+
+        $activeReservations = SeatReservation::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereIn('status', SeatReservation::ACTIVE_STATUSES)
+            ->orderBy('id')
+            ->get();
+
+        $cancelled = 0;
+        $refundPending = 0;
+        foreach ($activeReservations as $reservation) {
+            $detail = 'Driver cancelled the scheduled departure before trip start. Your booking was cancelled and full-refund processing has been initiated.';
+            if ($reason) {
+                $detail .= ' Reason: ' . trim($reason);
+            }
+
+            $updated = $this->refunds->cancelBySystem(
+                $reservation,
+                'driver_departure_cancelled',
+                $driver,
+                $detail,
+            );
+            $cancelled++;
+            if ($updated->refund_status === 'APPROVED') {
+                $refundPending++;
+            }
+        }
+
+        // Release any held seats on this departure
+        \App\Models\FixedSeatHold::query()
+            ->where('route_departure_id', $departure->id)
+            ->whereIn('status', ['PENDING_DRIVER_APPROVAL', 'ACCEPTED', 'HELD'])
+            ->update(['status' => 'CANCELLED']);
+
+        \App\Models\DepartureSeat::query()
+            ->where('route_departure_id', $departure->id)
+            ->where('status', 'HELD')
+            ->update(['status' => 'AVAILABLE']);
+
+        $dep = DB::transaction(function () use ($departure) {
+            /** @var RouteDeparture $dep */
+            $dep = RouteDeparture::query()->lockForUpdate()->findOrFail($departure->id);
+            $dep->update([
+                'status' => 'CANCELLED',
+                'visible_to_customers' => false,
+                'boarding_closed_at' => $dep->boarding_closed_at ?: now(),
+            ]);
+
+            return $dep->fresh(['route:id,city_id,name,scope,mode', 'driver:id,name']);
+        });
+
+        return [
+            'departure' => $dep,
+            'cancelled_passengers' => $cancelled,
+            'refund_pending' => $refundPending,
+        ];
+    }
+
     public function shapeCustomerDeparture(RouteDeparture $departure): array
     {
         $this->availability->assertFixedDeparture($departure);
