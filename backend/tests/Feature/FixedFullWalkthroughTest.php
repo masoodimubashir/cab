@@ -183,6 +183,11 @@ class FixedFullWalkthroughTest extends TestCase
             ])->assertCreated()
             ->json('hold.id');
 
+        Sanctum::actingAs($driver, ['act-as:driver']);
+        $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept")
+            ->assertOk();
+
+        Sanctum::actingAs($customer, ['act-as:customer']);
         $reservationId = $this->withHeaders(['Idempotency-Key' => 'walkthrough-test-pay'])
             ->postJson("/api/fixed/seat-holds/{$holdId}/test-confirm-payment", [
                 'booking_channel' => 'advance',
