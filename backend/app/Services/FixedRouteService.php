@@ -27,8 +27,10 @@ class FixedRouteService
         }
 
         $limit = min(100, max(1, (int) ($filters['limit'] ?? 60)));
+        $userLat = isset($filters['lat']) && is_numeric($filters['lat']) ? (float) $filters['lat'] : null;
+        $userLng = isset($filters['lng']) && is_numeric($filters['lng']) ? (float) $filters['lng'] : null;
 
-        return Route::query()
+        $query = Route::query()
             ->with('stops')
             ->where('mode', 'fixed')
             ->where('is_active', true)
@@ -68,9 +70,18 @@ class FixedRouteService
             })
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->limit($limit)
-            ->get()
-            ->map(fn (Route $route) => $this->shapeCustomerRoute($route));
+            ->limit($limit);
+
+        $routes = $query->get();
+        $mapped = $routes->map(fn (Route $route) => $this->shapeCustomerRoute($route, $userLat, $userLng));
+
+        if ($userLat !== null && $userLng !== null) {
+            $mapped = $mapped->sortBy(function ($r) {
+                return $r['distance_to_nearest_pickup'] ?? PHP_INT_MAX;
+            })->values();
+        }
+
+        return $mapped;
     }
 
     public function adminRoutes(City $city): Collection
@@ -139,9 +150,73 @@ class FixedRouteService
         });
     }
 
-    public function shapeCustomerRoute(Route $route): array
+    public function shapeCustomerRoute(Route $route, ?float $userLat = null, ?float $userLng = null): array
     {
         $this->availability->assertFixedRoute($route);
+
+        $stops = [];
+        $nearestPickup = null;
+        $minPickupDist = INF;
+        $hasCoords = $userLat !== null && $userLng !== null;
+
+        if ($route->relationLoaded('stops')) {
+            foreach ($route->stops as $stop) {
+                $stopLat = (float) $stop->lat;
+                $stopLng = (float) $stop->lng;
+                $distMeters = null;
+                $walkMinutes = null;
+
+                if ($hasCoords && $stopLat != 0.0 && $stopLng != 0.0) {
+                    $distMeters = $this->calculateDistanceMeters($userLat, $userLng, $stopLat, $stopLng);
+                    $walkMinutes = max(1, (int) round($distMeters / 75.0)); // ~4.5 km/h average walking speed
+                }
+
+                $isPickup = (bool) $stop->is_pickup;
+                $isActive = (bool) $stop->is_active;
+                $isAvailable = !(bool) $stop->is_temporarily_unavailable;
+
+                if ($hasCoords && $isPickup && $isActive && $isAvailable && $distMeters !== null) {
+                    if ($distMeters < $minPickupDist) {
+                        $minPickupDist = $distMeters;
+                        $nearestPickup = [
+                            'id' => $stop->id,
+                            'name' => $stop->name,
+                            'seq' => (int) $stop->seq,
+                            'lat' => $stopLat,
+                            'lng' => $stopLng,
+                            'distance_meters' => $distMeters,
+                            'walk_minutes' => $walkMinutes,
+                        ];
+                    }
+                }
+
+                $stops[] = [
+                    'id' => $stop->id,
+                    'seq' => (int) $stop->seq,
+                    'name' => $stop->name,
+                    'lat' => $stopLat,
+                    'lng' => $stopLng,
+                    'is_pickup' => $isPickup,
+                    'is_drop' => (bool) $stop->is_drop,
+                    'is_active' => $isActive,
+                    'is_temporarily_unavailable' => (bool) $stop->is_temporarily_unavailable,
+                    'unavailable_reason' => $stop->unavailable_reason,
+                    'distance_meters' => $distMeters,
+                    'walk_minutes' => $walkMinutes,
+                    'is_nearest_pickup' => false,
+                ];
+            }
+
+            if ($nearestPickup !== null) {
+                foreach ($stops as &$s) {
+                    if ($s['id'] === $nearestPickup['id']) {
+                        $s['is_nearest_pickup'] = true;
+                        break;
+                    }
+                }
+                unset($s);
+            }
+        }
 
         return [
             'id' => $route->id,
@@ -166,21 +241,27 @@ class FixedRouteService
             'waiting_time_per_stop_minutes' => (int) $route->waiting_time_per_stop_minutes,
             'luggage_surcharge_amount' => (float) $route->luggage_surcharge_amount,
             'max_luggage_per_vehicle' => (int) $route->max_luggage_per_vehicle,
-            'stops' => $route->relationLoaded('stops')
-                ? $route->stops->map(fn ($stop) => [
-                    'id' => $stop->id,
-                    'seq' => (int) $stop->seq,
-                    'name' => $stop->name,
-                    'lat' => (float) $stop->lat,
-                    'lng' => (float) $stop->lng,
-                    'is_pickup' => (bool) $stop->is_pickup,
-                    'is_drop' => (bool) $stop->is_drop,
-                    'is_active' => (bool) $stop->is_active,
-                    'is_temporarily_unavailable' => (bool) $stop->is_temporarily_unavailable,
-                    'unavailable_reason' => $stop->unavailable_reason,
-                ])->values()
-                : [],
+            'stops' => $stops,
+            'nearest_pickup_stop' => $nearestPickup,
+            'distance_to_nearest_pickup' => $nearestPickup ? $nearestPickup['distance_meters'] : null,
         ];
+    }
+
+    public function calculateDistanceMeters(float $lat1, float $lng1, float $lat2, float $lng2): int
+    {
+        $earthRadius = 6371000;
+        $latFrom = deg2rad($lat1);
+        $lngFrom = deg2rad($lng1);
+        $latTo = deg2rad($lat2);
+        $lngTo = deg2rad($lng2);
+
+        $latDelta = $latTo - $latFrom;
+        $lngDelta = $lngTo - $lngFrom;
+
+        $angle = 2 * asin(sqrt(pow(sin($latDelta / 2), 2) +
+            cos($latFrom) * cos($latTo) * pow(sin($lngDelta / 2), 2)));
+
+        return (int) round($angle * $earthRadius);
     }
 
     public function shapeAdminRoute(Route $route): array

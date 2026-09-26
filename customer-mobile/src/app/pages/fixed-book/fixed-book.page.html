@@ -57,6 +57,9 @@
         <button type="button" class="fb-card dc-press" *ngFor="let r of visibleRoutes" (click)="pickRoute(r)">
           <div class="fb-card__main">
             <span class="fb-card__sub">{{ r.origin_name }} → {{ r.dest_name }}</span>
+            <span class="fb-route-nearest" *ngIf="r.nearest_pickup_stop">
+              <ion-icon name="walk-outline"></ion-icon> Nearest: <b>{{ r.nearest_pickup_stop.name }}</b> ({{ formatDistance(r.nearest_pickup_stop.distance_meters) }})
+            </span>
           </div>
           <div class="fb-card__right">
             <span class="fb-fare">₹{{ r.flat_fare | number: '1.0-0' }}<small>/seat</small></span>
@@ -118,10 +121,37 @@
           <span>Snapped to <strong>{{ snappedStopInfo.stopName }}</strong> ({{ snappedStopInfo.distanceMeters }}m away)</span>
         </div>
 
+        <!-- Nearest Pickup Point Recommendation Card -->
+        <div class="fb-nearest-card dc-press" *ngIf="nearestPickupStop" (click)="pickBoardStop(nearestPickupStop.id)">
+          <div class="fb-nearest-card__top">
+            <span class="fb-nearest-badge">
+              <ion-icon name="navigate-circle"></ion-icon>
+              NEAREST PICKUP TO YOU
+            </span>
+            <span class="fb-nearest-walk" *ngIf="nearestPickupStop.distance_meters">
+              <ion-icon name="walk-outline"></ion-icon>
+              {{ formatDistance(nearestPickupStop.distance_meters) }} · ~{{ nearestPickupStop.walk_minutes }} min walk
+            </span>
+          </div>
+          <div class="fb-nearest-card__body">
+            <div class="fb-nearest-card__info">
+              <strong class="fb-nearest-card__name">{{ nearestPickupStop.name }}</strong>
+              <span class="fb-nearest-card__sub">Closest boarding stop along this route</span>
+            </div>
+            <button type="button" class="fb-nearest-card__btn" [class.is-selected]="boardStopId === nearestPickupStop.id">
+              {{ boardStopId === nearestPickupStop.id ? '✓ Selected' : 'Choose' }}
+            </button>
+          </div>
+          <div class="fb-nearest-card__alert" *ngIf="isNearestStopFar">
+            <ion-icon name="information-circle-outline"></ion-icon>
+            <span>You are {{ formatDistance(nearestPickupStop.distance_meters) }} away. You may need transport to reach this stop.</span>
+          </div>
+        </div>
+
         <label class="fb-field">
           <span class="fb-label">Board at</span>
           <ion-select [(ngModel)]="boardStopId" (ngModelChange)="onBoardStopChange()" interface="action-sheet" placeholder="Pick stop">
-            <ion-select-option *ngFor="let s of pickupStops" [value]="s.id">{{ s.name }}</ion-select-option>
+            <ion-select-option *ngFor="let s of pickupStops" [value]="s.id">{{ s.name }}{{ s.is_nearest_pickup ? ' (Nearest)' : '' }}{{ s.distance_meters ? ' · ' + formatDistance(s.distance_meters) : '' }}</ion-select-option>
           </ion-select>
         </label>
 

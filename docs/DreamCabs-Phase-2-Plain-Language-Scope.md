@@ -25,22 +25,24 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 | 4 — Complete App Redesign | Excluded | M4.01 | No Phase 2 development or testing scheduled |
 | 5 — Testing and Release Support | Included | M5.01–M5.07 | Applicable checks, client testing, release support and handover recorded |
 
-### Current Progress Summary (as of 25 September 2026)
+### Current Progress Summary (as of 26 September 2026)
 
 | Module | Total | Done / Passed | In Progress | Assess / Pending | Deferred | Excluded |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1 — Ride Operations and Tracking | 22 | 6 | 9 | 5 | 2 | — |
+| 1 — Ride Operations and Tracking | 22 | 8 | 8 | 4 | 2 | — |
 | 2 — Company Travel Accounts | 9 | 0 | 0 | 9 | — | — |
 | 3 — AI Voice Booking | 8 | 0 | 0 | 8 | — | — |
 | 4 — Complete App Redesign | 1 | — | — | — | — | 1 |
 | 5 — Testing and Release Support | 7 | 0 | 0 | 7 | — | — |
-| **Total Scope Items** | **47** | **6** | **9** | **29** | **2** | **1** |
+| **Total Scope Items** | **47** | **8** | **8** | **28** | **2** | **1** |
 
-**Module 1 Verified Complete Features (6 Done / Passed):**
+**Module 1 Verified Complete Features (8 Done / Passed):**
 - **M1.02**: Driver accept/reject before payment and seat confirmation (3-step booking order confirmed across Fixed, Private, Shuttle).
 - **M1.04**: Passenger names and booked seats (Fixed manifest in Admin & Driver app; Shuttle pooling manifest and board/drop verified in `ShuttleDriverManifestTest`, `ShuttlePoolingMatchTest`, `ShuttlePoolingDispatchTest`).
 - **M1.13**: Customer profile editing (profile fields, photo, DOB, address, and 2-step SMS OTP verified in `ProfilePhoneChangeTest.php`).
 - **M1.14**: Customer saved-location panel (complete CRUD and security verified in `CustomerSavedLocationsTest.php`: 6 tests, 14 assertions).
+- **M1.16**: Fixed Local/Outstation and nearby pickup points (corridors, town forcing, geofencing, customer nearest pickup point detection, walking distance and estimated walk minutes verified in `FixedNearbyPickupPointsTest.php`: 2 tests, 16 assertions).
+- **M1.18**: Restore missing in-app banner (migration, admin CRUD, customer/driver mobile overlays and live sync verified in `AppBannerTest.php`: 4 tests, 29 assertions).
 - **M1.20**: Fixed Admin drop correction (15 tests / 57 assertions passed in `FixedRideLiveControlsTest.php`).
 - **M1.22**: Admin Rides — History / Live access (History/Live split view and active Fixed passenger actions operational).
 
@@ -67,7 +69,7 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 | M1.13 | Customer profile editing | Update profile fields; verify a new phone number before the change takes effect | M1.10 | Done | Passed |
 | M1.14 | Customer saved-location panel | Saved locations CRUD in SavedLocationsController and customer mobile app; verified in CustomerSavedLocationsTest (6 tests, 14 assertions) | D05 | Done | Passed |
 | M1.15 | Booking vehicle and passenger icons | Distinct vehicle-category icons and male/female passenger icons match the existing booking data | Existing categories/passenger data | Assess | Pending |
-| M1.16 | Fixed Local/Outstation and nearby pickup points | Corridor discovery, interactive map route selection, town forcing (+ Route Via) and geofencing done; nearby pickup point matching pending | D04; Private versus Fixed clarification call | In progress | In progress |
+| M1.16 | Fixed Local/Outstation and nearby pickup points | Corridor discovery, interactive map route selection, town forcing (+ Route Via), geofencing, customer nearby pickup point matching, distance/walking time estimation, and nearest stop recommendation cards built and verified in FixedNearbyPickupPointsTest (2 tests, 16 assertions) and mobile flows | D04 | Done | Passed |
 | M1.17 | Fix Kupwara-to-Srinagar driver route visibility | Reproduce mismatch; route appears for eligible drivers and remains correct for customers; check eligibility exclusions | Deferred by user on 25 September 2026; resume only on explicit request; Client report: 15 September 2026 | Deferred | Deferred |
 | M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Done | Passed |
 | M1.19 | Fix coupon application and discount calculation | Backend calculations fixed and regression suites pass; client device reproduction and live checkout verification pending | Existing coupon rules; client report: 15 September 2026 | In progress | In progress |
@@ -145,7 +147,7 @@ Only work depending on unresolved decisions needs to wait. Record the agreed out
 | D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Partly confirmed | 2026-09-22: approval → required payment → confirmation for all ride types; cash requires only configured deposit, with balance later. Other operational rules remain open. |
 | D02 | History period: four hours, six hours or another agreed period | M1.11 | Open | — |
 | D03 | Approval rules for vehicle details/type changes | M1.12 | Open | — |
-| D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Partly confirmed | Confirmed and implemented for Fixed Local & Outstation corridor discovery, interactive polyline route selection, custom waypoint town forcing (+ Route Via), and geofenced service area boundaries (24 September 2026). Private definitions remain open. |
+| D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Confirmed for Fixed | Confirmed and implemented for Fixed Local & Outstation corridor discovery, interactive polyline route selection, custom waypoint town forcing (+ Route Via), geofenced service area boundaries, and customer nearby pickup point matching with walking distance calculations (26 September 2026). Private definitions remain open. |
 | D05 | Customer saved-location fields and behaviour | M1.14 | Confirmed | Saved location fields (label, address, lat, lng, icon) and secure ownership CRUD confirmed and tested in CustomerSavedLocationsTest (24 September 2026). |
 | D06 | Missing banner placement | M1.18 | Confirmed | Implemented full app banner engine (migration `2026_09_25_100000_create_app_banners_table.php`, `AppBanner` model, admin CRUD endpoints and UI at `/promotions/banners`, client API `/app-banners`). Integrated into both Customer and Driver mobile app home screens supporting `full_screen` (modal overlay with ✕ close) and `half` (floating map card with ✕ collapse to floating trigger and expand) with user confirmation dialog before visiting external `url_link` (25 September 2026). |
 | D07 | Company activation, permissions, employee linking and spending/ride controls | M2.01–M2.06 | Open | — |
@@ -170,6 +172,7 @@ Add one row per meaningful development update or test run. Link detailed evidenc
 
 | Date | Feature ID(s) | Work / affected files or change link | Build / environment / platform | Checks and result | Defects / next action |
 | --- | --- | --- | --- | --- | --- |
+| 2026-09-26 | M1.16 | Implemented customer nearby pickup point matching, distance/walking time estimation, and nearest stop recommendation cards in [fixed.page.ts](../customer-mobile/src/app/pages/booking/fixed/fixed.page.ts) and [fixed-book.page.ts](../customer-mobile/src/app/pages/fixed-book/fixed-book.page.ts); added lat/lng proximity querying, Haversine distance, and proximity sorting in [FixedRoutesController.php](../backend/app/Http/Controllers/FixedRoutesController.php) and [FixedRouteService.php](../backend/app/Services/FixedRouteService.php); created and passed [FixedNearbyPickupPointsTest.php](../backend/tests/Feature/FixedNearbyPickupPointsTest.php) | PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | Automated tests passed: 2 tests, 16 assertions in [FixedNearbyPickupPointsTest.php](../backend/tests/Feature/FixedNearbyPickupPointsTest.php); full TypeScript compilation passed with 0 errors across frontend, customer-mobile, driver-mobile | Feature complete and verified |
 | 2026-09-25 | M1.17 | User confirmed deferral of Kupwara-to-Srinagar driver route visibility; updated tracker to Deferred / Deferred | Documentation only; user instruction in conversation | Root-cause identified across scope lock and route-group city matching; work deferred | Keep development and testing deferred until explicitly resumed |
 | 2026-09-16 | All | Converted scope into modular development/testing reference | Documentation only | Scope organised; implementation not assessed | Assess existing features and confirm open decisions |
 | 2026-09-24 | M1.14 | Verified Customer Saved Locations CRUD in [SavedLocationsController.php](../backend/app/Http/Controllers/SavedLocationsController.php) and [customer-mobile](../customer-mobile/src/app/pages/saved-locations/); created and passed [CustomerSavedLocationsTest.php](../backend/tests/Feature/CustomerSavedLocationsTest.php) | PHP 8.3 / MySQL / Laravel Sanctum / Angular 17 | 6 tests, 14 assertions passed: customer list, create, update, delete, and cross-user 404 security isolation | Feature complete and verified |

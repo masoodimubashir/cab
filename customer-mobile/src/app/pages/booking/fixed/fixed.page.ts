@@ -20,14 +20,28 @@ declare const Razorpay: any;
 
 interface FixedStop {
   id: number; seq: number; name: string;
+  lat?: number; lng?: number;
   is_pickup: boolean; is_drop: boolean;
   is_active: boolean; is_temporarily_unavailable: boolean;
+  distance_meters?: number | null;
+  walk_minutes?: number | null;
+  is_nearest_pickup?: boolean;
 }
 interface FixedRoute {
   id: number; name: string; scope: 'local' | 'outstation';
   origin_name: string; dest_name: string;
   flat_fare: number; luggage_surcharge_amount: number;
   stops: FixedStop[];
+  nearest_pickup_stop?: {
+    id: number;
+    name: string;
+    seq: number;
+    lat: number;
+    lng: number;
+    distance_meters: number;
+    walk_minutes: number;
+  } | null;
+  distance_to_nearest_pickup?: number | null;
 }
 interface FixedDeparture {
   id: number; depart_at: string | null; announced_depart_at: string | null;
@@ -118,6 +132,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   reservation: Reservation | null = null;
   boardingCode = '';
 
+  userCoords: { lat: number; lng: number } | null = null;
+  nearestPickupStop: FixedStop | null = null;
+
   loading = false;
   busy = false;
   error: string | null = null;
@@ -140,7 +157,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   async ngOnInit(): Promise<void> {
     this.cityId = this.booking.trip.cityId;
     void this.fixedLocation.start();
-    void this.geo.getCurrentPosition();
+    void this.initUserLocation();
     await this.loadCities();
     this.loadRoutes();
     this.checkActiveHold();
@@ -149,6 +166,23 @@ export class FixedBookPage implements OnInit, OnDestroy {
       this.cashDepositPercent = m.cash_deposit_percent || 0;
       this.cdr.markForCheck();
     });
+  }
+
+  private async initUserLocation(): Promise<void> {
+    try {
+      const pos = await this.geo.getCurrentPosition();
+      if (pos?.lat != null && pos?.lng != null) {
+        this.userCoords = { lat: pos.lat, lng: pos.lng };
+        this.recalculateNearbyStops();
+        this.annotateRoutesWithProximity();
+        if (!this.loading && this.routes.length) {
+          this.loadRoutes();
+        }
+        this.cdr.markForCheck();
+      }
+    } catch {
+      // Permission denied or browser location fallback
+    }
   }
 
   ngOnDestroy(): void {
@@ -215,11 +249,108 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (this.cityId != null && this.cityId > 0) {
       params.set('city_id', String(this.cityId));
     }
+    if (this.userCoords) {
+      params.set('lat', String(this.userCoords.lat));
+      params.set('lng', String(this.userCoords.lng));
+    }
     const qStr = params.toString() ? '?' + params.toString() : '';
     this.api.get<{ data: FixedRoute[] }>('/fixed/routes' + qStr).subscribe({
-      next: (res) => { this.routes = res?.data ?? []; this.loading = false; this.cdr.markForCheck(); },
+      next: (res) => {
+        this.routes = res?.data ?? [];
+        this.annotateRoutesWithProximity();
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: () => { this.routes = []; this.loading = false; this.cdr.markForCheck(); },
     });
+  }
+
+  calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c);
+  }
+
+  formatDistance(meters?: number | null): string {
+    if (meters == null || isNaN(meters)) return '';
+    if (meters < 1000) return `${meters} m`;
+    return `${(meters / 1000).toFixed(1)} km`;
+  }
+
+  getWalkMinutes(meters?: number | null): number {
+    if (meters == null || isNaN(meters)) return 0;
+    return Math.max(1, Math.round(meters / 75));
+  }
+
+  private annotateRoutesWithProximity(): void {
+    if (!this.userCoords) return;
+    for (const r of this.routes) {
+      if (!r.stops?.length) continue;
+      let minD = Infinity;
+      let nearest: any = null;
+      for (const s of r.stops) {
+        if (s.lat != null && s.lng != null && s.lat !== 0 && s.lng !== 0) {
+          const d = this.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, s.lat, s.lng);
+          s.distance_meters = d;
+          s.walk_minutes = this.getWalkMinutes(d);
+          if (s.is_pickup && s.is_active && !s.is_temporarily_unavailable && d < minD) {
+            minD = d;
+            nearest = {
+              id: s.id,
+              name: s.name,
+              seq: s.seq,
+              lat: s.lat,
+              lng: s.lng,
+              distance_meters: d,
+              walk_minutes: s.walk_minutes,
+            };
+          }
+        }
+      }
+      if (nearest) {
+        r.nearest_pickup_stop = nearest;
+        r.distance_to_nearest_pickup = minD;
+        for (const s of r.stops) {
+          s.is_nearest_pickup = s.id === nearest.id;
+        }
+      }
+    }
+  }
+
+  recalculateNearbyStops(): void {
+    if (!this.route?.stops?.length) return;
+    let minD = Infinity;
+    let bestStop: FixedStop | null = null;
+
+    for (const s of this.route.stops) {
+      if (this.userCoords && s.lat != null && s.lng != null && s.lat !== 0 && s.lng !== 0) {
+        const d = this.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, s.lat, s.lng);
+        s.distance_meters = d;
+        s.walk_minutes = this.getWalkMinutes(d);
+        if (s.is_pickup && s.is_active && !s.is_temporarily_unavailable && d < minD) {
+          minD = d;
+          bestStop = s;
+        }
+      } else if (s.is_nearest_pickup && (!bestStop || (s.distance_meters != null && s.distance_meters < minD))) {
+        bestStop = s;
+        if (s.distance_meters != null) minD = s.distance_meters;
+      }
+    }
+
+    for (const s of this.route.stops) {
+      s.is_nearest_pickup = bestStop ? s.id === bestStop.id : false;
+    }
+
+    this.nearestPickupStop = bestStop;
+  }
+
+  get isNearestStopFar(): boolean {
+    return !!(this.nearestPickupStop?.distance_meters && this.nearestPickupStop.distance_meters > 3000);
   }
 
   get visibleRoutes(): FixedRoute[] {
@@ -235,6 +366,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.boardStopId = null;
     this.dropStopId = null;
     this.selected = [];
+    this.recalculateNearbyStops();
     this.step = 'departure';
     this.loadDepartures(route);
     this.cdr.markForCheck();
@@ -260,6 +392,10 @@ export class FixedBookPage implements OnInit, OnDestroy {
   pickDeparture(d: FixedDeparture): void {
     this.departure = d;
     this.step = 'details';
+    this.recalculateNearbyStops();
+    if (!this.boardStopId && this.nearestPickupStop) {
+      this.boardStopId = this.nearestPickupStop.id;
+    }
     this.cdr.markForCheck();
   }
 

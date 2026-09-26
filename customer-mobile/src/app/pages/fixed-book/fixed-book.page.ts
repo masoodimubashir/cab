@@ -35,6 +35,9 @@ interface FixedStop {
   is_active: boolean;
   is_temporarily_unavailable: boolean;
   unavailable_reason: string | null;
+  distance_meters?: number | null;
+  walk_minutes?: number | null;
+  is_nearest_pickup?: boolean;
 }
 
 interface FixedRoute {
@@ -55,6 +58,16 @@ interface FixedRoute {
   booking_window_hours: number;
   waiting_time_per_stop_minutes: number;
   stops: FixedStop[];
+  nearest_pickup_stop?: {
+    id: number;
+    name: string;
+    seq: number;
+    lat: number;
+    lng: number;
+    distance_meters: number;
+    walk_minutes: number;
+  } | null;
+  distance_to_nearest_pickup?: number | null;
 }
 
 interface FixedDeparture {
@@ -205,7 +218,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   seats = 1;
   extraLuggageCount = 0;
 
-  // Seat picker (M5) — replaces the counter with a real per-seat picker.
+  // Seat picker (M5) â€” replaces the counter with a real per-seat picker.
   seatMap: SeatMapResponse | null = null;
   selectedLabels: string[] = [];
   loadingSeatMap = false;
@@ -239,6 +252,8 @@ export class FixedBookPage implements OnInit, OnDestroy {
   selectedTipPreset: number | null = null;
 
   snappedStopInfo: { stopName: string; distanceMeters: number; kind: 'pickup' | 'drop' } | null = null;
+  userCoords: { lat: number; lng: number } | null = null;
+  nearestPickupStop: FixedStop | null = null;
 
   private entered = false;
   private unsubscribeFixedCity: (() => void) | null = null;
@@ -400,7 +415,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   }
 
   tipPresetLabel(val: number): string {
-    return this.tipping?.in_percentage ? `${val}%` : `₹${val}`;
+    return this.tipping?.in_percentage ? `${val}%` : `â‚¹${val}`;
   }
 
   get discountTotal(): number {
@@ -771,11 +786,14 @@ export class FixedBookPage implements OnInit, OnDestroy {
         this.selectedCity = this.cities.find((c) => c.id === this.cityId) || null;
       } else {
         const pos = await this.geo.getCurrentPosition().catch(() => null);
-        if (pos?.lat != null && pos?.lng != null && this.cities.length) {
-          const matched = resolveCity(this.cities, pos.lat, pos.lng);
-          if (matched) {
-            this.cityId = matched.id;
-            this.selectedCity = matched;
+        if (pos?.lat != null && pos?.lng != null) {
+          this.userCoords = { lat: pos.lat, lng: pos.lng };
+          if (this.cities.length) {
+            const matched = resolveCity(this.cities, pos.lat, pos.lng);
+            if (matched) {
+              this.cityId = matched.id;
+              this.selectedCity = matched;
+            }
           }
         }
         if (!this.selectedCity && this.cities.length) {
@@ -908,12 +926,17 @@ export class FixedBookPage implements OnInit, OnDestroy {
     if (this.cityId != null && this.cityId > 0) {
       params.set('city_id', String(this.cityId));
     }
+    if (this.userCoords?.lat != null && this.userCoords?.lng != null) {
+      params.set('lat', String(this.userCoords.lat));
+      params.set('lng', String(this.userCoords.lng));
+    }
     const search = this.routeSearch.trim();
     if (search.length >= 2) params.set('q', search);
     this.api.get<{ data: FixedRoute[] }>("/fixed/routes?" + params.toString()).subscribe({
       next: (res) => {
         const rows = res?.data || [];
         this.routes = rows;
+        this.annotateRoutesWithProximity();
         this.reconcileSelectedRoute(this.visibleRoutes);
         if (showSpinner) this.loading = false;
       },
@@ -925,6 +948,88 @@ export class FixedBookPage implements OnInit, OnDestroy {
           : 'Could not load fixed routes.';
       },
     });
+  }
+
+  formatDistance(meters?: number | null): string {
+    if (meters == null || isNaN(meters)) return '';
+    if (meters < 1000) return `${meters} m`;
+    return `${(meters / 1000).toFixed(1)} km`;
+  }
+
+  getWalkMinutes(meters?: number | null): number {
+    if (meters == null || isNaN(meters)) return 0;
+    return Math.max(1, Math.round(meters / 75));
+  }
+
+  private annotateRoutesWithProximity(): void {
+    if (!this.userCoords) return;
+    for (const r of this.routes) {
+      if (!r.stops?.length) continue;
+      let minD = Infinity;
+      let nearest: any = null;
+      for (const s of r.stops) {
+        if (s.lat != null && s.lng != null && s.lat !== 0 && s.lng !== 0) {
+          const d = this.distanceMeters(this.userCoords.lat, this.userCoords.lng, s.lat, s.lng);
+          s.distance_meters = d;
+          s.walk_minutes = this.getWalkMinutes(d);
+          if (s.is_pickup && s.is_active && !s.is_temporarily_unavailable && d < minD) {
+            minD = d;
+            nearest = {
+              id: s.id,
+              name: s.name,
+              seq: s.seq,
+              lat: s.lat,
+              lng: s.lng,
+              distance_meters: d,
+              walk_minutes: s.walk_minutes,
+            };
+          }
+        }
+      }
+      if (nearest) {
+        r.nearest_pickup_stop = nearest;
+        r.distance_to_nearest_pickup = minD;
+        for (const s of r.stops) {
+          s.is_nearest_pickup = s.id === nearest.id;
+        }
+      }
+    }
+  }
+
+  recalculateNearbyStops(): void {
+    if (!this.selectedRoute?.stops?.length) return;
+    let minD = Infinity;
+    let bestStop: FixedStop | null = null;
+
+    for (const s of this.selectedRoute.stops) {
+      if (this.userCoords && s.lat != null && s.lng != null && s.lat !== 0 && s.lng !== 0) {
+        const d = this.distanceMeters(this.userCoords.lat, this.userCoords.lng, s.lat, s.lng);
+        s.distance_meters = d;
+        s.walk_minutes = this.getWalkMinutes(d);
+        if (s.is_pickup && s.is_active && !s.is_temporarily_unavailable && d < minD) {
+          minD = d;
+          bestStop = s;
+        }
+      } else if (s.is_nearest_pickup && (!bestStop || (s.distance_meters != null && s.distance_meters < minD))) {
+        bestStop = s;
+        if (s.distance_meters != null) minD = s.distance_meters;
+      }
+    }
+
+    for (const s of this.selectedRoute.stops) {
+      s.is_nearest_pickup = bestStop ? s.id === bestStop.id : false;
+    }
+
+    this.nearestPickupStop = bestStop;
+  }
+
+  get isNearestStopFar(): boolean {
+    return !!(this.nearestPickupStop?.distance_meters && this.nearestPickupStop.distance_meters > 3000);
+  }
+
+  pickBoardStop(id: number): void {
+    this.boardStopId = id;
+    this.onBoardStopChange();
   }
 
 
@@ -988,8 +1093,9 @@ export class FixedBookPage implements OnInit, OnDestroy {
   pickDeparture(dep: FixedDeparture): void {
     if (dep.seats_remaining <= 0) return;
     this.selectedDeparture = dep;
+    this.recalculateNearbyStops();
     if (!this.pickupStops.some((stop) => stop.id === this.boardStopId)) {
-      this.boardStopId = null;
+      this.boardStopId = this.nearestPickupStop?.id || null;
       this.dropStopId = null;
     }
     this.setExtraLuggage(Math.min(this.extraLuggageCount, this.maxLuggage));
@@ -1027,7 +1133,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.clearCouponPreview();
   }
 
-  /** Details step Continue → move to the seat picker and fetch the map. */
+  /** Details step Continue â†’ move to the seat picker and fetch the map. */
   proceedToPicker(): void {
     if (!this.selectedDeparture || !this.boardStopId || !this.dropStopId) return;
     this.step = 'seats';
@@ -1070,7 +1176,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.clearCouponPreview();
   }
 
-  /** Seat picker "Book Seats" → directly requests seats from driver and shows approval waiting screen. */
+  /** Seat picker "Book Seats" â†’ directly requests seats from driver and shows approval waiting screen. */
   bookSeats(testPayment = false): void {
     if (this.step !== 'seats' || this.selectedLabels.length < 1) return;
     this.seats = this.selectedLabels.length;
@@ -1123,7 +1229,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     }
   }
 
-  /** Chosen from the shared payment sheet — hold the seats tagged with the
+  /** Chosen from the shared payment sheet â€” hold the seats tagged with the
    *  method (cash charges only the deposit online), then run its payment. */
   onFixedPayMethod(method: PaymentChoice): void {
     this.paymentModalOpen = false;
@@ -1272,7 +1378,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.loadSeatMap();
     const alert = await this.alertCtrl.create({
       header: 'Request Declined',
-      message: 'The driver is unable to accept passenger requests at this stop. Your seats have been released at ₹0 charge.',
+      message: 'The driver is unable to accept passenger requests at this stop. Your seats have been released at â‚¹0 charge.',
       buttons: ['OK'],
     });
     await alert.present();
@@ -1363,7 +1469,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
     this.loadSeatMap();
     const alert = await this.alertCtrl.create({
       header: 'Driver Unavailable',
-      message: 'The driver did not respond within the allocated time. Your seat hold has expired at ₹0 charge.',
+      message: 'The driver did not respond within the allocated time. Your seat hold has expired at â‚¹0 charge.',
       buttons: ['OK'],
     });
     await alert.present();
@@ -1426,7 +1532,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
         name: user?.name || '',
         email: user?.email || '',
         contact: user?.phone || '',
-        // GPay → open Razorpay straight on UPI (still lets the user switch).
+        // GPay â†’ open Razorpay straight on UPI (still lets the user switch).
         ...(method === 'gpay' ? { method: 'upi' } : {}),
       },
       ...(method === 'gpay'
@@ -1625,7 +1731,7 @@ export class FixedBookPage implements OnInit, OnDestroy {
   fixedBookingStops(booking: FixedReservation): string {
     const board = booking.board || booking.board_stop?.name || "Pickup stop";
     const drop = booking.drop || booking.drop_stop?.name || "Drop stop";
-    return `${board} → ${drop}`;
+    return `${board} â†’ ${drop}`;
   }
 
 
