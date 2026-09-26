@@ -51,6 +51,8 @@ class FixedSeatMapCustomerFlowTest extends TestCase
         $this->c1->addRole('customer');
         $this->c2 = User::factory()->create();
         $this->c2->addRole('customer');
+        $this->driver = User::factory()->create();
+        $this->driver->addRole('driver');
 
         $route = Route::query()->create([
             'city_id' => $cityId, 'scope' => 'local', 'mode' => 'fixed',
@@ -79,6 +81,7 @@ class FixedSeatMapCustomerFlowTest extends TestCase
 
         $this->departure = RouteDeparture::query()->create([
             'route_id' => $route->id,
+            'driver_id' => $this->driver->id,
             'vehicle_seat_layout_id' => $layoutId,
             'service_date' => now()->toDateString(),
             'departure_kind' => 'driver_opened',
@@ -174,6 +177,10 @@ class FixedSeatMapCustomerFlowTest extends TestCase
                 'seat_labels' => ['2A', '2B'],
             ])->assertCreated()->json('hold.id');
 
+        Sanctum::actingAs($this->driver, ['act-as:driver']);
+        $this->postJson("/api/fixed/driver/seat-holds/{$holdId}/accept")->assertOk();
+
+        Sanctum::actingAs($this->c1, ['act-as:customer']);
         $this->withHeaders(['Idempotency-Key' => 'sm-confirm-c1-pay'])
             ->postJson("/api/fixed/seat-holds/{$holdId}/test-confirm-payment", [
                 'booking_channel' => 'advance',
