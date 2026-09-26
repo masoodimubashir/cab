@@ -29,12 +29,12 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 
 | Module | Total | Done / Passed | In Progress | Assess / Pending | Deferred | Excluded |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1 — Ride Operations and Tracking | 22 | 8 | 8 | 4 | 2 | — |
+| 1 — Ride Operations and Tracking | 22 | 8 | 8 | 3 | 3 | — |
 | 2 — Company Travel Accounts | 9 | 0 | 0 | 9 | — | — |
 | 3 — AI Voice Booking | 8 | 0 | 0 | 8 | — | — |
 | 4 — Complete App Redesign | 1 | — | — | — | — | 1 |
 | 5 — Testing and Release Support | 7 | 0 | 0 | 7 | — | — |
-| **Total Scope Items** | **47** | **8** | **8** | **28** | **2** | **1** |
+| **Total Scope Items** | **47** | **8** | **8** | **27** | **3** | **1** |
 
 **Module 1 Verified Complete Features (8 Done / Passed):**
 - **M1.02**: Driver accept/reject before payment and seat confirmation (3-step booking order confirmed across Fixed, Private, Shuttle).
@@ -68,7 +68,7 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 | M1.12 | Driver profile and vehicle editing | Name and phone change with OTP verification built; vehicle details/type editing and approvals pending confirmation under D03 | D03; M1.10 | In progress | In progress |
 | M1.13 | Customer profile editing | Update profile fields; verify a new phone number before the change takes effect | M1.10 | Done | Passed |
 | M1.14 | Customer saved-location panel | Saved locations CRUD in SavedLocationsController and customer mobile app; verified in CustomerSavedLocationsTest (6 tests, 14 assertions) | D05 | Done | Passed |
-| M1.15 | Booking vehicle and passenger icons | Distinct vehicle-category icons and male/female passenger icons match the existing booking data | Existing categories/passenger data | Assess | Pending |
+| M1.15 | Booking vehicle and passenger icons | Distinct vehicle-category icons and male/female passenger icons match the existing booking data | Deferred by user on 26 September 2026; resume only on explicit request; Existing categories/passenger data | Deferred | Deferred |
 | M1.16 | Fixed Local/Outstation and nearby pickup points | Corridor discovery, interactive map route selection, town forcing (+ Route Via), geofencing, customer nearby pickup point matching, distance/walking time estimation, and nearest stop recommendation cards built and verified in FixedNearbyPickupPointsTest (5 tests, 36 assertions) and mobile flows | D04 | Done | Passed |
 | M1.17 | Fix Kupwara-to-Srinagar driver route visibility | Reproduce mismatch; route appears for eligible drivers and remains correct for customers; check eligibility exclusions | Deferred by user on 25 September 2026; resume only on explicit request; Client report: 15 September 2026 | Deferred | Deferred |
 | M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Done | Passed |
