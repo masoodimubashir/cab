@@ -380,6 +380,14 @@ interface ShowResponse {
                   >
                     <tm-icon name="edit" [size]="11" /> Change Drop
                   </button>
+                  <button
+                    type="button"
+                    class="passenger-btn passenger-btn--cancel"
+                    *ngIf="canCancelPassenger(p)"
+                    (click)="openCancelPassengerModal(p)"
+                  >
+                    <tm-icon name="x" [size]="11" /> Cancel Passenger
+                  </button>
                 </div>
               </article>
             </div>
@@ -559,6 +567,41 @@ interface ShowResponse {
             [disabled]="!cancelReason.trim() || submittingAction"
           >
             {{ submittingAction ? 'Cancelling...' : 'Cancel Ride' }}
+          </tm-button>
+        </div>
+      </tm-modal>
+
+      <!-- Cancel Passenger Modal -->
+      <tm-modal
+        [open]="cancelPassengerModalOpen"
+        [title]="'Cancel Ride for ' + (targetPassenger?.customer_name || 'Passenger')"
+        (closed)="cancelPassengerModalOpen = false"
+      >
+        <div slot="body" class="action-modal">
+          <p class="action-modal__desc">
+            Cancel booking for <strong>{{ targetPassenger?.customer_name || 'Passenger' }}</strong>?
+            This will initiate a <strong>100% full refund</strong> and release their seat back to the vehicle.
+          </p>
+          <div class="form-field">
+            <label class="form-label">Cancellation Reason</label>
+            <input
+              type="text"
+              class="form-input"
+              [(ngModel)]="cancelPassengerReason"
+              placeholder="e.g. Passenger emergency, vehicle breakdown, customer support request..."
+            />
+          </div>
+        </div>
+        <div slot="footer">
+          <tm-button variant="ghost" (clicked)="cancelPassengerModalOpen = false" [disabled]="submittingAction">
+            Close
+          </tm-button>
+          <tm-button
+            variant="danger"
+            (clicked)="submitCancelPassenger()"
+            [disabled]="submittingAction"
+          >
+            {{ submittingAction ? 'Cancelling...' : 'Cancel Passenger & Refund' }}
           </tm-button>
         </div>
       </tm-modal>
@@ -1086,6 +1129,16 @@ interface ShowResponse {
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .passenger-btn--cancel {
+      border-color: var(--tm-danger-border, #fca5a5);
+      color: var(--tm-danger-fg, #b91c1c);
+      background: var(--tm-danger-bg, #fee2e2);
+    }
+    .passenger-btn--cancel:hover:not(:disabled) {
+      border-color: var(--tm-danger-fg, #b91c1c);
+      color: #fff;
+      background: var(--tm-danger-fg, #b91c1c);
+    }
     .passenger-btn--edit {
       border-color: var(--tm-green-deep);
       color: var(--tm-green-deep);
@@ -1193,6 +1246,8 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   cancelModalOpen = false;
   cancelReason = '';
   cancelWaiveFee = false;
+  cancelPassengerModalOpen = false;
+  cancelPassengerReason = '';
   changeDropModalOpen = false;
   targetPassenger: FixedManifestPassenger | null = null;
   selectedDropStopId: number | null = null;
@@ -1277,6 +1332,40 @@ export class RideDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   get selectedDropStop(): RouteStop | undefined {
     if (!this.selectedDropStopId) return undefined;
     return this.availableStops.find((s) => s.id === Number(this.selectedDropStopId));
+  }
+
+  canCancelPassenger(p?: FixedManifestPassenger): boolean {
+    if (!this.trip || !p) return false;
+    if (['COMPLETED', 'CANCELLED'].includes(this.trip.status)) return false;
+    const status = (p.status || '').toUpperCase();
+    return ['BOOKED', 'CONFIRMED', 'BOARDED'].includes(status);
+  }
+
+  openCancelPassengerModal(p: FixedManifestPassenger): void {
+    this.targetPassenger = p;
+    this.cancelPassengerReason = '';
+    this.cancelPassengerModalOpen = true;
+  }
+
+  submitCancelPassenger(): void {
+    if (!this.trip || !this.targetPassenger) return;
+    this.submittingAction = true;
+    this.api.post<{ message: string; passenger?: any }>(
+      `/admin/trips/${this.trip.id}/passengers/${this.targetPassenger.id}/cancel`,
+      { reason: this.cancelPassengerReason.trim() || null },
+    ).subscribe({
+      next: (res) => {
+        this.submittingAction = false;
+        this.cancelPassengerModalOpen = false;
+        this.toast.success(res?.message || 'Passenger booking cancelled with full refund.');
+        this.targetPassenger = null;
+        this.fetch();
+      },
+      error: (err) => {
+        this.submittingAction = false;
+        this.toast.error(err?.error?.message || 'Failed to cancel passenger booking.');
+      },
+    });
   }
 
   canChangePassengerDrop(p?: FixedManifestPassenger): boolean {
