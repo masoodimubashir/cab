@@ -228,6 +228,17 @@ export class PushService {
           remainingSec = Math.min(diff, 60);
         }
         this.ringtone.startRinging('push-seat-hold-' + (holdId || ''), remainingSec);
+      } else if (type === 'new_trip' || type === 'trip_requested' || data['trip_id'] != null) {
+        let remainingSec = 45;
+        if (expiresAt) {
+          const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
+          if (diff <= 0) {
+            return; // Already expired, do not ring
+          }
+          remainingSec = Math.min(diff, 60);
+        }
+        const tripId = data['trip_id'] ?? 'trip';
+        this.ringtone.startRinging('push-trip-' + tripId, remainingSec);
       }
     });
   }

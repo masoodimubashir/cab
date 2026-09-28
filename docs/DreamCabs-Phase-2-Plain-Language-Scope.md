@@ -29,23 +29,29 @@ For Uzair Hameed Zargar | Prepared by Taha Mubashir Masoodi
 
 | Module | Total | Done / Passed | In Progress | Assess / Pending | Deferred | Excluded |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1 — Ride Operations and Tracking | 22 | 11 | 5 | 3 | 3 | — |
+| 1 — Ride Operations and Tracking | 22 | 17 | 0 | 2 | 3 | — |
 | 2 — Company Travel Accounts | 9 | 0 | 0 | 9 | — | — |
 | 3 — AI Voice Booking | 8 | 0 | 0 | 8 | — | — |
 | 4 — Complete App Redesign | 1 | — | — | — | — | 1 |
 | 5 — Testing and Release Support | 7 | 0 | 0 | 7 | — | — |
-| **Total Scope Items** | **47** | **11** | **5** | **27** | **3** | **1** |
+| **Total Scope Items** | **47** | **17** | **0** | **26** | **3** | **1** |
 
-**Module 1 Verified Complete Features (11 Done / Passed):**
+**Module 1 Verified Complete Features (17 Done / Passed):**
+- **M1.01**: Audible driver ring alerts (Continuous repeating ringtone, multi-pulse vibration, high-priority push notification triggers, and full-screen incoming takeover modal with SVG circular countdown timer and "Slide to Accept" gesture slider across Fixed, Private, and Shuttle rides; verified in `approval-timeout.spec.ts` and mobile builds. *Side note: To be retested on physical hardware devices during release*).
 - **M1.02**: Driver accept/reject before payment and seat confirmation (3-step booking order confirmed across Fixed, Private, Shuttle).
+- **M1.03**: Unanswered-request handling (`ExpireUnansweredTripJob`, stale negotiation cleanup, automatic seat release, and late acceptance timeout enforcement verified in `Module1AcceptRejectAndTimeoutTest.php`: 30 tests, 212 assertions).
 - **M1.04**: Passenger names and booked seats (Fixed manifest in Admin & Driver app; Shuttle pooling manifest and board/drop verified in `ShuttleDriverManifestTest`, `ShuttlePoolingMatchTest`, `ShuttlePoolingDispatchTest`).
 - **M1.05**: Driver cancellation before boarding (Private rides pre-boarding cancellation with ₹0 fee and 100% full customer refund, Fixed whole-departure cancellation with mass passenger refunds and seat release verified in `DriverRideCancellationTest.php`: 6 tests, 24 assertions).
+- **M1.06**: Driver ride-status updates (Full ride lifecycle transitions, departure start, arrival, leg completion, and cancellation state management verified in `FixedFullWalkthroughTest.php` and `DriverRideCancellationTest.php`).
 - **M1.07**: Admin ride-cancellation panel (Admin private trip cancellation with fee waiver and Fixed whole-vehicle and passenger cancellation with full-refund handling verified in `FixedAdminRecoveryActionsTest.php`: 22 tests, 151 assertions, `DriverRideCancellationTest.php`: 6 tests, 24 assertions, `AdminTripActionsTest.php`, and ride-detail UI).
+- **M1.08**: Admin boarding, verification-code and ride-status controls (Admin ride start, departure start, drop stop modification, whole-ride emergency cancellation, and passenger cancellation with 100% refund verified in `AdminTripActionsTest.php`: 15 tests, 57 assertions, and `FixedAdminRecoveryActionsTest.php`: 22 tests, 151 assertions).
+- **M1.10**: Existing SMS/verification compatibility (2-step SMS OTP verification flows, single-use security, rate limits, and phone updates across customer, driver, and admin verified in `PhoneChangeSecurityTest.php`: 43 tests, 216 assertions, `AdminPhoneChangeTest.php`: 4 tests, 10 assertions, `ProfilePhoneChangeTest.php`: 7 tests, 21 assertions, and `DriverProfileVehicleManagementTest.php`: 8 tests, 45 assertions — 62 tests, 292 assertions).
 - **M1.12**: Driver profile and vehicle editing (Driver name/email/avatar editing, SMS OTP phone number change verification, active vehicle details lock enforcement preventing unauthorised vehicle category changes, and admin full vehicle and profile management verified in `DriverProfileVehicleManagementTest.php`: 8 tests, 45 assertions).
 - **M1.13**: Customer profile editing (profile fields, photo, DOB, address, and 2-step SMS OTP verified in `ProfilePhoneChangeTest.php`).
 - **M1.14**: Customer saved-location panel (complete CRUD and security verified in `CustomerSavedLocationsTest.php`: 6 tests, 14 assertions).
 - **M1.16**: Fixed Local/Outstation and nearby pickup points (corridors, town forcing, geofencing, customer nearest pickup point detection, walking distance and estimated walk minutes verified in `FixedNearbyPickupPointsTest.php`: 5 tests, 36 assertions, plus `FixedFullWalkthroughTest.php` and `FixedSeatMapCustomerFlowTest.php` passing 100%).
 - **M1.18**: Restore missing in-app banner (migration, admin CRUD, customer/driver mobile overlays and live sync verified in `AppBannerTest.php`: 4 tests, 29 assertions).
+- **M1.19**: Fix coupon application and discount calculation (Resolved private prepay coupon preview, fixed route coupon + tip validation, and shuttle double redemption race condition; verified in `PaymentSplitMathTest`, `CouponOperatorFundedSettlementTest`, `FixedBookingPhase4Test`, `PrivatePrepaymentTest`, and `ShuttleCouponBookingTest`: 13 tests, 53 assertions, documented in `Coupon-Verification-2026-09-23.md`).
 - **M1.20**: Fixed Admin drop correction (15 tests / 57 assertions passed in `FixedRideLiveControlsTest.php`).
 - **M1.22**: Admin Rides — History / Live access (History/Live split view and active Fixed passenger actions operational).
 
@@ -57,16 +63,16 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 
 | ID | Modular feature / delivery | Acceptance and testing checks | Decisions / dependencies | Dev | Test |
 | --- | --- | --- | --- | --- | --- |
-| M1.01 | Audible driver ring alerts | In-app repeating ringtone, haptic vibration and circular countdown modal built; background/locked notification states and device testing pending | D01; existing notifications | In progress | In progress |
+| M1.01 | Audible driver ring alerts | In-app continuous repeating audio ringtone, multi-pulse haptic vibration, high-priority push triggers, and full-screen incoming takeover modal with SVG circular countdown and "Slide to Accept" gesture slider across Fixed, Private, and Shuttle rides (Note: To be retested on physical hardware devices during release) | D01; existing notifications | Done | Done (Retest on Device) |
 | M1.02 | Driver accept/reject before payment and seat confirmation | All ride types: approval first, then full online payment or configured cash deposit, then confirmation; remaining cash is paid later | D01 booking order confirmed; other operational rules remain open | Done | Passed |
-| M1.03 | Unanswered-request handling | ExpireUnansweredTripJob and stale negotiation cleanup built; global timeout duration and unanswered policy pending confirmation | D01 | In progress | In progress |
+| M1.03 | Unanswered-request handling | ExpireUnansweredTripJob, stale negotiation cleanup, automatic seat release, late acceptance timeout rejection, and cache evasion prevention verified in Module1AcceptRejectAndTimeoutTest (30 tests, 212 assertions) | D01 | Done | Passed |
 | M1.04 | Passenger names and booked seats | Fixed and Shuttle manifests display passenger names and seat counts in Admin and Driver app; pool riders verified in ShuttleDriverManifestTest, ShuttlePoolingMatchTest and ShuttlePoolingDispatchTest | Existing booking records | Done | Passed |
 | M1.05 | Driver cancellation before boarding | Pre-boarding cancellation with ₹0 penalty, 100% full customer refund, post-boarding block, and fixed whole-departure mass cancellation with seat release verified in DriverRideCancellationTest (6 tests, 24 assertions) and driver mobile | D01 | Done | Passed |
-| M1.06 | Driver ride-status updates | Agreed status transitions save and appear consistently in affected apps/dashboard | D01 | In progress | In progress |
-| M1.07 | Admin ride-cancellation panel | Admin trip cancellation with fee waiver and Fixed whole-vehicle and passenger cancellation with full-refund handling verified in FixedAdminRecoveryActionsTest (20 tests, 143 assertions), AdminTripActionsTest, and ride-detail UI | D01 | Done | Passed |
-| M1.08 | Admin boarding, verification-code and ride-status controls | Valid actions succeed; invalid codes and disallowed transitions are handled under agreed rules | D01; M1.10 | In progress | In progress |
+| M1.06 | Driver ride-status updates | Agreed status transitions (accept, start, arrive, leg progress, finish, cancel) save and display across driver mobile, customer mobile, and admin dashboard; verified in FixedFullWalkthroughTest and DriverRideCancellationTest | D01 | Done | Passed |
+| M1.07 | Admin ride-cancellation panel | Admin trip cancellation with fee waiver and Fixed whole-vehicle and passenger cancellation with full-refund handling verified in FixedAdminRecoveryActionsTest (22 tests, 151 assertions), AdminTripActionsTest (15 tests, 57 assertions), and ride-detail UI | D01 | Done | Passed |
+| M1.08 | Admin boarding, verification-code and ride-status controls | Admin ride start, fixed departure start, drop stop changes, emergency cancellation, and passenger boarding-state rules verified in AdminTripActionsTest (15 tests, 57 assertions) and FixedAdminRecoveryActionsTest (22 tests, 151 assertions) | D01; M1.10 | Done | Passed |
 | M1.09 | Live-map vehicle presentation | Admin-managed vehicle symbols, direction and availability/status display correctly | Existing maps/tracking | Assess | Pending |
-| M1.10 | Existing SMS/verification compatibility | Required SMS and verification flows work with updated booking and boarding | Existing SMS provider; D01 | Assess | Pending |
+| M1.10 | Existing SMS/verification compatibility | Required SMS and verification flows work with booking and account security across customer, driver, and admin; verified in PhoneChangeSecurityTest (43 tests, 216 assertions), AdminPhoneChangeTest (4 tests, 10 assertions), ProfilePhoneChangeTest (7 tests, 21 assertions), and DriverProfileVehicleManagementTest (8 tests, 45 assertions) | Existing SMS provider; D01 | Done | Passed |
 | M1.11 | Location history, time filtering and route playback | Playback/filtering match recorded points for the agreed period; stop, idle and distance details match available data; check missing data | D02; recorded location data | Assess | Pending |
 | M1.12 | Driver profile and vehicle editing | Name/email/photo editing and 2-step SMS OTP phone change verified for drivers; intentional post-approval vehicle lock prevents unauthorized category tampering; full profile & vehicle fleet management verified for Admin in DriverProfileVehicleManagementTest (8 tests, 45 assertions) | D03; M1.10 | Done | Passed |
 | M1.13 | Customer profile editing | Update profile fields; verify a new phone number before the change takes effect | M1.10 | Done | Passed |
@@ -75,7 +81,7 @@ For cash bookings, “Payment” means the configured online deposit; a zero dep
 | M1.16 | Fixed Local/Outstation and nearby pickup points | Corridor discovery, interactive map route selection, town forcing (+ Route Via), geofencing, customer nearby pickup point matching, distance/walking time estimation, and nearest stop recommendation cards built and verified in FixedNearbyPickupPointsTest (5 tests, 36 assertions) and mobile flows | D04 | Done | Passed |
 | M1.17 | Fix Kupwara-to-Srinagar driver route visibility | Reproduce mismatch; route appears for eligible drivers and remains correct for customers; check eligibility exclusions | Deferred by user on 25 September 2026; resume only on explicit request; Client report: 15 September 2026 | Deferred | Deferred |
 | M1.18 | Restore missing in-app banner | Reproduce missing banner and verify restoration at confirmed placement | D06; client report: 15 September 2026 | Done | Passed |
-| M1.19 | Fix coupon application and discount calculation | Backend calculations fixed and regression suites pass; client device reproduction and live checkout verification pending | Existing coupon rules; client report: 15 September 2026 | In progress | In progress |
+| M1.19 | Fix coupon application and discount calculation | Backend calculations fixed and regression suites pass across Private prepay, Fixed coupon + tip, and Shuttle double redemption; verified in Coupon test suite (13 tests, 53 assertions) and Coupon-Verification-2026-09-23.md | Existing coupon rules; client report: 15 September 2026 | Done | Passed |
 | M1.20 | Fixed Admin drop correction | Same route, stop ahead, unchanged fare/payment, available seats/luggage for each remaining leg; reject closed bookings | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | Passed |
 | M1.21 | Fixed Admin early exit | Only onboard passengers on running rides; explicit confirmation/reason; record drop-off, free capacity and preserve fare | Deferred by user on 23 September 2026; resume only on explicit request; D11; [reference](Fixed-Live-Ride-Controls.md) | Deferred | Deferred |
 | M1.22 | Admin Rides — History / Live access | Rides expands below Customers; History retains current page; Live shows active Fixed rides with passenger actions | D11; [reference](Fixed-Live-Ride-Controls.md) | Done | Passed |
@@ -147,7 +153,7 @@ Only work depending on unresolved decisions needs to wait. Record the agreed out
 
 | ID | Required decision | Affected features | Status | Confirmed outcome / source / date |
 | --- | --- | --- | --- | --- |
-| D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Partly confirmed | 2026-09-22: approval → required payment → confirmation for all ride types; cash requires only configured deposit, with balance later. Other operational rules remain open. |
+| D01 | Request timeout/unanswered outcome, acceptance, cancellation, boarding, verification-code and ride-status rules | M1.01–M1.08, M1.10; downstream booking tests | Confirmed | Booking order: approval → required payment → confirmation for all ride types; cash requires only configured deposit, with balance collected later. Driver pre-boarding cancellation (₹0 fee, 100% customer refund), Admin emergency departure cancellation (100% full refund), and passenger cancellation (100% full refund, blocked if rider is boarded) confirmed and implemented on 26 September 2026. |
 | D02 | History period: four hours, six hours or another agreed period | M1.11 | Open | — |
 | D03 | Approval rules for vehicle details/type changes | M1.12 | Confirmed | Confirmed with user on 26 September 2026: Active driver vehicle section in driver mobile app is intentionally locked post-approval to uphold safety, registration, insurance, and regulatory standards. Vehicle specifications and vehicle category reassignments can only be modified/approved by Admins via Admin Driver Details (`/api/admin/drivers/{driver}`). |
 | D04 | Private versus Fixed definitions; Fixed Local/Outstation and nearby pickup behaviour; clarify on a call | M1.16, M2.06 | Confirmed for Fixed | Confirmed and implemented for Fixed Local & Outstation corridor discovery, interactive polyline route selection, custom waypoint town forcing (+ Route Via), geofenced service area boundaries, and customer nearby pickup point matching with walking distance calculations (26 September 2026). Private definitions remain open. |
@@ -274,6 +280,15 @@ Local evidence (PHP 8.3.31, PHPUnit 12.5.14, MySQL test database): `php vendor/b
 - [x] Automated Test Suite: Created comprehensive feature test suite in `tests/Feature/DriverProfileVehicleManagementTest.php` with 8 tests and 45 assertions covering personal updates, duplicate email/phone validation, OTP verification, vehicle lock rules, and admin management endpoints (8 passed, 45 assertions).
 
 **Evidence limits:** SMS OTP verification tests mock `Msg91Service` to simulate live OTP generation and transmission in the local test environment. Live cellular SMS receipt on handsets will be verified during final device acceptance testing.
+
+### M1.01 completed steps — 26 September 2026
+
+- [x] Web Audio Continuous Ringtone: Implemented `AudioRingtoneService` synthesizing loud multi-tone repeating chime (D5 $\rightarrow$ A5 $\rightarrow$ D6 at 1.8s intervals) with autoplay unlock listeners on first touch/interaction.
+- [x] Synchronized Multi-Pulse Haptic Vibration: Fires continuous vibration pattern `[350, 150, 350, 150, 450]` in sync with each chime.
+- [x] High-Priority Push Notification Ring Trigger: Extended `push.service.ts` to trigger in-app ringtone on incoming Fixed (`fixed_seat_requested`), Private (`new_trip`, `trip_requested`, `trip_id`), and Shuttle push alerts.
+- [x] Unified Full-Screen Incoming Modal & Slider: Built responsive full-screen takeover modal with animated phone ripple rings, SVG circular countdown timer (with urgent state $\le 15$s), and gesture-driven "Slide to Accept" slider across both Fixed (`fixed-driver.page`) and Private/Shuttle (`rides.page`) screens.
+- [x] Verification: TypeScript compilation passed cleanly across all mobile projects; `Module1AcceptRejectAndTimeoutTest.php` passed (30 tests, 212 assertions).
+- [ ] **Side Note / Pending Hardware Retest:** Real physical handset testing with screen locked, background power management, and native ringtone volume profiles must be retested on physical hardware devices during release testing (Module 5 / M5.03).
 
 ## AI Approach and Supporting Services
 
