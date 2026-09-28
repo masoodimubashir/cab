@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { AlertController, ModalController, ToastController } from '@ionic/angular';
 import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, interval, Subscription } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService, PaymentMethod } from '../../core/auth.service';
 import { BackgroundLocationService } from '../../core/background-location.service';
@@ -133,6 +133,19 @@ export class RidesPage implements OnInit, OnDestroy {
   negBusy = false;
   /** True while the "Offer your price" panel is open from an available ride. */
   priceOpen = false;
+
+  // Full-screen incoming trip modal & circular countdown timer
+  activeIncomingTrip: AvailableTrip | null = null;
+  requestCountdown = 45;
+  private requestTimerSubscription?: Subscription;
+
+  // Drag to accept slider properties
+  dragProgress = 0;
+  thumbTranslateX = 0;
+  isDragging = false;
+  private dragStartX = 0;
+  private maxTrackWidth = 0;
+  private draggedTrip: AvailableTrip | null = null;
 
   /**
    * Whether the driver may COUNTER the customer's offer ("Send ₹N"). Driven by
@@ -322,6 +335,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   ionViewWillLeave(): void {
+    this.stopRequestCountdown();
     this.ringtone.stopRinging();
   }
 
@@ -356,6 +370,7 @@ export class RidesPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.stopRequestCountdown();
     this.ringtone.stopRinging();
     if (this.unsubscribeStatus) {
       this.unsubscribeStatus();
@@ -377,9 +392,17 @@ export class RidesPage implements OnInit, OnDestroy {
           this.message = res.reason;
         }
         if (this.available.length > 0 && !this.hasActiveTrip && !this.priceOpen) {
-          this.ringtone.startRinging('available-rides');
+          const currentId = this.activeIncomingTrip?.id;
+          if (!currentId || !this.available.some((t) => t.id === currentId)) {
+            this.activeIncomingTrip = this.available[0];
+            this.startRequestCountdown();
+            this.ringtone.startRinging('incoming-trip-' + this.activeIncomingTrip.id, this.requestCountdown);
+          }
         } else if (this.available.length === 0) {
+          this.activeIncomingTrip = null;
+          this.stopRequestCountdown();
           this.ringtone.stopRinging('available-rides');
+          this.ringtone.stopRinging();
         }
       },
       error: () => {
@@ -1430,6 +1453,119 @@ export class RidesPage implements OnInit, OnDestroy {
           this.negBusy = false;
         },
       });
+  }
+
+  /* ─── Incoming Ride Modal Countdown & Actions ─── */
+
+  private startRequestCountdown(): void {
+    this.stopRequestCountdown();
+    this.requestCountdown = 45;
+    this.requestTimerSubscription = interval(1000).subscribe(() => {
+      this.requestCountdown--;
+      if (this.requestCountdown <= 0) {
+        this.handleIncomingTripTimeout();
+      }
+    });
+  }
+
+  private stopRequestCountdown(): void {
+    this.requestTimerSubscription?.unsubscribe();
+    this.requestTimerSubscription = undefined;
+  }
+
+  private handleIncomingTripTimeout(): void {
+    if (!this.activeIncomingTrip) return;
+    const expiredId = this.activeIncomingTrip.id;
+    this.available = this.available.filter((t) => t.id !== expiredId);
+    this.activeIncomingTrip = this.available[0] || null;
+    if (this.activeIncomingTrip) {
+      this.startRequestCountdown();
+      this.ringtone.startRinging('incoming-trip-' + this.activeIncomingTrip.id, this.requestCountdown);
+    } else {
+      this.stopRequestCountdown();
+      this.ringtone.stopRinging();
+    }
+  }
+
+  getCircleDashOffset(countdown: number, totalSeconds = 45): number {
+    const circumference = 263.89; // 2 * PI * 42
+    const validTotal = totalSeconds > 0 ? totalSeconds : 45;
+    const remaining = Math.max(0, Math.min(countdown, validTotal));
+    const fillRatio = (validTotal - remaining) / validTotal;
+    return circumference * (1 - fillRatio);
+  }
+
+  /* ─── Drag to Accept Slider Methods ─── */
+
+  onDragStart(event: TouchEvent | PointerEvent, trackEl: HTMLElement): void {
+    if (this.busy || this.negBusy) return;
+    this.isDragging = true;
+    this.draggedTrip = this.activeIncomingTrip;
+    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+    this.dragStartX = clientX;
+    const trackWidth = trackEl.getBoundingClientRect().width;
+    const thumbWidth = 56;
+    this.maxTrackWidth = Math.max(1, trackWidth - thumbWidth);
+  }
+
+  onDragMove(event: TouchEvent | PointerEvent): void {
+    if (!this.isDragging || this.maxTrackWidth <= 0) return;
+    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+    const deltaX = Math.max(0, Math.min(clientX - this.dragStartX, this.maxTrackWidth));
+    this.thumbTranslateX = deltaX;
+    this.dragProgress = Math.round((deltaX / this.maxTrackWidth) * 100);
+  }
+
+  onDragEnd(): void {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+    const targetTrip = this.draggedTrip || this.activeIncomingTrip;
+    this.draggedTrip = null;
+    if (this.dragProgress >= 80 && targetTrip) {
+      this.thumbTranslateX = this.maxTrackWidth;
+      this.dragProgress = 100;
+      this.acceptIncomingTrip(targetTrip);
+      setTimeout(() => {
+        this.thumbTranslateX = 0;
+        this.dragProgress = 0;
+      }, 600);
+    } else {
+      this.thumbTranslateX = 0;
+      this.dragProgress = 0;
+    }
+  }
+
+  onDragCancel(): void {
+    this.isDragging = false;
+    this.draggedTrip = null;
+    this.thumbTranslateX = 0;
+    this.dragProgress = 0;
+  }
+
+  acceptIncomingTrip(trip: AvailableTrip): void {
+    this.activeIncomingTrip = null;
+    this.stopRequestCountdown();
+    this.pickAvailable(trip, 'accept');
+  }
+
+  declineIncomingTrip(trip: AvailableTrip): void {
+    this.ringtone.stopRinging();
+    this.ringtone.playRejectChime();
+    this.available = this.available.filter((t) => t.id !== trip.id);
+    this.activeIncomingTrip = this.available[0] || null;
+    if (this.activeIncomingTrip) {
+      this.startRequestCountdown();
+      this.ringtone.startRinging('incoming-trip-' + this.activeIncomingTrip.id, this.requestCountdown);
+    } else {
+      this.stopRequestCountdown();
+    }
+    this.api.post(`/trips/${trip.id}/driver-reject`, {}).subscribe({ error: () => {} });
+  }
+
+  openPriceFromModal(trip: AvailableTrip): void {
+    this.stopRequestCountdown();
+    this.activeIncomingTrip = null;
+    this.pickAvailable(trip, 'price');
   }
 
 }

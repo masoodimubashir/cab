@@ -447,4 +447,151 @@
       </div>
     </div>
   </ng-container>
+
+  <!-- ==================== FULL-SCREEN INCOMING RIDE REQUEST MODAL ==================== -->
+  <div class="incoming-request-overlay full-screen-ring-modal" *ngIf="activeIncomingTrip && !hasActiveTrip && !priceOpen">
+    <div class="ir-fullscreen-wrap">
+      
+      <!-- Top Section: Ringing Phone & Circular Timer -->
+      <div class="ir-top-header">
+        <div class="ir-phone-ripple-container">
+          <div class="ir-ripple-ring ring-1"></div>
+          <div class="ir-ripple-ring ring-2"></div>
+          <div class="ir-ripple-ring ring-3"></div>
+          <div class="ir-phone-circle">
+            <ion-icon name="call" class="ir-phone-icon"></ion-icon>
+          </div>
+        </div>
+
+        <div class="ir-header-title-box">
+          <span class="ir-live-pill" [class.is-shuttle]="activeIncomingTrip.service_mode === 'shuttle'">
+            <span class="ir-live-dot"></span>
+            {{ activeIncomingTrip.service_mode === 'shuttle' ? 'INCOMING SHUTTLE REQUEST' : (activeIncomingTrip.is_selected_for_me ? 'REQUESTED FOR YOU' : 'INCOMING RIDE REQUEST') }}
+          </span>
+          <h2 class="ir-main-title">{{ activeIncomingTrip.vehicle_name || activeIncomingTrip.ride_type_name || (activeIncomingTrip.service_mode === 'shuttle' ? 'Shared Shuttle' : 'Private Cab') }}</h2>
+        </div>
+
+        <!-- Circular Countdown Timer -->
+        <div class="ir-circle-timer-wrap" [class.is-urgent]="requestCountdown <= 15">
+          <svg class="ir-circle-svg" viewBox="0 0 100 100">
+            <circle class="ir-circle-track" cx="50" cy="50" r="42" />
+            <circle
+              class="ir-circle-progress"
+              cx="50" cy="50" r="42"
+              [style.strokeDashoffset]="getCircleDashOffset(requestCountdown, 45)"
+            />
+          </svg>
+          <div class="ir-circle-content">
+            <span class="ir-circle-seconds">{{ requestCountdown }}</span>
+            <span class="ir-circle-unit">sec</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Middle Section: Ride Card Details -->
+      <div class="ir-passengers-scroll-list">
+        <div class="ir-request-card">
+          <div class="ir-request-card__head">
+            <div class="ir-cust-avatar">
+              <ion-icon [name]="activeIncomingTrip.service_mode === 'shuttle' ? 'bus' : 'person'"></ion-icon>
+            </div>
+            <div class="ir-cust-details">
+              <h3 class="ir-cust-name">
+                {{ activeIncomingTrip.is_for_other ? ('For ' + (activeIncomingTrip.booked_for_name || 'Friend')) : (activeIncomingTrip.service_mode === 'shuttle' ? 'Shuttle Rider' : 'Passenger Request') }}
+              </h3>
+              <div class="ir-cust-meta">
+                <span class="ir-badge-seats" *ngIf="activeIncomingTrip.payment_method">
+                  <ion-icon name="card-outline"></ion-icon>
+                  {{ activeIncomingTrip.payment_method | uppercase }}
+                </span>
+                <span class="ir-badge-seats" *ngIf="activeIncomingTrip.service_mode === 'shuttle'">
+                  <ion-icon name="bus-outline"></ion-icon>
+                  Shuttle
+                </span>
+              </div>
+            </div>
+            <div class="ir-cust-price">
+              <span class="ir-fare-label">Estimated Fare</span>
+              <strong class="ir-fare-val">₹{{ activeIncomingTrip.customer_offer || activeIncomingTrip.estimated_fare || 0 }}</strong>
+            </div>
+          </div>
+
+          <div class="ir-request-route">
+            <div class="ir-route-node">
+              <span class="ir-node-dot pickup"></span>
+              <div class="ir-node-info">
+                <small>Pickup</small>
+                <strong>{{ activeIncomingTrip.pickup_address || (activeIncomingTrip.pickup_lat + ', ' + activeIncomingTrip.pickup_lng) }}</strong>
+              </div>
+            </div>
+            <div class="ir-route-connector"></div>
+            <div class="ir-route-node">
+              <span class="ir-node-dot drop"></span>
+              <div class="ir-node-info">
+                <small>Drop</small>
+                <strong>{{ activeIncomingTrip.drop_address || (activeIncomingTrip.drop_lat + ', ' + activeIncomingTrip.drop_lng) }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Section: Slide to Accept & Counter / Decline -->
+      <div class="ir-bottom-controls">
+        
+        <!-- Drag to Accept Slider -->
+        <div class="ir-slider-container">
+          <div class="ir-slider-track" #sliderTrack>
+            <div class="ir-slider-fill" [style.width.%]="dragProgress"></div>
+            <div class="ir-slider-label" [style.opacity]="1 - (dragProgress / 65)">
+              <span>Slide to Accept</span>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+              <ion-icon name="chevron-forward-outline"></ion-icon>
+            </div>
+            <div
+              class="ir-slider-thumb dc-press"
+              [class.is-dragging]="isDragging"
+              [style.transform]="'translateX(' + thumbTranslateX + 'px)'"
+              (touchstart)="onDragStart($event, sliderTrack)"
+              (touchmove)="onDragMove($event)"
+              (touchend)="onDragEnd()"
+              (touchcancel)="onDragCancel()"
+              (pointerdown)="onDragStart($event, sliderTrack)"
+              (pointermove)="onDragMove($event)"
+              (pointerup)="onDragEnd()"
+              (pointercancel)="onDragCancel()"
+            >
+              <ion-spinner *ngIf="busy || negBusy" name="crescent" class="ir-thumb-spinner"></ion-spinner>
+              <ion-icon *ngIf="!busy && !negBusy" name="checkmark-outline" class="ir-thumb-icon"></ion-icon>
+            </div>
+          </div>
+        </div>
+
+        <!-- Optional Counter Offer Button (if allowed) -->
+        <button
+          *ngIf="activeIncomingTrip.service_mode !== 'shuttle' && (activeIncomingTrip.reverse_bidding_enabled ?? true)"
+          type="button"
+          class="ir-counter-btn dc-press"
+          [disabled]="busy || negBusy"
+          (click)="openPriceFromModal(activeIncomingTrip)"
+        >
+          <ion-icon name="pricetag-outline"></ion-icon>
+          <span>Offer Custom Price</span>
+        </button>
+
+        <!-- Decline / Reject Button -->
+        <button
+          type="button"
+          class="ir-decline-button dc-press"
+          [disabled]="busy || negBusy"
+          (click)="declineIncomingTrip(activeIncomingTrip)"
+        >
+          <ion-icon name="close-outline"></ion-icon>
+          <span>Decline Request</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
 </ion-content>
