@@ -236,6 +236,7 @@ export class FixedDriverPage implements OnDestroy {
   }
 
   get hasMultipleScopes(): boolean {
+    if (this.driverScope === 'both') return true;
     const scopes = new Set(this.routes.map((r) => r.scope));
     return scopes.size > 1;
   }

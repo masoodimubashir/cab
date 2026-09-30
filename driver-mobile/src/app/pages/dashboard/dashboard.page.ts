@@ -179,7 +179,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
   private onlineSince: number | null = null;
   private onlineTimer: ReturnType<typeof setInterval> | null = null;
   driveMode: 'private' | 'fixed' | 'shuttle' | null = null;
-  driveScope: 'local' | 'outstation' | null = null;
+  driveScope: 'local' | 'outstation' | 'both' | null = null;
   routePickerOpen = false;
   routePickerRoutes: FixedRouteOption[] = [];
   openingRouteId: number | null = null;
@@ -707,7 +707,8 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
     return 'Service';
   }
 
-  scopeLabel(scope: 'local' | 'outstation' | string | null | undefined = this.driveScope): string {
+  scopeLabel(scope: 'local' | 'outstation' | 'both' | string | null | undefined = this.driveScope): string {
+    if (scope === 'both') return 'Local & Outstation';
     return scope === 'outstation' ? 'Outstation' : 'Local';
   }
 
@@ -1076,7 +1077,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
       );
       this.driver = res.driver;
       this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
-      this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
+      this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | 'both' | null) ?? null;
       return true;
     } catch (e) {
       const body = (e as { error?: Record<string, unknown> })?.error;
@@ -1198,7 +1199,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
               void this.stopVisualWatch();
             }
             this.driveMode = (this.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? (this.activeFixedVehicleOpen ? 'fixed' : null);
-            this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
+            this.driveScope = (this.driver?.['active_service_scope'] as 'local' | 'outstation' | 'both' | null) ?? null;
             void this.loadActiveFixedVehicleState();
             this.startOnlineTimer();
           }
@@ -1500,7 +1501,7 @@ export class DashboardPage implements AfterViewInit, OnDestroy {
           next: (res) => {
             this.driver = res.driver;
             this.driveMode = (res.driver?.['active_service_mode'] as 'private' | 'fixed' | 'shuttle' | null) ?? null;
-            this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | null) ?? null;
+            this.driveScope = (res.driver?.['active_service_scope'] as 'local' | 'outstation' | 'both' | null) ?? null;
             resolve();
           },
           error: (err) => reject(err),

@@ -82,12 +82,22 @@ class FixedDriverController extends Controller
             ->whereIn('id', $allowedRouteIds)
             ->where('mode', 'fixed')
             ->where('is_active', true)
-            ->where('scope', $scope) // STRICT: Local driver gets only Local routes, Outstation gets only Outstation
             ->where(function ($q) use ($cityIds) {
                 $q->whereIn('city_id', $cityIds)
                     ->orWhereIn('origin_city_id', $cityIds)
                     ->orWhereIn('dest_city_id', $cityIds);
             });
+
+        $scopeFilter = $request->query('scope');
+        if ($scope === Driver::SERVICE_SCOPE_BOTH) {
+            if ($scopeFilter && in_array($scopeFilter, [Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_OUTSTATION], true)) {
+                $routesQuery->where('scope', $scopeFilter);
+            } else {
+                $routesQuery->whereIn('scope', [Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_OUTSTATION]);
+            }
+        } else {
+            $routesQuery->where('scope', $scope);
+        }
 
         // If query specifies a specific city filter:
         if ($request->has('city_id') && is_numeric($request->query('city_id'))) {

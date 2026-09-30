@@ -460,6 +460,13 @@ interface TabDef { key: string; label: string; count?: number; }
                 <option value="disabled">Disabled</option>
               </select>
             </label>
+            <label>Scope
+              <select [(ngModel)]="routeScopeFilter">
+                <option value="all">All scopes</option>
+                <option value="local">Local</option>
+                <option value="outstation">Outstation</option>
+              </select>
+            </label>
           </div>
           <div class="route-directory-list">
             <article class="route-directory-row" *ngFor="let r of directoryRoutes(v)">
@@ -468,6 +475,7 @@ interface TabDef { key: string; label: string; count?: number; }
                 <span>{{ r.origin_name }} &rarr; {{ r.dest_name }}</span>
                 <small>{{ routeGroupNames(r) }}</small>
               </div>
+              <span class="pill pill--sm" [class.purple]="r.scope === 'outstation'" [class.blue]="r.scope === 'local'">{{ (r.scope || 'local') | uppercase }}</span>
               <span class="pill pill--sm" [class.success]="isRouteEnabled(r)" [class.neutral]="!isRouteEnabled(r)">{{ isRouteEnabled(r) ? 'Enabled' : 'Disabled' }}</span>
               <button type="button" class="btn-kb-outline" (click)="editRouteFor(v, r.id)">Edit route</button>
               <button type="button" class="btn-kb-outline" [disabled]="savingRouteIds.has(r.id)" [attr.aria-label]="(isRouteEnabled(r) ? 'Disable ' : 'Enable ') + r.name" (click)="toggleRouteActive(r, $event)">{{ savingRouteIds.has(r.id) ? 'Saving...' : (isRouteEnabled(r) ? 'Disable' : 'Enable') }}</button>
@@ -3900,6 +3908,7 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
 
   routeView: 'all' | 'groups' = 'all';
   routeStatusFilter: 'all' | 'enabled' | 'disabled' = 'all';
+  routeScopeFilter: 'all' | 'local' | 'outstation' = 'all';
   savingRouteIds = new Set<number>();
 
   isRouteEnabled(r: RouteLite): boolean {
@@ -3907,9 +3916,11 @@ export class VehicleWorkspaceComponent implements OnInit, OnDestroy {
   }
 
   directoryRoutes(v: CityVehicleRow): RouteLite[] {
-    return this.filterKanbanRoutes(this.routesForVehicle(v)).filter((r) =>
-      this.routeStatusFilter === 'all' || this.isRouteEnabled(r) === (this.routeStatusFilter === 'enabled')
-    );
+    return this.filterKanbanRoutes(this.routesForVehicle(v)).filter((r) => {
+      const statusMatch = this.routeStatusFilter === 'all' || this.isRouteEnabled(r) === (this.routeStatusFilter === 'enabled');
+      const scopeMatch = this.routeScopeFilter === 'all' || (r.scope || 'local').toLowerCase() === this.routeScopeFilter;
+      return statusMatch && scopeMatch;
+    });
   }
 
   routeGroupNames(r: RouteLite): string {

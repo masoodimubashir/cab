@@ -39,11 +39,25 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
         </div>
 
         <div class="drg__col">
-          <div class="drg__label">Effective routes ({{ effective.length }})</div>
-          <div class="drg__empty" *ngIf="!effective.length">No routes — assign a group to give this driver work.</div>
-          <div class="drg__route" *ngFor="let r of effective">
-            <strong>{{ r.name }}</strong>
-            <small>{{ r.origin_name }} → {{ r.dest_name }} · {{ r.scope }}</small>
+          <div class="drg__header-row">
+            <div class="drg__label">Effective routes ({{ filteredEffective.length }})</div>
+            <div class="drg__filters">
+              <button type="button" class="drg__filter-btn" [class.is-active]="scopeFilter === 'all'" (click)="scopeFilter = 'all'">All ({{ effective.length }})</button>
+              <button type="button" class="drg__filter-btn" [class.is-active]="scopeFilter === 'local'" (click)="scopeFilter = 'local'">Local ({{ localCount }})</button>
+              <button type="button" class="drg__filter-btn" [class.is-active]="scopeFilter === 'outstation'" (click)="scopeFilter = 'outstation'">Outstation ({{ outstationCount }})</button>
+            </div>
+          </div>
+          <div class="drg__empty" *ngIf="!filteredEffective.length">
+            {{ effective.length ? 'No routes match the selected scope filter.' : 'No routes — assign a group to give this driver work.' }}
+          </div>
+          <div class="drg__route" *ngFor="let r of filteredEffective">
+            <div class="drg__route-top">
+              <strong>{{ r.name }}</strong>
+              <span class="drg__badge" [class.is-outstation]="r.scope === 'outstation'" [class.is-local]="r.scope === 'local'">
+                {{ r.scope | uppercase }}
+              </span>
+            </div>
+            <small>{{ r.origin_name }} → {{ r.dest_name }}</small>
           </div>
         </div>
       </div>
@@ -56,14 +70,22 @@ interface Payload { assigned_group_ids: number[]; groups: GroupOpt[]; effective_
     .drg__sub { font-size: 12px; color: var(--tm-text-muted); }
     .drg__body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media (max-width: 640px) { .drg__body { grid-template-columns: 1fr; } }
-    .drg__label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--tm-text-muted); margin-bottom: 8px; }
+    .drg__header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px; }
+    .drg__label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--tm-text-muted); }
+    .drg__filters { display: flex; gap: 4px; }
+    .drg__filter-btn { font-size: 10.5px; font-weight: 700; border: 1px solid var(--tm-line); border-radius: 4px; background: transparent; color: var(--tm-text-muted); padding: 2px 6px; cursor: pointer; }
+    .drg__filter-btn.is-active { background: var(--tm-line-2, #e5e7eb); color: var(--tm-text); border-color: var(--tm-text-soft, #9ca3af); }
     .drg__grp { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; color: var(--tm-text); cursor: pointer; }
     .drg__city { font-size: 11.5px; color: var(--tm-text-muted); font-weight: 600; margin-left: 4px; }
     .drg__save { margin-top: 10px; padding: 8px 14px; border: 0; border-radius: 8px; background: var(--tm-green, #12b35b); color: #fff; font-weight: 700; font-size: 12.5px; cursor: pointer; }
     .drg__save:disabled { opacity: .5; cursor: default; }
     .drg__route { padding: 7px 10px; border: 1px solid var(--tm-line); border-radius: 8px; margin-bottom: 6px; display: flex; flex-direction: column; gap: 2px; }
+    .drg__route-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .drg__route strong { font-size: 13px; color: var(--tm-text); }
     .drg__route small { font-size: 11.5px; color: var(--tm-text-muted); }
+    .drg__badge { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .03em; }
+    .drg__badge.is-local { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+    .drg__badge.is-outstation { background: rgba(234, 88, 12, 0.12); color: #ea580c; }
     .drg__empty { font-size: 12.5px; color: var(--tm-text-muted); padding: 6px 0; }
   `],
 })
@@ -74,6 +96,20 @@ export class DriverRouteGroupsPanelComponent implements OnChanges {
   effective: EffRoute[] = [];
   assigned = new Set<number>();
   saving = false;
+  scopeFilter: 'all' | 'local' | 'outstation' = 'all';
+
+  get localCount(): number {
+    return this.effective.filter((r) => r.scope === 'local').length;
+  }
+
+  get outstationCount(): number {
+    return this.effective.filter((r) => r.scope === 'outstation').length;
+  }
+
+  get filteredEffective(): EffRoute[] {
+    if (this.scopeFilter === 'all') return this.effective;
+    return this.effective.filter((r) => r.scope === this.scopeFilter);
+  }
 
   constructor(private api: ApiService, private toast: ToastService) {}
 

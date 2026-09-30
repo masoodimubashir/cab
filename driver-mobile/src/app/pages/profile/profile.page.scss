@@ -1173,7 +1173,62 @@
   }
 }
 
-/* 2. Service Mode Selection List */
+/* 2. Service Scope Chips (Multi-select) */
+.pf-scope-chips {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.pf-scope-chip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 12px);
+  background: #F5F7FA;
+  border: 1.5px solid transparent;
+  color: var(--text-main, #0D1B2A);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  ion-icon {
+    font-size: 1.15rem;
+    color: #8C98A4;
+  }
+
+  &.is-active {
+    background: #EAF7EF;
+    border-color: var(--ion-color-primary, #12B35B);
+    color: var(--ion-color-primary, #12B35B);
+
+    ion-icon {
+      color: var(--ion-color-primary, #12B35B);
+    }
+  }
+}
+
+.pf-scope-selected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #12B35B;
+  font-weight: 700;
+  font-size: 0.78rem;
+  margin-top: 2px;
+  margin-bottom: 6px;
+
+  ion-icon {
+    font-size: 0.95rem;
+  }
+}
+
+/* 3. Service Mode Selection List */
 .pf-service-list {
   display: flex;
   flex-direction: column;
