@@ -48,7 +48,7 @@ interface DriverProfile {
   cities?: { id: number; name: string }[];
   city_name: string | null;
   city_names?: string | null;
-  service_scope?: 'local' | 'outstation' | string | null;
+  service_scope?: 'local' | 'outstation' | 'both' | string | null;
   service_mode?: 'private' | 'fixed' | 'shuttle' | string | null;
   approval_status: 'approved' | 'rejected' | 'pending' | string;
   is_online: boolean;
@@ -567,7 +567,15 @@ const BLOCK_REASONS = [
               </div>
               <div class="sp-list">
                 <div class="sp-row"><span>Assigned Cities</span><strong>{{ profile.city_names || profile.city_name || 'All Cities' }}</strong></div>
-                <div class="sp-row"><span>Service Scope</span><strong>{{ profile.service_scope ? (profile.service_scope | titlecase) : '—' }}</strong></div>
+                <div class="sp-row">
+                  <span>Service Scope</span>
+                  <strong>
+                    <span *ngIf="profile.service_scope === 'both'" class="badge" style="background: rgba(124, 58, 237, 0.12); color: #7c3aed; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11.5px;">Both (Local &amp; Outstation)</span>
+                    <span *ngIf="profile.service_scope === 'local'" class="badge" style="background: rgba(37, 99, 235, 0.12); color: #2563eb; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11.5px;">Local Only</span>
+                    <span *ngIf="profile.service_scope === 'outstation'" class="badge" style="background: rgba(234, 88, 12, 0.12); color: #ea580c; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11.5px;">Outstation Only</span>
+                    <span *ngIf="!profile.service_scope">—</span>
+                  </strong>
+                </div>
                 <div class="sp-row"><span>Service Mode</span><strong>{{ profile.service_mode ? (profile.service_mode | titlecase) : '—' }}</strong></div>
                 <div class="sp-row"><span>Registration No</span><strong class="mono">{{ profile.vehicle_reg_no || '—' }}</strong></div>
                 <div class="sp-row"><span>Vehicle Model</span><strong>{{ profile.vehicle_model || '—' }}</strong></div>
@@ -898,11 +906,32 @@ const BLOCK_REASONS = [
         <div class="drawer-section-heading mt-4">Service &amp; Mode Settings</div>
         <div class="form-group-grid">
           <div class="form-group">
-            <label class="form-label">Service Scope</label>
+            <label class="form-label">Service Scope (Multi-Select)</label>
+            <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+              <button
+                type="button"
+                class="city-chip"
+                [class.is-selected]="isEditScopeActive('local')"
+                (click)="toggleEditScope('local')"
+              >
+                <tm-icon [name]="isEditScopeActive('local') ? 'check' : 'plus'" [size]="12" />
+                <span>Local</span>
+              </button>
+              <button
+                type="button"
+                class="city-chip"
+                [class.is-selected]="isEditScopeActive('outstation')"
+                (click)="toggleEditScope('outstation')"
+              >
+                <tm-icon [name]="isEditScopeActive('outstation') ? 'check' : 'plus'" [size]="12" />
+                <span>Outstation</span>
+              </button>
+            </div>
             <select class="form-control" [(ngModel)]="editForm.service_scope">
               <option value="">Not Assigned</option>
               <option value="local">Local</option>
               <option value="outstation">Outstation</option>
+              <option value="both">Both (Local &amp; Outstation)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1830,7 +1859,7 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     dob: string;
     address: string;
     city_ids: number[];
-    service_scope: 'local' | 'outstation' | '';
+    service_scope: 'local' | 'outstation' | 'both' | '';
     service_mode: 'private' | 'fixed' | 'shuttle' | '';
     vehicle_type_id: number | null;
     city_vehicle_type_id: number | null;
@@ -2190,6 +2219,38 @@ export class DriverDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.editForm?.city_ids) return false;
     const cid = Number(cityId);
     return this.editForm.city_ids.some((id) => Number(id) === cid);
+  }
+
+  isEditScopeActive(scope: 'local' | 'outstation'): boolean {
+    if (!this.editForm?.service_scope) return false;
+    if (this.editForm.service_scope === 'both') return true;
+    return this.editForm.service_scope === scope;
+  }
+
+  toggleEditScope(scope: 'local' | 'outstation'): void {
+    if (!this.editForm) return;
+    const current = this.editForm.service_scope;
+    const hasLocal = current === 'both' || current === 'local';
+    const hasOutstation = current === 'both' || current === 'outstation';
+
+    let nextLocal = hasLocal;
+    let nextOutstation = hasOutstation;
+
+    if (scope === 'local') {
+      nextLocal = !nextLocal;
+    } else {
+      nextOutstation = !nextOutstation;
+    }
+
+    if (nextLocal && nextOutstation) {
+      this.editForm.service_scope = 'both';
+    } else if (nextLocal) {
+      this.editForm.service_scope = 'local';
+    } else if (nextOutstation) {
+      this.editForm.service_scope = 'outstation';
+    } else {
+      this.editForm.service_scope = scope;
+    }
   }
 
   ensureOptionsLoaded(): void {

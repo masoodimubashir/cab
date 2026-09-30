@@ -30,6 +30,16 @@ class DriversController extends Controller
         $user = $request->user();
         $existing = Driver::query()->where('user_id', $user->id)->first();
 
+        if ($request->has('service_scope') || $request->has('service_scopes')) {
+            $rawScope = $request->input('service_scope') ?? $request->input('service_scopes');
+            if (is_array($rawScope)) {
+                $hasLocal = in_array('local', $rawScope, true);
+                $hasOutstation = in_array('outstation', $rawScope, true);
+                $normalized = ($hasLocal && $hasOutstation) ? 'both' : ($hasOutstation ? 'outstation' : ($hasLocal ? 'local' : null));
+                $request->merge(['service_scope' => $normalized]);
+            }
+        }
+
         $data = $request->validate([
             // The 3-step wizard sends ride_type_id (Step 1) + vehicle_type_id
             // (Step 2). Free-text vehicle_type is kept for backwards compat
@@ -52,7 +62,7 @@ class DriversController extends Controller
             'city_ids' => ['nullable', 'array', 'min:1'],
             'city_ids.*' => ['integer', 'exists:cities,id'],
             'fleet_id' => ['nullable', 'integer', 'exists:fleets,id'],
-            'service_scope' => ['nullable', 'string', 'in:local,outstation'],
+            'service_scope' => ['nullable', 'string', 'in:local,outstation,both'],
             'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
             'name' => ['nullable', 'string', 'max:120'],
             'email' => ['nullable', 'email', 'max:190', Rule::unique('users', 'email')->ignore($user->id)],
@@ -977,7 +987,7 @@ class DriversController extends Controller
     {
         $data = $request->validate([
             'mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
-            'scope' => ['nullable', 'string', 'in:local,outstation'],
+            'scope' => ['nullable', 'string', 'in:local,outstation,both'],
         ]);
 
         $driver = Driver::query()->where('user_id', $request->user()->id)->first();

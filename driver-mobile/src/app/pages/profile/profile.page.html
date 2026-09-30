@@ -319,12 +319,42 @@
           </div>
         </div>
 
-        <!-- 2. Service Selection (Local / Outstation Modes) -->
-        <div class="pf-field" *ngIf="rideModes.length">
-          <span class="pf-field__label">Service <em>*</em></span>
+        <!-- 2. Service Scope (Local / Outstation / Both Multi-select) -->
+        <div class="pf-field">
+          <span class="pf-field__label">Operating Service Scope <em>*</em></span>
+          <p class="pf-field__hint">Choose whether you will drive locally, outstation, or both.</p>
+          <div class="pf-scope-chips">
+            <button
+              type="button"
+              class="pf-scope-chip dc-press"
+              [class.is-active]="isScopeSelected('local')"
+              (click)="toggleServiceScope('local')"
+            >
+              <ion-icon [name]="isScopeSelected('local') ? 'checkbox' : 'square-outline'"></ion-icon>
+              <span>Local Service</span>
+            </button>
+            <button
+              type="button"
+              class="pf-scope-chip dc-press"
+              [class.is-active]="isScopeSelected('outstation')"
+              (click)="toggleServiceScope('outstation')"
+            >
+              <ion-icon [name]="isScopeSelected('outstation') ? 'checkbox' : 'square-outline'"></ion-icon>
+              <span>Outstation Service</span>
+            </button>
+          </div>
+          <div class="pf-scope-selected-badge" *ngIf="service_scope === 'both'">
+            <ion-icon name="checkmark-circle"></ion-icon>
+            <span>Both Local &amp; Outstation selected</span>
+          </div>
+        </div>
+
+        <!-- 3. Ride Product / Mode Selection -->
+        <div class="pf-field" *ngIf="filteredRideModes.length">
+          <span class="pf-field__label">Ride Service <em>*</em></span>
           <div class="pf-service-list">
             <div
-              *ngFor="let m of rideModes"
+              *ngFor="let m of filteredRideModes"
               class="pf-service-item dc-press"
               [class.is-active]="selectedRideKey === m.key"
               (click)="selectRideMode(m)"

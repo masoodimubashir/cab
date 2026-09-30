@@ -35,7 +35,12 @@ class DriverServiceModeService
             ]);
         }
 
-        if ($mode !== null && ($mode !== $driver->service_mode || ($scope ?? $driver->service_scope) !== $driver->service_scope)) {
+        $requestedScope = $scope ?? $driver->service_scope;
+        $scopeAllowed = ($driver->service_scope === Driver::SERVICE_SCOPE_BOTH)
+            ? in_array($requestedScope, [Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_OUTSTATION, Driver::SERVICE_SCOPE_BOTH], true)
+            : ($requestedScope === $driver->service_scope);
+
+        if ($mode !== null && ($mode !== $driver->service_mode || !$scopeAllowed)) {
             throw ValidationException::withMessages([
                 'mode' => 'Your driver service is locked from registration. Contact the operator to change it.',
             ]);
@@ -54,7 +59,7 @@ class DriverServiceModeService
             $this->assertNoActiveFixedVehicle($driver);
         }
 
-        $driver->active_service_scope = $mode === null ? null : $driver->service_scope;
+        $driver->active_service_scope = $mode === null ? null : ($scope ?? $driver->service_scope);
         $driver->active_service_mode = $mode;
         $driver->save();
 
@@ -72,6 +77,10 @@ class DriverServiceModeService
     {
         if ($driver->active_service_mode !== Driver::SERVICE_MODE_FIXED) {
             abort(422, 'Choose your registered fixed service before opening this fixed vehicle.');
+        }
+
+        if ($scope !== null && !$driver->providesBoth() && $driver->service_scope !== $scope) {
+            abort(422, 'This route is ' . $scope . ' but your service is ' . $driver->service_scope . '.');
         }
 
         $this->assertNoActivePrivateTrip($driver);

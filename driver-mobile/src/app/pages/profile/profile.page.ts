@@ -15,7 +15,7 @@ import { ApprovedDriverGuard } from '../../core/approved-driver.guard';
 declare const google: any;
 
 type DocStatus = 'idle' | 'uploading' | 'done' | 'error';
-type ServiceScope = 'local' | 'outstation';
+type ServiceScope = 'local' | 'outstation' | 'both';
 type ServiceMode = 'private' | 'fixed' | 'shuttle';
 type LabelType = 'text' | 'number' | 'date' | 'url';
 
@@ -104,6 +104,7 @@ export class ProfilePage implements OnInit, OnDestroy {
   city_ids: number[] = [];
   cityModalOpen = false;
   citySearch = '';
+  selectedScopes: Set<'local' | 'outstation'> = new Set(['local']);
   service_scope: ServiceScope | null = null;
   service_mode: ServiceMode | null = null;
   vehicle_type_id: number | null = null;
@@ -455,6 +456,13 @@ export class ProfilePage implements OnInit, OnDestroy {
           this.vehicle_color = res.driver.vehicle_color ?? this.vehicle_color;
           this.vehicle_reg_no = res.driver.vehicle_reg_no ?? this.vehicle_reg_no;
           this.service_scope = res.driver.service_scope ?? this.service_scope;
+          if (this.service_scope === 'both') {
+            this.selectedScopes = new Set(['local', 'outstation']);
+          } else if (this.service_scope === 'outstation') {
+            this.selectedScopes = new Set(['outstation']);
+          } else if (this.service_scope === 'local') {
+            this.selectedScopes = new Set(['local']);
+          }
           this.service_mode = res.driver.service_mode ?? this.service_mode;
           this.driverApproved = res.driver.approval_status === 'approved';
 
@@ -482,6 +490,7 @@ export class ProfilePage implements OnInit, OnDestroy {
 
   get serviceScopeDisplay(): string {
     if (!this.service_scope) return 'Not registered';
+    if (this.service_scope === 'both') return 'Local & Outstation Service';
     return this.service_scope === 'outstation' ? 'Outstation Service' : 'Local Service';
   }
 
@@ -880,8 +889,56 @@ export class ProfilePage implements OnInit, OnDestroy {
           }
         }
         this.rideModes = modes;
+        this.syncServiceScopeFromSelection();
       },
     });
+  }
+
+  toggleServiceScope(scope: 'local' | 'outstation'): void {
+    if (this.selectedScopes.has(scope)) {
+      if (this.selectedScopes.size > 1) {
+        this.selectedScopes.delete(scope);
+      }
+    } else {
+      this.selectedScopes.add(scope);
+    }
+    this.syncServiceScopeFromSelection();
+  }
+
+  isScopeSelected(scope: 'local' | 'outstation'): boolean {
+    return this.selectedScopes.has(scope);
+  }
+
+  get filteredRideModes(): Array<RideModeOption & { key: string }> {
+    return this.rideModes.filter((m) => m.scope === 'both' || this.selectedScopes.has(m.scope as 'local' | 'outstation'));
+  }
+
+  private syncServiceScopeFromSelection(): void {
+    const hasLocal = this.selectedScopes.has('local');
+    const hasOutstation = this.selectedScopes.has('outstation');
+    if (hasLocal && hasOutstation) {
+      this.service_scope = 'both';
+    } else if (hasOutstation) {
+      this.service_scope = 'outstation';
+    } else {
+      this.service_scope = 'local';
+    }
+
+    if (this.selectedRideKey) {
+      const current = this.rideModes.find((x) => x.key === this.selectedRideKey);
+      if (current && current.scope !== 'both' && !this.selectedScopes.has(current.scope as 'local' | 'outstation')) {
+        const next = this.filteredRideModes[0];
+        if (next) {
+          this.selectRideMode(next);
+        } else {
+          this.selectedRideKey = null;
+          this.ride_type_id = null;
+          this.service_mode = null;
+        }
+      }
+    } else if (this.filteredRideModes.length) {
+      this.selectRideMode(this.filteredRideModes[0]);
+    }
   }
 
   selectRideMode(m: RideModeOption & { key: string }): void {
@@ -919,8 +976,16 @@ export class ProfilePage implements OnInit, OnDestroy {
   onRideModeChange(): void {
     const m = this.rideModes.find((x) => x.key === this.selectedRideKey);
     this.ride_type_id = m ? m.id : null;
-    this.service_scope = m ? m.scope : null;
     this.service_mode = m ? m.mode : null;
+    const hasLocal = this.selectedScopes.has('local');
+    const hasOutstation = this.selectedScopes.has('outstation');
+    if (hasLocal && hasOutstation) {
+      this.service_scope = 'both';
+    } else if (hasOutstation) {
+      this.service_scope = 'outstation';
+    } else {
+      this.service_scope = 'local';
+    }
   }
 
   /** Vehicle type chosen: reload the city's vehicles for that type. */

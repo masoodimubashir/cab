@@ -315,7 +315,11 @@ class TripsController extends Controller
         // /select-driver. Drivers should only see live, biddable requests.
         $trips = Trip::query()
             ->where('status', 'NEGOTIATION')
-            ->where('scope', $driverProfile->active_service_scope)
+            ->when(
+                $driverProfile->active_service_scope === Driver::SERVICE_SCOPE_BOTH,
+                fn ($q) => $q->whereIn('scope', [Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_OUTSTATION]),
+                fn ($q) => $q->where('scope', $driverProfile->active_service_scope),
+            )
             ->where(function ($q) use ($driverProfile) {
                 if ($driverProfile->active_service_mode === Driver::SERVICE_MODE_SHUTTLE) {
                     $q->whereHas('cityVehicleType.rideType', fn ($rt) => $rt->where('mode', \App\Models\RideType::MODE_SHUTTLE));
@@ -1101,7 +1105,7 @@ class TripsController extends Controller
         $candidates = Driver::query()
             ->where('approval_status', 'approved')
             ->where('is_online', true)
-            ->where('active_service_scope', $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL)
+            ->whereIn('active_service_scope', [$trip->scope ?: Driver::SERVICE_SCOPE_LOCAL, Driver::SERVICE_SCOPE_BOTH])
             ->where('active_service_mode', $serviceMode)
             ->whereNotIn('user_id', $busyDriverIds)
             ->when($trip->requested_vehicle_type_id, function ($q) use ($trip) {
@@ -1246,7 +1250,9 @@ class TripsController extends Controller
         if (!$driverProfile || $driverProfile->approval_status !== 'approved' || !$driverProfile->is_online) {
             return response()->json(['message' => 'Driver is no longer available.'], 409);
         }
-        if ($driverProfile->active_service_scope !== ($trip->scope ?: Driver::SERVICE_SCOPE_LOCAL) || $driverProfile->active_service_mode !== $serviceMode) {
+        $tripScope = $trip->scope ?: Driver::SERVICE_SCOPE_LOCAL;
+        $driverScopeMatches = in_array($driverProfile->active_service_scope, [$tripScope, Driver::SERVICE_SCOPE_BOTH], true);
+        if (!$driverScopeMatches || $driverProfile->active_service_mode !== $serviceMode) {
             $label = $serviceMode === Driver::SERVICE_MODE_SHUTTLE ? 'Shuttle' : 'private';
             return response()->json(['message' => "Driver is not accepting " . $label . " rides right now."], 409);
         }

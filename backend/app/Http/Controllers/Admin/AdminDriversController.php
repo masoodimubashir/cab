@@ -1024,6 +1024,16 @@ class AdminDriversController
      */
     public function updateDriver(Request $request, Driver $driver)
     {
+        if ($request->has('service_scope')) {
+            $rawScope = $request->input('service_scope');
+            if (is_array($rawScope)) {
+                $hasLocal = in_array('local', $rawScope, true);
+                $hasOutstation = in_array('outstation', $rawScope, true);
+                $normalized = ($hasLocal && $hasOutstation) ? 'both' : ($hasOutstation ? 'outstation' : ($hasLocal ? 'local' : null));
+                $request->merge(['service_scope' => $normalized]);
+            }
+        }
+
         $data = $request->validate([
             'vehicle_reg_no' => ['nullable', 'string', 'max:50'],
             'vehicle_brand' => ['nullable', 'string', 'max:100'],
@@ -1035,7 +1045,7 @@ class AdminDriversController
             'city_id' => ['nullable', 'integer', 'exists:cities,id'],
             'city_ids' => ['nullable', 'array', 'min:1'],
             'city_ids.*' => ['integer', 'exists:cities,id'],
-            'service_scope' => ['nullable', 'string', 'in:local,outstation'],
+            'service_scope' => ['nullable', 'string', 'in:local,outstation,both'],
             'service_mode' => ['nullable', 'string', 'in:private,fixed,shuttle'],
             // Linked User profile fields — driver identity lives on User
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],

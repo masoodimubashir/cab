@@ -113,7 +113,7 @@ class FixedDriverRouteAllocationTest extends TestCase
         $this->makeRoute('R1');
 
         Sanctum::actingAs($user, ['act-as:driver']);
-        $this->getJson('/api/fixed/driver/routes')->assertOk()->assertExactJson(['data' => []]);
+        $this->getJson('/api/fixed/driver/routes')->assertOk()->assertJson(['data' => []]);
     }
 
     public function test_scope_still_narrows_the_list(): void

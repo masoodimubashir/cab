@@ -43,10 +43,35 @@ class Driver extends Model
 
     public const SERVICE_SCOPE_LOCAL = 'local';
     public const SERVICE_SCOPE_OUTSTATION = 'outstation';
+    public const SERVICE_SCOPE_BOTH = 'both';
     public const SERVICE_SCOPES = [
         self::SERVICE_SCOPE_LOCAL,
         self::SERVICE_SCOPE_OUTSTATION,
+        self::SERVICE_SCOPE_BOTH,
     ];
+
+    public function providesLocal(): bool
+    {
+        return in_array($this->service_scope, [self::SERVICE_SCOPE_LOCAL, self::SERVICE_SCOPE_BOTH], true);
+    }
+
+    public function providesOutstation(): bool
+    {
+        return in_array($this->service_scope, [self::SERVICE_SCOPE_OUTSTATION, self::SERVICE_SCOPE_BOTH], true);
+    }
+
+    public function providesBoth(): bool
+    {
+        return $this->service_scope === self::SERVICE_SCOPE_BOTH;
+    }
+
+    public function allowedScopes(): array
+    {
+        if ($this->service_scope === self::SERVICE_SCOPE_BOTH) {
+            return [self::SERVICE_SCOPE_LOCAL, self::SERVICE_SCOPE_OUTSTATION];
+        }
+        return $this->service_scope ? [$this->service_scope] : [self::SERVICE_SCOPE_LOCAL];
+    }
 
     public const SERVICE_MODE_PRIVATE = 'private';
     public const SERVICE_MODE_FIXED = 'fixed';
