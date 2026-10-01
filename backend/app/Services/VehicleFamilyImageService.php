@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
-use App\Models\CityVehicleFamilyImage;
+use App\Models\VehicleFamilyImage;
 use Illuminate\Support\Collection;
 
 class VehicleFamilyImageService
 {
     /**
-     * Resolves images for a vehicle family in a given city.
+     * Resolves shared vehicle-family images for every city and platform.
+     * City/platform arguments remain for compatibility with existing callers.
      *
      * @param int|null $cityId
      * @param string|null $displayName
@@ -48,35 +49,26 @@ class VehicleFamilyImageService
             ],
         ];
 
-        if ($cityId && $displayName) {
+        if ($displayName) {
+            $family = mb_strtolower(trim($displayName));
             $records = $preloadedImages
-                ? $preloadedImages->filter(fn ($img) => empty($img->city_id) || (int) $img->city_id === (int) $cityId)
-                : CityVehicleFamilyImage::query()
-                    ->where('city_id', $cityId)
-                    ->where('display_name', trim($displayName))
+                ? $preloadedImages->filter(fn ($img) => mb_strtolower(trim($img->display_name)) === $family)
+                : VehicleFamilyImage::query()
+                    ->where('display_name', $family)
                     ->get();
 
             foreach ($records as $img) {
-                $platform = strtolower((string) $img->platform);
                 $key = strtolower(trim((string) $img->key));
-                if (isset($images[$platform]) && array_key_exists($key, $images[$platform])) {
-                    $images[$platform][$key] = $img->image_url;
+                if (array_key_exists($key, $images['android'])) {
+                    $images['android'][$key] = $img->image_url;
+                    $images['ios'][$key] = $img->image_url;
                 }
             }
         }
 
-        $platform = strtolower(trim((string) $requestedPlatform));
-        $primary = ($platform === 'ios') ? 'ios' : 'android';
-        $secondary = ($primary === 'ios') ? 'android' : 'ios';
-
-        // Fallback policy: requested platform -> other platform -> default
-        $resolvedImageUrl = $images[$primary]['booking_card']
-            ?? $images[$secondary]['booking_card']
-            ?? $defaultImageUrl;
-
-        $resolvedMarkerUrl = $images[$primary]['map_marker']
-            ?? $images[$secondary]['map_marker']
-            ?? $defaultMarkerUrl;
+        // Both platform response entries intentionally contain the same shared URLs.
+        $resolvedImageUrl = $images['android']['booking_card'] ?? $defaultImageUrl;
+        $resolvedMarkerUrl = $images['android']['map_marker'] ?? $defaultMarkerUrl;
 
         return [
             'images' => $images,
@@ -86,31 +78,23 @@ class VehicleFamilyImageService
     }
 
     /**
-     * Preload all family images for a city grouped by lower-cased display_name.
+     * Preload shared family images. City is retained for caller compatibility.
      *
-     * @return Collection<string, Collection<int, CityVehicleFamilyImage>>
+     * @return Collection<string, Collection<int, VehicleFamilyImage>>
      */
     public function loadMapForCity(int $cityId): Collection
     {
-        return CityVehicleFamilyImage::query()
-            ->where('city_id', $cityId)
-            ->get()
-            ->groupBy(fn ($img) => strtolower(trim((string) $img->display_name)));
+        return $this->preloadForPlatform();
     }
 
     /**
-     * Preload family images, optionally filtered by city,
-     * grouped by lower-cased display_name.
-     * All platforms are preloaded so that cross-platform fallback (e.g. iOS borrowing Android upload) works.
+     * Preload global family images grouped by canonical display name.
      *
-     * @return Collection<string, Collection<int, CityVehicleFamilyImage>>
+     * @return Collection<string, Collection<int, VehicleFamilyImage>>
      */
     public function preloadForPlatform(?string $platform = null, ?int $cityId = null): Collection
     {
-        $query = CityVehicleFamilyImage::query();
-        if ($cityId) {
-            $query->where('city_id', $cityId);
-        }
-        return $query->get()->groupBy(fn ($img) => strtolower(trim((string) $img->display_name)));
+        return VehicleFamilyImage::query()->get()
+            ->groupBy(fn ($img) => mb_strtolower(trim((string) $img->display_name)));
     }
 }
