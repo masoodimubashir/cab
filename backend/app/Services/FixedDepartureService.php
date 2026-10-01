@@ -21,13 +21,15 @@ class FixedDepartureService
         private readonly FixedRefundService $refunds,
         private readonly FixedBookingEventService $events,
         private readonly NotificationCenter $notifier,
+        private readonly VehicleFamilyImageService $vehicleImages,
     ) {}
 
     public function customerDepartures(Route $route): Collection
     {
+        $images = $this->vehicleImages->preloadForPlatform();
         return $this->availability->customerVisibleDeparturesQuery($route)
             ->get()
-            ->map(fn (RouteDeparture $departure) => $this->shapeCustomerDeparture($departure));
+            ->map(fn (RouteDeparture $departure) => $this->shapeCustomerDeparture($departure, $images));
     }
 
     public function adminDepartures(City $city, array $filters = []): array
@@ -326,15 +328,24 @@ class FixedDepartureService
         ];
     }
 
-    public function shapeCustomerDeparture(RouteDeparture $departure): array
+    public function shapeCustomerDeparture(RouteDeparture $departure, ?Collection $images = null): array
     {
         $this->availability->assertFixedDeparture($departure);
         $departure->loadMissing(['driver:id,name', 'cityVehicleType:id,display_name,vehicle_type_id', 'cityVehicleType.vehicleType:id,name']);
         $driverProfile = $departure->driver_id
             ? Driver::query()
+                ->with(['cityVehicleType:id,display_name', 'vehicleTypeRef:id,name'])
                 ->where('user_id', $departure->driver_id)
-                ->first(['user_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
+                ->first(['user_id', 'city_vehicle_type_id', 'vehicle_type_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
             : null;
+        $family = $departure->cityVehicleType?->display_name
+            ?? $driverProfile?->cityVehicleType?->display_name
+            ?? $driverProfile?->vehicle_type
+            ?? $driverProfile?->vehicleTypeRef?->name;
+        $image = $this->vehicleImages->resolveForVehicle(
+            $departure->route?->city_id, $family,
+            preloadedImages: $images?->get(mb_strtolower(trim((string) $family)), collect()),
+        );
 
         return [
             'id' => $departure->id,
@@ -369,6 +380,7 @@ class FixedDepartureService
             'driver_id' => $departure->driver_id,
             'city_vehicle_type_id' => $departure->city_vehicle_type_id,
             'vehicle_name' => $departure->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type,
+            'image_url' => $image['image_url'],
             'vehicle_type_name' => $departure->cityVehicleType?->vehicleType?->name ?? $driverProfile?->vehicle_type,
             'vehicle_brand' => $driverProfile?->vehicle_brand,
             'vehicle_model' => $driverProfile?->vehicle_model,

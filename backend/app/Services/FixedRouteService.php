@@ -18,6 +18,7 @@ class FixedRouteService
     public function __construct(
         private readonly FixedAvailabilityService $availability,
         private readonly FixedPricingService $pricing,
+        private readonly VehicleFamilyImageService $vehicleImages,
     ) {}
 
     public function customerRoutes(array|int $filters): Collection
@@ -31,7 +32,7 @@ class FixedRouteService
         $userLng = isset($filters['lng']) && is_numeric($filters['lng']) ? (float) $filters['lng'] : null;
 
         $query = Route::query()
-            ->with('stops')
+            ->with(['stops', 'cityVehicleType'])
             ->where('mode', 'fixed')
             ->where('is_active', true)
             ->where(function ($q) {
@@ -73,7 +74,8 @@ class FixedRouteService
             ->limit($limit);
 
         $routes = $query->get();
-        $mapped = $routes->map(fn (Route $route) => $this->shapeCustomerRoute($route, $userLat, $userLng));
+        $images = $this->vehicleImages->preloadForPlatform();
+        $mapped = $routes->map(fn (Route $route) => $this->shapeCustomerRoute($route, $userLat, $userLng, $images));
 
         if ($userLat !== null && $userLng !== null) {
             $mapped = $mapped->sortBy(function ($r) {
@@ -150,9 +152,15 @@ class FixedRouteService
         });
     }
 
-    public function shapeCustomerRoute(Route $route, ?float $userLat = null, ?float $userLng = null): array
+    public function shapeCustomerRoute(Route $route, ?float $userLat = null, ?float $userLng = null, ?Collection $images = null): array
     {
         $this->availability->assertFixedRoute($route);
+        $route->loadMissing('cityVehicleType');
+        $family = $route->cityVehicleType?->display_name;
+        $image = $this->vehicleImages->resolveForVehicle(
+            $route->city_id, $family,
+            preloadedImages: $images?->get(mb_strtolower(trim((string) $family)), collect()),
+        );
 
         $stops = [];
         $nearestPickup = null;
@@ -244,6 +252,7 @@ class FixedRouteService
             'stops' => $stops,
             'nearest_pickup_stop' => $nearestPickup,
             'distance_to_nearest_pickup' => $nearestPickup ? $nearestPickup['distance_meters'] : null,
+            'image_url' => $image['image_url'],
         ];
     }
 
