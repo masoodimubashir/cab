@@ -272,14 +272,14 @@ class DriversController extends Controller
         $user = $request->user();
         $driver = Driver::query()
             ->where('user_id', $user->id)
-            ->with(['cities:id,name', 'cityVehicleType:id,display_name', 'vehicleType:id,name'])
+            ->with(['cities:id,name', 'cityVehicleType:id,display_name', 'vehicleTypeRef:id,name'])
             ->first();
         if ($driver) {
             $driver->append('city_ids');
             $requestedPlatform = $request->header('X-Platform', 'android');
             $imageService = app(\App\Services\VehicleFamilyImageService::class);
             $primaryCityId = $driver->city_id ?: ($driver->cities?->first()?->id);
-            $familyName = $driver->cityVehicleType?->display_name ?: ($driver->vehicleType?->name ?: $driver->vehicle_type);
+            $familyName = $driver->cityVehicleType?->display_name ?: ($driver->vehicleTypeRef?->name ?: $driver->vehicle_type);
             $imagePayload = $imageService->resolveForVehicle(
                 $primaryCityId,
                 $familyName,
