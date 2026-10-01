@@ -12,25 +12,29 @@ use App\Models\RideType;
 use App\Models\Route;
 use App\Models\VehicleSeatLayout;
 use App\Models\VehicleSeatLayoutCell;
+use App\Services\VehicleFamilyImageService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AdminVehicleTypesController
 {
+    public function __construct(private readonly VehicleFamilyImageService $vehicleImages) {}
     /**
      * List all vehicle types for a city. The Enabled/Disabled split in the
      * Jugnoo UI is just is_active=true|false; the frontend filters client-side.
      */
     public function index(Request $request, City $city)
     {
+        $images = $this->vehicleImages->preloadForPlatform();
         $rows = CityVehicleType::query()
             ->with(['rideType:id,name', 'vehicleType:id,name', 'vehicleSet:id,name'])
             ->where('city_id', $city->id)
             ->orderBy('display_order')
             ->orderBy('id')
             ->get()
-            ->map(fn (CityVehicleType $v) => $this->shape($v));
+            ->map(fn (CityVehicleType $v) => $this->shape($v, $images));
 
         return response()->json([
             'city_id' => $city->id,
@@ -488,8 +492,12 @@ class AdminVehicleTypesController
         }
     }
 
-    private function shape(CityVehicleType $v): array
+    private function shape(CityVehicleType $v, ?Collection $images = null): array
     {
+        $image = $this->vehicleImages->resolveForVehicle(
+            $v->city_id, $v->display_name,
+            preloadedImages: $images?->get(mb_strtolower(trim($v->display_name)), collect()),
+        );
         return [
             'id' => $v->id,
             'city_id' => $v->city_id,
@@ -503,6 +511,8 @@ class AdminVehicleTypesController
             'vehicle_set_id' => $v->vehicle_set_id,
             'vehicle_set_name' => $v->vehicleSet?->name,
             'display_name' => $v->display_name,
+            'image_url' => $image['image_url'],
+            'map_marker_url' => $image['map_marker_url'],
             'display_order' => (int) $v->display_order,
             'max_people' => (int) $v->max_people,
             'luggage_capacity' => (int) $v->luggage_capacity,

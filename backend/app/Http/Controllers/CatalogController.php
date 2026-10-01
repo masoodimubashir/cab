@@ -34,7 +34,7 @@ class CatalogController extends Controller
     {
         $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
         $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
-        $familyImagesMap = $cityId ? $imageService->loadMapForCity($cityId) : null;
+        $familyImagesMap = $imageService->preloadForPlatform();
 
         $rows = VehicleType::query()
             ->where('is_active', true)
