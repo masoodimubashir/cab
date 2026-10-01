@@ -65,7 +65,7 @@ class FareNegotiationController extends Controller
 
         $tripWithDriver = $trip->fresh()->load([
             'driver:id,name,phone,avatar_path,accepted_payment_methods,current_lat,current_lng',
-            'driver.driver:id,user_id,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
+            'driver.driver:id,user_id,vehicle_type,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
             'cityVehicleType:id,display_name,reverse_bidding_enabled,ride_type_id',
             'cityVehicleType.rideType:id,name',
         ]);
@@ -74,6 +74,33 @@ class FareNegotiationController extends Controller
         $tripWithDriver->setAttribute('vehicle_name', $tripWithDriver->cityVehicleType?->display_name);
         $tripWithDriver->setAttribute('ride_type_name', $tripWithDriver->cityVehicleType?->rideType?->name);
         $tripWithDriver->setAttribute('tolls_enabled', $trip->tollsEnabled());
+
+        $requestedPlatform = $request->header('X-Platform', 'android');
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $vtName = $tripWithDriver->cityVehicleType?->display_name ?: $rideTypeName;
+        $imagePayload = $imageService->resolveForVehicle(
+            $tripWithDriver->city_id,
+            $vtName,
+            $requestedPlatform
+        );
+        $tripWithDriver->setAttribute('map_marker_url', $imagePayload['map_marker_url']);
+        $tripWithDriver->setAttribute('image_url', $imagePayload['image_url']);
+
+        if ($tripWithDriver->driver) {
+            $driverProfile = $tripWithDriver->driver->driver;
+            $driverVehicle = [
+                'type' => $driverProfile?->vehicle_type,
+                'brand' => $driverProfile?->vehicle_brand,
+                'model' => $driverProfile?->vehicle_model,
+                'color' => $driverProfile?->vehicle_color,
+                'reg_no' => $driverProfile?->vehicle_reg_no,
+                'image_url' => $imagePayload['image_url'],
+                'map_marker_url' => $imagePayload['map_marker_url'],
+            ];
+            $tripWithDriver->driver->setAttribute('vehicle', $driverVehicle);
+            $tripWithDriver->driver->setAttribute('map_marker_url', $imagePayload['map_marker_url']);
+            $tripWithDriver->driver->setAttribute('image_url', $imagePayload['image_url']);
+        }
 
         // So the driver sees + can call the actual rider (the friend on a
         // for-someone-else booking); the booker's relation stays hidden.

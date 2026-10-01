@@ -10,6 +10,7 @@ use App\Models\Fleet;
 use App\Models\RideType;
 use App\Models\VehicleType;
 use App\Support\RideCatalog;
+use App\Services\VehicleFamilyImageService;
 use Illuminate\Http\Request;
 
 /**
@@ -29,13 +30,35 @@ class CatalogController extends Controller
         return response()->json(['data' => $rows]);
     }
 
-    public function vehicleTypes(Request $request)
+    public function vehicleTypes(Request $request, VehicleFamilyImageService $imageService)
     {
+        $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $familyImagesMap = $cityId ? $imageService->loadMapForCity($cityId) : null;
+
         $rows = VehicleType::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get(['id', 'name']);
+            ->get(['id', 'name'])
+            ->map(function (VehicleType $row) use ($cityId, $requestedPlatform, $familyImagesMap, $imageService) {
+                $displayName = trim($row->name);
+                $preloaded = $familyImagesMap?->get(strtolower($displayName), collect());
+                $imagePayload = $imageService->resolveForVehicle(
+                    $cityId,
+                    $displayName,
+                    $requestedPlatform,
+                    preloadedImages: $preloaded
+                );
+
+                return [
+                    'id' => $row->id,
+                    'name' => $row->name,
+                    'images' => $imagePayload['images'],
+                    'image_url' => $imagePayload['image_url'],
+                    'map_marker_url' => $imagePayload['map_marker_url'],
+                ];
+            });
 
         return response()->json(['data' => $rows]);
     }
@@ -59,11 +82,14 @@ class CatalogController extends Controller
     }
 
 
-    public function cityVehicles(Request $request, City $city)
+    public function cityVehicles(Request $request, City $city, VehicleFamilyImageService $imageService)
     {
         $data = $request->validate([
             'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
         ]);
+
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $familyImagesMap = $imageService->loadMapForCity($city->id);
 
         $rows = CityVehicleType::query()
             ->where('city_id', $city->id)
@@ -72,15 +98,29 @@ class CatalogController extends Controller
             ->orderBy('display_order')
             ->orderBy('id')
             ->get(['id', 'city_id', 'ride_type_id', 'vehicle_type_id', 'display_name', 'max_people', 'luggage_capacity'])
-            ->map(fn (CityVehicleType $row) => [
-                'id' => $row->id,
-                'city_id' => $row->city_id,
-                'ride_type_id' => $row->ride_type_id,
-                'vehicle_type_id' => $row->vehicle_type_id,
-                'display_name' => $row->display_name,
-                'max_people' => (int) $row->max_people,
-                'luggage_capacity' => (int) $row->luggage_capacity,
-            ]);
+            ->map(function (CityVehicleType $row) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
+                $displayName = trim($row->display_name);
+                $preloaded = $familyImagesMap->get(strtolower($displayName), collect());
+                $imagePayload = $imageService->resolveForVehicle(
+                    $city->id,
+                    $displayName,
+                    $requestedPlatform,
+                    preloadedImages: $preloaded
+                );
+
+                return [
+                    'id' => $row->id,
+                    'city_id' => $row->city_id,
+                    'ride_type_id' => $row->ride_type_id,
+                    'vehicle_type_id' => $row->vehicle_type_id,
+                    'display_name' => $row->display_name,
+                    'max_people' => (int) $row->max_people,
+                    'luggage_capacity' => (int) $row->luggage_capacity,
+                    'images' => $imagePayload['images'],
+                    'image_url' => $imagePayload['image_url'],
+                    'map_marker_url' => $imagePayload['map_marker_url'],
+                ];
+            });
 
         return response()->json(['data' => $rows]);
     }

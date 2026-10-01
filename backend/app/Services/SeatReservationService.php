@@ -229,13 +229,18 @@ class SeatReservationService
     public function manifestFor(Trip $trip): array
     {
         $passengers = $trip->seatReservations()
-            ->with(['customer:id,name,phone', 'boardStop:id,name', 'dropStop:id,name'])
+            ->with(['customer:id,name,phone,avatar_path', 'boardStop:id,name', 'dropStop:id,name'])
             ->orderBy('id')
             ->get()
             ->map(fn (SeatReservation $r) => [
                 'id' => $r->id,
                 'name' => $r->customer?->name,
                 'phone' => $r->customer?->phone,
+                'avatar_url' => $r->customer?->avatar_path
+                    ? (str_starts_with($r->customer->avatar_path, 'http')
+                        ? $r->customer->avatar_path
+                        : url('/storage/' . ltrim($r->customer->avatar_path, '/')))
+                    : null,
                 'seats' => (int) $r->seats,
                 'status' => $r->status,
                 'board' => $r->board_address ?: $r->boardStop?->name,

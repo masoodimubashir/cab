@@ -270,9 +270,32 @@ class DriversController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
-        $driver = Driver::query()->where('user_id', $user->id)->with('cities:id,name')->first();
+        $driver = Driver::query()
+            ->where('user_id', $user->id)
+            ->with(['cities:id,name', 'cityVehicleType:id,display_name', 'vehicleType:id,name'])
+            ->first();
         if ($driver) {
             $driver->append('city_ids');
+            $requestedPlatform = $request->header('X-Platform', 'android');
+            $imageService = app(\App\Services\VehicleFamilyImageService::class);
+            $primaryCityId = $driver->city_id ?: ($driver->cities?->first()?->id);
+            $familyName = $driver->cityVehicleType?->display_name ?: ($driver->vehicleType?->name ?: $driver->vehicle_type);
+            $imagePayload = $imageService->resolveForVehicle(
+                $primaryCityId,
+                $familyName,
+                $requestedPlatform
+            );
+            $driver->setAttribute('map_marker_url', $imagePayload['map_marker_url']);
+            $driver->setAttribute('image_url', $imagePayload['image_url']);
+            $driver->setAttribute('vehicle', [
+                'type' => $driver->vehicle_type,
+                'brand' => $driver->vehicle_brand,
+                'model' => $driver->vehicle_model,
+                'color' => $driver->vehicle_color,
+                'reg_no' => $driver->vehicle_reg_no,
+                'image_url' => $imagePayload['image_url'],
+                'map_marker_url' => $imagePayload['map_marker_url'],
+            ]);
         }
 
         $documents = [];
@@ -613,6 +636,27 @@ class DriversController extends Controller
         $payload['ride_type_name'] = $trip->cityVehicleType?->rideType?->name;
         $payload['is_prepaid'] = $payload['service_mode'] === 'shuttle';
 
+        $requestedPlatform = $request->header('X-Platform', 'android');
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $vtName = $trip->cityVehicleType?->display_name ?: $rideTypeName;
+        $imagePayload = $imageService->resolveForVehicle(
+            $trip->city_id,
+            $vtName,
+            $requestedPlatform
+        );
+        $payload['map_marker_url'] = $imagePayload['map_marker_url'];
+        $payload['image_url'] = $imagePayload['image_url'];
+        $driver = Driver::query()->where('user_id', $trip->driver_id)->first();
+        $payload['vehicle'] = [
+            'type' => $driver?->vehicle_type,
+            'brand' => $driver?->vehicle_brand,
+            'model' => $driver?->vehicle_model,
+            'color' => $driver?->vehicle_color,
+            'reg_no' => $driver?->vehicle_reg_no,
+            'image_url' => $imagePayload['image_url'],
+            'map_marker_url' => $imagePayload['map_marker_url'],
+        ];
+
         // Whether tolls are on for this trip's city. When off, the driver app
         // hides the end-of-ride toll box (the server ignores a toll anyway).
         $payload['tolls_enabled'] = $trip->tollsEnabled();
@@ -621,9 +665,10 @@ class DriversController extends Controller
         // "booked for a friend" trip that's the friend the booker named; for a
         // normal trip it's the account holder. (is_for_other / booked_for_* are
         // already in the toArray payload.)
-        $trip->loadMissing('customer:id,name,phone');
+        $trip->loadMissing('customer:id,name,phone,avatar_path');
         $payload['customer_name'] = $trip->booked_for_name ?: $trip->customer?->name;
         $payload['customer_phone'] = $trip->booked_for_phone ?: $trip->customer?->phone;
+        $payload['customer_avatar_url'] = $trip->customer_avatar_url;
 
         // Shared (fixed/shuttle) journey → attach the passenger manifest + the
         // ordered route stops so the driver app can render the pickup list.
@@ -701,6 +746,42 @@ class DriversController extends Controller
             ->sortBy('distance_km')
             ->take($limit)
             ->values();
+
+        $requestedPlatform = $request->header('X-Platform', 'android');
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $familyImagesMap = $imageService->preloadForPlatform($requestedPlatform);
+
+        $driverUserIds = $nearby->pluck('id')->all();
+        $drivers = Driver::query()
+            ->whereIn('user_id', $driverUserIds)
+            ->with(['cityVehicleType:id,display_name', 'vehicleType:id,name'])
+            ->get()
+            ->keyBy('user_id');
+
+        $nearby = $nearby->map(function ($d) use ($drivers, $imageService, $familyImagesMap, $requestedPlatform) {
+            $driver = $drivers->get($d['id']);
+            $familyName = $driver?->cityVehicleType?->display_name ?: ($driver?->vehicleType?->name ?: $driver?->vehicle_type);
+            $preloaded = $familyImagesMap?->get(strtolower(trim($familyName ?: ''))) ?? collect();
+            $cityId = $driver?->city_id;
+            $imagePayload = $imageService->resolveForVehicle(
+                $cityId,
+                $familyName,
+                $requestedPlatform,
+                preloadedImages: $preloaded
+            );
+            $d['map_marker_url'] = $imagePayload['map_marker_url'];
+            $d['image_url'] = $imagePayload['image_url'];
+            $d['vehicle'] = [
+                'type' => $driver?->vehicle_type,
+                'brand' => $driver?->vehicle_brand,
+                'model' => $driver?->vehicle_model,
+                'color' => $driver?->vehicle_color,
+                'reg_no' => $driver?->vehicle_reg_no,
+                'image_url' => $imagePayload['image_url'],
+                'map_marker_url' => $imagePayload['map_marker_url'],
+            ];
+            return $d;
+        });
 
         return response()->json(['data' => $nearby]);
     }

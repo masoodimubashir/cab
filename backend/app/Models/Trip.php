@@ -176,14 +176,35 @@ class Trip extends Model
     }
 
     /**
+     * Rider avatar url for driver-facing responses: only returned when booking
+     * for self. When booked for someone else (is_for_other), returns null so
+     * the account holder's avatar is not mistakenly shown.
+     */
+    public function getCustomerAvatarUrlAttribute(): ?string
+    {
+        if ($this->is_for_other) {
+            return null;
+        }
+
+        $path = $this->customer?->avatar_path;
+        if (!$path) {
+            return null;
+        }
+
+        return str_starts_with($path, 'http')
+            ? $path
+            : url('/storage/' . ltrim($path, '/'));
+    }
+
+    /**
      * Prepare this trip for a DRIVER-facing response: attach the friend-aware
-     * rider name + phone, and hide the booker's raw user relation so their real
-     * number never leaks for a for-friend trip.
+     * rider name + phone + avatar (suppressed if for someone else), and hide
+     * the booker's raw user relation so their real number never leaks for a for-friend trip.
      */
     public function appendDriverRiderContact(): static
     {
-        $this->loadMissing('customer:id,name,phone');
-        return $this->append(['customer_name', 'customer_phone'])->makeHidden('customer');
+        $this->loadMissing('customer:id,name,phone,avatar_path');
+        return $this->append(['customer_name', 'customer_phone', 'customer_avatar_url'])->makeHidden('customer');
     }
 
     public function driver(): BelongsTo

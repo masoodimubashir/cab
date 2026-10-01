@@ -23,6 +23,7 @@ use App\Services\PayoutLedgerService;
 use App\Services\SchedulingPolicyService;
 use App\Services\TripStateMachineService;
 use App\Services\ShuttleRefundService;
+use App\Services\VehicleFamilyImageService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -357,7 +358,7 @@ class TripsController extends Controller
                 'city_vehicle_type_id',
             ]);
 
-        $trips->load('cityVehicleType:id,display_name,reverse_bidding_enabled,ride_type_id', 'cityVehicleType.rideType:id,name');
+        $trips->load('cityVehicleType:id,display_name,reverse_bidding_enabled,ride_type_id', 'cityVehicleType.rideType:id,name', 'customer:id,name,avatar_path');
 
         $tripIds = $trips->pluck('id')->all();
 
@@ -394,6 +395,7 @@ class TripsController extends Controller
                 // actually picking up before they accept.
                 'is_for_other' => (bool) $t->is_for_other,
                 'booked_for_name' => $t->is_for_other ? $t->booked_for_name : null,
+                'customer_avatar_url' => $t->customer_avatar_url,
                 'reverse_bidding_enabled' => $serviceMode === 'shuttle' ? false : ($t->cityVehicleType?->reverse_bidding_enabled ?? true),
                 'vehicle_name' => $t->cityVehicleType?->display_name,
                 'ride_type_name' => $t->cityVehicleType?->rideType?->name,
@@ -1075,6 +1077,7 @@ class TripsController extends Controller
         Request $request,
         Trip $trip,
         DynamicPricingService $dynamicPricingService,
+        VehicleFamilyImageService $imageService,
     ) {
         $user = $request->user();
         if ($trip->customer_id !== $user->id) {
@@ -1091,6 +1094,9 @@ class TripsController extends Controller
         ]);
         $radiusKm = (float) ($data['radius_km'] ?? 8.0);
         $limit = (int) ($data['limit'] ?? 20);
+
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $familyImagesMap = $trip->city_id ? $imageService->loadMapForCity($trip->city_id) : null;
 
         $trip->loadMissing("cityVehicleType.rideType:id,name");
         $serviceMode = ($trip->cityVehicleType?->rideType?->isShuttle() ?? false)
@@ -1130,9 +1136,9 @@ class TripsController extends Controller
                             ->whereColumn('pricing_rules.city_vehicle_type_id', 'city_vehicle_types.id');
                     });
             })
-            ->with(['user:id,name,phone,avatar_path'])
+            ->with(['user:id,name,phone,avatar_path', 'cityVehicleType:id,display_name', 'vehicleType:id,name'])
             ->get([
-                'id', 'user_id', 'vehicle_type_id', 'vehicle_type', 'vehicle_brand',
+                'id', 'user_id', 'vehicle_type_id', 'city_vehicle_type_id', 'vehicle_type', 'vehicle_brand',
                 'vehicle_model', 'vehicle_color', 'vehicle_reg_no', 'rating_avg', 'rating_count',
             ]);
 
@@ -1165,7 +1171,17 @@ class TripsController extends Controller
             : null;
 
         $rows = $candidates
-            ->map(function (Driver $d) use ($locationRows, $pickupLat, $pickupLng, $cityPolygon, $dynamicPricingService) {
+            ->map(function (Driver $d) use (
+                $locationRows,
+                $pickupLat,
+                $pickupLng,
+                $cityPolygon,
+                $dynamicPricingService,
+                $trip,
+                $requestedPlatform,
+                $familyImagesMap,
+                $imageService
+            ) {
                 $loc = $locationRows->get($d->user_id);
                 if (!$loc) {
                     return null;
@@ -1179,18 +1195,33 @@ class TripsController extends Controller
                 }
 
                 $distanceKm = $this->haversineKm($pickupLat, $pickupLng, $lat, $lng);
+
+                $familyName = $d->cityVehicleType?->display_name ?: ($d->vehicleType?->name ?: $d->vehicle_type);
+                $preloaded = $familyImagesMap?->get(strtolower(trim($familyName ?: ''))) ?? collect();
+
+                $imagePayload = $imageService->resolveForVehicle(
+                    $trip->city_id,
+                    $familyName,
+                    $requestedPlatform,
+                    preloadedImages: $preloaded
+                );
+
                 return [
                     'driver_id' => (int) $d->user_id,
                     'name' => $d->user?->name,
                     'avatar_path' => $d->user?->avatar_path,
                     'rating_avg' => (float) $d->rating_avg,
                     'rating_count' => (int) $d->rating_count,
+                    'image_url' => $imagePayload['image_url'],
+                    'map_marker_url' => $imagePayload['map_marker_url'],
                     'vehicle' => [
                         'type' => $d->vehicle_type,
                         'brand' => $d->vehicle_brand,
                         'model' => $d->vehicle_model,
                         'color' => $d->vehicle_color,
                         'reg_no' => $d->vehicle_reg_no,
+                        'image_url' => $imagePayload['image_url'],
+                        'map_marker_url' => $imagePayload['map_marker_url'],
                     ],
                     'lat' => $lat,
                     'lng' => $lng,
