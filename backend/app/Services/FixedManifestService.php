@@ -18,7 +18,12 @@ class FixedManifestService
     public function manifest(RouteDeparture $departure): array
     {
         $this->availability->assertFixedDeparture($departure);
-        $departure->loadMissing(['route.stops' => fn ($q) => $q->orderBy('seq'), 'driver:id,name']);
+        $departure->loadMissing([
+            'route.stops' => fn ($q) => $q->orderBy('seq'),
+            'driver:id,name',
+            'cityVehicleType:id,display_name',
+            'driver.driver:id,user_id,vehicle_type,vehicle_model',
+        ]);
 
         $route = $departure->route;
         $legacySettings = is_array($route?->fixed_settings_json) ? $route->fixed_settings_json : [];
@@ -50,7 +55,7 @@ class FixedManifestService
             ->where('route_departure_id', $departure->id)
             ->whereHas('route', fn ($q) => $q->where('mode', 'fixed'))
             ->with([
-                'customer:id,name,phone,current_lat,current_lng,current_location_updated_at',
+                'customer:id,name,phone,avatar_path,current_lat,current_lng,current_location_updated_at',
                 'boardStop:id,name,lat,lng,seq',
                 'dropStop:id,name,lat,lng',
             ])
@@ -60,6 +65,11 @@ class FixedManifestService
                 'id' => $reservation->id,
                 'customer_name' => $reservation->customer?->name,
                 'customer_phone' => $reservation->customer?->phone,
+                'customer_avatar_url' => $reservation->customer?->avatar_path
+                    ? (str_starts_with($reservation->customer->avatar_path, 'http')
+                        ? $reservation->customer->avatar_path
+                        : url('/storage/' . ltrim($reservation->customer->avatar_path, '/')))
+                    : null,
                 'customer_lat' => $reservation->customer?->current_lat !== null ? (float) $reservation->customer->current_lat : null,
                 'customer_lng' => $reservation->customer?->current_lng !== null ? (float) $reservation->customer->current_lng : null,
                 'customer_location_updated_at' => optional($reservation->customer?->current_location_updated_at)->toIso8601String(),
@@ -90,6 +100,17 @@ class FixedManifestService
         $originName = ($originRaw !== '' && strtolower($originRaw) !== 'origin') ? $originRaw : ($firstStop?->name ?: 'Origin');
         $destName = ($destRaw !== '' && strtolower($destRaw) !== 'destination') ? $destRaw : ($lastStop?->name ?: 'Destination');
 
+        $requestedPlatform = request()?->header('X-Platform', 'android') ?? 'android';
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $driverProfile = $departure->driver?->driver;
+        $vtName = $departure->cityVehicleType?->display_name
+            ?: ($driverProfile?->vehicle_model ?: ($driverProfile?->vehicle_type ?: ''));
+        $imagePayload = $imageService->resolveForVehicle(
+            $cityId,
+            $vtName,
+            $requestedPlatform
+        );
+
         return [
             'departure' => [
                 'id' => $departure->id,
@@ -102,6 +123,8 @@ class FixedManifestService
                 'announced_depart_at' => optional($departure->announced_depart_at)->toIso8601String(),
                 'capacity' => (int) $departure->capacity,
                 'seats_taken' => (int) $departure->seats_taken,
+                'map_marker_url' => $imagePayload['map_marker_url'],
+                'image_url' => $imagePayload['image_url'],
                 'active_hold_count' => FixedSeatHold::query()
                     ->where('route_departure_id', $departure->id)
                     ->where('status', 'HELD')

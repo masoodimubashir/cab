@@ -14,6 +14,7 @@ use App\Models\VehicleType;
 use App\Services\DynamicPricingService;
 use App\Services\FareEstimationService;
 use App\Services\GatewayFeeService;
+use App\Services\VehicleFamilyImageService;
 use App\Support\RideCatalog;
 use Illuminate\Http\Request;
 
@@ -71,8 +72,11 @@ class PricingController extends Controller
      * reads scope/mode/kind off a flat list); `scopes` is the grouped tree the
      * two-step picker consumes.
      */
-    public function products(City $city)
+    public function products(City $city, Request $request, VehicleFamilyImageService $imageService)
     {
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $familyImagesMap = $imageService->loadMapForCity($city->id);
+
         $activeSharedRouteKeys = Route::query()
             ->where('city_id', $city->id)
             ->where('is_active', true)
@@ -92,12 +96,33 @@ class PricingController extends Controller
 
                 return $activeSharedRouteKeys->has($scope . ':fixed');
             },
-        ))->map(fn (array $s) => [
-            'scope' => $s['scope'],
-            'name' => $s['name'],
-            'sort_order' => $s['sort_order'],
-            'modes' => collect($s['modes'])->values(),
-        ]);
+        ))->map(function (array $s) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
+            $modes = collect($s['modes'])->map(function (array $mode) use ($city, $requestedPlatform, $familyImagesMap, $imageService) {
+                $name = trim($mode['name'] ?? '');
+                $preloaded = $familyImagesMap->get(strtolower($name), collect());
+                $imagePayload = $imageService->resolveForVehicle(
+                    $city->id,
+                    $name,
+                    $requestedPlatform,
+                    defaultImageUrl: $mode['image_url'] ?? null,
+                    preloadedImages: $preloaded
+                );
+
+                return [
+                    ...$mode,
+                    'images' => $imagePayload['images'],
+                    'image_url' => $imagePayload['image_url'],
+                    'map_marker_url' => $imagePayload['map_marker_url'],
+                ];
+            })->values();
+
+            return [
+                'scope' => $s['scope'],
+                'name' => $s['name'],
+                'sort_order' => $s['sort_order'],
+                'modes' => $modes,
+            ];
+        });
 
         // Flat list kept for older clients that haven't moved to the tree yet.
         $flat = $tree->flatMap(fn ($s) => $s['modes'])->values();
@@ -108,13 +133,45 @@ class PricingController extends Controller
         ]);
     }
 
-    public function vehicleTypes(Request $request)
+    public function vehicleTypes(Request $request, VehicleFamilyImageService $imageService)
     {
+        $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $familyImagesMap = $cityId ? $imageService->loadMapForCity($cityId) : null;
+        $cityVehicles = $cityId ? CityVehicleType::query()
+            ->where('city_id', $cityId)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('vehicle_type_id') : collect();
+
         $rows = VehicleType::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get(['id', 'name']);
+            ->get(['id', 'name'])
+            ->map(function (VehicleType $vt) use ($cityId, $requestedPlatform, $familyImagesMap, $cityVehicles, $imageService) {
+                $cityVehicle = $cityVehicles->get($vt->id);
+                $displayName = $cityVehicle?->display_name ? trim($cityVehicle->display_name) : trim($vt->name);
+                $preloaded = $familyImagesMap?->get(strtolower($displayName))
+                    ?? $familyImagesMap?->get(strtolower(trim($vt->name)))
+                    ?? collect();
+
+                $imagePayload = $imageService->resolveForVehicle(
+                    $cityId,
+                    $displayName,
+                    $requestedPlatform,
+                    preloadedImages: $preloaded
+                );
+
+                return [
+                    'id' => $vt->id,
+                    'name' => $displayName,
+                    'global_type_name' => $vt->name,
+                    'images' => $imagePayload['images'],
+                    'image_url' => $imagePayload['image_url'],
+                    'map_marker_url' => $imagePayload['map_marker_url'],
+                ];
+            });
 
         return response()->json(['data' => $rows]);
     }
@@ -242,9 +299,21 @@ class PricingController extends Controller
             $tollCharge,
         );
 
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $imagePayload = app(VehicleFamilyImageService::class)->resolveForVehicle(
+            $cvt->city_id,
+            $cvt->display_name,
+            $requestedPlatform
+        );
+
         return response()->json([
             'currency' => 'INR',
             ...$estimate,
+            'city_vehicle_type_id' => $cvt->id,
+            'vehicle_name' => $cvt->display_name,
+            'images' => $imagePayload['images'],
+            'image_url' => $imagePayload['image_url'],
+            'map_marker_url' => $imagePayload['map_marker_url'],
             'gateway_fee' => $gatewayFees->quote((float) ($estimate['estimated_fare'] ?? 0)),
         ]);
     }
@@ -273,7 +342,7 @@ class PricingController extends Controller
         $query = CityVehicleType::query()
             ->with(['rideType:id,name', 'vehicleType:id,name'])
             ->where('is_active', true)
-            ->whereHas('rideType', fn ($q) => $q->where('mode', RideType::MODE_SHUTTLE));
+            ->whereHas('rideType', fn ($q) => $q->where('mode', RideType::MODE_SHUTTLE)->orWhere('name', 'like', '%shuttle%'));
 
         if (isset($data['city_vehicle_type_id'])) {
             $query->where('id', (int) $data['city_vehicle_type_id']);
@@ -352,6 +421,13 @@ class PricingController extends Controller
             $tollCharge,
         );
 
+        $requestedPlatform = $request->header('X-Platform') ?: $request->input('platform');
+        $imagePayload = app(VehicleFamilyImageService::class)->resolveForVehicle(
+            $cvt->city_id,
+            $cvt->display_name,
+            $requestedPlatform
+        );
+
         return response()->json([
             'available' => true,
             'booking_enabled' => false,
@@ -361,6 +437,9 @@ class PricingController extends Controller
             'vehicle_type_id' => $cvt->vehicle_type_id,
             'vehicle_name' => $cvt->display_name,
             'vehicle_type_name' => $cvt->vehicleType?->name,
+            'images' => $imagePayload['images'],
+            'image_url' => $imagePayload['image_url'],
+            'map_marker_url' => $imagePayload['map_marker_url'],
             ...$estimate,
             'gateway_fee' => $gatewayFees->quote((float) ($estimate['estimated_fare'] ?? 0)),
         ]);

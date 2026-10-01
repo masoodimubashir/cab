@@ -40,7 +40,7 @@ class AdminVehicleTypeImagesController
         $data = $request->validate([
             'platform' => ['required', Rule::in(self::PLATFORMS)],
             'key' => ['required', 'string', 'max:60', 'regex:/^[a-zA-Z0-9_\- ]+$/'],
-            'image' => ['required', 'file', 'image', 'max:4096'],
+            'image' => ['required', 'file', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:4096'],
         ]);
 
         $key = $this->normalizeKey($data['key']);
@@ -51,15 +51,24 @@ class AdminVehicleTypeImagesController
             ->where('platform', $data['platform'])
             ->where('key', $key)
             ->first();
+
+        $storedPath = $request->file('image')->store(
+            "vehicle_families/{$scope['city_id']}/{$data['platform']}",
+            'public',
+        );
+
+        if (!$storedPath || !Storage::disk('public')->exists($storedPath)) {
+            return response()->json(['message' => 'Failed to store image file on server.'], 500);
+        }
+
         if ($existing) {
-            if (Storage::disk('public')->exists($existing->image_path)) {
-                Storage::disk('public')->delete($existing->image_path);
-            }
-            $existing->image_path = $request->file('image')->store(
-                "vehicle_families/{$scope['city_id']}/{$data['platform']}",
-                'public',
-            );
+            $oldPath = $existing->image_path;
+            $existing->image_path = $storedPath;
             $existing->save();
+
+            if ($oldPath && $oldPath !== $storedPath && Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
 
             return response()->json(['image' => $this->shape($existing->fresh()), 'message' => 'Image replaced.']);
         }
@@ -69,10 +78,7 @@ class AdminVehicleTypeImagesController
             'display_name' => $scope['display_name'],
             'platform' => $data['platform'],
             'key' => $key,
-            'image_path' => $request->file('image')->store(
-                "vehicle_families/{$scope['city_id']}/{$data['platform']}",
-                'public',
-            ),
+            'image_path' => $storedPath,
         ]);
 
         return response()->json(['image' => $this->shape($image->fresh()), 'message' => 'Image added.'], 201);
@@ -86,7 +92,7 @@ class AdminVehicleTypeImagesController
         $data = $request->validate([
             'platform' => ['sometimes', Rule::in(self::PLATFORMS)],
             'key' => ['sometimes', 'string', 'max:60', 'regex:/^[a-zA-Z0-9_\- ]+$/'],
-            'image' => ['sometimes', 'file', 'image', 'max:4096'],
+            'image' => ['sometimes', 'file', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:4096'],
         ]);
 
         if (isset($data['platform'])) {
@@ -96,15 +102,25 @@ class AdminVehicleTypeImagesController
             $image->key = $this->normalizeKey($data['key']);
         }
         if ($request->hasFile('image')) {
-            if ($image->image_path && Storage::disk('public')->exists($image->image_path)) {
-                Storage::disk('public')->delete($image->image_path);
-            }
-            $image->image_path = $request->file('image')->store(
+            $oldPath = $image->image_path;
+            $newPath = $request->file('image')->store(
                 "vehicle_families/{$scope['city_id']}/{$image->platform}",
                 'public',
             );
+
+            if (!$newPath || !Storage::disk('public')->exists($newPath)) {
+                return response()->json(['message' => 'Failed to store image file on server.'], 500);
+            }
+
+            $image->image_path = $newPath;
+            $image->save();
+
+            if ($oldPath && $oldPath !== $newPath && Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        } else {
+            $image->save();
         }
-        $image->save();
 
         return response()->json(['image' => $this->shape($image->fresh()), 'message' => 'Image updated.']);
     }

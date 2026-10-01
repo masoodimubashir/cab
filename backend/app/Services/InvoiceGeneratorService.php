@@ -22,15 +22,21 @@ class InvoiceGeneratorService
             return $existing;
         }
 
-        $trip->loadMissing(['customer', 'driver', 'rideType']);
+        $trip->loadMissing(['customer', 'driver', 'rideType', 'cityVehicleType']);
         $customer = $trip->customer;
+
+        $imageService = app(VehicleFamilyImageService::class);
+        $vtName = $trip->vehicle_name ?: ($trip->cityVehicleType?->display_name ?: $trip->rideType?->name);
+        $vehicleImagePayload = $imageService->resolveForVehicle($trip->city_id, $vtName, 'android');
+        $vehicleImageUrl = $vehicleImagePayload['image_url'] ?? null;
 
         $invoiceNo = 'INV-' . $trip->id . '-' . now()->format('YmdHis');
         $pdfPath = null;
         $meta = ['generated_by' => 'Local'];
 
-        // 1. If customer has an email, delegate invoice generation & email dispatch to Razorpay
-        if ($customer && !empty($customer->email) && !str_ends_with((string) $customer->email, '@otp.local')) {
+        // Cash rides always receive a local invoice, including customers with a registered email.
+        if (strtoupper((string) $payment->method) !== 'CASH'
+            && $customer && !empty($customer->email) && !str_ends_with((string) $customer->email, '@otp.local')) {
             try {
                 $rzpService = app(RazorpayService::class);
                 $rzpInvoice = $rzpService->createInvoiceForTrip($trip, $payment);
@@ -54,10 +60,40 @@ class InvoiceGeneratorService
         // 2. Fallback: generate local PDF if Razorpay invoice wasn't created (e.g. offline/cash/no customer email)
         if (!$pdfPath) {
             try {
+                // For local PDF generation with DomPDF, convert the local disk asset to a base64 Data URI
+                // so it renders without requiring remote HTTP network calls (which DomPDF blocks by default).
+                $pdfVehicleImage = null;
+                if ($vehicleImageUrl) {
+                    $publicPrefix = '/storage/';
+                    $parsedPath = parse_url($vehicleImageUrl, PHP_URL_PATH);
+                    if ($parsedPath && str_contains($parsedPath, $publicPrefix)) {
+                        $relativeStoragePath = substr($parsedPath, strpos($parsedPath, $publicPrefix) + strlen($publicPrefix));
+                        if (Storage::disk('public')->exists($relativeStoragePath)) {
+                            $fullPath = Storage::disk('public')->path($relativeStoragePath);
+                            $mime = mime_content_type($fullPath) ?: 'image/png';
+                            $data = base64_encode(file_get_contents($fullPath));
+                            $pdfVehicleImage = "data:{$mime};base64,{$data}";
+                        }
+                    }
+                    if (!$pdfVehicleImage && filter_var($vehicleImageUrl, FILTER_VALIDATE_URL)) {
+                        try {
+                            $contents = @file_get_contents($vehicleImageUrl);
+                            if ($contents) {
+                                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                                $mime = $finfo->buffer($contents) ?: 'image/png';
+                                $pdfVehicleImage = "data:{$mime};base64," . base64_encode($contents);
+                            }
+                        } catch (\Throwable) {
+                            // Leave as fallback
+                        }
+                    }
+                }
+
                 $htmlViewData = [
                     'trip' => $trip,
                     'payment' => $payment,
                     'invoiceNo' => $invoiceNo,
+                    'vehicleImageUrl' => $pdfVehicleImage ?: $vehicleImageUrl,
                 ];
 
                 $pdf = Pdf::loadView('invoices.invoice', $htmlViewData)->setPaper('a4')->output();
@@ -82,5 +118,4 @@ class InvoiceGeneratorService
         ]);
     }
 }
-
 

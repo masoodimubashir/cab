@@ -7,6 +7,7 @@ use App\Models\Driver;
 use App\Models\DriverLocation;
 use App\Models\Trip;
 use App\Services\DynamicPricingService;
+use App\Services\VehicleFamilyImageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -36,13 +37,17 @@ class AdminDispatchController
      *                    drop_address, drop_lat, drop_lng, customer:{}, driver:{}, created_at,
      *                    estimated_fare, final_fare, ride_type, ride_mode }
      */
-    public function snapshot(Request $request, DynamicPricingService $dynamicPricingService)
-    {
+    public function snapshot(
+        Request $request,
+        DynamicPricingService $dynamicPricingService,
+        VehicleFamilyImageService $imageService
+    ) {
         $freshMinutes = max(1, (int) $request->query('fresh_minutes', 5));
         $freshCutoff = now()->subMinutes($freshMinutes);
 
         $cityId = $request->query('city_id') ? (int) $request->query('city_id') : null;
         $city = $cityId ? City::query()->find($cityId) : null;
+        $familyImagesMap = $cityId ? $imageService->loadMapForCity($cityId) : null;
 
         // "Busy" = driver attached to a live trip. CONFIRMED is included even
         // though it's not in ACTIVE_DRIVER_STATUSES — the moment a driver
@@ -70,7 +75,7 @@ class AdminDispatchController
             ->keyBy('driver_id');
 
         $drivers = Driver::query()
-            ->with(['user', 'vehicleTypeRef'])
+            ->with(['user', 'vehicleTypeRef', 'cityVehicleType:id,display_name'])
             ->whereNull('deactivated_at')
             ->where('approval_status', 'approved')
             ->get();
@@ -100,13 +105,24 @@ class AdminDispatchController
 
             $isFresh = $loc && $lastSeen && $lastSeen >= $freshCutoff->toDateTimeString();
 
+            $familyName = $driver->cityVehicleType?->display_name ?: ($driver->vehicleTypeRef?->name ?: $driver->vehicle_type);
+            $preloaded = $familyImagesMap?->get(strtolower(trim($familyName ?: ''))) ?? collect();
+            $imagePayload = $imageService->resolveForVehicle(
+                $cityId,
+                $familyName,
+                'web',
+                preloadedImages: $preloaded
+            );
+
             $row = [
                 'id' => $driver->id,
                 'user_id' => $driver->user_id,
                 'name' => $driver->user?->name,
                 'phone' => $driver->user?->phone,
-                'vehicle_type' => $driver->vehicleTypeRef?->name ?? $driver->vehicle_type,
+                'vehicle_type' => $familyName,
                 'vehicle_reg_no' => $driver->vehicle_reg_no,
+                'map_marker_url' => $imagePayload['map_marker_url'],
+                'image_url' => $imagePayload['image_url'],
                 'is_online' => (bool) $driver->is_online,
                 'lat' => $lat,
                 'lng' => $lng,
@@ -200,8 +216,13 @@ class AdminDispatchController
             'created_at' => optional($trip->created_at)->toIso8601String(),
             'customer' => $trip->customer ? [
                 'id' => $trip->customer->id,
-                'name' => $trip->customer->name,
-                'phone' => $trip->customer->phone,
+                'name' => $trip->is_for_other ? $trip->booked_for_name : $trip->customer->name,
+                'phone' => $trip->is_for_other ? $trip->booked_for_phone : $trip->customer->phone,
+                'avatar_url' => (!$trip->is_for_other && $trip->customer->avatar_path)
+                    ? (str_starts_with($trip->customer->avatar_path, 'http')
+                        ? $trip->customer->avatar_path
+                        : url('/storage/' . ltrim($trip->customer->avatar_path, '/')))
+                    : null,
             ] : null,
             'driver' => $trip->driver ? [
                 'id' => $trip->driver->id,

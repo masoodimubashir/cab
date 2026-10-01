@@ -68,7 +68,37 @@ class RatingsController extends Controller
         $trip->load([
             'payment:id,trip_id,method,status,amount,discount_amount,paid_at,coupon_assignment_id',
             'driver:id,name,phone,avatar_path',
+            'driver.driver:id,user_id,vehicle_type,vehicle_brand,vehicle_model,vehicle_color,vehicle_reg_no',
+            'cityVehicleType:id,display_name,ride_type_id',
+            'cityVehicleType.rideType:id,name',
+            'rideType:id,name',
         ]);
+
+        $requestedPlatform = $request->header('X-Platform', 'android');
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $vtName = $trip->cityVehicleType?->display_name ?: ($trip->rideType?->name ?: $trip->vehicle_name);
+        $imagePayload = $imageService->resolveForVehicle(
+            $trip->city_id,
+            $vtName,
+            $requestedPlatform
+        );
+        $trip->setAttribute('image_url', $imagePayload['image_url']);
+        $trip->setAttribute('map_marker_url', $imagePayload['map_marker_url']);
+        $trip->setAttribute('vehicle_name', $vtName);
+
+        if ($trip->driver) {
+            $driverProfile = $trip->driver->driver;
+            $trip->driver->setAttribute('vehicle', [
+                'type' => $driverProfile?->vehicle_type,
+                'brand' => $driverProfile?->vehicle_brand,
+                'model' => $driverProfile?->vehicle_model,
+                'color' => $driverProfile?->vehicle_color,
+                'reg_no' => $driverProfile?->vehicle_reg_no,
+                'image_url' => $imagePayload['image_url'],
+                'map_marker_url' => $imagePayload['map_marker_url'],
+            ]);
+            $trip->driver->setAttribute('vehicle_reg_no', $driverProfile?->vehicle_reg_no);
+        }
 
         return response()->json(['trip' => $trip]);
     }
@@ -85,10 +115,30 @@ class RatingsController extends Controller
             ->with([
                 'payment:id,trip_id,method,status,amount,discount_amount,paid_at',
                 'rideType:id,name',
+                'cityVehicleType:id,display_name',
             ])
             ->orderByDesc('completed_at')
             ->orderByDesc('created_at')
             ->paginate(20);
+
+        $requestedPlatform = $request->header('X-Platform', 'android');
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $familyImagesMap = $imageService->preloadForPlatform($requestedPlatform);
+
+        $trips->getCollection()->transform(function ($trip) use ($imageService, $familyImagesMap, $requestedPlatform) {
+            $vtName = $trip->cityVehicleType?->display_name ?: ($trip->rideType?->name ?: $trip->vehicle_name);
+            $preloaded = $familyImagesMap?->get(strtolower(trim($vtName ?: ''))) ?? collect();
+            $imagePayload = $imageService->resolveForVehicle(
+                $trip->city_id,
+                $vtName,
+                $requestedPlatform,
+                preloadedImages: $preloaded
+            );
+            $trip->setAttribute('image_url', $imagePayload['image_url']);
+            $trip->setAttribute('map_marker_url', $imagePayload['map_marker_url']);
+            $trip->setAttribute('vehicle_name', $vtName);
+            return $trip;
+        });
 
         return response()->json(['data' => $trips]);
     }
@@ -105,10 +155,30 @@ class RatingsController extends Controller
             ->with([
                 'payment:id,trip_id,method,status,amount,discount_amount,paid_at',
                 'rideType:id,name',
+                'cityVehicleType:id,display_name',
             ])
             ->orderByDesc('completed_at')
             ->orderByDesc('created_at')
             ->paginate(20);
+
+        $requestedPlatform = $request->header('X-Platform', 'android');
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $familyImagesMap = $imageService->preloadForPlatform($requestedPlatform);
+
+        $trips->getCollection()->transform(function ($trip) use ($imageService, $familyImagesMap, $requestedPlatform) {
+            $vtName = $trip->cityVehicleType?->display_name ?: ($trip->rideType?->name ?: $trip->vehicle_name);
+            $preloaded = $familyImagesMap?->get(strtolower(trim($vtName ?: ''))) ?? collect();
+            $imagePayload = $imageService->resolveForVehicle(
+                $trip->city_id,
+                $vtName,
+                $requestedPlatform,
+                preloadedImages: $preloaded
+            );
+            $trip->setAttribute('image_url', $imagePayload['image_url']);
+            $trip->setAttribute('map_marker_url', $imagePayload['map_marker_url']);
+            $trip->setAttribute('vehicle_name', $vtName);
+            return $trip;
+        });
 
         return response()->json(['data' => $trips]);
     }

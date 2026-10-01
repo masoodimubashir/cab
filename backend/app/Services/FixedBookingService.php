@@ -105,12 +105,33 @@ class FixedBookingService
 
     public function shapeBooking(SeatReservation $reservation): array
     {
+        $reservation->loadMissing([
+            'routeDeparture.cityVehicleType:id,display_name',
+            'routeDeparture.route:id,city_id,origin_city_id',
+            'route:id,city_id,origin_city_id',
+        ]);
         $departure = $reservation->routeDeparture;
         $driverProfile = $departure?->driver_id
             ? Driver::query()
                 ->where('user_id', $departure->driver_id)
-                ->first(['user_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
+                ->with(['cityVehicleType:id,display_name', 'vehicleType:id,name'])
+                ->first(['user_id', 'city_id', 'city_vehicle_type_id', 'vehicle_type_id', 'vehicle_type', 'vehicle_brand', 'vehicle_model', 'vehicle_color', 'vehicle_reg_no'])
             : null;
+
+        $cityId = $departure?->route?->city_id
+            ?: ($departure?->route?->origin_city_id
+                ?: ($reservation->route?->city_id
+                    ?: ($driverProfile?->city_id ?: null)));
+
+        $familyName = $departure?->cityVehicleType?->display_name
+            ?: ($driverProfile?->cityVehicleType?->display_name
+                ?: ($driverProfile?->vehicleType?->name
+                    ?: ($driverProfile?->vehicle_type ?: '')));
+
+        $requestedPlatform = request()?->header('X-Platform', 'android') ?? 'android';
+        $imageService = app(\App\Services\VehicleFamilyImageService::class);
+        $imagePayload = $imageService->resolveForVehicle($cityId, $familyName, $requestedPlatform);
+
         $latestDriverLocation = null;
         $driverLocationStale = false;
         if ($departure?->driver_id) {
@@ -143,12 +164,23 @@ class FixedBookingService
             'luggage_taken' => $departure?->luggage_taken !== null ? (int) $departure->luggage_taken : null,
             'driver_name' => $departure?->driver?->name,
             'driver_phone' => $departure?->driver?->phone,
-            'vehicle_name' => $departure?->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type,
+            'vehicle_name' => $familyName ?: ($departure?->cityVehicleType?->display_name ?? $driverProfile?->vehicle_type),
             'vehicle_type_name' => $departure?->cityVehicleType?->vehicleType?->name ?? $driverProfile?->vehicle_type,
             'vehicle_brand' => $driverProfile?->vehicle_brand,
             'vehicle_model' => $driverProfile?->vehicle_model,
             'vehicle_color' => $driverProfile?->vehicle_color,
             'vehicle_reg_no' => $driverProfile?->vehicle_reg_no,
+            'map_marker_url' => $imagePayload['map_marker_url'],
+            'image_url' => $imagePayload['image_url'],
+            'vehicle' => [
+                'type' => $driverProfile?->vehicle_type,
+                'brand' => $driverProfile?->vehicle_brand,
+                'model' => $driverProfile?->vehicle_model,
+                'color' => $driverProfile?->vehicle_color,
+                'reg_no' => $driverProfile?->vehicle_reg_no,
+                'image_url' => $imagePayload['image_url'],
+                'map_marker_url' => $imagePayload['map_marker_url'],
+            ],
             'service_date' => optional($reservation->routeDeparture?->service_date)->toDateString(),
             'depart_at' => optional($reservation->routeDeparture?->depart_at)->toIso8601String(),
             'announced_depart_at' => optional($reservation->routeDeparture?->announced_depart_at)->toIso8601String(),

@@ -35,6 +35,7 @@ class ShuttleDriverService
         $this->guard($driver, $journey);
 
         $bookings = ShuttlePassengerBooking::query()
+            ->with(['customer:id,name,avatar_path'])
             ->where('shuttle_journey_id', $journey->id)
             ->whereIn('status', ['CONFIRMED', 'BOARDED', 'DROPPED', 'NO_SHOW'])
             ->orderBy('id')
@@ -181,6 +182,11 @@ class ShuttleDriverService
         return [
             'booking_id' => (int) $b->id,
             'name' => $b->customer?->name,
+            'avatar_url' => $b->customer?->avatar_path
+                ? (str_starts_with($b->customer->avatar_path, 'http')
+                    ? $b->customer->avatar_path
+                    : url('/storage/' . ltrim($b->customer->avatar_path, '/')))
+                : null,
             'seat' => $this->seatLabel($b),
             'status' => $b->status,
             'payment_method' => $b->payment_method,
